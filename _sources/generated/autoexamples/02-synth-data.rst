@@ -187,7 +187,7 @@ Assume a constant refocusing train
  .. code-block:: none
 
 
-    (<matplotlib.image.AxesImage object at 0x7fa16c161690>, (-0.5, 767.5, 255.5, -0.5), (-0.5, 767.5, 255.5, -0.5))
+    (<matplotlib.image.AxesImage object at 0x7fe7dc44da20>, (-0.5, 767.5, 255.5, -0.5), (-0.5, 767.5, 255.5, -0.5))
 
 
 
@@ -267,7 +267,7 @@ from Sigpy.
  .. code-block:: none
 
 
-    (<matplotlib.image.AxesImage object at 0x7fa168cee830>, (-0.5, 255.5, 255.5, -0.5), (-0.5, 255.5, 255.5, -0.5), <matplotlib.colorbar.Colorbar object at 0x7fa16894f9d0>)
+    (<matplotlib.image.AxesImage object at 0x7fe7d1f64b80>, (-0.5, 255.5, 255.5, -0.5), (-0.5, 255.5, 255.5, -0.5), <matplotlib.colorbar.Colorbar object at 0x7fe7d1a1fa90>)
 
 
 
@@ -330,7 +330,7 @@ Reconstruction shows the effect of undersampling:
  .. code-block:: none
 
 
-    (<matplotlib.image.AxesImage object at 0x7fa1688114b0>, (-0.5, 767.5, 255.5, -0.5), (-0.5, 767.5, 255.5, -0.5))
+    (<matplotlib.image.AxesImage object at 0x7fe7d18eb2e0>, (-0.5, 767.5, 255.5, -0.5), (-0.5, 767.5, 255.5, -0.5))
 
 
 
@@ -342,7 +342,7 @@ datasets, such as in Synth-MOLED.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 12.064 seconds)
+   **Total running time of the script:** (0 minutes 11.963 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-synth-data.py:
