@@ -478,7 +478,7 @@ As mentioned, parallelization with automatic broadcasting is supported...
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 13.395 seconds)
+   **Total running time of the script:** (0 minutes 13.210 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_01-simple-simulator.py:
