@@ -354,7 +354,7 @@ Run and plot timings:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 15.484 seconds)
+   **Total running time of the script:** (0 minutes 15.372 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_04-derivatives.py:
