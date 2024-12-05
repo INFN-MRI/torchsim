@@ -132,7 +132,7 @@ now generate the data
  .. code-block:: none
 
 
-    (<matplotlib.image.AxesImage object at 0x7f3d00076e60>, (-0.5, 767.5, 255.5, -0.5), (-0.5, 767.5, 255.5, -0.5))
+    (<matplotlib.image.AxesImage object at 0x7fa168833e50>, (-0.5, 767.5, 255.5, -0.5), (-0.5, 767.5, 255.5, -0.5))
 
 
 
@@ -412,14 +412,14 @@ Done! We can now try it:
  .. code-block:: none
 
 
-    (<matplotlib.image.AxesImage object at 0x7f3cf8e5af80>, (-0.5, 255.5, 255.5, -0.5), <matplotlib.colorbar.Colorbar object at 0x7f3cf8e5b490>, Text(0.5, 1.0, 'recon M0'))
+    (<matplotlib.image.AxesImage object at 0x7fa168668550>, (-0.5, 255.5, 255.5, -0.5), <matplotlib.colorbar.Colorbar object at 0x7fa16866af20>, Text(0.5, 1.0, 'recon M0'))
 
 
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.695 seconds)
+   **Total running time of the script:** (0 minutes 2.604 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-fitting.py:
