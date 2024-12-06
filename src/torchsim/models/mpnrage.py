@@ -79,6 +79,8 @@ class MPnRAGEModel(AbstractModel):
         nshots: int,
         flip: float,
         TR: float,
+        MPRAGE_TR: float | None = None,
+        num_inversions: int = 1,
         TI: float = 0.0,
         slice_prof: float | npt.ArrayLike = 1.0,
     ):
@@ -96,6 +98,10 @@ class MPnRAGEModel(AbstractModel):
         TI : float, optional
             Inversion time in milliseconds.
             The default is ``0.0``.
+        MPRAGE_TR : float default is None
+            Repetition time in milliseconds for the whole inversion block.
+        num_inversions : int, optional
+            Number of inversion pulses, default is ``1``.
         slice_prof : float | npt.ArrayLike, optional
             Flip angle scaling along slice profile.
             The default is ``1.0``.
@@ -106,6 +112,8 @@ class MPnRAGEModel(AbstractModel):
         self.sequence.TR = TR * 1e-3  # ms -> s
         self.sequence.TI = TI * 1e-3  # ms -> s
         self.sequence.slice_prof = slice_prof
+        self.sequence.num_inversions = num_inversions
+        self.sequence.MPRAGE_TR = MPRAGE_TR * 1e-3 if MPRAGE_TR is not None else None
 
     @staticmethod
     def _engine(
@@ -118,6 +126,8 @@ class MPnRAGEModel(AbstractModel):
         B1: float | npt.ArrayLike = 1.0,
         inv_efficiency: float | npt.ArrayLike = 1.0,
         slice_prof: float | npt.ArrayLike = 1.0,
+        num_inversions: int = 1,
+        MPRAGE_TR: float = None,
     ):
         # Prepare relaxation parameters
         R1 = 1e3 / T1
@@ -136,26 +146,29 @@ class MPnRAGEModel(AbstractModel):
 
         # Prepare relaxation operator for sequence loop
         E1, rE1 = epg.longitudinal_relaxation_op(R1, TR)
-
+        if MPRAGE_TR is not None:
+            mprageE1, mpragerE1 = epg.longitudinal_relaxation_op(R1, MPRAGE_TR)
         # Initialize signal
         signal = []
-
-        # Apply inversion
-        states = epg.adiabatic_inversion(states, inv_efficiency)
-        states = epg.longitudinal_relaxation(states, E1inv, rE1inv)
-        states = epg.spoil(states)
-
-        # Scan loop
-        for p in range(nshots):
-
-            # Apply RF pulse
-            states = epg.rf_pulse(states, RF)
-
-            # Record signal
-            signal.append(epg.get_signal(states))
-
-            # Evolve
-            states = epg.longitudinal_relaxation(states, E1, rE1)
+        for i in range(num_inversions):
+            # Apply inversion
+            states = epg.adiabatic_inversion(states, inv_efficiency)
+            states = epg.longitudinal_relaxation(states, E1inv, rE1inv)
             states = epg.spoil(states)
+
+            # Scan loop
+            for p in range(nshots):
+
+                # Apply RF pulse
+                states = epg.rf_pulse(states, RF)
+
+                # Record signal
+                signal.append(epg.get_signal(states))
+
+                # Evolve
+                states = epg.longitudinal_relaxation(states, E1, rE1)
+                states = epg.spoil(states)
+            if MPRAGE_TR is not None:
+                epg.longitudinal_relaxation(states, mprageE1, mpragerE1)
 
         return M0 * 1j * torch.stack(signal)
