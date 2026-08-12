@@ -110,32 +110,36 @@ def _pack_events(
     device: torch.device,
     rf_raster_time_s: float,
 ) -> _PackedEvents:
-    durations: list[torch.Tensor] = []
+    # Values stay as plain Python numbers unless the description carries
+    # tensors (an optimizer differentiating through flip angles), so the common
+    # case builds each buffer with a single allocation instead of one scalar
+    # tensor per event.
+    durations: list[Any] = []
     kinds: list[int] = []
-    flips: list[torch.Tensor] = []
-    phases: list[torch.Tensor] = []
+    flips: list[Any] = []
+    phases: list[Any] = []
     actions: list[int] = []
     output_indices: list[int] = []
-    times: list[torch.Tensor] = []
+    times: list[Any] = []
     event_indices: list[int] = []
     repetition_indices: list[int] = []
     echo_flags: list[bool] = []
-    previous_absolute = _scalar(0.0, device)
+    previous_absolute: Any = 0.0
     output_index = 0
 
     for repetition in range(repetitions):
-        repetition_offset = _scalar(description.tr_duration_us, device) * repetition
+        repetition_offset = description.tr_duration_us * repetition
         for event_index, event in enumerate(description.events):
-            absolute = repetition_offset + _scalar(event.timestamp_us, device)
+            absolute = repetition_offset + event.timestamp_us
             durations.append((absolute - previous_absolute) * 1e-6)
             previous_absolute = absolute
             kinds.append(int(event.type))
             action = _action(policy_name, event)
-            flip = _scalar(0.0, device)
-            phase = _scalar(0.0, device)
+            flip: Any = 0.0
+            phase: Any = 0.0
             event_output_index = -1
             if event.type is EventType.RF:
-                phase = _scalar(event.rf_phase_rad, device)
+                phase = event.rf_phase_rad
                 if event.rf_use is RfUse.INVERSION:
                     action |= _INVERSION
                 else:
@@ -144,10 +148,10 @@ def _pack_events(
                         event.rf_amplitude_hz,
                         rf_raster_time_s=rf_raster_time_s,
                     )
-                    flip = _scalar(flip_value, device)
-                    phase = phase + _scalar(integral_phase, device)
+                    flip = flip_value
+                    phase = phase + integral_phase
             elif event.type is EventType.ADC:
-                phase = _scalar(event.adc_phase_rad, device)
+                phase = event.adc_phase_rad
                 if _record_event(event, record):
                     action |= _RECORD
                     event_output_index = output_index
@@ -162,15 +166,15 @@ def _pack_events(
             actions.append(action)
 
     return _PackedEvents(
-        duration=torch.stack(durations).to(torch.float32).contiguous(),
+        duration=_stack_values(durations, device),
         kind=torch.as_tensor(kinds, dtype=torch.int32, device=device).contiguous(),
-        flip=torch.stack(flips).to(torch.float32).contiguous(),
-        phase=torch.stack(phases).to(torch.float32).contiguous(),
+        flip=_stack_values(flips, device),
+        phase=_stack_values(phases, device),
         action=torch.as_tensor(actions, dtype=torch.uint8, device=device).contiguous(),
         output_index=torch.as_tensor(
             output_indices, dtype=torch.int32, device=device
         ).contiguous(),
-        time_us=_stack(times, torch.float32, device),
+        time_us=_stack_values(times, device),
         event_index=torch.as_tensor(event_indices, dtype=torch.int64, device=device),
         repetition=torch.as_tensor(
             repetition_indices, dtype=torch.int64, device=device
@@ -205,6 +209,16 @@ def _scalar(value: Any, device: torch.device) -> torch.Tensor:
     if isinstance(value, torch.Tensor):
         return value.to(device=device, dtype=torch.float32).reshape(())
     return torch.as_tensor(value, dtype=torch.float32, device=device).reshape(())
+
+
+def _stack_values(values: list[Any], device: torch.device) -> torch.Tensor:
+    """Pack per-event scalars, keeping any autograd graph intact."""
+    if not values:
+        return torch.empty(0, dtype=torch.float32, device=device)
+    if any(isinstance(value, torch.Tensor) for value in values):
+        stacked = torch.stack([_scalar(value, device) for value in values])
+        return stacked.to(torch.float32).contiguous()
+    return torch.tensor(values, dtype=torch.float32, device=device).contiguous()
 
 
 def _stack(
@@ -269,6 +283,26 @@ class _NativeEpg(torch.autograd.Function):
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
+        float_indices = (0, 1, 2, 3, 4, 5, 6, 7, 9, 10)
+        if _vjp_available(saved[0].device):
+            # Fused analytic adjoint. Ordered like ``float_indices``.
+            fused = _run_packed_vjp(
+                saved[:7],
+                saved[7:13],
+                grad_output,
+                state_count=ctx.state_count,
+                output_count=ctx.output_count,
+                threads=ctx.threads,
+            )
+            lookup = dict(zip(float_indices, fused, strict=True))
+            result: list[torch.Tensor | None] = [
+                lookup[index]
+                if index in lookup and ctx.needs_input_grad[index]
+                else None
+                for index in range(13)
+            ]
+            return (*result, None, None, None)
+
         with torch.enable_grad():
             output = _simulate_packed_torch(
                 saved[:7],
@@ -279,8 +313,7 @@ class _NativeEpg(torch.autograd.Function):
             differentiable = [
                 tensor
                 for index, tensor in enumerate(saved)
-                if index in {0, 1, 2, 3, 4, 5, 6, 7, 9, 10}
-                and ctx.needs_input_grad[index]
+                if index in set(float_indices) and ctx.needs_input_grad[index]
             ]
             gradients = torch.autograd.grad(
                 output,
@@ -289,10 +322,10 @@ class _NativeEpg(torch.autograd.Function):
                 allow_unused=True,
                 create_graph=torch.is_grad_enabled(),
             ) if differentiable else ()
-        result: list[torch.Tensor | None] = []
+        result = []
         gradient_index = 0
         for index in range(13):
-            if index in {0, 1, 2, 3, 4, 5, 6, 7, 9, 10} and ctx.needs_input_grad[index]:
+            if index in set(float_indices) and ctx.needs_input_grad[index]:
                 result.append(gradients[gradient_index])
                 gradient_index += 1
             else:
@@ -338,6 +371,29 @@ class _NativeEpgJvp(torch.autograd.Function):
         tangent = saved[13:23]
         float_indices = (0, 1, 2, 3, 4, 5, 6, 7, 9, 10)
         float_primal = tuple(primal[index] for index in float_indices)
+
+        if _vjp_available(primal[0].device):
+            primal_grads, tangent_grads = _run_packed_vjp_jvp(
+                primal[:7],
+                primal[7:13],
+                tangent,
+                grad_output,
+                state_count=ctx.state_count,
+                output_count=ctx.output_count,
+                threads=getattr(ctx, "threads", 0),
+            )
+            primal_lookup = dict(zip(float_indices, primal_grads, strict=True))
+            result: list[torch.Tensor | None] = []
+            for index in range(13):
+                needed = ctx.needs_input_grad[index]
+                result.append(primal_lookup[index] if needed and index in primal_lookup else None)
+            for offset in range(10):
+                index = 13 + offset
+                needed = (
+                    index < len(ctx.needs_input_grad) and ctx.needs_input_grad[index]
+                )
+                result.append(tangent_grads[offset] if needed else None)
+            return (*result, None, None, None)
 
         def function(*values: torch.Tensor) -> torch.Tensor:
             rebuilt = list(primal)
@@ -440,6 +496,108 @@ def _run_packed(
         threads,
     )
     return torch.complex(output_real, output_imag)
+
+
+def _vjp_available(device: torch.device) -> bool:
+    """Whether the fused adjoint can serve this backward.
+
+    The fused kernel returns plain tensors, so it cannot support double
+    backward; when a graph is being built the differentiable fallback is used
+    instead. CUDA has no fused adjoint yet.
+    """
+    if device.type != "cpu" or torch.is_grad_enabled():
+        return False
+    try:
+        from torchsim import _epg_cpu
+    except ImportError:
+        return False
+    return hasattr(_epg_cpu, "simulate_vjp")
+
+
+def _run_packed_vjp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    state_count: int,
+    output_count: int,
+    threads: int,
+) -> tuple[torch.Tensor, ...]:
+    """Return gradients w.r.t. the seven tissue and three float event buffers.
+
+    The result is ordered ``(t1, t2, m0, b1, b1_phase, b0, inversion_efficiency,
+    duration, flip, phase)``.
+    """
+    from torchsim import _epg_cpu
+
+    grad_output = grad_output.resolve_conj().contiguous()
+    grad_real = grad_output.real.contiguous()
+    grad_imag = grad_output.imag.contiguous()
+    atom_grads = tuple(torch.zeros_like(value) for value in tissue)
+    duration_grad = torch.zeros_like(events[0])
+    flip_grad = torch.zeros_like(events[2])
+    phase_grad = torch.zeros_like(events[3])
+    pointers = (
+        *tissue,
+        *events,
+        grad_real,
+        grad_imag,
+        *atom_grads,
+        flip_grad,
+        phase_grad,
+        duration_grad,
+    )
+    _epg_cpu.simulate_vjp(
+        tuple(value.data_ptr() for value in pointers),
+        tissue[0].numel(),
+        events[1].numel(),
+        state_count,
+        output_count,
+        threads,
+    )
+    return (*atom_grads, duration_grad, flip_grad, phase_grad)
+
+
+def _run_packed_vjp_jvp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    tangents: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    state_count: int,
+    output_count: int,
+    threads: int,
+) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
+    """Forward-over-reverse pass through the JVP state machine.
+
+    ``tangents`` follows the differentiable-input order ``(t1, t2, m0, b1,
+    b1_phase, b0, inversion_efficiency, duration, flip, phase)``. Returns
+    ``(primal_gradients, tangent_gradients)`` in that same order.
+    """
+    from torchsim import _epg_cpu
+
+    grad_output = grad_output.resolve_conj().contiguous()
+    grad_real = grad_output.real.contiguous()
+    grad_imag = grad_output.imag.contiguous()
+    value_grads = tuple(torch.zeros_like(value) for value in tangents)
+    tangent_grads = tuple(torch.zeros_like(value) for value in tangents)
+    pointers = (
+        *tissue,
+        *events,
+        *tangents,
+        grad_real,
+        grad_imag,
+        *value_grads,
+        *tangent_grads,
+    )
+    _epg_cpu.simulate_vjp_jvp(
+        tuple(value.data_ptr() for value in pointers),
+        tissue[0].numel(),
+        events[1].numel(),
+        state_count,
+        output_count,
+        threads,
+    )
+    # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
+    return tangent_grads, value_grads
 
 
 def _run_packed_jvp(

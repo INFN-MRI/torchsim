@@ -209,9 +209,24 @@ class RfDefinition:
         *,
         rf_raster_time_s: float = 1e-6,
     ) -> complex:
-        """Return the complex time integral of the normalized envelope."""
+        """Return the complex time integral of the normalized envelope.
+
+        The envelope is normalized, so this depends only on the pulse shape and
+        the raster, never on the amplitude of a particular occurrence. A
+        sequence typically reuses one definition for every refocusing pulse and
+        re-evaluates it on every simulation, so the result is memoized on the
+        (immutable) definition.
+        """
+        cache = getattr(self, "_integral_cache", None)
+        if cache is None:
+            cache = {}
+            object.__setattr__(self, "_integral_cache", cache)
+        elif rf_raster_time_s in cache:
+            return cache[rf_raster_time_s]
+
         envelope = self.complex_envelope()
         if envelope.size < 2:
+            cache[rf_raster_time_s] = 0.0j
             return 0.0j
         if self.time is None:
             time_s = (
@@ -223,7 +238,9 @@ class RfDefinition:
                 raise ValueError(
                     f"RF definition {self.id}: envelope/time size mismatch"
                 )
-        return complex(_trapezoid(envelope, time_s))
+        area = complex(_trapezoid(envelope, time_s))
+        cache[rf_raster_time_s] = area
+        return area
 
     def flip_angle(
         self,

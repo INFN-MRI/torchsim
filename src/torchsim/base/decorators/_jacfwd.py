@@ -32,17 +32,20 @@ def jacfwd(argnums: tuple[int]) -> Callable:
             Returns
             -------
             Tuple[torch.Tensor, Optional[torch.Tensor]]
-                Original function output and its Jacobian.
+                The Jacobian and the primal output it was linearized about.
             """
 
-            # Define a wrapper function to evaluate real-imag split output
+            # Forward-mode differentiation evaluates the primal anyway, so
+            # return it as auxiliary output rather than simulating twice.
             def wrapped_fn(*wrapped_args):
-                return _split_real_imag(fn(*wrapped_args, **kwargs))
+                output = fn(*wrapped_args, **kwargs)
+                return _split_real_imag(output), output
 
-            # Compute the Jacobian using jacfwd
-            jacobian = torch.func.jacfwd(wrapped_fn, argnums=argnums)(*args)
+            jacobian, primal = torch.func.jacfwd(
+                wrapped_fn, argnums=argnums, has_aux=True
+            )(*args)
 
-            return _combine_real_imag(jacobian)
+            return _combine_real_imag(jacobian), primal
 
         return wrapper
 

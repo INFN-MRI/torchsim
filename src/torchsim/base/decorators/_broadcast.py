@@ -22,11 +22,18 @@ def broadcast(func: Callable) -> Callable:
 
         # run function
         output = func(*args)
-        if torch.isreal(output).all():
-            output = output.real
-        return output.reshape(*shape, *output.shape[1:]).squeeze()
+        if isinstance(output, tuple):
+            return tuple(_reshape_output(item, shape) for item in output)
+        return _reshape_output(output, shape)
 
     return wrapper
+
+
+def _reshape_output(output: torch.Tensor, shape) -> torch.Tensor:
+    """Drop a vanishing imaginary part and restore the batch shape."""
+    if torch.isreal(output).all():
+        output = output.real
+    return output.reshape(*shape, *output.shape[1:]).squeeze()
 
 
 def broadcast_arguments(*args, **kwargs) -> tuple[list, dict]:

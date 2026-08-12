@@ -206,6 +206,21 @@ class AbstractModel(ABC):
                 broadcast_vmapped_jac = broadcast(vmapped_jac)
                 return broadcast_vmapped_jac(*inputs)
 
+        elif self.vectorized_engine:
+            engine, argnums = self._get_func(self._engine, *args, **kwargs)
+
+            # A vectorized engine already evaluates a whole batch of voxels,
+            # and voxels are independent, so its Jacobian is diagonal across
+            # them. One directional derivative per differentiated parameter
+            # therefore yields every per-voxel derivative at once, and vmap --
+            # whose pytree bookkeeping dominates the runtime here -- is not
+            # needed.
+            def jacobian_engine(*inputs):
+                def differentiate(*broadcast_inputs):
+                    return _forward_mode_jacobian(engine, argnums, broadcast_inputs)
+
+                return broadcast(differentiate)(*inputs)
+
         else:
             engine, argnums = self._get_func(self._engine, *args, **kwargs)
 
@@ -248,21 +263,24 @@ class AbstractModel(ABC):
             k: v for k, v in kwargs.items() if k not in self.broadcastable_params
         }
 
-        # Get forward function
-        forward_fn = self._forward(**non_broadcastable_kwargs)
-
         # If no derivative is requested, run forward with explicit `no_grad()` for performance
         if self.diff is None:
+            forward_fn = self._forward(**non_broadcastable_kwargs)
             with torch.no_grad():
                 output = forward_fn(*broadcastable_kwargs.values())
             return output
 
-        # Run forward pass
-        output = forward_fn(*broadcastable_kwargs.values())
-
-        # Get derivative and run
+        # Forward-mode differentiation evaluates the primal on the way, so the
+        # jacobian pass returns both and the model is simulated once.
         jacobian_fn = self._jacobian(**non_broadcastable_kwargs)
-        jacobian_output = jacobian_fn(*broadcastable_kwargs.values())
+        result = jacobian_fn(*broadcastable_kwargs.values())
+        if isinstance(result, tuple):
+            jacobian_output, output = result
+        else:
+            # an analytic ``_jacobian_engine`` yields no primal
+            jacobian_output = result
+            forward_fn = self._forward(**non_broadcastable_kwargs)
+            output = forward_fn(*broadcastable_kwargs.values())
 
         return output, jacobian_output
 
@@ -390,7 +408,12 @@ class AbstractModel(ABC):
             _args = list(_kwargs.values())
             _args = list(args) + _args[n_args:]
 
-            return _jacobian_fn(*_args)
+            result = _jacobian_fn(*_args)
+            # The internal pass also returns the primal it linearized about;
+            # this public method is documented to return the Jacobian alone.
+            if isinstance(result, tuple):
+                return result[0]
+            return result
 
         # Bind the new signature to the function
         jacobian_fn.__signature__ = jacobian_sig
@@ -399,6 +422,70 @@ class AbstractModel(ABC):
         if compile:
             return torch.compile(jacobian_fn)
         return jacobian_fn
+
+
+def _forward_mode_jacobian(
+    engine: Callable,
+    argnums: int | tuple[int, ...],
+    inputs: tuple[Any, ...],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-voxel Jacobian of a vectorized engine, plus its primal output.
+
+    Returns the Jacobian shaped ``(..., nparams, ncontrasts)``, alongside the
+    primal the derivative was taken about. As with ``torch.func``, a bare
+    integer ``argnums`` omits the parameter axis while a tuple keeps it.
+    """
+    single = isinstance(argnums, int)
+    argnums = (argnums,) if single else tuple(argnums)
+    # Broadcasting leaves zero-stride views behind, which forward-mode AD
+    # cannot attach a tangent to, so materialize them first.
+    primals = tuple(
+        value.contiguous()
+        if isinstance(value, torch.Tensor)
+        else torch.as_tensor(value)
+        for value in inputs
+    )
+    # Only floating-point inputs can carry a tangent; everything else is held
+    # fixed by closure so that jvp never sees it.
+    is_differentiable = [
+        torch.is_tensor(value) and torch.is_floating_point(value)
+        for value in primals
+    ]
+    tangent_primals = tuple(
+        value for value, flag in zip(primals, is_differentiable) if flag
+    )
+    position = {}
+    for index, flag in enumerate(is_differentiable):
+        if flag:
+            position[index] = len(position)
+
+    def restricted(*values: torch.Tensor) -> torch.Tensor:
+        remaining = iter(values)
+        rebuilt = [
+            next(remaining) if flag else value
+            for value, flag in zip(primals, is_differentiable)
+        ]
+        return engine(*rebuilt)
+
+    primal_output = None
+    columns = []
+    for argnum in argnums:
+        if argnum not in position:
+            raise ValueError(
+                "cannot differentiate with respect to a non-floating input"
+            )
+        selected = position[argnum]
+        tangents = tuple(
+            torch.ones_like(value) if index == selected else torch.zeros_like(value)
+            for index, value in enumerate(tangent_primals)
+        )
+        primal_output, directional = torch.func.jvp(
+            restricted, tangent_primals, tangents
+        )
+        columns.append(directional)
+
+    jacobian = columns[0] if single else torch.stack(columns, dim=-2)
+    return jacobian, primal_output
 
 
 # %% TODO: move
