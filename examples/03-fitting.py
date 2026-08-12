@@ -133,6 +133,8 @@ def signal_model(parameters, known=None):
 # inner product. :class:`torchsim.DictionaryMatcher` chunks the score matrix so
 # memory stays bounded, while each chunk is a BLAS/cuBLAS matrix product.
 #
+import time
+
 t2_grid = torch.linspace(1.0, 350.0, 1000, device=device)[:, None]
 dictionary = signal_model(t2_grid)
 
@@ -145,8 +147,13 @@ matcher = torchsim.DictionaryMatcher(dictionary, t2_grid).to(device)
 #
 signals = torch.as_tensor(echo_series, device=device).permute(1, 2, 0)
 
+start = time.perf_counter()
 match = matcher.match(signals)
+dictionary_time = time.perf_counter() - start
+
 T2_dict = match.parameters[..., 0, 0].numpy(force=True)
+# The scale is the complex least-squares fit between the measured signal and
+# the matched atom, i.e. the proton density.
 M0_dict = abs(match.scales[..., 0]).numpy(force=True)
 
 # %%
@@ -160,9 +167,21 @@ M0_dict = abs(match.scales[..., 0]).numpy(force=True)
 # mapping. ``normalize=True`` makes the estimate invariant to the unknown
 # proton density.
 #
-generator = torch.Generator(device=device).manual_seed(11)
-t2_train = 1.0 + 349.0 * torch.rand(20000, 1, generator=generator, device=device)
+# The prior is sampled *log*-uniformly. Sampling it uniformly spends most of
+# the training budget on long T2, where the echo train is nearly flat and
+# carries little information, and leaves the short-T2 end underdetermined.
+#
+import math
 
+generator = torch.Generator(device=device).manual_seed(11)
+log_low, log_high = math.log(5.0), math.log(400.0)
+t2_train = torch.exp(
+    log_low
+    + (log_high - log_low) * torch.rand(20000, 1, generator=generator, device=device)
+)
+
+start = time.perf_counter()
+training_signals = signal_model(t2_train)
 estimator = torchsim.PERK(
     n_features=1000,
     regularization=1e-6,
@@ -170,33 +189,45 @@ estimator = torchsim.PERK(
     normalize=True,
     seed=4,
 ).to(device)
-estimator.fit_simulator(
-    signal_model,
-    t2_train,
-    simulation_chunk_size=4096,
-    noise_std=0.02,
-)
+estimator.fit(training_signals, t2_train, noise_std=0.02)
+training_time = time.perf_counter() - start
 
 # %%
 #
-# Inference is now a fixed-cost feed-forward pass, independent of how finely
-# the training prior was sampled:
+# Inference is a fixed-cost feed-forward pass, independent of how finely the
+# training prior was sampled.
 #
-T2_perk = estimator(signals)[..., 0].clamp(0.0, 350.0).numpy(force=True)
+# PERK is an unconstrained regression, so nothing stops it from returning a
+# negative T2 in voxels where the parameter is not identifiable. Clamping to a
+# strictly positive range is not cosmetic: the proton density below divides by
+# the atom energy, which collapses to zero as T2 does.
+#
+start = time.perf_counter()
+T2_estimate = estimator(signals)[..., 0].clamp(5.0, 350.0)
 
 # %%
 #
-# PERK returns T2 only. The matching proton density follows from a single
-# batched simulation at the estimated T2 and a least-squares projection onto
-# the measured signal, which reuses the forward model a third time:
+# PERK returns T2 only, but the proton density costs nothing extra. Since the
+# atom for a given T2 is already tabulated in the dictionary above, we gather
+# it by index and take the same least-squares scale that dictionary matching
+# reports. This is a lookup plus one dot product per voxel, so no part of the
+# forward model is simulated a second time.
 #
-atoms_perk = signal_model(
-    torch.as_tensor(T2_perk.reshape(-1, 1), device=device),
-)
+index = torch.searchsorted(
+    t2_grid[:, 0].contiguous(), T2_estimate.reshape(-1).contiguous()
+).clamp(0, t2_grid.shape[0] - 1)
+atom = dictionary[index]
 measured = signals.reshape(-1, len(flip))
 M0_perk = (
-    (measured * atoms_perk).sum(-1) / atoms_perk.square().sum(-1).clamp_min(1e-12)
-).reshape(T2_perk.shape).numpy(force=True)
+    ((atom * measured).sum(-1) / atom.square().sum(-1))
+    .reshape(T2_estimate.shape)
+    .numpy(force=True)
+)
+perk_time = time.perf_counter() - start
+T2_perk = T2_estimate.numpy(force=True)
+
+print(f"dictionary : {dictionary_time:.3f} s inference")
+print(f"PERK       : {training_time:.3f} s training, {perk_time:.3f} s inference")
 
 # %%
 #
@@ -229,11 +260,13 @@ for ax, (data, title) in zip(
     ax.set_title(title), ax.axis("off")
     figure.colorbar(handle, ax=ax, fraction=0.046)
 
+# a shared scale, so the three proton-density panels are actually comparable
+m0_max = np.nanpercentile(masked(M0), 99.5)
 for ax, (data, title) in zip(
     axes[1],
     [(M0, "true M0"), (M0_dict, "dictionary M0"), (M0_perk, "PERK M0")],
 ):
-    handle = ax.imshow(masked(data), cmap="gray")
+    handle = ax.imshow(masked(data), cmap="gray", vmin=0.0, vmax=m0_max)
     ax.set_title(title), ax.axis("off")
     figure.colorbar(handle, ax=ax, fraction=0.046)
 figure.tight_layout()
@@ -243,21 +276,28 @@ figure.tight_layout()
 # Both estimators recover the same structure. Quantitatively, we compare them
 # against the ground truth over the masked region:
 #
-reference = T2[valid]
-for name, estimate in [("dictionary", T2_dict), ("PERK", T2_perk)]:
-    error = estimate[valid] - reference
+for name, t2_estimate, m0_estimate in [
+    ("dictionary", T2_dict, M0_dict),
+    ("PERK", T2_perk, M0_perk),
+]:
+    t2_error = t2_estimate[valid] - T2[valid]
+    m0_error = m0_estimate[mask] - M0[mask]
     print(
-        f"{name:>10}: bias {error.mean():+6.2f} ms, "
-        f"RMSE {np.sqrt((error**2).mean()):5.2f} ms"
+        f"{name:>10}:  T2 bias {t2_error.mean():+6.2f} ms "
+        f"RMSE {np.sqrt((t2_error**2).mean()):5.2f} ms  |  "
+        f"M0 bias {m0_error.mean():+6.2f} RMSE {np.sqrt((m0_error**2).mean()):6.2f}"
     )
+relative = np.abs(M0_perk[mask] - M0_dict[mask]).mean() / np.abs(M0_dict[mask]).mean()
+print(f"PERK vs dictionary M0: {100 * relative:.2f}% mean relative difference")
 
 # %%
 #
-# The dictionary estimate is quantized onto the T2 grid, whereas PERK
-# interpolates continuously between training samples. The practical difference
-# is cost: matching scales with the number of atoms at every inference, while
-# PERK pays that price once, during training.
+# Exhaustive matching is the more accurate of the two here, and on a
+# thousand-atom grid it is also the faster one. Its cost, however, grows with
+# the size of the grid, while PERK's does not: the cost of a finer or
+# higher-dimensional parameter space is paid once, during training.
 #
+reference = T2[valid]
 plt.figure(figsize=(5, 4))
 plt.plot(reference[::37], T2_dict[valid][::37], ".", markersize=2, label="dictionary")
 plt.plot(reference[::37], T2_perk[valid][::37], ".", markersize=2, label="PERK")
@@ -265,3 +305,30 @@ plt.plot([0, 350], [0, 350], "k--", linewidth=1, label="identity")
 plt.xlabel("true T2 [ms]"), plt.ylabel("estimated T2 [ms]")
 plt.xlim([0, 350]), plt.ylim([0, 350])
 plt.legend(), plt.tight_layout()
+
+# %%
+#
+# That trade-off is worth measuring rather than asserting. Matching the same
+# image against progressively finer grids, against PERK's constant cost:
+#
+print(f"{'atoms':>8} {'matching':>10} {'vs PERK':>9}")
+for n_atoms in [1000, 4000, 16000, 64000]:
+    grid = torch.linspace(1.0, 350.0, n_atoms, device=device)[:, None]
+    scaling_matcher = torchsim.DictionaryMatcher(signal_model(grid), grid).to(device)
+    scaling_matcher.match(signals[:1])  # warm up
+    start = time.perf_counter()
+    scaling_matcher.match(signals)
+    elapsed = time.perf_counter() - start
+    print(f"{n_atoms:>8} {elapsed:9.3f}s {elapsed / perk_time:8.2f}x")
+
+# %%
+#
+# Matching stays flat while the score matrix still fits in cache and only then
+# starts to scale with the grid, so where exactly the two cross depends on the
+# machine and its BLAS. The shape of the two curves is the durable part: one
+# grows with the parameter grid, the other does not.
+#
+# A single relaxation time is the case least favourable to PERK, since a
+# thousand atoms is a small matrix product. The argument strengthens for joint
+# T1/T2/B1 dictionaries, where the grid grows multiplicatively and exhaustive
+# search stops being affordable at all.
