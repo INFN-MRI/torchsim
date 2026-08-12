@@ -40,24 +40,34 @@ classifiers = [  # Optional
 ]
 
 dependencies = [
-"scipy",
-"torch",
+# NumPy 2.0 renamed ``trapz`` to ``trapezoid`` and is the baseline for the
+# array API used across the simulator.
+"numpy>=2.0",
+"scipy>=1.10",
+# torch.func (jacrev/jacfwd) and torch.linalg are used by the optimization and
+# estimator packages.
+"torch>=2.1",
 ]
 
 [project.optional-dependencies] # Optional
-dev = ["black", "isort"]
-test = ["pytest", "pytest-black", "pytest-cov", "pytest-sugar", "pytest-xdist"]
+dev = ["black", "isort", "ruff"]
+test = [
+"pytest>=7.0",
+"pytest-black",
+"pytest-cov",
+"pytest-sugar",
+"pytest-xdist",
+]
 doc = [
-"sphinx", 
-"sphinx_book_theme", 
-"sphinx-gallery",
-"sphinx-exec-directive",
-"sphinx_copybutton",
-"matplotlib", 
-"sigpy", 
-"torchio",
-"numba",
-"ipywidgets",
+"sphinx>=7.0",
+"sphinx_book_theme>=1.1",
+"sphinx-gallery>=0.15",
+"sphinx-exec-directive>=0.6",
+"sphinx_copybutton>=0.5",
+"matplotlib>=3.8",
+"sigpy>=0.1.26",
+"torchio>=0.19",
+"ipywidgets>=8.0",
 ]
 
 # List URLs that are relevant to your project
@@ -88,7 +98,7 @@ profile="black"
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = [
-    "--cov=mrsim",
+    "--cov=torchsim",
     "--cov-report=term-missing",
     "--cov-report=xml"
 ]
@@ -118,5 +128,5 @@ ignore = [
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
-[mypy]
+[tool.mypy]
 ignore_missing_imports = true

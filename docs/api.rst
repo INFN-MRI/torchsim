@@ -88,8 +88,8 @@ Magnetization Prep
    :toctree: generated
    :nosignatures:
    
-    torchsim.epg.adiabatic_inversion   
-   
+   torchsim.epg.adiabatic_inversion
+
 Flow and Diffusion
 ~~~~~~~~~~~~~~~~~~
 
@@ -151,11 +151,88 @@ Iterative
    :nosignatures:  
    
    torchsim.fse_sim
-  torchsim.mprage_sim
+   torchsim.mprage_sim
    torchsim.mp2rage_sim
    torchsim.mpnrage_sim
    torchsim.mrf_sim
     
+Sequence Description
+--------------------
+Device-agnostic description of an acquisition, shared by the interpreter,
+the estimators, and the sequence optimizer.
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.SequenceDescription
+   torchsim.SequenceEvent
+   torchsim.TissueProperties
+   torchsim.SimulationResult
+
+Builders
+~~~~~~~~
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.fse_description
+   torchsim.spgr_description
+   torchsim.mprage_description
+   torchsim.mpnrage_description
+   torchsim.mrf_description
+
+Interpreters
+~~~~~~~~~~~~
+Differentiable EPG interpreters driven by a sequence description.
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.EpgSimulator
+   torchsim.FSE
+   torchsim.SPGR
+   torchsim.BSSFP
+   torchsim.SSFPFID
+   torchsim.SSFPEcho
+   torchsim.make_simulator
+
+Subspace
+~~~~~~~~
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.simulate_subspace
+   torchsim.SubspaceBasis
+
+Parameter Estimation
+--------------------
+Quantitative estimators built on TorchSim signal models.
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.DictionaryMatcher
+   torchsim.DictionaryMatch
+   torchsim.PERK
+
+Sequence Optimization
+---------------------
+Differentiable acquisition design.
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.SequenceOptimizer
+   torchsim.SequenceOptimization
+   torchsim.FSET2Precision
+
 Miscellaneous
 -------------
 Other simulation utilities.

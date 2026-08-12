@@ -22,15 +22,13 @@ class FSEModel(AbstractModel):
 
     Methods
     -------
-    set_properties(T1, T2, M0=1.0, B1=1.0)
+    set_properties(T1, T2, M0=1.0, B1=1.0):
         Sets tissue relaxation properties and experimental conditions.
 
-    set_sequence(flip, ESP, phases=0.0, TR=1e6, exc_flip=90.0, exc_phase=90.0,
-                 slice_prof=1.0, nstates=10)
+    set_sequence(flip, ESP, phases=0.0, TR=1e6, exc_flip=90.0, exc_phase=90.0, slice_prof=1.0, nstates=10):
         Configures the pulse sequence parameters for the simulation.
 
-    _engine(T1, T2, flip, ESP, phases, TR=1e6, exc_flip=90.0, exc_phase=90.0,
-            M0=1.0, B1=1.0, slice_prof=1.0, nstates=10)
+    _engine(T1, T2, flip, ESP, phases, TR=1e6, exc_flip=90.0, exc_phase=90.0, M0=1.0, B1=1.0, slice_prof=1.0, nstates=10):
         Computes the FSE signal for given tissue properties and sequence parameters.
 
     Examples

@@ -22,14 +22,13 @@ class MPnRAGEModel(AbstractModel):
 
     Methods
     -------
-    set_properties(T1, M0=1.0, B1=1.0, inv_efficiency=1.0)
+    set_properties(T1, M0=1.0, B1=1.0, inv_efficiency=1.0):
         Sets tissue relaxation properties and experimental conditions.
 
-    set_sequence(nshots, flip, TR, TI=0.0, slice_prof=1.0)
+    set_sequence(nshots, flip, TR, TI=0.0, slice_prof=1.0):
         Configures the pulse sequence parameters for the simulation.
 
-    _engine(T1, flip, TR, TI=0.0, M0=1.0, B1=1.0, inv_efficiency=1.0,
-            slice_prof=1.0)
+    _engine(T1, flip, TR, TI=0.0, M0=1.0, B1=1.0, inv_efficiency=1.0, slice_prof=1.0):
         Computes the MPnRAGE signal for given tissue properties and sequence parameters.
 
     Examples

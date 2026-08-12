@@ -20,6 +20,9 @@ from typing import Any
 
 import numpy as np
 
+# ``np.trapz`` was renamed to ``np.trapezoid`` in NumPy 2.0.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 
 class EventType(IntEnum):
     """State-machine event type used by Pulserver SEQDESC streams."""
@@ -220,7 +223,7 @@ class RfDefinition:
                 raise ValueError(
                     f"RF definition {self.id}: envelope/time size mismatch"
                 )
-        return complex(np.trapezoid(envelope, time_s))
+        return complex(_trapezoid(envelope, time_s))
 
     def flip_angle(
         self,

@@ -27,6 +27,17 @@ from ._description import AdcRole, EventType, RfUse, SequenceDescription, Sequen
 
 RecordMode = Literal["all", "acquired", "echo"]
 
+# Relaxation times enter every backend as rates ``1000 / T``. A non-positive
+# time therefore yields an infinite rate, and zero-duration events (an RF pulse
+# at the same timestamp as its neighbour) turn ``inf * 0`` into NaN, which the
+# state matrix then propagates to every echo. Air voxels in a measured map are
+# routinely exactly zero, so clamp the times to a small positive value: the
+# resulting rate is large enough to null the signal over any real interval
+# while keeping ``exp(-R * 0) == 1``. Clamping (rather than ``1 / (T + eps)``)
+# also keeps the gradient finite, since clamped entries simply stop
+# contributing to the backward pass.
+MINIMUM_RELAXATION_TIME_MS = 1e-6
+
 
 @dataclass(frozen=True)
 class TissueProperties:
@@ -406,7 +417,11 @@ def _prepare_tissue(
         *(_as_float_tensor(value, device) for value in values)
     )
     shape = tensors[0].shape
-    return tuple(value.reshape(-1) for value in tensors), shape, device
+    flat = [value.reshape(-1) for value in tensors]
+    # t1_ms and t2_ms are the two entries used as denominators downstream.
+    flat[0] = flat[0].clamp_min(MINIMUM_RELAXATION_TIME_MS)
+    flat[1] = flat[1].clamp_min(MINIMUM_RELAXATION_TIME_MS)
+    return tuple(flat), shape, device
 
 
 def _as_float_tensor(value: Any, device: torch.device) -> torch.Tensor:
