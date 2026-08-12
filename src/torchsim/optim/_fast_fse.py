@@ -14,7 +14,7 @@ objective built on the jacobian never looks at those.
 
 from __future__ import annotations
 
-__all__ = ["FseT2Plan"]
+__all__ = ["FseT2Optimizer", "FseT2Plan"]
 
 from typing import Any
 
@@ -22,6 +22,7 @@ import torch
 
 from ..sequence._accelerators import (
     _pack_events,
+    _pointers,
     _run_packed_jvp,
     _run_packed_vjp_jvp,
     real_subspace_axis,
@@ -103,7 +104,8 @@ class FseT2Plan:
         self._phase_template = packed.phase
         self._definition = description.rf_definitions[0]
         self._axis: int | None = None
-        self._axis_key: tuple[int, ...] | None = None
+        self._axis_key: tuple[torch.Tensor, ...] | None = None
+        self._seeds: tuple[tuple[torch.Tensor, ...], ...] | None = None
 
         # fse_description lays events out as [excitation, (refocus, adc) * etl],
         # so the refocusing pulses are the odd positions. Verified against the
@@ -168,24 +170,59 @@ class FseT2Plan:
             value.to(dtype=torch.float32).contiguous() for value in prepared
         )
         events = self.buffers(flip_rad)
-        # A T2 seed stays inside the real subspace when the sequence qualifies,
-        # so the cheaper kernel is exact here rather than an approximation. The
-        # verdict depends on the RF phases and the tissue, never on the flip
-        # angles, so it survives every iteration of an optimizer.
-        key = tuple(value.data_ptr() for value in prepared)
-        if key != self._axis_key:
-            self._axis_key = key
-            self._axis = real_subspace_axis(events, prepared)
-        axis = self._axis
+        axis = self._subspace_axis(events, prepared)
         jacobian = _T2Jacobian.apply(
             *events,
             *prepared,
+            *self._tangents(prepared, events),
             self.state_count,
             self.output_count,
             threads,
             -1 if axis is None else axis,
         )
         return jacobian.reshape(-1, *shape, self.output_count)
+
+    def _subspace_axis(
+        self, events: tuple[torch.Tensor, ...], tissue: tuple[torch.Tensor, ...]
+    ) -> int | None:
+        """Whether a T2 seed stays inside a real subspace, reusing the verdict.
+
+        A seed that stays inside makes the cheaper kernel exact rather than an
+        approximation. The answer follows the RF phases and the tissue, so it is
+        recomputed only when one of those changes -- comparing them costs far
+        less than deciding again, and the caller passes freshly allocated
+        tensors every time, so identity cannot stand in for equality.
+        """
+        signature = (events[3], tissue[4], tissue[5])  # phase, b1_phase, b0
+        if self._axis_key is None or any(
+            not torch.equal(new, old)
+            for new, old in zip(signature, self._axis_key, strict=True)
+        ):
+            self._axis_key = tuple(value.clone() for value in signature)
+            self._axis = real_subspace_axis(events, tissue)
+        return self._axis
+
+    def _tangents(
+        self, tissue: tuple[torch.Tensor, ...], events: tuple[torch.Tensor, ...]
+    ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
+        """The forward-mode seed: one along T2, zero everywhere else.
+
+        Shapes are fixed for the life of the plan and the kernels only read
+        these, so they are built once instead of once per call.
+        """
+        if self._seeds is None:
+            self._seeds = (
+                tuple(
+                    torch.ones_like(value) if index == _T2 else torch.zeros_like(value)
+                    for index, value in enumerate(tissue)
+                ),
+                (
+                    torch.zeros_like(events[0]),
+                    torch.zeros_like(events[2]),
+                    torch.zeros_like(events[3]),
+                ),
+            )
+        return self._seeds
 
 
 class _T2Jacobian(torch.autograd.Function):
@@ -194,33 +231,32 @@ class _T2Jacobian(torch.autograd.Function):
     @staticmethod
     def forward(*inputs: Any) -> torch.Tensor:
         events, tissue = inputs[:6], inputs[6:13]
-        state_count, output_count, threads = inputs[13], inputs[14], inputs[15]
-        tissue_tangents = _t2_direction(tissue)
-        event_tangents = _zero_event_tangents(events)
+        tissue_tangents, event_tangents = inputs[13], inputs[14]
         return _run_packed_jvp(
             tissue,
             events,
             tissue_tangents,
             event_tangents,
-            state_count,
-            output_count,
-            threads,
+            inputs[15],
             inputs[16],
+            inputs[17],
+            inputs[18],
         )
 
     @staticmethod
     def setup_context(ctx: Any, inputs: tuple[Any, ...], _output: torch.Tensor) -> None:
         ctx.save_for_backward(*inputs[:13])
-        ctx.state_count = inputs[13]
-        ctx.output_count = inputs[14]
-        ctx.threads = inputs[15]
-        ctx.real_axis = inputs[16]
+        ctx.tangents = (*inputs[13], *inputs[14])
+        ctx.state_count = inputs[15]
+        ctx.output_count = inputs[16]
+        ctx.threads = inputs[17]
+        ctx.real_axis = inputs[18]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
         events, tissue = saved[:6], saved[6:13]
-        tangents = (*_t2_direction(tissue), *_zero_event_tangents(events))
+        tangents = ctx.tangents
         if ctx.real_axis == 1 and any(
             ctx.needs_input_grad[index] for index in (3, 10, 11)
         ):
@@ -251,22 +287,156 @@ class _T2Jacobian(torch.autograd.Function):
             gradient if needed else None
             for gradient, needed in zip(gradients, ctx.needs_input_grad, strict=False)
         ]
-        return (*result, None, None, None, None)
+        # tissue/event tangents, state_count, output_count, threads, real_axis
+        return (*result, None, None, None, None, None, None)
 
 
-def _t2_direction(tissue: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, ...]:
-    """Unit forward-mode seed along T2."""
-    return tuple(
-        torch.ones_like(value) if index == _T2 else torch.zeros_like(value)
-        for index, value in enumerate(tissue)
-    )
+class FseT2Optimizer:
+    """Runs the whole A-optimal T2 optimization inside the kernel layer.
 
+    Parameters
+    ----------
+    plan : FseT2Plan
+        Structure of the echo train being optimized.
+    t2_ms : torch.Tensor
+        T2 design points, matching the tissue passed to :meth:`run`.
+    smoothness_weight, curvature_weight, rf_power_weight : float
+        Penalty weights, applied to flip angles normalized by 180 degrees.
 
-def _zero_event_tangents(
-    events: tuple[torch.Tensor, ...],
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    return (
-        torch.zeros_like(events[0]),
-        torch.zeros_like(events[2]),
-        torch.zeros_like(events[3]),
-    )
+    Notes
+    -----
+    :class:`FseT2Plan` still pays Python and autograd once per iteration, which
+    costs more than the kernels do. This class hands the loop to C++ instead,
+    so the interpreter sees one call rather than one per iteration. It computes
+    the same objective and takes the same Adam steps.
+
+    Only the default hard-pulse train qualifies: the fused loop writes flip
+    angles straight into the event buffer, so a pulse whose flip angle is not
+    its own nominal value has to use the plan.
+    """
+
+    def __init__(
+        self,
+        plan: FseT2Plan,
+        t2_ms: torch.Tensor,
+        *,
+        smoothness_weight: float = 0.5,
+        curvature_weight: float = 60.0,
+        rf_power_weight: float = 0.05,
+    ) -> None:
+        self.plan = plan
+        self.t2_ms = t2_ms
+        self.smoothness_weight = float(smoothness_weight)
+        self.curvature_weight = float(curvature_weight)
+        self.rf_power_weight = float(rf_power_weight)
+
+    def supports(self) -> bool:
+        """Whether the plan's pulse lets flip angles go straight into events."""
+        probe = torch.linspace(
+            0.2, 3.0, self.plan.echo_train_length, device=self.plan.device
+        ).unsqueeze(0)
+        magnitude, integral_phase = self.plan._definition.flip_angle(
+            probe, rf_raster_time_s=self.plan.rf_raster_time_s
+        )
+        return bool(
+            torch.allclose(magnitude, probe) and torch.count_nonzero(integral_phase) == 0
+        )
+
+    def run(
+        self,
+        flip_deg: torch.Tensor,
+        tissue: TissueProperties,
+        *,
+        iterations: int,
+        learning_rate: float = 1.0,
+        betas: tuple[float, float] = (0.9, 0.999),
+        eps: float = 1e-8,
+        threads: int = 0,
+    ) -> tuple[torch.Tensor, float]:
+        """Optimize ``flip_deg`` in place-free fashion; returns it and the loss."""
+        from torchsim import _epg_cpu
+
+        if not self.supports():
+            raise RuntimeError(
+                "the fused loop needs a pulse whose flip angle is its nominal "
+                "value; use FseT2Plan with an autograd loop instead"
+            )
+        plan = self.plan
+        flip_deg = torch.atleast_2d(flip_deg).to(torch.float32).contiguous().clone()
+        trains, echoes = flip_deg.shape
+        if echoes != plan.echo_train_length:
+            raise ValueError(
+                f"expected {plan.echo_train_length} flip angles, got {echoes}"
+            )
+
+        prepared, _, _ = _prepare_tissue(tissue, plan.device)
+        prepared = tuple(
+            value.to(dtype=torch.float32).contiguous() for value in prepared
+        )
+        atoms = prepared[0].numel()
+        events = plan.buffers(torch.deg2rad(flip_deg))
+        events = tuple(
+            value.detach().contiguous() if value.is_floating_point() else value
+            for value in events
+        )
+        axis = plan._subspace_axis(events, prepared)
+        tissue_seed, event_seed = plan._tangents(prepared, events)
+
+        # Every one of these must outlive the call: _pointers returns bare
+        # addresses, so a temporary would be freed before the kernel writes it.
+        signal_real = torch.zeros(
+            (trains, atoms, plan.output_count), dtype=torch.float32
+        )
+        signal_imag = torch.zeros_like(signal_real)
+        cotangent_real = torch.zeros_like(signal_real)
+        cotangent_imag = torch.zeros_like(signal_real)
+        value_grads = tuple(
+            torch.zeros_like(value) for value in (*prepared, *event_seed)
+        )
+        tangent_grads = tuple(torch.zeros_like(value) for value in value_grads)
+        moment = torch.zeros_like(flip_deg)
+        velocity = torch.zeros_like(flip_deg)
+        t2 = self.t2_ms.to(torch.float32).contiguous()
+
+        pointers = _pointers(
+            (
+                *prepared,
+                *events,
+                *tissue_seed,
+                *event_seed,
+                signal_real,
+                signal_imag,
+                cotangent_real,
+                cotangent_imag,
+                *value_grads,
+                *tangent_grads,
+                flip_deg,
+                moment,
+                velocity,
+                t2,
+            )
+        )
+        loss = _epg_cpu.optimize_fse_t2(
+            pointers,
+            (
+                atoms,
+                trains,
+                int(events[1].numel()),
+                plan.state_count,
+                plan.output_count,
+                echoes,
+                int(iterations),
+                int(threads),
+                -1 if axis is None else axis,
+            ),
+            (
+                float(learning_rate),
+                float(betas[0]),
+                float(betas[1]),
+                float(eps),
+                self.smoothness_weight,
+                self.curvature_weight,
+                self.rf_power_weight,
+            ),
+        )
+        return flip_deg, loss

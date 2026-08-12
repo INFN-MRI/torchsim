@@ -5,6 +5,8 @@ from __future__ import annotations
 __all__: list[str] = []
 
 import torch
+
+from ._accelerators import _train_count
 import triton
 import triton.language as tl
 
@@ -76,16 +78,18 @@ def _epg_kernel(
     scratch_fminus_real,
     scratch_fminus_imag,
     atom_count,
+    train_count,
     event_count,
     output_count,
     state_count: tl.constexpr,
     block_states: tl.constexpr,
 ):
     atom = tl.program_id(0)
+    train = tl.program_id(1)
     state = tl.arange(0, block_states)
     state_mask = state < state_count
     active_atom = atom < atom_count
-    workspace_offset = atom * state_count
+    workspace_offset = (train * atom_count + atom) * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
     scratch_pi = scratch_fplus_imag + workspace_offset
     scratch_mr = scratch_fminus_real + workspace_offset
@@ -108,8 +112,9 @@ def _epg_kernel(
         inversion_efficiency + atom, mask=active_atom, other=1.0
     )
 
+    event_base = train * event_count
     for event in range(0, event_count):
-        dt = tl.load(duration + event)
+        dt = tl.load(duration + event_base + event)
         e1 = tl.exp(-(1000.0 / atom_t1) * dt)
         e2 = tl.exp(-(1000.0 / atom_t2) * dt)
         off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt
@@ -156,8 +161,8 @@ def _epg_kernel(
             invert, -atom_inversion * longitudinal_imag, longitudinal_imag
         )
 
-        alpha = tl.load(flip + event) * atom_b1
-        phi = tl.load(phase + event) + atom_b1_phase
+        alpha = tl.load(flip + event_base + event) * atom_b1
+        phi = tl.load(phase + event_base + event) + atom_b1_phase
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
         cosine_half_sq = 0.5 * (1.0 + cosine)
@@ -204,13 +209,13 @@ def _epg_kernel(
         longitudinal_imag = tl.where(rotate, rotated_zi, longitudinal_imag)
 
         record = ((event_action & 32) != 0) & (event_kind == 2)
-        adc_phase = tl.load(phase + event)
+        adc_phase = tl.load(phase + event_base + event)
         adc_cos = tl.cos(adc_phase)
         adc_sin = tl.sin(adc_phase)
         signal_real = atom_m0 * (fplus_real * adc_cos + fplus_imag * adc_sin)
         signal_imag = atom_m0 * (fplus_imag * adc_cos - fplus_real * adc_sin)
         out = tl.load(output_index + event)
-        output_offset = atom * output_count + out
+        output_offset = (train * atom_count + atom) * output_count + out
         output_mask = active_atom & (state == 0) & record & (out >= 0)
         tl.store(output_real + output_offset + state, signal_real, mask=output_mask)
         tl.store(output_imag + output_offset + state, signal_imag, mask=output_mask)
@@ -272,16 +277,18 @@ def _epg_jvp_kernel(
     scratch_fminus_real,
     scratch_fminus_imag,
     atom_count,
+    train_count,
     event_count,
     output_count,
     state_count: tl.constexpr,
     block_states: tl.constexpr,
 ):
     atom = tl.program_id(0)
+    train = tl.program_id(1)
     state = tl.arange(0, block_states)
     state_mask = state < state_count
     active_atom = atom < atom_count
-    workspace_offset = atom * state_count
+    workspace_offset = (train * atom_count + atom) * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
     scratch_pi = scratch_fplus_imag + workspace_offset
     scratch_mr = scratch_fminus_real + workspace_offset
@@ -319,9 +326,10 @@ def _epg_jvp_kernel(
         tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
     )
 
+    event_base = train * event_count
     for event in range(0, event_count):
-        event_dt = tl.load(duration + event)
-        ddt = tl.load(tangent_duration + event)
+        event_dt = tl.load(duration + event_base + event)
+        ddt = tl.load(tangent_duration + event_base + event)
         r1 = 1000.0 / atom_t1
         r2 = 1000.0 / atom_t2
         e1 = tl.exp(-r1 * event_dt)
@@ -432,12 +440,12 @@ def _epg_jvp_kernel(
         zr = tl.where(invert, -atom_inversion * zr, zr)
         zi = tl.where(invert, -atom_inversion * zi, zi)
 
-        event_flip = tl.load(flip + event)
-        event_phase = tl.load(phase + event)
+        event_flip = tl.load(flip + event_base + event)
+        event_phase = tl.load(phase + event_base + event)
         alpha = event_flip * atom_b1
-        dalpha = tl.load(tangent_flip + event) * atom_b1 + event_flip * db1
+        dalpha = tl.load(tangent_flip + event_base + event) * atom_b1 + event_flip * db1
         phi = event_phase + atom_b1_phase
-        dphi = tl.load(tangent_phase + event) + db1_phase
+        dphi = tl.load(tangent_phase + event_base + event) + db1_phase
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
         dcosine = -sine * dalpha
@@ -526,7 +534,7 @@ def _epg_jvp_kernel(
         record = ((event_action & 32) != 0) & (event_kind == 2)
         adc_cos = tl.cos(event_phase)
         adc_sin = tl.sin(event_phase)
-        dadc_phase = tl.load(tangent_phase + event)
+        dadc_phase = tl.load(tangent_phase + event_base + event)
         dadc_cos = -adc_sin * dadc_phase
         dadc_sin = adc_cos * dadc_phase
         signal_real = dm0 * (fpr * adc_cos + fpi * adc_sin)
@@ -538,7 +546,7 @@ def _epg_jvp_kernel(
             dfpi * adc_cos + fpi * dadc_cos - dfpr * adc_sin - fpr * dadc_sin
         )
         out = tl.load(output_index + event)
-        output_offset = atom * output_count + out
+        output_offset = (train * atom_count + atom) * output_count + out
         output_mask = active_atom & (state == 0) & record & (out >= 0)
         tl.store(output_real + output_offset + state, signal_real, mask=output_mask)
         tl.store(output_imag + output_offset + state, signal_imag, mask=output_mask)
@@ -589,6 +597,15 @@ def _epg_jvp_kernel(
         dfmi = tl.where(spoil, 0.0, dfmi)
 
 
+def _output_shape(
+    train_count: int, atom_count: int, output_count: int
+) -> tuple[int, ...]:
+    """Signal shape, matching what the CPU kernels return."""
+    if train_count == 1:
+        return (atom_count, output_count)
+    return (train_count, atom_count, output_count)
+
+
 def simulate(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],
@@ -600,18 +617,23 @@ def simulate(
     t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
     duration, kind, flip, phase, action, output_index = events
     atom_count = t1.numel()
+    train_count = _train_count(events)
     block_states = triton.next_power_of_2(state_count)
     output_real = torch.empty(
-        (atom_count, output_count), dtype=torch.float32, device=t1.device
+        _output_shape(train_count, atom_count, output_count),
+        dtype=torch.float32,
+        device=t1.device,
     )
     output_imag = torch.empty_like(output_real)
     scratch = [
         torch.empty(
-            (atom_count, state_count), dtype=torch.float32, device=t1.device
+            (train_count * atom_count, state_count),
+            dtype=torch.float32,
+            device=t1.device,
         )
         for _ in range(4)
     ]
-    _epg_kernel[(atom_count,)](
+    _epg_kernel[(atom_count, train_count)](
         t1,
         t2,
         m0,
@@ -629,6 +651,7 @@ def simulate(
         output_imag,
         *scratch,
         atom_count,
+        train_count,
         kind.numel(),
         output_count,
         state_count=state_count,
@@ -652,18 +675,23 @@ def simulate_jvp(
     duration, kind, flip, phase, action, output_index = events
     tangent_duration, tangent_flip, tangent_phase = event_tangents
     atom_count = t1.numel()
+    train_count = _train_count(events)
     block_states = triton.next_power_of_2(state_count)
     output_real = torch.empty(
-        (atom_count, output_count), dtype=torch.float32, device=t1.device
+        _output_shape(train_count, atom_count, output_count),
+        dtype=torch.float32,
+        device=t1.device,
     )
     output_imag = torch.empty_like(output_real)
     scratch = [
         torch.empty(
-            (atom_count, state_count), dtype=torch.float32, device=t1.device
+            (train_count * atom_count, state_count),
+            dtype=torch.float32,
+            device=t1.device,
         )
         for _ in range(4)
     ]
-    _epg_jvp_kernel[(atom_count,)](
+    _epg_jvp_kernel[(atom_count, train_count)](
         *tissue,
         duration,
         kind,
@@ -679,6 +707,7 @@ def simulate_jvp(
         output_imag,
         *scratch,
         atom_count,
+        train_count,
         kind.numel(),
         output_count,
         state_count=state_count,

@@ -584,10 +584,16 @@ def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
 
     The kernels stride these pointers themselves, so a non-contiguous argument
     -- a stride-0 broadcast view of a scalar property, most easily -- would be
-    read past its real extent. Checking here costs far less than the kernel and
-    turns silent corruption into an exception.
+    read past its real extent. A device pointer is worse still: the address is
+    valid to take and meaningless to dereference on the host. Checking here
+    costs far less than the kernel and turns silent corruption into an
+    exception.
     """
     for value in values:
+        if value.device.type != "cpu":
+            raise ValueError(
+                f"the CPU kernels need CPU tensors, got one on {value.device}"
+            )
         if not value.is_contiguous():
             raise ValueError(
                 f"kernel buffers must be contiguous, got a {tuple(value.shape)} "

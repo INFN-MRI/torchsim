@@ -170,3 +170,103 @@ def test_mismatched_train_widths_are_rejected():
     broken = (duration[0], kind, flips, phase, action, output_index)
     with pytest.raises(ValueError, match="disagree on train count"):
         _run_packed(prepared, broken, 10, int(output_index.max()) + 1, 1)
+
+
+TRAINS, ATOMS = 19, 8
+
+
+def _second_order(threads):
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+
+    flip = _schedules(TRAINS, 12)
+    tissue = TissueProperties(
+        t1_ms=torch.full((ATOMS,), 800.0), t2_ms=torch.full((ATOMS,), 45.0)
+    )
+    prepared, _, _ = _prepare_tissue(tissue, "cpu")
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+    events = _buffers(_pack(flip))
+    outputs = int(events[5].max()) + 1
+    torch.manual_seed(0)
+    cotangent = torch.randn((TRAINS, ATOMS, outputs), dtype=torch.complex64)
+    tangents = (
+        *(
+            torch.ones_like(value) if index == 1 else torch.zeros_like(value)
+            for index, value in enumerate(prepared)
+        ),
+        torch.zeros_like(events[0]),
+        torch.zeros_like(events[2]),
+        torch.zeros_like(events[3]),
+    )
+    gradients, _ = _run_packed_vjp_jvp(
+        prepared,
+        events,
+        tangents,
+        cotangent,
+        state_count=10,
+        output_count=outputs,
+        threads=threads,
+    )
+    return gradients
+
+
+# Odd counts force a partition that does not divide the trains evenly, which is
+# where a boundary would fall inside a train.
+@pytest.mark.parametrize("threads", [2, 3, 5, 0])
+def test_event_gradients_do_not_depend_on_the_worker_count(threads):
+    """Every slot of an event gradient has exactly one writer.
+
+    Workers take whole trains, and an event gradient belongs to one train, so
+    these slots are summed in the same order however the work is divided --
+    bitwise, not merely to tolerance. A partition splitting a train would put
+    two workers on one slot, and they would race.
+    """
+    expected = _second_order(1)
+    actual = _second_order(threads)
+    for index in (7, 8, 9):  # duration, flip, phase
+        assert torch.equal(expected[index], actual[index])
+
+
+@pytest.mark.parametrize("threads", [2, 3, 5, 0])
+def test_tissue_gradients_survive_the_worker_count(threads):
+    """Every train contributes to these, so workers sum private copies.
+
+    Reassociating that sum moves the last bits, so the agreement here is to
+    float tolerance rather than bitwise.
+    """
+    expected = _second_order(1)
+    actual = _second_order(threads)
+    for index in range(7):
+        scale = expected[index].abs().max()
+        if scale == 0:
+            assert actual[index].abs().max() == 0, index
+            continue
+        assert ((expected[index] - actual[index]).abs().max() / scale) < 1e-5, index
+
+
+def test_workers_are_reusable_across_concurrent_callers():
+    """The pool serves one job at a time, and callers may arrive together.
+
+    The kernels release the GIL, so several Python threads really can submit at
+    once. Slots are numbered rather than owned, so a caller must get the same
+    answer whichever pool workers happen to serve it.
+    """
+    import threading
+
+    expected = _second_order(1)
+    mismatches = []
+
+    def call():
+        for _ in range(10):
+            actual = _second_order(6)
+            if any(
+                not torch.equal(expected[index], actual[index])
+                for index in (7, 8, 9)
+            ):
+                mismatches.append(1)
+
+    callers = [threading.Thread(target=call) for _ in range(4)]
+    for caller in callers:
+        caller.start()
+    for caller in callers:
+        caller.join()
+    assert not mismatches

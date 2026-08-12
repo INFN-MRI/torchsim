@@ -136,3 +136,90 @@ def test_wrong_echo_count_is_rejected():
         _plan(8).t2_jacobian(
             torch.deg2rad(_degrees(2, 9)), TissueProperties(t1_ms=T1_MS, t2_ms=T2_MS)
         )
+
+
+def _fused(echoes=12):
+    from torchsim.optim._fast_fse import FseT2Optimizer
+
+    plan = FseT2Plan(
+        echoes, ECHO_SPACING_MS * 1e-3, phases_rad=torch.pi * PHASES_DEG / 180.0
+    )
+    return FseT2Optimizer(plan, T2_MS)
+
+
+def _autograd(start, iterations):
+    objective = FSET2Precision(T1_MS, T2_MS, ECHO_SPACING_MS, phases_deg=PHASES_DEG)
+    flip = start.clone().requires_grad_(True)
+    optimizer = torch.optim.Adam([flip], lr=1.0)
+    loss = None
+    for _ in range(iterations):
+        optimizer.zero_grad(set_to_none=True)
+        loss = objective(flip)
+        loss.backward()
+        optimizer.step()
+    return flip.detach(), float(loss)
+
+
+@pytest.mark.parametrize("iterations", [1, 5, 25])
+def test_fused_loop_tracks_the_autograd_loop(iterations):
+    """The fused loop is the same optimization, not merely a similar one.
+
+    It re-implements the objective, its cotangent, the penalties and the Adam
+    step in C++, so the trajectory it produces has to match the one the
+    autograd loop takes, step for step.
+    """
+    start = _degrees(6, 12)
+    expected, expected_loss = _autograd(start, iterations)
+    actual, actual_loss = _fused().run(
+        start,
+        TissueProperties(t1_ms=T1_MS, t2_ms=T2_MS),
+        iterations=iterations,
+    )
+    assert abs(expected_loss - actual_loss) < 1e-4
+    # Flip angles are in degrees, so this is a small fraction of a degree.
+    assert (expected - actual).abs().max() < 1e-3
+
+
+def test_the_starting_train_is_left_alone():
+    """The caller's tensor is an input, not scratch space."""
+    start = _degrees(4, 12)
+    reference = start.clone()
+    optimizer = _fused()
+    result, _ = optimizer.run(
+        start, TissueProperties(t1_ms=T1_MS, t2_ms=T2_MS), iterations=3
+    )
+    assert torch.equal(start, reference)
+    assert not torch.equal(result, reference)
+
+
+def test_no_iterations_returns_the_starting_train():
+    start = _degrees(4, 12)
+    result, _ = _fused().run(
+        start, TissueProperties(t1_ms=T1_MS, t2_ms=T2_MS), iterations=0
+    )
+    assert torch.equal(result, start.to(torch.float32))
+
+
+def test_a_pulse_that_rescales_the_flip_angle_is_refused():
+    """The fused loop writes flip angles straight into the event buffer.
+
+    A pulse whose flip angle is not its own nominal value needs the plan's
+    conversion, which lives in Python, so the loop must decline rather than
+    silently optimize the wrong thing.
+    """
+    optimizer = _fused()
+    definition = optimizer.plan._definition
+
+    class Rescaling:
+        def flip_angle(self, flip, **keywords):
+            magnitude, phase = definition.flip_angle(flip, **keywords)
+            return 0.5 * magnitude, phase
+
+    optimizer.plan._definition = Rescaling()
+    assert not optimizer.supports()
+    with pytest.raises(RuntimeError, match="nominal"):
+        optimizer.run(
+            _degrees(2, 12),
+            TissueProperties(t1_ms=T1_MS, t2_ms=T2_MS),
+            iterations=1,
+        )
