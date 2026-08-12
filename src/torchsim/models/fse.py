@@ -156,16 +156,18 @@ class FSEModel(AbstractModel):
             slice_profile=slice_prof,
         ).signal
         # Get elapsed time and time left before next TR
-        elapsed_time = ESP * len(flip)
+        echo_train_length = torch.atleast_1d(torch.as_tensor(flip)).shape[-1]
+        elapsed_time = ESP * echo_train_length
         dt = TR - elapsed_time
 
         # Calculate relaxation until TR
         R1 = 1e3 / T1
         ETR = torch.exp(-R1 * dt)  # (nTR,)
-        while ETR.ndim < signal.ndim:
-            ETR = ETR[..., None]
-        while M0.ndim < signal.ndim:
-            M0 = M0[..., None]
+        # Both carry the tissue shape, and ``signal`` is (..., tissue, echo):
+        # one trailing axis lines them up with the echoes, and any leading train
+        # axis broadcasts on its own.
+        ETR = ETR[..., None]
+        M0 = M0[..., None]
 
         # Apply modulation
         signal = M0 * signal * (1 - ETR) / (1 - ETR * signal)  # (etl, nTR)

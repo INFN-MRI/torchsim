@@ -18,6 +18,8 @@ _INVERSION = 4
 _SPOIL_AFTER = 8
 _SHIFT_AFTER = 16
 _RECORD = 32
+_EXCITATION = 64
+_REFOCUSING = 128
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,15 @@ class _PackedEvents:
     @property
     def output_count(self) -> int:
         return int(self.time_us.numel())
+
+    @property
+    def train_count(self) -> int:
+        return self.flip.shape[0] if self.is_batched else 1
+
+    @property
+    def is_batched(self) -> bool:
+        """Whether the description carried a train axis, even a lone one."""
+        return self.flip.dim() == 2
 
 
 def simulate_native(
@@ -88,7 +99,10 @@ def simulate_native(
         packed.output_count,
         threads,
     )
-    signal = signal.reshape(*output_shape, packed.output_count)
+    if packed.is_batched:
+        signal = signal.reshape(packed.train_count, *output_shape, packed.output_count)
+    else:
+        signal = signal.reshape(*output_shape, packed.output_count)
     return (
         signal,
         packed.time_us,
@@ -143,6 +157,13 @@ def _pack_events(
                 if event.rf_use is RfUse.INVERSION:
                     action |= _INVERSION
                 else:
+                    # The pulse's role, carried explicitly rather than inferred
+                    # from the crusher bits a given policy happens to set.
+                    action |= (
+                        _REFOCUSING
+                        if event.rf_use is RfUse.REFOCUSING
+                        else _EXCITATION
+                    )
                     definition = description.rf_definitions[event.rf_definition_id]
                     flip_value, integral_phase = definition.flip_angle(
                         event.rf_amplitude_hz,
@@ -165,11 +186,12 @@ def _pack_events(
             phases.append(phase)
             actions.append(action)
 
+    trains = _batch_width([*durations, *flips, *phases])
     return _PackedEvents(
-        duration=_stack_values(durations, device),
+        duration=_stack_values(durations, device, trains),
         kind=torch.as_tensor(kinds, dtype=torch.int32, device=device).contiguous(),
-        flip=_stack_values(flips, device),
-        phase=_stack_values(phases, device),
+        flip=_stack_values(flips, device, trains),
+        phase=_stack_values(phases, device, trains),
         action=torch.as_tensor(actions, dtype=torch.uint8, device=device).contiguous(),
         output_index=torch.as_tensor(
             output_indices, dtype=torch.int32, device=device
@@ -211,14 +233,60 @@ def _scalar(value: Any, device: torch.device) -> torch.Tensor:
     return torch.as_tensor(value, dtype=torch.float32, device=device).reshape(())
 
 
-def _stack_values(values: list[Any], device: torch.device) -> torch.Tensor:
-    """Pack per-event scalars, keeping any autograd graph intact."""
+def _stack_values(
+    values: list[Any], device: torch.device, trains: int | None = None
+) -> torch.Tensor:
+    """Pack per-event values, keeping any autograd graph intact.
+
+    ``trains`` is the width the caller requires: ``None`` packs ``(n_events,)``,
+    an integer packs ``(n_trains, n_events)`` and broadcasts scalar values
+    across the train axis. The three float event buffers must be packed to the
+    same width, since the kernels stride all of them by ``event_count``.
+    """
     if not values:
         return torch.empty(0, dtype=torch.float32, device=device)
-    if any(isinstance(value, torch.Tensor) for value in values):
-        stacked = torch.stack([_scalar(value, device) for value in values])
-        return stacked.to(torch.float32).contiguous()
-    return torch.tensor(values, dtype=torch.float32, device=device).contiguous()
+    if trains is None:
+        if any(isinstance(value, torch.Tensor) for value in values):
+            stacked = torch.stack([_scalar(value, device) for value in values])
+            return stacked.to(torch.float32).contiguous()
+        return torch.tensor(values, dtype=torch.float32, device=device).contiguous()
+    columns = [_broadcast_to_trains(value, trains, device) for value in values]
+    return torch.stack(columns, dim=1).to(torch.float32).contiguous()
+
+
+def _batch_width(values: list[Any]) -> int | None:
+    """Train count implied by ``values``, or ``None`` when all are scalar.
+
+    A train axis is recognized by rank, not by size, so a lone train stays
+    batched: ``(1, n_events)`` buffers and an output that keeps the train axis.
+    Keying off the size instead would make a one-train batch silently change
+    shape.
+    """
+    trains: int | None = None
+    for value in values:
+        if not isinstance(value, torch.Tensor) or value.dim() == 0:
+            continue
+        if value.dim() != 1:
+            raise ValueError(
+                f"batched event values must be one-dimensional, got {tuple(value.shape)}"
+            )
+        if trains is not None and trains != value.shape[0]:
+            raise ValueError(
+                f"inconsistent train counts across events: {trains} and {value.shape[0]}"
+            )
+        trains = value.shape[0]
+    return trains
+
+
+def _broadcast_to_trains(
+    value: Any, trains: int, device: torch.device
+) -> torch.Tensor:
+    if isinstance(value, torch.Tensor):
+        tensor = value.to(device=device, dtype=torch.float32)
+        if tensor.numel() == 1:
+            return tensor.reshape(1).expand(trains)
+        return tensor.reshape(trains)
+    return torch.full((trains,), float(value), dtype=torch.float32, device=device)
 
 
 def _stack(
@@ -466,13 +534,103 @@ def _loop_vmap(
     return torch.stack(outputs), 0
 
 
+def real_subspace_axis(
+    events: tuple[torch.Tensor, ...],
+    tissue: tuple[torch.Tensor, ...],
+) -> int | None:
+    """Which real axis the states are confined to, or ``None`` if neither.
+
+    When the refocusing pulses share one phase and there is no off-resonance or
+    transmit phase, the state machine never leaves a real subspace. The
+    excitation picks the axis: in phase with the refocusing pulses the signal is
+    pure imaginary (returns 1), a quarter turn away it is pure real (returns 0).
+
+    Off-resonance is disqualifying even though an FSE echo train refocuses it by
+    the echo centers: the states between refocusing pulses are complex, so only
+    the recorded samples look real.
+    """
+    b1_phase, b0 = tissue[4], tissue[5]
+    if bool((b0 != 0).any()) or bool((b1_phase != 0).any()):
+        return None
+
+    action, phase = events[4], events[3]
+    refocusing = (action & _REFOCUSING) != 0
+    excitation = (action & _EXCITATION) != 0
+    if not bool(refocusing.any()) or not bool(excitation.any()):
+        return None
+
+    # Phases matter modulo pi: a half turn only flips the sign of the state.
+    refocus_phase = torch.remainder(phase[..., refocusing], torch.pi)
+    if not bool(torch.allclose(refocus_phase, refocus_phase.flatten()[:1], atol=1e-6)):
+        return None
+    excite_phase = torch.remainder(phase[..., excitation], torch.pi)
+    if not bool(torch.allclose(excite_phase, excite_phase.flatten()[:1], atol=1e-6)):
+        return None
+
+    offset = torch.remainder(
+        excite_phase.flatten()[0] - refocus_phase.flatten()[0], torch.pi
+    )
+    if bool(torch.isclose(offset, torch.zeros_like(offset), atol=1e-6)) or bool(
+        torch.isclose(offset, torch.full_like(offset, torch.pi), atol=1e-6)
+    ):
+        return 1
+    if bool(torch.isclose(offset, torch.full_like(offset, torch.pi / 2), atol=1e-6)):
+        return 0
+    return None
+
+
+def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
+    """Raw addresses for the kernels, after checking they may be indexed flatly.
+
+    The kernels stride these pointers themselves, so a non-contiguous argument
+    -- a stride-0 broadcast view of a scalar property, most easily -- would be
+    read past its real extent. Checking here costs far less than the kernel and
+    turns silent corruption into an exception.
+    """
+    for value in values:
+        if not value.is_contiguous():
+            raise ValueError(
+                f"kernel buffers must be contiguous, got a {tuple(value.shape)} "
+                f"tensor with strides {value.stride()}"
+            )
+    return tuple(value.data_ptr() for value in values)
+
+
+def _train_count(events: tuple[torch.Tensor, ...]) -> int:
+    """Number of echo trains packed into the float event buffers.
+
+    ``duration``, ``flip`` and ``phase`` are either ``(n_events,)`` for a single
+    train or ``(n_trains, n_events)``; the structural buffers never carry a
+    train axis because every train shares the same event sequence.
+
+    Raises:
+        ValueError: if the three float buffers disagree. The kernels stride all
+            of them by ``event_count``, so a mismatch reads out of bounds.
+    """
+    widths = {
+        value.shape[0] if value.dim() == 2 else 1
+        for value in (events[0], events[2], events[3])
+    }
+    if len(widths) != 1:
+        raise ValueError(
+            f"duration/flip/phase disagree on train count: {sorted(widths)}"
+        )
+    return widths.pop()
+
+
 def _run_packed(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],
     state_count: int,
     output_count: int,
     threads: int,
+    real_axis: int | None = None,
 ) -> torch.Tensor:
+    """Run the forward state machine.
+
+    ``real_axis`` opts into the real-subspace kernel; pass what
+    :func:`real_subspace_axis` returned for these buffers, or ``None``.
+    """
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate
 
@@ -484,16 +642,24 @@ def _run_packed(
         )
     from torchsim import _epg_cpu
 
-    output_real = torch.empty((tissue[0].numel(), output_count), dtype=torch.float32)
+    trains = _train_count(events)
+    shape = (
+        (tissue[0].numel(), output_count)
+        if trains == 1
+        else (trains, tissue[0].numel(), output_count)
+    )
+    output_real = torch.empty(shape, dtype=torch.float32)
     output_imag = torch.empty_like(output_real)
     pointers = (*tissue, *events, output_real, output_imag)
     _epg_cpu.simulate(
-        tuple(value.data_ptr() for value in pointers),
+        _pointers(pointers),
         tissue[0].numel(),
+        trains,
         events[1].numel(),
         state_count,
         output_count,
         threads,
+        real_axis if real_axis is not None else -1,
     )
     return torch.complex(output_real, output_imag)
 
@@ -547,8 +713,9 @@ def _run_packed_vjp(
         duration_grad,
     )
     _epg_cpu.simulate_vjp(
-        tuple(value.data_ptr() for value in pointers),
+        _pointers(pointers),
         tissue[0].numel(),
+        _train_count(events),
         events[1].numel(),
         state_count,
         output_count,
@@ -565,6 +732,7 @@ def _run_packed_vjp_jvp(
     state_count: int,
     output_count: int,
     threads: int,
+    real_axis: int | None = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
@@ -589,12 +757,14 @@ def _run_packed_vjp_jvp(
         *tangent_grads,
     )
     _epg_cpu.simulate_vjp_jvp(
-        tuple(value.data_ptr() for value in pointers),
+        _pointers(pointers),
         tissue[0].numel(),
+        _train_count(events),
         events[1].numel(),
         state_count,
         output_count,
         threads,
+        real_axis if real_axis is not None else -1,
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
     return tangent_grads, value_grads
@@ -608,6 +778,7 @@ def _run_packed_jvp(
     state_count: int,
     output_count: int,
     threads: int,
+    real_axis: int | None = None,
 ) -> torch.Tensor:
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate_jvp
@@ -622,7 +793,13 @@ def _run_packed_jvp(
         )
     from torchsim import _epg_cpu
 
-    output_real = torch.empty((tissue[0].numel(), output_count), dtype=torch.float32)
+    trains = _train_count(events)
+    shape = (
+        (tissue[0].numel(), output_count)
+        if trains == 1
+        else (trains, tissue[0].numel(), output_count)
+    )
+    output_real = torch.empty(shape, dtype=torch.float32)
     output_imag = torch.empty_like(output_real)
     pointers = (
         *tissue,
@@ -633,12 +810,14 @@ def _run_packed_jvp(
         output_imag,
     )
     _epg_cpu.simulate_jvp(
-        tuple(value.data_ptr() for value in pointers),
+        _pointers(pointers),
         tissue[0].numel(),
+        trains,
         events[1].numel(),
         state_count,
         output_count,
         threads,
+        real_axis if real_axis is not None else -1,
     )
     return torch.complex(output_real, output_imag)
 

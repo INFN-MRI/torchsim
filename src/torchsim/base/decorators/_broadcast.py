@@ -30,10 +30,25 @@ def broadcast(func: Callable) -> Callable:
 
 
 def _reshape_output(output: torch.Tensor, shape) -> torch.Tensor:
-    """Drop a vanishing imaginary part and restore the batch shape."""
+    """Drop a vanishing imaginary part and restore the batch shape.
+
+    Inputs were flattened to a single atom axis, so the atom axis leads the
+    engine output -- unless the engine batched something of its own in front of
+    it, as a batch of echo trains does. That leading axis is not ours to
+    reshape, so keep it and restore ``shape`` in place of the atom axis only.
+    """
     if torch.isreal(output).all():
         output = output.real
-    return output.reshape(*shape, *output.shape[1:]).squeeze()
+    atoms = int(torch.Size(shape).numel())
+    if output.shape[0] == atoms:
+        return output.reshape(*shape, *output.shape[1:]).squeeze()
+    result = output.reshape(output.shape[0], *shape, *output.shape[2:])
+    # Squeeze everything but the engine's own leading axis: a batch of one train
+    # is still a batch, and dropping it here would change the output rank.
+    for dimension in reversed(range(1, result.dim())):
+        if result.shape[dimension] == 1:
+            result = result.squeeze(dimension)
+    return result
 
 
 def broadcast_arguments(*args, **kwargs) -> tuple[list, dict]:

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -34,7 +35,44 @@ struct Buffers {
     const std::int32_t* output_index;
     float* output_real;
     float* output_imag;
+    // ``duration``, ``flip`` and ``phase`` are (train_count, event_count)
+    // row-major; every other event buffer describes structure shared by all
+    // trains. Work items enumerate the (atom, train) product atom-major, so a
+    // block of consecutive items walks the train axis of one atom.
+    std::int64_t atom_count;
+    std::int64_t train_count;
 };
+
+// Per-work-item view of the buffers that vary along the train axis.
+struct TrainView {
+    const float* duration;
+    const float* flip;
+    const float* phase;
+    std::int64_t atom;
+    std::int64_t train;
+    std::int64_t output_base;
+    std::int64_t event_base;
+};
+
+inline TrainView train_view(
+    const Buffers& buffers,
+    const std::int64_t work,
+    const std::int64_t event_count,
+    const std::int64_t output_count
+) {
+    const std::int64_t atom = work / buffers.train_count;
+    const std::int64_t train = work % buffers.train_count;
+    const std::int64_t event_base = train * event_count;
+    return TrainView{
+        buffers.duration + event_base,
+        buffers.flip + event_base,
+        buffers.phase + event_base,
+        atom,
+        train,
+        (train * buffers.atom_count + atom) * output_count,
+        event_base,
+    };
+}
 
 struct JvpBuffers {
     Buffers primal;
@@ -225,17 +263,27 @@ __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
 void simulate_jvp_range(
     const JvpBuffers& buffers,
-    const std::int64_t atom_begin,
-    const std::int64_t atom_end,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
     const std::int64_t event_count,
     const std::int64_t state_count,
     const std::int64_t output_count
 ) {
     const Buffers& primal = buffers.primal;
-    for (std::int64_t atom = atom_begin; atom < atom_end; ++atom) {
-        std::vector<DualComplex> fplus(static_cast<std::size_t>(state_count));
-        std::vector<DualComplex> fminus(static_cast<std::size_t>(state_count));
-        std::vector<DualComplex> longitudinal(static_cast<std::size_t>(state_count));
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    std::vector<DualComplex> fplus(states);
+    std::vector<DualComplex> fminus(states);
+    std::vector<DualComplex> longitudinal(states);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(primal, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        const float* const dot_duration = buffers.duration + view.event_base;
+        const float* const dot_flip = buffers.flip + view.event_base;
+        const float* const dot_phase = buffers.phase + view.event_base;
+        std::fill(fplus.begin(), fplus.end(), DualComplex{});
+        std::fill(fminus.begin(), fminus.end(), DualComplex{});
+        std::fill(longitudinal.begin(), longitudinal.end(), DualComplex{});
         longitudinal[0].value = Complex(1.0F, 0.0F);
 
         const float t1 = primal.t1[atom];
@@ -243,8 +291,8 @@ void simulate_jvp_range(
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
         for (std::int64_t event = 0; event < event_count; ++event) {
-            const float dt = primal.duration[event];
-            const float dt_tangent = buffers.duration[event];
+            const float dt = view.duration[event];
+            const float dt_tangent = dot_duration[event];
             const float e1 = std::exp(-r1 * dt);
             const float e2 = std::exp(-r2 * dt);
             const float e1_tangent = e1 * (
@@ -298,13 +346,13 @@ void simulate_jvp_range(
                         value.value *= efficiency;
                     }
                 } else {
-                    const float alpha = primal.flip[event] * primal.b1[atom];
+                    const float alpha = view.flip[event] * primal.b1[atom];
                     const float alpha_tangent =
-                        buffers.flip[event] * primal.b1[atom]
-                        + primal.flip[event] * buffers.b1[atom];
-                    const float phi = primal.phase[event] + primal.b1_phase[atom];
+                        dot_flip[event] * primal.b1[atom]
+                        + view.flip[event] * buffers.b1[atom];
+                    const float phi = view.phase[event] + primal.b1_phase[atom];
                     const float phi_tangent =
-                        buffers.phase[event] + buffers.b1_phase[atom];
+                        dot_phase[event] + buffers.b1_phase[atom];
                     rotate(
                         fplus,
                         fminus,
@@ -317,15 +365,15 @@ void simulate_jvp_range(
                 }
             } else if (primal.kind[event] == 2 && (action & RECORD) != 0) {
                 const std::int64_t output = primal.output_index[event];
-                const Complex demodulation = std::polar(1.0F, -primal.phase[event]);
+                const Complex demodulation = std::polar(1.0F, -view.phase[event]);
                 const Complex demodulation_tangent =
-                    Complex(0.0F, -buffers.phase[event]) * demodulation;
+                    Complex(0.0F, -dot_phase[event]) * demodulation;
                 const DualComplex fp = fplus[0];
                 const Complex signal_tangent =
                     buffers.m0[atom] * fp.value * demodulation
                     + primal.m0[atom] * fp.tangent * demodulation
                     + primal.m0[atom] * fp.value * demodulation_tangent;
-                const std::int64_t index = atom * output_count + output;
+                const std::int64_t index = view.output_base + output;
                 primal.output_real[index] = signal_tangent.real();
                 primal.output_imag[index] = signal_tangent.imag();
             }
@@ -345,24 +393,605 @@ void simulate_jvp_range(
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
-void simulate_range(
+inline void shift_real(
+    std::vector<float>& plus, std::vector<float>& minus, const std::size_t states
+) {
+    for (std::size_t state = 0; state + 1 < states; ++state) {
+        minus[state] = minus[state + 1];
+    }
+    minus[states - 1] = 0.0F;
+    for (std::size_t state = states - 1; state > 0; --state) {
+        plus[state] = plus[state - 1];
+    }
+    plus[0] = -minus[0];
+}
+
+// ---------------------------------------------------------------------------
+// Real-subspace forward.
+//
+// When every refocusing pulse shares a phase and there is no off-resonance or
+// transmit phase, writing F+ = e^{i phi} i a, F- = e^{-i phi} i b, Z = c leaves
+// a, b and c real for the whole train: relaxation scales them, the shift's
+// conjugate coupling becomes a0 = -b0, and the RF rotation reduces to a real
+// 3x3 in the flip angle alone. The recorded sample is then i * m0 * a0.
+//
+// Callers must have established those conditions; see real_subspace_axis.
+// ---------------------------------------------------------------------------
+
+void simulate_real_range(
     const Buffers& buffers,
-    const std::int64_t atom_begin,
-    const std::int64_t atom_end,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
     const std::int64_t event_count,
     const std::int64_t state_count,
     const std::int64_t output_count
 ) {
-    for (std::int64_t atom = atom_begin; atom < atom_end; ++atom) {
-        std::vector<Complex> fplus(static_cast<std::size_t>(state_count));
-        std::vector<Complex> fminus(static_cast<std::size_t>(state_count));
-        std::vector<Complex> longitudinal(static_cast<std::size_t>(state_count));
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    std::vector<float> plus(states);
+    std::vector<float> minus(states);
+    std::vector<float> longitudinal(states);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(buffers, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        std::fill(plus.begin(), plus.end(), 0.0F);
+        std::fill(minus.begin(), minus.end(), 0.0F);
+        std::fill(longitudinal.begin(), longitudinal.end(), 0.0F);
+        longitudinal[0] = 1.0F;
+
+        const float r1 = 1000.0F / buffers.t1[atom];
+        const float r2 = 1000.0F / buffers.t2[atom];
+        const float b1 = buffers.b1[atom];
+        const float m0 = buffers.m0[atom];
+
+        for (std::int64_t event = 0; event < event_count; ++event) {
+            const float dt = view.duration[event];
+            const float e1 = std::exp(-r1 * dt);
+            const float e2 = std::exp(-r2 * dt);
+            for (std::size_t state = 0; state < states; ++state) {
+                plus[state] *= e2;
+                minus[state] *= e2;
+                longitudinal[state] *= e1;
+            }
+            longitudinal[0] += 1.0F - e1;
+
+            const std::uint8_t action = buffers.action[event];
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real(plus, minus, states);
+            }
+            if (buffers.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const float efficiency = -buffers.inversion_efficiency[atom];
+                    for (std::size_t state = 0; state < states; ++state) {
+                        longitudinal[state] *= efficiency;
+                    }
+                } else {
+                    const float alpha = view.flip[event] * b1;
+                    const float cosine = std::cos(alpha);
+                    const float sine = std::sin(alpha);
+                    const float cosine_half_sq = 0.5F * (1.0F + cosine);
+                    const float sine_half_sq = 0.5F * (1.0F - cosine);
+                    const float half_sine = 0.5F * sine;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const float p = plus[state];
+                        const float m = minus[state];
+                        const float z = longitudinal[state];
+                        plus[state] = cosine_half_sq * p + sine_half_sq * m - sine * z;
+                        minus[state] = sine_half_sq * p + cosine_half_sq * m + sine * z;
+                        longitudinal[state] = half_sine * p - half_sine * m + cosine * z;
+                    }
+                }
+            } else if (buffers.kind[event] == 2 && (action & RECORD) != 0) {
+                const std::int64_t index =
+                    view.output_base + buffers.output_index[event];
+                buffers.output_real[index] = 0.0F;
+                buffers.output_imag[index] = m0 * plus[0];
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real(plus, minus, states);
+            }
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus.begin(), plus.end(), 0.0F);
+                std::fill(minus.begin(), minus.end(), 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real(plus, minus, states);
+            }
+        }
+    }
+}
+
+// Forward-mode through the real subspace. The tangent obeys the same closure as
+// the value, so a, b and c each carry a derivative and the rotation is the same
+// real 3x3 differentiated by the product rule.
+//
+// A tangent along b0, b1_phase or an RF phase would leave the subspace; callers
+// must seed only directions that stay inside it.
+void simulate_real_jvp_range(
+    const JvpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count
+) {
+    const Buffers& primal = buffers.primal;
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    std::vector<float> plus(states), minus(states), longitudinal(states);
+    std::vector<float> dot_plus(states), dot_minus(states), dot_longitudinal(states);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(primal, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        const float* const dot_duration = buffers.duration + view.event_base;
+        const float* const dot_flip = buffers.flip + view.event_base;
+
+        std::fill(plus.begin(), plus.end(), 0.0F);
+        std::fill(minus.begin(), minus.end(), 0.0F);
+        std::fill(longitudinal.begin(), longitudinal.end(), 0.0F);
+        std::fill(dot_plus.begin(), dot_plus.end(), 0.0F);
+        std::fill(dot_minus.begin(), dot_minus.end(), 0.0F);
+        std::fill(dot_longitudinal.begin(), dot_longitudinal.end(), 0.0F);
+        longitudinal[0] = 1.0F;
+
+        const float t1 = primal.t1[atom];
+        const float t2 = primal.t2[atom];
+        const float r1 = 1000.0F / t1;
+        const float r2 = 1000.0F / t2;
+        const float b1 = primal.b1[atom];
+        const float m0 = primal.m0[atom];
+        const float dot_t1 = buffers.t1[atom];
+        const float dot_t2 = buffers.t2[atom];
+        const float dot_b1 = buffers.b1[atom];
+        const float dot_m0 = buffers.m0[atom];
+
+        for (std::int64_t event = 0; event < event_count; ++event) {
+            const float dt = view.duration[event];
+            const float dt_tangent = dot_duration[event];
+            const float e1 = std::exp(-r1 * dt);
+            const float e2 = std::exp(-r2 * dt);
+            const float e1_tangent =
+                e1 * (1000.0F * dt * dot_t1 / (t1 * t1) - r1 * dt_tangent);
+            const float e2_tangent =
+                e2 * (1000.0F * dt * dot_t2 / (t2 * t2) - r2 * dt_tangent);
+            for (std::size_t state = 0; state < states; ++state) {
+                dot_plus[state] = dot_plus[state] * e2 + plus[state] * e2_tangent;
+                plus[state] *= e2;
+                dot_minus[state] = dot_minus[state] * e2 + minus[state] * e2_tangent;
+                minus[state] *= e2;
+                dot_longitudinal[state] =
+                    dot_longitudinal[state] * e1 + longitudinal[state] * e1_tangent;
+                longitudinal[state] *= e1;
+            }
+            longitudinal[0] += 1.0F - e1;
+            dot_longitudinal[0] -= e1_tangent;
+
+            const std::uint8_t action = primal.action[event];
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real(plus, minus, states);
+                shift_real(dot_plus, dot_minus, states);
+            }
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const float efficiency = -primal.inversion_efficiency[atom];
+                    const float efficiency_tangent =
+                        -buffers.inversion_efficiency[atom];
+                    for (std::size_t state = 0; state < states; ++state) {
+                        dot_longitudinal[state] =
+                            dot_longitudinal[state] * efficiency
+                            + longitudinal[state] * efficiency_tangent;
+                        longitudinal[state] *= efficiency;
+                    }
+                } else {
+                    const float alpha = view.flip[event] * b1;
+                    const float alpha_tangent =
+                        dot_flip[event] * b1 + view.flip[event] * dot_b1;
+                    const float cosine = std::cos(alpha);
+                    const float sine = std::sin(alpha);
+                    const float cosine_half_sq = 0.5F * (1.0F + cosine);
+                    const float sine_half_sq = 0.5F * (1.0F - cosine);
+                    const float half_sine = 0.5F * sine;
+                    const float cosine_tangent = -sine * alpha_tangent;
+                    const float sine_tangent = cosine * alpha_tangent;
+                    const float cosine_half_sq_tangent = -0.5F * sine * alpha_tangent;
+                    const float sine_half_sq_tangent = 0.5F * sine * alpha_tangent;
+                    const float half_sine_tangent = 0.5F * cosine * alpha_tangent;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const float p = plus[state];
+                        const float m = minus[state];
+                        const float z = longitudinal[state];
+                        const float dp = dot_plus[state];
+                        const float dm = dot_minus[state];
+                        const float dz = dot_longitudinal[state];
+                        dot_plus[state] = cosine_half_sq * dp + cosine_half_sq_tangent * p
+                            + sine_half_sq * dm + sine_half_sq_tangent * m
+                            - sine * dz - sine_tangent * z;
+                        dot_minus[state] = sine_half_sq * dp + sine_half_sq_tangent * p
+                            + cosine_half_sq * dm + cosine_half_sq_tangent * m
+                            + sine * dz + sine_tangent * z;
+                        dot_longitudinal[state] = half_sine * dp + half_sine_tangent * p
+                            - half_sine * dm - half_sine_tangent * m
+                            + cosine * dz + cosine_tangent * z;
+                        plus[state] = cosine_half_sq * p + sine_half_sq * m - sine * z;
+                        minus[state] = sine_half_sq * p + cosine_half_sq * m + sine * z;
+                        longitudinal[state] = half_sine * p - half_sine * m + cosine * z;
+                    }
+                }
+            } else if (primal.kind[event] == 2 && (action & RECORD) != 0) {
+                const std::int64_t index =
+                    view.output_base + primal.output_index[event];
+                primal.output_real[index] = 0.0F;
+                primal.output_imag[index] = dot_m0 * plus[0] + m0 * dot_plus[0];
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real(plus, minus, states);
+                shift_real(dot_plus, dot_minus, states);
+            }
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus.begin(), plus.end(), 0.0F);
+                std::fill(minus.begin(), minus.end(), 0.0F);
+                std::fill(dot_plus.begin(), dot_plus.end(), 0.0F);
+                std::fill(dot_minus.begin(), dot_minus.end(), 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real(plus, minus, states);
+                shift_real(dot_plus, dot_minus, states);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Train-axis vectorization.
+//
+// A block of trains shares one atom, so every per-atom quantity is uniform
+// across lanes while flip, phase and duration vary with the train. States are
+// stored [state][lane] with the lane axis contiguous and innermost, which is
+// what lets the state loops below compile to packed arithmetic. Transcendentals
+// stay scalar: they are evaluated once per event, against a state loop that
+// runs `state_count` times.
+//
+// Inactive lanes in a partial block carry a copy of the first train, so the
+// arithmetic is uniform; their outputs are simply not written back.
+// ---------------------------------------------------------------------------
+
+constexpr std::size_t LANES = 8;
+
+struct LaneStates {
+    std::vector<float> storage;
+    std::size_t states;
+    float* plane[6];
+
+    explicit LaneStates(const std::size_t state_count)
+        : storage(6U * state_count * LANES, 0.0F), states(state_count) {
+        for (std::size_t index = 0; index < 6U; ++index) {
+            plane[index] = storage.data() + index * state_count * LANES;
+        }
+    }
+
+    void reset() { std::fill(storage.begin(), storage.end(), 0.0F); }
+
+    float* fplus_real() { return plane[0]; }
+    float* fplus_imag() { return plane[1]; }
+    float* fminus_real() { return plane[2]; }
+    float* fminus_imag() { return plane[3]; }
+    float* longitudinal_real() { return plane[4]; }
+    float* longitudinal_imag() { return plane[5]; }
+};
+
+inline void shift_lanes(
+    float* fplus_real,
+    float* fplus_imag,
+    float* fminus_real,
+    float* fminus_imag,
+    const std::size_t states
+) {
+    for (std::size_t state = 0; state + 1 < states; ++state) {
+        const std::size_t destination = state * LANES;
+        const std::size_t source = (state + 1) * LANES;
+        for (std::size_t lane = 0; lane < LANES; ++lane) {
+            fminus_real[destination + lane] = fminus_real[source + lane];
+            fminus_imag[destination + lane] = fminus_imag[source + lane];
+        }
+    }
+    for (std::size_t lane = 0; lane < LANES; ++lane) {
+        fminus_real[(states - 1) * LANES + lane] = 0.0F;
+        fminus_imag[(states - 1) * LANES + lane] = 0.0F;
+    }
+    for (std::size_t state = states - 1; state > 0; --state) {
+        const std::size_t destination = state * LANES;
+        const std::size_t source = (state - 1) * LANES;
+        for (std::size_t lane = 0; lane < LANES; ++lane) {
+            fplus_real[destination + lane] = fplus_real[source + lane];
+            fplus_imag[destination + lane] = fplus_imag[source + lane];
+        }
+    }
+    // fplus[0] = conj(fminus[0]), reading fminus after its own shift.
+    for (std::size_t lane = 0; lane < LANES; ++lane) {
+        fplus_real[lane] = fminus_real[lane];
+        fplus_imag[lane] = -fminus_imag[lane];
+    }
+}
+
+// Nine complex coefficients of the RF rotation, one set per lane.
+struct RotationLanes {
+    float real[9][LANES];
+    float imag[9][LANES];
+};
+
+inline void build_rotation(
+    RotationLanes& rotation,
+    const float* alpha,
+    const float* phi
+) {
+    for (std::size_t lane = 0; lane < LANES; ++lane) {
+        const float cosine = std::cos(alpha[lane]);
+        const float sine = std::sin(alpha[lane]);
+        const float cosine_half_sq = 0.5F * (1.0F + cosine);
+        const float sine_half_sq = 0.5F * (1.0F - cosine);
+        const float phase_real = std::cos(phi[lane]);
+        const float phase_imag = std::sin(phi[lane]);
+        const float two_real = phase_real * phase_real - phase_imag * phase_imag;
+        const float two_imag = 2.0F * phase_real * phase_imag;
+
+        rotation.real[0][lane] = cosine_half_sq;
+        rotation.imag[0][lane] = 0.0F;
+        rotation.real[1][lane] = sine_half_sq * two_real;
+        rotation.imag[1][lane] = sine_half_sq * two_imag;
+        // (-i sine) * phase_one
+        rotation.real[2][lane] = sine * phase_imag;
+        rotation.imag[2][lane] = -sine * phase_real;
+        rotation.real[3][lane] = rotation.real[1][lane];
+        rotation.imag[3][lane] = -rotation.imag[1][lane];
+        rotation.real[4][lane] = cosine_half_sq;
+        rotation.imag[4][lane] = 0.0F;
+        // (i sine) * conj(phase_one)
+        rotation.real[5][lane] = sine * phase_imag;
+        rotation.imag[5][lane] = sine * phase_real;
+        // (-i sine / 2) * conj(phase_one)
+        rotation.real[6][lane] = -0.5F * sine * phase_imag;
+        rotation.imag[6][lane] = -0.5F * sine * phase_real;
+        // (i sine / 2) * phase_one
+        rotation.real[7][lane] = -0.5F * sine * phase_imag;
+        rotation.imag[7][lane] = 0.5F * sine * phase_real;
+        rotation.real[8][lane] = cosine;
+        rotation.imag[8][lane] = 0.0F;
+    }
+}
+
+inline void rotate_lanes(
+    LaneStates& lane_states,
+    const RotationLanes& rotation,
+    const std::size_t states
+) {
+    float* fplus_real = lane_states.fplus_real();
+    float* fplus_imag = lane_states.fplus_imag();
+    float* fminus_real = lane_states.fminus_real();
+    float* fminus_imag = lane_states.fminus_imag();
+    float* longitudinal_real = lane_states.longitudinal_real();
+    float* longitudinal_imag = lane_states.longitudinal_imag();
+
+    for (std::size_t state = 0; state < states; ++state) {
+        const std::size_t base = state * LANES;
+        for (std::size_t lane = 0; lane < LANES; ++lane) {
+            const std::size_t slot = base + lane;
+            const float fp_re = fplus_real[slot];
+            const float fp_im = fplus_imag[slot];
+            const float fm_re = fminus_real[slot];
+            const float fm_im = fminus_imag[slot];
+            const float z_re = longitudinal_real[slot];
+            const float z_im = longitudinal_imag[slot];
+
+            fplus_real[slot] = rotation.real[0][lane] * fp_re
+                - rotation.imag[0][lane] * fp_im
+                + rotation.real[1][lane] * fm_re - rotation.imag[1][lane] * fm_im
+                + rotation.real[2][lane] * z_re - rotation.imag[2][lane] * z_im;
+            fplus_imag[slot] = rotation.real[0][lane] * fp_im
+                + rotation.imag[0][lane] * fp_re
+                + rotation.real[1][lane] * fm_im + rotation.imag[1][lane] * fm_re
+                + rotation.real[2][lane] * z_im + rotation.imag[2][lane] * z_re;
+
+            fminus_real[slot] = rotation.real[3][lane] * fp_re
+                - rotation.imag[3][lane] * fp_im
+                + rotation.real[4][lane] * fm_re - rotation.imag[4][lane] * fm_im
+                + rotation.real[5][lane] * z_re - rotation.imag[5][lane] * z_im;
+            fminus_imag[slot] = rotation.real[3][lane] * fp_im
+                + rotation.imag[3][lane] * fp_re
+                + rotation.real[4][lane] * fm_im + rotation.imag[4][lane] * fm_re
+                + rotation.real[5][lane] * z_im + rotation.imag[5][lane] * z_re;
+
+            longitudinal_real[slot] = rotation.real[6][lane] * fp_re
+                - rotation.imag[6][lane] * fp_im
+                + rotation.real[7][lane] * fm_re - rotation.imag[7][lane] * fm_im
+                + rotation.real[8][lane] * z_re - rotation.imag[8][lane] * z_im;
+            longitudinal_imag[slot] = rotation.real[6][lane] * fp_im
+                + rotation.imag[6][lane] * fp_re
+                + rotation.real[7][lane] * fm_im + rotation.imag[7][lane] * fm_re
+                + rotation.real[8][lane] * z_im + rotation.imag[8][lane] * z_re;
+        }
+    }
+}
+
+// Blocks of trains for one atom; ``work`` indexes the (atom, block) product.
+void simulate_lane_range(
+    const Buffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count
+) {
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    const std::int64_t blocks_per_atom =
+        (buffers.train_count + static_cast<std::int64_t>(LANES) - 1)
+        / static_cast<std::int64_t>(LANES);
+
+    LaneStates lane_states(states);
+    RotationLanes rotation{};
+    alignas(64) float duration[LANES];
+    alignas(64) float recovery[LANES];
+    alignas(64) float off_real[LANES];
+    alignas(64) float off_imag[LANES];
+    alignas(64) float alpha[LANES];
+    alignas(64) float phi[LANES];
+    alignas(64) float demodulation_real[LANES];
+    alignas(64) float demodulation_imag[LANES];
+    std::int64_t train_of[LANES];
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const std::int64_t atom = work / blocks_per_atom;
+        const std::int64_t block = work % blocks_per_atom;
+        const std::int64_t train_begin = block * static_cast<std::int64_t>(LANES);
+        const std::int64_t active =
+            std::min<std::int64_t>(LANES, buffers.train_count - train_begin);
+        for (std::size_t lane = 0; lane < LANES; ++lane) {
+            const std::int64_t offset = std::min<std::int64_t>(
+                static_cast<std::int64_t>(lane), active - 1
+            );
+            train_of[lane] = train_begin + offset;
+        }
+
+        lane_states.reset();
+        float* fplus_real = lane_states.fplus_real();
+        float* fplus_imag = lane_states.fplus_imag();
+        float* fminus_real = lane_states.fminus_real();
+        float* fminus_imag = lane_states.fminus_imag();
+        float* longitudinal_real = lane_states.longitudinal_real();
+        float* longitudinal_imag = lane_states.longitudinal_imag();
+        for (std::size_t lane = 0; lane < LANES; ++lane) {
+            longitudinal_real[lane] = 1.0F;
+        }
+
+        const float r1 = 1000.0F / buffers.t1[atom];
+        const float r2 = 1000.0F / buffers.t2[atom];
+        const float b0 = buffers.b0[atom];
+        const float b1 = buffers.b1[atom];
+        const float b1_phase = buffers.b1_phase[atom];
+        const float m0 = buffers.m0[atom];
+        const float efficiency = -buffers.inversion_efficiency[atom];
+
+        for (std::int64_t event = 0; event < event_count; ++event) {
+            for (std::size_t lane = 0; lane < LANES; ++lane) {
+                duration[lane] =
+                    buffers.duration[train_of[lane] * event_count + event];
+            }
+            // Transcendentals first, once per lane; the state loops that follow
+            // keep the lane axis innermost and contiguous so they vectorize.
+            for (std::size_t lane = 0; lane < LANES; ++lane) {
+                const float dt = duration[lane];
+                const float angle = -2.0F * PI * b0 * dt;
+                const float e2 = std::exp(-r2 * dt);
+                recovery[lane] = std::exp(-r1 * dt);
+                off_real[lane] = e2 * std::cos(angle);
+                off_imag[lane] = e2 * std::sin(angle);
+            }
+            for (std::size_t state = 0; state < states; ++state) {
+                const std::size_t base = state * LANES;
+                for (std::size_t lane = 0; lane < LANES; ++lane) {
+                    const std::size_t slot = base + lane;
+                    const float fp_re = fplus_real[slot];
+                    const float fp_im = fplus_imag[slot];
+                    fplus_real[slot] = fp_re * off_real[lane] - fp_im * off_imag[lane];
+                    fplus_imag[slot] = fp_re * off_imag[lane] + fp_im * off_real[lane];
+                    const float fm_re = fminus_real[slot];
+                    const float fm_im = fminus_imag[slot];
+                    fminus_real[slot] = fm_re * off_real[lane] + fm_im * off_imag[lane];
+                    fminus_imag[slot] = -fm_re * off_imag[lane] + fm_im * off_real[lane];
+                    longitudinal_real[slot] *= recovery[lane];
+                    longitudinal_imag[slot] *= recovery[lane];
+                }
+            }
+            for (std::size_t lane = 0; lane < LANES; ++lane) {
+                longitudinal_real[lane] += 1.0F - recovery[lane];
+            }
+
+            const std::uint8_t action = buffers.action[event];
+            if ((action & PRE_SHIFT) != 0) {
+                shift_lanes(
+                    fplus_real, fplus_imag, fminus_real, fminus_imag, states
+                );
+            }
+            if (buffers.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    for (std::size_t slot = 0; slot < states * LANES; ++slot) {
+                        longitudinal_real[slot] *= efficiency;
+                        longitudinal_imag[slot] *= efficiency;
+                    }
+                } else {
+                    for (std::size_t lane = 0; lane < LANES; ++lane) {
+                        const std::int64_t index =
+                            train_of[lane] * event_count + event;
+                        alpha[lane] = buffers.flip[index] * b1;
+                        phi[lane] = buffers.phase[index] + b1_phase;
+                    }
+                    build_rotation(rotation, alpha, phi);
+                    rotate_lanes(lane_states, rotation, states);
+                }
+            } else if (buffers.kind[event] == 2 && (action & RECORD) != 0) {
+                const std::int64_t output = buffers.output_index[event];
+                for (std::size_t lane = 0; lane < LANES; ++lane) {
+                    const float angle =
+                        -buffers.phase[train_of[lane] * event_count + event];
+                    demodulation_real[lane] = std::cos(angle);
+                    demodulation_imag[lane] = std::sin(angle);
+                }
+                for (std::int64_t lane = 0; lane < active; ++lane) {
+                    const float fp_re = fplus_real[lane];
+                    const float fp_im = fplus_imag[lane];
+                    const std::int64_t index =
+                        ((train_begin + lane) * buffers.atom_count + atom)
+                            * output_count
+                        + output;
+                    buffers.output_real[index] = m0
+                        * (fp_re * demodulation_real[lane]
+                           - fp_im * demodulation_imag[lane]);
+                    buffers.output_imag[index] = m0
+                        * (fp_re * demodulation_imag[lane]
+                           + fp_im * demodulation_real[lane]);
+                }
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_lanes(
+                    fplus_real, fplus_imag, fminus_real, fminus_imag, states
+                );
+            }
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(fplus_real, fplus_real + states * LANES, 0.0F);
+                std::fill(fplus_imag, fplus_imag + states * LANES, 0.0F);
+                std::fill(fminus_real, fminus_real + states * LANES, 0.0F);
+                std::fill(fminus_imag, fminus_imag + states * LANES, 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_lanes(
+                    fplus_real, fplus_imag, fminus_real, fminus_imag, states
+                );
+            }
+        }
+    }
+}
+
+void simulate_range(
+    const Buffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count
+) {
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    std::vector<Complex> fplus(states);
+    std::vector<Complex> fminus(states);
+    std::vector<Complex> longitudinal(states);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(buffers, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        std::fill(fplus.begin(), fplus.end(), Complex{});
+        std::fill(fminus.begin(), fminus.end(), Complex{});
+        std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
         longitudinal[0] = Complex(1.0F, 0.0F);
 
         const float r1 = 1000.0F / buffers.t1[atom];
         const float r2 = 1000.0F / buffers.t2[atom];
         for (std::int64_t event = 0; event < event_count; ++event) {
-            const float dt = buffers.duration[event];
+            const float dt = view.duration[event];
             const float e1 = std::exp(-r1 * dt);
             const float e2 = std::exp(-r2 * dt);
             const Complex off_resonance =
@@ -390,15 +1019,15 @@ void simulate_range(
                         fplus,
                         fminus,
                         longitudinal,
-                        buffers.flip[event] * buffers.b1[atom],
-                        buffers.phase[event] + buffers.b1_phase[atom]
+                        view.flip[event] * buffers.b1[atom],
+                        view.phase[event] + buffers.b1_phase[atom]
                     );
                 }
             } else if (buffers.kind[event] == 2 && (action & RECORD) != 0) {
                 const std::int64_t output = buffers.output_index[event];
-                const Complex demodulation = std::polar(1.0F, -buffers.phase[event]);
+                const Complex demodulation = std::polar(1.0F, -view.phase[event]);
                 const Complex signal = buffers.m0[atom] * fplus[0] * demodulation;
-                const std::int64_t index = atom * output_count + output;
+                const std::int64_t index = view.output_base + output;
                 buffers.output_real[index] = signal.real();
                 buffers.output_imag[index] = signal.imag();
             }
@@ -661,14 +1290,18 @@ __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
 void simulate_vjp_range(
     const VjpBuffers& buffers,
-    const std::int64_t atom_begin,
-    const std::int64_t atom_end,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
     const std::int64_t event_count,
     const std::int64_t state_count,
     const std::int64_t output_count,
     float* grad_flip_local,
     float* grad_phase_local,
-    float* grad_duration_local
+    float* grad_duration_local,
+    // Seven per-atom accumulators laid out [parameter][atom]. Work items are
+    // split across the (atom, train) product, so several threads reach the same
+    // atom and every train contributes to it.
+    float* grad_tissue_local
 ) {
     const Buffers& primal = buffers.primal;
     const std::size_t states = static_cast<std::size_t>(state_count);
@@ -692,7 +1325,12 @@ void simulate_vjp_range(
     State fminus_shifted(states);
     State longitudinal_pre(states);
 
-    for (std::int64_t atom = atom_begin; atom < atom_end; ++atom) {
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(primal, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        float* const grad_flip_train = grad_flip_local + view.event_base;
+        float* const grad_phase_train = grad_phase_local + view.event_base;
+        float* const grad_duration_train = grad_duration_local + view.event_base;
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
@@ -716,7 +1354,7 @@ void simulate_vjp_range(
             std::copy(fminus.begin(), fminus.end(), slot + states);
             std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
 
-            const float dt = primal.duration[event];
+            const float dt = view.duration[event];
             const float e1 = std::exp(-r1 * dt);
             const float e2 = std::exp(-r2 * dt);
             const Complex off_resonance = std::polar(e2, -2.0F * PI * b0 * dt);
@@ -742,8 +1380,8 @@ void simulate_vjp_range(
                         fplus,
                         fminus,
                         longitudinal,
-                        primal.flip[event] * b1,
-                        primal.phase[event] + b1_phase
+                        view.flip[event] * b1,
+                        view.phase[event] + b1_phase
                     );
                 }
             }
@@ -777,7 +1415,7 @@ void simulate_vjp_range(
             std::copy(slot + states, slot + 2U * states, fminus.begin());
             std::copy(slot + 2U * states, slot + 3U * states, longitudinal.begin());
 
-            const float dt = primal.duration[event];
+            const float dt = view.duration[event];
             const float e1 = std::exp(-r1 * dt);
             const float e2 = std::exp(-r2 * dt);
             const float angle = -2.0F * PI * b0 * dt;
@@ -815,17 +1453,17 @@ void simulate_vjp_range(
             // --- adjoint of the ADC ---
             if (primal.kind[event] == 2 && (action & RECORD) != 0) {
                 const std::int64_t output = primal.output_index[event];
-                const std::int64_t index = atom * output_count + output;
+                const std::int64_t index = view.output_base + output;
                 const Complex seed(
                     buffers.grad_output_real[index],
                     buffers.grad_output_imag[index]
                 );
-                const Complex demodulation = std::polar(1.0F, -primal.phase[event]);
+                const Complex demodulation = std::polar(1.0F, -view.phase[event]);
                 // an ADC event carries no RF, so the recorded state is the one
                 // left by the pre-shift
                 const Complex recorded = fplus_shifted[0];
                 grad_m0 += std::real(std::conj(seed) * recorded * demodulation);
-                grad_phase_local[event] += std::real(
+                grad_phase_train[event] += std::real(
                     std::conj(seed) * m0 * recorded * Complex(0.0F, -1.0F)
                         * demodulation
                 );
@@ -843,8 +1481,8 @@ void simulate_vjp_range(
                         longitudinal_bar[state] *= -efficiency;
                     }
                 } else {
-                    const float alpha = primal.flip[event] * b1;
-                    const float phi = primal.phase[event] + b1_phase;
+                    const float alpha = view.flip[event] * b1;
+                    const float phi = view.phase[event] + b1_phase;
                     float grad_alpha = 0.0F;
                     float grad_phi = 0.0F;
                     rotate_adjoint(
@@ -859,9 +1497,9 @@ void simulate_vjp_range(
                         grad_alpha,
                         grad_phi
                     );
-                    grad_flip_local[event] += grad_alpha * b1;
-                    grad_b1 += grad_alpha * primal.flip[event];
-                    grad_phase_local[event] += grad_phi;
+                    grad_flip_train[event] += grad_alpha * b1;
+                    grad_b1 += grad_alpha * view.flip[event];
+                    grad_phase_train[event] += grad_phi;
                     grad_b1_phase += grad_phi;
                 }
             }
@@ -899,18 +1537,19 @@ void simulate_vjp_range(
             grad_t1 += grad_e1 * e1 * 1000.0F * dt / (t1 * t1);
             grad_t2 += grad_e2 * e2 * 1000.0F * dt / (t2 * t2);
             grad_b0 += grad_angle * (-2.0F * PI * dt);
-            grad_duration_local[event] +=
+            grad_duration_train[event] +=
                 grad_e1 * (-r1 * e1) + grad_e2 * (-r2 * e2)
                 + grad_angle * (-2.0F * PI * b0);
         }
 
-        buffers.grad_t1[atom] = grad_t1;
-        buffers.grad_t2[atom] = grad_t2;
-        buffers.grad_m0[atom] = grad_m0;
-        buffers.grad_b1[atom] = grad_b1;
-        buffers.grad_b1_phase[atom] = grad_b1_phase;
-        buffers.grad_b0[atom] = grad_b0;
-        buffers.grad_inversion_efficiency[atom] = grad_efficiency;
+        const std::int64_t atoms = primal.atom_count;
+        grad_tissue_local[0 * atoms + atom] += grad_t1;
+        grad_tissue_local[1 * atoms + atom] += grad_t2;
+        grad_tissue_local[2 * atoms + atom] += grad_m0;
+        grad_tissue_local[3 * atoms + atom] += grad_b1;
+        grad_tissue_local[4 * atoms + atom] += grad_b1_phase;
+        grad_tissue_local[5 * atoms + atom] += grad_b0;
+        grad_tissue_local[6 * atoms + atom] += grad_efficiency;
     }
 }
 
@@ -1091,19 +1730,329 @@ inline void rotate_adjoint_dual(
     grad_phi = grad_phi + phi_sum;
 }
 
-#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-__attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
-#endif
-void simulate_vjp_jvp_range(
+inline DualFloat dual_inverse_square(const DualFloat a) {
+    const float inverse = 1.0F / (a.value * a.value);
+    return {inverse, -2.0F * a.tangent * inverse / a.value};
+}
+
+inline void shift_real_dual(
+    std::vector<DualFloat>& plus,
+    std::vector<DualFloat>& minus,
+    const std::size_t states
+) {
+    for (std::size_t state = 0; state + 1 < states; ++state) {
+        minus[state] = minus[state + 1];
+    }
+    minus[states - 1] = DualFloat{0.0F, 0.0F};
+    for (std::size_t state = states - 1; state > 0; --state) {
+        plus[state] = plus[state - 1];
+    }
+    plus[0] = DualFloat{0.0F, 0.0F} - minus[0];
+}
+
+// Transpose of shift_real_dual. The a0 = -b0 coupling sends the incoming plus
+// adjoint back onto minus, at the index the minus shift moves it to.
+inline void shift_real_dual_adjoint(
+    std::vector<DualFloat>& plus_bar,
+    std::vector<DualFloat>& minus_bar,
+    const std::size_t states
+) {
+    const DualFloat carry = DualFloat{0.0F, 0.0F} - plus_bar[0];
+    for (std::size_t state = 0; state + 1 < states; ++state) {
+        plus_bar[state] = plus_bar[state + 1];
+    }
+    plus_bar[states - 1] = DualFloat{0.0F, 0.0F};
+    for (std::size_t state = states - 1; state > 0; --state) {
+        minus_bar[state] = minus_bar[state - 1];
+    }
+    minus_bar[0] = DualFloat{0.0F, 0.0F};
+    if (states > 1) {
+        minus_bar[1] = minus_bar[1] + carry;
+    }
+}
+
+// Forward-over-reverse through the real subspace.
+//
+// The forward is a chain of real linear maps, so each adjoint is a transpose
+// rather than a conjugate transpose, and the state carries three reals instead
+// of three complex numbers. Everything is dual-valued, giving the derivative of
+// the forward-mode output with respect to the primal inputs.
+//
+// The RF phase does not appear: it divides out of the representation, so this
+// kernel leaves grad_phase untouched. Perturbing a single pulse's phase is
+// exactly the direction that leaves the subspace, so callers must not ask for
+// that gradient.
+void simulate_real_vjp_jvp_range(
     const VjpJvpBuffers& buffers,
-    const std::int64_t atom_begin,
-    const std::int64_t atom_end,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
     const std::int64_t event_count,
     const std::int64_t state_count,
     const std::int64_t output_count,
     DualFloat* grad_flip_local,
     DualFloat* grad_phase_local,
-    DualFloat* grad_duration_local
+    DualFloat* grad_duration_local,
+    DualFloat* grad_tissue_local
+) {
+    (void)grad_phase_local;
+    const Buffers& primal = buffers.primal;
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    const std::size_t stride = 3U * states;
+
+    std::vector<DualFloat> trajectory(
+        static_cast<std::size_t>(event_count) * stride
+    );
+    std::vector<DualFloat> plus(states), minus(states), longitudinal(states);
+    std::vector<DualFloat> plus_bar(states), minus_bar(states), longitudinal_bar(states);
+    std::vector<DualFloat> plus_stage(states), minus_stage(states), longitudinal_stage(states);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(primal, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        const float* const dot_duration = buffers.dot_duration + view.event_base;
+        const float* const dot_flip = buffers.dot_flip + view.event_base;
+        DualFloat* const grad_flip_train = grad_flip_local + view.event_base;
+        DualFloat* const grad_duration_train = grad_duration_local + view.event_base;
+
+        const DualFloat t1{primal.t1[atom], buffers.dot_t1[atom]};
+        const DualFloat t2{primal.t2[atom], buffers.dot_t2[atom]};
+        const DualFloat m0{primal.m0[atom], buffers.dot_m0[atom]};
+        const DualFloat b1{primal.b1[atom], buffers.dot_b1[atom]};
+        const DualFloat inversion{
+            primal.inversion_efficiency[atom],
+            buffers.dot_inversion_efficiency[atom]
+        };
+        const DualFloat r1{
+            1000.0F / t1.value, -1000.0F * t1.tangent / (t1.value * t1.value)
+        };
+        const DualFloat r2{
+            1000.0F / t2.value, -1000.0F * t2.tangent / (t2.value * t2.value)
+        };
+
+        std::fill(plus.begin(), plus.end(), DualFloat{0.0F, 0.0F});
+        std::fill(minus.begin(), minus.end(), DualFloat{0.0F, 0.0F});
+        std::fill(longitudinal.begin(), longitudinal.end(), DualFloat{0.0F, 0.0F});
+        longitudinal[0] = DualFloat{1.0F, 0.0F};
+
+        // ---- forward, recording the state entering each event ----
+        for (std::int64_t event = 0; event < event_count; ++event) {
+            DualFloat* slot = trajectory.data()
+                + static_cast<std::size_t>(event) * stride;
+            std::copy(plus.begin(), plus.end(), slot);
+            std::copy(minus.begin(), minus.end(), slot + states);
+            std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
+
+            const DualFloat dt{view.duration[event], dot_duration[event]};
+            const DualFloat e1 = dual_exp(DualFloat{0.0F, 0.0F} - r1 * dt);
+            const DualFloat e2 = dual_exp(DualFloat{0.0F, 0.0F} - r2 * dt);
+            for (std::size_t state = 0; state < states; ++state) {
+                plus[state] = plus[state] * e2;
+                minus[state] = minus[state] * e2;
+                longitudinal[state] = longitudinal[state] * e1;
+            }
+            longitudinal[0] = longitudinal[0] + (DualFloat{1.0F, 0.0F} - e1);
+
+            const std::uint8_t action = primal.action[event];
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_dual(plus, minus, states);
+            }
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const DualFloat efficiency = DualFloat{0.0F, 0.0F} - inversion;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        longitudinal[state] = longitudinal[state] * efficiency;
+                    }
+                } else {
+                    const DualFloat alpha =
+                        DualFloat{view.flip[event], dot_flip[event]} * b1;
+                    const DualFloat cosine{
+                        std::cos(alpha.value), -std::sin(alpha.value) * alpha.tangent
+                    };
+                    const DualFloat sine{
+                        std::sin(alpha.value), std::cos(alpha.value) * alpha.tangent
+                    };
+                    const DualFloat cosine_half_sq =
+                        0.5F * (DualFloat{1.0F, 0.0F} + cosine);
+                    const DualFloat sine_half_sq =
+                        0.5F * (DualFloat{1.0F, 0.0F} - cosine);
+                    const DualFloat half_sine = 0.5F * sine;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const DualFloat p = plus[state];
+                        const DualFloat m = minus[state];
+                        const DualFloat z = longitudinal[state];
+                        plus[state] = cosine_half_sq * p + sine_half_sq * m
+                            - sine * z;
+                        minus[state] = sine_half_sq * p + cosine_half_sq * m
+                            + sine * z;
+                        longitudinal[state] = half_sine * p - half_sine * m
+                            + cosine * z;
+                    }
+                }
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real_dual(plus, minus, states);
+            }
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus.begin(), plus.end(), DualFloat{0.0F, 0.0F});
+                std::fill(minus.begin(), minus.end(), DualFloat{0.0F, 0.0F});
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real_dual(plus, minus, states);
+            }
+        }
+
+        // ---- reverse ----
+        std::fill(plus_bar.begin(), plus_bar.end(), DualFloat{0.0F, 0.0F});
+        std::fill(minus_bar.begin(), minus_bar.end(), DualFloat{0.0F, 0.0F});
+        std::fill(
+            longitudinal_bar.begin(), longitudinal_bar.end(), DualFloat{0.0F, 0.0F}
+        );
+        DualFloat grad_t1{0.0F, 0.0F};
+        DualFloat grad_t2{0.0F, 0.0F};
+        DualFloat grad_m0{0.0F, 0.0F};
+        DualFloat grad_b1{0.0F, 0.0F};
+        DualFloat grad_inversion{0.0F, 0.0F};
+
+        for (std::int64_t event = event_count - 1; event >= 0; --event) {
+            const DualFloat* slot = trajectory.data()
+                + static_cast<std::size_t>(event) * stride;
+            const std::uint8_t action = primal.action[event];
+            const DualFloat dt{view.duration[event], dot_duration[event]};
+            const DualFloat e1 = dual_exp(DualFloat{0.0F, 0.0F} - r1 * dt);
+            const DualFloat e2 = dual_exp(DualFloat{0.0F, 0.0F} - r2 * dt);
+
+            // Replay the intra-event stages from the recorded entry state.
+            for (std::size_t state = 0; state < states; ++state) {
+                plus_stage[state] = slot[state] * e2;
+                minus_stage[state] = slot[states + state] * e2;
+                longitudinal_stage[state] = slot[2U * states + state] * e1;
+            }
+            longitudinal_stage[0] =
+                longitudinal_stage[0] + (DualFloat{1.0F, 0.0F} - e1);
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_dual(plus_stage, minus_stage, states);
+            }
+            // plus_stage now holds the state entering the RF operator.
+
+            // Undo the trailing spoil/shift.
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus_bar.begin(), plus_bar.end(), DualFloat{0.0F, 0.0F});
+                std::fill(minus_bar.begin(), minus_bar.end(), DualFloat{0.0F, 0.0F});
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real_dual_adjoint(plus_bar, minus_bar, states);
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real_dual_adjoint(plus_bar, minus_bar, states);
+            }
+
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const DualFloat efficiency = DualFloat{0.0F, 0.0F} - inversion;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        grad_inversion = grad_inversion
+                            - longitudinal_bar[state] * longitudinal_stage[state];
+                        longitudinal_bar[state] = longitudinal_bar[state] * efficiency;
+                    }
+                } else {
+                    const DualFloat flip{view.flip[event], dot_flip[event]};
+                    const DualFloat alpha = flip * b1;
+                    const DualFloat cosine{
+                        std::cos(alpha.value), -std::sin(alpha.value) * alpha.tangent
+                    };
+                    const DualFloat sine{
+                        std::sin(alpha.value), std::cos(alpha.value) * alpha.tangent
+                    };
+                    const DualFloat cosine_half_sq =
+                        0.5F * (DualFloat{1.0F, 0.0F} + cosine);
+                    const DualFloat sine_half_sq =
+                        0.5F * (DualFloat{1.0F, 0.0F} - cosine);
+                    const DualFloat half_sine = 0.5F * sine;
+                    DualFloat grad_alpha{0.0F, 0.0F};
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const DualFloat p = plus_stage[state];
+                        const DualFloat m = minus_stage[state];
+                        const DualFloat z = longitudinal_stage[state];
+                        const DualFloat pb = plus_bar[state];
+                        const DualFloat mb = minus_bar[state];
+                        const DualFloat zb = longitudinal_bar[state];
+                        // d/dalpha of each output row, contracted with the adjoint.
+                        grad_alpha = grad_alpha
+                            + pb * (half_sine * m - half_sine * p - cosine * z)
+                            + mb * (half_sine * p - half_sine * m + cosine * z)
+                            + zb * (0.5F * cosine * p - 0.5F * cosine * m - sine * z);
+                        // Transpose of the rotation.
+                        plus_bar[state] = cosine_half_sq * pb + sine_half_sq * mb
+                            + half_sine * zb;
+                        minus_bar[state] = sine_half_sq * pb + cosine_half_sq * mb
+                            - half_sine * zb;
+                        longitudinal_bar[state] = (DualFloat{0.0F, 0.0F} - sine) * pb
+                            + sine * mb + cosine * zb;
+                    }
+                    grad_flip_train[event] = grad_flip_train[event] + grad_alpha * b1;
+                    grad_b1 = grad_b1 + grad_alpha * flip;
+                }
+            } else if (primal.kind[event] == 2 && (action & RECORD) != 0) {
+                // The sample is i * m0 * plus[0]; only the imaginary seed acts.
+                const std::int64_t index =
+                    view.output_base + primal.output_index[event];
+                const DualFloat seed{buffers.grad_output_imag[index], 0.0F};
+                grad_m0 = grad_m0 + seed * plus_stage[0];
+                plus_bar[0] = plus_bar[0] + seed * m0;
+            }
+
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_dual_adjoint(plus_bar, minus_bar, states);
+            }
+
+            DualFloat grad_e1{0.0F, 0.0F};
+            DualFloat grad_e2{0.0F, 0.0F};
+            grad_e1 = grad_e1 - longitudinal_bar[0];
+            for (std::size_t state = 0; state < states; ++state) {
+                grad_e2 = grad_e2 + plus_bar[state] * slot[state]
+                    + minus_bar[state] * slot[states + state];
+                grad_e1 = grad_e1
+                    + longitudinal_bar[state] * slot[2U * states + state];
+                plus_bar[state] = plus_bar[state] * e2;
+                minus_bar[state] = minus_bar[state] * e2;
+                longitudinal_bar[state] = longitudinal_bar[state] * e1;
+            }
+            const DualFloat scale1 =
+                e1 * dt * (1000.0F * dual_inverse_square(t1));
+            const DualFloat scale2 =
+                e2 * dt * (1000.0F * dual_inverse_square(t2));
+            grad_t1 = grad_t1 + grad_e1 * scale1;
+            grad_t2 = grad_t2 + grad_e2 * scale2;
+            grad_duration_train[event] = grad_duration_train[event]
+                - grad_e1 * (r1 * e1) - grad_e2 * (r2 * e2);
+        }
+
+        const std::int64_t atoms = primal.atom_count;
+        const DualFloat contributions[7] = {
+            grad_t1, grad_t2, grad_m0, grad_b1, DualFloat{0.0F, 0.0F},
+            DualFloat{0.0F, 0.0F}, grad_inversion,
+        };
+        for (std::int64_t parameter = 0; parameter < 7; ++parameter) {
+            DualFloat& target = grad_tissue_local[parameter * atoms + atom];
+            target = target + contributions[parameter];
+        }
+    }
+}
+
+#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
+__attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
+#endif
+void simulate_vjp_jvp_range(
+    const VjpJvpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count,
+    DualFloat* grad_flip_local,
+    DualFloat* grad_phase_local,
+    DualFloat* grad_duration_local,
+    // Seven per-atom accumulators laid out [parameter][atom]; see the
+    // first-order kernel for why these cannot be written directly.
+    DualFloat* grad_tissue_local
 ) {
     const Buffers& primal = buffers.primal;
     const std::size_t states = static_cast<std::size_t>(state_count);
@@ -1124,7 +2073,15 @@ void simulate_vjp_jvp_range(
     DualState fplus_shifted(states);
     DualState fminus_shifted(states);
 
-    for (std::int64_t atom = atom_begin; atom < atom_end; ++atom) {
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(primal, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        const float* const dot_duration = buffers.dot_duration + view.event_base;
+        const float* const dot_flip = buffers.dot_flip + view.event_base;
+        const float* const dot_phase = buffers.dot_phase + view.event_base;
+        DualFloat* const grad_flip_train = grad_flip_local + view.event_base;
+        DualFloat* const grad_phase_train = grad_phase_local + view.event_base;
+        DualFloat* const grad_duration_train = grad_duration_local + view.event_base;
         const DualFloat t1{primal.t1[atom], buffers.dot_t1[atom]};
         const DualFloat t2{primal.t2[atom], buffers.dot_t2[atom]};
         const DualFloat m0{primal.m0[atom], buffers.dot_m0[atom]};
@@ -1154,7 +2111,7 @@ void simulate_vjp_jvp_range(
             std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
 
             const DualFloat dt{
-                primal.duration[event], buffers.dot_duration[event]
+                view.duration[event], dot_duration[event]
             };
             const DualFloat e1 = dual_exp(DualFloat{0.0F, 0.0F} - (r1 * dt));
             const DualFloat e2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
@@ -1181,9 +2138,9 @@ void simulate_vjp_jvp_range(
                     }
                 } else {
                     const DualFloat alpha =
-                        DualFloat{primal.flip[event], buffers.dot_flip[event]} * b1;
+                        DualFloat{view.flip[event], dot_flip[event]} * b1;
                     const DualFloat phi =
-                        DualFloat{primal.phase[event], buffers.dot_phase[event]}
+                        DualFloat{view.phase[event], dot_phase[event]}
                         + b1_phase;
                     rotate_dual(fplus, fminus, longitudinal, alpha, phi);
                 }
@@ -1219,7 +2176,7 @@ void simulate_vjp_jvp_range(
             std::copy(slot + 2U * states, slot + 3U * states, longitudinal.begin());
 
             const DualFloat dt{
-                primal.duration[event], buffers.dot_duration[event]
+                view.duration[event], dot_duration[event]
             };
             const DualFloat e1 = dual_exp(DualFloat{0.0F, 0.0F} - (r1 * dt));
             const DualFloat e2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
@@ -1255,7 +2212,7 @@ void simulate_vjp_jvp_range(
 
             if (primal.kind[event] == 2 && (action & RECORD) != 0) {
                 const std::int64_t output = primal.output_index[event];
-                const std::int64_t index = atom * output_count + output;
+                const std::int64_t index = view.output_base + output;
                 const DualComplex seed{
                     Complex(
                         buffers.grad_output_real[index],
@@ -1264,14 +2221,14 @@ void simulate_vjp_jvp_range(
                     Complex{},
                 };
                 const DualFloat adc_phase{
-                    primal.phase[event], buffers.dot_phase[event]
+                    view.phase[event], dot_phase[event]
                 };
                 const DualComplex demodulation =
                     dual_polar(DualFloat{0.0F, 0.0F} - adc_phase);
                 const DualComplex recorded = fplus_shifted[0];
                 grad_m0 = grad_m0
                     + real_part(conjugate(seed) * recorded * demodulation);
-                grad_phase_local[event] = grad_phase_local[event]
+                grad_phase_train[event] = grad_phase_train[event]
                     + real_part(
                         conjugate(seed) * m0 * recorded
                         * DualComplex{Complex(0.0F, -1.0F), Complex{}}
@@ -1295,11 +2252,11 @@ void simulate_vjp_jvp_range(
                     }
                 } else {
                     const DualFloat flip_value{
-                        primal.flip[event], buffers.dot_flip[event]
+                        view.flip[event], dot_flip[event]
                     };
                     const DualFloat alpha = flip_value * b1;
                     const DualFloat phi =
-                        DualFloat{primal.phase[event], buffers.dot_phase[event]}
+                        DualFloat{view.phase[event], dot_phase[event]}
                         + b1_phase;
                     DualFloat grad_alpha{0.0F, 0.0F};
                     DualFloat grad_phi{0.0F, 0.0F};
@@ -1315,9 +2272,9 @@ void simulate_vjp_jvp_range(
                         grad_alpha,
                         grad_phi
                     );
-                    grad_flip_local[event] = grad_flip_local[event] + grad_alpha * b1;
+                    grad_flip_train[event] = grad_flip_train[event] + grad_alpha * b1;
                     grad_b1 = grad_b1 + grad_alpha * flip_value;
-                    grad_phase_local[event] = grad_phase_local[event] + grad_phi;
+                    grad_phase_train[event] = grad_phase_train[event] + grad_phi;
                     grad_b1_phase = grad_b1_phase + grad_phi;
                 }
             }
@@ -1358,26 +2315,21 @@ void simulate_vjp_jvp_range(
             grad_t1 = grad_t1 + grad_e1 * e1 * (1000.0F * (dt * inverse_t1_squared));
             grad_t2 = grad_t2 + grad_e2 * e2 * (1000.0F * (dt * inverse_t2_squared));
             grad_b0 = grad_b0 + grad_angle * (-2.0F * PI * dt);
-            grad_duration_local[event] = grad_duration_local[event]
+            grad_duration_train[event] = grad_duration_train[event]
                 + (DualFloat{0.0F, 0.0F} - (grad_e1 * (r1 * e1)))
                 - (grad_e2 * (r2 * e2))
                 + grad_angle * (-2.0F * PI * b0);
         }
 
-        buffers.grad_dot_t1[atom] = grad_t1.value;
-        buffers.grad_t1[atom] = grad_t1.tangent;
-        buffers.grad_dot_t2[atom] = grad_t2.value;
-        buffers.grad_t2[atom] = grad_t2.tangent;
-        buffers.grad_dot_m0[atom] = grad_m0.value;
-        buffers.grad_m0[atom] = grad_m0.tangent;
-        buffers.grad_dot_b1[atom] = grad_b1.value;
-        buffers.grad_b1[atom] = grad_b1.tangent;
-        buffers.grad_dot_b1_phase[atom] = grad_b1_phase.value;
-        buffers.grad_b1_phase[atom] = grad_b1_phase.tangent;
-        buffers.grad_dot_b0[atom] = grad_b0.value;
-        buffers.grad_b0[atom] = grad_b0.tangent;
-        buffers.grad_dot_inversion_efficiency[atom] = grad_efficiency.value;
-        buffers.grad_inversion_efficiency[atom] = grad_efficiency.tangent;
+        const std::int64_t atoms = primal.atom_count;
+        const DualFloat contributions[7] = {
+            grad_t1, grad_t2, grad_m0, grad_b1, grad_b1_phase, grad_b0,
+            grad_efficiency,
+        };
+        for (std::int64_t parameter = 0; parameter < 7; ++parameter) {
+            DualFloat& slot = grad_tissue_local[parameter * atoms + atom];
+            slot = slot + contributions[parameter];
+        }
     }
 }
 
@@ -1394,19 +2346,23 @@ bool parse_pointer(PyObject* sequence, const Py_ssize_t index, void** pointer) {
 PyObject* simulate(PyObject*, PyObject* arguments) {
     PyObject* pointers = nullptr;
     long long atom_count = 0;
+    long long train_count = 0;
     long long event_count = 0;
     long long state_count = 0;
     long long output_count = 0;
     int requested_threads = 0;
+    int real_axis = -1;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLi",
+            "OLLLLLii",
             &pointers,
             &atom_count,
+            &train_count,
             &event_count,
             &state_count,
             &output_count,
-            &requested_threads
+            &requested_threads,
+            &real_axis
         )) {
         return nullptr;
     }
@@ -1414,7 +2370,8 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         PyErr_SetString(PyExc_ValueError, "expected fifteen buffer pointers");
         return nullptr;
     }
-    if (atom_count < 0 || event_count < 0 || state_count < 1 || output_count < 0) {
+    if (atom_count < 0 || train_count < 1 || event_count < 0 || state_count < 1
+        || output_count < 0) {
         PyErr_SetString(PyExc_ValueError, "invalid EPG buffer dimensions");
         return nullptr;
     }
@@ -1441,29 +2398,51 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<const std::int32_t*>(raw[12]),
         static_cast<float*>(raw[13]),
         static_cast<float*>(raw[14]),
+        static_cast<std::int64_t>(atom_count),
+        static_cast<std::int64_t>(train_count),
     };
 
+    // TORCHSIM_LANES=1 selects a lane-vectorized forward that walks the
+    // (atom, train block) product instead of (atom, train), putting a block of
+    // trains in the SIMD lanes. It is opt-in: it is measurably faster only for
+    // very wide batches, and it does not agree bit for bit with the scalar
+    // kernel, so enabling it changes results in the last place.
+    const char* const lane_override = std::getenv("TORCHSIM_LANES");
+    const bool lanes_enabled = lane_override != nullptr && lane_override[0] == '1';
+    const bool vectorize = lanes_enabled && train_count >= 4;
+    const std::int64_t lane_blocks =
+        (static_cast<std::int64_t>(train_count) + static_cast<std::int64_t>(LANES) - 1)
+        / static_cast<std::int64_t>(LANES);
+    const std::int64_t work_count = static_cast<std::int64_t>(atom_count)
+        * (vectorize ? lane_blocks : static_cast<std::int64_t>(train_count));
+    void (*kernel)(
+        const Buffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t
+    ) = vectorize ? &simulate_lane_range : &simulate_range;
+    // The caller establishes the real-subspace conditions; axis 1 puts the
+    // signal on the imaginary axis, which is the representation below.
+    if (real_axis == 1) {
+        kernel = &simulate_real_range;
+    }
     unsigned int thread_count = requested_threads > 0
         ? static_cast<unsigned int>(requested_threads)
         : std::thread::hardware_concurrency();
     thread_count = std::max(1U, thread_count);
-    thread_count = std::min(thread_count, static_cast<unsigned int>(std::max(1LL, atom_count)));
+    thread_count = std::min(thread_count, static_cast<unsigned int>(std::max<std::int64_t>(1, work_count)));
 
     Py_BEGIN_ALLOW_THREADS
     if (thread_count == 1) {
-        simulate_range(buffers, 0, atom_count, event_count, state_count, output_count);
+        kernel(buffers, 0, work_count, event_count, state_count, output_count);
     } else {
         std::vector<std::thread> workers;
         workers.reserve(thread_count);
-        const std::int64_t block = (atom_count + thread_count - 1) / thread_count;
+        const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         for (unsigned int thread = 0; thread < thread_count; ++thread) {
             const std::int64_t begin = static_cast<std::int64_t>(thread) * block;
-            const std::int64_t end = std::min<std::int64_t>(
-                static_cast<std::int64_t>(atom_count), begin + block
-            );
+            const std::int64_t end = std::min<std::int64_t>(work_count, begin + block);
             if (begin < end) {
                 workers.emplace_back(
-                    simulate_range,
+                    kernel,
                     std::cref(buffers),
                     begin,
                     end,
@@ -1485,19 +2464,23 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
 PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     PyObject* pointers = nullptr;
     long long atom_count = 0;
+    long long train_count = 0;
     long long event_count = 0;
     long long state_count = 0;
     long long output_count = 0;
     int requested_threads = 0;
+    int real_axis = -1;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLi",
+            "OLLLLLii",
             &pointers,
             &atom_count,
+            &train_count,
             &event_count,
             &state_count,
             &output_count,
-            &requested_threads
+            &requested_threads,
+            &real_axis
         )) {
         return nullptr;
     }
@@ -1505,7 +2488,8 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         PyErr_SetString(PyExc_ValueError, "expected twenty-five buffer pointers");
         return nullptr;
     }
-    if (atom_count < 0 || event_count < 0 || state_count < 1 || output_count < 0) {
+    if (atom_count < 0 || train_count < 1 || event_count < 0 || state_count < 1
+        || output_count < 0) {
         PyErr_SetString(PyExc_ValueError, "invalid EPG buffer dimensions");
         return nullptr;
     }
@@ -1532,6 +2516,8 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<const std::int32_t*>(raw[12]),
         static_cast<float*>(raw[23]),
         static_cast<float*>(raw[24]),
+        static_cast<std::int64_t>(atom_count),
+        static_cast<std::int64_t>(train_count),
     };
     const JvpBuffers buffers{
         primal,
@@ -1547,21 +2533,28 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<const float*>(raw[22]),
     };
 
+    const std::int64_t work_count =
+        static_cast<std::int64_t>(atom_count) * static_cast<std::int64_t>(train_count);
     unsigned int thread_count = requested_threads > 0
         ? static_cast<unsigned int>(requested_threads)
         : std::thread::hardware_concurrency();
     thread_count = std::max(1U, thread_count);
     thread_count = std::min(
         thread_count,
-        static_cast<unsigned int>(std::max(1LL, atom_count))
+        static_cast<unsigned int>(std::max<std::int64_t>(1, work_count))
     );
+
+    void (*jvp_kernel)(
+        const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t
+    ) = real_axis == 1 ? &simulate_real_jvp_range : &simulate_jvp_range;
 
     Py_BEGIN_ALLOW_THREADS
     if (thread_count == 1) {
-        simulate_jvp_range(
+        jvp_kernel(
             buffers,
             0,
-            atom_count,
+            work_count,
             event_count,
             state_count,
             output_count
@@ -1569,15 +2562,13 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     } else {
         std::vector<std::thread> workers;
         workers.reserve(thread_count);
-        const std::int64_t block = (atom_count + thread_count - 1) / thread_count;
+        const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         for (unsigned int thread = 0; thread < thread_count; ++thread) {
             const std::int64_t begin = static_cast<std::int64_t>(thread) * block;
-            const std::int64_t end = std::min<std::int64_t>(
-                static_cast<std::int64_t>(atom_count), begin + block
-            );
+            const std::int64_t end = std::min<std::int64_t>(work_count, begin + block);
             if (begin < end) {
                 workers.emplace_back(
-                    simulate_jvp_range,
+                    jvp_kernel,
                     std::cref(buffers),
                     begin,
                     end,
@@ -1599,15 +2590,17 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
 PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     PyObject* pointers = nullptr;
     long long atom_count = 0;
+    long long train_count = 0;
     long long event_count = 0;
     long long state_count = 0;
     long long output_count = 0;
     int requested_threads = 0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLi",
+            "OLLLLLi",
             &pointers,
             &atom_count,
+            &train_count,
             &event_count,
             &state_count,
             &output_count,
@@ -1619,7 +2612,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         PyErr_SetString(PyExc_ValueError, "expected twenty-five buffer pointers");
         return nullptr;
     }
-    if (atom_count < 0 || event_count < 0 || state_count < 1 || output_count < 0) {
+    if (atom_count < 0 || train_count < 1 || event_count < 0 || state_count < 1
+        || output_count < 0) {
         PyErr_SetString(PyExc_ValueError, "invalid EPG buffer dimensions");
         return nullptr;
     }
@@ -1646,6 +2640,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<const std::int32_t*>(raw[12]),
         nullptr,
         nullptr,
+        static_cast<std::int64_t>(atom_count),
+        static_cast<std::int64_t>(train_count),
     };
     const VjpBuffers buffers{
         primal,
@@ -1663,36 +2659,42 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<float*>(raw[24]),
     };
 
+    const std::int64_t work_count =
+        static_cast<std::int64_t>(atom_count) * static_cast<std::int64_t>(train_count);
     unsigned int thread_count = requested_threads > 0
         ? static_cast<unsigned int>(requested_threads)
         : std::thread::hardware_concurrency();
     thread_count = std::max(1U, thread_count);
     thread_count = std::min(
         thread_count,
-        static_cast<unsigned int>(std::max(1LL, atom_count))
+        static_cast<unsigned int>(std::max<std::int64_t>(1, work_count))
     );
 
-    const std::size_t events = static_cast<std::size_t>(event_count);
+    const std::size_t events =
+        static_cast<std::size_t>(event_count) * static_cast<std::size_t>(train_count);
+    const std::size_t atoms = static_cast<std::size_t>(atom_count);
     std::vector<float> shared(3U * events * thread_count, 0.0F);
+    std::vector<float> shared_tissue(7U * atoms * thread_count, 0.0F);
 
     Py_BEGIN_ALLOW_THREADS
     auto slice = [&](unsigned int thread, std::size_t which) {
         return shared.data() + (static_cast<std::size_t>(thread) * 3U + which) * events;
     };
+    auto tissue_slice = [&](unsigned int thread) {
+        return shared_tissue.data() + static_cast<std::size_t>(thread) * 7U * atoms;
+    };
     if (thread_count == 1) {
         simulate_vjp_range(
-            buffers, 0, atom_count, event_count, state_count, output_count,
-            slice(0, 0), slice(0, 1), slice(0, 2)
+            buffers, 0, work_count, event_count, state_count, output_count,
+            slice(0, 0), slice(0, 1), slice(0, 2), tissue_slice(0)
         );
     } else {
         std::vector<std::thread> workers;
         workers.reserve(thread_count);
-        const std::int64_t block = (atom_count + thread_count - 1) / thread_count;
+        const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         for (unsigned int thread = 0; thread < thread_count; ++thread) {
             const std::int64_t begin = static_cast<std::int64_t>(thread) * block;
-            const std::int64_t end = std::min<std::int64_t>(
-                static_cast<std::int64_t>(atom_count), begin + block
-            );
+            const std::int64_t end = std::min<std::int64_t>(work_count, begin + block);
             if (begin < end) {
                 workers.emplace_back(
                     simulate_vjp_range,
@@ -1704,12 +2706,33 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
                     output_count,
                     slice(thread, 0),
                     slice(thread, 1),
-                    slice(thread, 2)
+                    slice(thread, 2),
+                    tissue_slice(thread)
                 );
             }
         }
         for (std::thread& worker : workers) {
             worker.join();
+        }
+    }
+    // Tissue gradients sum over every train, reduced in ascending thread order
+    // for the same bitwise reproducibility as the per-event buffers.
+    {
+        float* const destinations[7] = {
+            buffers.grad_t1, buffers.grad_t2, buffers.grad_m0, buffers.grad_b1,
+            buffers.grad_b1_phase, buffers.grad_b0,
+            buffers.grad_inversion_efficiency,
+        };
+        for (std::size_t parameter = 0; parameter < 7U; ++parameter) {
+            for (std::size_t atom = 0; atom < atoms; ++atom) {
+                float total = 0.0F;
+                for (unsigned int thread = 0; thread < thread_count; ++thread) {
+                    total += shared_tissue[
+                        (static_cast<std::size_t>(thread) * 7U + parameter) * atoms + atom
+                    ];
+                }
+                destinations[parameter][atom] = total;
+            }
         }
     }
     // Reduce in ascending thread order so the sum is bitwise reproducible and
@@ -1735,19 +2758,23 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
 PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     PyObject* pointers = nullptr;
     long long atom_count = 0;
+    long long train_count = 0;
     long long event_count = 0;
     long long state_count = 0;
     long long output_count = 0;
     int requested_threads = 0;
+    int real_axis = -1;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLi",
+            "OLLLLLii",
             &pointers,
             &atom_count,
+            &train_count,
             &event_count,
             &state_count,
             &output_count,
-            &requested_threads
+            &requested_threads,
+            &real_axis
         )) {
         return nullptr;
     }
@@ -1755,7 +2782,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         PyErr_SetString(PyExc_ValueError, "expected forty-five buffer pointers");
         return nullptr;
     }
-    if (atom_count < 0 || event_count < 0 || state_count < 1 || output_count < 0) {
+    if (atom_count < 0 || train_count < 1 || event_count < 0 || state_count < 1
+        || output_count < 0) {
         PyErr_SetString(PyExc_ValueError, "invalid EPG buffer dimensions");
         return nullptr;
     }
@@ -1782,6 +2810,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<const std::int32_t*>(raw[12]),
         nullptr,
         nullptr,
+        static_cast<std::int64_t>(atom_count),
+        static_cast<std::int64_t>(train_count),
     };
     VjpJvpBuffers buffers{};
     buffers.primal = primal;
@@ -1813,39 +2843,51 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         *tangent_grad_slots[index] = static_cast<float*>(raw[35 + index]);
     }
 
+    const std::int64_t work_count =
+        static_cast<std::int64_t>(atom_count) * static_cast<std::int64_t>(train_count);
     unsigned int thread_count = requested_threads > 0
         ? static_cast<unsigned int>(requested_threads)
         : std::thread::hardware_concurrency();
     thread_count = std::max(1U, thread_count);
     thread_count = std::min(
         thread_count,
-        static_cast<unsigned int>(std::max(1LL, atom_count))
+        static_cast<unsigned int>(std::max<std::int64_t>(1, work_count))
     );
 
-    const std::size_t events = static_cast<std::size_t>(event_count);
+    const std::size_t events =
+        static_cast<std::size_t>(event_count) * static_cast<std::size_t>(train_count);
+    const std::size_t atoms = static_cast<std::size_t>(atom_count);
     std::vector<DualFloat> shared(3U * events * thread_count, DualFloat{0.0F, 0.0F});
+    std::vector<DualFloat> shared_tissue(
+        7U * atoms * thread_count, DualFloat{0.0F, 0.0F}
+    );
 
     Py_BEGIN_ALLOW_THREADS
     auto slice = [&](unsigned int thread, std::size_t which) {
         return shared.data() + (static_cast<std::size_t>(thread) * 3U + which) * events;
     };
+    auto tissue_slice = [&](unsigned int thread) {
+        return shared_tissue.data() + static_cast<std::size_t>(thread) * 7U * atoms;
+    };
+    void (*second_order)(
+        const VjpJvpBuffers&, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, DualFloat*, DualFloat*, DualFloat*, DualFloat*
+    ) = real_axis == 1 ? &simulate_real_vjp_jvp_range : &simulate_vjp_jvp_range;
     if (thread_count == 1) {
-        simulate_vjp_jvp_range(
-            buffers, 0, atom_count, event_count, state_count, output_count,
-            slice(0, 0), slice(0, 1), slice(0, 2)
+        second_order(
+            buffers, 0, work_count, event_count, state_count, output_count,
+            slice(0, 0), slice(0, 1), slice(0, 2), tissue_slice(0)
         );
     } else {
         std::vector<std::thread> workers;
         workers.reserve(thread_count);
-        const std::int64_t block = (atom_count + thread_count - 1) / thread_count;
+        const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         for (unsigned int thread = 0; thread < thread_count; ++thread) {
             const std::int64_t begin = static_cast<std::int64_t>(thread) * block;
-            const std::int64_t end = std::min<std::int64_t>(
-                static_cast<std::int64_t>(atom_count), begin + block
-            );
+            const std::int64_t end = std::min<std::int64_t>(work_count, begin + block);
             if (begin < end) {
                 workers.emplace_back(
-                    simulate_vjp_jvp_range,
+                    second_order,
                     std::cref(buffers),
                     begin,
                     end,
@@ -1854,12 +2896,37 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
                     output_count,
                     slice(thread, 0),
                     slice(thread, 1),
-                    slice(thread, 2)
+                    slice(thread, 2),
+                    tissue_slice(thread)
                 );
             }
         }
         for (std::thread& worker : workers) {
             worker.join();
+        }
+    }
+    {
+        float* const value_destinations[7] = {
+            buffers.grad_dot_t1, buffers.grad_dot_t2, buffers.grad_dot_m0,
+            buffers.grad_dot_b1, buffers.grad_dot_b1_phase, buffers.grad_dot_b0,
+            buffers.grad_dot_inversion_efficiency,
+        };
+        float* const tangent_destinations[7] = {
+            buffers.grad_t1, buffers.grad_t2, buffers.grad_m0, buffers.grad_b1,
+            buffers.grad_b1_phase, buffers.grad_b0,
+            buffers.grad_inversion_efficiency,
+        };
+        for (std::size_t parameter = 0; parameter < 7U; ++parameter) {
+            for (std::size_t atom = 0; atom < atoms; ++atom) {
+                DualFloat total{0.0F, 0.0F};
+                for (unsigned int thread = 0; thread < thread_count; ++thread) {
+                    total = total + shared_tissue[
+                        (static_cast<std::size_t>(thread) * 7U + parameter) * atoms + atom
+                    ];
+                }
+                value_destinations[parameter][atom] = total.value;
+                tangent_destinations[parameter][atom] = total.tangent;
+            }
         }
     }
     // Deterministic reduction, ascending thread order.

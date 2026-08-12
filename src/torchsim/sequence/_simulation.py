@@ -417,7 +417,9 @@ def _prepare_tissue(
         *(_as_float_tensor(value, device) for value in values)
     )
     shape = tensors[0].shape
-    flat = [value.reshape(-1) for value in tensors]
+    # Broadcasting leaves a scalar property as a stride-0 view. The kernels index
+    # raw pointers, so materialize before anyone hands one to them.
+    flat = [value.reshape(-1).contiguous() for value in tensors]
     # t1_ms and t2_ms are the two entries used as denominators downstream.
     flat[0] = flat[0].clamp_min(MINIMUM_RELAXATION_TIME_MS)
     flat[1] = flat[1].clamp_min(MINIMUM_RELAXATION_TIME_MS)

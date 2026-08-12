@@ -6,7 +6,8 @@ __all__ = ["FSET2Precision"]
 
 import torch
 
-from .._functional import fse_sim
+from ..sequence._simulation import TissueProperties
+from ._fast_fse import FseT2Plan
 from ._sequence import SequenceParameters
 
 
@@ -69,6 +70,28 @@ class FSET2Precision(torch.nn.Module):
         self.curvature_weight = float(curvature_weight)
         self.rf_power_weight = float(rf_power_weight)
         self.parameter_name = parameter_name
+        # One plan per (echo train length, device); the structure is fixed.
+        self._plans: dict[tuple[int, str], FseT2Plan] = {}
+
+    def _t2_jacobian(self, flip_deg: torch.Tensor) -> torch.Tensor:
+        """``d signal / d T2`` for the current refocusing train.
+
+        Uses the direct kernel path, whose plan is reused across iterations; the
+        generic model stack serves anything the plan does not cover.
+        """
+        echoes = flip_deg.shape[-1]
+        key = (echoes, str(flip_deg.device))
+        plan = self._plans.get(key)
+        if plan is None:
+            plan = FseT2Plan(
+                echoes,
+                self.echo_spacing_ms * 1e-3,
+                phases_rad=torch.pi * self.phases_deg / 180.0,
+                device=flip_deg.device,
+            )
+            self._plans[key] = plan
+        tissue = TissueProperties(t1_ms=self.t1_ms, t2_ms=self.t2_ms)
+        return plan.t2_jacobian(torch.pi * flip_deg / 180.0, tissue)
 
     def forward(self, parameters: SequenceParameters) -> torch.Tensor:
         """Evaluate T2 precision and RF-train penalties."""
@@ -77,28 +100,24 @@ class FSET2Precision(torch.nn.Module):
             if isinstance(parameters, dict)
             else parameters
         )
-        _, derivative = fse_sim(
-            flip=flip_deg,
-            phases=torch.full_like(flip_deg, self.phases_deg),
-            ESP=self.echo_spacing_ms,
-            T1=self.t1_ms,
-            T2=self.t2_ms,
-            diff="T2",
-            device=flip_deg.device,
-        )
+        derivative = self._t2_jacobian(flip_deg)
         information = derivative.abs().square().sum(dim=-1).clamp_min(1e-12)
         # Cramer-Rao variance is 1 / information; dividing by T2**2 turns it
         # into the squared relative error, which is dimensionless.
         precision = (1.0 / (information * self.t2_ms.square())).mean()
 
+        # Penalties run along the echo axis so that a batch of trains, shaped
+        # (n_trains, echo_train_length), is penalized per train rather than
+        # across trains.
         flip = flip_deg / 180.0
+        echoes = flip.shape[-1]
         zero = flip.new_zeros(())
         smoothness = (
-            (flip[1:] - flip[:-1]).square().mean() if flip.numel() > 1 else zero
+            (flip[..., 1:] - flip[..., :-1]).square().mean() if echoes > 1 else zero
         )
         curvature = (
-            (flip[2:] - 2.0 * flip[1:-1] + flip[:-2]).square().mean()
-            if flip.numel() > 2
+            (flip[..., 2:] - 2.0 * flip[..., 1:-1] + flip[..., :-2]).square().mean()
+            if echoes > 2
             else zero
         )
         return (

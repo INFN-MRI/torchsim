@@ -34,11 +34,18 @@ def fse_description(
     excitation_phase_rad: Any = torch.pi / 2,
     repetition_time_s: Any | None = None,
 ) -> SequenceDescription:
-    """Build an ideal FSE echo-train description."""
+    """Build an ideal FSE echo-train description.
+
+    ``flip_rad`` is ``(echo_train_length,)`` for one train, or ``(n_trains,
+    echo_train_length)`` to describe a batch of trains that share the event
+    structure and differ only in their refocusing schedule.
+    """
     flip = torch.atleast_1d(flip_rad)
+    if flip.dim() > 2:
+        raise ValueError("flip angles must be 1- or 2-dimensional")
     phases = torch.as_tensor(phases_rad, device=flip.device, dtype=flip.dtype)
     phases = phases.expand_as(flip) if phases.numel() == 1 else phases
-    if phases.shape != flip.shape:
+    if phases.shape[-1] != flip.shape[-1]:
         raise ValueError("refocusing phases must be scalar or match flip angles")
 
     events = [
@@ -50,27 +57,28 @@ def fse_description(
             excitation_phase_rad,
         )
     ]
-    for index in range(flip.numel()):
+    echo_train_length = flip.shape[-1]
+    for index in range(echo_train_length):
         echo_time_s = (index + 1) * echo_spacing_s
         events.append(
             SequenceEvent.rf(
                 1e6 * (echo_time_s - 0.5 * echo_spacing_s),
                 0,
                 RfUse.REFOCUSING,
-                flip[index],
-                phases[index],
+                flip[..., index],
+                phases[..., index],
             )
         )
         events.append(
             SequenceEvent.adc(
                 1e6 * echo_time_s,
                 AdcRole.ECHO_CENTER,
-                phases[index],
+                phases[..., index],
                 is_echo=True,
             )
         )
 
-    train_duration = flip.numel() * echo_spacing_s
+    train_duration = echo_train_length * echo_spacing_s
     duration = train_duration if repetition_time_s is None else repetition_time_s
     return SequenceDescription(
         subsequence_index=0,
