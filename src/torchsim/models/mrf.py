@@ -1,14 +1,14 @@
-"""Unbalanced SSFP MR Fingerprinting sub-routines."""
+"""Unbalanced SSFP MR fingerprinting model."""
+
+from __future__ import annotations
 
 __all__ = ["MRFModel"]
-
-from ..base import AbstractModel
-from ..base import autocast
 
 import numpy.typing as npt
 import torch
 
-from .. import epg
+from ..base import AbstractModel, autocast
+from ..sequence import SSFPFID, TissueProperties, mrf_description
 
 
 class MRFModel(AbstractModel):
@@ -45,6 +45,8 @@ class MRFModel(AbstractModel):
         signal = model()
 
     """
+
+    vectorized_engine = True
 
     @autocast
     def set_properties(
@@ -132,47 +134,18 @@ class MRFModel(AbstractModel):
         nstates: int = 10,
         nreps: int = 1,
     ):
-        # Prepare relaxation parameters
-        R1, R2 = 1e3 / T1, 1e3 / T2
-
-        # Prepare EPG states matrix
-        states = epg.states_matrix(
-            device=R1.device,
-            nlocs=slice_prof.numel(),
+        description = mrf_description(flip, TR, inversion_time_s=TI)
+        signal = SSFPFID().simulate(
+            description,
+            TissueProperties(
+                T1,
+                T2,
+                m0=M0,
+                b1=B1,
+                inversion_efficiency=inv_efficiency,
+            ),
+            repetitions=nreps,
             nstates=nstates,
-        )
-
-        # Prepare relaxation operator for preparation pulse
-        E1inv, rE1inv = epg.longitudinal_relaxation_op(R1, TI)
-
-        # Prepare relaxation operator for sequence loop
-        E1, rE1 = epg.longitudinal_relaxation_op(R1, TR)
-        E2 = epg.transverse_relaxation_op(R2, TR)
-
-        # Get number of shots
-        nshots = len(flip)
-
-        for r in range(nreps):
-            signal = []
-
-            # Apply inversion
-            states = epg.adiabatic_inversion(states, inv_efficiency)
-            states = epg.longitudinal_relaxation(states, E1inv, rE1inv)
-            states = epg.spoil(states)
-
-            # Scan loop
-            for p in range(nshots):
-                RF = epg.rf_pulse_op(flip[p], slice_prof, B1)
-
-                # Apply RF pulse
-                states = epg.rf_pulse(states, RF)
-
-                # Record signal
-                signal.append(epg.get_signal(states))
-
-                # Evolve
-                states = epg.longitudinal_relaxation(states, E1, rE1)
-                states = epg.transverse_relaxation(states, E2)
-                states = epg.shift(states)
-
-        return M0 * 1j * torch.stack(signal)
+            slice_profile=slice_prof,
+        ).signal
+        return 1j * signal[..., -len(flip) :]

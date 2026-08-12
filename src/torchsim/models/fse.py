@@ -1,14 +1,14 @@
-"""Fast Spin Echo sub-routines."""
+"""Fast spin-echo model."""
+
+from __future__ import annotations
 
 __all__ = ["FSEModel"]
-
-from ..base import AbstractModel
-from ..base import autocast
 
 import numpy.typing as npt
 import torch
 
-from .. import epg
+from ..base import AbstractModel, autocast
+from ..sequence import FSE, TissueProperties, fse_description
 
 
 class FSEModel(AbstractModel):
@@ -46,6 +46,8 @@ class FSEModel(AbstractModel):
         signal = model()
 
     """
+
+    vectorized_engine = True
 
     @autocast
     def set_properties(
@@ -142,63 +144,32 @@ class FSEModel(AbstractModel):
         slice_prof: float | npt.ArrayLike = 1.0,
         nstates: int = 10,
     ):
-        # Prepare relaxation parameters
-        R1, R2 = 1e3 / T1, 1e3 / T2
-
-        # Prepare EPG states matrix
-        states = epg.states_matrix(
-            device=R1.device,
-            nlocs=slice_prof.numel(),
-            nstates=nstates,
+        description = fse_description(
+            flip,
+            ESP,
+            phases_rad=phases,
+            excitation_flip_rad=exc_flip,
+            excitation_phase_rad=exc_phase,
         )
-
-        # Prepare matrix for RF excitation
-        RFexc = epg.phased_rf_pulse_op(exc_flip, exc_phase, slice_prof, B1)
-
-        # Prepare relaxation operator for sequence loop
-        E1, rE1 = epg.longitudinal_relaxation_op(R1, 0.5 * ESP)
-        E2 = epg.transverse_relaxation_op(R2, 0.5 * ESP)
-
-        # Get number of shots
-        etl = len(flip)
-
-        # Initialize signal
-        signal = []
-
-        # Apply excitation
-        states = epg.rf_pulse(states, RFexc)
-
-        # Scan loop
-        for p in range(etl):
-            # Pre refocusing
-            states = epg.longitudinal_relaxation(states, E1, rE1)
-            states = epg.transverse_relaxation(states, E2)
-            states = epg.shift(states)
-
-            # Refocus
-            RF = epg.phased_rf_pulse_op(flip[p], phases[p], slice_prof, B1)
-            states = epg.rf_pulse(states, RF)
-
-            # Post refocusing
-            states = epg.shift(states)
-            states = epg.longitudinal_relaxation(states, E1, rE1)
-            states = epg.transverse_relaxation(states, E2)
-
-            # Record signal
-            signal.append(epg.get_demodulated_signal(states, phases[p]))
-
-        # Get signal
-        signal = torch.stack(signal)  # (etl,)
-        signal = signal[..., None]  # (etl, 1)
-
+        signal = FSE().simulate(
+            description,
+            TissueProperties(T1, T2, b1=B1),
+            nstates=nstates,
+            slice_profile=slice_prof,
+        ).signal
         # Get elapsed time and time left before next TR
-        elapsed_time = ESP * etl
+        elapsed_time = ESP * len(flip)
         dt = TR - elapsed_time
 
         # Calculate relaxation until TR
+        R1 = 1e3 / T1
         ETR = torch.exp(-R1 * dt)  # (nTR,)
+        while ETR.ndim < signal.ndim:
+            ETR = ETR[..., None]
+        while M0.ndim < signal.ndim:
+            M0 = M0[..., None]
 
         # Apply modulation
         signal = M0 * signal * (1 - ETR) / (1 - ETR * signal)  # (etl, nTR)
 
-        return signal.swapaxes(-1, -2).ravel()  # (nTR*etl,)
+        return signal

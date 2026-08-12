@@ -11,7 +11,8 @@ readme = "README.rst"
 requires-python = ">=3.10"
 dynamic = ["version"]
 
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE.txt"]
 keywords = ["epg", "mri", "simulation", "bloch"]
 
 
@@ -30,8 +31,6 @@ classifiers = [  # Optional
 
   # Indicate who your project is intended for
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
-
   # Specify the Python versions you support here. In particular, ensure
   # that you indicate you support Python 3. These classifiers are *not*
   # checked by "pip install". See instead "python_requires" below.
@@ -43,7 +42,6 @@ classifiers = [  # Optional
 dependencies = [
 "scipy",
 "torch",
-"mri-nufft",
 ]
 
 [project.optional-dependencies] # Optional
@@ -72,6 +70,9 @@ doc = [
 [tool.setuptools.packages.find]
 where=["src"]
 
+[tool.setuptools.exclude-package-data]
+torchsim = ["*.cpp"]
+
 [tool.setuptools_scm]
 write_to = "src/torchsim/_version.py"
 version_scheme = "python-simplified-semver"
@@ -95,20 +96,26 @@ addopts = [
 # linting using ruff.
 [tool.ruff]
 src = ["src", "tests"]
+
+[tool.ruff.lint]
 select = ["E", "F", "B", "Q", "D", "UP", "ANN"]
 
 ignore = [
-    "ANN101", # missing type annotation for self
-    "ANN102", # missing type annotation for cls in classmethod.
     "ANN204", # missing return type for __init__
     "D105", # missing docstring in magic method
     "D404", # Imperative mode is not necessary everywhere, trust me.
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["ANN"]
+"src/torchsim/estimators/_perk.py" = ["ANN401"]
+"src/torchsim/sequence/_accelerators.py" = ["ANN401"]
+"src/torchsim/sequence/_builders.py" = ["ANN401"]
+"src/torchsim/sequence/_description.py" = ["ANN401"]
+"src/torchsim/sequence/_epg_triton.py" = ["ANN"]
+"src/torchsim/sequence/_simulation.py" = ["ANN401"]
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
 [mypy]

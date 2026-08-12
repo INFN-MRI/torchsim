@@ -1,15 +1,15 @@
-"""Automatic torch converter."""
+"""Automatic conversion of model inputs to Torch tensors."""
+
+from __future__ import annotations
 
 __all__ = ["autocast"]
 
-import inspect
-
 from functools import wraps
-from typing import Callable
+import inspect
+from collections.abc import Callable
+from typing import Any
 
 import torch
-
-from mrinufft._array_compat import _to_torch, _get_leading_argument, _get_device
 
 
 def autocast(func: Callable) -> Callable:
@@ -20,26 +20,10 @@ def autocast(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
         args, kwargs = _fill_kwargs(func, args, kwargs)
-
-        # convert arrays to torch
-        args, kwargs = _to_torch(*args, **kwargs)
-
-        # convert remaining objects to torch
         args, kwargs = _to_tensors(*args, **kwargs)
-
-        # enforce float32 for floating point tensors
         args, kwargs = _enforce_precision(*args, **kwargs)
-
-        # get device from first positional or keyworded argument
-        leading_arg = _get_leading_argument(args, kwargs)
-
-        # get array module from leading argument
-        device = _get_device(leading_arg)
-
-        # move everything to the leading argument device
+        device = _leading_device(args, kwargs)
         args, kwargs = _to_device(device, *args, **kwargs)
-
-        # run function
         return func(*args, **kwargs)
 
     return wrapper
@@ -69,52 +53,50 @@ def _fill_kwargs(func, args, kwargs):
     _keys = list(_kwargs.keys())[n_args:]
     _values = list(_kwargs.values())[n_args:]
 
-    return args, dict(zip(_keys, _values))
+    return args, dict(zip(_keys, _values, strict=True))
 
 
 def _enforce_precision(*args, **kwargs):
     """Enforce tensors precision."""
-    args = list(args)
-    for n in range(len(args)):
-        if isinstance(args[n], torch.Tensor) and torch.is_floating_point(args[n]):
-            args[n] = args[n].to(torch.float32)
-
-    # convert keyworded
-    if kwargs:
-        process_kwargs_vals, _ = _to_tensors(*kwargs.values())
-        kwargs = {k: v for k, v in zip(kwargs.keys(), process_kwargs_vals)}
-
+    args = [_to_float32(value) for value in args]
+    kwargs = {key: _to_float32(value) for key, value in kwargs.items()}
     return args, kwargs
 
 
 def _to_tensors(*args, **kwargs):
     """Enforce tensors."""
-    args = list(args)
-    for n in range(len(args)):
-        try:
-            args[n] = torch.as_tensor(args[n])
-        except Exception:
-            pass
-
-    # convert keyworded
-    if kwargs:
-        process_kwargs_vals, _ = _to_tensors(*kwargs.values())
-        kwargs = {k: v for k, v in zip(kwargs.keys(), process_kwargs_vals)}
-
+    args = [_to_tensor(value) for value in args]
+    kwargs = {key: _to_tensor(value) for key, value in kwargs.items()}
     return args, kwargs
 
 
 def _to_device(device, *args, **kwargs):
     """Enforce same device."""
-    for arg in args:
-        try:
-            arg = arg.to(device)
-        except Exception:
-            pass
-
-    # convert keyworded
-    if kwargs:
-        process_kwargs_vals, _ = _to_device(device, *kwargs.values())
-        kwargs = {k: v for k, v in zip(kwargs.keys(), process_kwargs_vals)}
-
+    args = [value.to(device) if isinstance(value, torch.Tensor) else value for value in args]
+    kwargs = {
+        key: value.to(device) if isinstance(value, torch.Tensor) else value
+        for key, value in kwargs.items()
+    }
     return args, kwargs
+
+
+def _to_tensor(value: Any) -> Any:
+    if isinstance(value, torch.Tensor) or value is None:
+        return value
+    try:
+        return torch.as_tensor(value)
+    except (TypeError, ValueError, RuntimeError):
+        return value
+
+
+def _to_float32(value: Any) -> Any:
+    if isinstance(value, torch.Tensor) and torch.is_floating_point(value):
+        return value.to(torch.float32)
+    return value
+
+
+def _leading_device(args: list[Any], kwargs: dict[str, Any]) -> torch.device:
+    for value in (*args, *kwargs.values()):
+        if isinstance(value, torch.Tensor):
+            return value.device
+    return torch.device("cpu")

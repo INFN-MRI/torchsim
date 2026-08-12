@@ -1,14 +1,14 @@
-"""MPnRAGE sub-routines."""
+"""Magnetization-prepared multi-echo spoiled GRE model."""
+
+from __future__ import annotations
 
 __all__ = ["MPnRAGEModel"]
-
-from ..base import AbstractModel
-from ..base import autocast
 
 import numpy.typing as npt
 import torch
 
-from .. import epg
+from ..base import AbstractModel, autocast
+from ..sequence import SPGR, TissueProperties, mpnrage_description
 
 
 class MPnRAGEModel(AbstractModel):
@@ -45,6 +45,8 @@ class MPnRAGEModel(AbstractModel):
 
     """
 
+    vectorized_engine = True
+
     @autocast
     def set_properties(
         self,
@@ -52,7 +54,7 @@ class MPnRAGEModel(AbstractModel):
         M0: float | npt.ArrayLike = 1.0,
         B1: float | npt.ArrayLike = 1.0,
         inv_efficiency: float | npt.ArrayLike = 1.0,
-    ):
+    ) -> None:
         """
         Set tissue and system-specific properties for the MRF model.
 
@@ -81,7 +83,7 @@ class MPnRAGEModel(AbstractModel):
         TR: float,
         TI: float = 0.0,
         slice_prof: float | npt.ArrayLike = 1.0,
-    ):
+    ) -> None:
         """
         Set sequence parameters for the SPGR model.
 
@@ -101,7 +103,7 @@ class MPnRAGEModel(AbstractModel):
             The default is ``1.0``.
 
         """
-        self.sequence.nshots = nshots
+        self.sequence.nshots = int(nshots.reshape(()).item())
         self.sequence.flip = torch.pi * flip / 180.0
         self.sequence.TR = TR * 1e-3  # ms -> s
         self.sequence.TI = TI * 1e-3  # ms -> s
@@ -118,44 +120,23 @@ class MPnRAGEModel(AbstractModel):
         B1: float | npt.ArrayLike = 1.0,
         inv_efficiency: float | npt.ArrayLike = 1.0,
         slice_prof: float | npt.ArrayLike = 1.0,
-    ):
-        # Prepare relaxation parameters
-        R1 = 1e3 / T1
-
-        # Prepare EPG states matrix
-        states = epg.states_matrix(
-            device=R1.device,
-            nlocs=slice_prof.numel(),
-            nstates=1,
+    ) -> torch.Tensor:
+        description = mpnrage_description(
+            nshots,
+            flip,
+            TR,
+            inversion_time_s=TI,
         )
-        # Prepare excitation pulse
-        RF = epg.rf_pulse_op(flip, slice_prof, B1)
-
-        # Prepare relaxation operator for preparation pulse
-        E1inv, rE1inv = epg.longitudinal_relaxation_op(R1, TI)
-
-        # Prepare relaxation operator for sequence loop
-        E1, rE1 = epg.longitudinal_relaxation_op(R1, TR)
-
-        # Initialize signal
-        signal = []
-
-        # Apply inversion
-        states = epg.adiabatic_inversion(states, inv_efficiency)
-        states = epg.longitudinal_relaxation(states, E1inv, rE1inv)
-        states = epg.spoil(states)
-
-        # Scan loop
-        for p in range(nshots):
-
-            # Apply RF pulse
-            states = epg.rf_pulse(states, RF)
-
-            # Record signal
-            signal.append(epg.get_signal(states))
-
-            # Evolve
-            states = epg.longitudinal_relaxation(states, E1, rE1)
-            states = epg.spoil(states)
-
-        return M0 * 1j * torch.stack(signal)
+        signal = SPGR().simulate(
+            description,
+            TissueProperties(
+                T1,
+                T1,
+                m0=M0,
+                b1=B1,
+                inversion_efficiency=inv_efficiency,
+            ),
+            nstates=1,
+            slice_profile=slice_prof,
+        ).signal
+        return 1j * signal

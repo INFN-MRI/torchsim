@@ -1,22 +1,24 @@
-"""Base simulator class"""
+"""Base simulator class."""
+
+from __future__ import annotations
 
 __all__ = ["AbstractModel"]
 
-import inspect
-
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+import inspect
 from types import SimpleNamespace
+from typing import Any
 
 import torch
 
-from mrinufft._array_compat import _get_leading_argument, _get_device
-
-from .decorators import autocast, broadcast, jacfwd
+from .decorators import autocast, broadcast, broadcast_arguments, jacfwd
 
 
 class AbstractModel(ABC):
     """Abstract base class for MRI simulation models with automated parameter handling."""
+
+    vectorized_engine = False
 
     def __init__(
         self,
@@ -162,6 +164,14 @@ class AbstractModel(ABC):
         """
         engine, _ = self._get_func(self._engine, *args, **kwargs)
 
+        if self.vectorized_engine:
+
+            def vectorized_engine(*inputs):
+                broadcast_inputs, _ = broadcast_arguments(*inputs)
+                return engine(*broadcast_inputs).squeeze()
+
+            return vectorized_engine
+
         def vmapped_engine(*inputs):
             vmapped = torch.vmap(engine, chunk_size=self.chunk_size)
             broadcast_vmapped = broadcast(vmapped)
@@ -221,11 +231,7 @@ class AbstractModel(ABC):
 
         # Get device
         if self.device is None:
-            # get device from first positional or keyworded argument
-            leading_arg = _get_leading_argument([], kwargs)
-
-            # get array module from leading argument
-            device = _get_device(leading_arg)
+            device = _leading_device(kwargs)
         else:
             device = self.device
 
@@ -446,3 +452,10 @@ def _get_argnums(diff, ARGS):  # noqa
         return tuple([ARGMAP[d] for d in diff])
     else:
         raise ValueError(f"Unsupported diff type: {diff}")
+
+
+def _leading_device(values: dict[str, Any]) -> torch.device:
+    for value in values.values():
+        if isinstance(value, torch.Tensor):
+            return value.device
+    return torch.device("cpu")

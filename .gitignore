@@ -16,6 +16,7 @@ tmp/
 *_cache/
 *.py[cod]
 *.egg
+*.so
 *.nbi
 *.nbc
 

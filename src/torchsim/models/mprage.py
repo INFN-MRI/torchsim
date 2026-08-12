@@ -1,14 +1,14 @@
-"""MPRAGE sub-routines."""
+"""Magnetization-prepared rapid gradient-echo model."""
+
+from __future__ import annotations
 
 __all__ = ["MPRAGEModel"]
-
-from ..base import AbstractModel
-from ..base import autocast
 
 import numpy.typing as npt
 import torch
 
-from .. import epg
+from ..base import AbstractModel, autocast
+from ..sequence import SPGR, TissueProperties, mprage_description
 
 
 class MPRAGEModel(AbstractModel):
@@ -45,13 +45,15 @@ class MPRAGEModel(AbstractModel):
 
     """
 
+    vectorized_engine = True
+
     @autocast
     def set_properties(
         self,
         T1: float | npt.ArrayLike,
         M0: float | npt.ArrayLike = 1.0,
         inv_efficiency: float | npt.ArrayLike = 1.0,
-    ):
+    ) -> None:
         """
         Set tissue and system-specific properties for the MRF model.
 
@@ -76,7 +78,7 @@ class MPRAGEModel(AbstractModel):
         flip: float,
         TRspgr: float,
         nshots: int | npt.ArrayLike,
-    ):
+    ) -> None:
         """
         Set sequence parameters for the SPGR model.
 
@@ -97,13 +99,26 @@ class MPRAGEModel(AbstractModel):
             i.e., the number of slices divided by the total acceleration factor along ``z``.
 
         """
-        self.sequence.nshots = nshots
         self.sequence.TI = TI * 1e-3  # ms -> s
         self.sequence.flip = torch.pi * flip / 180.0
         self.sequence.TRspgr = TRspgr * 1e-3  # ms -> s
+        nshots = nshots.flatten()
         if nshots.numel() == 1:
-            nshots = torch.repeat_interleave(nshots // 2, 2)
-        self.sequence.nshots = nshots
+            shot_count = int(nshots.item())
+            if shot_count < 1:
+                raise ValueError("nshots must be positive")
+            nshots_before = shot_count // 2
+            nshots_after = shot_count - nshots_before - 1
+        elif nshots.numel() == 2:
+            nshots_before, nshots_after = (int(value.item()) for value in nshots)
+            if nshots_before < 0 or nshots_after < 0:
+                raise ValueError("nshots entries must be nonnegative")
+        else:
+            raise ValueError("nshots must be scalar or (before, after)")
+        if bool(self.sequence.TI < nshots_before * self.sequence.TRspgr):
+            raise ValueError("TI must not precede the first MPRAGE excitation")
+        self.sequence.nshots_before = nshots_before
+        self.sequence.nshots_after = nshots_after
 
     @staticmethod
     def _engine(
@@ -111,45 +126,27 @@ class MPRAGEModel(AbstractModel):
         TI: npt.ArrayLike,
         flip: float | npt.ArrayLike,
         TRspgr: float,
-        TRmprage: float,
-        nshots: int | npt.ArrayLike,
+        nshots_before: int,
+        nshots_after: int,
         M0: float | npt.ArrayLike = 1.0,
         inv_efficiency: float | npt.ArrayLike = 1.0,
-    ):
-        R1 = 1e3 / T1
-
-        # Calculate number of shots and time before DC sampling
-        nshots_bef = nshots[0]
-        time_bef = nshots_bef * TRspgr
-
-        # Prepare EPG states matrix
-        states = epg.states_matrix(
-            device=R1.device,
-            nstates=1,
+    ) -> torch.Tensor:
+        description = mprage_description(
+            nshots_before,
+            nshots_after,
+            flip,
+            TRspgr,
+            TI,
         )
-        # Prepare excitation pulse
-        RF = epg.rf_pulse_op(flip)
-
-        # Prepare relaxation operator for preparation pulse
-        E1inv, rE1inv = epg.longitudinal_relaxation_op(R1, TI - time_bef)
-
-        # Prepare relaxation operator for sequence loop
-        E1, rE1 = epg.longitudinal_relaxation_op(R1, TRspgr)
-
-        # Apply inversion
-        states = epg.adiabatic_inversion(states, inv_efficiency)
-        states = epg.longitudinal_relaxation(states, E1inv, rE1inv)
-        states = epg.spoil(states)
-
-        # Scan loop
-        for p in range(nshots_bef):
-
-            # Apply RF pulse
-            states = epg.rf_pulse(states, RF)
-
-            # Evolve
-            states = epg.longitudinal_relaxation(states, E1, rE1)
-            states = epg.spoil(states)
-
-        # Record signal
-        return M0 * 1j * epg.get_signal(states)
+        signal = SPGR().simulate(
+            description,
+            TissueProperties(
+                T1,
+                T1,
+                m0=M0,
+                inversion_efficiency=inv_efficiency,
+            ),
+            record="acquired",
+            nstates=1,
+        ).signal
+        return 1j * signal[..., 0]
