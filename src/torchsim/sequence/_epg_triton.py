@@ -10,7 +10,10 @@ from ._accelerators import _train_count
 import triton
 import triton.language as tl
 
-from ._parameters import TISSUE_COUNT as _TISSUE_COUNT
+from ._parameters import TISSUE_COUNT as _TISSUE_PARAMETERS
+
+# Triton reads globals only through its own constexpr wrapper.
+_TISSUE_COUNT = tl.constexpr(_TISSUE_PARAMETERS)
 
 
 @triton.jit
@@ -108,6 +111,23 @@ def _damping(rate, dt, order):
     return (
         tl.exp(-b_factor * squared),
         tl.exp(-b_factor * (squared + order + 0.3333333333333333)),
+    )
+
+
+@triton.jit
+def _damping_jvp(rate, rate_tangent, dt, dt_tangent, order):
+    """Diffusion damping and its directional derivative, per state order."""
+    b_factor = rate * dt
+    b_tangent = rate_tangent * dt + rate * dt_tangent
+    squared = order * order
+    transverse_weight = squared + order + 0.3333333333333333
+    damp_z = tl.exp(-b_factor * squared)
+    damp_t = tl.exp(-b_factor * transverse_weight)
+    return (
+        damp_z,
+        damp_z * (-b_tangent * squared),
+        damp_t,
+        damp_t * (-b_tangent * transverse_weight),
     )
 
 
@@ -369,6 +389,11 @@ def _epg_vjp_jvp_kernel(
     d_inv = tl.load(
         dot_inversion_efficiency + atom, mask=active_atom, other=0.0
     )
+    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    d_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
+    order = state.to(tl.float32)
+    longitudinal_weight = order * order
+    transverse_weight = longitudinal_weight + order + 0.3333333333333333
     r1_value = 1000.0 / atom_t1
     r1_tangent = -1000.0 * d_t1 / (atom_t1 * atom_t1)
     r2_value = 1000.0 / atom_t2
@@ -398,6 +423,17 @@ def _epg_vjp_jvp_kernel(
         e1_tangent = -e1_value * (r1_value * dt_tangent + r1_tangent * dt_value)
         e2_value = tl.exp(-r2_value * dt_value)
         e2_tangent = -e2_value * (r2_value * dt_tangent + r2_tangent * dt_value)
+        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+            atom_damping, d_damping, dt_value, dt_tangent, order
+        )
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
+        bare1_value, bare1_tangent = e1_value, e1_tangent
+        bare2_value, bare2_tangent = e2_value, e2_tangent
+        e1_tangent = e1_tangent * damp_z + bare1_value * damp_z_tangent
+        e1_value = bare1_value * damp_z
+        e2_tangent = e2_tangent * damp_t + bare2_value * damp_t_tangent
+        e2_value = bare2_value * damp_t
         angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value)
         angle_tangent = -2.0 * 3.141592653589793 * (
             d_b0 * dt_value + atom_b0 * dt_tangent
@@ -408,8 +444,8 @@ def _epg_vjp_jvp_kernel(
         pvr, pvi, ptr, pti = _dual_mul(ovr, ovi, otr, oti, pvr, pvi, ptr, pti)
         mvr, mvi, mtr, mti = _dual_mul(ovr, -ovi, otr, -oti, mvr, mvi, mtr, mti)
         zvr, zvi, ztr, zti = _dual_scale(e1_value, e1_tangent, zvr, zvi, ztr, zti)
-        zvr += tl.where(state == 0, 1.0 - e1_value, 0.0)
-        ztr -= tl.where(state == 0, e1_tangent, 0.0)
+        zvr += tl.where(state == 0, recovery_value, 0.0)
+        ztr += tl.where(state == 0, recovery_tangent, 0.0)
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
@@ -528,6 +564,8 @@ def _epg_vjp_jvp_kernel(
     zbtr = empty
     zbti = empty
     zero = tl.zeros((problems, 1), tl.float32)
+    g_diffv = zero
+    g_difft = zero
     g_t1v = zero
     g_t1t = zero
     g_t2v = zero
@@ -569,6 +607,17 @@ def _epg_vjp_jvp_kernel(
         e1_tangent = -e1_value * (r1_value * dt_tangent + r1_tangent * dt_value)
         e2_value = tl.exp(-r2_value * dt_value)
         e2_tangent = -e2_value * (r2_value * dt_tangent + r2_tangent * dt_value)
+        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+            atom_damping, d_damping, dt_value, dt_tangent, order
+        )
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
+        bare1_value, bare1_tangent = e1_value, e1_tangent
+        bare2_value, bare2_tangent = e2_value, e2_tangent
+        e1_tangent = e1_tangent * damp_z + bare1_value * damp_z_tangent
+        e1_value = bare1_value * damp_z
+        e2_tangent = e2_tangent * damp_t + bare2_value * damp_t_tangent
+        e2_value = bare2_value * damp_t
         angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value)
         angle_tangent = -2.0 * 3.141592653589793 * (
             d_b0 * dt_value + atom_b0 * dt_tangent
@@ -586,8 +635,8 @@ def _epg_vjp_jvp_kernel(
         rzvr, rzvi, rztr, rzti = _dual_scale(
             e1_value, e1_tangent, xzvr, xzvi, xztr, xzti
         )
-        rzvr += tl.where(state == 0, 1.0 - e1_value, 0.0)
-        rztr -= tl.where(state == 0, e1_tangent, 0.0)
+        rzvr += tl.where(state == 0, recovery_value, 0.0)
+        rztr += tl.where(state == 0, recovery_tangent, 0.0)
 
         pre_shift = (event_action & 1) != 0
         svr, svi, wvr, wvi = _shift(
@@ -867,8 +916,12 @@ def _epg_vjp_jvp_kernel(
         part_v, part_t = _dual_real_conj_mul(
             mbvr, mbvi, mbtr, mbti, mq[0], mq[1], mq[2], mq[3]
         )
-        grad_e2_v = tl.sum(e2_v + part_v, axis=1)[:, None]
-        grad_e2_t = tl.sum(e2_t + part_t, axis=1)[:, None]
+        cot2_v = e2_v + part_v
+        cot2_t = e2_t + part_t
+        grad_e2_v = tl.sum(cot2_v * damp_t, axis=1)[:, None]
+        grad_e2_t = tl.sum(cot2_v * damp_t_tangent + cot2_t * damp_t, axis=1)[
+            :, None
+        ]
 
         po = _dual_mul(ovr, ovi, otr, oti, xpvr, xpvi, xptr, xpti)
         po = _dual_times_i(po[0], po[1], po[2], po[3])
@@ -886,10 +939,31 @@ def _epg_vjp_jvp_kernel(
         e1_v, e1_t = _dual_real_conj_mul(
             zbvr, zbvi, zbtr, zbti, xzvr, xzvi, xztr, xzti
         )
-        grad_e1_v = tl.sum(e1_v, axis=1)[:, None]
-        grad_e1_t = tl.sum(e1_t, axis=1)[:, None]
+        grad_e1_v = tl.sum(e1_v * damp_z, axis=1)[:, None]
+        grad_e1_t = tl.sum(e1_v * damp_z_tangent + e1_t * damp_z, axis=1)[:, None]
         grad_e1_v -= tl.sum(tl.where(state == 0, zbvr, 0.0), axis=1)[:, None]
         grad_e1_t -= tl.sum(tl.where(state == 0, zbtr, 0.0), axis=1)[:, None]
+
+        # The rate and the interval multiply every order's b-weight, so both
+        # take a weighted sum rather than one scalar. Order zero carries no
+        # longitudinal weight, which keeps recovery out of this.
+        weighted_v = (
+            e1_v * bare1_value * damp_z * longitudinal_weight
+            + cot2_v * bare2_value * damp_t * transverse_weight
+        )
+        weighted_t = (
+            e1_t * bare1_value * damp_z
+            + e1_v * bare1_tangent * damp_z
+            + e1_v * bare1_value * damp_z_tangent
+        ) * longitudinal_weight + (
+            cot2_t * bare2_value * damp_t
+            + cot2_v * bare2_tangent * damp_t
+            + cot2_v * bare2_value * damp_t_tangent
+        ) * transverse_weight
+        spread_v = tl.sum(weighted_v, axis=1)[:, None]
+        spread_t = tl.sum(weighted_t, axis=1)[:, None]
+        g_diffv += -spread_v * dt_value
+        g_difft += -(spread_v * dt_tangent + spread_t * dt_value)
 
         pbvr, pbvi, pbtr, pbti = _dual_mul(
             ovr, -ovi, otr, -oti, pbvr, pbvi, pbtr, pbti
@@ -905,14 +979,14 @@ def _epg_vjp_jvp_kernel(
         inverse1_tangent = -2000.0 * d_t1 / (atom_t1 * atom_t1 * atom_t1)
         inverse2_value = 1000.0 / (atom_t2 * atom_t2)
         inverse2_tangent = -2000.0 * d_t2 / (atom_t2 * atom_t2 * atom_t2)
-        scale1_value = e1_value * dt_value * inverse1_value
-        scale1_tangent = e1_tangent * dt_value * inverse1_value
-        scale1_tangent += e1_value * dt_tangent * inverse1_value
-        scale1_tangent += e1_value * dt_value * inverse1_tangent
-        scale2_value = e2_value * dt_value * inverse2_value
-        scale2_tangent = e2_tangent * dt_value * inverse2_value
-        scale2_tangent += e2_value * dt_tangent * inverse2_value
-        scale2_tangent += e2_value * dt_value * inverse2_tangent
+        scale1_value = bare1_value * dt_value * inverse1_value
+        scale1_tangent = bare1_tangent * dt_value * inverse1_value
+        scale1_tangent += bare1_value * dt_tangent * inverse1_value
+        scale1_tangent += bare1_value * dt_value * inverse1_tangent
+        scale2_value = bare2_value * dt_value * inverse2_value
+        scale2_tangent = bare2_tangent * dt_value * inverse2_value
+        scale2_tangent += bare2_value * dt_tangent * inverse2_value
+        scale2_tangent += bare2_value * dt_value * inverse2_tangent
         g_t1v += grad_e1_v * scale1_value
         g_t1t += grad_e1_v * scale1_tangent + grad_e1_t * scale1_value
         g_t2v += grad_e2_v * scale2_value
@@ -922,15 +996,21 @@ def _epg_vjp_jvp_kernel(
         g_b0v += grad_angle_v * (turn * dt_value)
         g_b0t += grad_angle_v * (turn * dt_tangent) + grad_angle_t * (turn * dt_value)
 
-        decay1_value = r1_value * e1_value
-        decay1_tangent = r1_value * e1_tangent + r1_tangent * e1_value
-        decay2_value = r2_value * e2_value
-        decay2_tangent = r2_value * e2_tangent + r2_tangent * e2_value
+        decay1_value = r1_value * bare1_value
+        decay1_tangent = (
+            r1_value * bare1_tangent + r1_tangent * bare1_value
+        )
+        decay2_value = r2_value * bare2_value
+        decay2_tangent = (
+            r2_value * bare2_tangent + r2_tangent * bare2_value
+        )
         duration_v = -grad_e1_v * decay1_value - grad_e2_v * decay2_value
         duration_v += grad_angle_v * (turn * atom_b0)
         duration_t = -(grad_e1_v * decay1_tangent + grad_e1_t * decay1_value)
         duration_t -= grad_e2_v * decay2_tangent + grad_e2_t * decay2_value
         duration_t += grad_angle_v * (turn * d_b0) + grad_angle_t * (turn * atom_b0)
+        duration_v += -spread_v * atom_damping
+        duration_t += -(spread_v * d_damping + spread_t * atom_damping)
         tl.atomic_add(
             grad_duration_value + event_base + event, duration_v, mask=active_atom
         )
@@ -938,9 +1018,9 @@ def _epg_vjp_jvp_kernel(
             grad_duration_tangent + event_base + event, duration_t, mask=active_atom
         )
 
-    values = (g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv)
-    tangents = (g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt)
-    for parameter in tl.static_range(7):
+    values = (g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv)
+    tangents = (g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt, g_difft)
+    for parameter in tl.static_range(_TISSUE_COUNT):
         tl.atomic_add(
             grad_tissue_value + parameter * atom_count + atom,
             values[parameter],
@@ -1037,6 +1117,11 @@ def _epg_real_vjp_jvp_kernel(
     atom_dot_inversion = tl.load(
         dot_inversion_efficiency + atom, mask=active_atom, other=0.0
     )
+    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    atom_dot_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
+    order = state.to(tl.float32)
+    longitudinal_weight = order * order
+    transverse_weight = longitudinal_weight + order + 0.3333333333333333
     rate1_value = 1000.0 / atom_t1
     rate1_tangent = -1000.0 * atom_dot_t1 / (atom_t1 * atom_t1)
     rate2_value = 1000.0 / atom_t2
@@ -1062,6 +1147,17 @@ def _epg_real_vjp_jvp_kernel(
         e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
         e2_value = tl.exp(-rate2_value * dt_value)
         e2_tangent = -e2_value * (rate2_value * dt_tangent + rate2_tangent * dt_value)
+        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+            atom_damping, atom_dot_damping, dt_value, dt_tangent, order
+        )
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
+        bare1_value, bare1_tangent = e1_value, e1_tangent
+        bare2_value, bare2_tangent = e2_value, e2_tangent
+        e1_tangent = e1_tangent * damp_z + bare1_value * damp_z_tangent
+        e1_value = bare1_value * damp_z
+        e2_tangent = e2_tangent * damp_t + bare2_value * damp_t_tangent
+        e2_value = bare2_value * damp_t
 
         plus_tangent = plus_value * e2_tangent + plus_tangent * e2_value
         plus_value = plus_value * e2_value
@@ -1069,8 +1165,8 @@ def _epg_real_vjp_jvp_kernel(
         minus_value = minus_value * e2_value
         long_tangent = long_value * e1_tangent + long_tangent * e1_value
         long_value = long_value * e1_value
-        long_value += tl.where(state == 0, 1.0 - e1_value, 0.0)
-        long_tangent -= tl.where(state == 0, e1_tangent, 0.0)
+        long_value += tl.where(state == 0, recovery_value, 0.0)
+        long_tangent += tl.where(state == 0, recovery_tangent, 0.0)
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
@@ -1174,6 +1270,8 @@ def _epg_real_vjp_jvp_kernel(
     grad_b1_tangent = zero
     grad_inversion_value = zero
     grad_inversion_tangent = zero
+    grad_damping_value = zero
+    grad_damping_tangent = zero
 
     for reverse in range(0, event_count):
         event = event_count - 1 - reverse
@@ -1203,15 +1301,26 @@ def _epg_real_vjp_jvp_kernel(
         e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
         e2_value = tl.exp(-rate2_value * dt_value)
         e2_tangent = -e2_value * (rate2_value * dt_tangent + rate2_tangent * dt_value)
+        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+            atom_damping, atom_dot_damping, dt_value, dt_tangent, order
+        )
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
+        bare1_value, bare1_tangent = e1_value, e1_tangent
+        bare2_value, bare2_tangent = e2_value, e2_tangent
+        e1_tangent = e1_tangent * damp_z + bare1_value * damp_z_tangent
+        e1_value = bare1_value * damp_z
+        e2_tangent = e2_tangent * damp_t + bare2_value * damp_t_tangent
+        e2_value = bare2_value * damp_t
 
         # Replay the intra-event stages from the recorded entry state.
         stage_pv = entry_pv * e2_value
         stage_pt = entry_pv * e2_tangent + entry_pt * e2_value
         stage_mv = entry_mv * e2_value
         stage_mt = entry_mv * e2_tangent + entry_mt * e2_value
-        stage_zv = entry_zv * e1_value + tl.where(state == 0, 1.0 - e1_value, 0.0)
+        stage_zv = entry_zv * e1_value + tl.where(state == 0, recovery_value, 0.0)
         stage_zt = entry_zv * e1_tangent + entry_zt * e1_value
-        stage_zt -= tl.where(state == 0, e1_tangent, 0.0)
+        stage_zt += tl.where(state == 0, recovery_tangent, 0.0)
 
         pre_shift = (event_action & 1) != 0
         shifted_pv, shifted_mv = _shift_real(
@@ -1397,26 +1506,52 @@ def _epg_real_vjp_jvp_kernel(
         plus_bar_tangent = tl.where(pre_shift, adjoint_pt, plus_bar_tangent)
         minus_bar_tangent = tl.where(pre_shift, adjoint_mt, minus_bar_tangent)
 
-        grad_e2_value = tl.sum(
-            plus_bar_value * entry_pv + minus_bar_value * entry_mv, axis=1
-        )[:, None]
-        grad_e2_tangent = tl.sum(
+        cot2_value = plus_bar_value * entry_pv + minus_bar_value * entry_mv
+        cot2_tangent = (
             plus_bar_value * entry_pt
             + plus_bar_tangent * entry_pv
             + minus_bar_value * entry_mt
-            + minus_bar_tangent * entry_mv,
-            axis=1,
+            + minus_bar_tangent * entry_mv
+        )
+        cot1_value = long_bar_value * entry_zv
+        cot1_tangent = long_bar_value * entry_zt + long_bar_tangent * entry_zv
+        grad_e2_value = tl.sum(cot2_value * damp_t, axis=1)[:, None]
+        grad_e2_tangent = tl.sum(
+            cot2_value * damp_t_tangent + cot2_tangent * damp_t, axis=1
         )[:, None]
-        grad_e1_value = tl.sum(long_bar_value * entry_zv, axis=1)[:, None]
+        grad_e1_value = tl.sum(cot1_value * damp_z, axis=1)[:, None]
         grad_e1_value -= tl.sum(
             tl.where(state == 0, long_bar_value, 0.0), axis=1
         )[:, None]
         grad_e1_tangent = tl.sum(
-            long_bar_value * entry_zt + long_bar_tangent * entry_zv, axis=1
+            cot1_value * damp_z_tangent + cot1_tangent * damp_z, axis=1
         )[:, None]
         grad_e1_tangent -= tl.sum(
             tl.where(state == 0, long_bar_tangent, 0.0), axis=1
         )[:, None]
+
+        # The rate and the interval multiply every order's b-weight, so both
+        # take a weighted sum. Order zero has no longitudinal weight, which
+        # keeps recovery out of this.
+        weighted_value = (
+            cot1_value * bare1_value * damp_z * longitudinal_weight
+            + cot2_value * bare2_value * damp_t * transverse_weight
+        )
+        weighted_tangent = (
+            cot1_tangent * bare1_value * damp_z
+            + cot1_value * bare1_tangent * damp_z
+            + cot1_value * bare1_value * damp_z_tangent
+        ) * longitudinal_weight + (
+            cot2_tangent * bare2_value * damp_t
+            + cot2_value * bare2_tangent * damp_t
+            + cot2_value * bare2_value * damp_t_tangent
+        ) * transverse_weight
+        spread_value = tl.sum(weighted_value, axis=1)[:, None]
+        spread_tangent = tl.sum(weighted_tangent, axis=1)[:, None]
+        grad_damping_value += -spread_value * dt_value
+        grad_damping_tangent += -(
+            spread_value * dt_tangent + spread_tangent * dt_value
+        )
 
         plus_bar_tangent = plus_bar_value * e2_tangent + plus_bar_tangent * e2_value
         plus_bar_value = plus_bar_value * e2_value
@@ -1429,14 +1564,14 @@ def _epg_real_vjp_jvp_kernel(
         inverse1_tangent = -2000.0 * atom_dot_t1 / (atom_t1 * atom_t1 * atom_t1)
         inverse2_value = 1000.0 / (atom_t2 * atom_t2)
         inverse2_tangent = -2000.0 * atom_dot_t2 / (atom_t2 * atom_t2 * atom_t2)
-        scale1_value = e1_value * dt_value * inverse1_value
-        scale1_tangent = e1_tangent * dt_value * inverse1_value
-        scale1_tangent += e1_value * dt_tangent * inverse1_value
-        scale1_tangent += e1_value * dt_value * inverse1_tangent
-        scale2_value = e2_value * dt_value * inverse2_value
-        scale2_tangent = e2_tangent * dt_value * inverse2_value
-        scale2_tangent += e2_value * dt_tangent * inverse2_value
-        scale2_tangent += e2_value * dt_value * inverse2_tangent
+        scale1_value = bare1_value * dt_value * inverse1_value
+        scale1_tangent = bare1_tangent * dt_value * inverse1_value
+        scale1_tangent += bare1_value * dt_tangent * inverse1_value
+        scale1_tangent += bare1_value * dt_value * inverse1_tangent
+        scale2_value = bare2_value * dt_value * inverse2_value
+        scale2_tangent = bare2_tangent * dt_value * inverse2_value
+        scale2_tangent += bare2_value * dt_tangent * inverse2_value
+        scale2_tangent += bare2_value * dt_value * inverse2_tangent
         grad_t1_value += grad_e1_value * scale1_value
         grad_t1_tangent += grad_e1_value * scale1_tangent
         grad_t1_tangent += grad_e1_tangent * scale1_value
@@ -1444,10 +1579,16 @@ def _epg_real_vjp_jvp_kernel(
         grad_t2_tangent += grad_e2_value * scale2_tangent
         grad_t2_tangent += grad_e2_tangent * scale2_value
 
-        decay1_value = rate1_value * e1_value
-        decay1_tangent = rate1_value * e1_tangent + rate1_tangent * e1_value
-        decay2_value = rate2_value * e2_value
-        decay2_tangent = rate2_value * e2_tangent + rate2_tangent * e2_value
+        decay1_value = rate1_value * bare1_value
+        decay1_tangent = (
+            rate1_value * bare1_tangent
+            + rate1_tangent * bare1_value
+        )
+        decay2_value = rate2_value * bare2_value
+        decay2_tangent = (
+            rate2_value * bare2_tangent
+            + rate2_tangent * bare2_value
+        )
         duration_gain_value = -grad_e1_value * decay1_value
         duration_gain_value -= grad_e2_value * decay2_value
         duration_gain_tangent = -(
@@ -1455,6 +1596,10 @@ def _epg_real_vjp_jvp_kernel(
         )
         duration_gain_tangent -= (
             grad_e2_value * decay2_tangent + grad_e2_tangent * decay2_value
+        )
+        duration_gain_value += -spread_value * atom_damping
+        duration_gain_tangent += -(
+            spread_value * atom_dot_damping + spread_tangent * atom_damping
         )
         tl.atomic_add(
             grad_duration_value + event_base + event,
@@ -1495,6 +1640,16 @@ def _epg_real_vjp_jvp_kernel(
     tl.atomic_add(
         grad_tissue_tangent + 6 * atom_count + atom,
         grad_inversion_tangent,
+        mask=active_atom,
+    )
+    tl.atomic_add(
+        grad_tissue_value + 7 * atom_count + atom,
+        grad_damping_value,
+        mask=active_atom,
+    )
+    tl.atomic_add(
+        grad_tissue_tangent + 7 * atom_count + atom,
+        grad_damping_tangent,
         mask=active_atom,
     )
 
@@ -1681,6 +1836,9 @@ def _epg_real_jvp_kernel(
     )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
+    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    dot_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
+    order = state.to(tl.float32)
 
     event_base = train * event_count
     for event in range(0, event_count):
@@ -1692,13 +1850,22 @@ def _epg_real_jvp_kernel(
         e2 = tl.exp(-rate2 * dt)
         dot_e1 = e1 * (1000.0 * dt * dot_t1 / (atom_t1 * atom_t1) - rate1 * dot_dt)
         dot_e2 = e2 * (1000.0 * dt * dot_t2 / (atom_t2 * atom_t2) - rate2 * dot_dt)
+        damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
+            atom_damping, dot_damping, dt, dot_dt, order
+        )
+        # Order zero is undamped, so the recovery term keeps the bare factor.
+        recovery, dot_recovery = 1.0 - e1, -dot_e1
+        dot_e1 = dot_e1 * damp_z + e1 * ddamp_z
+        e1 = e1 * damp_z
+        dot_e2 = dot_e2 * damp_t + e2 * ddamp_t
+        e2 = e2 * damp_t
         dot_plus = dot_plus * e2 + plus * dot_e2
         dot_minus = dot_minus * e2 + minus * dot_e2
         dot_longitudinal = dot_longitudinal * e1 + longitudinal * dot_e1
-        dot_longitudinal -= tl.where(state == 0, dot_e1, 0.0)
+        dot_longitudinal += tl.where(state == 0, dot_recovery, 0.0)
         plus *= e2
         minus *= e2
-        longitudinal = longitudinal * e1 + tl.where(state == 0, 1.0 - e1, 0.0)
+        longitudinal = longitudinal * e1 + tl.where(state == 0, recovery, 0.0)
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
@@ -2069,6 +2236,9 @@ def _epg_jvp_kernel(
     atom_inversion = tl.load(
         inversion_efficiency + atom, mask=active_atom, other=1.0
     )
+    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    d_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
+    order = state.to(tl.float32)
     dt1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
     dt2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
     dm0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
@@ -2089,6 +2259,15 @@ def _epg_jvp_kernel(
         e2 = tl.exp(-r2 * event_dt)
         de1 = e1 * (1000.0 * event_dt * dt1 / (atom_t1 * atom_t1) - r1 * ddt)
         de2 = e2 * (1000.0 * event_dt * dt2 / (atom_t2 * atom_t2) - r2 * ddt)
+        damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
+            atom_damping, d_damping, event_dt, ddt, order
+        )
+        # Order zero is undamped, so the recovery term keeps the bare factor.
+        recovery, drecovery = 1.0 - e1, -de1
+        de1 = de1 * damp_z + e1 * ddamp_z
+        e1 = e1 * damp_z
+        de2 = de2 * damp_t + e2 * ddamp_t
+        e2 = e2 * damp_t
         off_phase = -2.0 * 3.141592653589793 * atom_b0 * event_dt
         doff_phase = -2.0 * 3.141592653589793 * (
             db0 * event_dt + atom_b0 * ddt
@@ -2142,9 +2321,9 @@ def _epg_jvp_kernel(
 
         old_zr = zr
         old_zi = zi
-        dzr = dzr * e1 + old_zr * de1 - tl.where(state == 0, de1, 0.0)
+        dzr = dzr * e1 + old_zr * de1 + tl.where(state == 0, drecovery, 0.0)
         dzi = dzi * e1 + old_zi * de1
-        zr = old_zr * e1 + tl.where(state == 0, 1.0 - e1, 0.0)
+        zr = old_zr * e1 + tl.where(state == 0, recovery, 0.0)
         zi = old_zi * e1
 
         event_action = tl.load(action + event).to(tl.int32)
@@ -2690,7 +2869,7 @@ class AdjointBuffers:
         # One dual accumulator per plane: value is the gradient w.r.t. the
         # tangent inputs, tangent the gradient w.r.t. the primal ones.
         self.tissue = [
-            torch.zeros(_TISSUE_COUNT * chunk, dtype=torch.float32, device=device)
+            torch.zeros(_TISSUE_PARAMETERS * chunk, dtype=torch.float32, device=device)
             for _ in range(2)
         ]
         self.flip = [torch.zeros_like(flip) for _ in range(2)]
@@ -2722,7 +2901,7 @@ class AdjointBuffers:
 
         Ordered to match ``event_gradients``: tangent plane first.
         """
-        rows = _TISSUE_COUNT
+        rows = _TISSUE_PARAMETERS
         return tuple(
             tuple(
                 self.tissue[plane][: rows * atom_count].view(rows, atom_count)[index]
@@ -2780,7 +2959,7 @@ def simulate_vjp_jvp_into(
     )
     grad_real.copy_(grad_output.real)
     grad_imag.copy_(grad_output.imag)
-    grad_tissue = [plane[: _TISSUE_COUNT * atom_count] for plane in buffers.tissue]
+    grad_tissue = [plane[: _TISSUE_PARAMETERS * atom_count] for plane in buffers.tissue]
     for plane in grad_tissue:
         plane.zero_()
     grad_flip, grad_duration, grad_phase = buffers.flip, buffers.duration, buffers.phase
