@@ -277,13 +277,22 @@ class ShimDefinition:
 
 @dataclass(frozen=True)
 class SequenceDescription:
-    """Event stream and RF resources for one sequence or subsequence."""
+    """Event stream and RF resources for one sequence or subsequence.
+
+    ``crusher_dephasing_rad`` is the dephasing the sequence's unbalanced
+    gradient winds across one voxel of ``voxel_size_m``, and it is what sets
+    the b-factor diffusion and flow are damped by. Only the ratio of the two
+    enters, and a dephasing of zero leaves both terms out however large the
+    diffusion coefficient is.
+    """
 
     subsequence_index: int
     tr_duration_us: Any
     events: tuple[SequenceEvent, ...]
     rf_definitions: dict[int, RfDefinition]
     shim_definitions: dict[int, ShimDefinition] = field(default_factory=dict)
+    crusher_dephasing_rad: float = 0.0
+    voxel_size_m: float = 1.0
 
     @property
     def adc_events(self) -> tuple[SequenceEvent, ...]:

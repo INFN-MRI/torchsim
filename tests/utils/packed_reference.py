@@ -53,10 +53,16 @@ def simulate_packed(
     torch.Tensor
         Complex signal of shape ``(voxels, recorded echoes)``.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, _diffusion = tissue
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping = tissue
     duration, kind, flip, phase, action, _output_index = events
     atom_count = t1.numel()
     shape = (atom_count, state_count)
+    # The dephasing order each state sits at, and the b-factor weights that
+    # follow from it: a state travelling from order l to l+1 over the interval
+    # accumulates the transverse weight, while a longitudinal state stays put.
+    order = torch.arange(state_count, dtype=torch.float32, device=t1.device)
+    longitudinal_weight = order.square()
+    transverse_weight = order.square() + order + 1.0 / 3.0
     fplus = torch.zeros(shape, dtype=torch.complex64, device=t1.device)
     fminus = torch.zeros_like(fplus)
     longitudinal = torch.zeros_like(fplus)
@@ -68,9 +74,13 @@ def simulate_packed(
         e1 = torch.exp(-(1000.0 / t1) * dt)
         e2 = torch.exp(-(1000.0 / t2) * dt)
         off = e2 * torch.exp(-2j * torch.pi * b0 * dt)
-        fplus = fplus * off[:, None]
-        fminus = fminus * off.conj()[:, None]
-        longitudinal = longitudinal * e1[:, None]
+        b_factor = (damping * dt)[:, None]
+        transverse_damping = torch.exp(-b_factor * transverse_weight[None, :])
+        longitudinal_damping = torch.exp(-b_factor * longitudinal_weight[None, :])
+        fplus = fplus * off[:, None] * transverse_damping
+        fminus = fminus * off.conj()[:, None] * transverse_damping
+        longitudinal = longitudinal * e1[:, None] * longitudinal_damping
+        # Order zero is undamped, so recovery is unaffected by diffusion.
         recovery = torch.zeros_like(longitudinal)
         recovery[:, 0] = 1.0 - e1
         longitudinal = longitudinal + recovery

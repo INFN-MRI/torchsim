@@ -29,6 +29,7 @@ from ._parameters import (
 from ._parameters import (
     TISSUE_COUNT as _TISSUE_COUNT,
 )
+from ._parameters import TISSUE_NAMES
 
 # A forward-mode call appends one tangent per differentiable input to the
 # packed buffers; the scalar arguments follow those.
@@ -100,6 +101,37 @@ def _across_slice(
     return tuple(spread), locations
 
 
+# The apparent diffusion coefficient is given in um**2/ms; the b-factor wants
+# it in m**2/s.
+_DIFFUSION_UNIT = 1e-9
+
+
+def damping_scale(description: SequenceDescription) -> float:
+    """What an apparent diffusion coefficient is multiplied by to give a rate.
+
+    Zero when the sequence declares no unbalanced gradient, which is what
+    leaves the damping out altogether.
+    """
+    dephasing = description.crusher_dephasing_rad / description.voxel_size_m
+    return dephasing * dephasing * _DIFFUSION_UNIT
+
+
+def _damping_rate(
+    tissue: tuple[torch.Tensor, ...], description: SequenceDescription
+) -> tuple[torch.Tensor, ...]:
+    """Fold the sequence's gradient geometry into the diffusion coefficient.
+
+    What the state machine needs of both is the single rate ``k0**2 * D`` that
+    multiplies an interval to give its b-factor, so combining them here keeps
+    the geometry out of the kernels entirely. The product is a plain multiply,
+    so a gradient with respect to the coefficient flows back through it, and a
+    sequence that declares no crusher leaves the buffer exactly zero.
+    """
+    scale = damping_scale(description)
+    index = TISSUE_NAMES.index("diffusion_um2_per_ms")
+    return (*tissue[:index], tissue[index] * scale, *tissue[index + 1 :])
+
+
 def simulate_native(
     policy_name: str,
     description: SequenceDescription,
@@ -130,6 +162,7 @@ def simulate_native(
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
+    tissue = _damping_rate(tissue, description)
     tissue, locations = _across_slice(tissue, slice_profile)
     threads = int(os.environ.get("TORCHSIM_NUM_THREADS", str(torch.get_num_threads())))
     signal = _NativeEpg.apply(

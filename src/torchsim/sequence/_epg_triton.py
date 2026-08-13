@@ -96,6 +96,22 @@ def _shift_real(
 
 
 @triton.jit
+def _damping(rate, dt, order):
+    """Longitudinal and transverse diffusion damping for one interval.
+
+    ``rate`` already carries the sequence's gradient geometry, so an interval's
+    b-factor is that rate times its duration. Order zero has no longitudinal
+    weight, which is what keeps the recovery term undamped.
+    """
+    b_factor = rate * dt
+    squared = order * order
+    return (
+        tl.exp(-b_factor * squared),
+        tl.exp(-b_factor * (squared + order + 0.3333333333333333)),
+    )
+
+
+@triton.jit
 def _complex_mul(a_real, a_imag, b_real, b_imag):
     return a_real * b_real - a_imag * b_imag, a_real * b_imag + a_imag * b_real
 
@@ -1532,15 +1548,21 @@ def _epg_real_kernel(
     )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
+    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    order = state.to(tl.float32)
 
     event_base = train * event_count
     for event in range(0, event_count):
         dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
         e1 = tl.exp(-rate1 * dt)
         e2 = tl.exp(-rate2 * dt)
-        plus *= e2
-        minus *= e2
-        longitudinal = longitudinal * e1 + tl.where(state == 0, 1.0 - e1, 0.0)
+        damp_z, damp_t = _damping(atom_damping, dt, order)
+        recovery = 1.0 - e1
+        plus *= e2 * damp_t
+        minus *= e2 * damp_t
+        longitudinal = longitudinal * (e1 * damp_z) + tl.where(
+            state == 0, recovery, 0.0
+        )
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
@@ -1829,12 +1851,18 @@ def _epg_kernel(
     atom_inversion = tl.load(
         inversion_efficiency + atom, mask=active_atom, other=1.0
     )
+    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    order = state.to(tl.float32)
 
     event_base = train * event_count
     for event in range(0, event_count):
         dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
         e1 = tl.exp(-(1000.0 / atom_t1) * dt)
         e2 = tl.exp(-(1000.0 / atom_t2) * dt)
+        damp_z, damp_t = _damping(atom_damping, dt, order)
+        recovery = 1.0 - e1
+        e1 = e1 * damp_z
+        e2 = e2 * damp_t
         off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt
         off_cos = tl.cos(off_phase)
         off_sin = tl.sin(off_phase)
@@ -1846,7 +1874,7 @@ def _epg_kernel(
         fminus_imag = e2 * (-old_real * off_sin + fminus_imag * off_cos)
         longitudinal_real *= e1
         longitudinal_imag *= e1
-        longitudinal_real += tl.where(state == 0, 1.0 - e1, 0.0)
+        longitudinal_real += tl.where(state == 0, recovery, 0.0)
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
