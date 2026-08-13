@@ -302,3 +302,88 @@ def test_partial_train_blocks_match_the_complex_kernel(trains):
             assert result[index].abs().max() == 0
             continue
         assert ((reference[index] - result[index]).abs().max() / magnitude) < 1e-4
+
+
+def _tissue_events(trains, echoes=20, atoms=64, b0_hz=0.0):
+    generator = torch.Generator().manual_seed(0)
+    flip = torch.deg2rad(
+        80.0 + 80.0 * torch.rand(trains, echoes, generator=generator)
+    )
+    packed = _pack_events(
+        "fse",
+        fse_description(
+            flip,
+            echo_spacing_s=ECHO_SPACING_S,
+            phases_rad=torch.pi / 2,
+            excitation_phase_rad=torch.pi / 2,
+        ),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    events = _buffers(packed)
+    tissue = TissueProperties(
+        t1_ms=torch.full((atoms,), 800.0),
+        t2_ms=torch.full((atoms,), 45.0),
+        b0_hz=torch.full((atoms,), b0_hz),
+        b1_phase_rad=torch.zeros(atoms),
+    )
+    prepared, _, _ = _prepare_tissue(tissue, "cpu")
+    prepared = tuple(v.to(torch.float32).contiguous() for v in prepared)
+    return events, prepared, packed.output_count
+
+
+def test_the_fast_path_is_chosen_without_being_asked():
+    """A caller should not have to know the subspace rule to benefit from it."""
+    from torchsim.sequence._accelerators import _auto_real_axis, _run_packed
+
+    events, tissue, count = _tissue_events(200)
+    assert _auto_real_axis(events, tissue) == 1
+    automatic = _run_packed(tissue, events, 10, count, 1)
+    complex_path = _run_packed(tissue, events, 10, count, 1, real_axis=-1)
+    scale = complex_path.abs().max()
+    assert ((automatic - complex_path).abs().max() / scale) < 1e-6
+
+
+def test_off_resonance_is_not_chosen():
+    from torchsim.sequence._accelerators import _auto_real_axis
+
+    events, tissue, _ = _tissue_events(200, b0_hz=15.0)
+    assert _auto_real_axis(events, tissue) is None
+
+
+def test_a_tiny_problem_skips_the_test_that_would_cost_more_than_it_saves():
+    from torchsim.sequence._accelerators import _auto_real_axis
+
+    events, tissue, _ = _tissue_events(1, atoms=2)
+    assert _auto_real_axis(events, tissue) is None
+
+
+@pytest.mark.parametrize("direction", [4, 5])
+def test_a_seed_that_leaves_the_subspace_is_not_chosen(direction):
+    """b1_phase and off-resonance seeds have no derivative in the real kernels.
+
+    The primal can sit in the subspace while the tangent leaves it, so the
+    verdict has to look at the seed as well; otherwise the fast path would
+    silently return zero for exactly the direction that was asked for.
+    """
+    from torchsim.sequence._accelerators import _auto_real_axis
+
+    events, tissue, _ = _tissue_events(200)
+    seed = tuple(
+        torch.ones_like(value) if index == direction else torch.zeros_like(value)
+        for index, value in enumerate(tissue)
+    )
+    phase_seed = torch.zeros_like(events[3])
+    assert _auto_real_axis(events, tissue, (seed[4], seed[5], phase_seed)) is None
+
+
+def test_an_rf_phase_seed_is_not_chosen():
+    from torchsim.sequence._accelerators import _auto_real_axis
+
+    events, tissue, _ = _tissue_events(200)
+    zeros = tuple(torch.zeros_like(value) for value in tissue)
+    assert _auto_real_axis(
+        events, tissue, (zeros[4], zeros[5], torch.ones_like(events[3]))
+    ) is None

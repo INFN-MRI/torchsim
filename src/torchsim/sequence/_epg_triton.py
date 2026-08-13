@@ -57,6 +57,315 @@ def _shift(
 
 
 @triton.jit
+def _shift_real(
+    plus,
+    minus,
+    scratch_plus,
+    scratch_minus,
+    state,
+    state_mask,
+    state_count: tl.constexpr,
+):
+    tl.store(scratch_plus + state, plus, mask=state_mask)
+    tl.store(scratch_minus + state, minus, mask=state_mask)
+    tl.debug_barrier()
+
+    shifted_plus = tl.load(
+        scratch_plus + state - 1,
+        mask=(state > 0) & state_mask,
+        other=0.0,
+    )
+    shifted_minus = tl.load(
+        scratch_minus + state + 1,
+        mask=(state + 1 < state_count) & state_mask,
+        other=0.0,
+    )
+    return tl.where(state == 0, -shifted_minus, shifted_plus), shifted_minus
+
+
+@triton.jit
+def _epg_real_kernel(
+    t1,
+    t2,
+    m0,
+    b1,
+    inversion_efficiency,
+    duration,
+    kind,
+    flip,
+    action,
+    output_index,
+    output_real,
+    output_imag,
+    scratch_plus,
+    scratch_minus,
+    atom_count,
+    train_count,
+    event_count,
+    output_count,
+    state_count: tl.constexpr,
+    block_states: tl.constexpr,
+    problems: tl.constexpr,
+):
+    problem = tl.program_id(0) * problems + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    active_atom = problem < train_count * atom_count
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    workspace_offset = problem * state_count
+    scratch_p = scratch_plus + workspace_offset
+    scratch_m = scratch_minus + workspace_offset
+
+    empty = tl.zeros((problems, block_states), tl.float32)
+    plus = empty
+    minus = empty
+    longitudinal = empty + tl.where(state == 0, 1.0, 0.0)
+
+    atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
+    atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
+    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = tl.load(
+        inversion_efficiency + atom, mask=active_atom, other=1.0
+    )
+    rate1 = 1000.0 / atom_t1
+    rate2 = 1000.0 / atom_t2
+
+    event_base = train * event_count
+    for event in range(0, event_count):
+        dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        e1 = tl.exp(-rate1 * dt)
+        e2 = tl.exp(-rate2 * dt)
+        plus *= e2
+        minus *= e2
+        longitudinal = longitudinal * e1 + tl.where(state == 0, 1.0 - e1, 0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        pre_shift = (event_action & 1) != 0
+        shifted_p, shifted_m = _shift_real(
+            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        plus = tl.where(pre_shift, shifted_p, plus)
+        minus = tl.where(pre_shift, shifted_m, minus)
+
+        event_kind = tl.load(kind + event)
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        longitudinal = tl.where(
+            invert, -atom_inversion * longitudinal, longitudinal
+        )
+
+        alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        alpha *= atom_b1
+        cosine = tl.cos(alpha)
+        sine = tl.sin(alpha)
+        cosine_half_sq = 0.5 * (1.0 + cosine)
+        sine_half_sq = 0.5 * (1.0 - cosine)
+        half_sine = 0.5 * sine
+        rotated_p = cosine_half_sq * plus + sine_half_sq * minus - sine * longitudinal
+        rotated_m = sine_half_sq * plus + cosine_half_sq * minus + sine * longitudinal
+        rotated_z = half_sine * plus - half_sine * minus + cosine * longitudinal
+
+        rotate = is_rf & ~is_inversion
+        plus = tl.where(rotate, rotated_p, plus)
+        minus = tl.where(rotate, rotated_m, minus)
+        longitudinal = tl.where(rotate, rotated_z, longitudinal)
+
+        record = ((event_action & 32) != 0) & (event_kind == 2)
+        out = tl.load(output_index + event)
+        output_offset = problem * output_count + out
+        output_mask = active_atom & (state == 0) & record & (out >= 0)
+        tl.store(output_real + output_offset + state, empty, mask=output_mask)
+        tl.store(output_imag + output_offset + state, atom_m0 * plus, mask=output_mask)
+
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        shifted_p, shifted_m = _shift_real(
+            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        plus = tl.where(do_shift, shifted_p, plus)
+        minus = tl.where(do_shift, shifted_m, minus)
+        spoil = (event_action & 8) != 0
+        plus = tl.where(spoil, 0.0, plus)
+        minus = tl.where(spoil, 0.0, minus)
+
+
+@triton.jit
+def _epg_real_jvp_kernel(
+    t1,
+    t2,
+    m0,
+    b1,
+    inversion_efficiency,
+    duration,
+    kind,
+    flip,
+    action,
+    output_index,
+    tangent_t1,
+    tangent_t2,
+    tangent_m0,
+    tangent_b1,
+    tangent_inversion_efficiency,
+    tangent_duration,
+    tangent_flip,
+    output_real,
+    output_imag,
+    scratch_plus,
+    scratch_minus,
+    atom_count,
+    train_count,
+    event_count,
+    output_count,
+    state_count: tl.constexpr,
+    block_states: tl.constexpr,
+    problems: tl.constexpr,
+):
+    problem = tl.program_id(0) * problems + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    active_atom = problem < train_count * atom_count
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    workspace_offset = problem * state_count
+    scratch_p = scratch_plus + workspace_offset
+    scratch_m = scratch_minus + workspace_offset
+
+    empty = tl.zeros((problems, block_states), tl.float32)
+    plus = empty
+    minus = empty
+    longitudinal = empty + tl.where(state == 0, 1.0, 0.0)
+    dot_plus = empty
+    dot_minus = empty
+    dot_longitudinal = empty
+
+    atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
+    atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
+    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = tl.load(
+        inversion_efficiency + atom, mask=active_atom, other=1.0
+    )
+    dot_t1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
+    dot_t2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
+    dot_m0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
+    dot_b1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
+    dot_inversion = tl.load(
+        tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
+    )
+    rate1 = 1000.0 / atom_t1
+    rate2 = 1000.0 / atom_t2
+
+    event_base = train * event_count
+    for event in range(0, event_count):
+        dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dot_dt = tl.load(
+            tangent_duration + event_base + event, mask=active_atom, other=0.0
+        )
+        e1 = tl.exp(-rate1 * dt)
+        e2 = tl.exp(-rate2 * dt)
+        dot_e1 = e1 * (1000.0 * dt * dot_t1 / (atom_t1 * atom_t1) - rate1 * dot_dt)
+        dot_e2 = e2 * (1000.0 * dt * dot_t2 / (atom_t2 * atom_t2) - rate2 * dot_dt)
+        dot_plus = dot_plus * e2 + plus * dot_e2
+        dot_minus = dot_minus * e2 + minus * dot_e2
+        dot_longitudinal = dot_longitudinal * e1 + longitudinal * dot_e1
+        dot_longitudinal -= tl.where(state == 0, dot_e1, 0.0)
+        plus *= e2
+        minus *= e2
+        longitudinal = longitudinal * e1 + tl.where(state == 0, 1.0 - e1, 0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        pre_shift = (event_action & 1) != 0
+        shifted_p, shifted_m = _shift_real(
+            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        shifted_dp, shifted_dm = _shift_real(
+            dot_plus, dot_minus, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        plus = tl.where(pre_shift, shifted_p, plus)
+        minus = tl.where(pre_shift, shifted_m, minus)
+        dot_plus = tl.where(pre_shift, shifted_dp, dot_plus)
+        dot_minus = tl.where(pre_shift, shifted_dm, dot_minus)
+
+        event_kind = tl.load(kind + event)
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        dot_longitudinal = tl.where(
+            invert,
+            -atom_inversion * dot_longitudinal - dot_inversion * longitudinal,
+            dot_longitudinal,
+        )
+        longitudinal = tl.where(
+            invert, -atom_inversion * longitudinal, longitudinal
+        )
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        dot_flip = tl.load(
+            tangent_flip + event_base + event, mask=active_atom, other=0.0
+        )
+        alpha = event_flip * atom_b1
+        dot_alpha = dot_flip * atom_b1 + event_flip * dot_b1
+        cosine = tl.cos(alpha)
+        sine = tl.sin(alpha)
+        cosine_half_sq = 0.5 * (1.0 + cosine)
+        sine_half_sq = 0.5 * (1.0 - cosine)
+        half_sine = 0.5 * sine
+        dot_cosine = -sine * dot_alpha
+        dot_sine = cosine * dot_alpha
+        dot_cosine_half_sq = -0.5 * sine * dot_alpha
+        dot_sine_half_sq = 0.5 * sine * dot_alpha
+        dot_half_sine = 0.5 * cosine * dot_alpha
+
+        rotated_dp = cosine_half_sq * dot_plus + dot_cosine_half_sq * plus
+        rotated_dp += sine_half_sq * dot_minus + dot_sine_half_sq * minus
+        rotated_dp -= sine * dot_longitudinal + dot_sine * longitudinal
+        rotated_dm = sine_half_sq * dot_plus + dot_sine_half_sq * plus
+        rotated_dm += cosine_half_sq * dot_minus + dot_cosine_half_sq * minus
+        rotated_dm += sine * dot_longitudinal + dot_sine * longitudinal
+        rotated_dz = half_sine * dot_plus + dot_half_sine * plus
+        rotated_dz -= half_sine * dot_minus + dot_half_sine * minus
+        rotated_dz += cosine * dot_longitudinal + dot_cosine * longitudinal
+        rotated_p = cosine_half_sq * plus + sine_half_sq * minus - sine * longitudinal
+        rotated_m = sine_half_sq * plus + cosine_half_sq * minus + sine * longitudinal
+        rotated_z = half_sine * plus - half_sine * minus + cosine * longitudinal
+
+        rotate = is_rf & ~is_inversion
+        plus = tl.where(rotate, rotated_p, plus)
+        minus = tl.where(rotate, rotated_m, minus)
+        longitudinal = tl.where(rotate, rotated_z, longitudinal)
+        dot_plus = tl.where(rotate, rotated_dp, dot_plus)
+        dot_minus = tl.where(rotate, rotated_dm, dot_minus)
+        dot_longitudinal = tl.where(rotate, rotated_dz, dot_longitudinal)
+
+        record = ((event_action & 32) != 0) & (event_kind == 2)
+        out = tl.load(output_index + event)
+        output_offset = problem * output_count + out
+        output_mask = active_atom & (state == 0) & record & (out >= 0)
+        signal_imag = dot_m0 * plus + atom_m0 * dot_plus
+        tl.store(output_real + output_offset + state, empty, mask=output_mask)
+        tl.store(output_imag + output_offset + state, signal_imag, mask=output_mask)
+
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        shifted_p, shifted_m = _shift_real(
+            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        shifted_dp, shifted_dm = _shift_real(
+            dot_plus, dot_minus, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        plus = tl.where(do_shift, shifted_p, plus)
+        minus = tl.where(do_shift, shifted_m, minus)
+        dot_plus = tl.where(do_shift, shifted_dp, dot_plus)
+        dot_minus = tl.where(do_shift, shifted_dm, dot_minus)
+        spoil = (event_action & 8) != 0
+        plus = tl.where(spoil, 0.0, plus)
+        minus = tl.where(spoil, 0.0, minus)
+        dot_plus = tl.where(spoil, 0.0, dot_plus)
+        dot_minus = tl.where(spoil, 0.0, dot_minus)
+
+
+@triton.jit
 def _epg_kernel(
     t1,
     t2,
@@ -83,24 +392,29 @@ def _epg_kernel(
     output_count,
     state_count: tl.constexpr,
     block_states: tl.constexpr,
+    problems: tl.constexpr,
 ):
-    atom = tl.program_id(0)
-    train = tl.program_id(1)
-    state = tl.arange(0, block_states)
-    state_mask = state < state_count
-    active_atom = atom < atom_count
-    workspace_offset = (train * atom_count + atom) * state_count
+    problem = tl.program_id(0) * problems + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    active_atom = problem < train_count * atom_count
+    # A partial block carries lanes with no problem behind them; they must not
+    # touch the scratch rows, which only exist for real problems.
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    workspace_offset = problem * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
     scratch_pi = scratch_fplus_imag + workspace_offset
     scratch_mr = scratch_fminus_real + workspace_offset
     scratch_mi = scratch_fminus_imag + workspace_offset
 
-    fplus_real = tl.zeros((block_states,), tl.float32)
-    fplus_imag = tl.zeros((block_states,), tl.float32)
-    fminus_real = tl.zeros((block_states,), tl.float32)
-    fminus_imag = tl.zeros((block_states,), tl.float32)
-    longitudinal_real = tl.where(state == 0, 1.0, 0.0)
-    longitudinal_imag = tl.zeros((block_states,), tl.float32)
+    empty = tl.zeros((problems, block_states), tl.float32)
+    fplus_real = empty
+    fplus_imag = empty
+    fminus_real = empty
+    fminus_imag = empty
+    longitudinal_real = empty + tl.where(state == 0, 1.0, 0.0)
+    longitudinal_imag = empty
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
@@ -114,7 +428,7 @@ def _epg_kernel(
 
     event_base = train * event_count
     for event in range(0, event_count):
-        dt = tl.load(duration + event_base + event)
+        dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
         e1 = tl.exp(-(1000.0 / atom_t1) * dt)
         e2 = tl.exp(-(1000.0 / atom_t2) * dt)
         off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt
@@ -161,8 +475,8 @@ def _epg_kernel(
             invert, -atom_inversion * longitudinal_imag, longitudinal_imag
         )
 
-        alpha = tl.load(flip + event_base + event) * atom_b1
-        phi = tl.load(phase + event_base + event) + atom_b1_phase
+        alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0) * atom_b1
+        phi = tl.load(phase + event_base + event, mask=active_atom, other=0.0) + atom_b1_phase
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
         cosine_half_sq = 0.5 * (1.0 + cosine)
@@ -209,13 +523,13 @@ def _epg_kernel(
         longitudinal_imag = tl.where(rotate, rotated_zi, longitudinal_imag)
 
         record = ((event_action & 32) != 0) & (event_kind == 2)
-        adc_phase = tl.load(phase + event_base + event)
+        adc_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
         adc_cos = tl.cos(adc_phase)
         adc_sin = tl.sin(adc_phase)
         signal_real = atom_m0 * (fplus_real * adc_cos + fplus_imag * adc_sin)
         signal_imag = atom_m0 * (fplus_imag * adc_cos - fplus_real * adc_sin)
         out = tl.load(output_index + event)
-        output_offset = (train * atom_count + atom) * output_count + out
+        output_offset = problem * output_count + out
         output_mask = active_atom & (state == 0) & record & (out >= 0)
         tl.store(output_real + output_offset + state, signal_real, mask=output_mask)
         tl.store(output_imag + output_offset + state, signal_imag, mask=output_mask)
@@ -282,30 +596,35 @@ def _epg_jvp_kernel(
     output_count,
     state_count: tl.constexpr,
     block_states: tl.constexpr,
+    problems: tl.constexpr,
 ):
-    atom = tl.program_id(0)
-    train = tl.program_id(1)
-    state = tl.arange(0, block_states)
-    state_mask = state < state_count
-    active_atom = atom < atom_count
-    workspace_offset = (train * atom_count + atom) * state_count
+    problem = tl.program_id(0) * problems + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    active_atom = problem < train_count * atom_count
+    # A partial block carries lanes with no problem behind them; they must not
+    # touch the scratch rows, which only exist for real problems.
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    workspace_offset = problem * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
     scratch_pi = scratch_fplus_imag + workspace_offset
     scratch_mr = scratch_fminus_real + workspace_offset
     scratch_mi = scratch_fminus_imag + workspace_offset
 
-    fpr = tl.zeros((block_states,), tl.float32)
-    fpi = tl.zeros((block_states,), tl.float32)
-    fmr = tl.zeros((block_states,), tl.float32)
-    fmi = tl.zeros((block_states,), tl.float32)
-    zr = tl.where(state == 0, 1.0, 0.0)
-    zi = tl.zeros((block_states,), tl.float32)
-    dfpr = tl.zeros((block_states,), tl.float32)
-    dfpi = tl.zeros((block_states,), tl.float32)
-    dfmr = tl.zeros((block_states,), tl.float32)
-    dfmi = tl.zeros((block_states,), tl.float32)
-    dzr = tl.zeros((block_states,), tl.float32)
-    dzi = tl.zeros((block_states,), tl.float32)
+    empty = tl.zeros((problems, block_states), tl.float32)
+    fpr = empty
+    fpi = empty
+    fmr = empty
+    fmi = empty
+    zr = empty + tl.where(state == 0, 1.0, 0.0)
+    zi = empty
+    dfpr = empty
+    dfpi = empty
+    dfmr = empty
+    dfmi = empty
+    dzr = empty
+    dzi = empty
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
@@ -328,8 +647,8 @@ def _epg_jvp_kernel(
 
     event_base = train * event_count
     for event in range(0, event_count):
-        event_dt = tl.load(duration + event_base + event)
-        ddt = tl.load(tangent_duration + event_base + event)
+        event_dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        ddt = tl.load(tangent_duration + event_base + event, mask=active_atom, other=0.0)
         r1 = 1000.0 / atom_t1
         r2 = 1000.0 / atom_t2
         e1 = tl.exp(-r1 * event_dt)
@@ -440,12 +759,12 @@ def _epg_jvp_kernel(
         zr = tl.where(invert, -atom_inversion * zr, zr)
         zi = tl.where(invert, -atom_inversion * zi, zi)
 
-        event_flip = tl.load(flip + event_base + event)
-        event_phase = tl.load(phase + event_base + event)
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
         alpha = event_flip * atom_b1
-        dalpha = tl.load(tangent_flip + event_base + event) * atom_b1 + event_flip * db1
+        dalpha = tl.load(tangent_flip + event_base + event, mask=active_atom, other=0.0) * atom_b1 + event_flip * db1
         phi = event_phase + atom_b1_phase
-        dphi = tl.load(tangent_phase + event_base + event) + db1_phase
+        dphi = tl.load(tangent_phase + event_base + event, mask=active_atom, other=0.0) + db1_phase
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
         dcosine = -sine * dalpha
@@ -534,7 +853,7 @@ def _epg_jvp_kernel(
         record = ((event_action & 32) != 0) & (event_kind == 2)
         adc_cos = tl.cos(event_phase)
         adc_sin = tl.sin(event_phase)
-        dadc_phase = tl.load(tangent_phase + event_base + event)
+        dadc_phase = tl.load(tangent_phase + event_base + event, mask=active_atom, other=0.0)
         dadc_cos = -adc_sin * dadc_phase
         dadc_sin = adc_cos * dadc_phase
         signal_real = dm0 * (fpr * adc_cos + fpi * adc_sin)
@@ -546,7 +865,7 @@ def _epg_jvp_kernel(
             dfpi * adc_cos + fpi * dadc_cos - dfpr * adc_sin - fpr * dadc_sin
         )
         out = tl.load(output_index + event)
-        output_offset = (train * atom_count + atom) * output_count + out
+        output_offset = problem * output_count + out
         output_mask = active_atom & (state == 0) & record & (out >= 0)
         tl.store(output_real + output_offset + state, signal_real, mask=output_mask)
         tl.store(output_imag + output_offset + state, signal_imag, mask=output_mask)
@@ -597,6 +916,21 @@ def _epg_jvp_kernel(
         dfmi = tl.where(spoil, 0.0, dfmi)
 
 
+def _problems_per_program(total: int, block_states: int) -> int:
+    """How many independent problems to carry on one program's lane axis.
+
+    A warp's lanes cost about the same whether they are used or not, so packing
+    several problems into one program is close to free -- but only while enough
+    programs remain to fill the device. Below that the packing starves the GPU
+    of parallelism and costs more than the lanes save.
+
+    The result indexes a ``tl.arange``, so it must be a power of two.
+    """
+    widest = max(1, 64 // block_states)
+    packed = max(1, min(widest, total // 1024))
+    return 1 << (packed.bit_length() - 1)
+
+
 def _output_shape(
     train_count: int, atom_count: int, output_count: int
 ) -> tuple[int, ...]:
@@ -606,14 +940,33 @@ def _output_shape(
     return (train_count, atom_count, output_count)
 
 
+def _scratch(
+    count: int, problems: int, device: torch.device, state_count: int
+) -> list[torch.Tensor]:
+    """Per-problem staging rows for the shift, one set per state plane.
+
+    The shift moves data between lanes of the state axis, which registers
+    cannot do, so it goes out to memory and back.
+    """
+    return [
+        torch.empty((problems, state_count), dtype=torch.float32, device=device)
+        for _ in range(count)
+    ]
+
+
 def simulate(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],
     *,
     state_count: int,
     output_count: int,
+    real_axis: int | None = None,
 ) -> torch.Tensor:
-    """Run a packed state machine on CUDA and return complex signals."""
+    """Run a packed state machine on CUDA and return complex signals.
+
+    ``real_axis`` of 1 selects the real-subspace kernel; see
+    ``real_subspace_axis`` for when that is legitimate.
+    """
     t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
     duration, kind, flip, phase, action, output_index = events
     atom_count = t1.numel()
@@ -625,15 +978,38 @@ def simulate(
         device=t1.device,
     )
     output_imag = torch.empty_like(output_real)
-    scratch = [
-        torch.empty(
-            (train_count * atom_count, state_count),
-            dtype=torch.float32,
-            device=t1.device,
+    total = train_count * atom_count
+    problems = _problems_per_program(total, block_states)
+    grid = (triton.cdiv(total, problems),)
+
+    if real_axis == 1:
+        _epg_real_kernel[grid](
+            t1,
+            t2,
+            m0,
+            b1,
+            inversion_efficiency,
+            duration,
+            kind,
+            flip,
+            action,
+            output_index,
+            output_real,
+            output_imag,
+            *_scratch(2, total, t1.device, state_count),
+            atom_count,
+            train_count,
+            kind.numel(),
+            output_count,
+            state_count=state_count,
+            block_states=block_states,
+            problems=problems,
+            num_warps=1,
         )
-        for _ in range(4)
-    ]
-    _epg_kernel[(atom_count, train_count)](
+        return torch.complex(output_real, output_imag)
+
+    scratch = _scratch(4, total, t1.device, state_count)
+    _epg_kernel[grid](
         t1,
         t2,
         m0,
@@ -656,7 +1032,8 @@ def simulate(
         output_count,
         state_count=state_count,
         block_states=block_states,
-        num_warps=max(1, min(4, block_states // 16)),
+        problems=problems,
+        num_warps=1,
     )
     return torch.complex(output_real, output_imag)
 
@@ -669,8 +1046,14 @@ def simulate_jvp(
     *,
     state_count: int,
     output_count: int,
+    real_axis: int | None = None,
 ) -> torch.Tensor:
-    """Run one fused state-machine Jacobian-vector product on CUDA."""
+    """Run one fused state-machine Jacobian-vector product on CUDA.
+
+    ``real_axis`` of 1 selects the real-subspace kernel, which produces no
+    derivative along ``b1_phase``, ``b0`` or the RF phase -- seeds along those
+    directions leave the subspace, so the caller must rule them out.
+    """
     t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
     duration, kind, flip, phase, action, output_index = events
     tangent_duration, tangent_flip, tangent_phase = event_tangents
@@ -683,15 +1066,45 @@ def simulate_jvp(
         device=t1.device,
     )
     output_imag = torch.empty_like(output_real)
-    scratch = [
-        torch.empty(
-            (train_count * atom_count, state_count),
-            dtype=torch.float32,
-            device=t1.device,
+    total = train_count * atom_count
+    problems = _problems_per_program(total, block_states)
+    grid = (triton.cdiv(total, problems),)
+
+    if real_axis == 1:
+        _epg_real_jvp_kernel[grid](
+            t1,
+            t2,
+            m0,
+            b1,
+            inversion_efficiency,
+            duration,
+            kind,
+            flip,
+            action,
+            output_index,
+            tissue_tangents[0],
+            tissue_tangents[1],
+            tissue_tangents[2],
+            tissue_tangents[3],
+            tissue_tangents[6],
+            tangent_duration,
+            tangent_flip,
+            output_real,
+            output_imag,
+            *_scratch(2, total, t1.device, state_count),
+            atom_count,
+            train_count,
+            kind.numel(),
+            output_count,
+            state_count=state_count,
+            block_states=block_states,
+            problems=problems,
+            num_warps=1,
         )
-        for _ in range(4)
-    ]
-    _epg_jvp_kernel[(atom_count, train_count)](
+        return torch.complex(output_real, output_imag)
+
+    scratch = _scratch(4, total, t1.device, state_count)
+    _epg_jvp_kernel[grid](
         *tissue,
         duration,
         kind,
@@ -712,6 +1125,7 @@ def simulate_jvp(
         output_count,
         state_count=state_count,
         block_states=block_states,
-        num_warps=max(1, min(4, block_states // 16)),
+        problems=problems,
+        num_warps=1,
     )
     return torch.complex(output_real, output_imag)

@@ -534,6 +534,17 @@ def _loop_vmap(
     return torch.stack(outputs), 0
 
 
+# Below this many (atom, train, event) triples the subspace test costs more
+# than the kernel it would speed up. The test is a fixed handful of reductions
+# either way, so where it breaks even follows how fast the device clears the
+# work behind it.
+_AUTO_DETECT_WORK = {"cpu": 5_000, "cuda": 1_000_000}
+_AUTO_DETECT_DEFAULT = 1_000_000
+
+# How far two RF phases may drift and still count as the same one.
+_PHASE_TOLERANCE = 1e-5
+
+
 def real_subspace_axis(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
@@ -549,34 +560,97 @@ def real_subspace_axis(
     the echo centers: the states between refocusing pulses are complex, so only
     the recorded samples look real.
     """
-    b1_phase, b0 = tissue[4], tissue[5]
-    if bool((b0 != 0).any()) or bool((b1_phase != 0).any()):
+    b0_free, phase_free, has_refocusing, has_excitation, spread, offset = _summarize(
+        events, tissue
+    )
+    if not (b0_free and phase_free and has_refocusing and has_excitation):
         return None
+    if spread > _PHASE_TOLERANCE:
+        return None
+    if offset < _PHASE_TOLERANCE or abs(offset - torch.pi) < _PHASE_TOLERANCE:
+        return 1
+    if abs(offset - torch.pi / 2) < _PHASE_TOLERANCE:
+        return 0
+    return None
 
+
+def _summarize(
+    events: tuple[torch.Tensor, ...],
+    tissue: tuple[torch.Tensor, ...],
+) -> tuple[bool, bool, bool, bool, float, float]:
+    """Reduce the subspace question to six numbers in one device round trip.
+
+    Each reduction read back on its own would be its own synchronization, and on
+    CUDA that latency dwarfs the reductions themselves -- enough to cost more
+    than the kernel the answer is meant to speed up. Stacking them means one
+    transfer whatever the device.
+
+    Returns whether off-resonance is absent, whether transmit phase is absent,
+    whether the sequence has refocusing and excitation pulses, how far the
+    per-role phases spread, and how far excitation sits from refocusing.
+    """
+    b1_phase, b0 = tissue[4], tissue[5]
     action, phase = events[4], events[3]
     refocusing = (action & _REFOCUSING) != 0
     excitation = (action & _EXCITATION) != 0
-    if not bool(refocusing.any()) or not bool(excitation.any()):
-        return None
-
     # Phases matter modulo pi: a half turn only flips the sign of the state.
-    refocus_phase = torch.remainder(phase[..., refocusing], torch.pi)
-    if not bool(torch.allclose(refocus_phase, refocus_phase.flatten()[:1], atol=1e-6)):
-        return None
-    excite_phase = torch.remainder(phase[..., excitation], torch.pi)
-    if not bool(torch.allclose(excite_phase, excite_phase.flatten()[:1], atol=1e-6)):
-        return None
+    wrapped = torch.remainder(phase, torch.pi)
+    infinity = torch.full_like(wrapped, float("inf"))
 
-    offset = torch.remainder(
-        excite_phase.flatten()[0] - refocus_phase.flatten()[0], torch.pi
+    def extent(selected: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        lowest = torch.where(selected, wrapped, infinity).min()
+        return lowest, torch.where(selected, wrapped, -infinity).max()
+
+    refocus_low, refocus_high = extent(refocusing)
+    excite_low, excite_high = extent(excitation)
+    summary = torch.stack(
+        (
+            (b0 == 0).all().to(wrapped.dtype),
+            (b1_phase == 0).all().to(wrapped.dtype),
+            refocusing.any().to(wrapped.dtype),
+            excitation.any().to(wrapped.dtype),
+            torch.maximum(refocus_high - refocus_low, excite_high - excite_low),
+            torch.remainder(excite_low - refocus_low, torch.pi),
+        )
+    ).tolist()
+    return (
+        bool(summary[0]),
+        bool(summary[1]),
+        bool(summary[2]),
+        bool(summary[3]),
+        summary[4],
+        summary[5],
     )
-    if bool(torch.isclose(offset, torch.zeros_like(offset), atol=1e-6)) or bool(
-        torch.isclose(offset, torch.full_like(offset, torch.pi), atol=1e-6)
-    ):
-        return 1
-    if bool(torch.isclose(offset, torch.full_like(offset, torch.pi / 2), atol=1e-6)):
-        return 0
-    return None
+
+
+def _auto_real_axis(
+    events: tuple[torch.Tensor, ...],
+    tissue: tuple[torch.Tensor, ...],
+    tangents: tuple[torch.Tensor, ...] = (),
+) -> int | None:
+    """The subspace verdict, when deciding it costs less than it saves.
+
+    Deciding scans the phase buffer, so it is cheap next to a kernel over many
+    atoms and states but not next to a small one, and where that line falls
+    depends on the device -- see ``_AUTO_DETECT_WORK``. Below it the complex
+    kernel is simply the faster answer.
+
+    ``tangents`` are the forward-mode directions, if any. A seed along
+    off-resonance, transmit phase or RF phase leaves the subspace however real
+    the primal is, and the real kernels do not produce those derivatives, so
+    their presence rules the fast path out.
+    """
+    work = int(tissue[0].numel()) * _train_count(events) * int(events[1].numel())
+    device = tissue[0].device.type
+    if work < _AUTO_DETECT_WORK.get(device, _AUTO_DETECT_DEFAULT):
+        return None
+    if tangents:
+        seeded = torch.stack(
+            [(direction != 0).any() for direction in tangents]
+        ).any()
+        if bool(seeded):
+            return None
+    return real_subspace_axis(events, tissue)
 
 
 def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
@@ -634,9 +708,11 @@ def _run_packed(
 ) -> torch.Tensor:
     """Run the forward state machine.
 
-    ``real_axis`` opts into the real-subspace kernel; pass what
-    :func:`real_subspace_axis` returned for these buffers, or ``None``.
+    ``real_axis`` selects the real-subspace kernel. Leave it ``None`` and the
+    verdict is worked out here; pass a value to overrule that.
     """
+    if real_axis is None:
+        real_axis = _auto_real_axis(events, tissue)
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate
 
@@ -645,6 +721,7 @@ def _run_packed(
             events,
             state_count=state_count,
             output_count=output_count,
+            real_axis=real_axis,
         )
     from torchsim import _epg_cpu
 
@@ -786,6 +863,14 @@ def _run_packed_jvp(
     threads: int,
     real_axis: int | None = None,
 ) -> torch.Tensor:
+    if real_axis is None:
+        # b1_phase, b0 and RF phase are the directions that leave the subspace,
+        # and the real kernels do not produce derivatives along them.
+        real_axis = _auto_real_axis(
+            events,
+            tissue,
+            (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
+        )
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate_jvp
 
@@ -796,6 +881,7 @@ def _run_packed_jvp(
             event_tangents,
             state_count=state_count,
             output_count=output_count,
+            real_axis=real_axis,
         )
     from torchsim import _epg_cpu
 

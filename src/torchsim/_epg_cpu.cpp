@@ -13,6 +13,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(__linux__)
+#include <sched.h>
+#endif
+
 namespace {
 
 constexpr std::uint8_t PRE_SHIFT = 1;
@@ -101,6 +105,24 @@ private:
     unsigned int outstanding_ = 0;
 };
 
+// The processors this process may actually run on, which is not the same as the
+// ones the machine has: a container or a taskset narrows the CPU set without
+// changing what hardware_concurrency reports, and workers placed outside that
+// set only contend for the ones inside it.
+inline unsigned int usable_processors() {
+#if defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+        const int usable = CPU_COUNT(&set);
+        if (usable > 0) {
+            return static_cast<unsigned int>(usable);
+        }
+    }
+#endif
+    return std::max(1U, std::thread::hardware_concurrency());
+}
+
 // Even from a pool a worker has to be worth waking, so a problem that cannot
 // give every slot a few work items runs faster with fewer slots. An explicit
 // request is honoured as given, capped only by the work available.
@@ -111,9 +133,7 @@ inline unsigned int worker_count(
 ) {
     const std::int64_t available = requested > 0
         ? static_cast<std::int64_t>(requested)
-        : std::max<std::int64_t>(
-              1, static_cast<std::int64_t>(std::thread::hardware_concurrency())
-          );
+        : static_cast<std::int64_t>(usable_processors());
     const std::int64_t affordable = requested > 0
         ? work_count
         : work_count / MIN_WORK_PER_THREAD;
