@@ -5,7 +5,11 @@ import torch
 
 from torchsim import FSE, TissueProperties, fse_description
 from torchsim.sequence._accelerators import _pack_events, _run_packed, _run_packed_vjp
+from torchsim.sequence._parameters import TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue
+
+# Where duration, flip and phase land in a gradient tuple.
+_EVENT_GRADIENTS = (TISSUE_COUNT, TISSUE_COUNT + 1, TISSUE_COUNT + 2)
 
 ECHO_SPACING_S = 5e-3
 PHASES_RAD = torch.pi / 2
@@ -113,9 +117,9 @@ def test_tissue_gradients_sum_over_trains():
         prepared, batched, seed, state_count=10, output_count=outputs, threads=1
     )
 
-    for index in range(7):  # tissue gradients
+    for index in range(TISSUE_COUNT):  # tissue gradients
         assert torch.equal(fused[index], sum(g[index] for g in per_train))
-    for index in (7, 8, 9):  # duration, flip, phase stay per train
+    for index in _EVENT_GRADIENTS:  # duration, flip, phase stay per train
         assert torch.equal(fused[index], torch.stack([g[index] for g in per_train]))
 
 
@@ -226,7 +230,7 @@ def test_event_gradients_do_not_depend_on_the_worker_count(threads):
     """
     expected = _second_order(1)
     actual = _second_order(threads)
-    for index in (7, 8, 9):  # duration, flip, phase
+    for index in _EVENT_GRADIENTS:  # duration, flip, phase
         assert torch.equal(expected[index], actual[index])
 
 
@@ -239,7 +243,7 @@ def test_tissue_gradients_survive_the_worker_count(threads):
     """
     expected = _second_order(1)
     actual = _second_order(threads)
-    for index in range(7):
+    for index in range(TISSUE_COUNT):
         scale = expected[index].abs().max()
         if scale == 0:
             assert actual[index].abs().max() == 0, index
@@ -264,7 +268,7 @@ def test_workers_are_reusable_across_concurrent_callers():
             actual = _second_order(6)
             if any(
                 not torch.equal(expected[index], actual[index])
-                for index in (7, 8, 9)
+                for index in _EVENT_GRADIENTS
             ):
                 mismatches.append(1)
 

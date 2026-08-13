@@ -24,6 +24,9 @@ from ._parameters import (
     SEED_INPUT as _SEED_INPUT,
 )
 from ._parameters import (
+    OUTSIDE_THE_SUBSPACE as _OUTSIDE_THE_SUBSPACE,
+)
+from ._parameters import (
     TISSUE_COUNT as _TISSUE_COUNT,
 )
 
@@ -424,6 +427,7 @@ class _NativeEpg(torch.autograd.Function):
         b1_phase: torch.Tensor,
         b0: torch.Tensor,
         inversion_efficiency: torch.Tensor,
+        diffusion: torch.Tensor,
         duration: torch.Tensor,
         kind: torch.Tensor,
         flip: torch.Tensor,
@@ -434,7 +438,7 @@ class _NativeEpg(torch.autograd.Function):
         output_count: int,
         threads: int,
     ) -> torch.Tensor:
-        tissue = (t1, t2, m0, b1, b1_phase, b0, inversion_efficiency)
+        tissue = (t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion)
         events = (duration, kind, flip, phase, action, output_index)
         return _run_packed(tissue, events, state_count, output_count, threads)
 
@@ -759,10 +763,7 @@ def _auto_real_axis(
     return real_subspace_axis(events, tissue)
 
 
-# Where the differentiable-input order carries the three gradients a real
-# adjoint leaves at zero: transmit phase, off-resonance and RF phase all point
-# out of the subspace.
-_OUTSIDE_THE_SUBSPACE = (4, 5, 9)
+
 
 
 def _auto_real_axis_adjoint(
@@ -953,7 +954,7 @@ def _combine_shards(
     combined = []
     for index, pieces in enumerate(zip(*parts, strict=True)):
         moved = [piece.to(home) for piece in pieces]
-        if index < 7:
+        if index < _TISSUE_COUNT:
             combined.append(torch.stack(moved).sum(dim=0))
         else:
             combined.append(torch.cat(moved))
@@ -1254,7 +1255,7 @@ class _Lane:
         output_count: int,
         state_count: int,
         real_axis: int | None,
-        voxel_inputs: int = 7,
+        voxel_inputs: int = _TISSUE_COUNT,
     ) -> None:
         self.device = device
         self.stream = torch.cuda.Stream(device=device)
@@ -1362,7 +1363,7 @@ def _offload_plan(
     output_count: int,
     state_count: int,
     real_axis: int | None,
-    voxel_inputs: int = 7,
+    voxel_inputs: int = _TISSUE_COUNT,
 ) -> tuple[int, dict[torch.device, tuple[torch.Tensor, ...]], list[_Lane]]:
     """Chunk width, the events replicated per device, and the lanes."""
     train_count = _train_count(events)
@@ -1478,7 +1479,7 @@ def _run_offloaded_jvp(
         output_count,
         state_count,
         real_axis,
-        voxel_inputs=14,
+        voxel_inputs=2 * _TISSUE_COUNT,
     )
     seeds = {
         device: _to_device(event_tangents, device) for device in plan.devices
@@ -1493,7 +1494,7 @@ def _run_offloaded_jvp(
         simulate_jvp_into(
             loaded[:_TISSUE_COUNT],
             per_device[lane.device],
-            loaded[7:],
+            loaded[_TISSUE_COUNT:],
             seeds[lane.device],
             real,
             imag,
@@ -1542,13 +1543,17 @@ def _run_offloaded_vjp_jvp(
 
     # Pinned, so a chunk's rows go back asynchronously and the loop runs on.
     tissue_grads = [
-        [torch.empty(voxels, dtype=torch.float32, pin_memory=True) for _ in range(_TISSUE_COUNT)]
+        [
+            torch.empty(voxels, dtype=torch.float32, pin_memory=True)
+            for _ in range(_TISSUE_COUNT)
+        ]
         for _ in range(2)
     ]
 
     per_device = {device: _to_device(events, device) for device in plan.devices}
     seeds = {
-        device: _to_device(tangents[7:], device) for device in plan.devices
+        device: _to_device(tangents[_TISSUE_COUNT:], device)
+        for device in plan.devices
     }
     lanes = [
         _Lane(
@@ -1558,7 +1563,7 @@ def _run_offloaded_vjp_jvp(
             output_count,
             state_count,
             real_axis,
-            voxel_inputs=14,
+            voxel_inputs=2 * _TISSUE_COUNT,
         )
         for device in plan.devices
         for _ in range(plan.lanes)
@@ -1581,7 +1586,7 @@ def _run_offloaded_vjp_jvp(
         voxel_grads = simulate_vjp_jvp_into(
             loaded[:_TISSUE_COUNT],
             per_device[lane.device],
-            (*loaded[7:], *seeds[lane.device]),
+            (*loaded[_TISSUE_COUNT:], *seeds[lane.device]),
             cotangent,
             lane.adjoint,
             state_count=state_count,
@@ -1871,7 +1876,7 @@ def _run_packed_vjp_jvp(
                     _shard_events(events, begin, end, device),
                     (
                         *_to_device(tangents[:_TISSUE_COUNT], device),
-                        *_shard_event_tangents(tangents[7:], begin, end, device),
+                        *_shard_event_tangents(tangents[_TISSUE_COUNT:], begin, end, device),
                     ),
                     grad_output[begin:end].contiguous().to(device),
                     state_count=state_count,

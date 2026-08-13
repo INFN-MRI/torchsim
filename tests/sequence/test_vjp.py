@@ -19,22 +19,12 @@ from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed_vjp,
 )
+from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue
 from utils.packed_reference import simulate_packed
 
-# (t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, duration, flip, phase)
-PARAMETER_NAMES = [
-    "t1",
-    "t2",
-    "m0",
-    "b1",
-    "b1_phase",
-    "b0",
-    "inversion_efficiency",
-    "duration",
-    "flip",
-    "phase",
-]
+# Gradient tuples arrive in the packing order, so name them from the same place.
+PARAMETER_NAMES = list(FLOAT_NAMES)
 ECHOES = 6
 
 
@@ -268,8 +258,16 @@ def _forward_over_reverse(route: str):
     tangents = tuple(torch.ones_like(value) for value in inputs)
 
     def simulate(*values):
-        rebuilt = (*values[:7], values[7], events[1], values[8], *events[3:])
-        return _route(route, rebuilt[:7], rebuilt[7:], output_count, state_count)
+        # The tissue properties, then duration, the untouched kind buffer, and
+        # flip, followed by the rest of the packed events.
+        tissue_values = values[:TISSUE_COUNT]
+        rebuilt = (
+            values[TISSUE_COUNT],
+            events[1],
+            values[TISSUE_COUNT + 1],
+            *events[3:],
+        )
+        return _route(route, tissue_values, rebuilt, output_count, state_count)
 
     _signal, derivative = torch.func.jvp(simulate, inputs, tangents)
     loss = derivative.abs().square().sum()
@@ -282,7 +280,7 @@ def test_forward_over_reverse_matches_the_reference() -> None:
     fused_loss, fused = _forward_over_reverse("kernel")
 
     assert torch.allclose(reference_loss, fused_loss, rtol=1e-5)
-    _agree(reference, fused, PARAMETER_NAMES[:9])
+    _agree(reference, fused, PARAMETER_NAMES[:-1])
 
 
 def test_forward_over_reverse_is_deterministic() -> None:

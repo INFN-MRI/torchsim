@@ -39,8 +39,7 @@ def simulate_packed(
     Parameters
     ----------
     tissue
-        ``(t1, t2, m0, b1, b1_phase, b0, inversion_efficiency)``, one entry per
-        voxel.
+        The prepared tissue properties in packing order, one entry per voxel.
     events
         ``(duration, kind, flip, phase, action, output_index)``, one entry per
         event, for a single train.
@@ -54,7 +53,7 @@ def simulate_packed(
     torch.Tensor
         Complex signal of shape ``(voxels, recorded echoes)``.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, _diffusion = tissue
     duration, kind, flip, phase, action, _output_index = events
     atom_count = t1.numel()
     shape = (atom_count, state_count)

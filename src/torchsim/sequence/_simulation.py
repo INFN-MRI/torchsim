@@ -45,7 +45,10 @@ class TissueProperties:
     """Single-pool tissue and transmit-field properties.
 
     Values may be scalars or broadcastable tensors. Relaxation times use
-    milliseconds; off-resonance uses Hz.
+    milliseconds; off-resonance uses Hz. The apparent diffusion coefficient
+    uses um**2/ms, so free water at body temperature is about 3; it damps the
+    states only where the sequence also declares the gradient that dephases
+    them, and costs nothing at its default of zero.
     """
 
     t1_ms: Any
@@ -55,6 +58,7 @@ class TissueProperties:
     b1_phase_rad: Any = 0.0
     b0_hz: Any = 0.0
     inversion_efficiency: Any = 1.0
+    diffusion_um2_per_ms: Any = 0.0
 
 
 @dataclass(frozen=True)
@@ -146,7 +150,7 @@ class EpgSimulator:
             raise ValueError("record must be 'all', 'acquired', or 'echo'")
 
         prepared, output_shape, target_device = _prepare_tissue(tissue, device)
-        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = prepared
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, _diffusion = prepared
 
         minimum_states = 1 + repetitions * self.shifts_per_repetition(description)
         if nstates is None:

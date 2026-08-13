@@ -28,12 +28,30 @@ from ..sequence._accelerators import (
     real_subspace_axis,
 )
 from ..sequence._builders import fse_description
+from ..sequence._parameters import TISSUE_COUNT as _TISSUE_COUNT
+from ..sequence._parameters import TISSUE_NAMES as _TISSUE_NAMES
 from ..sequence._simulation import TissueProperties, _prepare_tissue
 
 # Position of each differentiable buffer in the kernel gradient ordering
 # ``(t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, duration, flip, phase)``.
 _T2 = 1
-_DURATION, _FLIP, _PHASE = 7, 8, 9
+# Where the float event gradients sit in a gradient tuple, after the tissue.
+_DURATION, _FLIP, _PHASE = (
+    _TISSUE_COUNT,
+    _TISSUE_COUNT + 1,
+    _TISSUE_COUNT + 2,
+)
+# This function's own inputs: the packed events, then the tissue properties.
+_EVENT_COUNT = 6
+_TISSUE_END = _EVENT_COUNT + _TISSUE_COUNT
+# Those same inputs, for the three directions a real kernel cannot follow:
+# the RF phase among the events, transmit phase and off-resonance among the
+# tissue properties.
+_OUTSIDE_THE_SUBSPACE_INPUTS = (
+    3,
+    _EVENT_COUNT + _TISSUE_NAMES.index("b1_phase_rad"),
+    _EVENT_COUNT + _TISSUE_NAMES.index("b0_hz"),
+)
 
 
 class FseT2Plan:
@@ -230,35 +248,35 @@ class _T2Jacobian(torch.autograd.Function):
 
     @staticmethod
     def forward(*inputs: Any) -> torch.Tensor:
-        events, tissue = inputs[:6], inputs[6:13]
-        tissue_tangents, event_tangents = inputs[13], inputs[14]
+        events, tissue = inputs[:_EVENT_COUNT], inputs[_EVENT_COUNT:_TISSUE_END]
+        tissue_tangents, event_tangents = inputs[_TISSUE_END], inputs[_TISSUE_END + 1]
         return _run_packed_jvp(
             tissue,
             events,
             tissue_tangents,
             event_tangents,
-            inputs[15],
-            inputs[16],
-            inputs[17],
-            inputs[18],
+            inputs[_TISSUE_END + 2],
+            inputs[_TISSUE_END + 3],
+            inputs[_TISSUE_END + 4],
+            inputs[_TISSUE_END + 5],
         )
 
     @staticmethod
     def setup_context(ctx: Any, inputs: tuple[Any, ...], _output: torch.Tensor) -> None:
-        ctx.save_for_backward(*inputs[:13])
-        ctx.tangents = (*inputs[13], *inputs[14])
-        ctx.state_count = inputs[15]
-        ctx.output_count = inputs[16]
-        ctx.threads = inputs[17]
-        ctx.real_axis = inputs[18]
+        ctx.save_for_backward(*inputs[:_TISSUE_END])
+        ctx.tangents = (*inputs[_TISSUE_END], *inputs[_TISSUE_END + 1])
+        ctx.state_count = inputs[_TISSUE_END + 2]
+        ctx.output_count = inputs[_TISSUE_END + 3]
+        ctx.threads = inputs[_TISSUE_END + 4]
+        ctx.real_axis = inputs[_TISSUE_END + 5]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
-        events, tissue = saved[:6], saved[6:13]
+        events, tissue = saved[:_EVENT_COUNT], saved[_EVENT_COUNT:_TISSUE_END]
         tangents = ctx.tangents
         if ctx.real_axis == 1 and any(
-            ctx.needs_input_grad[index] for index in (3, 10, 11)
+            ctx.needs_input_grad[index] for index in _OUTSIDE_THE_SUBSPACE_INPUTS
         ):
             raise RuntimeError(
                 "the real-subspace kernel cannot differentiate RF phase, "
@@ -281,7 +299,7 @@ class _T2Jacobian(torch.autograd.Function):
             primal_grads[_PHASE],
             None,  # action
             None,  # output_index
-            *primal_grads[:7],
+            *primal_grads[:_TISSUE_COUNT],
         ]
         result = [
             gradient if needed else None

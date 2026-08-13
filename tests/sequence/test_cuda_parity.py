@@ -8,6 +8,7 @@ flip angles for every train, which is a wrong answer rather than an error.
 import pytest
 import torch
 
+from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed,
@@ -368,7 +369,7 @@ def test_the_directions_outside_the_subspace_stay_zero():
     gradients = _second_order("cuda", 4, 3)
 
     for side in gradients:
-        for index in (4, 5, 9):
+        for index in OUTSIDE_THE_SUBSPACE:
             assert side[index].abs().max() == 0
 
 
@@ -452,7 +453,7 @@ def test_the_complex_second_order_kernel_matches_the_cpu_kernel(seed_index):
     actual = _complex_second_order("cuda", 4, 3, seed_index=seed_index)
 
     # b1_phase, b0 and phase separate this from the real-subspace kernel.
-    for index in (4, 5, 9):
+    for index in OUTSIDE_THE_SUBSPACE:
         assert expected[0][index].abs().max() > 0
     assert _worst_disagreement(expected, actual) < 1e-4
 
@@ -486,7 +487,7 @@ def test_an_echo_train_has_no_off_resonance_gradient():
     """
     events, prepared, count = _real_case(4, "cpu", atoms=3)
     signal = _run_packed(prepared, events, STATES, count, 1, real_axis=-1)
-    shifted = (*prepared[:5], prepared[5] + 300.0, prepared[6])
+    shifted = (*prepared[:5], prepared[5] + 300.0, *prepared[6:])
     detuned = _run_packed(shifted, events, STATES, count, 1, real_axis=-1)
 
     assert ((signal - detuned).abs().max() / signal.abs().max()) < 1e-5

@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from torchsim import FSE, fse_description
+from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._accelerators import _pack_events, real_subspace_axis
 from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
 
@@ -237,7 +238,7 @@ def test_real_second_order_kernel_reproduces_the_complex_one():
         assert ((expected[index] - actual[index]).abs().max() / scale) < 1e-5
 
     # b1_phase, b0 and RF phase leave the subspace and are not produced.
-    for index in (4, 5, 9):
+    for index in OUTSIDE_THE_SUBSPACE:
         assert actual[index].abs().max() == 0
 
 
@@ -434,16 +435,24 @@ def _adjoint_case(trains):
 
 
 def _every_gradient():
-    return tuple(True for _ in range(10))
+    return tuple(True for _ in FLOAT_NAMES)
 
 
-def _only(*positions):
-    return tuple(index in positions for index in range(10))
+def _only(*names):
+    """A mask over the differentiable inputs, named rather than positional."""
+    positions = {
+        name if isinstance(name, int) else FLOAT_NAMES.index(name)
+        for name in names
+    }
+    return tuple(index in positions for index in range(len(FLOAT_NAMES)))
+
+
+_FLIP = FLOAT_NAMES.index("flip")
 
 
 @pytest.mark.parametrize(
     "wanted, expected",
-    [(None, None), (_every_gradient(), None), (_only(1, 8), 1)],
+    [(None, None), (_every_gradient(), None), (_only("t2_ms", "flip"), 1)],
     ids=["unsaid", "all ten", "t2 and flip"],
 )
 def test_the_adjoint_verdict_follows_what_the_caller_will_read(wanted, expected):
@@ -455,7 +464,9 @@ def test_the_adjoint_verdict_follows_what_the_caller_will_read(wanted, expected)
     assert _auto_real_axis_adjoint(events, tissue, 10, tangents, wanted) == expected
 
 
-@pytest.mark.parametrize("position", [4, 5, 9], ids=["b1_phase", "b0", "phase"])
+@pytest.mark.parametrize(
+    "position", OUTSIDE_THE_SUBSPACE, ids=["b1_phase", "b0", "phase"]
+)
 def test_wanting_a_gradient_outside_the_subspace_keeps_the_complex_kernel(position):
     """Those three are genuinely non-zero; returning zero would be wrong."""
     from torchsim.sequence._accelerators import (
@@ -464,7 +475,7 @@ def test_wanting_a_gradient_outside_the_subspace_keeps_the_complex_kernel(positi
     )
 
     events, tissue, tangents, cotangent, count = _adjoint_case(_trains_worth(8))
-    wanted = _only(8, position)
+    wanted = _only(_FLIP, position)
 
     assert _auto_real_axis_adjoint(events, tissue, 10, tangents, wanted) is None
 
@@ -480,7 +491,7 @@ def test_an_adjoint_that_stays_in_the_subspace_reaches_the_real_kernel():
 
     events, tissue, tangents, cotangent, count = _adjoint_case(_trains_worth(8))
     shared = (tissue, events, tangents, cotangent, 10, count, 1)
-    automatic, _ = _run_packed_vjp_jvp(*shared, wanted=_only(1, 8))
+    automatic, _ = _run_packed_vjp_jvp(*shared, wanted=_only("t2_ms", "flip"))
     real, _ = _run_packed_vjp_jvp(*shared, real_axis=1)
 
     for chosen, reference in zip(automatic, real, strict=True):

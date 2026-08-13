@@ -16,6 +16,7 @@ import pytest
 import torch
 
 from torchsim.sequence import offload
+from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._accelerators import (
     _Lane,
     _Offload,
@@ -388,7 +389,7 @@ def test_a_streamed_complex_adjoint_matches_the_cpu_run(budget, trains):
     actual = _adjoint(events, prepared, outputs, voxels, trains, -1, budget)
 
     # The gradients the real-subspace kernel cannot produce, checked here.
-    for index in (4, 5, 9):
+    for index in OUTSIDE_THE_SUBSPACE:
         assert expected[0][index].abs().max() > 0
     assert _compare_gradients(expected, actual) < 1e-4
 

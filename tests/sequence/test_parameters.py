@@ -81,8 +81,15 @@ def test_only_the_integer_buffers_are_undifferentiable():
 
 
 def test_the_gradient_order_matches_what_the_adjoint_returns():
-    """``_run_packed_vjp`` documents this order; the table has to produce it."""
-    assert FLOAT_INPUTS == (0, 1, 2, 3, 4, 5, 6, 7, 9, 10)
+    """Every tissue property, then the float event buffers, skipping ``kind``."""
+    tissue = tuple(range(TISSUE_COUNT))
+    events = tuple(
+        TISSUE_COUNT + offset
+        for offset, parameter in enumerate(EVENT_PARAMETERS)
+        if parameter.differentiable
+    )
+
+    assert FLOAT_INPUTS == (*tissue, *events)
 
 
 def test_autograd_asks_for_exactly_the_differentiable_inputs():

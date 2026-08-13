@@ -54,6 +54,7 @@ TISSUE_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("b1_phase_rad", identity=0.0, feature="B1_PHASE"),
     Parameter("b0_hz", identity=0.0, feature="B0"),
     Parameter("inversion_efficiency", identity=1.0, feature="INVERSION"),
+    Parameter("diffusion_um2_per_ms", identity=0.0, feature="DIFFUSION"),
 )
 
 EVENT_PARAMETERS: tuple[Parameter, ...] = (
@@ -89,6 +90,13 @@ TISSUE_NAMES: tuple[str, ...] = tuple(
 )
 FLOAT_NAMES: tuple[str, ...] = tuple(
     PACKED_PARAMETERS[index].name for index in FLOAT_INPUTS
+)
+
+# Where the differentiable-input order carries the three gradients a real
+# adjoint leaves at zero: transmit phase, off-resonance and RF phase all point
+# out of the subspace.
+OUTSIDE_THE_SUBSPACE: tuple[int, ...] = tuple(
+    FLOAT_NAMES.index(name) for name in ("b1_phase_rad", "b0_hz", "phase")
 )
 
 def at_identity(parameter: Parameter, value: Any) -> bool:

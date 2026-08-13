@@ -10,6 +10,8 @@ from ._accelerators import _train_count
 import triton
 import triton.language as tl
 
+from ._parameters import TISSUE_COUNT as _TISSUE_COUNT
+
 
 @triton.jit
 def _shift(
@@ -257,6 +259,7 @@ def _epg_vjp_jvp_kernel(
     b1_phase,
     b0,
     inversion_efficiency,
+    diffusion,
     duration,
     kind,
     flip,
@@ -270,6 +273,7 @@ def _epg_vjp_jvp_kernel(
     dot_b1_phase,
     dot_b0,
     dot_inversion_efficiency,
+    dot_diffusion,
     dot_duration,
     dot_flip,
     dot_phase,
@@ -940,6 +944,7 @@ def _epg_real_vjp_jvp_kernel(
     m0,
     b1,
     inversion_efficiency,
+    diffusion,
     duration,
     kind,
     flip,
@@ -950,6 +955,7 @@ def _epg_real_vjp_jvp_kernel(
     dot_m0,
     dot_b1,
     dot_inversion_efficiency,
+    dot_diffusion,
     dot_duration,
     dot_flip,
     grad_output_imag,
@@ -1484,6 +1490,7 @@ def _epg_real_kernel(
     m0,
     b1,
     inversion_efficiency,
+    diffusion,
     duration,
     kind,
     flip,
@@ -1592,6 +1599,7 @@ def _epg_real_jvp_kernel(
     m0,
     b1,
     inversion_efficiency,
+    diffusion,
     duration,
     kind,
     flip,
@@ -1602,6 +1610,7 @@ def _epg_real_jvp_kernel(
     tangent_m0,
     tangent_b1,
     tangent_inversion_efficiency,
+    tangent_diffusion,
     tangent_duration,
     tangent_flip,
     output_real,
@@ -1768,6 +1777,7 @@ def _epg_kernel(
     b1_phase,
     b0,
     inversion_efficiency,
+    diffusion,
     duration,
     kind,
     flip,
@@ -1962,6 +1972,7 @@ def _epg_jvp_kernel(
     b1_phase,
     b0,
     inversion_efficiency,
+    diffusion,
     duration,
     kind,
     flip,
@@ -1975,6 +1986,7 @@ def _epg_jvp_kernel(
     tangent_b1_phase,
     tangent_b0,
     tangent_inversion_efficiency,
+    tangent_diffusion,
     tangent_duration,
     tangent_flip,
     tangent_phase,
@@ -2405,7 +2417,7 @@ def simulate_into(
     buffers are sized for the largest chunk and the last one is shorter.
     Passing ``None`` for ``scratch`` allocates it for this call alone.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion = tissue
     duration, kind, flip, phase, action, output_index = events
     train_count = _train_count(events)
     block_states = triton.next_power_of_2(state_count)
@@ -2423,6 +2435,7 @@ def simulate_into(
             m0,
             b1,
             inversion_efficiency,
+            diffusion,
             duration,
             kind,
             flip,
@@ -2450,6 +2463,7 @@ def simulate_into(
         b1_phase,
         b0,
         inversion_efficiency,
+        diffusion,
         duration,
         kind,
         flip,
@@ -2528,7 +2542,7 @@ def simulate_jvp_into(
 
     See ``simulate_into`` for why the streaming path needs this.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion = tissue
     duration, kind, flip, phase, action, output_index = events
     tangent_duration, tangent_flip, tangent_phase = event_tangents
     train_count = _train_count(events)
@@ -2548,6 +2562,7 @@ def simulate_jvp_into(
             m0,
             b1,
             inversion_efficiency,
+            diffusion,
             duration,
             kind,
             flip,
@@ -2558,6 +2573,7 @@ def simulate_jvp_into(
             tissue_tangents[2],
             tissue_tangents[3],
             tissue_tangents[6],
+            tissue_tangents[7],
             tangent_duration,
             tangent_flip,
             output_real,
@@ -2646,7 +2662,7 @@ class AdjointBuffers:
         # One dual accumulator per plane: value is the gradient w.r.t. the
         # tangent inputs, tangent the gradient w.r.t. the primal ones.
         self.tissue = [
-            torch.zeros(7 * chunk, dtype=torch.float32, device=device)
+            torch.zeros(_TISSUE_COUNT * chunk, dtype=torch.float32, device=device)
             for _ in range(2)
         ]
         self.flip = [torch.zeros_like(flip) for _ in range(2)]
@@ -2674,14 +2690,15 @@ class AdjointBuffers:
         self.scratch = _scratch(self.planes, self.wave, device, state_count)
 
     def tissue_gradients(self, atom_count: int) -> tuple[tuple[torch.Tensor, ...], ...]:
-        """The per-voxel gradients of the last pass, seven rows per plane.
+        """The per-voxel gradients of the last pass, one row per parameter.
 
         Ordered to match ``event_gradients``: tangent plane first.
         """
+        rows = _TISSUE_COUNT
         return tuple(
             tuple(
-                self.tissue[plane][: 7 * atom_count].view(7, atom_count)[index]
-                for index in range(7)
+                self.tissue[plane][: rows * atom_count].view(rows, atom_count)[index]
+                for index in range(rows)
             )
             for plane in (1, 0)
         )
@@ -2720,7 +2737,7 @@ def simulate_vjp_jvp_into(
     ``atom_count`` is this chunk's width, which may be narrower than the one
     the buffers were built for.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion = tissue
     duration, kind, flip, phase, action, output_index = events
     train_count = _train_count(events)
     event_count = kind.numel()
@@ -2735,7 +2752,7 @@ def simulate_vjp_jvp_into(
     )
     grad_real.copy_(grad_output.real)
     grad_imag.copy_(grad_output.imag)
-    grad_tissue = [plane[: 7 * atom_count] for plane in buffers.tissue]
+    grad_tissue = [plane[: _TISSUE_COUNT * atom_count] for plane in buffers.tissue]
     for plane in grad_tissue:
         plane.zero_()
     grad_flip, grad_duration, grad_phase = buffers.flip, buffers.duration, buffers.phase
@@ -2759,6 +2776,7 @@ def simulate_vjp_jvp_into(
                 m0,
                 b1,
                 inversion_efficiency,
+                diffusion,
                 duration,
                 kind,
                 flip,
@@ -2771,6 +2789,7 @@ def simulate_vjp_jvp_into(
                 tangents[6],
                 tangents[7],
                 tangents[8],
+                tangents[9],
                 grad_imag,
                 *grad_tissue,
                 *grad_flip,
