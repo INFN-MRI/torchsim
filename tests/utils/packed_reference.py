@@ -53,7 +53,9 @@ def simulate_packed(
     torch.Tensor
         Complex signal of shape ``(voxels, recorded echoes)``.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping = tissue
+    (
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, flow,
+    ) = tissue
     duration, kind, flip, phase, action, _output_index = events
     atom_count = t1.numel()
     shape = (atom_count, state_count)

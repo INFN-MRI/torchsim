@@ -22,7 +22,7 @@ from typing import Any, Literal
 import torch
 
 from .. import epg
-from ._accelerators import damping_scale, simulate_native
+from ._accelerators import dephasing_per_m, simulate_native
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
 from ._parameters import TISSUE_NAMES
 
@@ -48,7 +48,9 @@ class TissueProperties:
     milliseconds; off-resonance uses Hz. The apparent diffusion coefficient
     uses um**2/ms, so free water at body temperature is about 3; it damps the
     states only where the sequence also declares the gradient that dephases
-    them, and costs nothing at its default of zero.
+    them, and costs nothing at its default of zero. Velocity uses m/s along
+    that same gradient and, unlike diffusion, turns the damping into a
+    per-order phase, which is why it takes the states out of any real subspace.
     """
 
     t1_ms: Any
@@ -59,6 +61,7 @@ class TissueProperties:
     b0_hz: Any = 0.0
     inversion_efficiency: Any = 1.0
     diffusion_um2_per_ms: Any = 0.0
+    velocity_m_per_s: Any = 0.0
 
 
 @dataclass(frozen=True)
@@ -150,7 +153,10 @@ class EpgSimulator:
             raise ValueError("record must be 'all', 'acquired', or 'echo'")
 
         prepared, output_shape, target_device = _prepare_tissue(tissue, device)
-        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion = prepared
+        (
+            t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
+            velocity,
+        ) = prepared
 
         minimum_states = 1 + repetitions * self.shifts_per_repetition(description)
         if nstates is None:
@@ -181,11 +187,13 @@ class EpgSimulator:
                 raise RuntimeError(
                     "native EPG backend is unavailable for this device or AD context"
                 )
-        if damping_scale(description) and bool((diffusion != 0.0).any()):
+        if dephasing_per_m(description) and bool(
+            (diffusion != 0.0).any() or (velocity != 0.0).any()
+        ):
             raise NotImplementedError(
-                "diffusion is carried by the fused kernels only; this sequence "
-                "fell back to the operator loop, which does not damp by "
-                "dephasing order"
+                "diffusion and flow are carried by the fused kernels only; this "
+                "sequence fell back to the operator loop, which does not weight "
+                "by dephasing order"
             )
         states = epg.states_matrix(
             device=target_device,

@@ -296,6 +296,7 @@ def _epg_vjp_jvp_kernel(
     b0,
     inversion_efficiency,
     diffusion,
+    velocity,
     duration,
     kind,
     flip,
@@ -310,6 +311,7 @@ def _epg_vjp_jvp_kernel(
     dot_b0,
     dot_inversion_efficiency,
     dot_diffusion,
+    dot_velocity,
     dot_duration,
     dot_flip,
     dot_phase,
@@ -566,6 +568,8 @@ def _epg_vjp_jvp_kernel(
     zero = tl.zeros((problems, 1), tl.float32)
     g_diffv = zero
     g_difft = zero
+    g_flowv = zero
+    g_flowt = zero
     g_t1v = zero
     g_t1t = zero
     g_t2v = zero
@@ -1018,8 +1022,12 @@ def _epg_vjp_jvp_kernel(
             grad_duration_tangent + event_base + event, duration_t, mask=active_atom
         )
 
-    values = (g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv)
-    tangents = (g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt, g_difft)
+    values = (
+        g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv, g_flowv,
+    )
+    tangents = (
+        g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt, g_difft, g_flowt,
+    )
     for parameter in tl.static_range(_TISSUE_COUNT):
         tl.atomic_add(
             grad_tissue_value + parameter * atom_count + atom,
@@ -1967,6 +1975,7 @@ def _epg_kernel(
     b0,
     inversion_efficiency,
     diffusion,
+    velocity,
     duration,
     kind,
     flip,
@@ -2168,6 +2177,7 @@ def _epg_jvp_kernel(
     b0,
     inversion_efficiency,
     diffusion,
+    velocity,
     duration,
     kind,
     flip,
@@ -2182,6 +2192,7 @@ def _epg_jvp_kernel(
     tangent_b0,
     tangent_inversion_efficiency,
     tangent_diffusion,
+    tangent_velocity,
     tangent_duration,
     tangent_flip,
     tangent_phase,
@@ -2624,7 +2635,9 @@ def simulate_into(
     buffers are sized for the largest chunk and the last one is shorter.
     Passing ``None`` for ``scratch`` allocates it for this call alone.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion = tissue
+    (
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+    ) = tissue
     duration, kind, flip, phase, action, output_index = events
     train_count = _train_count(events)
     block_states = triton.next_power_of_2(state_count)
@@ -2671,6 +2684,7 @@ def simulate_into(
         b0,
         inversion_efficiency,
         diffusion,
+        velocity,
         duration,
         kind,
         flip,
@@ -2749,7 +2763,9 @@ def simulate_jvp_into(
 
     See ``simulate_into`` for why the streaming path needs this.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion = tissue
+    (
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+    ) = tissue
     duration, kind, flip, phase, action, output_index = events
     tangent_duration, tangent_flip, tangent_phase = event_tangents
     train_count = _train_count(events)
@@ -2944,7 +2960,9 @@ def simulate_vjp_jvp_into(
     ``atom_count`` is this chunk's width, which may be narrower than the one
     the buffers were built for.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion = tissue
+    (
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+    ) = tissue
     duration, kind, flip, phase, action, output_index = events
     train_count = _train_count(events)
     event_count = kind.numel()
@@ -2995,8 +3013,8 @@ def simulate_vjp_jvp_into(
                 tangents[3],
                 tangents[6],
                 tangents[7],
-                tangents[8],
                 tangents[9],
+                tangents[10],
                 grad_imag,
                 *grad_tissue,
                 *grad_flip,

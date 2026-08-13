@@ -30,7 +30,7 @@ constexpr float PI = 3.14159265358979323846F;
 // The kernels' input list, mirrored by sequence/_parameters.py: the tissue
 // properties, then the packed per-event buffers. The pointer arrays below are
 // sized from these, so a parameter appended there is appended here too.
-constexpr std::size_t TISSUE_COUNT = 8;
+constexpr std::size_t TISSUE_COUNT = 9;
 constexpr std::size_t EVENT_COUNT = 6;
 constexpr std::size_t PACKED_COUNT = TISSUE_COUNT + EVENT_COUNT;
 // Every tissue property carries a gradient; of the event buffers only
@@ -161,6 +161,7 @@ struct Buffers {
     const float* b0;
     const float* inversion_efficiency;
     const float* diffusion;
+    const float* velocity;
     const float* duration;
     const std::int32_t* kind;
     const float* flip;
@@ -219,6 +220,7 @@ struct JvpBuffers {
     const float* b0;
     const float* inversion_efficiency;
     const float* diffusion;
+    const float* velocity;
     const float* duration;
     const float* flip;
     const float* phase;
@@ -1752,6 +1754,7 @@ struct VjpBuffers {
     float* grad_b0;
     float* grad_inversion_efficiency;
     float* grad_diffusion;
+    float* grad_velocity;
     // Per-event gradients are shared by every atom. Workers accumulate into
     // private buffers which are reduced in a fixed order, so the result does
     // not depend on thread scheduling.
@@ -2193,6 +2196,7 @@ struct VjpJvpBuffers {
     const float* dot_b0;
     const float* dot_inversion_efficiency;
     const float* dot_diffusion;
+    const float* dot_velocity;
     const float* dot_duration;
     const float* dot_flip;
     const float* dot_phase;
@@ -2207,6 +2211,7 @@ struct VjpJvpBuffers {
     float* grad_dot_b0;
     float* grad_dot_inversion_efficiency;
     float* grad_dot_diffusion;
+    float* grad_dot_velocity;
     float* grad_dot_duration;
     float* grad_dot_flip;
     float* grad_dot_phase;
@@ -2219,6 +2224,7 @@ struct VjpJvpBuffers {
     float* grad_b0;
     float* grad_inversion_efficiency;
     float* grad_diffusion;
+    float* grad_velocity;
     float* grad_duration;
     float* grad_flip;
     float* grad_phase;
@@ -2684,6 +2690,7 @@ void simulate_real_vjp_jvp_range(
         const DualFloat contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, DualFloat{0.0F, 0.0F},
             DualFloat{0.0F, 0.0F}, grad_inversion, grad_damping,
+            DualFloat{0.0F, 0.0F},
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             DualFloat& target = grad_tissue_local[parameter * atoms + atom];
@@ -3093,7 +3100,7 @@ void simulate_real_vjp_jvp_lane_range(
         const std::int64_t atoms = primal.atom_count;
         const DualLane contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, zero, zero, grad_inversion,
-            grad_damping,
+            grad_damping, zero,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             DualFloat& target = grad_tissue_local[parameter * atoms + atom];
@@ -3417,13 +3424,47 @@ void simulate_vjp_jvp_range(
         const std::int64_t atoms = primal.atom_count;
         const DualFloat contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, grad_b1_phase, grad_b0,
-            grad_efficiency, grad_damping,
+            grad_efficiency, grad_damping, DualFloat{0.0F, 0.0F},
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             DualFloat& slot = grad_tissue_local[parameter * atoms + atom];
             slot = slot + contributions[parameter];
         }
     }
+}
+
+// The packed pointers arrive in the order the parameter registry declares:
+// every tissue property, then duration, kind, flip, phase, action and the
+// output index. Naming them once here means a new parameter moves one table
+// rather than every entry point's aggregate initializer.
+inline Buffers packed_buffers(
+    void* const* raw,
+    float* const output_real,
+    float* const output_imag,
+    const std::int64_t atom_count,
+    const std::int64_t train_count
+) {
+    Buffers buffers{};
+    const float** tissue[TISSUE_COUNT] = {
+        &buffers.t1, &buffers.t2, &buffers.m0, &buffers.b1,
+        &buffers.b1_phase, &buffers.b0, &buffers.inversion_efficiency,
+        &buffers.diffusion, &buffers.velocity,
+    };
+    for (std::size_t index = 0; index < TISSUE_COUNT; ++index) {
+        *tissue[index] = static_cast<const float*>(raw[index]);
+    }
+    buffers.duration = static_cast<const float*>(raw[TISSUE_COUNT]);
+    buffers.kind = static_cast<const std::int32_t*>(raw[TISSUE_COUNT + 1]);
+    buffers.flip = static_cast<const float*>(raw[TISSUE_COUNT + 2]);
+    buffers.phase = static_cast<const float*>(raw[TISSUE_COUNT + 3]);
+    buffers.action = static_cast<const std::uint8_t*>(raw[TISSUE_COUNT + 4]);
+    buffers.output_index =
+        static_cast<const std::int32_t*>(raw[TISSUE_COUNT + 5]);
+    buffers.output_real = output_real;
+    buffers.output_imag = output_imag;
+    buffers.atom_count = atom_count;
+    buffers.train_count = train_count;
+    return buffers;
 }
 
 bool parse_pointer(PyObject* sequence, const Py_ssize_t index, void** pointer) {
@@ -3660,26 +3701,13 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             return nullptr;
         }
     }
-    const Buffers buffers{
-        static_cast<const float*>(raw[0]),
-        static_cast<const float*>(raw[1]),
-        static_cast<const float*>(raw[2]),
-        static_cast<const float*>(raw[3]),
-        static_cast<const float*>(raw[4]),
-        static_cast<const float*>(raw[5]),
-        static_cast<const float*>(raw[6]),
-        static_cast<const float*>(raw[7]),
-        static_cast<const float*>(raw[8]),
-        static_cast<const std::int32_t*>(raw[9]),
-        static_cast<const float*>(raw[10]),
-        static_cast<const float*>(raw[11]),
-        static_cast<const std::uint8_t*>(raw[12]),
-        static_cast<const std::int32_t*>(raw[13]),
-        static_cast<float*>(raw[14]),
-        static_cast<float*>(raw[15]),
+    const Buffers buffers = packed_buffers(
+        raw,
+        static_cast<float*>(raw[PACKED_COUNT]),
+        static_cast<float*>(raw[PACKED_COUNT + 1]),
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count),
-    };
+        static_cast<std::int64_t>(train_count)
+    );
 
     // TORCHSIM_LANES=1 selects a lane-vectorized forward that walks the
     // (atom, train block) product instead of (atom, train), putting a block of
@@ -3801,26 +3829,13 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     }
     constexpr std::size_t tangents = PACKED_COUNT;
     constexpr std::size_t outputs = tangents + FLOAT_COUNT;
-    const Buffers primal{
-        static_cast<const float*>(raw[0]),
-        static_cast<const float*>(raw[1]),
-        static_cast<const float*>(raw[2]),
-        static_cast<const float*>(raw[3]),
-        static_cast<const float*>(raw[4]),
-        static_cast<const float*>(raw[5]),
-        static_cast<const float*>(raw[6]),
-        static_cast<const float*>(raw[7]),
-        static_cast<const float*>(raw[8]),
-        static_cast<const std::int32_t*>(raw[9]),
-        static_cast<const float*>(raw[10]),
-        static_cast<const float*>(raw[11]),
-        static_cast<const std::uint8_t*>(raw[12]),
-        static_cast<const std::int32_t*>(raw[13]),
+    const Buffers primal = packed_buffers(
+        raw,
         static_cast<float*>(raw[outputs]),
         static_cast<float*>(raw[outputs + 1]),
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count),
-    };
+        static_cast<std::int64_t>(train_count)
+    );
     const JvpBuffers buffers{
         primal,
         static_cast<const float*>(raw[tangents]),
@@ -3834,6 +3849,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<const float*>(raw[tangents + 8]),
         static_cast<const float*>(raw[tangents + 9]),
         static_cast<const float*>(raw[tangents + 10]),
+        static_cast<const float*>(raw[tangents + 11]),
     };
 
     Py_BEGIN_ALLOW_THREADS
@@ -3886,42 +3902,25 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     }
     constexpr std::size_t seed = PACKED_COUNT;
     constexpr std::size_t grads = seed + 2;
-    const Buffers primal{
-        static_cast<const float*>(raw[0]),
-        static_cast<const float*>(raw[1]),
-        static_cast<const float*>(raw[2]),
-        static_cast<const float*>(raw[3]),
-        static_cast<const float*>(raw[4]),
-        static_cast<const float*>(raw[5]),
-        static_cast<const float*>(raw[6]),
-        static_cast<const float*>(raw[7]),
-        static_cast<const float*>(raw[8]),
-        static_cast<const std::int32_t*>(raw[9]),
-        static_cast<const float*>(raw[10]),
-        static_cast<const float*>(raw[11]),
-        static_cast<const std::uint8_t*>(raw[12]),
-        static_cast<const std::int32_t*>(raw[13]),
-        nullptr,
-        nullptr,
+    const Buffers primal = packed_buffers(
+        raw, nullptr, nullptr,
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count),
+        static_cast<std::int64_t>(train_count)
+    );
+    VjpBuffers buffers{};
+    buffers.primal = primal;
+    buffers.grad_output_real = static_cast<const float*>(raw[seed]);
+    buffers.grad_output_imag = static_cast<const float*>(raw[seed + 1]);
+    float** const grad_slots[] = {
+        &buffers.grad_t1, &buffers.grad_t2, &buffers.grad_m0, &buffers.grad_b1,
+        &buffers.grad_b1_phase, &buffers.grad_b0,
+        &buffers.grad_inversion_efficiency, &buffers.grad_diffusion,
+        &buffers.grad_velocity,
+        &buffers.grad_flip, &buffers.grad_phase, &buffers.grad_duration,
     };
-    const VjpBuffers buffers{
-        primal,
-        static_cast<const float*>(raw[seed]),
-        static_cast<const float*>(raw[seed + 1]),
-        static_cast<float*>(raw[grads]),
-        static_cast<float*>(raw[grads + 1]),
-        static_cast<float*>(raw[grads + 2]),
-        static_cast<float*>(raw[grads + 3]),
-        static_cast<float*>(raw[grads + 4]),
-        static_cast<float*>(raw[grads + 5]),
-        static_cast<float*>(raw[grads + 6]),
-        static_cast<float*>(raw[grads + 7]),
-        static_cast<float*>(raw[grads + 8]),
-        static_cast<float*>(raw[grads + 9]),
-        static_cast<float*>(raw[grads + 10]),
-    };
+    for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
+        *grad_slots[index] = static_cast<float*>(raw[grads + index]);
+    }
 
     const std::int64_t work_count =
         static_cast<std::int64_t>(atom_count) * static_cast<std::int64_t>(train_count);
@@ -3961,6 +3960,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             buffers.grad_t1, buffers.grad_t2, buffers.grad_m0, buffers.grad_b1,
             buffers.grad_b1_phase, buffers.grad_b0,
             buffers.grad_inversion_efficiency, buffers.grad_diffusion,
+            buffers.grad_velocity,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             for (std::size_t atom = 0; atom < atoms; ++atom) {
@@ -4056,11 +4056,13 @@ void dispatch_second_order(
             buffers.grad_dot_t1, buffers.grad_dot_t2, buffers.grad_dot_m0,
             buffers.grad_dot_b1, buffers.grad_dot_b1_phase, buffers.grad_dot_b0,
             buffers.grad_dot_inversion_efficiency, buffers.grad_dot_diffusion,
+            buffers.grad_dot_velocity,
         };
         float* const tangent_destinations[TISSUE_COUNT] = {
             buffers.grad_t1, buffers.grad_t2, buffers.grad_m0, buffers.grad_b1,
             buffers.grad_b1_phase, buffers.grad_b0,
             buffers.grad_inversion_efficiency, buffers.grad_diffusion,
+            buffers.grad_velocity,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             for (std::size_t atom = 0; atom < atoms; ++atom) {
@@ -4128,26 +4130,11 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
             return nullptr;
         }
     }
-    const Buffers primal{
-        static_cast<const float*>(raw[0]),
-        static_cast<const float*>(raw[1]),
-        static_cast<const float*>(raw[2]),
-        static_cast<const float*>(raw[3]),
-        static_cast<const float*>(raw[4]),
-        static_cast<const float*>(raw[5]),
-        static_cast<const float*>(raw[6]),
-        static_cast<const float*>(raw[7]),
-        static_cast<const float*>(raw[8]),
-        static_cast<const std::int32_t*>(raw[9]),
-        static_cast<const float*>(raw[10]),
-        static_cast<const float*>(raw[11]),
-        static_cast<const std::uint8_t*>(raw[12]),
-        static_cast<const std::int32_t*>(raw[13]),
-        nullptr,
-        nullptr,
+    const Buffers primal = packed_buffers(
+        raw, nullptr, nullptr,
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count),
-    };
+        static_cast<std::int64_t>(train_count)
+    );
     VjpJvpBuffers buffers{};
     buffers.primal = primal;
     constexpr std::size_t tangents = PACKED_COUNT;
@@ -4158,6 +4145,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         &buffers.dot_t1, &buffers.dot_t2, &buffers.dot_m0, &buffers.dot_b1,
         &buffers.dot_b1_phase, &buffers.dot_b0,
         &buffers.dot_inversion_efficiency, &buffers.dot_diffusion,
+        &buffers.dot_velocity,
         &buffers.dot_duration, &buffers.dot_flip, &buffers.dot_phase,
     };
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
@@ -4169,6 +4157,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         &buffers.grad_dot_t1, &buffers.grad_dot_t2, &buffers.grad_dot_m0,
         &buffers.grad_dot_b1, &buffers.grad_dot_b1_phase, &buffers.grad_dot_b0,
         &buffers.grad_dot_inversion_efficiency, &buffers.grad_dot_diffusion,
+        &buffers.grad_dot_velocity,
         &buffers.grad_dot_duration, &buffers.grad_dot_flip,
         &buffers.grad_dot_phase,
     };
@@ -4176,6 +4165,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         &buffers.grad_t1, &buffers.grad_t2, &buffers.grad_m0, &buffers.grad_b1,
         &buffers.grad_b1_phase, &buffers.grad_b0,
         &buffers.grad_inversion_efficiency, &buffers.grad_diffusion,
+        &buffers.grad_velocity,
         &buffers.grad_duration, &buffers.grad_flip, &buffers.grad_phase,
     };
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
@@ -4274,19 +4264,13 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
     constexpr std::size_t value_grads = cotangent + 2;
     constexpr std::size_t tangent_grads = value_grads + FLOAT_COUNT;
     constexpr std::size_t optimizer = tangent_grads + FLOAT_COUNT;
-    Buffers primal{
-        static_cast<const float*>(raw[0]), static_cast<const float*>(raw[1]),
-        static_cast<const float*>(raw[2]), static_cast<const float*>(raw[3]),
-        static_cast<const float*>(raw[4]), static_cast<const float*>(raw[5]),
-        static_cast<const float*>(raw[6]), static_cast<const float*>(raw[7]),
-        static_cast<const float*>(raw[8]),
-        static_cast<const std::int32_t*>(raw[9]),
-        static_cast<const float*>(raw[10]), static_cast<const float*>(raw[11]),
-        static_cast<const std::uint8_t*>(raw[12]),
-        static_cast<const std::int32_t*>(raw[13]),
-        static_cast<float*>(raw[signal]), static_cast<float*>(raw[signal + 1]),
-        atom_count, train_count,
-    };
+    Buffers primal = packed_buffers(
+        raw,
+        static_cast<float*>(raw[signal]),
+        static_cast<float*>(raw[signal + 1]),
+        atom_count,
+        train_count
+    );
     const JvpBuffers forward{
         primal,
         static_cast<const float*>(raw[tangents]),
@@ -4300,6 +4284,7 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         static_cast<const float*>(raw[tangents + 8]),
         static_cast<const float*>(raw[tangents + 9]),
         static_cast<const float*>(raw[tangents + 10]),
+        static_cast<const float*>(raw[tangents + 11]),
     };
     VjpJvpBuffers second{};
     second.primal = primal;
@@ -4307,6 +4292,7 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         &second.dot_t1, &second.dot_t2, &second.dot_m0, &second.dot_b1,
         &second.dot_b1_phase, &second.dot_b0,
         &second.dot_inversion_efficiency, &second.dot_diffusion,
+        &second.dot_velocity,
         &second.dot_duration, &second.dot_flip, &second.dot_phase,
     };
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
@@ -4318,13 +4304,15 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         &second.grad_dot_t1, &second.grad_dot_t2, &second.grad_dot_m0,
         &second.grad_dot_b1, &second.grad_dot_b1_phase, &second.grad_dot_b0,
         &second.grad_dot_inversion_efficiency, &second.grad_dot_diffusion,
+        &second.grad_dot_velocity,
         &second.grad_dot_duration, &second.grad_dot_flip,
         &second.grad_dot_phase,
     };
     float** tangent_slots[] = {
         &second.grad_t1, &second.grad_t2, &second.grad_m0, &second.grad_b1,
         &second.grad_b1_phase, &second.grad_b0, &second.grad_inversion_efficiency,
-        &second.grad_diffusion, &second.grad_duration, &second.grad_flip,
+        &second.grad_diffusion, &second.grad_velocity,
+        &second.grad_duration, &second.grad_flip,
         &second.grad_phase,
     };
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {

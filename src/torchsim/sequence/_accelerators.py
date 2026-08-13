@@ -106,30 +106,42 @@ def _across_slice(
 _DIFFUSION_UNIT = 1e-9
 
 
-def damping_scale(description: SequenceDescription) -> float:
-    """What an apparent diffusion coefficient is multiplied by to give a rate.
+def dephasing_per_m(description: SequenceDescription) -> float:
+    """The winding the sequence's unbalanced gradient puts across a metre.
 
-    Zero when the sequence declares no unbalanced gradient, which is what
-    leaves the damping out altogether.
+    Zero when no such gradient is declared, which is what leaves every
+    order-weighted term out at once.
     """
-    dephasing = description.crusher_dephasing_rad / description.voxel_size_m
+    return description.crusher_dephasing_rad / description.voxel_size_m
+
+
+def damping_scale(description: SequenceDescription) -> float:
+    """What an apparent diffusion coefficient is multiplied by to give a rate."""
+    dephasing = dephasing_per_m(description)
     return dephasing * dephasing * _DIFFUSION_UNIT
 
 
-def _damping_rate(
+def _order_weighted_rates(
     tissue: tuple[torch.Tensor, ...], description: SequenceDescription
 ) -> tuple[torch.Tensor, ...]:
-    """Fold the sequence's gradient geometry into the diffusion coefficient.
+    """Fold the sequence's gradient geometry into the terms it weights.
 
-    What the state machine needs of both is the single rate ``k0**2 * D`` that
-    multiplies an interval to give its b-factor, so combining them here keeps
-    the geometry out of the kernels entirely. The product is a plain multiply,
-    so a gradient with respect to the coefficient flows back through it, and a
-    sequence that declares no crusher leaves the buffer exactly zero.
+    What the state machine needs of a coefficient and the geometry is one rate
+    that an interval multiplies: ``k0**2 * D`` for the b-factor a state
+    accumulates, and ``k0 * v`` for the phase one turns through per unit order.
+    Combining them here keeps the geometry out of the kernels entirely. Each is
+    a plain multiply, so a gradient with respect to the coefficient flows back
+    through it, and a sequence that declares no crusher leaves both buffers
+    exactly zero.
     """
-    scale = damping_scale(description)
-    index = TISSUE_NAMES.index("diffusion_um2_per_ms")
-    return (*tissue[:index], tissue[index] * scale, *tissue[index + 1 :])
+    scaled = {
+        "diffusion_um2_per_ms": damping_scale(description),
+        "velocity_m_per_s": dephasing_per_m(description),
+    }
+    return tuple(
+        value * scaled[name] if name in scaled else value
+        for name, value in zip(TISSUE_NAMES, tissue, strict=True)
+    )
 
 
 def simulate_native(
@@ -162,7 +174,7 @@ def simulate_native(
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
-    tissue = _damping_rate(tissue, description)
+    tissue = _order_weighted_rates(tissue, description)
     tissue, locations = _across_slice(tissue, slice_profile)
     threads = int(os.environ.get("TORCHSIM_NUM_THREADS", str(torch.get_num_threads())))
     signal = _NativeEpg.apply(
@@ -461,6 +473,7 @@ class _NativeEpg(torch.autograd.Function):
         b0: torch.Tensor,
         inversion_efficiency: torch.Tensor,
         diffusion: torch.Tensor,
+        velocity: torch.Tensor,
         duration: torch.Tensor,
         kind: torch.Tensor,
         flip: torch.Tensor,
@@ -471,7 +484,10 @@ class _NativeEpg(torch.autograd.Function):
         output_count: int,
         threads: int,
     ) -> torch.Tensor:
-        tissue = (t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion)
+        tissue = (
+            t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
+            velocity,
+        )
         events = (duration, kind, flip, phase, action, output_index)
         return _run_packed(tissue, events, state_count, output_count, threads)
 

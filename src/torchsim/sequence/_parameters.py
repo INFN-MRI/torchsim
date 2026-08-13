@@ -55,6 +55,7 @@ TISSUE_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("b0_hz", identity=0.0, feature="B0"),
     Parameter("inversion_efficiency", identity=1.0, feature="INVERSION"),
     Parameter("diffusion_um2_per_ms", identity=0.0, feature="DIFFUSION"),
+    Parameter("velocity_m_per_s", identity=0.0, feature="FLOW"),
 )
 
 EVENT_PARAMETERS: tuple[Parameter, ...] = (
