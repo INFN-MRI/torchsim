@@ -87,10 +87,17 @@ def test_off_resonance_is_rejected_despite_real_looking_echoes():
     assert signal.real.abs().max() < 1e-5 * signal.imag.abs().max()
 
 
-def test_quarter_turn_excitation_stays_real():
-    """CPMG: excitation a quarter turn from the refocusing pulses."""
+def test_quarter_turn_excitation_is_rejected_despite_a_real_signal():
+    """CPMG: excitation a quarter turn from the refocusing pulses.
+
+    Every recorded echo is real, and the states are not. Splitting the state
+    into real and imaginary parts and asking how far each configuration sits
+    off a single line puts them 97% off it, so there is no real subspace here
+    to run a cheaper kernel on -- only a real projection of a complex one.
+    """
     axis, signal = _axis(torch.pi / 2, 0.0)
-    assert axis == 0
+    assert axis is None
+    # The signal alone would wrongly suggest a subspace, at every echo.
     assert signal.imag.abs().max() < 1e-6 * signal.real.abs().max()
 
 
@@ -334,12 +341,22 @@ def _tissue_events(trains, echoes=20, atoms=64, b0_hz=0.0):
     return events, prepared, packed.output_count
 
 
+def _trains_worth(share, echoes=20, atoms=64):
+    """Enough trains to carry ``share`` of the work the test is worth at."""
+    from torchsim.sequence._calibration import detection
+
+    events, _tissue, _count = _tissue_events(1, echoes=echoes, atoms=atoms)
+    per_train = atoms * int(events[1].numel())
+    floor = detection("forward", torch.device("cpu"), 10)
+    return max(1, int(floor * share / per_train))
+
+
 def test_the_fast_path_is_chosen_without_being_asked():
     """A caller should not have to know the subspace rule to benefit from it."""
     from torchsim.sequence._accelerators import _auto_real_axis, _run_packed
 
-    events, tissue, count = _tissue_events(200)
-    assert _auto_real_axis(events, tissue) == 1
+    events, tissue, count = _tissue_events(_trains_worth(8))
+    assert _auto_real_axis("forward", events, tissue, 10) == 1
     automatic = _run_packed(tissue, events, 10, count, 1)
     complex_path = _run_packed(tissue, events, 10, count, 1, real_axis=-1)
     scale = complex_path.abs().max()
@@ -349,15 +366,15 @@ def test_the_fast_path_is_chosen_without_being_asked():
 def test_off_resonance_is_not_chosen():
     from torchsim.sequence._accelerators import _auto_real_axis
 
-    events, tissue, _ = _tissue_events(200, b0_hz=15.0)
-    assert _auto_real_axis(events, tissue) is None
+    events, tissue, _ = _tissue_events(_trains_worth(8), b0_hz=15.0)
+    assert _auto_real_axis("forward", events, tissue, 10) is None
 
 
 def test_a_tiny_problem_skips_the_test_that_would_cost_more_than_it_saves():
     from torchsim.sequence._accelerators import _auto_real_axis
 
-    events, tissue, _ = _tissue_events(1, atoms=2)
-    assert _auto_real_axis(events, tissue) is None
+    events, tissue, _ = _tissue_events(_trains_worth(1 / 8, atoms=2), atoms=2)
+    assert _auto_real_axis("forward", events, tissue, 10) is None
 
 
 @pytest.mark.parametrize("direction", [4, 5])
@@ -370,20 +387,151 @@ def test_a_seed_that_leaves_the_subspace_is_not_chosen(direction):
     """
     from torchsim.sequence._accelerators import _auto_real_axis
 
-    events, tissue, _ = _tissue_events(200)
+    events, tissue, _ = _tissue_events(_trains_worth(8))
     seed = tuple(
         torch.ones_like(value) if index == direction else torch.zeros_like(value)
         for index, value in enumerate(tissue)
     )
     phase_seed = torch.zeros_like(events[3])
-    assert _auto_real_axis(events, tissue, (seed[4], seed[5], phase_seed)) is None
+    assert _auto_real_axis(
+        "jvp", events, tissue, 10, (seed[4], seed[5], phase_seed)
+    ) is None
 
 
 def test_an_rf_phase_seed_is_not_chosen():
     from torchsim.sequence._accelerators import _auto_real_axis
 
-    events, tissue, _ = _tissue_events(200)
+    events, tissue, _ = _tissue_events(_trains_worth(8))
     zeros = tuple(torch.zeros_like(value) for value in tissue)
     assert _auto_real_axis(
-        events, tissue, (zeros[4], zeros[5], torch.ones_like(events[3]))
+        "jvp", events, tissue, 10, (zeros[4], zeros[5], torch.ones_like(events[3]))
     ) is None
+
+
+# --- the adjoint, where the verdict also depends on what is being asked for ---
+
+
+def _adjoint_case(trains):
+    """An echo train, its forward directions, and a cotangent to pull back."""
+    events, tissue, count = _tissue_events(trains)
+    t2_seed = tuple(
+        torch.ones_like(value) if index == 1 else torch.zeros_like(value)
+        for index, value in enumerate(tissue)
+    )
+    tangents = (
+        *t2_seed,
+        torch.zeros_like(events[0]),
+        torch.zeros_like(events[2]),
+        torch.zeros_like(events[3]),
+    )
+    generator = torch.Generator().manual_seed(0)
+    cotangent = torch.randn(
+        (trains, tissue[0].numel(), count),
+        generator=generator,
+        dtype=torch.complex64,
+    )
+    return events, tissue, tangents, cotangent, count
+
+
+def _every_gradient():
+    return tuple(True for _ in range(10))
+
+
+def _only(*positions):
+    return tuple(index in positions for index in range(10))
+
+
+@pytest.mark.parametrize(
+    "wanted, expected",
+    [(None, None), (_every_gradient(), None), (_only(1, 8), 1)],
+    ids=["unsaid", "all ten", "t2 and flip"],
+)
+def test_the_adjoint_verdict_follows_what_the_caller_will_read(wanted, expected):
+    """A real adjoint is three gradients short, so it depends who is asking."""
+    from torchsim.sequence._accelerators import _auto_real_axis_adjoint
+
+    events, tissue, tangents, _cotangent, _count = _adjoint_case(_trains_worth(8))
+
+    assert _auto_real_axis_adjoint(events, tissue, 10, tangents, wanted) == expected
+
+
+@pytest.mark.parametrize("position", [4, 5, 9], ids=["b1_phase", "b0", "phase"])
+def test_wanting_a_gradient_outside_the_subspace_keeps_the_complex_kernel(position):
+    """Those three are genuinely non-zero; returning zero would be wrong."""
+    from torchsim.sequence._accelerators import (
+        _auto_real_axis_adjoint,
+        _run_packed_vjp_jvp,
+    )
+
+    events, tissue, tangents, cotangent, count = _adjoint_case(_trains_worth(8))
+    wanted = _only(8, position)
+
+    assert _auto_real_axis_adjoint(events, tissue, 10, tangents, wanted) is None
+
+    gradients, _ = _run_packed_vjp_jvp(
+        tissue, events, tangents, cotangent, 10, count, 1, wanted=wanted
+    )
+    assert gradients[position].abs().max() > 0.0
+
+
+def test_an_adjoint_that_stays_in_the_subspace_reaches_the_real_kernel():
+    """Bitwise, because only the same kernel gives the same bits."""
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+
+    events, tissue, tangents, cotangent, count = _adjoint_case(_trains_worth(8))
+    shared = (tissue, events, tangents, cotangent, 10, count, 1)
+    automatic, _ = _run_packed_vjp_jvp(*shared, wanted=_only(1, 8))
+    real, _ = _run_packed_vjp_jvp(*shared, real_axis=1)
+
+    for chosen, reference in zip(automatic, real, strict=True):
+        assert torch.equal(chosen, reference)
+
+
+def _forward_over_reverse(atoms):
+    """A directional derivative, differentiated: what backward fuses."""
+    from torchsim import FSE
+    from torchsim.sequence._simulation import TissueProperties
+
+    generator = torch.Generator().manual_seed(0)
+    flip = torch.deg2rad(80.0 + 80.0 * torch.rand(20, generator=generator))
+    description = fse_description(
+        flip,
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=torch.pi / 2,
+        excitation_phase_rad=torch.pi / 2,
+    )
+    t2 = torch.linspace(40.0, 120.0, atoms).requires_grad_(True)
+
+    def simulate(values):
+        tissue = TissueProperties(t1_ms=torch.full((atoms,), 900.0), t2_ms=values)
+        return FSE().simulate(description, tissue, nstates=10).signal
+
+    _signal, derivative = torch.func.jvp(simulate, (t2,), (torch.ones_like(t2),))
+    return torch.autograd.grad(derivative.abs().square().sum(), t2)[0]
+
+
+def test_autograd_asks_for_what_the_graph_needs(monkeypatch):
+    """The verdict is reached inside backward, off ``needs_input_grad``.
+
+    Differentiating T2 stays inside the subspace, so the fast adjoint is
+    available -- and the answer must not depend on it being taken.
+    """
+    from torchsim.sequence import _accelerators
+
+    chosen = []
+    original = _accelerators._auto_real_axis_adjoint
+    monkeypatch.setattr(
+        _accelerators,
+        "_auto_real_axis_adjoint",
+        lambda *arguments: chosen.append(original(*arguments)) or chosen[-1],
+    )
+    atoms = max(2, _trains_worth(8, echoes=20, atoms=1))
+    automatic = _forward_over_reverse(atoms)
+    monkeypatch.setattr(
+        _accelerators, "_auto_real_axis_adjoint", lambda *arguments: None
+    )
+    reference = _forward_over_reverse(atoms)
+
+    assert chosen and all(axis == 1 for axis in chosen)
+    assert reference.abs().max() > 0.0
+    assert ((automatic - reference).abs().max() / reference.abs().max()) < 1e-4

@@ -83,6 +83,1400 @@ def _shift_real(
     return tl.where(state == 0, -shifted_minus, shifted_plus), shifted_minus
 
 
+# ---------------------------------------------------------------------------
+# Dual complex arithmetic.
+#
+# A dual complex number is four planes: the real and imaginary parts of the
+# value, then of the tangent. Triton has no structs, so every quantity travels
+# as four separate registers and these helpers keep the bookkeeping in one
+# place rather than spread through the kernel.
+# ---------------------------------------------------------------------------
+
+
+@triton.jit
+def _complex_mul(a_real, a_imag, b_real, b_imag):
+    return a_real * b_real - a_imag * b_imag, a_real * b_imag + a_imag * b_real
+
+
+@triton.jit
+def _dual_mul(a_vr, a_vi, a_tr, a_ti, b_vr, b_vi, b_tr, b_ti):
+    """Product of two dual complex numbers."""
+    value_real, value_imag = _complex_mul(a_vr, a_vi, b_vr, b_vi)
+    left_real, left_imag = _complex_mul(a_tr, a_ti, b_vr, b_vi)
+    right_real, right_imag = _complex_mul(a_vr, a_vi, b_tr, b_ti)
+    return value_real, value_imag, left_real + right_real, left_imag + right_imag
+
+
+@triton.jit
+def _dual_scale(scale_value, scale_tangent, vr, vi, tr, ti):
+    """A real dual number times a complex one."""
+    return (
+        scale_value * vr,
+        scale_value * vi,
+        scale_tangent * vr + scale_value * tr,
+        scale_tangent * vi + scale_value * ti,
+    )
+
+
+@triton.jit
+def _dual_times_i(vr, vi, tr, ti):
+    return -vi, vr, -ti, tr
+
+
+@triton.jit
+def _dual_real_conj_mul(a_vr, a_vi, a_tr, a_ti, b_vr, b_vi, b_tr, b_ti):
+    """``real_part(conj(a) * b)``, the contraction an adjoint asks for."""
+    value = a_vr * b_vr + a_vi * b_vi
+    tangent = a_tr * b_vr + a_ti * b_vi + a_vr * b_tr + a_vi * b_ti
+    return value, tangent
+
+
+@triton.jit
+def _dual_polar(angle_value, angle_tangent):
+    """``exp(i * angle)`` for a real dual angle."""
+    cosine = tl.cos(angle_value)
+    sine = tl.sin(angle_value)
+    return cosine, sine, -sine * angle_tangent, cosine * angle_tangent
+
+
+@triton.jit
+def _shift_adjoint(
+    plus_bar_real,
+    plus_bar_imag,
+    minus_bar_real,
+    minus_bar_imag,
+    scratch_pr,
+    scratch_pi,
+    scratch_mr,
+    scratch_mi,
+    state,
+    state_mask,
+    state_count: tl.constexpr,
+):
+    """Transpose of ``_shift``.
+
+    The conjugate refill at order zero sends the incoming plus adjoint back
+    onto minus, conjugated, at the index the minus shift moves it to.
+    """
+    tl.store(scratch_pr + state, plus_bar_real, mask=state_mask)
+    tl.store(scratch_pi + state, plus_bar_imag, mask=state_mask)
+    tl.store(scratch_mr + state, minus_bar_real, mask=state_mask)
+    tl.store(scratch_mi + state, minus_bar_imag, mask=state_mask)
+    tl.debug_barrier()
+
+    carry_real = tl.load(scratch_pr, mask=state_mask, other=0.0)
+    carry_imag = -tl.load(scratch_pi, mask=state_mask, other=0.0)
+    forward = (state + 1 < state_count) & state_mask
+    backward = (state > 0) & state_mask
+    shifted_pr = tl.load(scratch_pr + state + 1, mask=forward, other=0.0)
+    shifted_pi = tl.load(scratch_pi + state + 1, mask=forward, other=0.0)
+    shifted_mr = tl.load(scratch_mr + state - 1, mask=backward, other=0.0)
+    shifted_mi = tl.load(scratch_mi + state - 1, mask=backward, other=0.0)
+    shifted_mr = tl.where(state == 1, shifted_mr + carry_real, shifted_mr)
+    shifted_mi = tl.where(state == 1, shifted_mi + carry_imag, shifted_mi)
+    return shifted_pr, shifted_pi, shifted_mr, shifted_mi
+
+
+@triton.jit
+def _shift_real_adjoint(
+    plus_bar,
+    minus_bar,
+    scratch_plus,
+    scratch_minus,
+    state,
+    state_mask,
+    state_count: tl.constexpr,
+):
+    """Transpose of ``_shift_real``.
+
+    The ``a0 = -b0`` coupling sends the incoming plus adjoint back onto minus,
+    at the index the minus shift moves it to.
+    """
+    tl.store(scratch_plus + state, plus_bar, mask=state_mask)
+    tl.store(scratch_minus + state, minus_bar, mask=state_mask)
+    tl.debug_barrier()
+
+    carry = -tl.load(scratch_plus, mask=state_mask, other=0.0)
+    shifted_plus = tl.load(
+        scratch_plus + state + 1,
+        mask=(state + 1 < state_count) & state_mask,
+        other=0.0,
+    )
+    shifted_minus = tl.load(
+        scratch_minus + state - 1,
+        mask=(state > 0) & state_mask,
+        other=0.0,
+    )
+    shifted_minus = tl.where(state == 1, shifted_minus + carry, shifted_minus)
+    return shifted_plus, shifted_minus
+
+
+@triton.jit
+def _rotation_block(
+    a_value, a_tangent,
+    b_value, b_tangent,
+    c_value, c_tangent,
+    d_value, d_tangent,
+    p1r, p1i, p1tr, p1ti,
+    p2r, p2i, p2tr, p2ti,
+    pcr, pci, pctr, pcti,
+):
+    """Seven of the nine rotation coefficients; the rest follow by symmetry.
+
+    ``t11`` repeats ``t00`` and ``t10`` is the conjugate of ``t01``, so the
+    caller derives those. Feeding ``(cos, sin)`` gives the rotation itself and
+    ``(sin, cos)`` rearranged gives its derivative in the flip angle, which is
+    why this is one routine rather than two.
+    """
+    t00 = (a_value, 0.0 * a_value, a_tangent, 0.0 * a_tangent)
+    t01 = _dual_scale(b_value, b_tangent, p2r, p2i, p2tr, p2ti)
+    t02 = _dual_mul(
+        0.0 * c_value, -c_value, 0.0 * c_tangent, -c_tangent, p1r, p1i, p1tr, p1ti
+    )
+    t12 = _dual_mul(
+        0.0 * c_value, c_value, 0.0 * c_tangent, c_tangent, pcr, pci, pctr, pcti
+    )
+    t20 = _dual_mul(
+        0.0 * c_value, -0.5 * c_value, 0.0 * c_tangent, -0.5 * c_tangent,
+        pcr, pci, pctr, pcti,
+    )
+    t21 = _dual_mul(
+        0.0 * c_value, 0.5 * c_value, 0.0 * c_tangent, 0.5 * c_tangent,
+        p1r, p1i, p1tr, p1ti,
+    )
+    t22 = (d_value, 0.0 * d_value, d_tangent, 0.0 * d_tangent)
+    return t00, t01, t02, t12, t20, t21, t22
+
+
+@triton.jit
+def _epg_vjp_jvp_kernel(
+    t1,
+    t2,
+    m0,
+    b1,
+    b1_phase,
+    b0,
+    inversion_efficiency,
+    duration,
+    kind,
+    flip,
+    phase,
+    action,
+    output_index,
+    dot_t1,
+    dot_t2,
+    dot_m0,
+    dot_b1,
+    dot_b1_phase,
+    dot_b0,
+    dot_inversion_efficiency,
+    dot_duration,
+    dot_flip,
+    dot_phase,
+    grad_output_real,
+    grad_output_imag,
+    grad_tissue_value,
+    grad_tissue_tangent,
+    grad_flip_value,
+    grad_flip_tangent,
+    grad_phase_value,
+    grad_phase_tangent,
+    grad_duration_value,
+    grad_duration_tangent,
+    trajectory_vr,
+    trajectory_vi,
+    trajectory_tr,
+    trajectory_ti,
+    scratch_pr,
+    scratch_pi,
+    scratch_mr,
+    scratch_mi,
+    problem_base,
+    problem_end,
+    atom_count,
+    train_count,
+    event_count,
+    output_count,
+    state_count: tl.constexpr,
+    block_states: tl.constexpr,
+    problems: tl.constexpr,
+):
+    problem = problem_base + tl.program_id(0) * problems
+    problem = problem + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    active_atom = problem < problem_end
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    local = problem - problem_base
+    scratch_offset = local * state_count
+    sp_r = scratch_pr + scratch_offset
+    sp_i = scratch_pi + scratch_offset
+    sm_r = scratch_mr + scratch_offset
+    sm_i = scratch_mi + scratch_offset
+    record_stride = 3 * state_count
+    trajectory = local * event_count * record_stride + state
+    minus_plane = state_count
+    long_plane = 2 * state_count
+
+    empty = tl.zeros((problems, block_states), tl.float32)
+    pvr = empty
+    pvi = empty
+    ptr = empty
+    pti = empty
+    mvr = empty
+    mvi = empty
+    mtr = empty
+    mti = empty
+    zvr = empty + tl.where(state == 0, 1.0, 0.0)
+    zvi = empty
+    ztr = empty
+    zti = empty
+
+    atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
+    atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
+    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
+    atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+    atom_inv = tl.load(inversion_efficiency + atom, mask=active_atom, other=1.0)
+    d_t1 = tl.load(dot_t1 + atom, mask=active_atom, other=0.0)
+    d_t2 = tl.load(dot_t2 + atom, mask=active_atom, other=0.0)
+    d_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
+    d_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
+    d_b1_phase = tl.load(dot_b1_phase + atom, mask=active_atom, other=0.0)
+    d_b0 = tl.load(dot_b0 + atom, mask=active_atom, other=0.0)
+    d_inv = tl.load(
+        dot_inversion_efficiency + atom, mask=active_atom, other=0.0
+    )
+    r1_value = 1000.0 / atom_t1
+    r1_tangent = -1000.0 * d_t1 / (atom_t1 * atom_t1)
+    r2_value = 1000.0 / atom_t2
+    r2_tangent = -1000.0 * d_t2 / (atom_t2 * atom_t2)
+
+    event_base = train * event_count
+    for event in range(0, event_count):
+        slot = trajectory + event * record_stride
+        tl.store(trajectory_vr + slot, pvr, mask=state_mask)
+        tl.store(trajectory_vi + slot, pvi, mask=state_mask)
+        tl.store(trajectory_tr + slot, ptr, mask=state_mask)
+        tl.store(trajectory_ti + slot, pti, mask=state_mask)
+        tl.store(trajectory_vr + slot + minus_plane, mvr, mask=state_mask)
+        tl.store(trajectory_vi + slot + minus_plane, mvi, mask=state_mask)
+        tl.store(trajectory_tr + slot + minus_plane, mtr, mask=state_mask)
+        tl.store(trajectory_ti + slot + minus_plane, mti, mask=state_mask)
+        tl.store(trajectory_vr + slot + long_plane, zvr, mask=state_mask)
+        tl.store(trajectory_vi + slot + long_plane, zvi, mask=state_mask)
+        tl.store(trajectory_tr + slot + long_plane, ztr, mask=state_mask)
+        tl.store(trajectory_ti + slot + long_plane, zti, mask=state_mask)
+
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_tangent = tl.load(
+            dot_duration + event_base + event, mask=active_atom, other=0.0
+        )
+        e1_value = tl.exp(-r1_value * dt_value)
+        e1_tangent = -e1_value * (r1_value * dt_tangent + r1_tangent * dt_value)
+        e2_value = tl.exp(-r2_value * dt_value)
+        e2_tangent = -e2_value * (r2_value * dt_tangent + r2_tangent * dt_value)
+        angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value)
+        angle_tangent = -2.0 * 3.141592653589793 * (
+            d_b0 * dt_value + atom_b0 * dt_tangent
+        )
+        qr, qi, qtr, qti = _dual_polar(angle_value, angle_tangent)
+        ovr, ovi, otr, oti = _dual_scale(e2_value, e2_tangent, qr, qi, qtr, qti)
+
+        pvr, pvi, ptr, pti = _dual_mul(ovr, ovi, otr, oti, pvr, pvi, ptr, pti)
+        mvr, mvi, mtr, mti = _dual_mul(ovr, -ovi, otr, -oti, mvr, mvi, mtr, mti)
+        zvr, zvi, ztr, zti = _dual_scale(e1_value, e1_tangent, zvr, zvi, ztr, zti)
+        zvr += tl.where(state == 0, 1.0 - e1_value, 0.0)
+        ztr -= tl.where(state == 0, e1_tangent, 0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        pre_shift = (event_action & 1) != 0
+        svr, svi, wvr, wvi = _shift(
+            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
+        )
+        str_, sti, wtr, wti = _shift(
+            ptr, pti, mtr, mti, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
+        )
+        pvr = tl.where(pre_shift, svr, pvr)
+        pvi = tl.where(pre_shift, svi, pvi)
+        ptr = tl.where(pre_shift, str_, ptr)
+        pti = tl.where(pre_shift, sti, pti)
+        mvr = tl.where(pre_shift, wvr, mvr)
+        mvi = tl.where(pre_shift, wvi, mvi)
+        mtr = tl.where(pre_shift, wtr, mtr)
+        mti = tl.where(pre_shift, wti, mti)
+
+        event_kind = tl.load(kind + event)
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        ivr, ivi, itr, iti = _dual_scale(-atom_inv, -d_inv, zvr, zvi, ztr, zti)
+        zvr = tl.where(invert, ivr, zvr)
+        zvi = tl.where(invert, ivi, zvi)
+        ztr = tl.where(invert, itr, ztr)
+        zti = tl.where(invert, iti, zti)
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_dot_flip = tl.load(
+            dot_flip + event_base + event, mask=active_atom, other=0.0
+        )
+        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        event_dot_phase = tl.load(
+            dot_phase + event_base + event, mask=active_atom, other=0.0
+        )
+        alpha_value = event_flip * atom_b1
+        alpha_tangent = event_dot_flip * atom_b1 + event_flip * d_b1
+        phi_value = event_phase + atom_b1_phase
+        phi_tangent = event_dot_phase + d_b1_phase
+        cos_value = tl.cos(alpha_value)
+        sin_value = tl.sin(alpha_value)
+        cos_tangent = -sin_value * alpha_tangent
+        sin_tangent = cos_value * alpha_tangent
+        p1r, p1i, p1tr, p1ti = _dual_polar(phi_value, phi_tangent)
+        p2r, p2i, p2tr, p2ti = _dual_mul(p1r, p1i, p1tr, p1ti, p1r, p1i, p1tr, p1ti)
+        t00, t01, t02, t12, t20, t21, t22 = _rotation_block(
+            0.5 * (1.0 + cos_value), 0.5 * cos_tangent,
+            0.5 * (1.0 - cos_value), -0.5 * cos_tangent,
+            sin_value, sin_tangent,
+            cos_value, cos_tangent,
+            p1r, p1i, p1tr, p1ti,
+            p2r, p2i, p2tr, p2ti,
+            p1r, -p1i, p1tr, -p1ti,
+        )
+        a0 = _dual_mul(t00[0], t00[1], t00[2], t00[3], pvr, pvi, ptr, pti)
+        a1 = _dual_mul(t01[0], t01[1], t01[2], t01[3], mvr, mvi, mtr, mti)
+        a2 = _dual_mul(t02[0], t02[1], t02[2], t02[3], zvr, zvi, ztr, zti)
+        b0_ = _dual_mul(t01[0], -t01[1], t01[2], -t01[3], pvr, pvi, ptr, pti)
+        b1_ = _dual_mul(t00[0], t00[1], t00[2], t00[3], mvr, mvi, mtr, mti)
+        b2 = _dual_mul(t12[0], t12[1], t12[2], t12[3], zvr, zvi, ztr, zti)
+        c0 = _dual_mul(t20[0], t20[1], t20[2], t20[3], pvr, pvi, ptr, pti)
+        c1 = _dual_mul(t21[0], t21[1], t21[2], t21[3], mvr, mvi, mtr, mti)
+        c2 = _dual_mul(t22[0], t22[1], t22[2], t22[3], zvr, zvi, ztr, zti)
+
+        rotate = is_rf & ~is_inversion
+        pvr = tl.where(rotate, a0[0] + a1[0] + a2[0], pvr)
+        pvi = tl.where(rotate, a0[1] + a1[1] + a2[1], pvi)
+        ptr = tl.where(rotate, a0[2] + a1[2] + a2[2], ptr)
+        pti = tl.where(rotate, a0[3] + a1[3] + a2[3], pti)
+        mvr = tl.where(rotate, b0_[0] + b1_[0] + b2[0], mvr)
+        mvi = tl.where(rotate, b0_[1] + b1_[1] + b2[1], mvi)
+        mtr = tl.where(rotate, b0_[2] + b1_[2] + b2[2], mtr)
+        mti = tl.where(rotate, b0_[3] + b1_[3] + b2[3], mti)
+        zvr = tl.where(rotate, c0[0] + c1[0] + c2[0], zvr)
+        zvi = tl.where(rotate, c0[1] + c1[1] + c2[1], zvi)
+        ztr = tl.where(rotate, c0[2] + c1[2] + c2[2], ztr)
+        zti = tl.where(rotate, c0[3] + c1[3] + c2[3], zti)
+
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        svr, svi, wvr, wvi = _shift(
+            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
+        )
+        str_, sti, wtr, wti = _shift(
+            ptr, pti, mtr, mti, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
+        )
+        pvr = tl.where(do_shift, svr, pvr)
+        pvi = tl.where(do_shift, svi, pvi)
+        ptr = tl.where(do_shift, str_, ptr)
+        pti = tl.where(do_shift, sti, pti)
+        mvr = tl.where(do_shift, wvr, mvr)
+        mvi = tl.where(do_shift, wvi, mvi)
+        mtr = tl.where(do_shift, wtr, mtr)
+        mti = tl.where(do_shift, wti, mti)
+        spoil = (event_action & 8) != 0
+        pvr = tl.where(spoil, 0.0, pvr)
+        pvi = tl.where(spoil, 0.0, pvi)
+        ptr = tl.where(spoil, 0.0, ptr)
+        pti = tl.where(spoil, 0.0, pti)
+        mvr = tl.where(spoil, 0.0, mvr)
+        mvi = tl.where(spoil, 0.0, mvi)
+        mtr = tl.where(spoil, 0.0, mtr)
+        mti = tl.where(spoil, 0.0, mti)
+
+    # ---- reverse ----
+    pbvr = empty
+    pbvi = empty
+    pbtr = empty
+    pbti = empty
+    mbvr = empty
+    mbvi = empty
+    mbtr = empty
+    mbti = empty
+    zbvr = empty
+    zbvi = empty
+    zbtr = empty
+    zbti = empty
+    zero = tl.zeros((problems, 1), tl.float32)
+    g_t1v = zero
+    g_t1t = zero
+    g_t2v = zero
+    g_t2t = zero
+    g_m0v = zero
+    g_m0t = zero
+    g_b1v = zero
+    g_b1t = zero
+    g_b1pv = zero
+    g_b1pt = zero
+    g_b0v = zero
+    g_b0t = zero
+    g_invv = zero
+    g_invt = zero
+
+    for reverse in range(0, event_count):
+        event = event_count - 1 - reverse
+        slot = trajectory + event * record_stride
+        xpvr = tl.load(trajectory_vr + slot, mask=state_mask, other=0.0)
+        xpvi = tl.load(trajectory_vi + slot, mask=state_mask, other=0.0)
+        xptr = tl.load(trajectory_tr + slot, mask=state_mask, other=0.0)
+        xpti = tl.load(trajectory_ti + slot, mask=state_mask, other=0.0)
+        xmvr = tl.load(trajectory_vr + slot + minus_plane, mask=state_mask, other=0.0)
+        xmvi = tl.load(trajectory_vi + slot + minus_plane, mask=state_mask, other=0.0)
+        xmtr = tl.load(trajectory_tr + slot + minus_plane, mask=state_mask, other=0.0)
+        xmti = tl.load(trajectory_ti + slot + minus_plane, mask=state_mask, other=0.0)
+        xzvr = tl.load(trajectory_vr + slot + long_plane, mask=state_mask, other=0.0)
+        xzvi = tl.load(trajectory_vi + slot + long_plane, mask=state_mask, other=0.0)
+        xztr = tl.load(trajectory_tr + slot + long_plane, mask=state_mask, other=0.0)
+        xzti = tl.load(trajectory_ti + slot + long_plane, mask=state_mask, other=0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        event_kind = tl.load(kind + event)
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_tangent = tl.load(
+            dot_duration + event_base + event, mask=active_atom, other=0.0
+        )
+        e1_value = tl.exp(-r1_value * dt_value)
+        e1_tangent = -e1_value * (r1_value * dt_tangent + r1_tangent * dt_value)
+        e2_value = tl.exp(-r2_value * dt_value)
+        e2_tangent = -e2_value * (r2_value * dt_tangent + r2_tangent * dt_value)
+        angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value)
+        angle_tangent = -2.0 * 3.141592653589793 * (
+            d_b0 * dt_value + atom_b0 * dt_tangent
+        )
+        qr, qi, qtr, qti = _dual_polar(angle_value, angle_tangent)
+        ovr, ovi, otr, oti = _dual_scale(e2_value, e2_tangent, qr, qi, qtr, qti)
+
+        # Replay the intra-event stages from the recorded entry state.
+        rpvr, rpvi, rptr, rpti = _dual_mul(
+            ovr, ovi, otr, oti, xpvr, xpvi, xptr, xpti
+        )
+        rmvr, rmvi, rmtr, rmti = _dual_mul(
+            ovr, -ovi, otr, -oti, xmvr, xmvi, xmtr, xmti
+        )
+        rzvr, rzvi, rztr, rzti = _dual_scale(
+            e1_value, e1_tangent, xzvr, xzvi, xztr, xzti
+        )
+        rzvr += tl.where(state == 0, 1.0 - e1_value, 0.0)
+        rztr -= tl.where(state == 0, e1_tangent, 0.0)
+
+        pre_shift = (event_action & 1) != 0
+        svr, svi, wvr, wvi = _shift(
+            rpvr, rpvi, rmvr, rmvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        str_, sti, wtr, wti = _shift(
+            rptr, rpti, rmtr, rmti, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        spvr = tl.where(pre_shift, svr, rpvr)
+        spvi = tl.where(pre_shift, svi, rpvi)
+        sptr = tl.where(pre_shift, str_, rptr)
+        spti = tl.where(pre_shift, sti, rpti)
+        smvr = tl.where(pre_shift, wvr, rmvr)
+        smvi = tl.where(pre_shift, wvi, rmvi)
+        smtr = tl.where(pre_shift, wtr, rmtr)
+        smti = tl.where(pre_shift, wti, rmti)
+
+        # Undo the trailing spoil or shift.
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        spoil = (event_action & 8) != 0
+        avr, avi, bvr, bvi = _shift_adjoint(
+            pbvr, pbvi, mbvr, mbvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        atr, ati, btr, bti = _shift_adjoint(
+            pbtr, pbti, mbtr, mbti, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        trailing = do_shift & ~spoil
+        pbvr = tl.where(spoil, 0.0, tl.where(trailing, avr, pbvr))
+        pbvi = tl.where(spoil, 0.0, tl.where(trailing, avi, pbvi))
+        pbtr = tl.where(spoil, 0.0, tl.where(trailing, atr, pbtr))
+        pbti = tl.where(spoil, 0.0, tl.where(trailing, ati, pbti))
+        mbvr = tl.where(spoil, 0.0, tl.where(trailing, bvr, mbvr))
+        mbvi = tl.where(spoil, 0.0, tl.where(trailing, bvi, mbvi))
+        mbtr = tl.where(spoil, 0.0, tl.where(trailing, btr, mbtr))
+        mbti = tl.where(spoil, 0.0, tl.where(trailing, bti, mbti))
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_dot_flip = tl.load(
+            dot_flip + event_base + event, mask=active_atom, other=0.0
+        )
+        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        event_dot_phase = tl.load(
+            dot_phase + event_base + event, mask=active_atom, other=0.0
+        )
+
+        # ---- recorded sample ----
+        record = ((event_action & 32) != 0) & (event_kind == 2)
+        out = tl.load(output_index + event)
+        seed_mask = active_atom & record & (out >= 0)
+        seed_real = tl.load(
+            grad_output_real + problem * output_count + out, mask=seed_mask, other=0.0
+        )
+        seed_imag = tl.load(
+            grad_output_imag + problem * output_count + out, mask=seed_mask, other=0.0
+        )
+        dvr, dvi, dtr, dti = _dual_polar(-event_phase, -event_dot_phase)
+        # grad_m0 = Re(conj(seed) * recorded * demodulation)
+        wr, wi, wtr_, wti_ = _dual_mul(spvr, spvi, sptr, spti, dvr, dvi, dtr, dti)
+        m0_value, m0_tangent = _dual_real_conj_mul(
+            seed_real, seed_imag, 0.0 * seed_real, 0.0 * seed_imag,
+            wr, wi, wtr_, wti_,
+        )
+        g_m0v += tl.sum(tl.where(state == 0, m0_value, 0.0), axis=1)[:, None]
+        g_m0t += tl.sum(tl.where(state == 0, m0_tangent, 0.0), axis=1)[:, None]
+        # grad_phase = Re(conj(seed) * m0 * recorded * (-i) * demodulation)
+        yr, yi, ytr, yti = _dual_scale(atom_m0, d_m0, spvr, spvi, sptr, spti)
+        yr, yi, ytr, yti = _dual_times_i(yr, yi, ytr, yti)
+        yr, yi, ytr, yti = -yr, -yi, -ytr, -yti
+        yr, yi, ytr, yti = _dual_mul(yr, yi, ytr, yti, dvr, dvi, dtr, dti)
+        phase_value, phase_tangent = _dual_real_conj_mul(
+            seed_real, seed_imag, 0.0 * seed_real, 0.0 * seed_imag, yr, yi, ytr, yti
+        )
+        tl.atomic_add(
+            grad_phase_value + event_base + event,
+            tl.sum(tl.where(state == 0, phase_value, 0.0), axis=1)[:, None],
+            mask=seed_mask,
+        )
+        tl.atomic_add(
+            grad_phase_tangent + event_base + event,
+            tl.sum(tl.where(state == 0, phase_tangent, 0.0), axis=1)[:, None],
+            mask=seed_mask,
+        )
+        # fplus_bar[0] += conj(m0 * demodulation) * seed
+        kr, ki, ktr, kti = _dual_scale(atom_m0, d_m0, dvr, dvi, dtr, dti)
+        sr, si, stg_r, stg_i = _dual_mul(
+            kr, -ki, ktr, -kti,
+            seed_real, seed_imag, 0.0 * seed_real, 0.0 * seed_imag,
+        )
+        pbvr += tl.where(state == 0, sr, 0.0)
+        pbvi += tl.where(state == 0, si, 0.0)
+        pbtr += tl.where(state == 0, stg_r, 0.0)
+        pbti += tl.where(state == 0, stg_i, 0.0)
+
+        # ---- RF adjoint ----
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        inv_value, inv_tangent = _dual_real_conj_mul(
+            zbvr, zbvi, zbtr, zbti, -rzvr, -rzvi, -rztr, -rzti
+        )
+        g_invv += tl.sum(tl.where(invert, inv_value, 0.0), axis=1)[:, None]
+        g_invt += tl.sum(tl.where(invert, inv_tangent, 0.0), axis=1)[:, None]
+        ivr, ivi, itr, iti = _dual_scale(-atom_inv, -d_inv, zbvr, zbvi, zbtr, zbti)
+        zbvr = tl.where(invert, ivr, zbvr)
+        zbvi = tl.where(invert, ivi, zbvi)
+        zbtr = tl.where(invert, itr, zbtr)
+        zbti = tl.where(invert, iti, zbti)
+
+        alpha_value = event_flip * atom_b1
+        alpha_tangent = event_dot_flip * atom_b1 + event_flip * d_b1
+        phi_value = event_phase + atom_b1_phase
+        phi_tangent = event_dot_phase + d_b1_phase
+        cos_value = tl.cos(alpha_value)
+        sin_value = tl.sin(alpha_value)
+        cos_tangent = -sin_value * alpha_tangent
+        sin_tangent = cos_value * alpha_tangent
+        p1r, p1i, p1tr, p1ti = _dual_polar(phi_value, phi_tangent)
+        p2r, p2i, p2tr, p2ti = _dual_mul(p1r, p1i, p1tr, p1ti, p1r, p1i, p1tr, p1ti)
+        t00, t01, t02, t12, t20, t21, t22 = _rotation_block(
+            0.5 * (1.0 + cos_value), 0.5 * cos_tangent,
+            0.5 * (1.0 - cos_value), -0.5 * cos_tangent,
+            sin_value, sin_tangent,
+            cos_value, cos_tangent,
+            p1r, p1i, p1tr, p1ti,
+            p2r, p2i, p2tr, p2ti,
+            p1r, -p1i, p1tr, -p1ti,
+        )
+        d00, d01, d02, d12, d20, d21, d22 = _rotation_block(
+            -0.5 * sin_value, -0.5 * sin_tangent,
+            0.5 * sin_value, 0.5 * sin_tangent,
+            cos_value, cos_tangent,
+            -sin_value, -sin_tangent,
+            p1r, p1i, p1tr, p1ti,
+            p2r, p2i, p2tr, p2ti,
+            p1r, -p1i, p1tr, -p1ti,
+        )
+
+        # d/dalpha, contracted with the adjoint.
+        row0 = _dual_mul(d00[0], d00[1], d00[2], d00[3], spvr, spvi, sptr, spti)
+        add1 = _dual_mul(d01[0], d01[1], d01[2], d01[3], smvr, smvi, smtr, smti)
+        add2 = _dual_mul(d02[0], d02[1], d02[2], d02[3], rzvr, rzvi, rztr, rzti)
+        alpha_v, alpha_t = _dual_real_conj_mul(
+            pbvr, pbvi, pbtr, pbti,
+            row0[0] + add1[0] + add2[0], row0[1] + add1[1] + add2[1],
+            row0[2] + add1[2] + add2[2], row0[3] + add1[3] + add2[3],
+        )
+        row0 = _dual_mul(d01[0], -d01[1], d01[2], -d01[3], spvr, spvi, sptr, spti)
+        add1 = _dual_mul(d00[0], d00[1], d00[2], d00[3], smvr, smvi, smtr, smti)
+        add2 = _dual_mul(d12[0], d12[1], d12[2], d12[3], rzvr, rzvi, rztr, rzti)
+        part_v, part_t = _dual_real_conj_mul(
+            mbvr, mbvi, mbtr, mbti,
+            row0[0] + add1[0] + add2[0], row0[1] + add1[1] + add2[1],
+            row0[2] + add1[2] + add2[2], row0[3] + add1[3] + add2[3],
+        )
+        alpha_v += part_v
+        alpha_t += part_t
+        row0 = _dual_mul(d20[0], d20[1], d20[2], d20[3], spvr, spvi, sptr, spti)
+        add1 = _dual_mul(d21[0], d21[1], d21[2], d21[3], smvr, smvi, smtr, smti)
+        add2 = _dual_mul(d22[0], d22[1], d22[2], d22[3], rzvr, rzvi, rztr, rzti)
+        part_v, part_t = _dual_real_conj_mul(
+            zbvr, zbvi, zbtr, zbti,
+            row0[0] + add1[0] + add2[0], row0[1] + add1[1] + add2[1],
+            row0[2] + add1[2] + add2[2], row0[3] + add1[3] + add2[3],
+        )
+        alpha_v += part_v
+        alpha_t += part_t
+
+        # d/dphi, where only the phase factors carry the dependence.
+        u1 = _dual_mul(t01[0], t01[1], t01[2], t01[3], smvr, smvi, smtr, smti)
+        u2 = _dual_mul(t02[0], t02[1], t02[2], t02[3], rzvr, rzvi, rztr, rzti)
+        ur, ui, utr, uti = _dual_times_i(
+            2.0 * u1[0] + u2[0], 2.0 * u1[1] + u2[1],
+            2.0 * u1[2] + u2[2], 2.0 * u1[3] + u2[3],
+        )
+        phi_v, phi_t = _dual_real_conj_mul(pbvr, pbvi, pbtr, pbti, ur, ui, utr, uti)
+        u1 = _dual_mul(t01[0], -t01[1], t01[2], -t01[3], spvr, spvi, sptr, spti)
+        u2 = _dual_mul(t12[0], t12[1], t12[2], t12[3], rzvr, rzvi, rztr, rzti)
+        ur, ui, utr, uti = _dual_times_i(
+            -2.0 * u1[0] - u2[0], -2.0 * u1[1] - u2[1],
+            -2.0 * u1[2] - u2[2], -2.0 * u1[3] - u2[3],
+        )
+        part_v, part_t = _dual_real_conj_mul(
+            mbvr, mbvi, mbtr, mbti, ur, ui, utr, uti
+        )
+        phi_v += part_v
+        phi_t += part_t
+        u1 = _dual_mul(t20[0], t20[1], t20[2], t20[3], spvr, spvi, sptr, spti)
+        u2 = _dual_mul(t21[0], t21[1], t21[2], t21[3], smvr, smvi, smtr, smti)
+        ur, ui, utr, uti = _dual_times_i(
+            u2[0] - u1[0], u2[1] - u1[1], u2[2] - u1[2], u2[3] - u1[3]
+        )
+        part_v, part_t = _dual_real_conj_mul(
+            zbvr, zbvi, zbtr, zbti, ur, ui, utr, uti
+        )
+        phi_v += part_v
+        phi_t += part_t
+
+        rotate = is_rf & ~is_inversion
+        grad_alpha_v = tl.sum(tl.where(rotate, alpha_v, 0.0), axis=1)[:, None]
+        grad_alpha_t = tl.sum(tl.where(rotate, alpha_t, 0.0), axis=1)[:, None]
+        grad_phi_v = tl.sum(tl.where(rotate, phi_v, 0.0), axis=1)[:, None]
+        grad_phi_t = tl.sum(tl.where(rotate, phi_t, 0.0), axis=1)[:, None]
+
+        # Conjugate transpose of the rotation.
+        n0 = _dual_mul(t00[0], -t00[1], t00[2], -t00[3], pbvr, pbvi, pbtr, pbti)
+        n1 = _dual_mul(t01[0], t01[1], t01[2], t01[3], mbvr, mbvi, mbtr, mbti)
+        n2 = _dual_mul(t20[0], -t20[1], t20[2], -t20[3], zbvr, zbvi, zbtr, zbti)
+        q0 = _dual_mul(t01[0], -t01[1], t01[2], -t01[3], pbvr, pbvi, pbtr, pbti)
+        q1 = _dual_mul(t00[0], -t00[1], t00[2], -t00[3], mbvr, mbvi, mbtr, mbti)
+        q2 = _dual_mul(t21[0], -t21[1], t21[2], -t21[3], zbvr, zbvi, zbtr, zbti)
+        w0 = _dual_mul(t02[0], -t02[1], t02[2], -t02[3], pbvr, pbvi, pbtr, pbti)
+        w1 = _dual_mul(t12[0], -t12[1], t12[2], -t12[3], mbvr, mbvi, mbtr, mbti)
+        w2 = _dual_mul(t22[0], -t22[1], t22[2], -t22[3], zbvr, zbvi, zbtr, zbti)
+
+        pbvr = tl.where(rotate, n0[0] + n1[0] + n2[0], pbvr)
+        pbvi = tl.where(rotate, n0[1] + n1[1] + n2[1], pbvi)
+        pbtr = tl.where(rotate, n0[2] + n1[2] + n2[2], pbtr)
+        pbti = tl.where(rotate, n0[3] + n1[3] + n2[3], pbti)
+        mbvr = tl.where(rotate, q0[0] + q1[0] + q2[0], mbvr)
+        mbvi = tl.where(rotate, q0[1] + q1[1] + q2[1], mbvi)
+        mbtr = tl.where(rotate, q0[2] + q1[2] + q2[2], mbtr)
+        mbti = tl.where(rotate, q0[3] + q1[3] + q2[3], mbti)
+        zbvr = tl.where(rotate, w0[0] + w1[0] + w2[0], zbvr)
+        zbvi = tl.where(rotate, w0[1] + w1[1] + w2[1], zbvi)
+        zbtr = tl.where(rotate, w0[2] + w1[2] + w2[2], zbtr)
+        zbti = tl.where(rotate, w0[3] + w1[3] + w2[3], zbti)
+
+        writes_flip = active_atom & rotate
+        tl.atomic_add(
+            grad_flip_value + event_base + event,
+            grad_alpha_v * atom_b1,
+            mask=writes_flip,
+        )
+        tl.atomic_add(
+            grad_flip_tangent + event_base + event,
+            grad_alpha_t * atom_b1 + grad_alpha_v * d_b1,
+            mask=writes_flip,
+        )
+        tl.atomic_add(
+            grad_phase_value + event_base + event, grad_phi_v, mask=writes_flip
+        )
+        tl.atomic_add(
+            grad_phase_tangent + event_base + event, grad_phi_t, mask=writes_flip
+        )
+        g_b1v += grad_alpha_v * event_flip
+        g_b1t += grad_alpha_t * event_flip + grad_alpha_v * event_dot_flip
+        g_b1pv += grad_phi_v
+        g_b1pt += grad_phi_t
+
+        avr, avi, bvr, bvi = _shift_adjoint(
+            pbvr, pbvi, mbvr, mbvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        atr, ati, btr, bti = _shift_adjoint(
+            pbtr, pbti, mbtr, mbti, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        pbvr = tl.where(pre_shift, avr, pbvr)
+        pbvi = tl.where(pre_shift, avi, pbvi)
+        pbtr = tl.where(pre_shift, atr, pbtr)
+        pbti = tl.where(pre_shift, ati, pbti)
+        mbvr = tl.where(pre_shift, bvr, mbvr)
+        mbvi = tl.where(pre_shift, bvi, mbvi)
+        mbtr = tl.where(pre_shift, btr, mbtr)
+        mbti = tl.where(pre_shift, bti, mbti)
+
+        # ---- relaxation and off-resonance adjoint ----
+        pq = _dual_mul(qr, qi, qtr, qti, xpvr, xpvi, xptr, xpti)
+        mq = _dual_mul(qr, -qi, qtr, -qti, xmvr, xmvi, xmtr, xmti)
+        e2_v, e2_t = _dual_real_conj_mul(
+            pbvr, pbvi, pbtr, pbti, pq[0], pq[1], pq[2], pq[3]
+        )
+        part_v, part_t = _dual_real_conj_mul(
+            mbvr, mbvi, mbtr, mbti, mq[0], mq[1], mq[2], mq[3]
+        )
+        grad_e2_v = tl.sum(e2_v + part_v, axis=1)[:, None]
+        grad_e2_t = tl.sum(e2_t + part_t, axis=1)[:, None]
+
+        po = _dual_mul(ovr, ovi, otr, oti, xpvr, xpvi, xptr, xpti)
+        po = _dual_times_i(po[0], po[1], po[2], po[3])
+        mo = _dual_mul(ovr, -ovi, otr, -oti, xmvr, xmvi, xmtr, xmti)
+        mo = _dual_times_i(mo[0], mo[1], mo[2], mo[3])
+        angle_v, angle_t = _dual_real_conj_mul(
+            pbvr, pbvi, pbtr, pbti, po[0], po[1], po[2], po[3]
+        )
+        part_v, part_t = _dual_real_conj_mul(
+            mbvr, mbvi, mbtr, mbti, mo[0], mo[1], mo[2], mo[3]
+        )
+        grad_angle_v = tl.sum(angle_v - part_v, axis=1)[:, None]
+        grad_angle_t = tl.sum(angle_t - part_t, axis=1)[:, None]
+
+        e1_v, e1_t = _dual_real_conj_mul(
+            zbvr, zbvi, zbtr, zbti, xzvr, xzvi, xztr, xzti
+        )
+        grad_e1_v = tl.sum(e1_v, axis=1)[:, None]
+        grad_e1_t = tl.sum(e1_t, axis=1)[:, None]
+        grad_e1_v -= tl.sum(tl.where(state == 0, zbvr, 0.0), axis=1)[:, None]
+        grad_e1_t -= tl.sum(tl.where(state == 0, zbtr, 0.0), axis=1)[:, None]
+
+        pbvr, pbvi, pbtr, pbti = _dual_mul(
+            ovr, -ovi, otr, -oti, pbvr, pbvi, pbtr, pbti
+        )
+        mbvr, mbvi, mbtr, mbti = _dual_mul(
+            ovr, ovi, otr, oti, mbvr, mbvi, mbtr, mbti
+        )
+        zbvr, zbvi, zbtr, zbti = _dual_scale(
+            e1_value, e1_tangent, zbvr, zbvi, zbtr, zbti
+        )
+
+        inverse1_value = 1000.0 / (atom_t1 * atom_t1)
+        inverse1_tangent = -2000.0 * d_t1 / (atom_t1 * atom_t1 * atom_t1)
+        inverse2_value = 1000.0 / (atom_t2 * atom_t2)
+        inverse2_tangent = -2000.0 * d_t2 / (atom_t2 * atom_t2 * atom_t2)
+        scale1_value = e1_value * dt_value * inverse1_value
+        scale1_tangent = e1_tangent * dt_value * inverse1_value
+        scale1_tangent += e1_value * dt_tangent * inverse1_value
+        scale1_tangent += e1_value * dt_value * inverse1_tangent
+        scale2_value = e2_value * dt_value * inverse2_value
+        scale2_tangent = e2_tangent * dt_value * inverse2_value
+        scale2_tangent += e2_value * dt_tangent * inverse2_value
+        scale2_tangent += e2_value * dt_value * inverse2_tangent
+        g_t1v += grad_e1_v * scale1_value
+        g_t1t += grad_e1_v * scale1_tangent + grad_e1_t * scale1_value
+        g_t2v += grad_e2_v * scale2_value
+        g_t2t += grad_e2_v * scale2_tangent + grad_e2_t * scale2_value
+
+        turn = -2.0 * 3.141592653589793
+        g_b0v += grad_angle_v * (turn * dt_value)
+        g_b0t += grad_angle_v * (turn * dt_tangent) + grad_angle_t * (turn * dt_value)
+
+        decay1_value = r1_value * e1_value
+        decay1_tangent = r1_value * e1_tangent + r1_tangent * e1_value
+        decay2_value = r2_value * e2_value
+        decay2_tangent = r2_value * e2_tangent + r2_tangent * e2_value
+        duration_v = -grad_e1_v * decay1_value - grad_e2_v * decay2_value
+        duration_v += grad_angle_v * (turn * atom_b0)
+        duration_t = -(grad_e1_v * decay1_tangent + grad_e1_t * decay1_value)
+        duration_t -= grad_e2_v * decay2_tangent + grad_e2_t * decay2_value
+        duration_t += grad_angle_v * (turn * d_b0) + grad_angle_t * (turn * atom_b0)
+        tl.atomic_add(
+            grad_duration_value + event_base + event, duration_v, mask=active_atom
+        )
+        tl.atomic_add(
+            grad_duration_tangent + event_base + event, duration_t, mask=active_atom
+        )
+
+    values = (g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv)
+    tangents = (g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt)
+    for parameter in tl.static_range(7):
+        tl.atomic_add(
+            grad_tissue_value + parameter * atom_count + atom,
+            values[parameter],
+            mask=active_atom,
+        )
+        tl.atomic_add(
+            grad_tissue_tangent + parameter * atom_count + atom,
+            tangents[parameter],
+            mask=active_atom,
+        )
+
+
+@triton.jit
+def _epg_real_vjp_jvp_kernel(
+    t1,
+    t2,
+    m0,
+    b1,
+    inversion_efficiency,
+    duration,
+    kind,
+    flip,
+    action,
+    output_index,
+    dot_t1,
+    dot_t2,
+    dot_m0,
+    dot_b1,
+    dot_inversion_efficiency,
+    dot_duration,
+    dot_flip,
+    grad_output_imag,
+    grad_tissue_value,
+    grad_tissue_tangent,
+    grad_flip_value,
+    grad_flip_tangent,
+    grad_duration_value,
+    grad_duration_tangent,
+    trajectory_value,
+    trajectory_tangent,
+    scratch_plus,
+    scratch_minus,
+    problem_base,
+    problem_end,
+    atom_count,
+    train_count,
+    event_count,
+    output_count,
+    state_count: tl.constexpr,
+    block_states: tl.constexpr,
+    problems: tl.constexpr,
+):
+    problem = problem_base + tl.program_id(0) * problems
+    problem = problem + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    # The grid rounds up to whole tiles, so the last program of a wave reaches
+    # past it. Those problems are real, but their trajectory rows belong to a
+    # later launch and do not exist yet.
+    active_atom = problem < problem_end
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    scratch_offset = (problem - problem_base) * state_count
+    scratch_p = scratch_plus + scratch_offset
+    scratch_m = scratch_minus + scratch_offset
+    # The trajectory holds the state entering every event: three planes of
+    # configuration orders, for the value and the tangent alike.
+    record_stride = 3 * state_count
+    trajectory = (problem - problem_base) * event_count * record_stride + state
+    minus_plane = state_count
+    long_plane = 2 * state_count
+
+    empty = tl.zeros((problems, block_states), tl.float32)
+    plus_value = empty
+    plus_tangent = empty
+    minus_value = empty
+    minus_tangent = empty
+    long_value = empty + tl.where(state == 0, 1.0, 0.0)
+    long_tangent = empty
+
+    atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
+    atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
+    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = tl.load(
+        inversion_efficiency + atom, mask=active_atom, other=1.0
+    )
+    atom_dot_t1 = tl.load(dot_t1 + atom, mask=active_atom, other=0.0)
+    atom_dot_t2 = tl.load(dot_t2 + atom, mask=active_atom, other=0.0)
+    atom_dot_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
+    atom_dot_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
+    atom_dot_inversion = tl.load(
+        dot_inversion_efficiency + atom, mask=active_atom, other=0.0
+    )
+    rate1_value = 1000.0 / atom_t1
+    rate1_tangent = -1000.0 * atom_dot_t1 / (atom_t1 * atom_t1)
+    rate2_value = 1000.0 / atom_t2
+    rate2_tangent = -1000.0 * atom_dot_t2 / (atom_t2 * atom_t2)
+
+    event_base = train * event_count
+    for event in range(0, event_count):
+        slot = trajectory + event * record_stride
+        tl.store(trajectory_value + slot, plus_value, mask=state_mask)
+        tl.store(trajectory_value + slot + minus_plane, minus_value, mask=state_mask)
+        tl.store(trajectory_value + slot + long_plane, long_value, mask=state_mask)
+        tl.store(trajectory_tangent + slot, plus_tangent, mask=state_mask)
+        tl.store(
+            trajectory_tangent + slot + minus_plane, minus_tangent, mask=state_mask
+        )
+        tl.store(trajectory_tangent + slot + long_plane, long_tangent, mask=state_mask)
+
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_tangent = tl.load(
+            dot_duration + event_base + event, mask=active_atom, other=0.0
+        )
+        e1_value = tl.exp(-rate1_value * dt_value)
+        e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
+        e2_value = tl.exp(-rate2_value * dt_value)
+        e2_tangent = -e2_value * (rate2_value * dt_tangent + rate2_tangent * dt_value)
+
+        plus_tangent = plus_value * e2_tangent + plus_tangent * e2_value
+        plus_value = plus_value * e2_value
+        minus_tangent = minus_value * e2_tangent + minus_tangent * e2_value
+        minus_value = minus_value * e2_value
+        long_tangent = long_value * e1_tangent + long_tangent * e1_value
+        long_value = long_value * e1_value
+        long_value += tl.where(state == 0, 1.0 - e1_value, 0.0)
+        long_tangent -= tl.where(state == 0, e1_tangent, 0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        pre_shift = (event_action & 1) != 0
+        shifted_pv, shifted_mv = _shift_real(
+            plus_value, minus_value, scratch_p, scratch_m, state, state_mask,
+            state_count,
+        )
+        shifted_pt, shifted_mt = _shift_real(
+            plus_tangent, minus_tangent, scratch_p, scratch_m, state, state_mask,
+            state_count,
+        )
+        plus_value = tl.where(pre_shift, shifted_pv, plus_value)
+        minus_value = tl.where(pre_shift, shifted_mv, minus_value)
+        plus_tangent = tl.where(pre_shift, shifted_pt, plus_tangent)
+        minus_tangent = tl.where(pre_shift, shifted_mt, minus_tangent)
+
+        event_kind = tl.load(kind + event)
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        inverted_value = -atom_inversion * long_value
+        inverted_tangent = -atom_inversion * long_tangent
+        inverted_tangent -= atom_dot_inversion * long_value
+        long_value = tl.where(invert, inverted_value, long_value)
+        long_tangent = tl.where(invert, inverted_tangent, long_tangent)
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_dot_flip = tl.load(
+            dot_flip + event_base + event, mask=active_atom, other=0.0
+        )
+        alpha_value = event_flip * atom_b1
+        alpha_tangent = event_dot_flip * atom_b1 + event_flip * atom_dot_b1
+        cosine_value = tl.cos(alpha_value)
+        sine_value = tl.sin(alpha_value)
+        cosine_tangent = -sine_value * alpha_tangent
+        sine_tangent = cosine_value * alpha_tangent
+        chs_value = 0.5 * (1.0 + cosine_value)
+        chs_tangent = 0.5 * cosine_tangent
+        shs_value = 0.5 * (1.0 - cosine_value)
+        shs_tangent = -0.5 * cosine_tangent
+        half_sine_value = 0.5 * sine_value
+        half_sine_tangent = 0.5 * sine_tangent
+
+        rotated_pv = chs_value * plus_value + shs_value * minus_value
+        rotated_pv -= sine_value * long_value
+        rotated_pt = chs_value * plus_tangent + chs_tangent * plus_value
+        rotated_pt += shs_value * minus_tangent + shs_tangent * minus_value
+        rotated_pt -= sine_value * long_tangent + sine_tangent * long_value
+        rotated_mv = shs_value * plus_value + chs_value * minus_value
+        rotated_mv += sine_value * long_value
+        rotated_mt = shs_value * plus_tangent + shs_tangent * plus_value
+        rotated_mt += chs_value * minus_tangent + chs_tangent * minus_value
+        rotated_mt += sine_value * long_tangent + sine_tangent * long_value
+        rotated_zv = half_sine_value * plus_value - half_sine_value * minus_value
+        rotated_zv += cosine_value * long_value
+        rotated_zt = half_sine_value * plus_tangent + half_sine_tangent * plus_value
+        rotated_zt -= half_sine_value * minus_tangent + half_sine_tangent * minus_value
+        rotated_zt += cosine_value * long_tangent + cosine_tangent * long_value
+
+        rotate = is_rf & ~is_inversion
+        plus_value = tl.where(rotate, rotated_pv, plus_value)
+        plus_tangent = tl.where(rotate, rotated_pt, plus_tangent)
+        minus_value = tl.where(rotate, rotated_mv, minus_value)
+        minus_tangent = tl.where(rotate, rotated_mt, minus_tangent)
+        long_value = tl.where(rotate, rotated_zv, long_value)
+        long_tangent = tl.where(rotate, rotated_zt, long_tangent)
+
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        shifted_pv, shifted_mv = _shift_real(
+            plus_value, minus_value, scratch_p, scratch_m, state, state_mask,
+            state_count,
+        )
+        shifted_pt, shifted_mt = _shift_real(
+            plus_tangent, minus_tangent, scratch_p, scratch_m, state, state_mask,
+            state_count,
+        )
+        plus_value = tl.where(do_shift, shifted_pv, plus_value)
+        minus_value = tl.where(do_shift, shifted_mv, minus_value)
+        plus_tangent = tl.where(do_shift, shifted_pt, plus_tangent)
+        minus_tangent = tl.where(do_shift, shifted_mt, minus_tangent)
+        spoil = (event_action & 8) != 0
+        plus_value = tl.where(spoil, 0.0, plus_value)
+        minus_value = tl.where(spoil, 0.0, minus_value)
+        plus_tangent = tl.where(spoil, 0.0, plus_tangent)
+        minus_tangent = tl.where(spoil, 0.0, minus_tangent)
+
+    plus_bar_value = empty
+    plus_bar_tangent = empty
+    minus_bar_value = empty
+    minus_bar_tangent = empty
+    long_bar_value = empty
+    long_bar_tangent = empty
+    zero = tl.zeros((problems, 1), tl.float32)
+    grad_t1_value = zero
+    grad_t1_tangent = zero
+    grad_t2_value = zero
+    grad_t2_tangent = zero
+    grad_m0_value = zero
+    grad_m0_tangent = zero
+    grad_b1_value = zero
+    grad_b1_tangent = zero
+    grad_inversion_value = zero
+    grad_inversion_tangent = zero
+
+    for reverse in range(0, event_count):
+        event = event_count - 1 - reverse
+        slot = trajectory + event * record_stride
+        entry_pv = tl.load(trajectory_value + slot, mask=state_mask, other=0.0)
+        entry_mv = tl.load(
+            trajectory_value + slot + minus_plane, mask=state_mask, other=0.0
+        )
+        entry_zv = tl.load(
+            trajectory_value + slot + long_plane, mask=state_mask, other=0.0
+        )
+        entry_pt = tl.load(trajectory_tangent + slot, mask=state_mask, other=0.0)
+        entry_mt = tl.load(
+            trajectory_tangent + slot + minus_plane, mask=state_mask, other=0.0
+        )
+        entry_zt = tl.load(
+            trajectory_tangent + slot + long_plane, mask=state_mask, other=0.0
+        )
+
+        event_action = tl.load(action + event).to(tl.int32)
+        event_kind = tl.load(kind + event)
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_tangent = tl.load(
+            dot_duration + event_base + event, mask=active_atom, other=0.0
+        )
+        e1_value = tl.exp(-rate1_value * dt_value)
+        e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
+        e2_value = tl.exp(-rate2_value * dt_value)
+        e2_tangent = -e2_value * (rate2_value * dt_tangent + rate2_tangent * dt_value)
+
+        # Replay the intra-event stages from the recorded entry state.
+        stage_pv = entry_pv * e2_value
+        stage_pt = entry_pv * e2_tangent + entry_pt * e2_value
+        stage_mv = entry_mv * e2_value
+        stage_mt = entry_mv * e2_tangent + entry_mt * e2_value
+        stage_zv = entry_zv * e1_value + tl.where(state == 0, 1.0 - e1_value, 0.0)
+        stage_zt = entry_zv * e1_tangent + entry_zt * e1_value
+        stage_zt -= tl.where(state == 0, e1_tangent, 0.0)
+
+        pre_shift = (event_action & 1) != 0
+        shifted_pv, shifted_mv = _shift_real(
+            stage_pv, stage_mv, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        shifted_pt, shifted_mt = _shift_real(
+            stage_pt, stage_mt, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        stage_pv = tl.where(pre_shift, shifted_pv, stage_pv)
+        stage_mv = tl.where(pre_shift, shifted_mv, stage_mv)
+        stage_pt = tl.where(pre_shift, shifted_pt, stage_pt)
+        stage_mt = tl.where(pre_shift, shifted_mt, stage_mt)
+
+        # Undo the trailing spoil or shift.
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        spoil = (event_action & 8) != 0
+        adjoint_pv, adjoint_mv = _shift_real_adjoint(
+            plus_bar_value, minus_bar_value, scratch_p, scratch_m, state,
+            state_mask, state_count,
+        )
+        adjoint_pt, adjoint_mt = _shift_real_adjoint(
+            plus_bar_tangent, minus_bar_tangent, scratch_p, scratch_m, state,
+            state_mask, state_count,
+        )
+        trailing = do_shift & ~spoil
+        plus_bar_value = tl.where(
+            spoil, 0.0, tl.where(trailing, adjoint_pv, plus_bar_value)
+        )
+        minus_bar_value = tl.where(
+            spoil, 0.0, tl.where(trailing, adjoint_mv, minus_bar_value)
+        )
+        plus_bar_tangent = tl.where(
+            spoil, 0.0, tl.where(trailing, adjoint_pt, plus_bar_tangent)
+        )
+        minus_bar_tangent = tl.where(
+            spoil, 0.0, tl.where(trailing, adjoint_mt, minus_bar_tangent)
+        )
+
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        inversion_gain = -tl.sum(
+            tl.where(invert, long_bar_value * stage_zv, 0.0), axis=1
+        )[:, None]
+        inversion_gain_tangent = -tl.sum(
+            tl.where(
+                invert,
+                long_bar_value * stage_zt + long_bar_tangent * stage_zv,
+                0.0,
+            ),
+            axis=1,
+        )[:, None]
+        grad_inversion_value += inversion_gain
+        grad_inversion_tangent += inversion_gain_tangent
+        inverted_bar_value = -atom_inversion * long_bar_value
+        inverted_bar_tangent = (
+            -atom_inversion * long_bar_tangent - atom_dot_inversion * long_bar_value
+        )
+        long_bar_value = tl.where(invert, inverted_bar_value, long_bar_value)
+        long_bar_tangent = tl.where(invert, inverted_bar_tangent, long_bar_tangent)
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_dot_flip = tl.load(
+            dot_flip + event_base + event, mask=active_atom, other=0.0
+        )
+        alpha_value = event_flip * atom_b1
+        alpha_tangent = event_dot_flip * atom_b1 + event_flip * atom_dot_b1
+        cosine_value = tl.cos(alpha_value)
+        sine_value = tl.sin(alpha_value)
+        cosine_tangent = -sine_value * alpha_tangent
+        sine_tangent = cosine_value * alpha_tangent
+        chs_value = 0.5 * (1.0 + cosine_value)
+        chs_tangent = 0.5 * cosine_tangent
+        shs_value = 0.5 * (1.0 - cosine_value)
+        shs_tangent = -0.5 * cosine_tangent
+        half_sine_value = 0.5 * sine_value
+        half_sine_tangent = 0.5 * sine_tangent
+
+        # d/dalpha of each output row, contracted with the adjoint.
+        row_p_value = half_sine_value * stage_mv - half_sine_value * stage_pv
+        row_p_value -= cosine_value * stage_zv
+        row_p_tangent = half_sine_value * stage_mt + half_sine_tangent * stage_mv
+        row_p_tangent -= half_sine_value * stage_pt + half_sine_tangent * stage_pv
+        row_p_tangent -= cosine_value * stage_zt + cosine_tangent * stage_zv
+        row_m_value = half_sine_value * stage_pv - half_sine_value * stage_mv
+        row_m_value += cosine_value * stage_zv
+        row_m_tangent = half_sine_value * stage_pt + half_sine_tangent * stage_pv
+        row_m_tangent -= half_sine_value * stage_mt + half_sine_tangent * stage_mv
+        row_m_tangent += cosine_value * stage_zt + cosine_tangent * stage_zv
+        row_z_value = 0.5 * cosine_value * stage_pv - 0.5 * cosine_value * stage_mv
+        row_z_value -= sine_value * stage_zv
+        row_z_tangent = 0.5 * (cosine_value * stage_pt + cosine_tangent * stage_pv)
+        row_z_tangent -= 0.5 * (cosine_value * stage_mt + cosine_tangent * stage_mv)
+        row_z_tangent -= sine_value * stage_zt + sine_tangent * stage_zv
+
+        alpha_bar_terms_value = plus_bar_value * row_p_value
+        alpha_bar_terms_value += minus_bar_value * row_m_value
+        alpha_bar_terms_value += long_bar_value * row_z_value
+        alpha_bar_terms_tangent = plus_bar_value * row_p_tangent
+        alpha_bar_terms_tangent += plus_bar_tangent * row_p_value
+        alpha_bar_terms_tangent += minus_bar_value * row_m_tangent
+        alpha_bar_terms_tangent += minus_bar_tangent * row_m_value
+        alpha_bar_terms_tangent += long_bar_value * row_z_tangent
+        alpha_bar_terms_tangent += long_bar_tangent * row_z_value
+        rotate = is_rf & ~is_inversion
+        grad_alpha_value = tl.sum(
+            tl.where(rotate, alpha_bar_terms_value, 0.0), axis=1
+        )[:, None]
+        grad_alpha_tangent = tl.sum(
+            tl.where(rotate, alpha_bar_terms_tangent, 0.0), axis=1
+        )[:, None]
+
+        # Transpose of the rotation.
+        rotated_pbv = chs_value * plus_bar_value + shs_value * minus_bar_value
+        rotated_pbv += half_sine_value * long_bar_value
+        rotated_pbt = chs_value * plus_bar_tangent + chs_tangent * plus_bar_value
+        rotated_pbt += shs_value * minus_bar_tangent + shs_tangent * minus_bar_value
+        rotated_pbt += half_sine_value * long_bar_tangent
+        rotated_pbt += half_sine_tangent * long_bar_value
+        rotated_mbv = shs_value * plus_bar_value + chs_value * minus_bar_value
+        rotated_mbv -= half_sine_value * long_bar_value
+        rotated_mbt = shs_value * plus_bar_tangent + shs_tangent * plus_bar_value
+        rotated_mbt += chs_value * minus_bar_tangent + chs_tangent * minus_bar_value
+        rotated_mbt -= half_sine_value * long_bar_tangent
+        rotated_mbt -= half_sine_tangent * long_bar_value
+        rotated_zbv = -sine_value * plus_bar_value + sine_value * minus_bar_value
+        rotated_zbv += cosine_value * long_bar_value
+        rotated_zbt = -sine_value * plus_bar_tangent - sine_tangent * plus_bar_value
+        rotated_zbt += sine_value * minus_bar_tangent + sine_tangent * minus_bar_value
+        rotated_zbt += cosine_value * long_bar_tangent + cosine_tangent * long_bar_value
+
+        plus_bar_value = tl.where(rotate, rotated_pbv, plus_bar_value)
+        plus_bar_tangent = tl.where(rotate, rotated_pbt, plus_bar_tangent)
+        minus_bar_value = tl.where(rotate, rotated_mbv, minus_bar_value)
+        minus_bar_tangent = tl.where(rotate, rotated_mbt, minus_bar_tangent)
+        long_bar_value = tl.where(rotate, rotated_zbv, long_bar_value)
+        long_bar_tangent = tl.where(rotate, rotated_zbt, long_bar_tangent)
+
+        flip_gain_value = grad_alpha_value * atom_b1
+        flip_gain_tangent = grad_alpha_tangent * atom_b1
+        flip_gain_tangent += grad_alpha_value * atom_dot_b1
+        writes_flip = active_atom & rotate
+        tl.atomic_add(
+            grad_flip_value + event_base + event, flip_gain_value, mask=writes_flip
+        )
+        tl.atomic_add(
+            grad_flip_tangent + event_base + event, flip_gain_tangent, mask=writes_flip
+        )
+        grad_b1_value += tl.where(rotate, grad_alpha_value * event_flip, 0.0)
+        grad_b1_tangent += tl.where(
+            rotate,
+            grad_alpha_tangent * event_flip + grad_alpha_value * event_dot_flip,
+            0.0,
+        )
+
+        # The sample is i * m0 * plus[0]; only the imaginary seed acts.
+        record = ((event_action & 32) != 0) & (event_kind == 2)
+        out = tl.load(output_index + event)
+        seed = tl.load(
+            grad_output_imag + problem * output_count + out,
+            mask=active_atom & record & (out >= 0),
+            other=0.0,
+        )
+        grad_m0_value += tl.sum(
+            tl.where(state == 0, seed * stage_pv, 0.0), axis=1
+        )[:, None]
+        grad_m0_tangent += tl.sum(
+            tl.where(state == 0, seed * stage_pt, 0.0), axis=1
+        )[:, None]
+        plus_bar_value += tl.where(state == 0, seed * atom_m0, 0.0)
+        plus_bar_tangent += tl.where(state == 0, seed * atom_dot_m0, 0.0)
+
+        adjoint_pv, adjoint_mv = _shift_real_adjoint(
+            plus_bar_value, minus_bar_value, scratch_p, scratch_m, state,
+            state_mask, state_count,
+        )
+        adjoint_pt, adjoint_mt = _shift_real_adjoint(
+            plus_bar_tangent, minus_bar_tangent, scratch_p, scratch_m, state,
+            state_mask, state_count,
+        )
+        plus_bar_value = tl.where(pre_shift, adjoint_pv, plus_bar_value)
+        minus_bar_value = tl.where(pre_shift, adjoint_mv, minus_bar_value)
+        plus_bar_tangent = tl.where(pre_shift, adjoint_pt, plus_bar_tangent)
+        minus_bar_tangent = tl.where(pre_shift, adjoint_mt, minus_bar_tangent)
+
+        grad_e2_value = tl.sum(
+            plus_bar_value * entry_pv + minus_bar_value * entry_mv, axis=1
+        )[:, None]
+        grad_e2_tangent = tl.sum(
+            plus_bar_value * entry_pt
+            + plus_bar_tangent * entry_pv
+            + minus_bar_value * entry_mt
+            + minus_bar_tangent * entry_mv,
+            axis=1,
+        )[:, None]
+        grad_e1_value = tl.sum(long_bar_value * entry_zv, axis=1)[:, None]
+        grad_e1_value -= tl.sum(
+            tl.where(state == 0, long_bar_value, 0.0), axis=1
+        )[:, None]
+        grad_e1_tangent = tl.sum(
+            long_bar_value * entry_zt + long_bar_tangent * entry_zv, axis=1
+        )[:, None]
+        grad_e1_tangent -= tl.sum(
+            tl.where(state == 0, long_bar_tangent, 0.0), axis=1
+        )[:, None]
+
+        plus_bar_tangent = plus_bar_value * e2_tangent + plus_bar_tangent * e2_value
+        plus_bar_value = plus_bar_value * e2_value
+        minus_bar_tangent = minus_bar_value * e2_tangent + minus_bar_tangent * e2_value
+        minus_bar_value = minus_bar_value * e2_value
+        long_bar_tangent = long_bar_value * e1_tangent + long_bar_tangent * e1_value
+        long_bar_value = long_bar_value * e1_value
+
+        inverse1_value = 1000.0 / (atom_t1 * atom_t1)
+        inverse1_tangent = -2000.0 * atom_dot_t1 / (atom_t1 * atom_t1 * atom_t1)
+        inverse2_value = 1000.0 / (atom_t2 * atom_t2)
+        inverse2_tangent = -2000.0 * atom_dot_t2 / (atom_t2 * atom_t2 * atom_t2)
+        scale1_value = e1_value * dt_value * inverse1_value
+        scale1_tangent = e1_tangent * dt_value * inverse1_value
+        scale1_tangent += e1_value * dt_tangent * inverse1_value
+        scale1_tangent += e1_value * dt_value * inverse1_tangent
+        scale2_value = e2_value * dt_value * inverse2_value
+        scale2_tangent = e2_tangent * dt_value * inverse2_value
+        scale2_tangent += e2_value * dt_tangent * inverse2_value
+        scale2_tangent += e2_value * dt_value * inverse2_tangent
+        grad_t1_value += grad_e1_value * scale1_value
+        grad_t1_tangent += grad_e1_value * scale1_tangent
+        grad_t1_tangent += grad_e1_tangent * scale1_value
+        grad_t2_value += grad_e2_value * scale2_value
+        grad_t2_tangent += grad_e2_value * scale2_tangent
+        grad_t2_tangent += grad_e2_tangent * scale2_value
+
+        decay1_value = rate1_value * e1_value
+        decay1_tangent = rate1_value * e1_tangent + rate1_tangent * e1_value
+        decay2_value = rate2_value * e2_value
+        decay2_tangent = rate2_value * e2_tangent + rate2_tangent * e2_value
+        duration_gain_value = -grad_e1_value * decay1_value
+        duration_gain_value -= grad_e2_value * decay2_value
+        duration_gain_tangent = -(
+            grad_e1_value * decay1_tangent + grad_e1_tangent * decay1_value
+        )
+        duration_gain_tangent -= (
+            grad_e2_value * decay2_tangent + grad_e2_tangent * decay2_value
+        )
+        tl.atomic_add(
+            grad_duration_value + event_base + event,
+            duration_gain_value,
+            mask=active_atom,
+        )
+        tl.atomic_add(
+            grad_duration_tangent + event_base + event,
+            duration_gain_tangent,
+            mask=active_atom,
+        )
+
+    tl.atomic_add(grad_tissue_value + atom, grad_t1_value, mask=active_atom)
+    tl.atomic_add(grad_tissue_tangent + atom, grad_t1_tangent, mask=active_atom)
+    tl.atomic_add(
+        grad_tissue_value + atom_count + atom, grad_t2_value, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue_tangent + atom_count + atom, grad_t2_tangent, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue_value + 2 * atom_count + atom, grad_m0_value, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue_tangent + 2 * atom_count + atom, grad_m0_tangent, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue_value + 3 * atom_count + atom, grad_b1_value, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue_tangent + 3 * atom_count + atom, grad_b1_tangent, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue_value + 6 * atom_count + atom,
+        grad_inversion_value,
+        mask=active_atom,
+    )
+    tl.atomic_add(
+        grad_tissue_tangent + 6 * atom_count + atom,
+        grad_inversion_tangent,
+        mask=active_atom,
+    )
+
+
 @triton.jit
 def _epg_real_kernel(
     t1,
@@ -967,20 +2361,60 @@ def simulate(
     ``real_axis`` of 1 selects the real-subspace kernel; see
     ``real_subspace_axis`` for when that is legitimate.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
-    duration, kind, flip, phase, action, output_index = events
-    atom_count = t1.numel()
     train_count = _train_count(events)
-    block_states = triton.next_power_of_2(state_count)
+    atom_count = tissue[0].numel()
     output_real = torch.empty(
         _output_shape(train_count, atom_count, output_count),
         dtype=torch.float32,
-        device=t1.device,
+        device=tissue[0].device,
     )
     output_imag = torch.empty_like(output_real)
+    simulate_into(
+        tissue,
+        events,
+        output_real,
+        output_imag,
+        None,
+        state_count=state_count,
+        output_count=output_count,
+        real_axis=real_axis,
+        atom_count=atom_count,
+    )
+    return torch.complex(output_real, output_imag)
+
+
+def simulate_into(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    output_real: torch.Tensor,
+    output_imag: torch.Tensor,
+    scratch: list[torch.Tensor] | None,
+    *,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None,
+    atom_count: int,
+) -> None:
+    """Run the forward machine into buffers the caller owns.
+
+    Streaming reuses one set of buffers per chunk, so allocating here would put
+    an allocation in the loop -- and an allocation that reaches ``cudaMalloc``
+    synchronizes the device, which is exactly what the streams exist to avoid.
+
+    ``atom_count`` is given rather than taken from ``tissue`` because a chunk's
+    buffers are sized for the largest chunk and the last one is shorter.
+    Passing ``None`` for ``scratch`` allocates it for this call alone.
+    """
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
+    duration, kind, flip, phase, action, output_index = events
+    train_count = _train_count(events)
+    block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
     problems = _problems_per_program(total, block_states)
     grid = (triton.cdiv(total, problems),)
+    planes = 2 if real_axis == 1 else 4
+    if scratch is None:
+        scratch = _scratch(planes, total, t1.device, state_count)
 
     if real_axis == 1:
         _epg_real_kernel[grid](
@@ -996,7 +2430,7 @@ def simulate(
             output_index,
             output_real,
             output_imag,
-            *_scratch(2, total, t1.device, state_count),
+            *scratch,
             atom_count,
             train_count,
             kind.numel(),
@@ -1006,9 +2440,8 @@ def simulate(
             problems=problems,
             num_warps=1,
         )
-        return torch.complex(output_real, output_imag)
+        return
 
-    scratch = _scratch(4, total, t1.device, state_count)
     _epg_kernel[grid](
         t1,
         t2,
@@ -1035,7 +2468,6 @@ def simulate(
         problems=problems,
         num_warps=1,
     )
-    return torch.complex(output_real, output_imag)
 
 
 def simulate_jvp(
@@ -1054,21 +2486,60 @@ def simulate_jvp(
     derivative along ``b1_phase``, ``b0`` or the RF phase -- seeds along those
     directions leave the subspace, so the caller must rule them out.
     """
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
-    duration, kind, flip, phase, action, output_index = events
-    tangent_duration, tangent_flip, tangent_phase = event_tangents
-    atom_count = t1.numel()
     train_count = _train_count(events)
-    block_states = triton.next_power_of_2(state_count)
+    atom_count = tissue[0].numel()
     output_real = torch.empty(
         _output_shape(train_count, atom_count, output_count),
         dtype=torch.float32,
-        device=t1.device,
+        device=tissue[0].device,
     )
     output_imag = torch.empty_like(output_real)
+    simulate_jvp_into(
+        tissue,
+        events,
+        tissue_tangents,
+        event_tangents,
+        output_real,
+        output_imag,
+        None,
+        state_count=state_count,
+        output_count=output_count,
+        real_axis=real_axis,
+        atom_count=atom_count,
+    )
+    return torch.complex(output_real, output_imag)
+
+
+def simulate_jvp_into(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    tissue_tangents: tuple[torch.Tensor, ...],
+    event_tangents: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    output_real: torch.Tensor,
+    output_imag: torch.Tensor,
+    scratch: list[torch.Tensor] | None,
+    *,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None,
+    atom_count: int,
+) -> None:
+    """Run one Jacobian-vector product into buffers the caller owns.
+
+    See ``simulate_into`` for why the streaming path needs this.
+    """
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
+    duration, kind, flip, phase, action, output_index = events
+    tangent_duration, tangent_flip, tangent_phase = event_tangents
+    train_count = _train_count(events)
+    block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
     problems = _problems_per_program(total, block_states)
     grid = (triton.cdiv(total, problems),)
+    if scratch is None:
+        scratch = _scratch(
+            2 if real_axis == 1 else 4, total, t1.device, state_count
+        )
 
     if real_axis == 1:
         _epg_real_jvp_kernel[grid](
@@ -1091,7 +2562,7 @@ def simulate_jvp(
             tangent_flip,
             output_real,
             output_imag,
-            *_scratch(2, total, t1.device, state_count),
+            *scratch,
             atom_count,
             train_count,
             kind.numel(),
@@ -1101,9 +2572,8 @@ def simulate_jvp(
             problems=problems,
             num_warps=1,
         )
-        return torch.complex(output_real, output_imag)
+        return
 
-    scratch = _scratch(4, total, t1.device, state_count)
     _epg_jvp_kernel[grid](
         *tissue,
         duration,
@@ -1128,4 +2598,266 @@ def simulate_jvp(
         problems=problems,
         num_warps=1,
     )
-    return torch.complex(output_real, output_imag)
+
+
+# How much device memory the recorded trajectory may hold at once. Beyond this
+# the problems are run in waves, which the gradient buffers absorb because they
+# accumulate rather than being written.
+_TRAJECTORY_BUDGET_BYTES = 256 << 20
+
+
+def _trajectory_wave(
+    event_count: int, state_count: int, total: int, planes: int
+) -> int:
+    """How many problems can record their trajectory in one launch."""
+    per_problem = event_count * 3 * state_count * planes * 4
+    return max(1, min(total, _TRAJECTORY_BUDGET_BYTES // max(1, per_problem)))
+
+
+class AdjointBuffers:
+    """Device memory a forward-over-reverse pass writes into.
+
+    Sized for ``chunk`` voxels and reusable for any narrower one. Per-voxel
+    gradients are cleared before each pass; per-event gradients accumulate over
+    every pass the buffers serve and are read out with ``event_gradients``.
+
+    ``real_axis`` of 1 halves the state planes, so buffers built for one
+    representation cannot be handed to the other.
+    """
+
+    def __init__(
+        self,
+        events: tuple[torch.Tensor, ...],
+        chunk: int,
+        *,
+        state_count: int,
+        output_count: int,
+        real_axis: int | None = None,
+    ) -> None:
+        duration, kind, flip, phase, _action, _output_index = events
+        device = kind.device
+        train_count = _train_count(events)
+        event_count = kind.numel()
+        self.planes = 2 if real_axis == 1 else 4
+        self.chunk = chunk
+        self.state_count = state_count
+        self.output_count = output_count
+        self.train_count = train_count
+        # One dual accumulator per plane: value is the gradient w.r.t. the
+        # tangent inputs, tangent the gradient w.r.t. the primal ones.
+        self.tissue = [
+            torch.zeros(7 * chunk, dtype=torch.float32, device=device)
+            for _ in range(2)
+        ]
+        self.flip = [torch.zeros_like(flip) for _ in range(2)]
+        self.duration = [torch.zeros_like(duration) for _ in range(2)]
+        self.phase = [torch.zeros_like(phase) for _ in range(2)]
+        self.cotangent = [
+            torch.empty(
+                train_count * chunk * output_count,
+                dtype=torch.float32,
+                device=device,
+            )
+            for _ in range(2)
+        ]
+        self.wave = _trajectory_wave(
+            event_count, state_count, train_count * chunk, self.planes
+        )
+        self.trajectory = [
+            torch.empty(
+                (self.wave, event_count * 3 * state_count),
+                dtype=torch.float32,
+                device=device,
+            )
+            for _ in range(self.planes)
+        ]
+        self.scratch = _scratch(self.planes, self.wave, device, state_count)
+
+    def tissue_gradients(self, atom_count: int) -> tuple[tuple[torch.Tensor, ...], ...]:
+        """The per-voxel gradients of the last pass, seven rows per plane.
+
+        Ordered to match ``event_gradients``: tangent plane first.
+        """
+        return tuple(
+            tuple(
+                self.tissue[plane][: 7 * atom_count].view(7, atom_count)[index]
+                for index in range(7)
+            )
+            for plane in (1, 0)
+        )
+
+    def event_gradients(self) -> tuple[tuple[torch.Tensor, ...], ...]:
+        """The per-event gradients summed over every pass so far.
+
+        Ordered ``(duration, flip, phase)`` to match the tail of the
+        differentiable-input order, tangent plane first.
+        """
+        return tuple(
+            (self.duration[plane], self.flip[plane], self.phase[plane])
+            for plane in (1, 0)
+        )
+
+
+def simulate_vjp_jvp_into(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    tangents: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    buffers: AdjointBuffers,
+    *,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None = None,
+    atom_count: int,
+) -> tuple[tuple[torch.Tensor, ...], ...]:
+    """Forward-over-reverse for one chunk of voxels, into caller-owned buffers.
+
+    Returns the per-voxel gradients of this chunk -- tangent plane first, seven
+    rows each, views into ``buffers`` that the next call overwrites. The
+    per-event gradients accumulate inside ``buffers`` instead, because every
+    chunk contributes to all of them.
+
+    ``atom_count`` is this chunk's width, which may be narrower than the one
+    the buffers were built for.
+    """
+    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
+    duration, kind, flip, phase, action, output_index = events
+    train_count = _train_count(events)
+    event_count = kind.numel()
+    total = train_count * atom_count
+    block_states = triton.next_power_of_2(state_count)
+    real = real_axis == 1
+
+    grad_output = grad_output.resolve_conj()
+    size = total * output_count
+    grad_real, grad_imag = (
+        plane[:size].view(grad_output.shape) for plane in buffers.cotangent
+    )
+    grad_real.copy_(grad_output.real)
+    grad_imag.copy_(grad_output.imag)
+    grad_tissue = [plane[: 7 * atom_count] for plane in buffers.tissue]
+    for plane in grad_tissue:
+        plane.zero_()
+    grad_flip, grad_duration, grad_phase = buffers.flip, buffers.duration, buffers.phase
+    trajectory, scratch = buffers.trajectory, buffers.scratch
+
+    wave = buffers.wave
+    problems = _problems_per_program(wave, block_states)
+    for base in range(0, total, wave):
+        span = min(wave, total - base)
+        grid = (triton.cdiv(span, problems),)
+        shape = dict(
+            state_count=state_count,
+            block_states=block_states,
+            problems=problems,
+            num_warps=1,
+        )
+        if real:
+            _epg_real_vjp_jvp_kernel[grid](
+                t1,
+                t2,
+                m0,
+                b1,
+                inversion_efficiency,
+                duration,
+                kind,
+                flip,
+                action,
+                output_index,
+                tangents[0],
+                tangents[1],
+                tangents[2],
+                tangents[3],
+                tangents[6],
+                tangents[7],
+                tangents[8],
+                grad_imag,
+                *grad_tissue,
+                *grad_flip,
+                *grad_duration,
+                *trajectory,
+                *scratch,
+                base,
+                base + span,
+                atom_count,
+                train_count,
+                event_count,
+                output_count,
+                **shape,
+            )
+        else:
+            _epg_vjp_jvp_kernel[grid](
+                *tissue,
+                *events,
+                *tangents,
+                grad_real,
+                grad_imag,
+                *grad_tissue,
+                *grad_flip,
+                *grad_phase,
+                *grad_duration,
+                *trajectory,
+                *scratch,
+                base,
+                base + span,
+                atom_count,
+                train_count,
+                event_count,
+                output_count,
+                **shape,
+            )
+
+    # Plane 1 is the tangent part -> d/d(primal inputs); plane 0 the value part.
+    return buffers.tissue_gradients(atom_count)
+
+
+def simulate_vjp_jvp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    tangents: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    *,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None = None,
+) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
+    """Forward-over-reverse through the state machine on CUDA.
+
+    ``tangents`` follows the differentiable-input order ``(t1, t2, m0, b1,
+    b1_phase, b0, inversion_efficiency, duration, flip, phase)``, and the two
+    returned tuples -- gradients with respect to the primal inputs, then to the
+    tangent inputs -- follow it too.
+
+    ``real_axis`` of 1 selects the real-subspace adjoint. That representation
+    divides the RF phase out, so it leaves ``b1_phase``, ``b0`` and ``phase`` at
+    zero and callers must not ask for those; the complex adjoint produces all
+    ten.
+
+    Gradients land through atomic accumulation, so repeated runs agree to
+    floating-point tolerance rather than bit for bit.
+    """
+    atom_count = tissue[0].numel()
+    buffers = AdjointBuffers(
+        events,
+        atom_count,
+        state_count=state_count,
+        output_count=output_count,
+        real_axis=real_axis,
+    )
+    voxel_grads = simulate_vjp_jvp_into(
+        tissue,
+        events,
+        tangents,
+        grad_output,
+        buffers,
+        state_count=state_count,
+        output_count=output_count,
+        real_axis=real_axis,
+        atom_count=atom_count,
+    )
+    return tuple(
+        (*voxels, *per_event)
+        for voxels, per_event in zip(
+            voxel_grads, buffers.event_gradients(), strict=True
+        )
+    )

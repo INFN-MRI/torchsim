@@ -24,6 +24,7 @@ import torch
 from .. import epg
 from ._accelerators import simulate_native
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
+from ._parameters import TISSUE_NAMES
 
 RecordMode = Literal["all", "acquired", "echo"]
 
@@ -398,15 +399,7 @@ def _prepare_tissue(
     tissue: TissueProperties,
     device: torch.device | str | None,
 ) -> tuple[tuple[torch.Tensor, ...], torch.Size, torch.device]:
-    values = (
-        tissue.t1_ms,
-        tissue.t2_ms,
-        tissue.m0,
-        tissue.b1,
-        tissue.b1_phase_rad,
-        tissue.b0_hz,
-        tissue.inversion_efficiency,
-    )
+    values = tuple(getattr(tissue, name) for name in TISSUE_NAMES)
     if device is None:
         device = next(
             (value.device for value in values if isinstance(value, torch.Tensor)),

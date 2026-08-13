@@ -20,16 +20,22 @@ __all__ = [
     "SimulationResult",
     "SubspaceBasis",
     "TissueProperties",
+    "calibrate",
     "decompress_shape",
+    "execution",
+    "distribute",
     "fse_description",
     "make_simulator",
     "mpnrage_description",
     "mprage_description",
     "mrf_description",
+    "offload",
     "simulate_subspace",
     "spgr_description",
 ]
 
+from ._accelerators import distribute, execution, offload
+from ._calibration import calibrate
 from ._builders import (
     fse_description,
     mpnrage_description,

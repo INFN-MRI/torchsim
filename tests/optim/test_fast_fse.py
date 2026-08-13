@@ -223,3 +223,81 @@ def test_a_pulse_that_rescales_the_flip_angle_is_refused():
             TissueProperties(t1_ms=T1_MS, t2_ms=T2_MS),
             iterations=1,
         )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_full_optimization_step_runs_on_cuda():
+    """Forward, Jacobian and backward, the whole path the optimizer walks.
+
+    Every kernel underneath is reached only through the plan, so this is what
+    says a GPU optimization run works rather than each piece separately.
+    """
+    degrees = _degrees(8, 20)
+    tissue = TissueProperties(
+        t1_ms=T1_MS,
+        t2_ms=T2_MS,
+        b0_hz=torch.zeros(2),
+        b1_phase_rad=torch.zeros(2),
+    )
+
+    def step(device):
+        plan = FseT2Plan(
+            20,
+            ECHO_SPACING_MS * 1e-3,
+            phases_rad=torch.pi * PHASES_DEG / 180.0,
+            device=device,
+        )
+        flip = torch.deg2rad(degrees).to(device).requires_grad_(True)
+        loss = (plan.t2_jacobian(flip, tissue).abs() ** 2).sum()
+        loss.backward()
+        return loss.detach().cpu(), flip.grad.detach().cpu()
+
+    expected_loss, expected_grad = step("cpu")
+    actual_loss, actual_grad = step("cuda")
+
+    assert expected_grad.abs().max() > 0
+    assert torch.isclose(expected_loss, actual_loss, rtol=1e-4)
+    scale = expected_grad.abs().max()
+    assert ((expected_grad - actual_grad).abs().max() / scale) < 1e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_an_optimization_step_survives_being_sharded():
+    """The plan reaches the kernels through three entry points, all shardable.
+
+    One GPU here, so the shards land on the same device; what this pins down is
+    that splitting and reassembling the trains changes no answer.
+    """
+    from torchsim.sequence import distribute
+
+    degrees = _degrees(16, 20)
+    tissue = TissueProperties(
+        t1_ms=T1_MS,
+        t2_ms=T2_MS,
+        b0_hz=torch.zeros(2),
+        b1_phase_rad=torch.zeros(2),
+    )
+
+    def step(shards):
+        plan = FseT2Plan(
+            20,
+            ECHO_SPACING_MS * 1e-3,
+            phases_rad=torch.pi * PHASES_DEG / 180.0,
+            device="cuda",
+        )
+        flip = torch.deg2rad(degrees).cuda().requires_grad_(True)
+        if shards:
+            with distribute(["cuda:0"] * shards):
+                loss = (plan.t2_jacobian(flip, tissue).abs() ** 2).sum()
+                loss.backward()
+        else:
+            loss = (plan.t2_jacobian(flip, tissue).abs() ** 2).sum()
+            loss.backward()
+        return loss.detach().cpu(), flip.grad.detach().cpu()
+
+    expected_loss, expected_grad = step(0)
+    assert expected_grad.abs().max() > 0
+    for shards in (2, 4):
+        loss, grad = step(shards)
+        assert torch.equal(loss, expected_loss)
+        assert torch.equal(grad, expected_grad)

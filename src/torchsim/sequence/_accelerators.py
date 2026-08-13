@@ -5,12 +5,31 @@ from __future__ import annotations
 __all__: list[str] = []
 
 import os
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
 import torch
 
+from ._calibration import crossover, detection
 from ._description import EventType, RfUse, SequenceDescription, SequenceEvent
+from ._parameters import (
+    FLOAT_INPUTS as _FLOAT_INPUTS,
+)
+from ._parameters import (
+    PACKED_COUNT as _PACKED_COUNT,
+)
+from ._parameters import (
+    SEED_INPUT as _SEED_INPUT,
+)
+from ._parameters import (
+    TISSUE_COUNT as _TISSUE_COUNT,
+)
+
+# A forward-mode call appends one tangent per differentiable input to the
+# packed buffers; the scalar arguments follow those.
+_TANGENT_END = _PACKED_COUNT + len(_FLOAT_INPUTS)
 
 _PRE_SHIFT = 1
 _POST_SHIFT = 2
@@ -49,6 +68,35 @@ class _PackedEvents:
         return self.flip.dim() == 2
 
 
+def _across_slice(
+    tissue: tuple[torch.Tensor, ...], profile: torch.Tensor
+) -> tuple[tuple[torch.Tensor, ...], int]:
+    """Spread each voxel over the slice profile, as many voxels as it has points.
+
+    A slice profile scales the flip angle and nothing else, exactly as the
+    transmit field does, and the recorded signal is the mean over the profile.
+    So a profile of n points is n copies of every voxel at scaled transmit,
+    which the state machine can run without knowing anything about slices.
+
+    Returns the tissue laid out voxel-major, and how many points it holds.
+    """
+    locations = int(profile.numel())
+    if locations == 1:
+        return (
+            (*tissue[:3], (tissue[3] * profile.reshape(())).contiguous(), *tissue[4:]),
+            1,
+        )
+    transmit = 3
+    spread = [
+        value[:, None].expand(-1, locations).reshape(-1).contiguous()
+        for value in tissue
+    ]
+    spread[transmit] = (
+        (tissue[transmit][:, None] * profile[None, :]).reshape(-1).contiguous()
+    )
+    return tuple(spread), locations
+
+
 def simulate_native(
     policy_name: str,
     description: SequenceDescription,
@@ -62,10 +110,10 @@ def simulate_native(
     rf_raster_time_s: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules."""
-    if slice_profile.numel() != 1:
-        return None
     device = prepared_tissue[0].device
     if device.type not in {"cpu", "cuda"} or not _backend_available(device):
+        return None
+    if policy_name not in _SHIFTS_AND_SPOILS:
         return None
 
     packed = _pack_events(
@@ -79,13 +127,7 @@ def simulate_native(
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
-    tissue = (
-        tissue[0],
-        tissue[1],
-        tissue[2],
-        (tissue[3] * slice_profile.reshape(())).contiguous(),
-        *tissue[4:],
-    )
+    tissue, locations = _across_slice(tissue, slice_profile)
     threads = int(os.environ.get("TORCHSIM_NUM_THREADS", str(torch.get_num_threads())))
     signal = _NativeEpg.apply(
         *tissue,
@@ -99,10 +141,12 @@ def simulate_native(
         packed.output_count,
         threads,
     )
-    if packed.is_batched:
-        signal = signal.reshape(packed.train_count, *output_shape, packed.output_count)
-    else:
-        signal = signal.reshape(*output_shape, packed.output_count)
+    leading = (packed.train_count,) if packed.is_batched else ()
+    if locations > 1:
+        signal = signal.reshape(
+            *leading, -1, locations, packed.output_count
+        ).mean(dim=-2)
+    signal = signal.reshape(*leading, *output_shape, packed.output_count)
     return (
         signal,
         packed.time_us,
@@ -205,6 +249,12 @@ def _pack_events(
     )
 
 
+# The crusher and spoiler placements these kernels can be told about, named by
+# the policy that asks for them. A policy outside this set has state handling
+# the packed events have no way to carry, so it does not reach the kernels.
+_SHIFTS_AND_SPOILS = frozenset({"base", "bssfp", "fse", "spgr", "ssfp-fid", "ssfp-echo"})
+
+
 def _action(policy_name: str, event: SequenceEvent) -> int:
     if event.type is EventType.RF and event.rf_use is RfUse.REFOCUSING:
         return _PRE_SHIFT | _POST_SHIFT if policy_name == "fse" else 0
@@ -297,6 +347,73 @@ def _stack(
     return torch.stack(values).to(dtype=dtype)
 
 
+def _spread(
+    gradients: tuple[torch.Tensor, ...], needed: tuple[bool, ...]
+) -> tuple[torch.Tensor | None, ...]:
+    """Place the differentiable gradients back among all the packed inputs."""
+    lookup = dict(zip(_FLOAT_INPUTS, gradients, strict=True))
+    return tuple(
+        lookup[index] if index in lookup and needed[index] else None
+        for index in range(_PACKED_COUNT)
+    )
+
+
+def _wanted(needs_input_grad: tuple[bool, ...]) -> tuple[bool, ...]:
+    """Which differentiable inputs the caller will read, in gradient order."""
+    return tuple(bool(needs_input_grad[index]) for index in _FLOAT_INPUTS)
+
+
+class _LastDerivative(torch.autograd.Function):
+    """An identity whose own derivative is refused.
+
+    The kernels reach two orders. A third would be asked of results that came
+    out of them as plain tensors, while the inputs those results were computed
+    from are still in the graph -- so autograd can route around the missing
+    term and return an answer that is quietly short of it. Passing the results
+    through here puts a node in the way that says so instead.
+    """
+
+    @staticmethod
+    def forward(count: int, *values: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return tuple(value.view_as(value) for value in values[:count])
+
+    @staticmethod
+    def setup_context(
+        _ctx: Any, _inputs: tuple[Any, ...], _output: tuple[torch.Tensor, ...]
+    ) -> None:
+        return None
+
+    @staticmethod
+    def backward(_ctx: Any, *_cotangents: torch.Tensor) -> tuple[Any, ...]:
+        raise RuntimeError(
+            "the fused EPG kernels give first and second derivatives; a third "
+            "would need a pass that is not written"
+        )
+
+
+def _last(
+    results: tuple[torch.Tensor | None, ...], sources: Sequence[torch.Tensor]
+) -> tuple[torch.Tensor | None, ...]:
+    """Refuse a further derivative of ``results``, which the kernels cannot give.
+
+    Only when a graph is being built, which is the sole way a third derivative
+    can be reached.
+    """
+    if not torch.is_grad_enabled():
+        return results
+    graphed = tuple(value for value in sources if value.requires_grad)
+    positions = [index for index, value in enumerate(results) if value is not None]
+    if not graphed or not positions:
+        return results
+    guarded = _LastDerivative.apply(
+        len(positions), *(results[index] for index in positions), *graphed
+    )
+    replaced = list(results)
+    for index, value in zip(positions, guarded, strict=True):
+        replaced[index] = value
+    return tuple(replaced)
+
+
 class _NativeEpg(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -323,22 +440,21 @@ class _NativeEpg(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx: Any, inputs: tuple[Any, ...], _output: torch.Tensor) -> None:
-        tensors = inputs[:13]
+        tensors = inputs[:_PACKED_COUNT]
         ctx.save_for_backward(*tensors)
         ctx.save_for_forward(*tensors)
-        ctx.state_count = inputs[13]
-        ctx.output_count = inputs[14]
-        ctx.threads = inputs[15]
+        ctx.state_count = inputs[_PACKED_COUNT]
+        ctx.output_count = inputs[_PACKED_COUNT + 1]
+        ctx.threads = inputs[_PACKED_COUNT + 2]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
         saved = ctx.saved_tensors
-        float_indices = (0, 1, 2, 3, 4, 5, 6, 7, 9, 10)
         float_tangents = tuple(
             torch.zeros_like(saved[index])
             if tangents[index] is None
             else tangents[index].to(saved[index]).contiguous()
-            for index in float_indices
+            for index in _FLOAT_INPUTS
         )
         return _NativeEpgJvp.apply(
             *saved,
@@ -351,54 +467,16 @@ class _NativeEpg(torch.autograd.Function):
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
-        float_indices = (0, 1, 2, 3, 4, 5, 6, 7, 9, 10)
-        if _vjp_available(saved[0].device):
-            # Fused analytic adjoint. Ordered like ``float_indices``.
-            fused = _run_packed_vjp(
-                saved[:7],
-                saved[7:13],
-                grad_output,
-                state_count=ctx.state_count,
-                output_count=ctx.output_count,
-                threads=ctx.threads,
-            )
-            lookup = dict(zip(float_indices, fused, strict=True))
-            result: list[torch.Tensor | None] = [
-                lookup[index]
-                if index in lookup and ctx.needs_input_grad[index]
-                else None
-                for index in range(13)
-            ]
-            return (*result, None, None, None)
-
-        with torch.enable_grad():
-            output = _simulate_packed_torch(
-                saved[:7],
-                saved[7:13],
-                state_count=ctx.state_count,
-                output_count=ctx.output_count,
-            )
-            differentiable = [
-                tensor
-                for index, tensor in enumerate(saved)
-                if index in set(float_indices) and ctx.needs_input_grad[index]
-            ]
-            gradients = torch.autograd.grad(
-                output,
-                differentiable,
-                grad_output,
-                allow_unused=True,
-                create_graph=torch.is_grad_enabled(),
-            ) if differentiable else ()
-        result = []
-        gradient_index = 0
-        for index in range(13):
-            if index in set(float_indices) and ctx.needs_input_grad[index]:
-                result.append(gradients[gradient_index])
-                gradient_index += 1
-            else:
-                result.append(None)
-        return (*result, None, None, None)
+        wanted = _wanted(ctx.needs_input_grad)
+        fused = _NativeEpgVjp.apply(
+            *saved,
+            grad_output,
+            ctx.state_count,
+            ctx.output_count,
+            ctx.threads,
+            wanted,
+        )
+        return (*_spread(fused, ctx.needs_input_grad), None, None, None)
 
     @staticmethod
     def vmap(
@@ -409,94 +487,129 @@ class _NativeEpg(torch.autograd.Function):
         return _loop_vmap(_NativeEpg, info.batch_size, in_dims, inputs)
 
 
+class _NativeEpgVjp(torch.autograd.Function):
+    """The adjoint ``J(x)^T w``, itself differentiable once more.
+
+    Its own backward is two more kernel calls. Contracting the ten gradients
+    with a direction ``v`` gives ``<v, J(x)^T w> = <J(x) v, w>``, a form that is
+    linear in ``w`` and whose derivatives are therefore the two passes already
+    written: the forward-over-reverse contraction for ``d/dx``, and a plain
+    directional derivative ``J(x) v`` for ``d/dw``.
+    """
+
+    @staticmethod
+    def forward(*inputs: Any) -> tuple[torch.Tensor, ...]:
+        primal = inputs[:_PACKED_COUNT]
+        return _run_packed_vjp(
+            primal[:_TISSUE_COUNT],
+            primal[_TISSUE_COUNT:_PACKED_COUNT],
+            inputs[_SEED_INPUT],
+            state_count=inputs[_SEED_INPUT + 1],
+            output_count=inputs[_SEED_INPUT + 2],
+            threads=inputs[_SEED_INPUT + 3],
+            wanted=inputs[_SEED_INPUT + 4],
+        )
+
+    @staticmethod
+    def setup_context(
+        ctx: Any, inputs: tuple[Any, ...], _output: tuple[torch.Tensor, ...]
+    ) -> None:
+        ctx.save_for_backward(*inputs[:_SEED_INPUT + 1])
+        ctx.state_count = inputs[_SEED_INPUT + 1]
+        ctx.output_count = inputs[_SEED_INPUT + 2]
+        ctx.threads = inputs[_SEED_INPUT + 3]
+
+    @staticmethod
+    def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
+        saved = ctx.saved_tensors
+        primal, seed = saved[:_PACKED_COUNT], saved[_SEED_INPUT]
+        directions = tuple(
+            torch.zeros_like(primal[index])
+            if cotangent is None
+            else cotangent.to(primal[index]).contiguous()
+            for index, cotangent in zip(_FLOAT_INPUTS, cotangents, strict=True)
+        )
+        wanted = _wanted(ctx.needs_input_grad)
+        curvature, _ = _run_packed_vjp_jvp(
+            primal[:_TISSUE_COUNT],
+            primal[_TISSUE_COUNT:_PACKED_COUNT],
+            directions,
+            seed,
+            state_count=ctx.state_count,
+            output_count=ctx.output_count,
+            threads=ctx.threads,
+            wanted=wanted,
+        )
+        seed_grad = None
+        if ctx.needs_input_grad[_SEED_INPUT]:
+            seed_grad = _run_packed_jvp(
+                primal[:_TISSUE_COUNT],
+                primal[_TISSUE_COUNT:_PACKED_COUNT],
+                directions[:_TISSUE_COUNT],
+                directions[_TISSUE_COUNT:],
+                ctx.state_count,
+                ctx.output_count,
+                ctx.threads,
+            )
+        guarded = _last(
+            (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
+        )
+        return (*guarded, None, None, None, None)
+
+
 class _NativeEpgJvp(torch.autograd.Function):
     @staticmethod
     def forward(*inputs: Any) -> torch.Tensor:
-        saved = inputs[:13]
-        tangents = inputs[13:23]
-        tissue_tangents = tangents[:7]
-        event_tangents = tangents[7:]
+        saved = inputs[:_PACKED_COUNT]
+        tangents = inputs[_PACKED_COUNT:_TANGENT_END]
+        tissue_tangents = tangents[:_TISSUE_COUNT]
+        event_tangents = tangents[_TISSUE_COUNT:]
         return _run_packed_jvp(
-            saved[:7],
-            saved[7:13],
+            saved[:_TISSUE_COUNT],
+            saved[_TISSUE_COUNT:_PACKED_COUNT],
             tissue_tangents,
             event_tangents,
-            inputs[23],
-            inputs[24],
-            inputs[25],
+            inputs[_TANGENT_END],
+            inputs[_TANGENT_END + 1],
+            inputs[_TANGENT_END + 2],
         )
 
     @staticmethod
     def setup_context(ctx: Any, inputs: tuple[Any, ...], _output: torch.Tensor) -> None:
-        ctx.save_for_backward(*inputs[:23])
-        ctx.state_count = inputs[23]
-        ctx.output_count = inputs[24]
+        ctx.save_for_backward(*inputs[:_TANGENT_END])
+        ctx.state_count = inputs[_TANGENT_END]
+        ctx.output_count = inputs[_TANGENT_END + 1]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
-        primal = saved[:13]
-        tangent = saved[13:23]
-        float_indices = (0, 1, 2, 3, 4, 5, 6, 7, 9, 10)
-        float_primal = tuple(primal[index] for index in float_indices)
-
-        if _vjp_available(primal[0].device):
-            primal_grads, tangent_grads = _run_packed_vjp_jvp(
-                primal[:7],
-                primal[7:13],
-                tangent,
-                grad_output,
-                state_count=ctx.state_count,
-                output_count=ctx.output_count,
-                threads=getattr(ctx, "threads", 0),
-            )
-            primal_lookup = dict(zip(float_indices, primal_grads, strict=True))
-            result: list[torch.Tensor | None] = []
-            for index in range(13):
-                needed = ctx.needs_input_grad[index]
-                result.append(primal_lookup[index] if needed and index in primal_lookup else None)
-            for offset in range(10):
-                index = 13 + offset
-                needed = (
-                    index < len(ctx.needs_input_grad) and ctx.needs_input_grad[index]
-                )
-                result.append(tangent_grads[offset] if needed else None)
-            return (*result, None, None, None)
-
-        def function(*values: torch.Tensor) -> torch.Tensor:
-            rebuilt = list(primal)
-            for index, value in zip(float_indices, values, strict=True):
-                rebuilt[index] = value
-            return _simulate_packed_torch(
-                tuple(rebuilt[:7]),
-                tuple(rebuilt[7:13]),
-                state_count=ctx.state_count,
-                output_count=ctx.output_count,
-            )
-
-        with torch.enable_grad():
-            _, directional = torch.func.jvp(function, float_primal, tangent)
-            requested = [
-                tensor
-                for index, tensor in enumerate((*primal, *tangent))
-                if index < len(ctx.needs_input_grad) and ctx.needs_input_grad[index]
-            ]
-            gradients = torch.autograd.grad(
-                directional,
-                requested,
-                grad_output,
-                allow_unused=True,
-                create_graph=torch.is_grad_enabled(),
-            ) if requested else ()
-        result: list[torch.Tensor | None] = []
-        gradient_index = 0
-        for index in range(23):
-            if ctx.needs_input_grad[index]:
-                result.append(gradients[gradient_index])
-                gradient_index += 1
-            else:
-                result.append(None)
-        return (*result, None, None, None)
+        primal = saved[:_PACKED_COUNT]
+        tangent = saved[_PACKED_COUNT:_TANGENT_END]
+        # Each of the ten is wanted if either the primal input or its forward
+        # direction is being differentiated.
+        wanted = tuple(
+            bool(ctx.needs_input_grad[index])
+            or bool(ctx.needs_input_grad[_PACKED_COUNT + position])
+            for position, index in enumerate(_FLOAT_INPUTS)
+        )
+        primal_grads, tangent_grads = _run_packed_vjp_jvp(
+            primal[:_TISSUE_COUNT],
+            primal[_TISSUE_COUNT:_PACKED_COUNT],
+            tangent,
+            grad_output,
+            state_count=ctx.state_count,
+            output_count=ctx.output_count,
+            threads=getattr(ctx, "threads", 0),
+            wanted=wanted,
+        )
+        directions = tuple(
+            gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
+            for offset, gradient in enumerate(tangent_grads)
+        )
+        guarded = _last(
+            (*_spread(primal_grads, ctx.needs_input_grad), *directions), saved
+        )
+        return (*guarded, None, None, None)
 
     @staticmethod
     def vmap(
@@ -534,13 +647,6 @@ def _loop_vmap(
     return torch.stack(outputs), 0
 
 
-# Below this many (atom, train, event) triples the subspace test costs more
-# than the kernel it would speed up. The test is a fixed handful of reductions
-# either way, so where it breaks even follows how fast the device clears the
-# work behind it.
-_AUTO_DETECT_WORK = {"cpu": 5_000, "cuda": 1_000_000}
-_AUTO_DETECT_DEFAULT = 1_000_000
-
 # How far two RF phases may drift and still count as the same one.
 _PHASE_TOLERANCE = 1e-5
 
@@ -549,16 +655,18 @@ def real_subspace_axis(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
 ) -> int | None:
-    """Which real axis the states are confined to, or ``None`` if neither.
+    """The real axis the states are confined to, or ``None``.
 
-    When the refocusing pulses share one phase and there is no off-resonance or
-    transmit phase, the state machine never leaves a real subspace. The
-    excitation picks the axis: in phase with the refocusing pulses the signal is
-    pure imaginary (returns 1), a quarter turn away it is pure real (returns 0).
+    Returns 1 when the refocusing pulses share one phase, the excitation shares
+    it too, and there is neither off-resonance nor transmit phase. The state
+    machine then never leaves the axis on which the signal is pure imaginary.
 
-    Off-resonance is disqualifying even though an FSE echo train refocuses it by
-    the echo centers: the states between refocusing pulses are complex, so only
-    the recorded samples look real.
+    Two arrangements make the recorded echoes look real without confining the
+    states, and both are refused. Off-resonance is refocused at the echo
+    centers but not between them. An excitation a quarter turn from the
+    refocusing pulses gives a signal that is real at every sample while its
+    states fill the plane -- a real projection of a complex trajectory, not a
+    subspace a kernel can be built on.
     """
     b0_free, phase_free, has_refocusing, has_excitation, spread, offset = _summarize(
         events, tissue
@@ -569,8 +677,6 @@ def real_subspace_axis(
         return None
     if offset < _PHASE_TOLERANCE or abs(offset - torch.pi) < _PHASE_TOLERANCE:
         return 1
-    if abs(offset - torch.pi / 2) < _PHASE_TOLERANCE:
-        return 0
     return None
 
 
@@ -624,16 +730,17 @@ def _summarize(
 
 
 def _auto_real_axis(
+    kind: str,
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
+    state_count: int,
     tangents: tuple[torch.Tensor, ...] = (),
 ) -> int | None:
     """The subspace verdict, when deciding it costs less than it saves.
 
     Deciding scans the phase buffer, so it is cheap next to a kernel over many
     atoms and states but not next to a small one, and where that line falls
-    depends on the device -- see ``_AUTO_DETECT_WORK``. Below it the complex
-    kernel is simply the faster answer.
+    depends on the machine -- ``detection`` measures it.
 
     ``tangents`` are the forward-mode directions, if any. A seed along
     off-resonance, transmit phase or RF phase leaves the subspace however real
@@ -641,8 +748,7 @@ def _auto_real_axis(
     their presence rules the fast path out.
     """
     work = int(tissue[0].numel()) * _train_count(events) * int(events[1].numel())
-    device = tissue[0].device.type
-    if work < _AUTO_DETECT_WORK.get(device, _AUTO_DETECT_DEFAULT):
+    if work < detection(kind, tissue[0].device, state_count):
         return None
     if tangents:
         seeded = torch.stack(
@@ -651,6 +757,37 @@ def _auto_real_axis(
         if bool(seeded):
             return None
     return real_subspace_axis(events, tissue)
+
+
+# Where the differentiable-input order carries the three gradients a real
+# adjoint leaves at zero: transmit phase, off-resonance and RF phase all point
+# out of the subspace.
+_OUTSIDE_THE_SUBSPACE = (4, 5, 9)
+
+
+def _auto_real_axis_adjoint(
+    events: tuple[torch.Tensor, ...],
+    tissue: tuple[torch.Tensor, ...],
+    state_count: int,
+    tangents: tuple[torch.Tensor, ...],
+    wanted: tuple[bool, ...] | None,
+) -> int | None:
+    """The subspace verdict for an adjoint, given what the caller will read.
+
+    A real adjoint returns zero for the three gradients that leave the
+    subspace, and those are not zero in truth, so it is only available to a
+    caller that has said which gradients it wants and left those out. ``None``
+    for ``wanted`` means all of them, which rules the fast path out.
+    """
+    if wanted is None or any(wanted[index] for index in _OUTSIDE_THE_SUBSPACE):
+        return None
+    return _auto_real_axis(
+        "adjoint",
+        events,
+        tissue,
+        state_count,
+        tuple(tangents[index] for index in _OUTSIDE_THE_SUBSPACE),
+    )
 
 
 def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
@@ -698,6 +835,803 @@ def _train_count(events: tuple[torch.Tensor, ...]) -> int:
     return widths.pop()
 
 
+# ---------------------------------------------------------------------------
+# Spreading echo trains over several CUDA devices.
+#
+# Trains are the axis to split on: they are independent, the event buffers
+# already carry them as their leading dimension, and the signal comes back with
+# them leading too. Tissue is shared by every train, so it is replicated.
+# ---------------------------------------------------------------------------
+
+_DEVICES: tuple[torch.device, ...] = ()
+
+
+@contextmanager
+def distribute(devices: Sequence[torch.device | str]) -> Iterator[None]:
+    """Spread echo trains across ``devices`` for the duration of the block.
+
+    Only CUDA work shards, and only when there is more than one train to split;
+    anything else runs where it already is. Naming one device is allowed and
+    simply runs everything there.
+
+    Raises:
+        ValueError: if ``devices`` is empty or names a device that is not CUDA.
+    """
+    global _DEVICES
+    resolved = tuple(torch.device(value) for value in devices)
+    if not resolved:
+        raise ValueError("distribute needs at least one device")
+    for device in resolved:
+        if device.type != "cuda":
+            raise ValueError(f"distribute is for CUDA devices, got {device}")
+    previous = _DEVICES
+    _DEVICES = resolved
+    try:
+        yield
+    finally:
+        _DEVICES = previous
+
+
+def _shard_bounds(train_count: int) -> list[tuple[int, int, torch.device]]:
+    """Contiguous train spans, one per device, remainders going to the first.
+
+    Empty when there is nothing to gain: one device, or fewer trains than the
+    call already runs in one piece.
+    """
+    if len(_DEVICES) < 2 or train_count < 2:
+        return []
+    step, extra = divmod(train_count, len(_DEVICES))
+    bounds = []
+    start = 0
+    for index, device in enumerate(_DEVICES):
+        width = step + (1 if index < extra else 0)
+        if width:
+            bounds.append((start, start + width, device))
+        start += width
+    return bounds
+
+
+def _to_device(
+    values: tuple[torch.Tensor, ...], device: torch.device
+) -> tuple[torch.Tensor, ...]:
+    """Replicate buffers that every train shares."""
+    return tuple(value.to(device) for value in values)
+
+
+def _shard_events(
+    events: tuple[torch.Tensor, ...], begin: int, end: int, device: torch.device
+) -> tuple[torch.Tensor, ...]:
+    """One shard's events: the per-train buffers cut, the shared ones copied."""
+    duration, kind, flip, phase, action, output_index = events
+    return (
+        duration[begin:end].contiguous().to(device),
+        kind.to(device),
+        flip[begin:end].contiguous().to(device),
+        phase[begin:end].contiguous().to(device),
+        action.to(device),
+        output_index.to(device),
+    )
+
+
+def _shard_event_tangents(
+    tangents: tuple[torch.Tensor, ...], begin: int, end: int, device: torch.device
+) -> tuple[torch.Tensor, ...]:
+    """``(duration, flip, phase)`` seeds, cut the same way as the events."""
+    return tuple(
+        value[begin:end].contiguous().to(device) for value in tangents
+    )
+
+
+def _gather_shards(
+    parts: list[tuple[int, torch.Tensor]],
+    home: torch.device,
+    output_count: int,
+) -> torch.Tensor:
+    """Stack the shards' signals back into one train-leading tensor.
+
+    A shard holding a single train gets the shape a single-train call returns,
+    which has no train axis at all, so each piece is reshaped from the span it
+    was asked for rather than from what came back.
+    """
+    return torch.cat(
+        [
+            signal.to(home).reshape(width, -1, output_count)
+            for width, signal in parts
+        ]
+    )
+
+
+def _combine_shards(
+    parts: tuple[tuple[torch.Tensor, ...], ...], home: torch.device
+) -> tuple[torch.Tensor, ...]:
+    """Reassemble one side of the second-order result from its shards.
+
+    A tissue gradient collects a contribution from every train, so the shards
+    hold partial sums that have to be added. An event gradient belongs to one
+    train, so the shards hold disjoint pieces that line up end to end.
+    """
+    combined = []
+    for index, pieces in enumerate(zip(*parts, strict=True)):
+        moved = [piece.to(home) for piece in pieces]
+        if index < 7:
+            combined.append(torch.stack(moved).sum(dim=0))
+        else:
+            combined.append(torch.cat(moved))
+    return tuple(combined)
+
+
+# ---------------------------------------------------------------------------
+# Streaming a host-resident volume through a memory-limited device.
+#
+# Parameter mapping and model-based imaging scale with voxels, and the signal
+# alone runs to tens of gigabytes -- more than a recon server's card has spare
+# once the product pipeline's kernels are loaded. So the volume stays on the
+# host and moves through the device a chunk at a time, on reusable buffers
+# whose size the caller sets. Several chunks are in flight at once so a copy
+# can proceed while another chunk computes.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_BUDGET_BYTES = 512 << 20
+
+
+@dataclass(frozen=True)
+class _Offload:
+    devices: tuple[torch.device, ...]
+    budget_bytes: int
+    lanes: int
+
+
+_OFFLOAD: _Offload | None = None
+
+
+@contextmanager
+def offload(
+    devices: Sequence[torch.device | str] = ("cuda",),
+    *,
+    budget_bytes: int = _DEFAULT_BUDGET_BYTES,
+    lanes: int = 1,
+) -> Iterator[None]:
+    """Run host-resident volumes on CUDA without holding them there.
+
+    Inside the block a simulation whose tissue is on the host still runs on
+    ``devices``, in voxel chunks sized so that the device buffers stay within
+    ``budget_bytes`` in total. The result comes back on the host.
+
+    The budget buys memory with time, and steeply once the chunks get small: a
+    chunk both fills the device less well and pays its own launch and transfer
+    latency, so quartering the budget costs far more than a quarter of the
+    throughput. Give it as much as the card can spare.
+
+    ``lanes`` is how many chunks may be in flight per device. A lane owns a
+    stream and its own buffers, so a second one lets a chunk's transfer overlap
+    another chunk's arithmetic -- but it takes its share out of the same
+    budget, and every chunk gets narrower as a result. Narrower chunks lose
+    more than the overlap recovers except when the volume was barely splitting
+    to begin with, so one lane is the default and raising it is worth measuring
+    before believing. A machine that overlaps transfers better than this one
+    would move that balance.
+
+    Whatever ``lanes`` is set to, it changes only throughput: what makes a
+    volume larger than the card runnable at all is the chunking.
+
+    Raises:
+        ValueError: if ``devices`` is empty, names a device that is not CUDA,
+            or if ``budget_bytes`` or ``lanes`` is not positive.
+    """
+    global _OFFLOAD
+    resolved = tuple(torch.device(value) for value in devices)
+    if not resolved:
+        raise ValueError("offload needs at least one device")
+    for device in resolved:
+        if device.type != "cuda":
+            raise ValueError(f"offload is for CUDA devices, got {device}")
+    if budget_bytes <= 0:
+        raise ValueError(f"budget_bytes must be positive, got {budget_bytes}")
+    if lanes <= 0:
+        raise ValueError(f"lanes must be positive, got {lanes}")
+    previous = _OFFLOAD
+    _OFFLOAD = _Offload(resolved, int(budget_bytes), int(lanes))
+    try:
+        yield
+    finally:
+        _OFFLOAD = previous
+
+
+# What one voxel costs on the device, by pass. These are what both the chunk
+# size and the whole-problem footprint are derived from, so they stay in step.
+def _bytes_per_voxel(
+    kind: str,
+    train_count: int,
+    event_count: int,
+    output_count: int,
+    state_count: int,
+    real_axis: int | None,
+) -> int:
+    """Device bytes one voxel needs for a ``forward``, ``jvp`` or ``adjoint`` pass."""
+    planes = 2 if real_axis == 1 else 4
+    scratch = train_count * planes * state_count * 4
+    # Two float planes of signal and the complex copy staged for the transfer.
+    signal = train_count * (2 * 4 * output_count + 8 * output_count)
+    if kind == "adjoint":
+        # The recorded trajectory dominates by orders of magnitude: it holds
+        # three state planes for every event, not just the recorded ones. The
+        # cotangent adds two more float planes on top of the signal buffers.
+        return (
+            14 * 4
+            + signal
+            + train_count * 2 * 4 * output_count
+            + train_count * event_count * 3 * state_count * planes * 4
+            + scratch
+            + 7 * 2 * 4
+        )
+    inputs = 14 * 4 if kind == "jvp" else 7 * 4
+    return inputs + signal + scratch
+
+
+def _chunk_voxels(plan: _Offload, kind: str, *shape: Any) -> int:
+    """Largest voxel chunk whose buffers fit the budget, across every lane."""
+    across = plan.lanes * len(plan.devices)
+    per_voxel = max(1, _bytes_per_voxel(kind, *shape))
+    return max(1, plan.budget_bytes // (across * per_voxel))
+
+
+# ---------------------------------------------------------------------------
+# Choosing where to run.
+#
+# How much work it takes before a launch earns itself back is a property of the
+# machine, so ``crossover`` measures it rather than assuming it.
+# ---------------------------------------------------------------------------
+
+# Left free on every card. A recon server's product pipeline keeps its own
+# kernels and workspaces resident, and taking the last of the memory would
+# evict them rather than fail honestly.
+_RESERVE_BYTES = 512 << 20
+
+
+@dataclass(frozen=True)
+class _Execution:
+    """What the caller asked for, before any problem is in hand."""
+
+    target: str  # "auto", "cpu" or "devices"
+    devices: tuple[torch.device, ...]
+    stream: bool | None
+    budget_bytes: int | None
+    lanes: int
+    reserve_bytes: int
+
+
+@dataclass(frozen=True)
+class _Choice:
+    """What to do with one particular problem."""
+
+    where: str  # "cpu", "upfront" or "stream"
+    devices: tuple[torch.device, ...] = ()
+    offload: _Offload | None = None
+
+
+_EXECUTION: _Execution | None = None
+_ON_HOST = _Choice("cpu")
+
+
+@contextmanager
+def execution(
+    target: str | torch.device | Sequence[torch.device | str] = "auto",
+    *,
+    stream: bool | None = None,
+    budget_bytes: int | None = None,
+    lanes: int = 1,
+    reserve_bytes: int = _RESERVE_BYTES,
+) -> Iterator[None]:
+    """Choose where simulations run inside the block.
+
+    ``target`` is ``"auto"`` to decide per call, ``"cpu"`` to insist on the
+    host, or a device or list of devices to insist on those. Deciding weighs
+    the problem against what each card has free right now: work too small to
+    repay a launch stays on the CPU, work that fits goes across in one piece,
+    and work that does not is streamed through in chunks.
+
+    ``stream`` overrules that last step -- ``False`` demands the whole volume
+    be resident and lets it fail if it will not fit, ``True`` streams even when
+    it would have fit. ``budget_bytes`` caps what streaming may hold, and
+    defaults to what the devices report free less ``reserve_bytes``. ``lanes``
+    is passed to :func:`offload` for streamed work and rarely wants changing.
+
+    Outside a block, simulations run wherever their tensors already are.
+
+    Raises:
+        ValueError: for an empty device list, a non-CUDA device, or a
+            non-positive ``budget_bytes`` or ``lanes``.
+    """
+    global _EXECUTION
+    if lanes <= 0:
+        raise ValueError(f"lanes must be positive, got {lanes}")
+    if budget_bytes is not None and budget_bytes <= 0:
+        raise ValueError(f"budget_bytes must be positive, got {budget_bytes}")
+
+    if isinstance(target, str) and target in {"auto", "cpu"}:
+        name, devices = target, ()
+    else:
+        named = (target,) if isinstance(target, (str, torch.device)) else tuple(target)
+        if not named:
+            raise ValueError("execution needs at least one device")
+        devices = tuple(torch.device(value) for value in named)
+        if all(device.type == "cpu" for device in devices):
+            name, devices = "cpu", ()
+        else:
+            for device in devices:
+                if device.type != "cuda":
+                    raise ValueError(
+                        f"execution takes CUDA devices or 'cpu', got {device}"
+                    )
+            name = "devices"
+
+    previous = _EXECUTION
+    _EXECUTION = _Execution(
+        name, devices, stream, budget_bytes, int(lanes), int(reserve_bytes)
+    )
+    try:
+        yield
+    finally:
+        _EXECUTION = previous
+
+
+def _free_bytes(device: torch.device, reserve: int) -> int:
+    """What this card can spare, after leaving the reserve alone."""
+    free, _total = torch.cuda.mem_get_info(device)
+    return max(0, free - reserve)
+
+
+def _candidate_devices(plan: _Execution) -> tuple[torch.device, ...]:
+    if plan.devices:
+        return plan.devices
+    return tuple(
+        torch.device("cuda", index) for index in range(torch.cuda.device_count())
+    )
+
+
+def _choose(
+    kind: str,
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    output_count: int,
+    state_count: int,
+    real_axis: int | None,
+) -> _Choice | None:
+    """Decide where one problem runs, given the policy and the free memory.
+
+    ``None`` means there is no policy in force and the call stands as written:
+    it runs wherever its tensors already are.
+    """
+    plan = _EXECUTION
+    if plan is None:
+        return None
+    if plan.target == "cpu":
+        return _ON_HOST
+    if not torch.cuda.is_available():
+        return _ON_HOST
+
+    devices = _candidate_devices(plan)
+    if not devices:
+        return _ON_HOST
+
+    train_count = _train_count(events)
+    voxels = int(tissue[0].numel())
+    event_count = int(events[1].numel())
+    work = voxels * train_count * event_count
+    if plan.target == "auto" and work < crossover(kind, devices[0], state_count):
+        return _ON_HOST
+
+    per_voxel = _bytes_per_voxel(
+        kind, train_count, event_count, output_count, state_count, real_axis
+    )
+    footprint = voxels * per_voxel
+    free = [_free_bytes(device, plan.reserve_bytes) for device in devices]
+
+    if plan.stream is not True:
+        # Fewest cards that can hold it, so the rest stay out of the way.
+        for count in range(1, len(devices) + 1):
+            if sum(free[:count]) >= footprint:
+                return _Choice("upfront", devices[:count])
+        if plan.stream is False:
+            # Asked for resident and it will not fit; let the allocator say so
+            # rather than silently doing something else.
+            return _Choice("upfront", devices)
+
+    budget = plan.budget_bytes or max(1, min(free) if free else 0)
+    return _Choice(
+        "stream", devices, _Offload(devices, max(1, budget), plan.lanes)
+    )
+
+
+class _Lane:
+    """One stream and the device buffers it reuses for every chunk."""
+
+    def __init__(
+        self,
+        device: torch.device,
+        chunk: int,
+        train_count: int,
+        output_count: int,
+        state_count: int,
+        real_axis: int | None,
+        voxel_inputs: int = 7,
+    ) -> None:
+        self.device = device
+        self.stream = torch.cuda.Stream(device=device)
+        self.train_count = train_count
+        self.output_count = output_count
+        # Tissue, and for a forward-mode pass its per-voxel seeds behind it.
+        self.inputs = [
+            torch.empty(chunk, dtype=torch.float32, device=device)
+            for _ in range(voxel_inputs)
+        ]
+        # Flat, because the kernels stride the signal by the chunk they are
+        # given: a shorter final chunk needs a buffer packed for that width,
+        # which a slice of a wider one is not.
+        size = train_count * chunk * output_count
+        self.real = torch.empty(size, dtype=torch.float32, device=device)
+        self.imag = torch.empty_like(self.real)
+        self.signal = torch.empty(size, dtype=torch.complex64, device=device)
+        planes = 2 if real_axis == 1 else 4
+        self.scratch = [
+            torch.empty(
+                (train_count * chunk, state_count), dtype=torch.float32, device=device
+            )
+            for _ in range(planes)
+        ]
+        # Claimed by the first ``send``; a pass that only brings signals home
+        # never needs it.
+        self.staging: torch.Tensor | None = None
+        self.drained = torch.cuda.Event()
+        # A forward-over-reverse pass needs a trajectory and gradient
+        # accumulators as well; the adjoint path hangs them here.
+        self.adjoint: Any = None
+
+    def views(self, width: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """This lane's buffers, packed for a chunk of ``width`` voxels."""
+        shape = (
+            (self.train_count, width, self.output_count)
+            if self.train_count > 1
+            else (width, self.output_count)
+        )
+        size = self.train_count * width * self.output_count
+        return (
+            self.real[:size].view(shape),
+            self.imag[:size].view(shape),
+            self.signal[:size].view(shape),
+        )
+
+    def send(self, piece: torch.Tensor) -> torch.Tensor:
+        """Put one chunk of a host signal on the device, and return it there.
+
+        The staging buffer is pinned, so the transfer runs asynchronously and
+        the stream reads the buffer long after the host wrote it. Overwriting
+        it for the next chunk therefore has to wait for that read.
+        """
+        if self.staging is None:
+            self.staging = torch.empty_like(
+                self.signal, device="cpu", pin_memory=True
+            )
+        self.drained.synchronize()
+        size = piece.numel()
+        host = self.staging[:size].view(piece.shape)
+        host.copy_(piece)
+        landed = self.signal[:size].view(piece.shape)
+        landed.copy_(host, non_blocking=True)
+        self.drained.record(torch.cuda.current_stream(self.device))
+        return landed
+
+    def load(self, values: Sequence[torch.Tensor], begin: int, end: int) -> tuple[
+        torch.Tensor, ...
+    ]:
+        """Stage per-voxel inputs for one chunk and return the device views."""
+        width = end - begin
+        for slot, value in zip(self.inputs, values, strict=True):
+            slot[:width].copy_(value[begin:end], non_blocking=True)
+        return tuple(slot[:width] for slot in self.inputs)
+
+
+def _stream_chunks(
+    plan: _Offload,
+    voxels: int,
+    chunk: int,
+    lanes: list[_Lane],
+    body: Any,
+) -> None:
+    """Walk the volume one chunk per lane, then wait for every stream.
+
+    The launches are asynchronous, so the loop runs ahead of the devices and a
+    chunk's transfer can proceed while another chunk computes.
+    """
+    for index, begin in enumerate(range(0, voxels, chunk)):
+        end = min(voxels, begin + chunk)
+        lane = lanes[index % len(lanes)]
+        with torch.cuda.stream(lane.stream):
+            body(lane, begin, end)
+    for lane in lanes:
+        torch.cuda.current_stream(lane.device).wait_stream(lane.stream)
+    for device in plan.devices:
+        torch.cuda.synchronize(device)
+
+
+def _offload_plan(
+    plan: _Offload,
+    kind: str,
+    events: tuple[torch.Tensor, ...],
+    voxels: int,
+    output_count: int,
+    state_count: int,
+    real_axis: int | None,
+    voxel_inputs: int = 7,
+) -> tuple[int, dict[torch.device, tuple[torch.Tensor, ...]], list[_Lane]]:
+    """Chunk width, the events replicated per device, and the lanes."""
+    train_count = _train_count(events)
+    shape = (
+        train_count,
+        int(events[1].numel()),
+        output_count,
+        state_count,
+        real_axis,
+    )
+    chunk = min(voxels, _chunk_voxels(plan, kind, *shape))
+    per_device = {
+        device: _to_device(events, device) for device in plan.devices
+    }
+    lanes = [
+        _Lane(
+            device,
+            chunk,
+            train_count,
+            output_count,
+            state_count,
+            real_axis,
+            voxel_inputs,
+        )
+        for device in plan.devices
+        for _ in range(plan.lanes)
+    ]
+    return chunk, per_device, lanes
+
+
+def _host_signal(
+    train_count: int, voxels: int, output_count: int
+) -> torch.Tensor:
+    shape = (
+        (train_count, voxels, output_count)
+        if train_count > 1
+        else (voxels, output_count)
+    )
+    return torch.empty(shape, dtype=torch.complex64, pin_memory=True)
+
+
+def _write_signal(
+    signal: torch.Tensor, staged: torch.Tensor, begin: int, end: int, batched: bool
+) -> None:
+    destination = signal[:, begin:end] if batched else signal[begin:end]
+    destination.copy_(staged, non_blocking=True)
+
+
+def _run_offloaded(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    plan: _Offload,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None,
+) -> torch.Tensor:
+    """Stream a host-resident volume through the devices, chunk by chunk."""
+    from ._epg_triton import simulate_into
+
+    train_count = _train_count(events)
+    voxels = tissue[0].numel()
+    chunk, per_device, lanes = _offload_plan(
+        plan, "forward", events, voxels, output_count, state_count, real_axis
+    )
+    signal = _host_signal(train_count, voxels, output_count)
+
+    def body(lane: _Lane, begin: int, end: int) -> None:
+        width = end - begin
+        staged_tissue = lane.load(tissue, begin, end)
+        real, imag, staged = lane.views(width)
+        simulate_into(
+            staged_tissue,
+            per_device[lane.device],
+            real,
+            imag,
+            lane.scratch,
+            state_count=state_count,
+            output_count=output_count,
+            real_axis=real_axis,
+            atom_count=width,
+        )
+        torch.complex(real, imag, out=staged)
+        _write_signal(signal, staged, begin, end, train_count > 1)
+
+    _stream_chunks(plan, voxels, chunk, lanes, body)
+    return signal
+
+
+def _run_offloaded_jvp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    tissue_tangents: tuple[torch.Tensor, ...],
+    event_tangents: tuple[torch.Tensor, ...],
+    plan: _Offload,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None,
+) -> torch.Tensor:
+    """Stream a forward-mode pass; the seeds ride along with the tissue.
+
+    Tissue seeds are per voxel and are chunked with it. Event seeds are shared
+    by every voxel, so they are replicated once per device instead.
+    """
+    from ._epg_triton import simulate_jvp_into
+
+    train_count = _train_count(events)
+    voxels = tissue[0].numel()
+    chunk, per_device, lanes = _offload_plan(
+        plan,
+        "jvp",
+        events,
+        voxels,
+        output_count,
+        state_count,
+        real_axis,
+        voxel_inputs=14,
+    )
+    seeds = {
+        device: _to_device(event_tangents, device) for device in plan.devices
+    }
+    signal = _host_signal(train_count, voxels, output_count)
+    staged_inputs = (*tissue, *tissue_tangents)
+
+    def body(lane: _Lane, begin: int, end: int) -> None:
+        width = end - begin
+        loaded = lane.load(staged_inputs, begin, end)
+        real, imag, staged = lane.views(width)
+        simulate_jvp_into(
+            loaded[:_TISSUE_COUNT],
+            per_device[lane.device],
+            loaded[7:],
+            seeds[lane.device],
+            real,
+            imag,
+            lane.scratch,
+            state_count=state_count,
+            output_count=output_count,
+            real_axis=real_axis,
+            atom_count=width,
+        )
+        torch.complex(real, imag, out=staged)
+        _write_signal(signal, staged, begin, end, train_count > 1)
+
+    _stream_chunks(plan, voxels, chunk, lanes, body)
+    return signal
+
+
+def _run_offloaded_vjp_jvp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    tangents: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    plan: _Offload,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None,
+) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
+    """Stream a forward-over-reverse pass through the devices, chunk by chunk.
+
+    The two kinds of gradient part ways here. A tissue gradient belongs to one
+    voxel, so each chunk writes its slice straight back to pinned host memory.
+    An event gradient collects a contribution from every voxel, so each lane
+    accumulates its own on the device and they are added once at the end.
+
+    Nothing in the loop reads a device result, which is what lets the host run
+    ahead and keep the lanes fed.
+    """
+    from ._epg_triton import AdjointBuffers, simulate_vjp_jvp_into
+
+    train_count = _train_count(events)
+    voxels = tissue[0].numel()
+    event_count = int(events[1].numel())
+    shape = (train_count, event_count, output_count, state_count, real_axis)
+    chunk = min(voxels, _chunk_voxels(plan, "adjoint", *shape))
+    grad_output = grad_output.resolve_conj()
+    batched = train_count > 1
+
+    # Pinned, so a chunk's rows go back asynchronously and the loop runs on.
+    tissue_grads = [
+        [torch.empty(voxels, dtype=torch.float32, pin_memory=True) for _ in range(_TISSUE_COUNT)]
+        for _ in range(2)
+    ]
+
+    per_device = {device: _to_device(events, device) for device in plan.devices}
+    seeds = {
+        device: _to_device(tangents[7:], device) for device in plan.devices
+    }
+    lanes = [
+        _Lane(
+            device,
+            chunk,
+            train_count,
+            output_count,
+            state_count,
+            real_axis,
+            voxel_inputs=14,
+        )
+        for device in plan.devices
+        for _ in range(plan.lanes)
+    ]
+    for lane in lanes:
+        lane.adjoint = AdjointBuffers(
+            per_device[lane.device],
+            chunk,
+            state_count=state_count,
+            output_count=output_count,
+            real_axis=real_axis,
+        )
+    staged_inputs = (*tissue, *tangents[:_TISSUE_COUNT])
+
+    def body(lane: _Lane, begin: int, end: int) -> None:
+        width = end - begin
+        loaded = lane.load(staged_inputs, begin, end)
+        piece = grad_output[:, begin:end] if batched else grad_output[begin:end]
+        cotangent = lane.send(piece)
+        voxel_grads = simulate_vjp_jvp_into(
+            loaded[:_TISSUE_COUNT],
+            per_device[lane.device],
+            (*loaded[7:], *seeds[lane.device]),
+            cotangent,
+            lane.adjoint,
+            state_count=state_count,
+            output_count=output_count,
+            real_axis=real_axis,
+            atom_count=width,
+        )
+        for plane, side in enumerate(voxel_grads):
+            for index in range(_TISSUE_COUNT):
+                tissue_grads[plane][index][begin:end].copy_(
+                    side[index], non_blocking=True
+                )
+
+    _stream_chunks(plan, voxels, chunk, lanes, body)
+    event_grads = [
+        [torch.zeros_like(value) for value in (events[0], events[2], events[3])]
+        for _ in range(2)
+    ]
+    for lane in lanes:
+        for plane, side in enumerate(lane.adjoint.event_gradients()):
+            for index in range(3):
+                event_grads[plane][index] += side[index].cpu()
+    return tuple(
+        (*tissue_grads[plane], *event_grads[plane]) for plane in range(2)
+    )
+
+
+def _elsewhere(
+    choice: _Choice, values: tuple[torch.Tensor, ...]
+) -> bool:
+    """Whether this call has to move its inputs to honour the choice."""
+    return values[0].device != _home(choice)
+
+
+def _home(choice: _Choice) -> torch.device:
+    return torch.device("cpu") if choice.where == "cpu" else choice.devices[0]
+
+
+@contextmanager
+def _using(devices: tuple[torch.device, ...]) -> Iterator[None]:
+    """Shard over these devices for one call, without a nested policy."""
+    global _DEVICES, _EXECUTION
+    previous_devices, previous_execution = _DEVICES, _EXECUTION
+    _DEVICES, _EXECUTION = devices, None
+    try:
+        yield
+    finally:
+        _DEVICES, _EXECUTION = previous_devices, previous_execution
+
+
 def _run_packed(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],
@@ -712,10 +1646,52 @@ def _run_packed(
     verdict is worked out here; pass a value to overrule that.
     """
     if real_axis is None:
-        real_axis = _auto_real_axis(events, tissue)
+        real_axis = _auto_real_axis("forward", events, tissue, state_count)
+    if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        return _run_offloaded(
+            tissue, events, _OFFLOAD, state_count, output_count, real_axis
+        )
+    choice = _choose(
+        "forward", tissue, events, output_count, state_count, real_axis
+    )
+    streaming = choice is not None and choice.where == "stream"
+    if streaming and tissue[0].device.type == "cpu":
+        return _run_offloaded(
+            tissue, events, choice.offload, state_count, output_count, real_axis
+        )
+    if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
+        home = _home(choice)
+        with _using(choice.devices):
+            moved = _run_packed(
+                _to_device(tissue, home),
+                _to_device(events, home),
+                state_count,
+                output_count,
+                threads,
+                real_axis,
+            )
+        return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate
 
+        shards = _shard_bounds(_train_count(events))
+        if shards:
+            # Every launch is asynchronous, so issuing them all before touching
+            # a result lets the devices run at the same time.
+            parts = [
+                (
+                    end - begin,
+                    simulate(
+                        _to_device(tissue, device),
+                        _shard_events(events, begin, end, device),
+                        state_count=state_count,
+                        output_count=output_count,
+                        real_axis=real_axis,
+                    ),
+                )
+                for begin, end, device in shards
+            ]
+            return _gather_shards(parts, tissue[0].device, output_count)
         return simulate(
             tissue,
             events,
@@ -747,22 +1723,6 @@ def _run_packed(
     return torch.complex(output_real, output_imag)
 
 
-def _vjp_available(device: torch.device) -> bool:
-    """Whether the fused adjoint can serve this backward.
-
-    The fused kernel returns plain tensors, so it cannot support double
-    backward; when a graph is being built the differentiable fallback is used
-    instead. CUDA has no fused adjoint yet.
-    """
-    if device.type != "cpu" or torch.is_grad_enabled():
-        return False
-    try:
-        from torchsim import _epg_cpu
-    except ImportError:
-        return False
-    return hasattr(_epg_cpu, "simulate_vjp")
-
-
 def _run_packed_vjp(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],
@@ -770,12 +1730,36 @@ def _run_packed_vjp(
     state_count: int,
     output_count: int,
     threads: int,
+    wanted: tuple[bool, ...] | None = None,
 ) -> tuple[torch.Tensor, ...]:
     """Return gradients w.r.t. the seven tissue and three float event buffers.
 
     The result is ordered ``(t1, t2, m0, b1, b1_phase, b0, inversion_efficiency,
     duration, flip, phase)``.
+
+    ``wanted`` says which of those ten the caller will read, which is what lets
+    the real-subspace kernels -- three of them short -- be chosen. All ten, if
+    it is not given.
     """
+    if tissue[0].device.type != "cpu":
+        # An adjoint does not depend on any forward direction, so the
+        # forward-over-reverse kernel given no direction to follow returns it
+        # on its own.
+        still = tuple(
+            torch.zeros_like(value)
+            for value in (*tissue, events[0], events[2], events[3])
+        )
+        _, adjoint = _run_packed_vjp_jvp(
+            tissue,
+            events,
+            still,
+            grad_output,
+            state_count=state_count,
+            output_count=output_count,
+            threads=threads,
+            wanted=wanted,
+        )
+        return adjoint
     from torchsim import _epg_cpu
 
     grad_output = grad_output.resolve_conj().contiguous()
@@ -816,13 +1800,97 @@ def _run_packed_vjp_jvp(
     output_count: int,
     threads: int,
     real_axis: int | None = None,
+    wanted: tuple[bool, ...] | None = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
     ``tangents`` follows the differentiable-input order ``(t1, t2, m0, b1,
     b1_phase, b0, inversion_efficiency, duration, flip, phase)``. Returns
     ``(primal_gradients, tangent_gradients)`` in that same order.
+
+    ``wanted`` says which of those ten the caller will read, which is what
+    decides whether the real-subspace adjoint -- three of them short -- may be
+    chosen when ``real_axis`` is left open. All ten, if it is not given.
     """
+    if real_axis is None:
+        real_axis = _auto_real_axis_adjoint(
+            events, tissue, state_count, tangents, wanted
+        )
+    if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        return _run_offloaded_vjp_jvp(
+            tissue,
+            events,
+            tangents,
+            grad_output,
+            _OFFLOAD,
+            state_count,
+            output_count,
+            real_axis,
+        )
+    choice = _choose(
+        "adjoint", tissue, events, output_count, state_count, real_axis
+    )
+    streaming = choice is not None and choice.where == "stream"
+    if streaming and tissue[0].device.type == "cpu":
+        return _run_offloaded_vjp_jvp(
+            tissue,
+            events,
+            tangents,
+            grad_output,
+            choice.offload,
+            state_count,
+            output_count,
+            real_axis,
+        )
+    if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
+        home = _home(choice)
+        with _using(choice.devices):
+            moved = _run_packed_vjp_jvp(
+                _to_device(tissue, home),
+                _to_device(events, home),
+                _to_device(tangents, home),
+                grad_output.to(home),
+                state_count,
+                output_count,
+                threads,
+                real_axis,
+            )
+        origin = tissue[0].device
+        return tuple(
+            tuple(value.to(origin) for value in side) for side in moved
+        )
+    if tissue[0].device.type == "cuda":
+        from ._epg_triton import simulate_vjp_jvp
+
+        shards = _shard_bounds(_train_count(events))
+        if shards:
+            home = tissue[0].device
+            parts = [
+                simulate_vjp_jvp(
+                    _to_device(tissue, device),
+                    _shard_events(events, begin, end, device),
+                    (
+                        *_to_device(tangents[:_TISSUE_COUNT], device),
+                        *_shard_event_tangents(tangents[7:], begin, end, device),
+                    ),
+                    grad_output[begin:end].contiguous().to(device),
+                    state_count=state_count,
+                    output_count=output_count,
+                    real_axis=real_axis,
+                )
+                for begin, end, device in shards
+            ]
+            sides = zip(*parts, strict=True)
+            return tuple(_combine_shards(side, home) for side in sides)
+        return simulate_vjp_jvp(
+            tissue,
+            events,
+            tangents,
+            grad_output,
+            state_count=state_count,
+            output_count=output_count,
+            real_axis=real_axis,
+        )
     from torchsim import _epg_cpu
 
     grad_output = grad_output.resolve_conj().contiguous()
@@ -867,13 +1935,71 @@ def _run_packed_jvp(
         # b1_phase, b0 and RF phase are the directions that leave the subspace,
         # and the real kernels do not produce derivatives along them.
         real_axis = _auto_real_axis(
+            "jvp",
             events,
             tissue,
+            state_count,
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
         )
+    if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        return _run_offloaded_jvp(
+            tissue,
+            events,
+            tissue_tangents,
+            event_tangents,
+            _OFFLOAD,
+            state_count,
+            output_count,
+            real_axis,
+        )
+    choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
+    streaming = choice is not None and choice.where == "stream"
+    if streaming and tissue[0].device.type == "cpu":
+        return _run_offloaded_jvp(
+            tissue,
+            events,
+            tissue_tangents,
+            event_tangents,
+            choice.offload,
+            state_count,
+            output_count,
+            real_axis,
+        )
+    if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
+        home = _home(choice)
+        with _using(choice.devices):
+            moved = _run_packed_jvp(
+                _to_device(tissue, home),
+                _to_device(events, home),
+                _to_device(tissue_tangents, home),
+                _to_device(event_tangents, home),
+                state_count,
+                output_count,
+                threads,
+                real_axis,
+            )
+        return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate_jvp
 
+        shards = _shard_bounds(_train_count(events))
+        if shards:
+            parts = [
+                (
+                    end - begin,
+                    simulate_jvp(
+                        _to_device(tissue, device),
+                        _shard_events(events, begin, end, device),
+                        _to_device(tissue_tangents, device),
+                        _shard_event_tangents(event_tangents, begin, end, device),
+                        state_count=state_count,
+                        output_count=output_count,
+                        real_axis=real_axis,
+                    ),
+                )
+                for begin, end, device in shards
+            ]
+            return _gather_shards(parts, tissue[0].device, output_count)
         return simulate_jvp(
             tissue,
             events,
@@ -912,100 +2038,3 @@ def _run_packed_jvp(
         real_axis if real_axis is not None else -1,
     )
     return torch.complex(output_real, output_imag)
-
-
-def _simulate_packed_torch(
-    tissue: tuple[torch.Tensor, ...],
-    events: tuple[torch.Tensor, ...],
-    *,
-    state_count: int,
-    output_count: int,
-) -> torch.Tensor:
-    t1, t2, m0, b1, b1_phase, b0, inversion_efficiency = tissue
-    duration, kind, flip, phase, action, _output_index = events
-    atom_count = t1.numel()
-    shape = (atom_count, state_count)
-    fplus = torch.zeros(shape, dtype=torch.complex64, device=t1.device)
-    fminus = torch.zeros_like(fplus)
-    longitudinal = torch.zeros_like(fplus)
-    longitudinal[:, 0] = 1.0
-    signals = []
-
-    for event in range(kind.numel()):
-        dt = duration[event]
-        e1 = torch.exp(-(1000.0 / t1) * dt)
-        e2 = torch.exp(-(1000.0 / t2) * dt)
-        off = e2 * torch.exp(-2j * torch.pi * b0 * dt)
-        fplus = fplus * off[:, None]
-        fminus = fminus * off.conj()[:, None]
-        longitudinal = longitudinal * e1[:, None]
-        recovery = torch.zeros_like(longitudinal)
-        recovery[:, 0] = 1.0 - e1
-        longitudinal = longitudinal + recovery
-
-        event_action = int(action[event])
-        if event_action & _PRE_SHIFT:
-            fplus, fminus = _shift_tensors(fplus, fminus)
-        event_kind = int(kind[event])
-        if event_kind == 1:
-            if event_action & _INVERSION:
-                longitudinal = -inversion_efficiency[:, None] * longitudinal
-            else:
-                alpha = flip[event] * b1
-                phi = phase[event] + b1_phase
-                fplus, fminus, longitudinal = _rotate_tensors(
-                    fplus, fminus, longitudinal, alpha, phi
-                )
-        elif event_kind == 2 and event_action & _RECORD:
-            signals.append(m0 * fplus[:, 0] * torch.exp(-1j * phase[event]))
-        if event_action & _POST_SHIFT:
-            fplus, fminus = _shift_tensors(fplus, fminus)
-        if event_action & _SPOIL_AFTER:
-            fplus = torch.zeros_like(fplus)
-            fminus = torch.zeros_like(fminus)
-        elif event_action & _SHIFT_AFTER:
-            fplus, fminus = _shift_tensors(fplus, fminus)
-
-    if not signals:
-        return torch.empty(
-            (atom_count, output_count),
-            dtype=torch.complex64,
-            device=t1.device,
-        )
-    return torch.stack(signals, dim=-1)
-
-
-def _shift_tensors(
-    fplus: torch.Tensor,
-    fminus: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    zero = torch.zeros_like(fplus[:, :1])
-    shifted_minus = torch.cat((fminus[:, 1:], zero), dim=-1)
-    shifted_plus = torch.cat((shifted_minus[:, :1].conj(), fplus[:, :-1]), dim=-1)
-    return shifted_plus, shifted_minus
-
-
-def _rotate_tensors(
-    fplus: torch.Tensor,
-    fminus: torch.Tensor,
-    longitudinal: torch.Tensor,
-    alpha: torch.Tensor,
-    phi: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    cosine = torch.cos(alpha)[:, None]
-    sine = torch.sin(alpha)[:, None]
-    phase_one = torch.exp(1j * phi)[:, None]
-    phase_two = phase_one.square()
-    t00 = 0.5 * (1.0 + cosine)
-    t01 = 0.5 * (1.0 - cosine) * phase_two
-    t02 = -1j * sine * phase_one
-    t10 = t01.conj()
-    t12 = 1j * sine * phase_one.conj()
-    t20 = -0.5j * sine * phase_one.conj()
-    t21 = 0.5j * sine * phase_one
-    old_plus, old_minus, old_z = fplus, fminus, longitudinal
-    return (
-        t00 * old_plus + t01 * old_minus + t02 * old_z,
-        t10 * old_plus + t00 * old_minus + t12 * old_z,
-        t20 * old_plus + t21 * old_minus + cosine * old_z,
-    )

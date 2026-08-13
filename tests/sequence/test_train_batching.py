@@ -186,8 +186,12 @@ def _second_order(threads):
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
     events = _buffers(_pack(flip))
     outputs = int(events[5].max()) + 1
-    torch.manual_seed(0)
-    cotangent = torch.randn((TRAINS, ATOMS, outputs), dtype=torch.complex64)
+    # A generator of its own: several threads call this at once, and seeding
+    # the global one is two steps that another caller can get between.
+    generator = torch.Generator().manual_seed(0)
+    cotangent = torch.randn(
+        (TRAINS, ATOMS, outputs), generator=generator, dtype=torch.complex64
+    )
     tangents = (
         *(
             torch.ones_like(value) if index == 1 else torch.zeros_like(value)
