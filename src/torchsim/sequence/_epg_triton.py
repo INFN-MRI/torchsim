@@ -115,6 +115,20 @@ def _damping(rate, dt, order):
 
 
 @triton.jit
+def _flow(rate, dt, order):
+    """Phase each dephasing order turns through over one interval.
+
+    ``rate`` already carries the sequence's gradient geometry, so it is the
+    winding per unit order per second: a longitudinal state at order l turns
+    through ``l * rate * dt``. The transverse states sit half an order further
+    along the gradient, which is where the extra half turn comes from. Order
+    zero is left alone while longitudinal, so the recovery term is unaffected.
+    """
+    turn = rate * dt
+    return -order * turn, -(order + 0.5) * turn
+
+
+@triton.jit
 def _damping_jvp(rate, rate_tangent, dt, dt_tangent, order):
     """Diffusion damping and its directional derivative, per state order."""
     b_factor = rate * dt
@@ -2028,6 +2042,7 @@ def _epg_kernel(
         inversion_efficiency + atom, mask=active_atom, other=1.0
     )
     atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    atom_flow = tl.load(velocity + atom, mask=active_atom, other=0.0)
     order = state.to(tl.float32)
 
     event_base = train * event_count
@@ -2036,10 +2051,13 @@ def _epg_kernel(
         e1 = tl.exp(-(1000.0 / atom_t1) * dt)
         e2 = tl.exp(-(1000.0 / atom_t2) * dt)
         damp_z, damp_t = _damping(atom_damping, dt, order)
+        turn_z, turn_t = _flow(atom_flow, dt, order)
         recovery = 1.0 - e1
         e1 = e1 * damp_z
         e2 = e2 * damp_t
-        off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt
+        # Flow winds the transverse states through the same rotation
+        # off-resonance does, so the two phases add before either is taken.
+        off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt + turn_t
         off_cos = tl.cos(off_phase)
         off_sin = tl.sin(off_phase)
         old_real = fplus_real
@@ -2048,8 +2066,13 @@ def _epg_kernel(
         old_real = fminus_real
         fminus_real = e2 * (old_real * off_cos + fminus_imag * off_sin)
         fminus_imag = e2 * (-old_real * off_sin + fminus_imag * off_cos)
-        longitudinal_real *= e1
-        longitudinal_imag *= e1
+        # The longitudinal states carry a phase of their own, which nothing
+        # else in the state machine gives them.
+        turn_cos = tl.cos(turn_z)
+        turn_sin = tl.sin(turn_z)
+        old_real = longitudinal_real
+        longitudinal_real = e1 * (old_real * turn_cos - longitudinal_imag * turn_sin)
+        longitudinal_imag = e1 * (old_real * turn_sin + longitudinal_imag * turn_cos)
         longitudinal_real += tl.where(state == 0, recovery, 0.0)
 
         event_action = tl.load(action + event).to(tl.int32)

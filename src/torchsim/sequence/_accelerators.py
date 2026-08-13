@@ -121,6 +121,30 @@ def damping_scale(description: SequenceDescription) -> float:
     return dephasing * dephasing * _DIFFUSION_UNIT
 
 
+_VELOCITY = TISSUE_NAMES.index("velocity_m_per_s")
+
+
+def _refuse_flow_derivative(
+    tissue: tuple[torch.Tensor, ...],
+    tangents: tuple[torch.Tensor, ...] | None = None,
+) -> None:
+    """Flow reaches the forward kernels only, so refuse to differentiate it.
+
+    The forward term is a phase that each dephasing order turns through by a
+    different amount, and no adjoint carries it yet. Returning a derivative
+    that ignored it would be wrong in a way nothing downstream could detect,
+    which is worse than not answering.
+    """
+    moving = bool((tissue[_VELOCITY] != 0.0).any())
+    if tangents is not None:
+        moving = moving or bool((tangents[_VELOCITY] != 0.0).any())
+    if moving:
+        raise NotImplementedError(
+            "flow has no adjoint yet: the fused kernels carry it forward only, "
+            "so a derivative through a moving spin would drop the term"
+        )
+
+
 def _order_weighted_rates(
     tissue: tuple[torch.Tensor, ...], description: SequenceDescription
 ) -> tuple[torch.Tensor, ...]:
@@ -711,8 +735,11 @@ def real_subspace_axis(
     """The real axis the states are confined to, or ``None``.
 
     Returns 1 when the refocusing pulses share one phase, the excitation shares
-    it too, and there is neither off-resonance nor transmit phase. The state
-    machine then never leaves the axis on which the signal is pure imaginary.
+    it too, and there is neither off-resonance, transmit phase, nor flow. The
+    state machine then never leaves the axis on which the signal is pure
+    imaginary. Flow belongs on that list because it turns each dephasing order
+    through a phase of its own, which is a rotation out of the axis rather than
+    a scaling along it.
 
     Two arrangements make the recorded echoes look real without confining the
     states, and both are refused. Off-resonance is refocused at the echo
@@ -721,10 +748,13 @@ def real_subspace_axis(
     states fill the plane -- a real projection of a complex trajectory, not a
     subspace a kernel can be built on.
     """
-    b0_free, phase_free, has_refocusing, has_excitation, spread, offset = _summarize(
-        events, tissue
-    )
-    if not (b0_free and phase_free and has_refocusing and has_excitation):
+    (
+        b0_free, phase_free, flow_free, has_refocusing, has_excitation, spread,
+        offset,
+    ) = _summarize(events, tissue)
+    if not (
+        b0_free and phase_free and flow_free and has_refocusing and has_excitation
+    ):
         return None
     if spread > _PHASE_TOLERANCE:
         return None
@@ -736,7 +766,7 @@ def real_subspace_axis(
 def _summarize(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
-) -> tuple[bool, bool, bool, bool, float, float]:
+) -> tuple[bool, bool, bool, bool, bool, float, float]:
     """Reduce the subspace question to six numbers in one device round trip.
 
     Each reduction read back on its own would be its own synchronization, and on
@@ -745,10 +775,12 @@ def _summarize(
     transfer whatever the device.
 
     Returns whether off-resonance is absent, whether transmit phase is absent,
-    whether the sequence has refocusing and excitation pulses, how far the
-    per-role phases spread, and how far excitation sits from refocusing.
+    whether flow is absent, whether the sequence has refocusing and excitation
+    pulses, how far the per-role phases spread, and how far excitation sits
+    from refocusing.
     """
     b1_phase, b0 = tissue[4], tissue[5]
+    velocity = tissue[TISSUE_NAMES.index("velocity_m_per_s")]
     action, phase = events[4], events[3]
     refocusing = (action & _REFOCUSING) != 0
     excitation = (action & _EXCITATION) != 0
@@ -766,6 +798,7 @@ def _summarize(
         (
             (b0 == 0).all().to(wrapped.dtype),
             (b1_phase == 0).all().to(wrapped.dtype),
+            (velocity == 0).all().to(wrapped.dtype),
             refocusing.any().to(wrapped.dtype),
             excitation.any().to(wrapped.dtype),
             torch.maximum(refocus_high - refocus_low, excite_high - excite_low),
@@ -777,8 +810,9 @@ def _summarize(
         bool(summary[1]),
         bool(summary[2]),
         bool(summary[3]),
-        summary[4],
+        bool(summary[4]),
         summary[5],
+        summary[6],
     )
 
 
@@ -1795,6 +1829,7 @@ def _run_packed_vjp(
     the real-subspace kernels -- three of them short -- be chosen. All ten, if
     it is not given.
     """
+    _refuse_flow_derivative(tissue)
     if tissue[0].device.type != "cpu":
         # An adjoint does not depend on any forward direction, so the
         # forward-over-reverse kernel given no direction to follow returns it
@@ -1866,6 +1901,7 @@ def _run_packed_vjp_jvp(
     decides whether the real-subspace adjoint -- three of them short -- may be
     chosen when ``real_axis`` is left open. All ten, if it is not given.
     """
+    _refuse_flow_derivative(tissue, tangents)
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
             events, tissue, state_count, tangents, wanted
@@ -1985,6 +2021,7 @@ def _run_packed_jvp(
     threads: int,
     real_axis: int | None = None,
 ) -> torch.Tensor:
+    _refuse_flow_derivative(tissue, tissue_tangents)
     if real_axis is None:
         # b1_phase, b0 and RF phase are the directions that leave the subspace,
         # and the real kernels do not produce derivatives along them.

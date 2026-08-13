@@ -407,6 +407,24 @@ struct Damping {
     }
 };
 
+// Phase each dephasing order turns through over one interval. The rate is the
+// winding per unit order per second, so a longitudinal state at order l turns
+// through l * rate * dt; the transverse states sit half an order further along
+// the gradient. Order zero is left alone while longitudinal, so the recovery
+// term is unaffected.
+inline void flow_turn(
+    const float rate,
+    const float dt,
+    const std::size_t state,
+    float& longitudinal,
+    float& transverse
+) {
+    const float turn = rate * dt;
+    const float order = static_cast<float>(state);
+    longitudinal = -order * turn;
+    transverse = -(order + 0.5F) * turn;
+}
+
 // Whether any atom carries diffusion. The lane kernels keep transcendentals
 // out of their state loops, which per-order damping would undo, so they are
 // selected only when this is false.
@@ -1670,20 +1688,29 @@ void simulate_range(
         const float r1 = 1000.0F / buffers.t1[atom];
         const float r2 = 1000.0F / buffers.t2[atom];
         const float damping_rate = buffers.diffusion[atom];
+        const float flow_rate = buffers.velocity[atom];
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
             const float e1 = std::exp(-r1 * dt);
             const float e2 = std::exp(-r2 * dt);
-            const Complex off_resonance =
-                std::polar(e2, -2.0F * PI * buffers.b0[atom] * dt);
-            const Complex conjugate_off_resonance = std::conj(off_resonance);
+            const float off_angle = -2.0F * PI * buffers.b0[atom] * dt;
             for (std::int64_t state = 0; state < state_count; ++state) {
                 const std::size_t index = static_cast<std::size_t>(state);
                 const float damp_transverse = damping.transverse[index];
-                fplus[index] *= off_resonance * damp_transverse;
-                fminus[index] *= conjugate_off_resonance * damp_transverse;
-                longitudinal[index] *= e1 * damping.longitudinal[index];
+                float turn_longitudinal = 0.0F;
+                float turn_transverse = 0.0F;
+                flow_turn(flow_rate, dt, index, turn_longitudinal, turn_transverse);
+                // Flow winds the transverse states through the same rotation
+                // off-resonance does, so the two phases add before either is
+                // taken; the longitudinal states carry a phase of their own.
+                const Complex transverse =
+                    std::polar(e2 * damp_transverse, off_angle + turn_transverse);
+                fplus[index] *= transverse;
+                fminus[index] *= std::conj(transverse);
+                longitudinal[index] *= std::polar(
+                    e1 * damping.longitudinal[index], turn_longitudinal
+                );
             }
             longitudinal[0] += Complex(1.0F - e1, 0.0F);
 
@@ -3717,7 +3744,8 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     const char* const lane_override = std::getenv("TORCHSIM_LANES");
     const bool lanes_enabled = lane_override != nullptr && lane_override[0] == '1';
     const bool vectorize = lanes_enabled && train_count >= 4
-        && !any_diffusion(buffers.diffusion, buffers.atom_count);
+        && !any_diffusion(buffers.diffusion, buffers.atom_count)
+        && !any_diffusion(buffers.velocity, buffers.atom_count);
     const std::int64_t lane_blocks =
         (static_cast<std::int64_t>(train_count) + static_cast<std::int64_t>(LANES) - 1)
         / static_cast<std::int64_t>(LANES);

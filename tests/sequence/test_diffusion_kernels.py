@@ -96,6 +96,11 @@ def _seed(shape) -> torch.Tensor:
     return torch.randn(shape, dtype=torch.complex64, generator=generator)
 
 
+# Flow reaches the forward kernels only, so the reference differentiates it
+# and they do not. See test_flow_kernels for what a caller sees instead.
+_UNDIFFERENTIATED = {"velocity_m_per_s"}
+
+
 def _agree(expected, actual, names, tolerance: float = 1e-3) -> None:
     """Compare gradient tuples, skipping the entries float32 cannot resolve."""
     scales = {
@@ -106,7 +111,7 @@ def _agree(expected, actual, names, tolerance: float = 1e-3) -> None:
     floor = 1e-6 * max(scales.values())
     compared = []
     for name, want, got in zip(names, expected, actual, strict=True):
-        if want is None or scales[name] <= floor:
+        if want is None or scales[name] <= floor or name in _UNDIFFERENTIATED:
             continue
         error = (want - got).abs().max().item() / scales[name]
         assert error < tolerance, f"{name} differs by {error:.2e}"

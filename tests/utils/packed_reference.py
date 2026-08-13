@@ -65,6 +65,10 @@ def simulate_packed(
     order = torch.arange(state_count, dtype=torch.float32, device=t1.device)
     longitudinal_weight = order.square()
     transverse_weight = order.square() + order + 1.0 / 3.0
+    # Flow turns each order through a phase instead of damping it, and the
+    # transverse states sit half an order further along the gradient.
+    longitudinal_turn = order
+    transverse_turn = order + 0.5
     fplus = torch.zeros(shape, dtype=torch.complex64, device=t1.device)
     fminus = torch.zeros_like(fplus)
     longitudinal = torch.zeros_like(fplus)
@@ -79,9 +83,17 @@ def simulate_packed(
         b_factor = (damping * dt)[:, None]
         transverse_damping = torch.exp(-b_factor * transverse_weight[None, :])
         longitudinal_damping = torch.exp(-b_factor * longitudinal_weight[None, :])
-        fplus = fplus * off[:, None] * transverse_damping
-        fminus = fminus * off.conj()[:, None] * transverse_damping
-        longitudinal = longitudinal * e1[:, None] * longitudinal_damping
+        turn = (flow * dt)[:, None]
+        transverse_phase = torch.exp(-1j * turn * transverse_turn[None, :])
+        longitudinal_phase = torch.exp(-1j * turn * longitudinal_turn[None, :])
+        fplus = fplus * off[:, None] * transverse_damping * transverse_phase
+        fminus = (
+            fminus * off.conj()[:, None] * transverse_damping
+            * transverse_phase.conj()
+        )
+        longitudinal = (
+            longitudinal * e1[:, None] * longitudinal_damping * longitudinal_phase
+        )
         # Order zero is undamped, so recovery is unaffected by diffusion.
         recovery = torch.zeros_like(longitudinal)
         recovery[:, 0] = 1.0 - e1
