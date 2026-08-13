@@ -161,10 +161,6 @@ class EpgSimulator:
             raise ValueError("nstates must be positive")
 
         profile = _as_float_tensor(slice_profile, target_device).reshape(-1)
-        # The kernels are handed this same product; here it also decides
-        # whether the damping runs at all.
-        scale = damping_scale(description)
-        damping = diffusion * scale if scale else None
         if backend not in {"auto", "torch", "native"}:
             raise ValueError("backend must be 'auto', 'torch', or 'native'")
         if backend != "torch":
@@ -185,6 +181,12 @@ class EpgSimulator:
                 raise RuntimeError(
                     "native EPG backend is unavailable for this device or AD context"
                 )
+        if damping_scale(description) and bool((diffusion != 0.0).any()):
+            raise NotImplementedError(
+                "diffusion is carried by the fused kernels only; this sequence "
+                "fell back to the operator loop, which does not damp by "
+                "dephasing order"
+            )
         states = epg.states_matrix(
             device=target_device,
             nstates=nstates,
@@ -210,8 +212,6 @@ class EpgSimulator:
                     t2,
                     b0,
                     (event.timestamp_us - current_us) * 1e-6,
-                    damping,
-                    nstates,
                 )
                 current_us = event.timestamp_us
 
@@ -457,8 +457,6 @@ def _free_precess(
     t2_ms: torch.Tensor,
     b0_hz: torch.Tensor,
     duration_s: Any,
-    diffusion: torch.Tensor | None = None,
-    nstates: int = 0,
 ) -> Any:
     duration = _as_float_tensor(duration_s, t1_ms.device)
     e1, recovery = epg.longitudinal_relaxation_op(
@@ -474,28 +472,7 @@ def _free_precess(
     )
     states.Fplus = states.Fplus * phase
     states.Fminus = states.Fminus * phase.conj()
-    if diffusion is not None:
-        states = epg.diffusion(
-            states, *_damping(diffusion, duration, nstates)
-        )
     return states
-
-
-def _damping(
-    rate: torch.Tensor, duration: torch.Tensor, nstates: int
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Longitudinal and transverse diffusion damping, one factor per order.
-
-    ``rate`` already carries the sequence's gradient geometry, so the b-factor
-    of an interval is that rate times its duration.
-    """
-    order = torch.arange(nstates, dtype=torch.float32, device=rate.device)
-    order = order[:, None, None, None]
-    b_factor = rate[None, :, None, None] * duration
-    return (
-        torch.exp(-b_factor * order.square()),
-        torch.exp(-b_factor * (order.square() + order + 1.0 / 3.0)),
-    )
 
 
 def _record_event(event: SequenceEvent, mode: RecordMode) -> bool:
