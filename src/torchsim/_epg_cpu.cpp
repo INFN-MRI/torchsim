@@ -219,13 +219,18 @@ struct Buffers {
     float washout_scale;
     std::int64_t shim_count;
     // The rotation a shaped pulse performs, tabulated over slice position and
-    // effective flip angle: ``locations`` rows of ``profile_bins`` knots, eight
-    // floats each -- the Cayley-Klein pair and its slope in the flip angle,
-    // interleaved so the two knots a read needs are contiguous. Null when the
-    // sequence has no table, which is what selects the flip-and-phase operator
-    // instead. Voxels run voxel-major over the slice, so a voxel's row is its
-    // index modulo ``locations``.
+    // effective flip angle: rows of ``profile_bins`` knots, eight floats each
+    // -- the Cayley-Klein pair and its slope in the flip angle, interleaved so
+    // the two knots a read needs are contiguous. Null when the sequence has no
+    // table, which is what selects the flip-and-phase operator instead.
+    //
+    // One pulse shape occupies ``locations`` consecutive rows, and a sequence
+    // may play several: ``profile_index`` says which shape an event drives, so
+    // a pulse's row is that shape's block plus the voxel's position. Voxels run
+    // voxel-major over the slice, so the position is the index modulo
+    // ``locations``.
     const float* profile;
+    const std::int32_t* profile_index;
     std::int64_t profile_bins;
     std::int64_t locations;
     float profile_step;
@@ -575,6 +580,23 @@ inline std::int64_t slice_row(const Buffers& buffers, const std::int64_t atom) {
     }
 }
 
+// Which row of the stacked tables this pulse reads: its own shape's block,
+// then the voxel's place along the slice.
+template <bool PROFILED>
+inline std::int64_t table_row(
+    const Buffers& buffers, const std::int64_t event, const std::int64_t location
+) {
+    if constexpr (PROFILED) {
+        return static_cast<std::int64_t>(buffers.profile_index[event])
+            * buffers.locations + location;
+    } else {
+        (void)buffers;
+        (void)event;
+        (void)location;
+        return 0;
+    }
+}
+
 // The pair the table holds at this flip angle, by cubic Hermite between the
 // knots bracketing it. Cubic rather than linear because a linear read has no
 // second derivative to give the second-order pass, and because storing the
@@ -585,7 +607,7 @@ inline std::int64_t slice_row(const Buffers& buffers, const std::int64_t atom) {
 // saturate rather than diverge.
 inline void profile_pair(
     const Buffers& buffers,
-    const std::int64_t location,
+    const std::int64_t row,
     const float theta,
     Complex& a,
     Complex& b
@@ -595,7 +617,7 @@ inline void profile_pair(
     const float lower = std::min(std::floor(scaled), last - 1.0F);
     const float u = scaled - lower;
     const float* const near = buffers.profile
-        + (location * buffers.profile_bins + static_cast<std::int64_t>(lower))
+        + (row * buffers.profile_bins + static_cast<std::int64_t>(lower))
             * PROFILE_STRIDE;
     const float* const far = near + PROFILE_STRIDE;
 
@@ -672,7 +694,7 @@ inline void rotate(
 // there, so this only has to stay finite.
 inline void profile_pair_slope(
     const Buffers& buffers,
-    const std::int64_t location,
+    const std::int64_t row,
     const float theta,
     Complex& a,
     Complex& b,
@@ -684,7 +706,7 @@ inline void profile_pair_slope(
     const float lower = std::min(std::floor(scaled), last - 1.0F);
     const float u = scaled - lower;
     const float* const near = buffers.profile
-        + (location * buffers.profile_bins + static_cast<std::int64_t>(lower))
+        + (row * buffers.profile_bins + static_cast<std::int64_t>(lower))
             * PROFILE_STRIDE;
     const float* const far = near + PROFILE_STRIDE;
 
@@ -1073,8 +1095,8 @@ void simulate_jvp_range(
                         Complex slope_a{};
                         Complex slope_b{};
                         profile_pair_slope(
-                            primal, location, alpha, pair_a, pair_b, slope_a,
-                            slope_b
+                            primal, table_row<PROFILED>(primal, event, location),
+                            alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         // The flip angle carries the tangent into the table;
                         // the RF phase turns the axis after it comes out.
@@ -2124,7 +2146,11 @@ void simulate_range(
                     if constexpr (PROFILED) {
                         Complex a{};
                         Complex b{};
-                        profile_pair(buffers, location, theta, a, b);
+                        profile_pair(
+                            buffers,
+                            table_row<PROFILED>(buffers, event, location),
+                            theta, a, b
+                        );
                         // The table is built at zero RF phase, which turns the
                         // rotation axis and so reaches ``b`` alone.
                         rotate_spinor(
@@ -2513,7 +2539,11 @@ void simulate_vjp_range(
                     if constexpr (PROFILED) {
                         Complex pair_a{};
                         Complex pair_b{};
-                        profile_pair(primal, location, alpha, pair_a, pair_b);
+                        profile_pair(
+                            primal,
+                            table_row<PROFILED>(primal, event, location),
+                            alpha, pair_a, pair_b
+                        );
                         rotate_spinor(
                             fplus, fminus, longitudinal, pair_a,
                             pair_b * std::polar(1.0F, -phi)
@@ -2666,8 +2696,8 @@ void simulate_vjp_range(
                         Complex slope_a{};
                         Complex slope_b{};
                         profile_pair_slope(
-                            primal, location, alpha, pair_a, pair_b, slope_a,
-                            slope_b
+                            primal, table_row<PROFILED>(primal, event, location),
+                            alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         const Complex turn = std::polar(1.0F, -phi);
                         const Complex spun = pair_b * turn;
@@ -3008,7 +3038,7 @@ inline void rotate_adjoint_dual(
 // since the segment is a cubic.
 inline void profile_pair_slope_dual(
     const Buffers& buffers,
-    const std::int64_t location,
+    const std::int64_t row,
     const DualFloat theta,
     DualComplex& a,
     DualComplex& b,
@@ -3021,7 +3051,7 @@ inline void profile_pair_slope_dual(
     const float lower = std::min(std::floor(scaled), last - 1.0F);
     const float u = scaled - lower;
     const float* const near = buffers.profile
-        + (location * buffers.profile_bins + static_cast<std::int64_t>(lower))
+        + (row * buffers.profile_bins + static_cast<std::int64_t>(lower))
             * PROFILE_STRIDE;
     const float* const far = near + PROFILE_STRIDE;
 
@@ -4052,8 +4082,8 @@ void simulate_vjp_jvp_range(
                         DualComplex slope_a{};
                         DualComplex slope_b{};
                         profile_pair_slope_dual(
-                            primal, location, alpha, pair_a, pair_b, slope_a,
-                            slope_b
+                            primal, table_row<PROFILED>(primal, event, location),
+                            alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         rotate_spinor(
                             fplus,
@@ -4233,8 +4263,8 @@ void simulate_vjp_jvp_range(
                         DualComplex slope_a{};
                         DualComplex slope_b{};
                         profile_pair_slope_dual(
-                            primal, location, alpha, pair_a, pair_b, slope_a,
-                            slope_b
+                            primal, table_row<PROFILED>(primal, event, location),
+                            alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         const DualComplex turn =
                             dual_polar(DualFloat{0.0F, 0.0F} - phi);
@@ -4398,6 +4428,7 @@ inline Buffers packed_buffers(
     const float washout_scale,
     const std::int64_t shim_count,
     const void* const profile = nullptr,
+    const void* const profile_index = nullptr,
     const std::int64_t profile_bins = 0,
     const std::int64_t locations = 1,
     const float profile_step = 1.0F
@@ -4427,6 +4458,7 @@ inline Buffers packed_buffers(
     buffers.washout_scale = washout_scale;
     buffers.shim_count = shim_count;
     buffers.profile = static_cast<const float*>(profile);
+    buffers.profile_index = static_cast<const std::int32_t*>(profile_index);
     buffers.profile_bins = profile_bins;
     buffers.locations = locations;
     buffers.profile_step = profile_step;
@@ -4662,9 +4694,10 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         )) {
         return nullptr;
     }
-    // The packed buffers, the two output planes, then the transition table --
-    // null when the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3;
+    // The packed buffers, the two output planes, then the transition tables
+    // and the per-event index that says which an event reads -- both null when
+    // the sequence has none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 4;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -4691,6 +4724,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
         raw[PACKED_COUNT + 2],
+        raw[PACKED_COUNT + 3],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step)
@@ -4836,8 +4870,9 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         return nullptr;
     }
     // The packed buffers, one tangent per differentiable input, the two output
-    // planes, then the transition table -- null when there is none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 3;
+    // planes, then the transition tables and the per-event index that says
+    // which an event reads -- both null when there is no table.
+    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 4;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -4865,6 +4900,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
@@ -4930,8 +4966,9 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         return nullptr;
     }
     // The packed buffers, the two seed planes, one gradient per differentiable
-    // input, then the transition table -- null when there is none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 1;
+    // input, then the transition tables and the per-event index that says
+    // which an event reads -- both null when there is no table.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 2;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -4957,6 +4994,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
@@ -5219,8 +5257,9 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         return nullptr;
     }
     // The packed buffers, the tangents, the two seed planes, both gradient
-    // blocks, then the transition table -- null when there is none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 1;
+    // blocks, then the transition tables and the per-event index that says
+    // which an event reads -- both null when there is no table.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 2;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -5244,6 +5283,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),

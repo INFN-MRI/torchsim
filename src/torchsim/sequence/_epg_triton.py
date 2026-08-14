@@ -307,7 +307,17 @@ def _shift_real_adjoint(
 
 
 @triton.jit
-def _profile_pair(profile, location, theta, bins: tl.constexpr, step):
+def _table_row(profile_index, event, location, locations: tl.constexpr):
+    """Which row of the stacked tables this pulse reads.
+
+    Its own shape's block of ``locations`` rows, then the voxel's place along
+    the slice.
+    """
+    return tl.load(profile_index + event).to(tl.int64) * locations + location
+
+
+@triton.jit
+def _profile_pair(profile, row, theta, bins: tl.constexpr, step):
     """The Cayley-Klein pair the transition table holds at this flip angle.
 
     Cubic Hermite between the two knots bracketing ``theta``, clamped at both
@@ -326,7 +336,7 @@ def _profile_pair(profile, location, theta, bins: tl.constexpr, step):
     h01 = -2.0 * u3 + 3.0 * u2
     h11 = (u3 - u2) * step
 
-    base = (location * bins + lower.to(tl.int64)) * 8
+    base = (row * bins + lower.to(tl.int64)) * 8
     pair = ()
     for component in tl.static_range(4):
         near = tl.load(profile + base + component)
@@ -338,7 +348,7 @@ def _profile_pair(profile, location, theta, bins: tl.constexpr, step):
 
 
 @triton.jit
-def _profile_pair_slope(profile, location, theta, bins: tl.constexpr, step):
+def _profile_pair_slope(profile, row, theta, bins: tl.constexpr, step):
     """The pair and its derivative in the flip angle, from the same cubic.
 
     The derivative of a Hermite segment is another polynomial in the same four
@@ -362,7 +372,7 @@ def _profile_pair_slope(profile, location, theta, bins: tl.constexpr, step):
     g01 = (6.0 * u - 6.0 * u2) / step
     g11 = 3.0 * u2 - 2.0 * u
 
-    base = (location * bins + lower.to(tl.int64)) * 8
+    base = (row * bins + lower.to(tl.int64)) * 8
     read = ()
     for component in tl.static_range(4):
         near = tl.load(profile + base + component)
@@ -377,7 +387,7 @@ def _profile_pair_slope(profile, location, theta, bins: tl.constexpr, step):
 
 
 @triton.jit
-def _profile_pair_curve(profile, location, theta, bins: tl.constexpr, step):
+def _profile_pair_curve(profile, row, theta, bins: tl.constexpr, step):
     """The pair, its slope and its curvature in the flip angle.
 
     The second-order pass differentiates the read twice, and a Hermite segment
@@ -403,7 +413,7 @@ def _profile_pair_curve(profile, location, theta, bins: tl.constexpr, step):
     c01 = (6.0 - 12.0 * u) / (step * step)
     c11 = (6.0 * u - 2.0) / step
 
-    base = (location * bins + lower.to(tl.int64)) * 8
+    base = (row * bins + lower.to(tl.int64)) * 8
     read = ()
     for component in tl.static_range(4):
         near = tl.load(profile + base + component)
@@ -449,7 +459,7 @@ def _dual_product(x, y):
 
 @triton.jit
 def _profiled_pair_dual(
-    profile, location, alpha_value, alpha_tangent, phi_value, phi_tangent,
+    profile, row, alpha_value, alpha_tangent, phi_value, phi_tangent,
     bins: tl.constexpr, step,
 ):
     """The pair a shaped pulse turns through, and its slope, as duals.
@@ -458,7 +468,7 @@ def _profiled_pair_dual(
     the stored slope and the slope's own tangent is the segment's curvature.
     The RF phase turns the axis once the pair is out, and so reaches ``b``.
     """
-    read = _profile_pair_curve(profile, location, alpha_value, bins, step)
+    read = _profile_pair_curve(profile, row, alpha_value, bins, step)
     a = (read[0], read[3], read[1] * alpha_tangent, read[4] * alpha_tangent)
     slope_a = (read[1], read[4], read[2] * alpha_tangent, read[5] * alpha_tangent)
     b = (read[6], read[9], read[7] * alpha_tangent, read[10] * alpha_tangent)
@@ -777,6 +787,7 @@ def _epg_vjp_jvp_kernel(
     output_index,
     shim_index,
     profile,
+    profile_index,
     dot_t1,
     dot_t2,
     dot_m0,
@@ -830,8 +841,9 @@ def _epg_vjp_jvp_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
-    # Voxels are spread over the slice voxel-major, so a voxel's row in the
-    # transition table is its index modulo the profile's width.
+    # Voxels are spread over the slice voxel-major, so a voxel's place along
+    # the slice is its index modulo the profile's width. One pulse shape holds
+    # that many consecutive rows, and the event says which shape it drives.
     location = atom % locations
     local = problem - problem_base
     scratch_offset = local * state_count
@@ -1051,8 +1063,10 @@ def _epg_vjp_jvp_kernel(
         turned_zti = c0[3] + c1[3] + c2[3]
         if profile_bins > 0:
             shaped_a, shaped_b, _, _ = _profiled_pair_dual(
-                profile, location, alpha_value, alpha_tangent, phi_value,
-                phi_tangent, profile_bins, profile_step,
+                profile,
+                _table_row(profile_index, event, location, locations),
+                alpha_value, alpha_tangent, phi_value, phi_tangent,
+                profile_bins, profile_step,
             )
             (
                 turned_pvr, turned_pvi, turned_mvr, turned_mvi, turned_zvr,
@@ -1430,8 +1444,10 @@ def _epg_vjp_jvp_kernel(
         if profile_bins > 0:
             shaped_a, shaped_b, shaped_slope_a, shaped_slope_b = (
                 _profiled_pair_dual(
-                    profile, location, alpha_value, alpha_tangent, phi_value,
-                    phi_tangent, profile_bins, profile_step,
+                    profile,
+                    _table_row(profile_index, event, location, locations),
+                    alpha_value, alpha_tangent, phi_value, phi_tangent,
+                    profile_bins, profile_step,
                 )
             )
             grad_a, grad_b, shaped_pb, shaped_mb, shaped_zb = (
@@ -2693,6 +2709,7 @@ def _epg_kernel(
     output_index,
     shim_index,
     profile,
+    profile_index,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -2721,8 +2738,9 @@ def _epg_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
-    # Voxels are spread over the slice voxel-major, so a voxel's row in the
-    # transition table is its index modulo the profile's width.
+    # Voxels are spread over the slice voxel-major, so a voxel's place along
+    # the slice is its index modulo the profile's width. One pulse shape holds
+    # that many consecutive rows, and the event says which shape it drives.
     location = atom % locations
     workspace_offset = problem * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
@@ -2829,7 +2847,8 @@ def _epg_kernel(
             # The table is built at zero RF phase, which turns the rotation
             # axis and so reaches ``b`` alone.
             pair = _profile_pair(
-                profile, location, alpha, profile_bins, profile_step
+                profile, _table_row(profile_index, event, location, locations),
+                alpha, profile_bins, profile_step,
             )
             turn_r = tl.cos(phi)
             turn_i = -tl.sin(phi)
@@ -2963,6 +2982,7 @@ def _epg_jvp_kernel(
     tangent_flip,
     tangent_phase,
     profile,
+    profile_index,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -2991,8 +3011,9 @@ def _epg_jvp_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
-    # Voxels are spread over the slice voxel-major, so a voxel's row in the
-    # transition table is its index modulo the profile's width.
+    # Voxels are spread over the slice voxel-major, so a voxel's place along
+    # the slice is its index modulo the profile's width. One pulse shape holds
+    # that many consecutive rows, and the event says which shape it drives.
     location = atom % locations
     workspace_offset = problem * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
@@ -3224,7 +3245,8 @@ def _epg_jvp_kernel(
         dphi = tl.load(tangent_phase + event_base + event, mask=active_atom, other=0.0) + db1_phase
         if profile_bins > 0:
             read = _profile_pair_slope(
-                profile, location, alpha, profile_bins, profile_step
+                profile, _table_row(profile_index, event, location, locations),
+                alpha, profile_bins, profile_step,
             )
             # The flip angle carries the tangent into the table; the RF phase
             # turns the axis after the pair comes out, and so reaches ``b``.
@@ -3528,6 +3550,7 @@ def simulate_into(
     # A kernel argument has to be a tensor even where the branch reading it is
     # compiled out, so an unprofiled launch passes one it already has.
     table = None if profile is None else profile.packed(t1.device)
+    table_rows = None if profile is None else profile.rows(kind.device)
 
     if real_axis == 1:
         _epg_real_kernel[grid](
@@ -3574,6 +3597,7 @@ def simulate_into(
         output_index,
         shim_index,
         t1 if table is None else table,
+        kind if table_rows is None else table_rows,
         output_real,
         output_imag,
         *scratch,
@@ -3710,6 +3734,7 @@ def simulate_jvp_into(
         return
 
     table = None if profile is None else profile.packed(t1.device)
+    table_rows = None if profile is None else profile.rows(kind.device)
     _epg_jvp_kernel[grid](
         *tissue,
         duration,
@@ -3723,7 +3748,8 @@ def simulate_jvp_into(
         tangent_duration,
         tangent_flip,
         tangent_phase,
-        table,
+        t1 if table is None else table,
+        kind if table_rows is None else table_rows,
         output_real,
         output_imag,
         *scratch,
@@ -3900,6 +3926,7 @@ def simulate_vjp_jvp_into(
     grad_flip, grad_duration, grad_phase = buffers.flip, buffers.duration, buffers.phase
     trajectory, scratch = buffers.trajectory, buffers.scratch
     table = None if profile is None else profile.packed(t1.device)
+    table_rows = None if profile is None else profile.rows(kind.device)
 
     wave = buffers.wave
     problems = _problems_per_program(wave, block_states)
@@ -3951,7 +3978,8 @@ def simulate_vjp_jvp_into(
             _epg_vjp_jvp_kernel[grid](
                 *tissue,
                 *events,
-                table,
+                t1 if table is None else table,
+                kind if table_rows is None else table_rows,
                 *tangents,
                 grad_real,
                 grad_imag,

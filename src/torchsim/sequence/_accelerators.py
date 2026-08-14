@@ -42,7 +42,12 @@ from ._parameters import (
     tissue_gradient_height,
     tissue_gradient_rows,
 )
-from ._transition import ExactSliceProfile, transition_table
+from ._transition import (
+    ExactSliceProfile,
+    SliceTables,
+    TransitionTable,
+    transition_table,
+)
 from ._transmit import shim_rows
 
 # A forward-mode call appends one tangent per differentiable input to the
@@ -68,6 +73,10 @@ class _PackedEvents:
     action: torch.Tensor
     output_index: torch.Tensor
     shim_index: torch.Tensor
+    # Which stacked table each event's pulse reads. Kept beside the event
+    # buffers rather than among them: only a sequence with a table has one, and
+    # it travels with the table rather than with the events.
+    profile_index: torch.Tensor
     time_us: torch.Tensor
     event_index: torch.Tensor
     repetition: torch.Tensor
@@ -146,39 +155,34 @@ def _across_the_table(
     )
 
 
-def _one_pulse_shape(
-    description: SequenceDescription, rf_raster_time_s: float
-) -> RfDefinition:
-    """The RF definition a table is built from.
+def _pulse_shapes(
+    description: SequenceDescription,
+) -> dict[int, RfDefinition]:
+    """The RF definitions a sequence's tables are built from, in event order.
 
-    The table is indexed by slice position and effective flip angle, so one
-    covers every pulse that shares a shape however they differ in flip. Pulses
-    of different shapes would each need a table and an index saying which,
-    which the kernels do not carry.
+    A table is indexed by slice position and effective flip angle, so one
+    covers every pulse sharing a shape however they differ in flip. Pulses of
+    different shapes get one each, and the event carries which it reads.
+
+    Ordered by first use, so the row a definition takes does not depend on how
+    the description happened to number it.
 
     Raises:
-        ValueError: if the sequence plays no shaped pulse, or more than one
-            distinct shape.
+        ValueError: if the sequence plays no shaped pulse.
     """
     used: dict[int, RfDefinition] = {}
     for event in description.events:
         if event.type is not EventType.RF or event.rf_use is RfUse.INVERSION:
             continue
-        definition = description.rf_definitions[event.rf_definition_id]
-        used[definition.id] = definition
+        key = event.rf_definition_id
+        if key not in used:
+            used[key] = description.rf_definitions[key]
     if not used:
         raise ValueError(
             "an exact slice profile is the rotation a pulse performs, and this "
             "sequence plays no shaped pulse to take it from"
         )
-    if len(used) > 1:
-        names = ", ".join(str(key) for key in sorted(used))
-        raise ValueError(
-            f"an exact slice profile covers one pulse shape, and this sequence "
-            f"plays {len(used)} ({names}); the kernels carry one table and no "
-            f"index saying which pulse reads it"
-        )
-    return next(iter(used.values()))
+    return used
 
 
 # The apparent diffusion coefficient is given in um**2/ms; the b-factor wants
@@ -254,6 +258,11 @@ def simulate_native(
     if policy_name not in _SHIFTS_AND_SPOILS:
         return None
 
+    shapes = (
+        _pulse_shapes(description)
+        if isinstance(slice_profile, ExactSliceProfile)
+        else {}
+    )
     packed = _pack_events(
         policy_name,
         description,
@@ -262,19 +271,27 @@ def simulate_native(
         device=prepared_tissue[0].device,
         rf_raster_time_s=rf_raster_time_s,
         shim_rows=shim_rows(description),
+        table_rows={key: row for row, key in enumerate(shapes)},
     )
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
     tissue = _order_weighted_rates(tissue, description)
     table = None
-    if isinstance(slice_profile, ExactSliceProfile):
-        table = transition_table(
-            _one_pulse_shape(description, rf_raster_time_s),
-            slice_profile.positions(),
-            bins=slice_profile.bins,
-            theta_max=slice_profile.theta_max,
-            rf_raster_time_s=rf_raster_time_s,
+    if shapes:
+        positions = slice_profile.positions()
+        table = SliceTables(
+            tables=tuple(
+                transition_table(
+                    definition,
+                    positions,
+                    bins=slice_profile.bins,
+                    theta_max=slice_profile.theta_max,
+                    rf_raster_time_s=rf_raster_time_s,
+                )
+                for definition in shapes.values()
+            ),
+            index=packed.profile_index,
         )
         locations = table.points
         tissue = _across_the_table(tissue, locations)
@@ -323,12 +340,14 @@ def _pack_events(
     device: torch.device,
     rf_raster_time_s: float,
     shim_rows: dict[int, int] | None = None,
+    table_rows: dict[int, int] | None = None,
 ) -> _PackedEvents:
     # Values stay as plain Python numbers unless the description carries
     # tensors (an optimizer differentiating through flip angles), so the common
     # case builds each buffer with a single allocation instead of one scalar
     # tensor per event.
     shim_rows = shim_rows or {}
+    table_rows = table_rows or {}
     durations: list[Any] = []
     kinds: list[int] = []
     flips: list[Any] = []
@@ -336,6 +355,7 @@ def _pack_events(
     actions: list[int] = []
     output_indices: list[int] = []
     shim_indices: list[int] = []
+    profile_indices: list[int] = []
     times: list[Any] = []
     event_indices: list[int] = []
     repetition_indices: list[int] = []
@@ -356,6 +376,11 @@ def _pack_events(
             event_output_index = -1
             shim_indices.append(
                 shim_rows.get(event.rf_shim_id, 0)
+                if event.type is EventType.RF
+                else 0
+            )
+            profile_indices.append(
+                table_rows.get(event.rf_definition_id, 0)
                 if event.type is EventType.RF
                 else 0
             )
@@ -405,6 +430,9 @@ def _pack_events(
         ).contiguous(),
         shim_index=torch.as_tensor(
             shim_indices, dtype=torch.int32, device=device
+        ).contiguous(),
+        profile_index=torch.as_tensor(
+            profile_indices, dtype=torch.int32, device=device
         ).contiguous(),
         time_us=_stack_values(times, device),
         event_index=torch.as_tensor(event_indices, dtype=torch.int64, device=device),
@@ -1032,16 +1060,27 @@ def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
 
 
 def _profiled_pointers(
-    values: tuple[torch.Tensor, ...], table: torch.Tensor | None
+    values: tuple[torch.Tensor, ...],
+    table: torch.Tensor | None,
+    rows: torch.Tensor | None = None,
 ) -> tuple[int, ...]:
-    """Buffer addresses with the transition table's on the end.
+    """Buffer addresses with the transition tables' and their index's on the end.
 
-    A sequence with no table still passes the slot, as a null the kernels
+    A sequence with no table still passes both slots, as nulls the kernels
     check to pick the flip-and-phase operator instead.
     """
     if table is None:
-        return (*_pointers(values), 0)
-    return _pointers((*values, table))
+        return (*_pointers(values), 0, 0)
+    return _pointers((*values, table, rows))
+
+
+def _tables(profile: Any, events: tuple[torch.Tensor, ...]) -> Any:
+    """A bare table read as the one every pulse drives."""
+    if isinstance(profile, TransitionTable):
+        return SliceTables.alone(
+            profile, int(events[1].numel()), events[1].device
+        )
+    return profile
 
 
 def _within_the_table(profile: Any, flip: torch.Tensor) -> None:
@@ -2005,6 +2044,7 @@ def _run_packed(
     so the table's row count is also how many copies of each voxel the tissue
     holds.
     """
+    profile = _tables(profile, events)
     if real_axis is None:
         real_axis = _auto_real_axis(
             "forward", events, tissue, state_count, profile=profile
@@ -2082,8 +2122,9 @@ def _run_packed(
     output_imag = torch.empty_like(output_real)
     pointers = (*tissue, *events, output_real, output_imag)
     table = None if profile is None else profile.packed()
+    table_rows = None if profile is None else profile.rows()
     _epg_cpu.simulate(
-        _profiled_pointers(pointers, table),
+        _profiled_pointers(pointers, table, table_rows),
         tissue[0].numel(),
         trains,
         events[1].numel(),
@@ -2123,6 +2164,7 @@ def _run_packed_vjp(
     the real-subspace kernels -- four of them short -- be chosen. All of them,
     if it is not given.
     """
+    profile = _tables(profile, events)
     if profile is not None:
         _within_the_table(profile, events[2])
     if tissue[0].device.type != "cpu":
@@ -2166,8 +2208,9 @@ def _run_packed_vjp(
         duration_grad,
     )
     table = None if profile is None else profile.packed()
+    table_rows = None if profile is None else profile.rows()
     _epg_cpu.simulate_vjp(
-        _profiled_pointers(pointers, table),
+        _profiled_pointers(pointers, table, table_rows),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2209,6 +2252,7 @@ def _run_packed_vjp_jvp(
     decides whether the real-subspace adjoint -- four of them short -- may be
     chosen when ``real_axis`` is left open. All of them, if it is not given.
     """
+    profile = _tables(profile, events)
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
             events, tissue, state_count, tangents, wanted, profile
@@ -2316,8 +2360,9 @@ def _run_packed_vjp_jvp(
         *tangent_grads,
     )
     table = None if profile is None else profile.packed()
+    table_rows = None if profile is None else profile.rows()
     _epg_cpu.simulate_vjp_jvp(
-        _profiled_pointers(pointers, table),
+        _profiled_pointers(pointers, table, table_rows),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2349,6 +2394,7 @@ def _run_packed_jvp(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
 ) -> torch.Tensor:
+    profile = _tables(profile, events)
     if profile is not None:
         _within_the_table(profile, events[2])
     if real_axis is None:
@@ -2458,8 +2504,9 @@ def _run_packed_jvp(
         output_imag,
     )
     table = None if profile is None else profile.packed()
+    table_rows = None if profile is None else profile.rows()
     _epg_cpu.simulate_jvp(
-        _profiled_pointers(pointers, table),
+        _profiled_pointers(pointers, table, table_rows),
         tissue[0].numel(),
         trains,
         events[1].numel(),

@@ -31,12 +31,14 @@ from __future__ import annotations
 
 __all__ = [
     "ExactSliceProfile",
+    "SliceTables",
     "TransitionTable",
     "exact_slice_profile",
     "transition_table",
 ]
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
@@ -326,3 +328,84 @@ def exact_slice_profile(
     return ExactSliceProfile(
         points=points, extent=extent, bins=bins, theta_max=theta_max
     )
+
+
+@dataclass(frozen=True)
+class SliceTables:
+    """The tables a sequence reads, and which pulse reads which.
+
+    A table is indexed by slice position and effective flip angle, so one
+    covers every pulse sharing a shape however they differ in flip. Pulses of
+    different shapes need one each, and ``index`` says which an event reads --
+    packed alongside the events, in their order, exactly as the shim row is.
+
+    Every table spans the same positions and the same flip grid, because they
+    are built together from one request.
+    """
+
+    tables: tuple[TransitionTable, ...]
+    index: torch.Tensor
+
+    def __post_init__(self) -> None:
+        if not self.tables:
+            raise ValueError("a slice table set holds at least one table")
+        first = self.tables[0]
+        for table in self.tables[1:]:
+            if (
+                table.points != first.points
+                or table.bins != first.bins
+                or table.theta_max != first.theta_max
+            ):
+                raise ValueError(
+                    "slice tables are stacked into one buffer, so they must "
+                    "span the same positions and the same flip grid"
+                )
+
+    @classmethod
+    def alone(
+        cls, table: TransitionTable, events: int, device: Any = None
+    ) -> SliceTables:
+        """One table every pulse reads, which is the single-shape case."""
+        return cls(
+            tables=(table,),
+            index=torch.zeros(events, dtype=torch.int32, device=device),
+        )
+
+    @property
+    def shapes(self) -> int:
+        """How many distinct pulse shapes the set holds."""
+        return len(self.tables)
+
+    @property
+    def points(self) -> int:
+        """How many slice positions each table carries."""
+        return self.tables[0].points
+
+    @property
+    def bins(self) -> int:
+        """How many flip-angle knots each position carries."""
+        return self.tables[0].bins
+
+    @property
+    def step(self) -> float:
+        """Flip angle between neighbouring knots, in radians."""
+        return self.tables[0].step
+
+    @property
+    def theta_max(self) -> float:
+        """Largest effective flip the tables cover, in radians."""
+        return self.tables[0].theta_max
+
+    def packed(self, device: torch.device | str | None = None) -> torch.Tensor:
+        """Every table stacked, laid out as the kernels index them.
+
+        ``(shapes * points, bins, 8)``, so a pulse's row is its shape times the
+        position count plus the voxel's position.
+        """
+        return torch.cat(
+            [table.packed(device) for table in self.tables], dim=0
+        ).contiguous()
+
+    def rows(self, device: torch.device | str | None = None) -> torch.Tensor:
+        """The per-event table index, on the device the kernels run on."""
+        return self.index.to(device=device, dtype=torch.int32).contiguous()

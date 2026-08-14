@@ -149,15 +149,13 @@ def test_the_gradients_reach_the_flip_angles_through_the_table() -> None:
     assert gradient.abs().max() > 0.0
 
 
-def test_a_sequence_with_two_pulse_shapes_is_refused() -> None:
-    """One table and no index saying which pulse reads it."""
+def _two_shapes(second: RfDefinition):
+    """An FSE whose excitation and refocusing are shaped differently."""
     from dataclasses import replace
 
     from torchsim.sequence._description import RfUse, SequenceEvent
 
     description = _describe(definition=_sinc(4.0e3))
-    # The excitation keeps definition 0; every refocusing moves to a second
-    # shape, which is the case a single table cannot cover.
     events = []
     seen_rf = 0
     for event in description.events:
@@ -166,25 +164,62 @@ def test_a_sequence_with_two_pulse_shapes_is_refused() -> None:
             if seen_rf > 1:
                 event = SequenceEvent.rf(
                     event.timestamp_us,
-                    1,
+                    second.id,
                     event.rf_use,
                     event.rf_amplitude_hz,
                     event.rf_phase_rad,
                 )
         events.append(event)
-    description = replace(
+    return replace(
         description,
         events=tuple(events),
-        rf_definitions={0: _sinc(4.0e3), 1: _sinc(2.0e3, rf_id=1)},
+        rf_definitions={0: _sinc(4.0e3), second.id: second},
     )
 
-    shapes = {
-        event.rf_definition_id
-        for event in description.events
-        if event.type.name == "RF" and event.rf_use is not RfUse.INVERSION
-    }
-    assert shapes == {0, 1}
-    with pytest.raises(ValueError, match="one pulse shape"):
+
+def test_each_pulse_reads_the_table_of_its_own_shape() -> None:
+    """The excitation and the refocusing need not be the same pulse.
+
+    A sequence playing two shapes gets a table each, and the event says which
+    it drives. If the index were ignored every pulse would read one of them,
+    so the mixed sequence must sit apart from both sequences that play only
+    one shape.
+    """
+    mixed = _two_shapes(_sinc(1.0e3, rf_id=1))
+    only_wide = _describe(definition=_sinc(4.0e3))
+    only_narrow = _describe(definition=_sinc(1.0e3))
+
+    profile = exact_slice_profile(9)
+    both = _signal(mixed, profile)
+    wide = _signal(only_wide, profile)
+    narrow = _signal(only_narrow, profile)
+
+    assert (both - wide).abs().max() > 1e-3 * wide.abs().max()
+    assert (both - narrow).abs().max() > 1e-3 * narrow.abs().max()
+
+
+def test_two_shapes_that_are_the_same_shape_are_the_one_table_twice() -> None:
+    """The index is what changed, so pointing it at equal pulses changes nothing."""
+    twinned = _two_shapes(_sinc(4.0e3, rf_id=1))
+    single = _describe(definition=_sinc(4.0e3))
+
+    profile = exact_slice_profile(9)
+    assert (
+        _signal(twinned, profile) - _signal(single, profile)
+    ).abs().max() < 1e-5 * _signal(single, profile).abs().max()
+
+
+def test_a_sequence_with_no_shaped_pulse_is_refused() -> None:
+    from dataclasses import replace
+
+    description = _describe()
+    description = replace(
+        description,
+        events=tuple(
+            event for event in description.events if event.type.name != "RF"
+        ),
+    )
+    with pytest.raises(ValueError, match="no shaped pulse"):
         _signal(description, exact_slice_profile(5))
 
 
@@ -198,3 +233,21 @@ def test_the_operator_loop_refuses_an_exact_profile() -> None:
 def test_a_slice_needs_at_least_one_position() -> None:
     with pytest.raises(ValueError, match="at least one position"):
         exact_slice_profile(0).positions()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_the_card_reads_each_shape_the_host_reads() -> None:
+    mixed = _two_shapes(_sinc(1.0e3, rf_id=1))
+    profile = exact_slice_profile(9)
+    tissue = _tissue(b1=torch.tensor([0.8, 1.2]))
+    host = _signal(mixed, profile, tissue=tissue)
+    card = FSE().simulate(
+        mixed,
+        tissue,
+        slice_profile=profile,
+        nstates=STATES,
+        backend="native",
+        device="cuda",
+    ).signal
+
+    assert (host - card.cpu()).abs().max() < 1e-4 * host.abs().max()
