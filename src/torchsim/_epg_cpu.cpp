@@ -37,6 +37,34 @@ constexpr std::size_t PACKED_COUNT = TISSUE_COUNT + EVENT_COUNT;
 // duration, flip and phase do.
 constexpr std::size_t FLOAT_COUNT = TISSUE_COUNT + 3;
 
+// Where the transmit pair sits among the tissue properties.
+constexpr std::size_t B1_INDEX = 3;
+constexpr std::size_t B1_PHASE_INDEX = 4;
+
+// Rows of one voxel each that a tissue parameter's gradient takes. A pulse
+// reaches only the shim it drives, so the transmit pair takes a row per shim;
+// every other property belongs to the voxel alone and takes one.
+inline std::size_t tissue_rows(const std::size_t parameter, const std::int64_t shims) {
+    return (parameter == B1_INDEX || parameter == B1_PHASE_INDEX)
+        ? static_cast<std::size_t>(shims)
+        : 1U;
+}
+
+// Where each parameter's gradient starts within the plane, in those rows. At a
+// single shim every base is its own parameter index, which is the flat layout
+// a sequence without a transmit array uses.
+struct TissueLayout {
+    std::size_t base[TISSUE_COUNT];
+    std::size_t rows;
+
+    explicit TissueLayout(const std::int64_t shims) : base{}, rows(0U) {
+        for (std::size_t parameter = 0U; parameter < TISSUE_COUNT; ++parameter) {
+            base[parameter] = rows;
+            rows += tissue_rows(parameter, shims);
+        }
+    }
+};
+
 // Workers outlive the call that first needs them, so a kernel pays for a
 // handoff rather than for thread creation.
 //
@@ -674,6 +702,7 @@ inline void rotate(
     }
 }
 
+template <bool SHIMMED>
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
@@ -812,13 +841,15 @@ void simulate_jvp_range(
                         value.value *= efficiency;
                     }
                 } else {
-                    const float alpha = view.flip[event] * primal.b1[atom];
+                    const std::int64_t transmit =
+                        transmit_row<SHIMMED>(primal, event, atom);
+                    const float alpha = view.flip[event] * primal.b1[transmit];
                     const float alpha_tangent =
-                        dot_flip[event] * primal.b1[atom]
-                        + view.flip[event] * buffers.b1[atom];
-                    const float phi = view.phase[event] + primal.b1_phase[atom];
+                        dot_flip[event] * primal.b1[transmit]
+                        + view.flip[event] * buffers.b1[transmit];
+                    const float phi = view.phase[event] + primal.b1_phase[transmit];
                     const float phi_tangent =
-                        dot_phase[event] + buffers.b1_phase[atom];
+                        dot_phase[event] + buffers.b1_phase[transmit];
                     rotate(
                         fplus,
                         fminus,
@@ -2034,6 +2065,7 @@ inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
     }
 }
 
+template <bool SHIMMED>
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
@@ -2047,12 +2079,14 @@ void simulate_vjp_range(
     float* grad_flip_local,
     float* grad_phase_local,
     float* grad_duration_local,
-    // Seven per-atom accumulators laid out [parameter][atom]. Work items are
-    // split across the (atom, train) product, so several threads reach the same
-    // atom and every train contributes to it.
+    // Per-atom accumulators laid out [row][atom], the rows given by
+    // TissueLayout. Work items are split across the (atom, train) product, so
+    // several threads reach the same atom and every train contributes to it.
     float* grad_tissue_local
 ) {
     const Buffers& primal = buffers.primal;
+    const TissueLayout layout(primal.shim_count);
+    const std::int64_t atoms = primal.atom_count;
     const std::size_t states = static_cast<std::size_t>(state_count);
     const std::size_t trajectory_stride = 3U * states;
 
@@ -2092,6 +2126,9 @@ void simulate_vjp_range(
         const float r2 = 1000.0F / t2;
         const float b0 = primal.b0[atom];
         const float m0 = primal.m0[atom];
+        // With one shim the transmit field is a property of the voxel and
+        // lifts out of the event loop; with several it belongs to the shim a
+        // pulse drives, and is read where the pulse is.
         const float b1 = primal.b1[atom];
         const float b1_phase = primal.b1_phase[atom];
         const float efficiency = primal.inversion_efficiency[atom];
@@ -2139,12 +2176,15 @@ void simulate_vjp_range(
                         value *= -efficiency;
                     }
                 } else {
+                    const std::int64_t transmit =
+                        transmit_row<SHIMMED>(primal, event, atom);
                     rotate(
                         fplus,
                         fminus,
                         longitudinal,
-                        view.flip[event] * b1,
-                        view.phase[event] + b1_phase
+                        view.flip[event] * (SHIMMED ? primal.b1[transmit] : b1),
+                        view.phase[event]
+                            + (SHIMMED ? primal.b1_phase[transmit] : b1_phase)
                     );
                 }
             }
@@ -2168,6 +2208,10 @@ void simulate_vjp_range(
         float grad_m0 = 0.0F;
         float grad_b1 = 0.0F;
         float grad_b1_phase = 0.0F;
+        // Transmit gradients are summed per shim: the running pair is flushed
+        // to its row whenever the walk back reaches a pulse on a different
+        // one. A single-shim sequence never changes row and flushes once.
+        std::int64_t held = 0;
         float grad_b0 = 0.0F;
         float grad_efficiency = 0.0F;
         float grad_damping = 0.0F;
@@ -2259,8 +2303,26 @@ void simulate_vjp_range(
                         longitudinal_bar[state] *= -efficiency;
                     }
                 } else {
-                    const float alpha = view.flip[event] * b1;
-                    const float phi = view.phase[event] + b1_phase;
+                    const std::int64_t transmit =
+                        transmit_row<SHIMMED>(primal, event, atom);
+                    const float pulse_b1 = SHIMMED ? primal.b1[transmit] : b1;
+                    const float alpha = view.flip[event] * pulse_b1;
+                    const float phi = view.phase[event]
+                        + (SHIMMED ? primal.b1_phase[transmit] : b1_phase);
+                    if constexpr (SHIMMED) {
+                        const std::int64_t row = primal.shim_index[event];
+                        if (row != held) {
+                            grad_tissue_local[
+                                (layout.base[B1_INDEX] + held) * atoms + atom
+                            ] += grad_b1;
+                            grad_tissue_local[
+                                (layout.base[B1_PHASE_INDEX] + held) * atoms + atom
+                            ] += grad_b1_phase;
+                            grad_b1 = 0.0F;
+                            grad_b1_phase = 0.0F;
+                            held = row;
+                        }
+                    }
                     float grad_alpha = 0.0F;
                     float grad_phi = 0.0F;
                     rotate_adjoint(
@@ -2275,7 +2337,7 @@ void simulate_vjp_range(
                         grad_alpha,
                         grad_phi
                     );
-                    grad_flip_train[event] += grad_alpha * b1;
+                    grad_flip_train[event] += grad_alpha * pulse_b1;
                     grad_b1 += grad_alpha * view.flip[event];
                     grad_phase_train[event] += grad_phi;
                     grad_b1_phase += grad_phi;
@@ -2370,18 +2432,19 @@ void simulate_vjp_range(
                 + grad_wout * washout_rate;
         }
 
-        const std::int64_t atoms = primal.atom_count;
-        grad_tissue_local[0 * atoms + atom] += grad_t1;
-        grad_tissue_local[1 * atoms + atom] += grad_t2;
-        grad_tissue_local[2 * atoms + atom] += grad_m0;
-        grad_tissue_local[3 * atoms + atom] += grad_b1;
-        grad_tissue_local[4 * atoms + atom] += grad_b1_phase;
-        grad_tissue_local[5 * atoms + atom] += grad_b0;
-        grad_tissue_local[6 * atoms + atom] += grad_efficiency;
-        grad_tissue_local[7 * atoms + atom] += grad_damping;
+        grad_tissue_local[layout.base[0] * atoms + atom] += grad_t1;
+        grad_tissue_local[layout.base[1] * atoms + atom] += grad_t2;
+        grad_tissue_local[layout.base[2] * atoms + atom] += grad_m0;
+        grad_tissue_local[(layout.base[B1_INDEX] + held) * atoms + atom] += grad_b1;
+        grad_tissue_local[(layout.base[B1_PHASE_INDEX] + held) * atoms + atom] +=
+            grad_b1_phase;
+        grad_tissue_local[layout.base[5] * atoms + atom] += grad_b0;
+        grad_tissue_local[layout.base[6] * atoms + atom] += grad_efficiency;
+        grad_tissue_local[layout.base[7] * atoms + atom] += grad_damping;
         // One buffer drives two rates, so the velocity gradient is the sum of
         // what each geometry carries back.
-        grad_tissue_local[8 * atoms + atom] += grad_flow * primal.flow_scale
+        grad_tissue_local[layout.base[8] * atoms + atom] +=
+            grad_flow * primal.flow_scale
             + grad_washout * speed_direction(velocity) * primal.washout_scale;
     }
 }
@@ -3311,6 +3374,28 @@ void simulate_real_vjp_jvp_lane_range(
     }
 }
 
+// One half of the transmit pair a pulse sees, with its tangent. ``voxel``
+// carries the single-shim field, which is a property of the voxel and lifts
+// out of the event loop; a shimmed sequence reads the row of the shim the
+// pulse drives.
+template <bool SHIMMED>
+inline DualFloat shim_dual(
+    const float* const value,
+    const float* const tangent,
+    const std::int64_t row,
+    const DualFloat voxel
+) {
+    if constexpr (SHIMMED) {
+        return DualFloat{value[row], tangent[row]};
+    } else {
+        (void)value;
+        (void)tangent;
+        (void)row;
+        return voxel;
+    }
+}
+
+template <bool SHIMMED>
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
@@ -3324,11 +3409,13 @@ void simulate_vjp_jvp_range(
     DualFloat* grad_flip_local,
     DualFloat* grad_phase_local,
     DualFloat* grad_duration_local,
-    // Seven per-atom accumulators laid out [parameter][atom]; see the
-    // first-order kernel for why these cannot be written directly.
+    // Per-atom accumulators laid out [row][atom]; see the first-order kernel
+    // for the rows and for why these cannot be written directly.
     DualFloat* grad_tissue_local
 ) {
     const Buffers& primal = buffers.primal;
+    const TissueLayout layout(primal.shim_count);
+    const std::int64_t atoms = primal.atom_count;
     const std::size_t states = static_cast<std::size_t>(state_count);
     const std::size_t stride = 3U * states;
 
@@ -3439,11 +3526,19 @@ void simulate_vjp_jvp_range(
                         value = negated * value;
                     }
                 } else {
+                    const std::int64_t transmit =
+                        transmit_row<SHIMMED>(primal, event, atom);
                     const DualFloat alpha =
-                        DualFloat{view.flip[event], dot_flip[event]} * b1;
+                        DualFloat{view.flip[event], dot_flip[event]}
+                        * shim_dual<SHIMMED>(
+                            primal.b1, buffers.dot_b1, transmit, b1
+                        );
                     const DualFloat phi =
                         DualFloat{view.phase[event], dot_phase[event]}
-                        + b1_phase;
+                        + shim_dual<SHIMMED>(
+                            primal.b1_phase, buffers.dot_b1_phase, transmit,
+                            b1_phase
+                        );
                     rotate_dual(fplus, fminus, longitudinal, alpha, phi);
                 }
             }
@@ -3467,6 +3562,9 @@ void simulate_vjp_jvp_range(
         DualFloat grad_m0{0.0F, 0.0F};
         DualFloat grad_b1{0.0F, 0.0F};
         DualFloat grad_b1_phase{0.0F, 0.0F};
+        // Flushed to its shim's row whenever the walk back reaches a pulse on
+        // a different one; see the first-order kernel.
+        std::int64_t held = 0;
         DualFloat grad_b0{0.0F, 0.0F};
         DualFloat grad_efficiency{0.0F, 0.0F};
         DualFloat grad_damping{0.0F, 0.0F};
@@ -3574,10 +3672,34 @@ void simulate_vjp_jvp_range(
                     const DualFloat flip_value{
                         view.flip[event], dot_flip[event]
                     };
-                    const DualFloat alpha = flip_value * b1;
+                    const std::int64_t transmit =
+                        transmit_row<SHIMMED>(primal, event, atom);
+                    const DualFloat pulse_b1 = shim_dual<SHIMMED>(
+                        primal.b1, buffers.dot_b1, transmit, b1
+                    );
+                    const DualFloat alpha = flip_value * pulse_b1;
                     const DualFloat phi =
                         DualFloat{view.phase[event], dot_phase[event]}
-                        + b1_phase;
+                        + shim_dual<SHIMMED>(
+                            primal.b1_phase, buffers.dot_b1_phase, transmit,
+                            b1_phase
+                        );
+                    if constexpr (SHIMMED) {
+                        const std::int64_t row = primal.shim_index[event];
+                        if (row != held) {
+                            DualFloat& magnitude = grad_tissue_local[
+                                (layout.base[B1_INDEX] + held) * atoms + atom
+                            ];
+                            DualFloat& angle = grad_tissue_local[
+                                (layout.base[B1_PHASE_INDEX] + held) * atoms + atom
+                            ];
+                            magnitude = magnitude + grad_b1;
+                            angle = angle + grad_b1_phase;
+                            grad_b1 = DualFloat{0.0F, 0.0F};
+                            grad_b1_phase = DualFloat{0.0F, 0.0F};
+                            held = row;
+                        }
+                    }
                     DualFloat grad_alpha{0.0F, 0.0F};
                     DualFloat grad_phi{0.0F, 0.0F};
                     rotate_adjoint_dual(
@@ -3592,7 +3714,8 @@ void simulate_vjp_jvp_range(
                         grad_alpha,
                         grad_phi
                     );
-                    grad_flip_train[event] = grad_flip_train[event] + grad_alpha * b1;
+                    grad_flip_train[event] =
+                        grad_flip_train[event] + grad_alpha * pulse_b1;
                     grad_b1 = grad_b1 + grad_alpha * flip_value;
                     grad_phase_train[event] = grad_phase_train[event] + grad_phi;
                     grad_b1_phase = grad_b1_phase + grad_phi;
@@ -3685,7 +3808,6 @@ void simulate_vjp_jvp_range(
                 + grad_wout * washout_rate;
         }
 
-        const std::int64_t atoms = primal.atom_count;
         const DualFloat contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, grad_b1_phase, grad_b0,
             grad_efficiency, grad_damping,
@@ -3694,7 +3816,11 @@ void simulate_vjp_jvp_range(
                     * grad_washout,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
-            DualFloat& slot = grad_tissue_local[parameter * atoms + atom];
+            const std::size_t plane = layout.base[parameter]
+                + (parameter == B1_INDEX || parameter == B1_PHASE_INDEX
+                       ? static_cast<std::size_t>(held)
+                       : 0U);
+            DualFloat& slot = grad_tissue_local[plane * atoms + atom];
             slot = slot + contributions[parameter];
         }
     }
@@ -4059,7 +4185,10 @@ void dispatch_jvp(
         const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
     ) = lanes ? &simulate_real_jvp_lane_range
-              : (real_axis == 1 ? &simulate_real_jvp_range : &simulate_jvp_range);
+              : (real_axis == 1 ? &simulate_real_jvp_range
+                                : (buffers.primal.shim_count > 1
+                                       ? &simulate_jvp_range<true>
+                                       : &simulate_jvp_range<false>));
     // A lane kernel's work item covers a block of trains rather than one train.
     const std::int64_t work_count =
         atom_count * (lanes ? lane_blocks(train_count) : train_count);
@@ -4234,23 +4363,30 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     const std::size_t events =
         static_cast<std::size_t>(event_count) * static_cast<std::size_t>(train_count);
     const std::size_t atoms = static_cast<std::size_t>(atom_count);
+    const TissueLayout layout(buffers.primal.shim_count);
     std::vector<float> shared(3U * events * thread_count, 0.0F);
-    std::vector<float> shared_tissue(TISSUE_COUNT * atoms * thread_count, 0.0F);
+    std::vector<float> shared_tissue(layout.rows * atoms * thread_count, 0.0F);
 
     Py_BEGIN_ALLOW_THREADS
     auto slice = [&](unsigned int thread, std::size_t which) {
         return shared.data() + (static_cast<std::size_t>(thread) * 3U + which) * events;
     };
     auto tissue_slice = [&](unsigned int thread) {
-        return shared_tissue.data() + static_cast<std::size_t>(thread) * TISSUE_COUNT * atoms;
+        return shared_tissue.data()
+            + static_cast<std::size_t>(thread) * layout.rows * atoms;
     };
     {
+        void (*kernel)(
+            const VjpBuffers&, std::int64_t, std::int64_t, std::int64_t,
+            std::int64_t, std::int64_t, float*, float*, float*, float*
+        ) = buffers.primal.shim_count > 1 ? &simulate_vjp_range<true>
+                                          : &simulate_vjp_range<false>;
         const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         WorkerPool::instance().run(thread_count, [&](const unsigned int slot) {
             const std::int64_t begin = static_cast<std::int64_t>(slot) * block;
             const std::int64_t end = std::min<std::int64_t>(work_count, begin + block);
             if (begin < end) {
-                simulate_vjp_range(
+                kernel(
                     buffers, begin, end, event_count, state_count, output_count,
                     slice(slot, 0), slice(slot, 1), slice(slot, 2),
                     tissue_slice(slot)
@@ -4268,14 +4404,19 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             buffers.grad_velocity,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
-            for (std::size_t atom = 0; atom < atoms; ++atom) {
-                float total = 0.0F;
-                for (unsigned int thread = 0; thread < thread_count; ++thread) {
-                    total += shared_tissue[
-                        (static_cast<std::size_t>(thread) * TISSUE_COUNT + parameter) * atoms + atom
-                    ];
+            const std::size_t rows = tissue_rows(parameter, buffers.primal.shim_count);
+            for (std::size_t row = 0; row < rows; ++row) {
+                const std::size_t plane = layout.base[parameter] + row;
+                for (std::size_t atom = 0; atom < atoms; ++atom) {
+                    float total = 0.0F;
+                    for (unsigned int thread = 0; thread < thread_count; ++thread) {
+                        total += shared_tissue[
+                            (static_cast<std::size_t>(thread) * layout.rows + plane)
+                                * atoms + atom
+                        ];
+                    }
+                    destinations[parameter][row * atoms + atom] = total;
                 }
-                destinations[parameter][atom] = total;
             }
         }
     }
@@ -4319,7 +4460,9 @@ void dispatch_second_order(
         std::int64_t, DualFloat*, DualFloat*, DualFloat*, DualFloat*
     ) = lanes ? &simulate_real_vjp_jvp_lane_range
               : (real_axis == 1 ? &simulate_real_vjp_jvp_range
-                                : &simulate_vjp_jvp_range);
+                                : (buffers.primal.shim_count > 1
+                                       ? &simulate_vjp_jvp_range<true>
+                                       : &simulate_vjp_jvp_range<false>));
     const std::int64_t work_count =
         atom_count * (lanes ? lane_blocks(train_count) : train_count);
     const unsigned int thread_count = worker_count(requested_threads, work_count);
@@ -4331,13 +4474,15 @@ void dispatch_second_order(
     // train, so all of them accumulate into one buffer without sharing a slot.
     // Only the tissue gradients, which every train contributes to, need a copy
     // per worker and a reduction.
+    const TissueLayout layout(buffers.primal.shim_count);
     std::vector<DualFloat> shared(3U * events, DualFloat{0.0F, 0.0F});
     std::vector<DualFloat> shared_tissue(
-        TISSUE_COUNT * atoms * thread_count, DualFloat{0.0F, 0.0F}
+        layout.rows * atoms * thread_count, DualFloat{0.0F, 0.0F}
     );
     auto slice = [&](std::size_t which) { return shared.data() + which * events; };
     auto tissue_slice = [&](unsigned int slot) {
-        return shared_tissue.data() + static_cast<std::size_t>(slot) * TISSUE_COUNT * atoms;
+        return shared_tissue.data()
+            + static_cast<std::size_t>(slot) * layout.rows * atoms;
     };
     {
         // Round the block up to a whole number of trains so no two workers hold
@@ -4370,15 +4515,20 @@ void dispatch_second_order(
             buffers.grad_velocity,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
-            for (std::size_t atom = 0; atom < atoms; ++atom) {
-                DualFloat total{0.0F, 0.0F};
-                for (unsigned int slot = 0; slot < thread_count; ++slot) {
-                    total = total + shared_tissue[
-                        (static_cast<std::size_t>(slot) * TISSUE_COUNT + parameter) * atoms + atom
-                    ];
+            const std::size_t rows = tissue_rows(parameter, buffers.primal.shim_count);
+            for (std::size_t row = 0; row < rows; ++row) {
+                const std::size_t plane = layout.base[parameter] + row;
+                for (std::size_t atom = 0; atom < atoms; ++atom) {
+                    DualFloat total{0.0F, 0.0F};
+                    for (unsigned int slot = 0; slot < thread_count; ++slot) {
+                        total = total + shared_tissue[
+                            (static_cast<std::size_t>(slot) * layout.rows + plane)
+                                * atoms + atom
+                        ];
+                    }
+                    value_destinations[parameter][row * atoms + atom] = total.value;
+                    tangent_destinations[parameter][row * atoms + atom] = total.tangent;
                 }
-                value_destinations[parameter][atom] = total.value;
-                tangent_destinations[parameter][atom] = total.tangent;
             }
         }
     }

@@ -10,11 +10,25 @@ from ._accelerators import _shim_count, _train_count
 import triton
 import triton.language as tl
 
-from ._parameters import NO_GEOMETRY, Geometry
+from ._parameters import (
+    NO_GEOMETRY,
+    Geometry,
+    tissue_gradient_bases,
+    tissue_gradient_height,
+    tissue_gradient_rows,
+)
 from ._parameters import TISSUE_COUNT as _TISSUE_PARAMETERS
+from ._parameters import TRANSMIT_INPUTS as _TRANSMIT_INPUTS
 
 # Triton reads globals only through its own constexpr wrapper.
 _TISSUE_COUNT = tl.constexpr(_TISSUE_PARAMETERS)
+
+# The gradient plane holds a row of voxels per tissue parameter, except that
+# the transmit pair holds one per shim. Both sit ahead of everything that
+# widens, so a plane's row is its parameter index shifted by the rows the pair
+# added ahead of it.
+_B1_ROW = tl.constexpr(_TRANSMIT_INPUTS[0])
+_B1_PHASE_ROW = tl.constexpr(_TRANSMIT_INPUTS[1])
 
 
 @triton.jit
@@ -1008,10 +1022,38 @@ def _epg_vjp_jvp_kernel(
         tl.atomic_add(
             grad_phase_tangent + event_base + event, grad_phi_t, mask=writes_flip
         )
-        g_b1v += grad_alpha_v * event_flip
-        g_b1t += grad_alpha_t * event_flip + grad_alpha_v * event_dot_flip
-        g_b1pv += grad_phi_v
-        g_b1pt += grad_phi_t
+        # A pulse's transmit gradient belongs to the shim it drives, so with
+        # several it lands in that shim's row here rather than in a register
+        # summed over the whole train. ``row`` is the offset of the row the
+        # replay above read.
+        if shims > 1:
+            tl.atomic_add(
+                grad_tissue_value + _B1_ROW * atom_count + row + atom,
+                grad_alpha_v * event_flip,
+                mask=writes_flip,
+            )
+            tl.atomic_add(
+                grad_tissue_tangent + _B1_ROW * atom_count + row + atom,
+                grad_alpha_t * event_flip + grad_alpha_v * event_dot_flip,
+                mask=writes_flip,
+            )
+            tl.atomic_add(
+                grad_tissue_value
+                + (_B1_PHASE_ROW + shims - 1) * atom_count + row + atom,
+                grad_phi_v,
+                mask=writes_flip,
+            )
+            tl.atomic_add(
+                grad_tissue_tangent
+                + (_B1_PHASE_ROW + shims - 1) * atom_count + row + atom,
+                grad_phi_t,
+                mask=writes_flip,
+            )
+        else:
+            g_b1v += grad_alpha_v * event_flip
+            g_b1t += grad_alpha_t * event_flip + grad_alpha_v * event_dot_flip
+            g_b1pv += grad_phi_v
+            g_b1pt += grad_phi_t
 
         avr, avi, bvr, bvi = _shift_adjoint(
             pbvr, pbvi, mbvr, mbvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
@@ -1187,16 +1229,23 @@ def _epg_vjp_jvp_kernel(
         g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt, g_difft, velocity_t,
     )
     for parameter in tl.static_range(_TISSUE_COUNT):
-        tl.atomic_add(
-            grad_tissue_value + parameter * atom_count + atom,
-            values[parameter],
-            mask=active_atom,
-        )
-        tl.atomic_add(
-            grad_tissue_tangent + parameter * atom_count + atom,
-            tangents[parameter],
-            mask=active_atom,
-        )
+        # The transmit pair went to its shim's row above when there is more
+        # than one; the rest sit past whatever rows that pair took.
+        if shims == 1 or (parameter != _B1_ROW and parameter != _B1_PHASE_ROW):
+            plane = (
+                parameter if parameter < _B1_ROW
+                else parameter + 2 * (shims - 1)
+            )
+            tl.atomic_add(
+                grad_tissue_value + plane * atom_count + atom,
+                values[parameter],
+                mask=active_atom,
+            )
+            tl.atomic_add(
+                grad_tissue_tangent + plane * atom_count + atom,
+                tangents[parameter],
+                mask=active_atom,
+            )
 
 
 @triton.jit
@@ -3131,6 +3180,7 @@ class AdjointBuffers:
         state_count: int,
         output_count: int,
         real_axis: int | None = None,
+        shims: int = 1,
     ) -> None:
         duration, kind, flip, phase, _action, _output_index, _shim = events
         device = kind.device
@@ -3138,13 +3188,15 @@ class AdjointBuffers:
         event_count = kind.numel()
         self.planes = 2 if real_axis == 1 else 4
         self.chunk = chunk
+        self.shims = shims
+        self.rows = tissue_gradient_height(shims)
         self.state_count = state_count
         self.output_count = output_count
         self.train_count = train_count
         # One dual accumulator per plane: value is the gradient w.r.t. the
         # tangent inputs, tangent the gradient w.r.t. the primal ones.
         self.tissue = [
-            torch.zeros(_TISSUE_PARAMETERS * chunk, dtype=torch.float32, device=device)
+            torch.zeros(self.rows * chunk, dtype=torch.float32, device=device)
             for _ in range(2)
         ]
         self.flip = [torch.zeros_like(flip) for _ in range(2)]
@@ -3172,15 +3224,22 @@ class AdjointBuffers:
         self.scratch = _scratch(self.planes, self.wave, device, state_count)
 
     def tissue_gradients(self, atom_count: int) -> tuple[tuple[torch.Tensor, ...], ...]:
-        """The per-voxel gradients of the last pass, one row per parameter.
+        """The per-voxel gradients of the last pass, one entry per parameter.
 
-        Ordered to match ``event_gradients``: tangent plane first.
+        Each is flat and as wide as the buffer it belongs to, so the transmit
+        pair spans every shim. Ordered to match ``event_gradients``: tangent
+        plane first.
         """
-        rows = _TISSUE_PARAMETERS
         return tuple(
             tuple(
-                self.tissue[plane][: rows * atom_count].view(rows, atom_count)[index]
-                for index in range(rows)
+                self.tissue[plane][
+                    base * atom_count : (base + rows) * atom_count
+                ]
+                for base, rows in zip(
+                    tissue_gradient_bases(self.shims),
+                    tissue_gradient_rows(self.shims),
+                    strict=True,
+                )
             )
             for plane in (1, 0)
         )
@@ -3212,10 +3271,10 @@ def simulate_vjp_jvp_into(
 ) -> tuple[tuple[torch.Tensor, ...], ...]:
     """Forward-over-reverse for one chunk of voxels, into caller-owned buffers.
 
-    Returns the per-voxel gradients of this chunk -- tangent plane first, seven
-    rows each, views into ``buffers`` that the next call overwrites. The
-    per-event gradients accumulate inside ``buffers`` instead, because every
-    chunk contributes to all of them.
+    Returns the per-voxel gradients of this chunk -- tangent plane first, one
+    entry per tissue parameter, views into ``buffers`` that the next call
+    overwrites. The per-event gradients accumulate inside ``buffers`` instead,
+    because every chunk contributes to all of them.
 
     ``atom_count`` is this chunk's width, which may be narrower than the one
     the buffers were built for.
@@ -3237,7 +3296,7 @@ def simulate_vjp_jvp_into(
     )
     grad_real.copy_(grad_output.real)
     grad_imag.copy_(grad_output.imag)
-    grad_tissue = [plane[: _TISSUE_PARAMETERS * atom_count] for plane in buffers.tissue]
+    grad_tissue = [plane[: buffers.rows * atom_count] for plane in buffers.tissue]
     for plane in grad_tissue:
         plane.zero_()
     grad_flip, grad_duration, grad_phase = buffers.flip, buffers.duration, buffers.phase
@@ -3351,6 +3410,7 @@ def simulate_vjp_jvp(
         state_count=state_count,
         output_count=output_count,
         real_axis=real_axis,
+        shims=_shim_count(tissue),
     )
     voxel_grads = simulate_vjp_jvp_into(
         tissue,

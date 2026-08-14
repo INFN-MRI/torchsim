@@ -21,7 +21,14 @@ import torch
 
 from torchsim import FSE, TissueProperties, fse_description
 from torchsim.sequence._description import EventType, SequenceEvent, ShimDefinition
-from torchsim.sequence._accelerators import _pack_events, _run_packed
+from torchsim.sequence._accelerators import (
+    _pack_events,
+    _run_packed,
+    _run_packed_jvp,
+    _run_packed_vjp,
+    _run_packed_vjp_jvp,
+    offload,
+)
 from torchsim.sequence._simulation import _prepare_tissue, _resolve_transmit
 from torchsim.sequence._transmit import (
     channel_count,
@@ -211,10 +218,9 @@ def test_a_pulse_naming_an_undefined_shim_is_refused() -> None:
         shim_rows(description)
 
 
-def _two_shim_packed(voxels: int = 3, device: str = "cpu"):
-    """Prepared tissue and packed events for the two-shim train."""
+def _packed(description, voxels: int = 3, device: str = "cpu"):
+    """Prepared tissue and packed events for a train, shimmed or not."""
     b1, b1_phase = _sensitivity(voxels)
-    description = _two_shim_description()
     tissue, shims = _resolve_transmit(
         _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), description, device
     )
@@ -229,6 +235,11 @@ def _two_shim_packed(voxels: int = 3, device: str = "cpu"):
         shim_rows=shim_rows(description),
     )
     return prepared, packed.buffers, packed.output_count
+
+
+def _two_shim_packed(voxels: int = 3, device: str = "cpu"):
+    """Prepared tissue and packed events for the two-shim train."""
+    return _packed(_two_shim_description(), voxels, device)
 
 
 def test_each_pulse_reads_the_shim_it_names() -> None:
@@ -293,18 +304,252 @@ def test_two_identical_shims_are_the_same_as_one() -> None:
     )
 
 
-def test_a_derivative_through_several_shims_is_refused() -> None:
-    """Each shim needs a gradient row of its own, which the adjoints lack."""
+def _seed(tissue, output_count: int) -> torch.Tensor:
+    generator = torch.Generator().manual_seed(11)
+    return torch.randn(
+        (tissue[0].numel(), output_count),
+        generator=generator,
+        dtype=torch.complex64,
+    )
+
+
+def _oracle_adjoint(tissue, events, seed, output_count: int):
+    """What autograd through the reference makes of the same pass."""
+    leaves = tuple(value.clone().requires_grad_(True) for value in tissue)
+    signal = simulate_packed(
+        leaves, events, state_count=8, output_count=output_count
+    )
+    (signal.real * seed.real + signal.imag * seed.imag).sum().backward()
+    return tuple(
+        torch.zeros_like(value) if value.grad is None else value.grad
+        for value in leaves
+    )
+
+
+def test_the_adjoint_gives_each_shim_a_row_of_its_own() -> None:
+    """Two shims, two transmit gradients, against the oracle."""
+    tissue, events, output_count = _two_shim_packed()
+    atoms = tissue[0].numel()
+    seed = _seed(tissue, output_count)
+    expected = _oracle_adjoint(tissue, events, seed, output_count)
+    actual = _run_packed_vjp(
+        tissue, events, seed, state_count=8, output_count=output_count, threads=1
+    )
+
+    assert actual[3].numel() == 2 * atoms
+    for index in (3, 4):
+        reference = expected[index]
+        assert (reference - actual[index]).abs().max() < 1e-5 * reference.abs().max()
+
+
+def test_forward_mode_follows_each_shim() -> None:
+    tissue, events, output_count = _two_shim_packed()
+    generator = torch.Generator().manual_seed(3)
+    tissue_dot = tuple(
+        0.1 * torch.randn(value.shape, generator=generator) for value in tissue
+    )
+    event_dot = tuple(
+        0.01 * torch.randn(events[index].shape, generator=generator)
+        for index in (0, 2, 3)
+    )
+
+    def forward(*values):
+        return simulate_packed(
+            values[:9],
+            (values[9], events[1], values[10], values[11], *events[4:]),
+            state_count=8,
+            output_count=output_count,
+        )
+
+    _, expected = torch.func.jvp(
+        forward,
+        (*tissue, events[0], events[2], events[3]),
+        (*tissue_dot, *event_dot),
+    )
+    actual = _run_packed_jvp(
+        tissue, events, tissue_dot, event_dot,
+        state_count=8, output_count=output_count, threads=1,
+    )
+    assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
+
+
+def test_the_second_order_pass_follows_each_shim() -> None:
+    """Forward-over-reverse, which is also how CUDA reaches a first adjoint."""
+    tissue, events, output_count = _two_shim_packed()
+    generator = torch.Generator().manual_seed(4)
+    primals = (*tissue, events[0], events[2], events[3])
+    tangents = tuple(
+        0.05 * torch.randn(value.shape, generator=generator) for value in primals
+    )
+    seed = _seed(tissue, output_count)
+
+    leaves = tuple(value.clone().requires_grad_(True) for value in primals)
+    signal = simulate_packed(
+        leaves[:9],
+        (leaves[9], events[1], leaves[10], leaves[11], *events[4:]),
+        state_count=8,
+        output_count=output_count,
+    )
+    first = torch.autograd.grad(
+        (signal.real * seed.real + signal.imag * seed.imag).sum(),
+        leaves,
+        create_graph=True,
+        materialize_grads=True,
+    )
+    expected = torch.autograd.grad(
+        sum((grad * step).sum() for grad, step in zip(first, tangents)),
+        leaves,
+        materialize_grads=True,
+    )
+    actual, _ = _run_packed_vjp_jvp(
+        tissue, events, tangents, seed,
+        state_count=8, output_count=output_count, threads=1,
+    )
+    for index in (3, 4):
+        reference = expected[index]
+        assert (reference - actual[index]).abs().max() < 1e-4 * reference.abs().max()
+
+
+def test_a_shim_no_pulse_drives_gets_no_gradient() -> None:
+    """A row nothing reads is a row nothing can change, exactly."""
+    tissue, events, output_count = _two_shim_packed()
+    atoms = tissue[0].numel()
+    padded = list(tissue)
+    for index in (3, 4):
+        padded[index] = torch.cat(
+            (tissue[index], torch.full((atoms,), 0.7))
+        ).contiguous()
+
+    gradients = _run_packed_vjp(
+        tuple(padded), events, _seed(tissue, output_count),
+        state_count=8, output_count=output_count, threads=1,
+    )
+    for index in (3, 4):
+        assert torch.equal(
+            gradients[index][2 * atoms :], torch.zeros(atoms)
+        )
+        assert gradients[index][:atoms].abs().max() > 0
+
+
+def test_two_identical_shims_carry_between_them_what_one_carries() -> None:
+    """Splitting a field across rows only splits where its gradient lands."""
+    voxels = 3
+    shim = _uniform_shim()
+    doubled = replace(
+        _description(shim, shim_ids=(0, 1, 0, 1, 0)),
+        shim_definitions={
+            0: shim,
+            1: ShimDefinition(1, shim.magnitudes, shim.phases_rad),
+        },
+    )
+    single, events, output_count = _packed(_description(shim), voxels)
+    seed = _seed(single, output_count)
+    arguments = dict(state_count=8, output_count=output_count, threads=1)
+    whole = _run_packed_vjp(single, events, seed, **arguments)
+
+    split_tissue, split_events, _ = _packed(doubled, voxels)
+    split = _run_packed_vjp(split_tissue, split_events, seed, **arguments)
+
+    for index in (3, 4):
+        summed = split[index][:voxels] + split[index][voxels:]
+        assert (summed - whole[index]).abs().max() < 1e-5 * whole[index].abs().max()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_the_cuda_adjoint_agrees_with_the_cpu_one_across_shims() -> None:
+    tissue, events, output_count = _two_shim_packed()
+    seed = _seed(tissue, output_count)
+    arguments = dict(state_count=8, output_count=output_count, threads=1)
+    expected = _run_packed_vjp(tissue, events, seed, **arguments)
+    card = torch.device("cuda")
+    actual = _run_packed_vjp(
+        tuple(value.to(card) for value in tissue),
+        tuple(value.to(card) for value in events),
+        seed.to(card),
+        **arguments,
+    )
+    for index in (3, 4):
+        reference = expected[index]
+        moved = actual[index].cpu()
+        assert (reference - moved).abs().max() < 1e-5 * reference.abs().max()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_streaming_a_shimmed_volume_is_refused() -> None:
+    """Streaming cuts by voxel, and a shim row is a whole volume."""
+    tissue, events, output_count = _two_shim_packed()
+    with offload(["cuda"], budget_bytes=1 << 20):
+        with pytest.raises(NotImplementedError, match="drives 2 shims"):
+            _run_packed(tissue, events, state_count=8,
+                        output_count=output_count, threads=1)
+
+
+def test_a_gradient_reaches_the_weights_of_each_shim() -> None:
+    """The point of the pass: a per-pulse shim is a thing to design."""
     voxels = 3
     b1, b1_phase = _sensitivity(voxels)
-    leaf = b1.clone().requires_grad_(True)
+    excitation = torch.full((CHANNELS,), 1.0 / CHANNELS, requires_grad=True)
+    refocusing = torch.linspace(0.05, 0.4, CHANNELS).requires_grad_(True)
+    shims = {
+        0: ShimDefinition(0, excitation, (0.0,) * CHANNELS),
+        1: ShimDefinition(1, refocusing, tuple(0.3 * i for i in range(CHANNELS))),
+    }
+    description = replace(
+        _description(shims[0], shim_ids=(0, 1, 1, 1, 1, 1, 1)),
+        shim_definitions=shims,
+    )
+
     signal = FSE().simulate(
-        _two_shim_description(),
-        _tissue(voxels, b1=leaf, b1_phase_rad=b1_phase),
-        nstates=8,
+        description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
     ).signal
-    with pytest.raises(NotImplementedError, match="drives 2 shims"):
-        signal.abs().square().sum().backward()
+    signal.abs().square().sum().backward()
+
+    assert excitation.grad is not None and excitation.grad.abs().max() > 0
+    assert refocusing.grad is not None and refocusing.grad.abs().max() > 0
+
+
+def test_the_weight_gradients_match_a_finite_difference_shim_by_shim() -> None:
+    """A row swapped between shims stays nonzero, so nonzero is not enough."""
+    voxels = 2
+    b1, b1_phase = _sensitivity(voxels)
+    phases = tuple(0.3 * index for index in range(CHANNELS))
+
+    def loss(excitation: torch.Tensor, refocusing: torch.Tensor) -> torch.Tensor:
+        shims = {
+            0: ShimDefinition(0, excitation, (0.0,) * CHANNELS),
+            1: ShimDefinition(1, refocusing, phases),
+        }
+        description = replace(
+            _description(shims[0], shim_ids=(0, 1, 1, 1, 1, 1, 1)),
+            shim_definitions=shims,
+        )
+        signal = FSE().simulate(
+            description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
+        ).signal
+        return signal.abs().square().sum()
+
+    weights = (
+        torch.full((CHANNELS,), 1.0 / CHANNELS),
+        torch.linspace(0.05, 0.4, CHANNELS),
+    )
+    leaves = tuple(value.clone().requires_grad_(True) for value in weights)
+    loss(*leaves).backward()
+
+    step = 1e-3
+    for shim in (0, 1):
+        for channel in (0, CHANNELS // 2):
+            bump = torch.zeros(CHANNELS)
+            bump[channel] = step
+            moved = tuple(
+                value + bump if index == shim else value
+                for index, value in enumerate(weights)
+            )
+            back = tuple(
+                value - bump if index == shim else value
+                for index, value in enumerate(weights)
+            )
+            numeric = (loss(*moved) - loss(*back)) / (2.0 * step)
+            assert abs(numeric - leaves[shim].grad[channel]) < 3e-3 * abs(numeric)
 
 
 def test_a_uniform_array_reproduces_the_single_channel_signal() -> None:

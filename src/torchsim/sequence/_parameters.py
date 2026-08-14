@@ -20,6 +20,9 @@ __all__ = [
     "EVENT_PARAMETERS",
     "TISSUE_PARAMETERS",
     "at_identity",
+    "tissue_gradient_bases",
+    "tissue_gradient_rows",
+    "tissue_gradient_height",
 ]
 
 from dataclasses import dataclass
@@ -42,12 +45,17 @@ class Parameter:
         always does.
     feature
         The term of the state machine it switches on.
+    transmit
+        Whether the buffer carries one row of voxels per shim rather than a
+        single row. Only the transmit field does: a pulse reads the shim it
+        drives, so both the buffer and its gradient need a row for each.
     """
 
     name: str
     differentiable: bool = True
     identity: float | None = None
     feature: str | None = None
+    transmit: bool = False
 
 
 @dataclass(frozen=True)
@@ -79,8 +87,8 @@ TISSUE_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("t1_ms", feature="T1"),
     Parameter("t2_ms", feature="T2"),
     Parameter("m0", identity=1.0, feature="M0"),
-    Parameter("b1", identity=1.0, feature="B1"),
-    Parameter("b1_phase_rad", identity=0.0, feature="B1_PHASE"),
+    Parameter("b1", identity=1.0, feature="B1", transmit=True),
+    Parameter("b1_phase_rad", identity=0.0, feature="B1_PHASE", transmit=True),
     Parameter("b0_hz", identity=0.0, feature="B0"),
     Parameter("inversion_efficiency", identity=1.0, feature="INVERSION"),
     Parameter("diffusion_um2_per_ms", identity=0.0, feature="DIFFUSION"),
@@ -107,7 +115,7 @@ EVENT_COUNT = len(EVENT_PARAMETERS)
 PACKED_COUNT = len(PACKED_PARAMETERS)
 
 # Where the differentiable buffers sit among the packed ones. Gradient tuples
-# are ordered by this throughout: seven tissue properties, then event duration,
+# are ordered by this throughout: every tissue property, then event duration,
 # flip and phase.
 FLOAT_INPUTS: tuple[int, ...] = tuple(
     index
@@ -123,6 +131,13 @@ SEED_INPUT = PACKED_COUNT
 TISSUE_NAMES: tuple[str, ...] = tuple(
     parameter.name for parameter in TISSUE_PARAMETERS
 )
+
+# Which tissue buffers hold a row per shim.
+TRANSMIT_INPUTS: tuple[int, ...] = tuple(
+    index for index, parameter in enumerate(TISSUE_PARAMETERS) if parameter.transmit
+)
+
+
 FLOAT_NAMES: tuple[str, ...] = tuple(
     PACKED_PARAMETERS[index].name for index in FLOAT_INPUTS
 )
@@ -136,6 +151,7 @@ OUTSIDE_THE_SUBSPACE: tuple[int, ...] = tuple(
     FLOAT_NAMES.index(name)
     for name in ("b1_phase_rad", "b0_hz", "velocity_m_per_s", "phase")
 )
+
 
 def at_identity(parameter: Parameter, value: Any) -> bool:
     """Whether this value leaves the parameter's term with nothing to do.
@@ -154,3 +170,33 @@ def at_identity(parameter: Parameter, value: Any) -> bool:
     if numel is not None and numel() == 1:
         return float(value.item()) == parameter.identity
     return False
+
+
+def tissue_gradient_rows(shims: int) -> tuple[int, ...]:
+    """Rows of one voxel each that every tissue parameter's gradient takes.
+
+    A pulse reaches only the shim it drives, so the transmit pair takes a row
+    per shim; every other property belongs to the voxel alone and takes one.
+    """
+    return tuple(
+        shims if parameter.transmit else 1 for parameter in TISSUE_PARAMETERS
+    )
+
+
+def tissue_gradient_bases(shims: int) -> tuple[int, ...]:
+    """Where each tissue parameter's gradient starts, in those rows.
+
+    At a single shim each base is its own parameter index, which is the flat
+    plane a sequence without a transmit array uses.
+    """
+    bases = []
+    height = 0
+    for rows in tissue_gradient_rows(shims):
+        bases.append(height)
+        height += rows
+    return tuple(bases)
+
+
+def tissue_gradient_height(shims: int) -> int:
+    """How many rows of one voxel each the whole tissue gradient plane takes."""
+    return TISSUE_COUNT + (shims - 1) * len(TRANSMIT_INPUTS)

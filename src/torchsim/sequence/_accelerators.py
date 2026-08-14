@@ -933,7 +933,10 @@ def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
 
 
 def _one_shim(tissue: tuple[torch.Tensor, ...], what: str) -> None:
-    """Refuse a pass that has no row of its own to write or read per shim.
+    """Refuse a path that cuts the transmit buffers where a shim row is whole.
+
+    Streaming divides a volume by voxel, and a shim row is a whole volume, so
+    a chunk of one is not a chunk of the other.
 
     Raises:
         NotImplementedError: if the transmit buffers hold more than one shim.
@@ -941,7 +944,7 @@ def _one_shim(tissue: tuple[torch.Tensor, ...], what: str) -> None:
     shims = _shim_count(tissue)
     if shims > 1:
         raise NotImplementedError(
-            f"{what} carries one transmit field per voxel, and this sequence "
+            f"{what} cuts the transmit buffers by voxel, and this sequence "
             f"drives {shims} shims"
         )
 
@@ -1900,16 +1903,16 @@ def _run_packed_vjp(
     *,
     geometry: Geometry = NO_GEOMETRY,
 ) -> tuple[torch.Tensor, ...]:
-    """Return gradients w.r.t. the seven tissue and three float event buffers.
+    """Return gradients w.r.t. the tissue and three float event buffers.
 
     The result is ordered ``(t1, t2, m0, b1, b1_phase, b0, inversion_efficiency,
-    duration, flip, phase)``.
+    diffusion, velocity, duration, flip, phase)``, each shaped like the buffer
+    it belongs to -- so the transmit pair carries a row per shim.
 
-    ``wanted`` says which of those ten the caller will read, which is what lets
-    the real-subspace kernels -- three of them short -- be chosen. All ten, if
-    it is not given.
+    ``wanted`` says which of those the caller will read, which is what lets
+    the real-subspace kernels -- four of them short -- be chosen. All of them,
+    if it is not given.
     """
-    _one_shim(tissue, "the adjoint")
     if tissue[0].device.type != "cpu":
         # An adjoint does not depend on any forward direction, so the
         # forward-over-reverse kernel given no direction to follow returns it
@@ -1980,19 +1983,20 @@ def _run_packed_vjp_jvp(
     """Forward-over-reverse pass through the JVP state machine.
 
     ``tangents`` follows the differentiable-input order ``(t1, t2, m0, b1,
-    b1_phase, b0, inversion_efficiency, duration, flip, phase)``. Returns
-    ``(primal_gradients, tangent_gradients)`` in that same order.
+    b1_phase, b0, inversion_efficiency, diffusion, velocity, duration, flip,
+    phase)``. Returns ``(primal_gradients, tangent_gradients)`` in that same
+    order.
 
-    ``wanted`` says which of those ten the caller will read, which is what
-    decides whether the real-subspace adjoint -- three of them short -- may be
-    chosen when ``real_axis`` is left open. All ten, if it is not given.
+    ``wanted`` says which of those the caller will read, which is what
+    decides whether the real-subspace adjoint -- four of them short -- may be
+    chosen when ``real_axis`` is left open. All of them, if it is not given.
     """
-    _one_shim(tissue, "the second-order pass")
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
             events, tissue, state_count, tangents, wanted
         )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_vjp_jvp(
             tissue,
             events,
@@ -2009,6 +2013,7 @@ def _run_packed_vjp_jvp(
     )
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
+        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_vjp_jvp(
             tissue,
             events,
@@ -2117,7 +2122,6 @@ def _run_packed_jvp(
     *,
     geometry: Geometry = NO_GEOMETRY,
 ) -> torch.Tensor:
-    _one_shim(tissue, "forward mode")
     if real_axis is None:
         # b1_phase, b0 and RF phase are the directions that leave the subspace,
         # and the real kernels do not produce derivatives along them.
@@ -2129,6 +2133,7 @@ def _run_packed_jvp(
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
         )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_jvp(
             tissue,
             events,
@@ -2143,6 +2148,7 @@ def _run_packed_jvp(
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
+        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_jvp(
             tissue,
             events,

@@ -22,6 +22,10 @@ from torchsim.sequence._parameters import (
     TISSUE_COUNT,
     TISSUE_NAMES,
     TISSUE_PARAMETERS,
+    TRANSMIT_INPUTS,
+    tissue_gradient_bases,
+    tissue_gradient_height,
+    tissue_gradient_rows,
 )
 from torchsim.sequence._simulation import _prepare_tissue
 
@@ -78,6 +82,26 @@ def test_only_the_integer_buffers_are_undifferentiable():
 
     assert undifferentiated == {"kind", "action", "output_index", "shim_index"}
     assert all(parameter.differentiable for parameter in TISSUE_PARAMETERS)
+
+
+def test_the_extension_hardcodes_where_the_transmit_pair_sits():
+    """``_epg_cpu.cpp`` names ``B1_INDEX`` and ``B1_PHASE_INDEX`` as literals
+    to lay out its gradient plane, while the registry derives them. Inserting
+    a tissue property ahead of the pair moves one and not the other, so this
+    fails here rather than silently in a shimmed adjoint.
+    """
+    assert TRANSMIT_INPUTS == (3, 4)
+    assert TISSUE_COUNT == 9
+
+
+def test_a_shim_only_widens_the_transmit_pair():
+    """Every other property belongs to the voxel, whatever the array does."""
+    assert tissue_gradient_rows(1) == (1,) * TISSUE_COUNT
+    assert tissue_gradient_rows(4) == (1, 1, 1, 4, 4, 1, 1, 1, 1)
+    assert tissue_gradient_bases(1) == tuple(range(TISSUE_COUNT))
+    assert tissue_gradient_bases(4) == (0, 1, 2, 3, 7, 11, 12, 13, 14)
+    assert tissue_gradient_height(1) == TISSUE_COUNT
+    assert tissue_gradient_height(4) == 15
 
 
 def test_the_gradient_order_matches_what_the_adjoint_returns():
