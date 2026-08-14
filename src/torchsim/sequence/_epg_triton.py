@@ -377,6 +377,176 @@ def _profile_pair_slope(profile, location, theta, bins: tl.constexpr, step):
 
 
 @triton.jit
+def _profile_pair_curve(profile, location, theta, bins: tl.constexpr, step):
+    """The pair, its slope and its curvature in the flip angle.
+
+    The second-order pass differentiates the read twice, and a Hermite segment
+    is a cubic, so all three come from the same four knot values. Returned in
+    threes per component: value, slope, curvature.
+    """
+    last = bins - 1
+    scaled = tl.minimum(tl.maximum(theta / step, 0.0), last + 0.0)
+    lower = tl.minimum(tl.floor(scaled), last - 1.0)
+    u = scaled - lower
+    u2 = u * u
+    u3 = u2 * u
+    h00 = 2.0 * u3 - 3.0 * u2 + 1.0
+    h10 = (u3 - 2.0 * u2 + u) * step
+    h01 = -2.0 * u3 + 3.0 * u2
+    h11 = (u3 - u2) * step
+    g00 = (6.0 * u2 - 6.0 * u) / step
+    g10 = 3.0 * u2 - 4.0 * u + 1.0
+    g01 = (6.0 * u - 6.0 * u2) / step
+    g11 = 3.0 * u2 - 2.0 * u
+    c00 = (12.0 * u - 6.0) / (step * step)
+    c10 = (6.0 * u - 4.0) / step
+    c01 = (6.0 - 12.0 * u) / (step * step)
+    c11 = (6.0 * u - 2.0) / step
+
+    base = (location * bins + lower.to(tl.int64)) * 8
+    read = ()
+    for component in tl.static_range(4):
+        near = tl.load(profile + base + component)
+        near_slope = tl.load(profile + base + 4 + component)
+        far = tl.load(profile + base + 8 + component)
+        far_slope = tl.load(profile + base + 12 + component)
+        read = read + (
+            h00 * near + h10 * near_slope + h01 * far + h11 * far_slope,
+            g00 * near + g10 * near_slope + g01 * far + g11 * far_slope,
+            c00 * near + c10 * near_slope + c01 * far + c11 * far_slope,
+        )
+    return read
+
+
+@triton.jit
+def _dual_conj(z):
+    """A dual complex number's conjugate, both halves."""
+    return (z[0], -z[1], z[2], -z[3])
+
+
+@triton.jit
+def _dual_weigh(z, factor):
+    """A dual complex number scaled by a real constant."""
+    return (factor * z[0], factor * z[1], factor * z[2], factor * z[3])
+
+
+@triton.jit
+def _dual_sum(first, second, third, fourth):
+    """Four dual complex numbers added."""
+    return (
+        first[0] + second[0] + third[0] + fourth[0],
+        first[1] + second[1] + third[1] + fourth[1],
+        first[2] + second[2] + third[2] + fourth[2],
+        first[3] + second[3] + third[3] + fourth[3],
+    )
+
+
+@triton.jit
+def _dual_product(x, y):
+    """Two dual complex numbers multiplied."""
+    return _dual_mul(x[0], x[1], x[2], x[3], y[0], y[1], y[2], y[3])
+
+
+@triton.jit
+def _profiled_pair_dual(
+    profile, location, alpha_value, alpha_tangent, phi_value, phi_tangent,
+    bins: tl.constexpr, step,
+):
+    """The pair a shaped pulse turns through, and its slope, as duals.
+
+    The flip angle carries the tangent into the table, so the pair's tangent is
+    the stored slope and the slope's own tangent is the segment's curvature.
+    The RF phase turns the axis once the pair is out, and so reaches ``b``.
+    """
+    read = _profile_pair_curve(profile, location, alpha_value, bins, step)
+    a = (read[0], read[3], read[1] * alpha_tangent, read[4] * alpha_tangent)
+    slope_a = (read[1], read[4], read[2] * alpha_tangent, read[5] * alpha_tangent)
+    b = (read[6], read[9], read[7] * alpha_tangent, read[10] * alpha_tangent)
+    slope_b = (read[7], read[10], read[8] * alpha_tangent, read[11] * alpha_tangent)
+    turn = _dual_polar(-phi_value, -phi_tangent)
+    return a, _dual_product(b, turn), slope_a, _dual_product(slope_b, turn)
+
+
+@triton.jit
+def _spinor_adjoint_dual(a, b, sp, sm, rz, pb, mb, zb):
+    """The spinor rotation's adjoint, on dual numbers.
+
+    Returns the cotangent on the Cayley-Klein pair and the three state
+    cotangents sent back through the conjugate transpose. Every entry of the
+    matrix is a product of two factors drawn from the pair and its conjugate,
+    so the pair's two Wirtinger halves are linear in the outer product of the
+    seed with the state the rotation acted on -- which is why this is a closed
+    form rather than a differentiated matrix.
+    """
+    t00, t01, t02, t10, t11, t12, t20, t21, t22 = _spinor_coefficients(
+        a[0], a[1], b[0], b[1], a[2], a[3], b[2], b[3]
+    )
+
+    conj_pb = _dual_conj(pb)
+    conj_mb = _dual_conj(mb)
+    conj_zb = _dual_conj(zb)
+    m00 = _dual_product(conj_pb, sp)
+    m01 = _dual_product(conj_pb, sm)
+    m02 = _dual_product(conj_pb, rz)
+    m10 = _dual_product(conj_mb, sp)
+    m11 = _dual_product(conj_mb, sm)
+    m12 = _dual_product(conj_mb, rz)
+    m20 = _dual_product(conj_zb, sp)
+    m21 = _dual_product(conj_zb, sm)
+    m22 = _dual_product(conj_zb, rz)
+
+    conj_a = _dual_conj(a)
+    conj_b = _dual_conj(b)
+    holding_conj_a = _dual_sum(
+        _dual_weigh(_dual_product(a, m11), 2.0),
+        _dual_weigh(_dual_product(b, m12), -2.0),
+        _dual_product(conj_b, m21),
+        _dual_product(conj_a, m22),
+    )
+    holding_a = _dual_sum(
+        _dual_weigh(_dual_product(conj_a, m00), 2.0),
+        _dual_weigh(_dual_product(conj_b, m02), -2.0),
+        _dual_product(b, m20),
+        _dual_product(a, m22),
+    )
+    holding_conj_b = _dual_sum(
+        _dual_weigh(_dual_product(b, m10), -2.0),
+        _dual_weigh(_dual_product(a, m12), -2.0),
+        _dual_product(conj_a, m20),
+        _dual_weigh(_dual_product(conj_b, m22), -1.0),
+    )
+    holding_b = _dual_sum(
+        _dual_weigh(_dual_product(conj_b, m01), -2.0),
+        _dual_weigh(_dual_product(conj_a, m02), -2.0),
+        _dual_product(a, m21),
+        _dual_weigh(_dual_product(b, m22), -1.0),
+    )
+    zero = _dual_weigh(m00, 0.0)
+    grad_a = _dual_sum(_dual_conj(holding_conj_a), holding_a, zero, zero)
+    grad_b = _dual_sum(_dual_conj(holding_conj_b), holding_b, zero, zero)
+
+    next_pb = _dual_sum(
+        _dual_product(_dual_conj(t00), pb),
+        _dual_product(_dual_conj(t10), mb),
+        _dual_product(_dual_conj(t20), zb),
+        zero,
+    )
+    next_mb = _dual_sum(
+        _dual_product(_dual_conj(t01), pb),
+        _dual_product(_dual_conj(t11), mb),
+        _dual_product(_dual_conj(t21), zb),
+        zero,
+    )
+    next_zb = _dual_sum(
+        _dual_product(_dual_conj(t02), pb),
+        _dual_product(_dual_conj(t12), mb),
+        _dual_product(_dual_conj(t22), zb),
+        zero,
+    )
+    return grad_a, grad_b, next_pb, next_mb, next_zb
+
+
+@triton.jit
 def _spinor_coefficients(ar, ai, br, bi, dar, dai, dbr, dbi):
     """The rotation's nine coefficients and their tangents.
 
@@ -606,6 +776,7 @@ def _epg_vjp_jvp_kernel(
     action,
     output_index,
     shim_index,
+    profile,
     dot_t1,
     dot_t2,
     dot_m0,
@@ -644,8 +815,11 @@ def _epg_vjp_jvp_kernel(
     output_count,
     flow_scale,
     washout_scale,
+    profile_step,
     state_count: tl.constexpr,
     shims: tl.constexpr,
+    locations: tl.constexpr,
+    profile_bins: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -656,6 +830,9 @@ def _epg_vjp_jvp_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
+    # Voxels are spread over the slice voxel-major, so a voxel's row in the
+    # transition table is its index modulo the profile's width.
+    location = atom % locations
     local = problem - problem_base
     scratch_offset = local * state_count
     sp_r = scratch_pr + scratch_offset
@@ -860,19 +1037,47 @@ def _epg_vjp_jvp_kernel(
         c1 = _dual_mul(t21[0], t21[1], t21[2], t21[3], mvr, mvi, mtr, mti)
         c2 = _dual_mul(t22[0], t22[1], t22[2], t22[3], zvr, zvi, ztr, zti)
 
+        turned_pvr = a0[0] + a1[0] + a2[0]
+        turned_pvi = a0[1] + a1[1] + a2[1]
+        turned_ptr = a0[2] + a1[2] + a2[2]
+        turned_pti = a0[3] + a1[3] + a2[3]
+        turned_mvr = b0_[0] + b1_[0] + b2[0]
+        turned_mvi = b0_[1] + b1_[1] + b2[1]
+        turned_mtr = b0_[2] + b1_[2] + b2[2]
+        turned_mti = b0_[3] + b1_[3] + b2[3]
+        turned_zvr = c0[0] + c1[0] + c2[0]
+        turned_zvi = c0[1] + c1[1] + c2[1]
+        turned_ztr = c0[2] + c1[2] + c2[2]
+        turned_zti = c0[3] + c1[3] + c2[3]
+        if profile_bins > 0:
+            shaped_a, shaped_b, _, _ = _profiled_pair_dual(
+                profile, location, alpha_value, alpha_tangent, phi_value,
+                phi_tangent, profile_bins, profile_step,
+            )
+            (
+                turned_pvr, turned_pvi, turned_mvr, turned_mvi, turned_zvr,
+                turned_zvi, turned_ptr, turned_pti, turned_mtr, turned_mti,
+                turned_ztr, turned_zti,
+            ) = _rotate_spinor_dual(
+                shaped_a[0], shaped_a[1], shaped_b[0], shaped_b[1],
+                shaped_a[2], shaped_a[3], shaped_b[2], shaped_b[3],
+                pvr, pvi, mvr, mvi, zvr, zvi,
+                ptr, pti, mtr, mti, ztr, zti,
+            )
+
         rotate = is_rf & ~is_inversion
-        pvr = tl.where(rotate, a0[0] + a1[0] + a2[0], pvr)
-        pvi = tl.where(rotate, a0[1] + a1[1] + a2[1], pvi)
-        ptr = tl.where(rotate, a0[2] + a1[2] + a2[2], ptr)
-        pti = tl.where(rotate, a0[3] + a1[3] + a2[3], pti)
-        mvr = tl.where(rotate, b0_[0] + b1_[0] + b2[0], mvr)
-        mvi = tl.where(rotate, b0_[1] + b1_[1] + b2[1], mvi)
-        mtr = tl.where(rotate, b0_[2] + b1_[2] + b2[2], mtr)
-        mti = tl.where(rotate, b0_[3] + b1_[3] + b2[3], mti)
-        zvr = tl.where(rotate, c0[0] + c1[0] + c2[0], zvr)
-        zvi = tl.where(rotate, c0[1] + c1[1] + c2[1], zvi)
-        ztr = tl.where(rotate, c0[2] + c1[2] + c2[2], ztr)
-        zti = tl.where(rotate, c0[3] + c1[3] + c2[3], zti)
+        pvr = tl.where(rotate, turned_pvr, pvr)
+        pvi = tl.where(rotate, turned_pvi, pvi)
+        ptr = tl.where(rotate, turned_ptr, ptr)
+        pti = tl.where(rotate, turned_pti, pti)
+        mvr = tl.where(rotate, turned_mvr, mvr)
+        mvi = tl.where(rotate, turned_mvi, mvi)
+        mtr = tl.where(rotate, turned_mtr, mtr)
+        mti = tl.where(rotate, turned_mti, mti)
+        zvr = tl.where(rotate, turned_zvr, zvr)
+        zvi = tl.where(rotate, turned_zvi, zvi)
+        ztr = tl.where(rotate, turned_ztr, ztr)
+        zti = tl.where(rotate, turned_zti, zti)
 
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         svr, svi, wvr, wvi = _shift(
@@ -1222,6 +1427,45 @@ def _epg_vjp_jvp_kernel(
         phi_v += part_v
         phi_t += part_t
 
+        if profile_bins > 0:
+            shaped_a, shaped_b, shaped_slope_a, shaped_slope_b = (
+                _profiled_pair_dual(
+                    profile, location, alpha_value, alpha_tangent, phi_value,
+                    phi_tangent, profile_bins, profile_step,
+                )
+            )
+            grad_a, grad_b, shaped_pb, shaped_mb, shaped_zb = (
+                _spinor_adjoint_dual(
+                    shaped_a, shaped_b,
+                    (spvr, spvi, sptr, spti),
+                    (smvr, smvi, smtr, smti),
+                    (rzvr, rzvi, rztr, rzti),
+                    (pbvr, pbvi, pbtr, pbti),
+                    (mbvr, mbvi, mbtr, mbti),
+                    (zbvr, zbvi, zbtr, zbti),
+                )
+            )
+            alpha_v, alpha_t = _dual_real_conj_mul(
+                grad_a[0], grad_a[1], grad_a[2], grad_a[3],
+                shaped_slope_a[0], shaped_slope_a[1],
+                shaped_slope_a[2], shaped_slope_a[3],
+            )
+            part_v, part_t = _dual_real_conj_mul(
+                grad_b[0], grad_b[1], grad_b[2], grad_b[3],
+                shaped_slope_b[0], shaped_slope_b[1],
+                shaped_slope_b[2], shaped_slope_b[3],
+            )
+            alpha_v += part_v
+            alpha_t += part_t
+            # d(b e^{-i phi})/dphi is -i times it, and nothing else moves.
+            turn_r, turn_i, turn_tr, turn_ti = _dual_times_i(
+                shaped_b[0], shaped_b[1], shaped_b[2], shaped_b[3]
+            )
+            phi_v, phi_t = _dual_real_conj_mul(
+                grad_b[0], grad_b[1], grad_b[2], grad_b[3],
+                -turn_r, -turn_i, -turn_tr, -turn_ti,
+            )
+
         rotate = is_rf & ~is_inversion
         grad_alpha_v = tl.sum(tl.where(rotate, alpha_v, 0.0), axis=1)[:, None]
         grad_alpha_t = tl.sum(tl.where(rotate, alpha_t, 0.0), axis=1)[:, None]
@@ -1239,18 +1483,29 @@ def _epg_vjp_jvp_kernel(
         w1 = _dual_mul(t12[0], -t12[1], t12[2], -t12[3], mbvr, mbvi, mbtr, mbti)
         w2 = _dual_mul(t22[0], -t22[1], t22[2], -t22[3], zbvr, zbvi, zbtr, zbti)
 
-        pbvr = tl.where(rotate, n0[0] + n1[0] + n2[0], pbvr)
-        pbvi = tl.where(rotate, n0[1] + n1[1] + n2[1], pbvi)
-        pbtr = tl.where(rotate, n0[2] + n1[2] + n2[2], pbtr)
-        pbti = tl.where(rotate, n0[3] + n1[3] + n2[3], pbti)
-        mbvr = tl.where(rotate, q0[0] + q1[0] + q2[0], mbvr)
-        mbvi = tl.where(rotate, q0[1] + q1[1] + q2[1], mbvi)
-        mbtr = tl.where(rotate, q0[2] + q1[2] + q2[2], mbtr)
-        mbti = tl.where(rotate, q0[3] + q1[3] + q2[3], mbti)
-        zbvr = tl.where(rotate, w0[0] + w1[0] + w2[0], zbvr)
-        zbvi = tl.where(rotate, w0[1] + w1[1] + w2[1], zbvi)
-        zbtr = tl.where(rotate, w0[2] + w1[2] + w2[2], zbtr)
-        zbti = tl.where(rotate, w0[3] + w1[3] + w2[3], zbti)
+        back_pb = (n0[0] + n1[0] + n2[0], n0[1] + n1[1] + n2[1],
+                   n0[2] + n1[2] + n2[2], n0[3] + n1[3] + n2[3])
+        back_mb = (q0[0] + q1[0] + q2[0], q0[1] + q1[1] + q2[1],
+                   q0[2] + q1[2] + q2[2], q0[3] + q1[3] + q2[3])
+        back_zb = (w0[0] + w1[0] + w2[0], w0[1] + w1[1] + w2[1],
+                   w0[2] + w1[2] + w2[2], w0[3] + w1[3] + w2[3])
+        if profile_bins > 0:
+            back_pb = shaped_pb
+            back_mb = shaped_mb
+            back_zb = shaped_zb
+
+        pbvr = tl.where(rotate, back_pb[0], pbvr)
+        pbvi = tl.where(rotate, back_pb[1], pbvi)
+        pbtr = tl.where(rotate, back_pb[2], pbtr)
+        pbti = tl.where(rotate, back_pb[3], pbti)
+        mbvr = tl.where(rotate, back_mb[0], mbvr)
+        mbvi = tl.where(rotate, back_mb[1], mbvi)
+        mbtr = tl.where(rotate, back_mb[2], mbtr)
+        mbti = tl.where(rotate, back_mb[3], mbti)
+        zbvr = tl.where(rotate, back_zb[0], zbvr)
+        zbvi = tl.where(rotate, back_zb[1], zbvi)
+        zbtr = tl.where(rotate, back_zb[2], zbtr)
+        zbti = tl.where(rotate, back_zb[3], zbti)
 
         writes_flip = active_atom & rotate
         tl.atomic_add(
@@ -3610,6 +3865,7 @@ def simulate_vjp_jvp_into(
     real_axis: int | None = None,
     atom_count: int,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], ...]:
     """Forward-over-reverse for one chunk of voxels, into caller-owned buffers.
 
@@ -3643,6 +3899,7 @@ def simulate_vjp_jvp_into(
         plane.zero_()
     grad_flip, grad_duration, grad_phase = buffers.flip, buffers.duration, buffers.phase
     trajectory, scratch = buffers.trajectory, buffers.scratch
+    table = None if profile is None else profile.packed(t1.device)
 
     wave = buffers.wave
     problems = _problems_per_program(wave, block_states)
@@ -3694,6 +3951,7 @@ def simulate_vjp_jvp_into(
             _epg_vjp_jvp_kernel[grid](
                 *tissue,
                 *events,
+                table,
                 *tangents,
                 grad_real,
                 grad_imag,
@@ -3711,7 +3969,10 @@ def simulate_vjp_jvp_into(
                 output_count,
                 geometry.flow_scale,
                 geometry.washout_scale,
+                1.0 if profile is None else profile.step,
                 shims=_shim_count(tissue),
+                locations=1 if profile is None else profile.points,
+                profile_bins=0 if profile is None else profile.bins,
                 **shape,
             )
 
@@ -3729,6 +3990,7 @@ def simulate_vjp_jvp(
     output_count: int,
     real_axis: int | None = None,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse through the state machine on CUDA.
 
@@ -3765,6 +4027,7 @@ def simulate_vjp_jvp(
         real_axis=real_axis,
         atom_count=atom_count,
         geometry=geometry,
+        profile=profile,
     )
     return tuple(
         (*voxels, *per_event)

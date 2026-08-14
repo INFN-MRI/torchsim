@@ -433,53 +433,49 @@ def test_an_unprofiled_second_order_pass_is_untouched() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-def test_a_second_order_pass_through_a_table_is_refused_on_the_card() -> None:
+def test_the_card_follows_the_table_through_both_adjoint_passes() -> None:
+    """One kernel serves both: the card reaches a first adjoint through it."""
     from torchsim.sequence._accelerators import _run_packed_vjp_jvp
 
+    locations, voxels = 3, 2
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
         rf_raster_time_s=RASTER,
     )
-    tissue, events, outputs = _packed(4)
-    card = torch.device("cuda")
-    moved = tuple(value.to(card) for value in tissue)
-    moved_events = tuple(value.to(card) for value in events)
+    tissue, events, outputs = _packed(voxels * locations)
+    generator = torch.Generator().manual_seed(9)
+    seed = torch.complex(
+        torch.randn(voxels * locations, outputs, generator=generator),
+        torch.randn(voxels * locations, outputs, generator=generator),
+    )
     directions = tuple(
-        torch.zeros_like(value)
-        for value in (*moved, moved_events[0], moved_events[2], moved_events[3])
+        0.05 * torch.randn(value.shape, generator=generator)
+        for value in (*tissue, events[0], events[2], events[3])
     )
-    seed = torch.zeros(4, outputs, dtype=torch.complex64, device=card)
-
-    with pytest.raises(NotImplementedError, match="second-order pass on the card"):
-        _run_packed_vjp_jvp(
-            moved, moved_events, directions, seed, STATES, outputs, 1,
-            profile=table,
-        )
-
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-def test_an_adjoint_through_a_table_is_refused_on_the_card() -> None:
-    """The card's adjoint runs the forward-over-reverse kernel, which has none."""
-    from torchsim.sequence._accelerators import _run_packed_vjp
-
-    table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
-        rf_raster_time_s=RASTER,
+    host = _run_packed_vjp_jvp(
+        tissue, events, directions, seed, STATES, outputs, 1, profile=table
     )
-    tissue, events, outputs = _packed(4)
     card = torch.device("cuda")
-    seed = torch.zeros(4, outputs, dtype=torch.complex64, device=card)
+    on_card = _run_packed_vjp_jvp(
+        tuple(value.to(card) for value in tissue),
+        tuple(value.to(card) for value in events),
+        tuple(value.to(card) for value in directions),
+        seed.to(card),
+        STATES,
+        outputs,
+        1,
+        profile=table,
+    )
 
-    with pytest.raises(NotImplementedError, match="adjoint on the card"):
-        _run_packed_vjp(
-            tuple(value.to(card) for value in tissue),
-            tuple(value.to(card) for value in events),
-            seed,
-            STATES,
-            outputs,
-            1,
-            profile=table,
-        )
+    names = (
+        "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
+        "velocity", "duration", "flip", "phase",
+    )
+    _compare(host[0], tuple(v.cpu() for v in on_card[0]), names, 1e-3)
+    _compare(
+        host[1], tuple(v.cpu() for v in on_card[1]),
+        tuple(f"adjoint {name}" for name in names), 1e-3,
+    )
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")

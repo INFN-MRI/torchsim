@@ -2020,7 +2020,6 @@ def _run_packed_vjp(
     if profile is not None:
         _within_the_table(profile, events[2])
     if tissue[0].device.type != "cpu":
-        _unprofiled(profile, "an adjoint on the card", tissue[0].device.type)
         # An adjoint does not depend on any forward direction, so the
         # forward-over-reverse kernel given no direction to follow returns it
         # on its own.
@@ -2038,6 +2037,7 @@ def _run_packed_vjp(
             threads=threads,
             wanted=wanted,
             geometry=geometry,
+            profile=profile,
         )
         return adjoint
     from torchsim import _epg_cpu
@@ -2110,11 +2110,6 @@ def _run_packed_vjp_jvp(
     if profile is not None:
         _unprofiled(profile, "streaming a volume through a device", _OFFLOAD)
         _within_the_table(profile, events[2])
-        _unprofiled(
-            profile,
-            "a second-order pass on the card",
-            None if tissue[0].device.type == "cpu" else tissue[0].device.type,
-        )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded_vjp_jvp(
             tissue,
@@ -2180,6 +2175,7 @@ def _run_packed_vjp_jvp(
                     output_count=output_count,
                     real_axis=real_axis,
                     geometry=geometry,
+                    profile=profile,
                 )
                 for begin, end, device in shards
             ]
@@ -2194,6 +2190,7 @@ def _run_packed_vjp_jvp(
             output_count=output_count,
             real_axis=real_axis,
             geometry=geometry,
+            profile=profile,
         )
     from torchsim import _epg_cpu
 
