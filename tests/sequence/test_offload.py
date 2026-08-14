@@ -20,6 +20,7 @@ from torchsim.sequence._parameters import NO_GEOMETRY, OUTSIDE_THE_SUBSPACE, Geo
 from torchsim.sequence._accelerators import (
     _Lane,
     _Offload,
+    _bytes_per_voxel,
     _chunk_voxels,
     _pack_events,
     _run_packed,
@@ -479,3 +480,91 @@ def test_a_pass_that_only_brings_signals_home_stages_nothing():
     lane = _Lane(torch.device("cuda"), 256, 1, 8, STATES, 1)
 
     assert lane.staging is None
+
+
+def _shim_volume(voxels, trains=1):
+    """A spoiled train whose pulses are split across two transmit shims.
+
+    On SPGR for the reason ``_spgr_volume`` gives, and because a shim is a
+    thing you would want to design against a gradient-echo readout. Streaming
+    cuts the voxel axis, which for the transmit buffers is the last axis
+    rather than the whole buffer, so both rows have to stay whole and a chunk
+    has to be a slice of each.
+    """
+    events, prepared, outputs = _spgr_volume(voxels, trains=trains)
+    rows = torch.zeros_like(events[6])
+    pulses = (events[1] == 1).nonzero().flatten()
+    # Every second pulse on the other shim, so both rows drive something.
+    rows[pulses[1::2]] = 1
+    events = (*events[:6], rows.contiguous())
+
+    ramp = torch.linspace(0.0, 0.3, voxels)
+    tissue = list(prepared)
+    tissue[3] = torch.cat((prepared[3], 0.7 + ramp)).contiguous()
+    tissue[4] = torch.cat((prepared[4], 0.4 - ramp)).contiguous()
+    return events, tuple(tissue), outputs
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 512 << 20])
+@pytest.mark.parametrize("trains", [1, 3])
+def test_a_streamed_shimmed_volume_matches_the_whole_one(budget, trains):
+    voxels = 4000
+    events, prepared, outputs = _shim_volume(voxels, trains=trains)
+    assert prepared[3].numel() == 2 * voxels
+
+    arguments = dict(real_axis=-1, geometry=SPGR_GEOMETRY)
+    expected = _run_packed(prepared, events, STATES, outputs, 0, **arguments)
+    with offload(["cuda"], budget_bytes=budget, lanes=2):
+        actual = _run_packed(prepared, events, STATES, outputs, 0, **arguments)
+
+    assert actual.device.type == "cpu"
+    assert ((expected - actual).abs().max() / expected.abs().max()) < 1e-5
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 512 << 20])
+def test_a_streamed_shimmed_forward_mode_matches_the_whole_one(budget):
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    events, prepared, outputs = _shim_volume(4000)
+    # Seed the transmit magnitude, so the tangent travels the shim rows too.
+    tissue_seed, event_seed = _seeds(events, prepared, 3)
+    arguments = (prepared, events, tissue_seed, event_seed, STATES, outputs, 0)
+    expected = _run_packed_jvp(*arguments, real_axis=-1, geometry=SPGR_GEOMETRY)
+    with offload(["cuda"], budget_bytes=budget, lanes=2):
+        actual = _run_packed_jvp(*arguments, real_axis=-1, geometry=SPGR_GEOMETRY)
+
+    assert expected.abs().max() > 0
+    assert ((expected - actual).abs().max() / expected.abs().max()) < 1e-5
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 512 << 20])
+@pytest.mark.parametrize("trains", [1, 3])
+def test_a_streamed_shimmed_adjoint_matches_the_whole_one(budget, trains):
+    """A gradient row is a whole volume; a chunk writes a slice of each."""
+    voxels = 2000
+    events, prepared, outputs = _shim_volume(voxels, trains=trains)
+    expected = _adjoint(
+        events, prepared, outputs, voxels, trains, -1, None, SPGR_GEOMETRY
+    )
+    actual = _adjoint(
+        events, prepared, outputs, voxels, trains, -1, budget, SPGR_GEOMETRY
+    )
+
+    for side in expected:
+        assert side[3].numel() == 2 * voxels
+    for index in OUTSIDE_THE_SUBSPACE:
+        assert expected[0][index].abs().max() > 0
+    assert _compare_gradients(expected, actual) < 1e-4
+
+
+@pytest.mark.parametrize("kind", ["forward", "jvp", "adjoint"])
+def test_a_shim_widens_what_a_voxel_costs_the_budget(kind):
+    """Chunking has to know, or the transmit rows overrun the lane buffers."""
+    shape = (1, 40, 20, STATES, None)
+    one = _bytes_per_voxel(kind, *shape, 1)
+    four = _bytes_per_voxel(kind, *shape, 4)
+
+    # Three extra rows for each of the two transmit buffers, and for a pass
+    # that also carries tangents or gradients, again for each of those.
+    copies = 1 if kind == "forward" else 2 if kind == "jvp" else 4
+    assert four - one == copies * 2 * 3 * 4

@@ -29,7 +29,13 @@ from ._parameters import (
 from ._parameters import (
     TISSUE_COUNT as _TISSUE_COUNT,
 )
-from ._parameters import NO_GEOMETRY, TISSUE_NAMES, Geometry
+from ._parameters import (
+    NO_GEOMETRY,
+    TISSUE_NAMES,
+    Geometry,
+    tissue_gradient_height,
+    tissue_gradient_rows,
+)
 from ._transmit import shim_rows
 
 # A forward-mode call appends one tangent per differentiable input to the
@@ -932,23 +938,6 @@ def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
     return tuple(value.data_ptr() for value in values)
 
 
-def _one_shim(tissue: tuple[torch.Tensor, ...], what: str) -> None:
-    """Refuse a path that cuts the transmit buffers where a shim row is whole.
-
-    Streaming divides a volume by voxel, and a shim row is a whole volume, so
-    a chunk of one is not a chunk of the other.
-
-    Raises:
-        NotImplementedError: if the transmit buffers hold more than one shim.
-    """
-    shims = _shim_count(tissue)
-    if shims > 1:
-        raise NotImplementedError(
-            f"{what} cuts the transmit buffers by voxel, and this sequence "
-            f"drives {shims} shims"
-        )
-
-
 def _shim_count(tissue: tuple[torch.Tensor, ...]) -> int:
     """How many shim rows the transmit buffers carry, one per voxel each.
 
@@ -1193,25 +1182,30 @@ def _bytes_per_voxel(
     output_count: int,
     state_count: int,
     real_axis: int | None,
+    shims: int = 1,
 ) -> int:
     """Device bytes one voxel needs for a ``forward``, ``jvp`` or ``adjoint`` pass."""
     planes = 2 if real_axis == 1 else 4
     scratch = train_count * planes * state_count * 4
     # Two float planes of signal and the complex copy staged for the transfer.
     signal = train_count * (2 * 4 * output_count + 8 * output_count)
+    # One float per tissue property, except the transmit pair, which a voxel
+    # carries once per shim.
+    tissue = tissue_gradient_height(shims) * 4
     if kind == "adjoint":
         # The recorded trajectory dominates by orders of magnitude: it holds
         # three state planes for every event, not just the recorded ones. The
-        # cotangent adds two more float planes on top of the signal buffers.
+        # cotangent adds two more float planes on top of the signal buffers,
+        # and the two gradient planes another tissue buffer each.
         return (
-            14 * 4
+            2 * tissue
             + signal
             + train_count * 2 * 4 * output_count
             + train_count * event_count * 3 * state_count * planes * 4
             + scratch
-            + 7 * 2 * 4
+            + 2 * tissue
         )
-    inputs = 14 * 4 if kind == "jvp" else 7 * 4
+    inputs = 2 * tissue if kind == "jvp" else tissue
     return inputs + signal + scratch
 
 
@@ -1369,7 +1363,8 @@ def _choose(
         return _ON_HOST
 
     per_voxel = _bytes_per_voxel(
-        kind, train_count, event_count, output_count, state_count, real_axis
+        kind, train_count, event_count, output_count, state_count, real_axis,
+        _shim_count(tissue),
     )
     footprint = voxels * per_voxel
     free = [_free_bytes(device, plan.reserve_bytes) for device in devices]
@@ -1402,15 +1397,19 @@ class _Lane:
         state_count: int,
         real_axis: int | None,
         voxel_inputs: int = _TISSUE_COUNT,
+        shims: int = 1,
     ) -> None:
         self.device = device
         self.stream = torch.cuda.Stream(device=device)
         self.train_count = train_count
         self.output_count = output_count
         # Tissue, and for a forward-mode pass its per-voxel seeds behind it.
+        # Each is one row of voxels, except the transmit pair, which is one row
+        # per shim; ``load`` packs a chunk to the same shape at its own width.
+        self.rows = tissue_gradient_rows(shims) * (voxel_inputs // _TISSUE_COUNT)
         self.inputs = [
-            torch.empty(chunk, dtype=torch.float32, device=device)
-            for _ in range(voxel_inputs)
+            torch.empty(rows * chunk, dtype=torch.float32, device=device)
+            for rows in self.rows
         ]
         # Flat, because the kernels stride the signal by the chunk they are
         # given: a shorter final chunk needs a buffer packed for that width,
@@ -1471,11 +1470,26 @@ class _Lane:
     def load(self, values: Sequence[torch.Tensor], begin: int, end: int) -> tuple[
         torch.Tensor, ...
     ]:
-        """Stage per-voxel inputs for one chunk and return the device views."""
+        """Stage per-voxel inputs for one chunk and return the device views.
+
+        A chunk is a slice of the voxel axis, which for the transmit pair is
+        the last axis rather than the whole buffer. Each row is packed to the
+        chunk's own width, because that is the stride the kernels give it, and
+        goes across on its own: a row is contiguous at both ends, where the
+        rows together would be a strided read that cannot transfer
+        asynchronously.
+        """
         width = end - begin
-        for slot, value in zip(self.inputs, values, strict=True):
-            slot[:width].copy_(value[begin:end], non_blocking=True)
-        return tuple(slot[:width] for slot in self.inputs)
+        staged = []
+        for slot, rows, value in zip(self.inputs, self.rows, values, strict=True):
+            piece = slot[: rows * width]
+            source = value.view(rows, -1)
+            for row in range(rows):
+                piece[row * width : (row + 1) * width].copy_(
+                    source[row, begin:end], non_blocking=True
+                )
+            staged.append(piece)
+        return tuple(staged)
 
 
 def _stream_chunks(
@@ -1510,6 +1524,7 @@ def _offload_plan(
     state_count: int,
     real_axis: int | None,
     voxel_inputs: int = _TISSUE_COUNT,
+    shims: int = 1,
 ) -> tuple[int, dict[torch.device, tuple[torch.Tensor, ...]], list[_Lane]]:
     """Chunk width, the events replicated per device, and the lanes."""
     train_count = _train_count(events)
@@ -1519,6 +1534,7 @@ def _offload_plan(
         output_count,
         state_count,
         real_axis,
+        shims,
     )
     chunk = min(voxels, _chunk_voxels(plan, kind, *shape))
     per_device = {
@@ -1533,6 +1549,7 @@ def _offload_plan(
             state_count,
             real_axis,
             voxel_inputs,
+            shims,
         )
         for device in plan.devices
         for _ in range(plan.lanes)
@@ -1573,7 +1590,8 @@ def _run_offloaded(
     train_count = _train_count(events)
     voxels = tissue[0].numel()
     chunk, per_device, lanes = _offload_plan(
-        plan, "forward", events, voxels, output_count, state_count, real_axis
+        plan, "forward", events, voxels, output_count, state_count, real_axis,
+        shims=_shim_count(tissue),
     )
     signal = _host_signal(train_count, voxels, output_count)
 
@@ -1629,6 +1647,7 @@ def _run_offloaded_jvp(
         state_count,
         real_axis,
         voxel_inputs=2 * _TISSUE_COUNT,
+        shims=_shim_count(tissue),
     )
     seeds = {
         device: _to_device(event_tangents, device) for device in plan.devices
@@ -1687,16 +1706,22 @@ def _run_offloaded_vjp_jvp(
     train_count = _train_count(events)
     voxels = tissue[0].numel()
     event_count = int(events[1].numel())
-    shape = (train_count, event_count, output_count, state_count, real_axis)
+    shims = _shim_count(tissue)
+    shape = (
+        train_count, event_count, output_count, state_count, real_axis, shims
+    )
     chunk = min(voxels, _chunk_voxels(plan, "adjoint", *shape))
     grad_output = grad_output.resolve_conj()
     batched = train_count > 1
 
     # Pinned, so a chunk's rows go back asynchronously and the loop runs on.
+    # Each is shaped like the buffer it belongs to, so the transmit pair has a
+    # row per shim and a chunk lands in a slice of every row.
+    rows = tissue_gradient_rows(shims)
     tissue_grads = [
         [
-            torch.empty(voxels, dtype=torch.float32, pin_memory=True)
-            for _ in range(_TISSUE_COUNT)
+            torch.empty(count * voxels, dtype=torch.float32, pin_memory=True)
+            for count in rows
         ]
         for _ in range(2)
     ]
@@ -1715,6 +1740,7 @@ def _run_offloaded_vjp_jvp(
             state_count,
             real_axis,
             voxel_inputs=2 * _TISSUE_COUNT,
+            shims=shims,
         )
         for device in plan.devices
         for _ in range(plan.lanes)
@@ -1726,6 +1752,7 @@ def _run_offloaded_vjp_jvp(
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
+            shims=shims,
         )
     staged_inputs = (*tissue, *tangents[:_TISSUE_COUNT])
 
@@ -1747,10 +1774,15 @@ def _run_offloaded_vjp_jvp(
             atom_count=width,
         )
         for plane, side in enumerate(voxel_grads):
-            for index in range(_TISSUE_COUNT):
-                tissue_grads[plane][index][begin:end].copy_(
-                    side[index], non_blocking=True
-                )
+            for index, count in enumerate(rows):
+                # A row at a time, so both ends of the copy are contiguous and
+                # the transfer can run while the loop goes on; see ``load``.
+                home = tissue_grads[plane][index].view(count, voxels)
+                for row in range(count):
+                    home[row, begin:end].copy_(
+                        side[index][row * width : (row + 1) * width],
+                        non_blocking=True,
+                    )
 
     _stream_chunks(plan, voxels, chunk, lanes, body)
     event_grads = [
@@ -1807,7 +1839,6 @@ def _run_packed(
     if real_axis is None:
         real_axis = _auto_real_axis("forward", events, tissue, state_count)
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
-        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
             geometry,
@@ -1817,7 +1848,6 @@ def _run_packed(
     )
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
-        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded(
             tissue, events, choice.offload, state_count, output_count, real_axis,
             geometry,
@@ -1996,7 +2026,6 @@ def _run_packed_vjp_jvp(
             events, tissue, state_count, tangents, wanted
         )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
-        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_vjp_jvp(
             tissue,
             events,
@@ -2013,7 +2042,6 @@ def _run_packed_vjp_jvp(
     )
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
-        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_vjp_jvp(
             tissue,
             events,
@@ -2133,7 +2161,6 @@ def _run_packed_jvp(
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
         )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
-        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_jvp(
             tissue,
             events,
@@ -2148,7 +2175,6 @@ def _run_packed_jvp(
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
-        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded_jvp(
             tissue,
             events,

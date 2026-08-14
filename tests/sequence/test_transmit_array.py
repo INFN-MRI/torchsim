@@ -22,6 +22,7 @@ import torch
 from torchsim import FSE, TissueProperties, fse_description
 from torchsim.sequence._description import EventType, SequenceEvent, ShimDefinition
 from torchsim.sequence._accelerators import (
+    _across_slice,
     _pack_events,
     _run_packed,
     _run_packed_jvp,
@@ -304,6 +305,33 @@ def test_two_identical_shims_are_the_same_as_one() -> None:
     )
 
 
+def test_a_slice_profile_scales_every_shim_row_and_keeps_them_apart() -> None:
+    """The profile spreads a voxel into copies; each row has to follow it.
+
+    ``_across_slice`` multiplies the transmit magnitude by the profile and
+    expands the rest, which lands the shim rows in the order the kernels index
+    only because the rows are the outermost axis. Checked through the kernels,
+    against the oracle reading the same spread buffers.
+    """
+    voxels = 3
+    tissue, events, output_count = _two_shim_packed(voxels)
+    profile = torch.tensor([0.45, 0.8, 1.0])
+    spread, locations = _across_slice(tissue, profile)
+
+    assert locations == len(profile)
+    assert spread[3].numel() == 2 * voxels * locations
+    # Each row is that row's field, scaled down the slice.
+    assert torch.allclose(
+        spread[3].view(2, voxels, locations),
+        tissue[3].view(2, voxels)[:, :, None] * profile,
+    )
+
+    arguments = dict(state_count=8, output_count=output_count)
+    expected = simulate_packed(spread, events, **arguments)
+    actual = _run_packed(spread, events, threads=1, **arguments)
+    assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
+
+
 def _seed(tissue, output_count: int) -> torch.Tensor:
     generator = torch.Generator().manual_seed(11)
     return torch.randn(
@@ -475,13 +503,15 @@ def test_the_cuda_adjoint_agrees_with_the_cpu_one_across_shims() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-def test_streaming_a_shimmed_volume_is_refused() -> None:
-    """Streaming cuts by voxel, and a shim row is a whole volume."""
-    tissue, events, output_count = _two_shim_packed()
-    with offload(["cuda"], budget_bytes=1 << 20):
-        with pytest.raises(NotImplementedError, match="drives 2 shims"):
-            _run_packed(tissue, events, state_count=8,
-                        output_count=output_count, threads=1)
+def test_streaming_cuts_the_voxels_and_not_the_shim_rows() -> None:
+    """A chunk is a slice of every row, not a slice of the buffer."""
+    tissue, events, output_count = _two_shim_packed(voxels=400)
+    arguments = dict(state_count=8, output_count=output_count, threads=1)
+    expected = _run_packed(tissue, events, **arguments)
+    with offload(["cuda"], budget_bytes=1 << 16):
+        actual = _run_packed(tissue, events, **arguments)
+
+    assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
 
 
 def test_a_gradient_reaches_the_weights_of_each_shim() -> None:
