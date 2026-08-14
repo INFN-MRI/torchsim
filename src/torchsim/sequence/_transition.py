@@ -64,6 +64,35 @@ class TransitionTable:
         """How many flip-angle knots each position carries."""
         return int(self.a.shape[1])
 
+    @property
+    def step(self) -> float:
+        """Flip angle between neighbouring knots, in radians."""
+        return self.theta_max / (self.bins - 1)
+
+    def packed(self, device: torch.device | str | None = None) -> torch.Tensor:
+        """The table laid out as the kernels index it.
+
+        ``(points, bins, 8)``: the pair then its slope, real before imaginary,
+        so the two knots a Hermite read needs are sixteen contiguous floats.
+        """
+        return (
+            torch.stack(
+                (
+                    self.a.real,
+                    self.a.imag,
+                    self.b.real,
+                    self.b.imag,
+                    self.slope_a.real,
+                    self.slope_a.imag,
+                    self.slope_b.real,
+                    self.slope_b.imag,
+                ),
+                dim=-1,
+            )
+            .to(device=device, dtype=torch.float32)
+            .contiguous()
+        )
+
     def at(
         self, position: torch.Tensor, theta: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -191,16 +220,25 @@ def transition_table(
             drive = flip[None, :] * sample
             turn_x = drive.real.expand_as(turn_z)
             turn_y = drive.imag.expand_as(turn_z)
-            angle = torch.sqrt(turn_x**2 + turn_y**2 + turn_z**2)
+            # Both coefficients are smooth functions of the squared angle, and
+            # are taken that way near the origin: a spin at the slice centre
+            # under no flip sits at exactly zero, where the square root is
+            # continuous but its derivative is not, and the table carries
+            # derivatives.
+            square = turn_x**2 + turn_y**2 + turn_z**2
+            turning = square > 1e-18
+            angle = torch.sqrt(torch.where(turning, square, torch.ones_like(square)))
             half = 0.5 * angle
-            # sin(angle / 2) / angle, which is 1/2 at the origin rather than
-            # the zero-over-zero that dividing would give.
-            scale = torch.where(
-                angle > 1e-9,
-                torch.sin(half) / torch.where(angle > 1e-9, angle, torch.ones_like(angle)),
-                0.5 - angle**2 / 48.0,
+            cosine = torch.where(
+                turning, torch.cos(half), 1.0 - square / 8.0 + square**2 / 384.0
             )
-            step_a = torch.cos(half) - 1j * turn_z * scale
+            # sin(angle / 2) / angle, which is 1/2 at the origin.
+            scale = torch.where(
+                turning,
+                torch.sin(half) / angle,
+                0.5 - square / 48.0 + square**2 / 3840.0,
+            )
+            step_a = cosine - 1j * turn_z * scale
             step_b = -1j * (turn_x - 1j * turn_y) * scale
             a, b = step_a * a - step_b * b.conj(), step_b * a.conj() + step_a * b
         return a, b

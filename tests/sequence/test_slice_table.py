@@ -1,0 +1,241 @@
+"""Driving the kernels' RF operator from a tabulated rotation.
+
+A pulse whose shape matters turns about an axis that is neither transverse nor
+the same across the slice, which no flip-and-phase pair reaches. The kernels
+read the rotation out of a table instead, indexed by the voxel's position along
+the slice and by the flip angle it actually sees.
+
+Two properties carry the stage. A table built from a pulse with no gradient
+across it holds the instantaneous rotation, so it must reproduce the operator
+it replaces -- that pins the whole lookup, the phase convention and the matrix
+at once. And a sequence with no table must be untouched, bit for bit, because
+the table path is a separate kernel rather than a branch inside the old one.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+import torch
+
+from torchsim import TissueProperties, fse_description
+from torchsim.sequence._accelerators import (
+    _pack_events,
+    _run_packed,
+    offload,
+    real_subspace_axis,
+)
+from torchsim.sequence._description import RfDefinition, RfShape
+from torchsim.sequence._simulation import _prepare_tissue
+from torchsim.sequence._transition import transition_table
+from utils.packed_reference import simulate_packed
+
+ECHOES = 4
+STATES = 8
+RASTER = 1e-6
+SAMPLES = 256
+BANDWIDTH = 4.0 / (SAMPLES * RASTER)
+
+
+def _shaped(bandwidth_hz: float, samples: int = SAMPLES) -> RfDefinition:
+    """A windowed sinc, its negative lobes carried in the phase."""
+    grid = np.linspace(-2.0, 2.0, samples)
+    envelope = np.sinc(grid) * (0.54 + 0.46 * np.cos(np.pi * grid / 2.0))
+    envelope = envelope / np.abs(envelope).max()
+    return RfDefinition(
+        id=0,
+        bandwidth_hz=bandwidth_hz,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=bandwidth_hz,
+        total_b1sq_power=1.0,
+        magnitude=RfShape(
+            num_uncompressed=samples, samples=np.abs(envelope).astype(np.float32)
+        ),
+        phase=RfShape(
+            num_uncompressed=samples,
+            samples=(np.angle(envelope) / (2.0 * np.pi)).astype(np.float32),
+        ),
+    )
+
+
+def _instantaneous_table():
+    """A pulse with no gradient across it: one rotation, every position."""
+    flat = RfDefinition(
+        id=0,
+        bandwidth_hz=0.0,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=0.0,
+        total_b1sq_power=1.0,
+        magnitude=RfShape(num_uncompressed=8, samples=np.ones(8, dtype=np.float32)),
+    )
+    return transition_table(
+        flat, torch.zeros(1), bins=1024, rf_raster_time_s=RASTER
+    )
+
+
+def _packed(voxels: int):
+    """Prepared tissue and packed events for a short echo train."""
+    description = fse_description(
+        torch.deg2rad(torch.full((ECHOES,), 150.0)),
+        echo_spacing_s=5e-3,
+        phases_rad=torch.pi / 2,
+    )
+    generator = torch.Generator().manual_seed(0)
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b1=0.7 + 0.6 * torch.rand(voxels, generator=generator),
+        b1_phase_rad=torch.linspace(-0.4, 0.4, voxels),
+    )
+    prepared, _, device = _prepare_tissue(tissue, torch.device("cpu"))
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=device,
+        rf_raster_time_s=RASTER,
+    )
+    return prepared, packed.buffers, packed.output_count
+
+
+def test_a_table_of_an_instantaneous_pulse_is_the_operator_it_replaces() -> None:
+    """The anchor: same rotation, reached two entirely different ways."""
+    tissue, events, outputs = _packed(5)
+    arguments = dict(state_count=STATES, output_count=outputs, threads=1)
+    expected = _run_packed(tissue, events, **arguments)
+    actual = _run_packed(tissue, events, profile=_instantaneous_table(), **arguments)
+
+    assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
+
+
+def test_the_kernel_reads_the_table_the_oracle_reads() -> None:
+    voxels, locations = 3, 3
+    table = transition_table(
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(voxels * locations)
+    expected = simulate_packed(
+        tissue,
+        events,
+        state_count=STATES,
+        output_count=outputs,
+        profile=table,
+        locations=locations,
+    )
+    actual = _run_packed(
+        tissue, events, state_count=STATES, output_count=outputs, threads=1,
+        profile=table,
+    )
+
+    assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
+
+
+def test_a_sequence_without_a_table_is_untouched() -> None:
+    """The table path is another kernel, not a branch inside this one."""
+    tissue, events, outputs = _packed(7)
+    arguments = dict(state_count=STATES, output_count=outputs, threads=1)
+
+    assert torch.equal(
+        _run_packed(tissue, events, **arguments),
+        _run_packed(tissue, events, profile=None, **arguments),
+    )
+
+
+def test_each_voxel_reads_its_own_place_along_the_slice() -> None:
+    """Voxels run voxel-major over the profile, so the row wraps with them."""
+    locations = 4
+    table = transition_table(
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(2 * locations)
+    signal = _run_packed(
+        tissue, events, state_count=STATES, output_count=outputs, threads=1,
+        profile=table,
+    )
+    # Two voxels differing only in their slice position give different signals,
+    # and one wrap apart they see the same row.
+    assert not torch.allclose(signal[0], signal[1], atol=1e-6)
+    assert signal.shape[0] == 2 * locations
+
+
+def test_the_real_subspace_declines_a_shaped_pulse() -> None:
+    """A shaped pulse's ``a`` is complex, which is what leaves the subspace."""
+    tissue, events, _ = _packed(4)
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        rf_raster_time_s=RASTER,
+    )
+    plain = TissueProperties(
+        t1_ms=torch.linspace(600.0, 1400.0, 4), t2_ms=torch.linspace(40.0, 120.0, 4)
+    )
+    real_tissue, _, _ = _prepare_tissue(plain, torch.device("cpu"))
+    real_tissue = tuple(v.to(torch.float32).contiguous() for v in real_tissue)
+
+    assert real_subspace_axis(events, real_tissue) == 1
+    assert real_subspace_axis(events, real_tissue, table) is None
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_the_card_reads_the_table_the_host_reads() -> None:
+    voxels, locations = 3, 3
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(voxels * locations)
+    arguments = dict(
+        state_count=STATES, output_count=outputs, threads=1, profile=table
+    )
+    expected = _run_packed(tissue, events, **arguments)
+    card = torch.device("cuda")
+    actual = _run_packed(
+        tuple(value.to(card) for value in tissue),
+        tuple(value.to(card) for value in events),
+        **arguments,
+    )
+
+    assert (expected - actual.cpu()).abs().max() < 1e-5 * expected.abs().max()
+
+
+def test_a_pulse_past_the_end_of_the_table_is_refused() -> None:
+    """Saturating at the last knot returns numbers for a wrong simulation.
+
+    A table and a sequence built for different rasters give flips that differ
+    by the ratio between them, which is how this goes wrong in practice.
+    """
+    tissue, events, outputs = _packed(3)
+    narrow = transition_table(
+        _shaped(BANDWIDTH), torch.zeros(1), bins=32, theta_max=0.25,
+        rf_raster_time_s=RASTER,
+    )
+    with pytest.raises(ValueError, match="past the"):
+        _run_packed(
+            tissue, events, state_count=STATES, output_count=outputs,
+            threads=1, profile=narrow,
+        )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_streaming_a_profiled_volume_is_refused() -> None:
+    """The table has not reached the chunked path yet."""
+    tissue, events, outputs = _packed(64)
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        rf_raster_time_s=RASTER,
+    )
+    with offload(["cuda"], budget_bytes=1 << 20):
+        with pytest.raises(NotImplementedError, match="transition table"):
+            _run_packed(
+                tissue, events, state_count=STATES, output_count=outputs,
+                threads=1, profile=table,
+            )

@@ -218,7 +218,21 @@ struct Buffers {
     float flow_scale;
     float washout_scale;
     std::int64_t shim_count;
+    // The rotation a shaped pulse performs, tabulated over slice position and
+    // effective flip angle: ``locations`` rows of ``profile_bins`` knots, eight
+    // floats each -- the Cayley-Klein pair and its slope in the flip angle,
+    // interleaved so the two knots a read needs are contiguous. Null when the
+    // sequence has no table, which is what selects the flip-and-phase operator
+    // instead. Voxels run voxel-major over the slice, so a voxel's row is its
+    // index modulo ``locations``.
+    const float* profile;
+    std::int64_t profile_bins;
+    std::int64_t locations;
+    float profile_step;
 };
+
+// Floats one knot of the transition table holds.
+constexpr std::int64_t PROFILE_STRIDE = 8;
 
 // Per-work-item view of the buffers that vary along the train axis.
 struct TrainView {
@@ -548,6 +562,60 @@ inline Complex multiply(const Complex left, const Complex right) {
     return left * right;
 }
 
+// Where a voxel sits along the slice. Voxels are spread over the profile
+// voxel-major, so consecutive atoms walk the slice and wrap.
+template <bool PROFILED>
+inline std::int64_t slice_row(const Buffers& buffers, const std::int64_t atom) {
+    if constexpr (PROFILED) {
+        return atom % buffers.locations;
+    } else {
+        (void)buffers;
+        (void)atom;
+        return 0;
+    }
+}
+
+// The pair the table holds at this flip angle, by cubic Hermite between the
+// knots bracketing it. Cubic rather than linear because a linear read has no
+// second derivative to give the second-order pass, and because storing the
+// slope makes the cubic cost the same two loads.
+//
+// Clamped at both ends rather than extrapolated: a cubic run off its grid
+// leaves the unit circle, and a pulse driven past the tabulated flip should
+// saturate rather than diverge.
+inline void profile_pair(
+    const Buffers& buffers,
+    const std::int64_t location,
+    const float theta,
+    Complex& a,
+    Complex& b
+) {
+    const float last = static_cast<float>(buffers.profile_bins - 1);
+    const float scaled = std::min(std::max(theta / buffers.profile_step, 0.0F), last);
+    const float lower = std::min(std::floor(scaled), last - 1.0F);
+    const float u = scaled - lower;
+    const float* const near = buffers.profile
+        + (location * buffers.profile_bins + static_cast<std::int64_t>(lower))
+            * PROFILE_STRIDE;
+    const float* const far = near + PROFILE_STRIDE;
+
+    const float u2 = u * u;
+    const float u3 = u2 * u;
+    const float h00 = 2.0F * u3 - 3.0F * u2 + 1.0F;
+    const float h10 = (u3 - 2.0F * u2 + u) * buffers.profile_step;
+    const float h01 = -2.0F * u3 + 3.0F * u2;
+    const float h11 = (u3 - u2) * buffers.profile_step;
+
+    a = Complex(
+        h00 * near[0] + h10 * near[4] + h01 * far[0] + h11 * far[4],
+        h00 * near[1] + h10 * near[5] + h01 * far[1] + h11 * far[5]
+    );
+    b = Complex(
+        h00 * near[2] + h10 * near[6] + h01 * far[2] + h11 * far[6],
+        h00 * near[3] + h10 * near[7] + h01 * far[3] + h11 * far[7]
+    );
+}
+
 inline void shift(std::vector<Complex>& fplus, std::vector<Complex>& fminus) {
     const std::size_t count = fplus.size();
     for (std::size_t state = 0; state + 1 < count; ++state) {
@@ -582,6 +650,46 @@ inline void rotate(
     const Complex t20 = Complex(0.0F, -0.5F * sine) * std::conj(phase_one);
     const Complex t21 = Complex(0.0F, 0.5F * sine) * phase_one;
     const Complex t22(cosine, 0.0F);
+
+    for (std::size_t state = 0; state < fplus.size(); ++state) {
+        const Complex fp = fplus[state];
+        const Complex fm = fminus[state];
+        const Complex z = longitudinal[state];
+        fplus[state] = multiply(t00, fp) + multiply(t01, fm) + multiply(t02, z);
+        fminus[state] = multiply(t10, fp) + multiply(t11, fm) + multiply(t12, z);
+        longitudinal[state] =
+            multiply(t20, fp) + multiply(t21, fm) + multiply(t22, z);
+    }
+}
+
+// The rotation a pulse of any shape performs, named by its Cayley-Klein pair:
+//
+//   T = [ conj(a)^2   -conj(b)^2   -2 conj(a b) ]
+//       [ -b^2         a^2         -2 a b       ]
+//       [ conj(a) b    a conj(b)   |a|^2-|b|^2  ]
+//
+// `rotate` above is the case of an instantaneous pulse, kept separate rather
+// than folded into this: it reaches the same matrix through different
+// arithmetic, and a sequence with no table must not move in the last place for
+// the sake of one that has a table.
+inline void rotate_spinor(
+    std::vector<Complex>& fplus,
+    std::vector<Complex>& fminus,
+    std::vector<Complex>& longitudinal,
+    const Complex a,
+    const Complex b
+) {
+    const Complex conj_a = std::conj(a);
+    const Complex conj_b = std::conj(b);
+    const Complex t00 = conj_a * conj_a;
+    const Complex t01 = -conj_b * conj_b;
+    const Complex t02 = -2.0F * std::conj(a * b);
+    const Complex t10 = -b * b;
+    const Complex t11 = a * a;
+    const Complex t12 = -2.0F * a * b;
+    const Complex t20 = conj_a * b;
+    const Complex t21 = a * conj_b;
+    const Complex t22(std::norm(a) - std::norm(b), 0.0F);
 
     for (std::size_t state = 0; state < fplus.size(); ++state) {
         const Complex fp = fplus[state];
@@ -1806,7 +1914,7 @@ void simulate_lane_range(
     }
 }
 
-template <bool SHIMMED>
+template <bool SHIMMED, bool PROFILED>
 void simulate_range(
     const Buffers& buffers,
     const std::int64_t work_begin,
@@ -1824,6 +1932,7 @@ void simulate_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(buffers, work, event_count, output_count);
         const std::int64_t atom = view.atom;
+        const std::int64_t location = slice_row<PROFILED>(buffers, atom);
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
@@ -1874,13 +1983,22 @@ void simulate_range(
                 } else {
                     const std::int64_t transmit =
                         transmit_row<SHIMMED>(buffers, event, atom);
-                    rotate(
-                        fplus,
-                        fminus,
-                        longitudinal,
-                        view.flip[event] * buffers.b1[transmit],
-                        view.phase[event] + buffers.b1_phase[transmit]
-                    );
+                    const float theta = view.flip[event] * buffers.b1[transmit];
+                    const float phi =
+                        view.phase[event] + buffers.b1_phase[transmit];
+                    if constexpr (PROFILED) {
+                        Complex a{};
+                        Complex b{};
+                        profile_pair(buffers, location, theta, a, b);
+                        // The table is built at zero RF phase, which turns the
+                        // rotation axis and so reaches ``b`` alone.
+                        rotate_spinor(
+                            fplus, fminus, longitudinal, a,
+                            b * std::polar(1.0F, -phi)
+                        );
+                    } else {
+                        rotate(fplus, fminus, longitudinal, theta, phi);
+                    }
                 }
             } else if (buffers.kind[event] == 2 && (action & RECORD) != 0) {
                 const std::int64_t output = buffers.output_index[event];
@@ -3838,7 +3956,11 @@ inline Buffers packed_buffers(
     const std::int64_t train_count,
     const float flow_scale,
     const float washout_scale,
-    const std::int64_t shim_count
+    const std::int64_t shim_count,
+    const void* const profile = nullptr,
+    const std::int64_t profile_bins = 0,
+    const std::int64_t locations = 1,
+    const float profile_step = 1.0F
 ) {
     Buffers buffers{};
     const float** tissue[TISSUE_COUNT] = {
@@ -3864,6 +3986,10 @@ inline Buffers packed_buffers(
     buffers.flow_scale = flow_scale;
     buffers.washout_scale = washout_scale;
     buffers.shim_count = shim_count;
+    buffers.profile = static_cast<const float*>(profile);
+    buffers.profile_bins = profile_bins;
+    buffers.locations = locations;
+    buffers.profile_step = profile_step;
     return buffers;
 }
 
@@ -4073,9 +4199,12 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     double flow_scale = 0.0;
     double washout_scale = 0.0;
     long long shim_count = 1;
+    long long locations = 1;
+    long long profile_bins = 0;
+    double profile_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddL",
+            "OLLLLLiiddLLLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -4086,11 +4215,16 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             &real_axis,
             &flow_scale,
             &washout_scale,
-            &shim_count
+            &shim_count,
+            &locations,
+            &profile_bins,
+            &profile_step
         )) {
         return nullptr;
     }
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2;
+    // The packed buffers, the two output planes, then the transition table --
+    // null when the sequence has none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -4115,7 +4249,11 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
-        static_cast<std::int64_t>(shim_count)
+        static_cast<std::int64_t>(shim_count),
+        raw[PACKED_COUNT + 2],
+        static_cast<std::int64_t>(profile_bins),
+        static_cast<std::int64_t>(locations),
+        static_cast<float>(profile_step)
     );
 
     // TORCHSIM_LANES=1 selects a lane-vectorized forward that walks the
@@ -4127,6 +4265,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     const bool lanes_enabled = lane_override != nullptr && lane_override[0] == '1';
     const bool vectorize = lanes_enabled && train_count >= 4
         && buffers.shim_count == 1
+        && buffers.profile == nullptr
         && !any_diffusion(buffers.diffusion, buffers.atom_count)
         && !any_diffusion(buffers.velocity, buffers.atom_count);
     const std::int64_t lane_blocks =
@@ -4137,9 +4276,17 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     void (*kernel)(
         const Buffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = vectorize ? &simulate_lane_range
-                  : (buffers.shim_count > 1 ? &simulate_range<true>
-                                            : &simulate_range<false>);
+    ) = vectorize ? &simulate_lane_range : &simulate_range<false, false>;
+    if (!vectorize) {
+        const bool shimmed = buffers.shim_count > 1;
+        const bool profiled = buffers.profile != nullptr;
+        if (shimmed) {
+            kernel = profiled ? &simulate_range<true, true>
+                              : &simulate_range<true, false>;
+        } else if (profiled) {
+            kernel = &simulate_range<false, true>;
+        }
+    }
     // The caller establishes the real-subspace conditions; axis 1 puts the
     // signal on the imaginary axis, which is the representation below.
     if (real_axis == 1) {

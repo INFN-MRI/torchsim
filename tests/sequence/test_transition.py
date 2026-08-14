@@ -143,12 +143,25 @@ def test_reading_between_the_knots_is_still_the_integration(table) -> None:
     assert worst < 1e-5
 
 
+def test_every_knot_and_slope_is_a_number(table) -> None:
+    """The zero-flip knot at the slice centre sits where nothing is turning.
+
+    The rotation angle is exactly zero there, and a square root is continuous
+    at zero but its derivative is not, so a table that reaches the angle that
+    way carries NaN in its slope -- in one corner, where a spot check does not
+    look.
+    """
+    for name in ("a", "b", "slope_a", "slope_b"):
+        assert torch.isfinite(getattr(table, name)).all(), name
+    assert torch.isfinite(table.packed()).all()
+
+
 def test_the_stored_slope_is_the_derivative_of_the_integration(table) -> None:
     positions = torch.linspace(-1.0, 1.0, 9).tolist()
     step = 1e-4
     worst = 0.0
     for index, position in enumerate(positions):
-        for bin_index in (7, 31, 63):
+        for bin_index in (0, 1, 7, 31, 63):
             theta = table.theta_max * bin_index / (table.bins - 1)
             up = _integrate(theta + step, position)
             down = _integrate(theta - step, position)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 __all__: list[str] = []
 
+from typing import Any
+
 import torch
 
 from ._accelerators import _shim_count, _train_count
@@ -302,6 +304,97 @@ def _shift_real_adjoint(
     )
     shifted_minus = tl.where(state == 1, shifted_minus + carry, shifted_minus)
     return shifted_plus, shifted_minus
+
+
+@triton.jit
+def _profile_pair(profile, location, theta, bins: tl.constexpr, step):
+    """The Cayley-Klein pair the transition table holds at this flip angle.
+
+    Cubic Hermite between the two knots bracketing ``theta``, clamped at both
+    ends: a cubic run off its grid leaves the unit circle. Each knot is eight
+    floats -- the pair then its slope, real before imaginary -- so the two a
+    read needs are sixteen contiguous ones.
+    """
+    last = bins - 1
+    scaled = tl.minimum(tl.maximum(theta / step, 0.0), last + 0.0)
+    lower = tl.minimum(tl.floor(scaled), last - 1.0)
+    u = scaled - lower
+    u2 = u * u
+    u3 = u2 * u
+    h00 = 2.0 * u3 - 3.0 * u2 + 1.0
+    h10 = (u3 - 2.0 * u2 + u) * step
+    h01 = -2.0 * u3 + 3.0 * u2
+    h11 = (u3 - u2) * step
+
+    base = (location * bins + lower.to(tl.int64)) * 8
+    pair = ()
+    for component in tl.static_range(4):
+        near = tl.load(profile + base + component)
+        near_slope = tl.load(profile + base + 4 + component)
+        far = tl.load(profile + base + 8 + component)
+        far_slope = tl.load(profile + base + 12 + component)
+        pair = pair + (h00 * near + h10 * near_slope + h01 * far + h11 * far_slope,)
+    return pair
+
+
+@triton.jit
+def _rotate_spinor(ar, ai, br, bi, fp_r, fp_i, fm_r, fm_i, z_r, z_i):
+    """The rotation named by its Cayley-Klein pair, applied to the states.
+
+        T = [ conj(a)^2   -conj(b)^2   -2 conj(a b) ]
+            [ -b^2         a^2         -2 a b       ]
+            [ conj(a) b    a conj(b)   |a|^2-|b|^2  ]
+    """
+    aa_r = ar * ar - ai * ai
+    aa_i = 2.0 * ar * ai
+    bb_r = br * br - bi * bi
+    bb_i = 2.0 * br * bi
+    ab_r = ar * br - ai * bi
+    ab_i = ar * bi + ai * br
+
+    t00_r, t00_i = aa_r, -aa_i
+    t01_r, t01_i = -bb_r, bb_i
+    t02_r, t02_i = -2.0 * ab_r, 2.0 * ab_i
+    t10_r, t10_i = -bb_r, -bb_i
+    t11_r, t11_i = aa_r, aa_i
+    t12_r, t12_i = -2.0 * ab_r, -2.0 * ab_i
+    cross_r = ar * br + ai * bi
+    cross_i = ar * bi - ai * br
+    t20_r, t20_i = cross_r, cross_i
+    t21_r, t21_i = cross_r, -cross_i
+    t22 = ar * ar + ai * ai - br * br - bi * bi
+
+    out_pr = (
+        t00_r * fp_r - t00_i * fp_i
+        + t01_r * fm_r - t01_i * fm_i
+        + t02_r * z_r - t02_i * z_i
+    )
+    out_pi = (
+        t00_r * fp_i + t00_i * fp_r
+        + t01_r * fm_i + t01_i * fm_r
+        + t02_r * z_i + t02_i * z_r
+    )
+    out_mr = (
+        t10_r * fp_r - t10_i * fp_i
+        + t11_r * fm_r - t11_i * fm_i
+        + t12_r * z_r - t12_i * z_i
+    )
+    out_mi = (
+        t10_r * fp_i + t10_i * fp_r
+        + t11_r * fm_i + t11_i * fm_r
+        + t12_r * z_i + t12_i * z_r
+    )
+    out_zr = (
+        t20_r * fp_r - t20_i * fp_i
+        + t21_r * fm_r - t21_i * fm_i
+        + t22 * z_r
+    )
+    out_zi = (
+        t20_r * fp_i + t20_i * fp_r
+        + t21_r * fm_i + t21_i * fm_r
+        + t22 * z_i
+    )
+    return out_pr, out_pi, out_mr, out_mi, out_zr, out_zi
 
 
 @triton.jit
@@ -2190,6 +2283,7 @@ def _epg_kernel(
     action,
     output_index,
     shim_index,
+    profile,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -2202,8 +2296,11 @@ def _epg_kernel(
     output_count,
     flow_scale,
     washout_scale,
+    profile_step,
     state_count: tl.constexpr,
     shims: tl.constexpr,
+    locations: tl.constexpr,
+    profile_bins: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -2215,6 +2312,9 @@ def _epg_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
+    # Voxels are spread over the slice voxel-major, so a voxel's row in the
+    # transition table is its index modulo the profile's width.
+    location = atom % locations
     workspace_offset = problem * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
     scratch_pi = scratch_fplus_imag + workspace_offset
@@ -2316,6 +2416,23 @@ def _epg_kernel(
             )
         alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0) * atom_b1
         phi = tl.load(phase + event_base + event, mask=active_atom, other=0.0) + atom_b1_phase
+        if profile_bins > 0:
+            # The table is built at zero RF phase, which turns the rotation
+            # axis and so reaches ``b`` alone.
+            pair = _profile_pair(
+                profile, location, alpha, profile_bins, profile_step
+            )
+            turn_r = tl.cos(phi)
+            turn_i = -tl.sin(phi)
+            spun_br = pair[2] * turn_r - pair[3] * turn_i
+            spun_bi = pair[2] * turn_i + pair[3] * turn_r
+            (
+                shaped_pr, shaped_pi, shaped_mr, shaped_mi, shaped_zr, shaped_zi
+            ) = _rotate_spinor(
+                pair[0], pair[1], spun_br, spun_bi,
+                fplus_real, fplus_imag, fminus_real, fminus_imag,
+                longitudinal_real, longitudinal_imag,
+            )
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
         cosine_half_sq = 0.5 * (1.0 + cosine)
@@ -2352,6 +2469,14 @@ def _epg_kernel(
         rotated_zi = -0.5 * sine * (cos_phi * fp_r + sin_phi * fp_i)
         rotated_zi += 0.5 * sine * (cos_phi * fm_r - sin_phi * fm_i)
         rotated_zi += cosine * z_i
+
+        if profile_bins > 0:
+            rotated_pr = shaped_pr
+            rotated_pi = shaped_pi
+            rotated_mr = shaped_mr
+            rotated_mi = shaped_mi
+            rotated_zr = shaped_zr
+            rotated_zi = shaped_zi
 
         rotate = is_rf & ~is_inversion
         fplus_real = tl.where(rotate, rotated_pr, fplus_real)
@@ -2878,6 +3003,7 @@ def simulate(
     output_count: int,
     real_axis: int | None = None,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> torch.Tensor:
     """Run a packed state machine on CUDA and return complex signals.
 
@@ -2903,6 +3029,7 @@ def simulate(
         real_axis=real_axis,
         atom_count=atom_count,
         geometry=geometry,
+        profile=profile,
     )
     return torch.complex(output_real, output_imag)
 
@@ -2919,6 +3046,7 @@ def simulate_into(
     real_axis: int | None,
     atom_count: int,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> None:
     """Run the forward machine into buffers the caller owns.
 
@@ -2943,6 +3071,9 @@ def simulate_into(
     planes = 2 if real_axis == 1 else 4
     if scratch is None:
         scratch = _scratch(planes, total, t1.device, state_count)
+    # A kernel argument has to be a tensor even where the branch reading it is
+    # compiled out, so an unprofiled launch passes one it already has.
+    table = None if profile is None else profile.packed(t1.device)
 
     if real_axis == 1:
         _epg_real_kernel[grid](
@@ -2988,6 +3119,7 @@ def simulate_into(
         action,
         output_index,
         shim_index,
+        t1 if table is None else table,
         output_real,
         output_imag,
         *scratch,
@@ -2997,8 +3129,11 @@ def simulate_into(
         output_count,
         geometry.flow_scale,
         geometry.washout_scale,
+        1.0 if profile is None else profile.step,
         state_count=state_count,
         shims=shims,
+        locations=1 if profile is None else profile.points,
+        profile_bins=0 if profile is None else profile.bins,
         block_states=block_states,
         problems=problems,
         num_warps=1,

@@ -13,6 +13,8 @@ makes it independent of the kernels it checks.
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 from torchsim.sequence._accelerators import (
@@ -35,6 +37,8 @@ def simulate_packed(
     state_count: int,
     output_count: int,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
+    locations: int = 1,
 ) -> torch.Tensor:
     """Run one echo train and return its recorded signal.
 
@@ -52,6 +56,15 @@ def simulate_packed(
     geometry
         The two scales the velocity is read through, exactly as the kernels
         take them.
+    profile
+        A :class:`~torchsim.sequence._transition.TransitionTable`, or ``None``
+        for the instantaneous pulse. Given one, a pulse turns through the
+        rotation the table holds at its effective flip rather than through a
+        flip and a phase.
+    locations
+        Slice positions each voxel was spread over. The prepared tissue runs
+        voxel-major, so a voxel's position along the slice is its index modulo
+        this, which is the row of the table it reads.
 
     Returns
     -------
@@ -85,6 +98,11 @@ def simulate_packed(
     longitudinal = torch.zeros_like(fplus)
     longitudinal[:, 0] = 1.0
     signals = []
+    slice_index = (
+        torch.arange(atom_count, device=t1.device) % locations
+        if profile is not None
+        else None
+    )
 
     for event in range(kind.numel()):
         dt = duration[event]
@@ -125,9 +143,21 @@ def simulate_packed(
                 row = int(shim_index[event])
                 alpha = flip[event] * transmit[row]
                 phi = phase[event] + transmit_phase[row]
-                fplus, fminus, longitudinal = _rotate(
-                    fplus, fminus, longitudinal, alpha, phi
-                )
+                if profile is None:
+                    fplus, fminus, longitudinal = _rotate(
+                        fplus, fminus, longitudinal, alpha, phi
+                    )
+                else:
+                    # The table is built at zero RF phase, which turns the
+                    # rotation axis and so multiplies ``b`` alone.
+                    spinor_a, spinor_b = profile.at(slice_index, alpha)
+                    fplus, fminus, longitudinal = _rotate_spinor(
+                        fplus,
+                        fminus,
+                        longitudinal,
+                        spinor_a,
+                        spinor_b * torch.exp(-1j * phi),
+                    )
         elif event_kind == 2 and event_action & _RECORD:
             signals.append(m0 * fplus[:, 0] * torch.exp(-1j * phase[event]))
         if event_action & _POST_SHIFT:
@@ -152,6 +182,33 @@ def _shift(
     shifted_minus = torch.cat((fminus[:, 1:], zero), dim=-1)
     shifted_plus = torch.cat((shifted_minus[:, :1].conj(), fplus[:, :-1]), dim=-1)
     return shifted_plus, shifted_minus
+
+
+def _rotate_spinor(
+    fplus: torch.Tensor,
+    fminus: torch.Tensor,
+    longitudinal: torch.Tensor,
+    a: torch.Tensor,
+    b: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """The rotation named by its Cayley-Klein pair rather than by flip angle."""
+    a = a[:, None]
+    b = b[:, None]
+    t00 = a.conj().square()
+    t01 = -b.conj().square()
+    t02 = -2.0 * (a * b).conj()
+    t10 = -b.square()
+    t11 = a.square()
+    t12 = -2.0 * a * b
+    t20 = a.conj() * b
+    t21 = a * b.conj()
+    t22 = (a.abs().square() - b.abs().square()).to(a.dtype)
+    old_plus, old_minus, old_z = fplus, fminus, longitudinal
+    return (
+        t00 * old_plus + t01 * old_minus + t02 * old_z,
+        t10 * old_plus + t11 * old_minus + t12 * old_z,
+        t20 * old_plus + t21 * old_minus + t22 * old_z,
+    )
 
 
 def _rotate(

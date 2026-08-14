@@ -767,6 +767,7 @@ _PHASE_TOLERANCE = 1e-5
 def real_subspace_axis(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
+    profile: Any = None,
 ) -> int | None:
     """The real axis the states are confined to, or ``None``.
 
@@ -788,6 +789,11 @@ def real_subspace_axis(
     subspace a kernel can be built on.
     """
     if _shim_count(tissue) > 1:
+        return None
+    if profile is not None:
+        # A shaped pulse turns about an axis with a component along z, which
+        # makes its Cayley-Klein ``a`` complex -- and a complex ``a`` is
+        # exactly what carries a state out of the real subspace.
         return None
     (
         b0_free, phase_free, flow_free, has_refocusing, has_excitation, spread,
@@ -863,6 +869,7 @@ def _auto_real_axis(
     tissue: tuple[torch.Tensor, ...],
     state_count: int,
     tangents: tuple[torch.Tensor, ...] = (),
+    profile: Any = None,
 ) -> int | None:
     """The subspace verdict, when deciding it costs less than it saves.
 
@@ -884,9 +891,7 @@ def _auto_real_axis(
         ).any()
         if bool(seeded):
             return None
-    return real_subspace_axis(events, tissue)
-
-
+    return real_subspace_axis(events, tissue, profile)
 
 
 
@@ -936,6 +941,55 @@ def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
                 f"tensor with strides {value.stride()}"
             )
     return tuple(value.data_ptr() for value in values)
+
+
+def _profiled_pointers(
+    values: tuple[torch.Tensor, ...], table: torch.Tensor | None
+) -> tuple[int, ...]:
+    """Buffer addresses with the transition table's on the end.
+
+    A sequence with no table still passes the slot, as a null the kernels
+    check to pick the flip-and-phase operator instead.
+    """
+    if table is None:
+        return (*_pointers(values), 0)
+    return _pointers((*values, table))
+
+
+def _within_the_table(profile: Any, flip: torch.Tensor) -> None:
+    """Refuse a pulse the table does not reach.
+
+    A flip past the grid saturates at the last knot, which is the right
+    numerical behaviour -- a cubic run off its end leaves the unit circle --
+    but a silently saturated pulse is a wrong simulation that still returns
+    numbers. The nominal flip is checked because that is where the mistake
+    usually is: a sequence and a table built for different rasters give flips
+    that differ by the ratio and nothing says so.
+
+    Transmit scaling on top of the nominal flip is not checked, since reading
+    its largest value means a reduction over every voxel.
+
+    Raises:
+        ValueError: if any pulse asks for more than the table holds.
+    """
+    largest = float(flip.abs().max()) if flip.numel() else 0.0
+    if largest > profile.theta_max:
+        raise ValueError(
+            f"the sequence drives a pulse to {largest:.3f} rad, past the "
+            f"{profile.theta_max:.3f} rad the transition table covers"
+        )
+
+
+def _unprofiled(profile: Any, what: str, active: Any) -> None:
+    """Refuse a path a transition table has not reached yet.
+
+    Raises:
+        NotImplementedError: if a table is present and the path is taken.
+    """
+    if profile is not None and active is not None:
+        raise NotImplementedError(
+            f"{what} does not carry a transition table yet"
+        )
 
 
 def _shim_count(tissue: tuple[torch.Tensor, ...]) -> int:
@@ -1830,14 +1884,25 @@ def _run_packed(
     real_axis: int | None = None,
     *,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> torch.Tensor:
     """Run the forward state machine.
 
     ``real_axis`` selects the real-subspace kernel. Leave it ``None`` and the
     verdict is worked out here; pass a value to overrule that.
+
+    ``profile`` is the transition table a shaped pulse turns through, if the
+    sequence has one. Voxels are spread over its slice positions voxel-major,
+    so the table's row count is also how many copies of each voxel the tissue
+    holds.
     """
     if real_axis is None:
-        real_axis = _auto_real_axis("forward", events, tissue, state_count)
+        real_axis = _auto_real_axis(
+            "forward", events, tissue, state_count, profile=profile
+        )
+    if profile is not None:
+        _unprofiled(profile, "streaming a volume through a device", _OFFLOAD)
+        _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
@@ -1882,6 +1947,7 @@ def _run_packed(
                         output_count=output_count,
                         real_axis=real_axis,
                         geometry=geometry,
+                        profile=profile,
                     ),
                 )
                 for begin, end, device in shards
@@ -1894,6 +1960,7 @@ def _run_packed(
             output_count=output_count,
             real_axis=real_axis,
             geometry=geometry,
+            profile=profile,
         )
     from torchsim import _epg_cpu
 
@@ -1906,8 +1973,9 @@ def _run_packed(
     output_real = torch.empty(shape, dtype=torch.float32)
     output_imag = torch.empty_like(output_real)
     pointers = (*tissue, *events, output_real, output_imag)
+    table = None if profile is None else profile.packed()
     _epg_cpu.simulate(
-        _pointers(pointers),
+        _profiled_pointers(pointers, table),
         tissue[0].numel(),
         trains,
         events[1].numel(),
@@ -1918,6 +1986,9 @@ def _run_packed(
         geometry.flow_scale,
         geometry.washout_scale,
         _shim_count(tissue),
+        1 if profile is None else profile.points,
+        0 if profile is None else profile.bins,
+        1.0 if profile is None else profile.step,
     )
     return torch.complex(output_real, output_imag)
 
