@@ -30,6 +30,7 @@ from ._parameters import (
     TISSUE_COUNT as _TISSUE_COUNT,
 )
 from ._parameters import NO_GEOMETRY, TISSUE_NAMES, Geometry
+from ._transmit import shim_rows
 
 # A forward-mode call appends one tangent per differentiable input to the
 # packed buffers; the scalar arguments follow those.
@@ -53,10 +54,24 @@ class _PackedEvents:
     phase: torch.Tensor
     action: torch.Tensor
     output_index: torch.Tensor
+    shim_index: torch.Tensor
     time_us: torch.Tensor
     event_index: torch.Tensor
     repetition: torch.Tensor
     echo: torch.Tensor
+
+    @property
+    def buffers(self) -> tuple[torch.Tensor, ...]:
+        """The event buffers the kernels take, in the order the registry sets."""
+        return (
+            self.duration,
+            self.kind,
+            self.flip,
+            self.phase,
+            self.action,
+            self.output_index,
+            self.shim_index,
+        )
 
     @property
     def output_count(self) -> int:
@@ -181,6 +196,7 @@ def simulate_native(
         record=record,
         device=prepared_tissue[0].device,
         rf_raster_time_s=rf_raster_time_s,
+        shim_rows=shim_rows(description),
     )
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
@@ -196,6 +212,7 @@ def simulate_native(
         packed.phase,
         packed.action,
         packed.output_index,
+        packed.shim_index,
         nstates,
         packed.output_count,
         threads,
@@ -227,17 +244,20 @@ def _pack_events(
     record: str,
     device: torch.device,
     rf_raster_time_s: float,
+    shim_rows: dict[int, int] | None = None,
 ) -> _PackedEvents:
     # Values stay as plain Python numbers unless the description carries
     # tensors (an optimizer differentiating through flip angles), so the common
     # case builds each buffer with a single allocation instead of one scalar
     # tensor per event.
+    shim_rows = shim_rows or {}
     durations: list[Any] = []
     kinds: list[int] = []
     flips: list[Any] = []
     phases: list[Any] = []
     actions: list[int] = []
     output_indices: list[int] = []
+    shim_indices: list[int] = []
     times: list[Any] = []
     event_indices: list[int] = []
     repetition_indices: list[int] = []
@@ -256,6 +276,11 @@ def _pack_events(
             flip: Any = 0.0
             phase: Any = 0.0
             event_output_index = -1
+            shim_indices.append(
+                shim_rows.get(event.rf_shim_id, 0)
+                if event.type is EventType.RF
+                else 0
+            )
             if event.type is EventType.RF:
                 phase = event.rf_phase_rad
                 if event.rf_use is RfUse.INVERSION:
@@ -299,6 +324,9 @@ def _pack_events(
         action=torch.as_tensor(actions, dtype=torch.uint8, device=device).contiguous(),
         output_index=torch.as_tensor(
             output_indices, dtype=torch.int32, device=device
+        ).contiguous(),
+        shim_index=torch.as_tensor(
+            shim_indices, dtype=torch.int32, device=device
         ).contiguous(),
         time_us=_stack_values(times, device),
         event_index=torch.as_tensor(event_indices, dtype=torch.int64, device=device),
@@ -492,6 +520,7 @@ class _NativeEpg(torch.autograd.Function):
         phase: torch.Tensor,
         action: torch.Tensor,
         output_index: torch.Tensor,
+        shim_index: torch.Tensor,
         state_count: int,
         output_count: int,
         threads: int,
@@ -501,7 +530,7 @@ class _NativeEpg(torch.autograd.Function):
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
             velocity,
         )
-        events = (duration, kind, flip, phase, action, output_index)
+        events = (duration, kind, flip, phase, action, output_index, shim_index)
         return _run_packed(
             tissue, events, state_count, output_count, threads, geometry=geometry
         )
@@ -752,6 +781,8 @@ def real_subspace_axis(
     states fill the plane -- a real projection of a complex trajectory, not a
     subspace a kernel can be built on.
     """
+    if _shim_count(tissue) > 1:
+        return None
     (
         b0_free, phase_free, flow_free, has_refocusing, has_excitation, spread,
         offset,
@@ -901,6 +932,30 @@ def _pointers(values: tuple[torch.Tensor, ...]) -> tuple[int, ...]:
     return tuple(value.data_ptr() for value in values)
 
 
+def _one_shim(tissue: tuple[torch.Tensor, ...], what: str) -> None:
+    """Refuse a pass that has no row of its own to write or read per shim.
+
+    Raises:
+        NotImplementedError: if the transmit buffers hold more than one shim.
+    """
+    shims = _shim_count(tissue)
+    if shims > 1:
+        raise NotImplementedError(
+            f"{what} carries one transmit field per voxel, and this sequence "
+            f"drives {shims} shims"
+        )
+
+
+def _shim_count(tissue: tuple[torch.Tensor, ...]) -> int:
+    """How many shim rows the transmit buffers carry, one per voxel each.
+
+    Read off the buffers rather than passed alongside them, so the stride the
+    kernels use cannot disagree with the memory they are given.
+    """
+    atoms = tissue[0].numel()
+    return 1 if atoms == 0 else tissue[3].numel() // atoms
+
+
 def _train_count(events: tuple[torch.Tensor, ...]) -> int:
     """Number of echo trains packed into the float event buffers.
 
@@ -990,7 +1045,7 @@ def _shard_events(
     events: tuple[torch.Tensor, ...], begin: int, end: int, device: torch.device
 ) -> tuple[torch.Tensor, ...]:
     """One shard's events: the per-train buffers cut, the shared ones copied."""
-    duration, kind, flip, phase, action, output_index = events
+    duration, kind, flip, phase, action, output_index, shim_index = events
     return (
         duration[begin:end].contiguous().to(device),
         kind.to(device),
@@ -998,6 +1053,7 @@ def _shard_events(
         phase[begin:end].contiguous().to(device),
         action.to(device),
         output_index.to(device),
+        shim_index.to(device),
     )
 
 
@@ -1748,6 +1804,7 @@ def _run_packed(
     if real_axis is None:
         real_axis = _auto_real_axis("forward", events, tissue, state_count)
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
             geometry,
@@ -1757,6 +1814,7 @@ def _run_packed(
     )
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
+        _one_shim(tissue, "streaming a volume through a device")
         return _run_offloaded(
             tissue, events, choice.offload, state_count, output_count, real_axis,
             geometry,
@@ -1826,6 +1884,7 @@ def _run_packed(
         real_axis if real_axis is not None else -1,
         geometry.flow_scale,
         geometry.washout_scale,
+        _shim_count(tissue),
     )
     return torch.complex(output_real, output_imag)
 
@@ -1850,6 +1909,7 @@ def _run_packed_vjp(
     the real-subspace kernels -- three of them short -- be chosen. All ten, if
     it is not given.
     """
+    _one_shim(tissue, "the adjoint")
     if tissue[0].device.type != "cpu":
         # An adjoint does not depend on any forward direction, so the
         # forward-over-reverse kernel given no direction to follow returns it
@@ -1899,6 +1959,7 @@ def _run_packed_vjp(
         threads,
         geometry.flow_scale,
         geometry.washout_scale,
+        _shim_count(tissue),
     )
     return (*atom_grads, duration_grad, flip_grad, phase_grad)
 
@@ -1926,6 +1987,7 @@ def _run_packed_vjp_jvp(
     decides whether the real-subspace adjoint -- three of them short -- may be
     chosen when ``real_axis`` is left open. All ten, if it is not given.
     """
+    _one_shim(tissue, "the second-order pass")
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
             events, tissue, state_count, tangents, wanted
@@ -2037,6 +2099,7 @@ def _run_packed_vjp_jvp(
         real_axis if real_axis is not None else -1,
         geometry.flow_scale,
         geometry.washout_scale,
+        _shim_count(tissue),
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
     return tangent_grads, value_grads
@@ -2054,6 +2117,7 @@ def _run_packed_jvp(
     *,
     geometry: Geometry = NO_GEOMETRY,
 ) -> torch.Tensor:
+    _one_shim(tissue, "forward mode")
     if real_axis is None:
         # b1_phase, b0 and RF phase are the directions that leave the subspace,
         # and the real kernels do not produce derivatives along them.
@@ -2166,5 +2230,6 @@ def _run_packed_jvp(
         real_axis if real_axis is not None else -1,
         geometry.flow_scale,
         geometry.washout_scale,
+        _shim_count(tissue),
     )
     return torch.complex(output_real, output_imag)

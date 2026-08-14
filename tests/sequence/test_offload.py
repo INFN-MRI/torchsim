@@ -53,14 +53,7 @@ def _volume(voxels, trains=1):
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     tissue = TissueProperties(
         t1_ms=torch.linspace(300.0, 2000.0, voxels),
         t2_ms=torch.linspace(20.0, 200.0, voxels),
@@ -282,6 +275,7 @@ def _spgr_volume(voxels, trains=1, pulses=12):
         stack("phase"),
         packed[0].action,
         packed[0].output_index,
+        packed[0].shim_index,
     )
     tissue = TissueProperties(
         t1_ms=torch.linspace(300.0, 2000.0, voxels),

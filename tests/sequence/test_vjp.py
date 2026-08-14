@@ -81,14 +81,7 @@ def _packed(name: str = "fse", state_count: int = 8):
         device=device,
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     return prepared, events, packed.output_count, state_count
 
 
@@ -102,6 +95,7 @@ def _leaves(prepared, events):
         events[3].detach().clone().requires_grad_(True),
         events[4],
         events[5],
+        events[6],
     )
     return tissue, differentiable_events
 
@@ -153,14 +147,7 @@ def test_fused_vjp_matches_the_reference(name: str, threads: int) -> None:
         device=device,
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     state_count = 8
     output_count = packed.output_count
 
@@ -172,6 +159,7 @@ def test_fused_vjp_matches_the_reference(name: str, threads: int) -> None:
         events[3].detach().clone().requires_grad_(True),
         events[4],
         events[5],
+        events[6],
     )
     output = simulate_packed(
         leaves,

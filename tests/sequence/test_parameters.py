@@ -76,7 +76,7 @@ def test_only_the_integer_buffers_are_undifferentiable():
         if not parameter.differentiable
     }
 
-    assert undifferentiated == {"kind", "action", "output_index"}
+    assert undifferentiated == {"kind", "action", "output_index", "shim_index"}
     assert all(parameter.differentiable for parameter in TISSUE_PARAMETERS)
 
 

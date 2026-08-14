@@ -81,14 +81,7 @@ def _packed(device: str = "cpu", diffusion: float = FREE_WATER, rate: bool = Tru
         device=resolved,
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     return prepared, events, packed.output_count
 
 
@@ -177,6 +170,7 @@ def test_the_adjoint_matches_the_reference() -> None:
         events[3].detach().clone().requires_grad_(True),
         events[4],
         events[5],
+        events[6],
     )
     reference = simulate_packed(
         leaves, differentiable, state_count=STATE_COUNT, output_count=output_count
@@ -219,6 +213,7 @@ def test_the_second_order_kernel_matches_the_reference() -> None:
         events[3].detach().clone().requires_grad_(True),
         events[4],
         events[5],
+        events[6],
     )
     inputs = leaves + (differentiable[0], differentiable[2], differentiable[3])
     signal = simulate_packed(

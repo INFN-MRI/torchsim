@@ -31,7 +31,7 @@ constexpr float PI = 3.14159265358979323846F;
 // properties, then the packed per-event buffers. The pointer arrays below are
 // sized from these, so a parameter appended there is appended here too.
 constexpr std::size_t TISSUE_COUNT = 9;
-constexpr std::size_t EVENT_COUNT = 6;
+constexpr std::size_t EVENT_COUNT = 7;
 constexpr std::size_t PACKED_COUNT = TISSUE_COUNT + EVENT_COUNT;
 // Every tissue property carries a gradient; of the event buffers only
 // duration, flip and phase do.
@@ -168,6 +168,10 @@ struct Buffers {
     const float* phase;
     const std::uint8_t* action;
     const std::int32_t* output_index;
+    // Which row of the transmit buffers each pulse drives. ``b1`` and
+    // ``b1_phase`` hold ``shim_count`` rows of ``atom_count``, so a pulse reads
+    // its own shim's field rather than one shared by the whole sequence.
+    const std::int32_t* shim_index;
     float* output_real;
     float* output_imag;
     // ``duration``, ``flip`` and ``phase`` are (train_count, event_count)
@@ -185,6 +189,7 @@ struct Buffers {
     // while flow dephasing depends on the winding it crosses.
     float flow_scale;
     float washout_scale;
+    std::int64_t shim_count;
 };
 
 // Per-work-item view of the buffers that vary along the train axis.
@@ -480,6 +485,23 @@ inline DualFloat washout_out(const DualFloat rate, const DualFloat dt) {
 // depends on the speed, and |v| has no derivative at the origin.
 inline float speed_direction(const float velocity) {
     return static_cast<float>(velocity > 0.0F) - static_cast<float>(velocity < 0.0F);
+}
+
+// Where an event's pulse reads the transmit field. Templated rather than
+// branched so a sequence with one shim compiles to the bare atom index it
+// would have had, with neither the row load nor the multiply.
+template <bool SHIMMED>
+inline std::int64_t transmit_row(
+    const Buffers& buffers, const std::int64_t event, const std::int64_t atom
+) {
+    if constexpr (SHIMMED) {
+        return static_cast<std::int64_t>(buffers.shim_index[event])
+            * buffers.atom_count + atom;
+    } else {
+        (void)buffers;
+        (void)event;
+        return atom;
+    }
 }
 
 // Whether any atom carries diffusion. The lane kernels keep transcendentals
@@ -1753,6 +1775,7 @@ void simulate_lane_range(
     }
 }
 
+template <bool SHIMMED>
 void simulate_range(
     const Buffers& buffers,
     const std::int64_t work_begin,
@@ -1818,12 +1841,14 @@ void simulate_range(
                         value *= efficiency;
                     }
                 } else {
+                    const std::int64_t transmit =
+                        transmit_row<SHIMMED>(buffers, event, atom);
                     rotate(
                         fplus,
                         fminus,
                         longitudinal,
-                        view.flip[event] * buffers.b1[atom],
-                        view.phase[event] + buffers.b1_phase[atom]
+                        view.flip[event] * buffers.b1[transmit],
+                        view.phase[event] + buffers.b1_phase[transmit]
                     );
                 }
             } else if (buffers.kind[event] == 2 && (action & RECORD) != 0) {
@@ -3686,7 +3711,8 @@ inline Buffers packed_buffers(
     const std::int64_t atom_count,
     const std::int64_t train_count,
     const float flow_scale,
-    const float washout_scale
+    const float washout_scale,
+    const std::int64_t shim_count
 ) {
     Buffers buffers{};
     const float** tissue[TISSUE_COUNT] = {
@@ -3704,12 +3730,14 @@ inline Buffers packed_buffers(
     buffers.action = static_cast<const std::uint8_t*>(raw[TISSUE_COUNT + 4]);
     buffers.output_index =
         static_cast<const std::int32_t*>(raw[TISSUE_COUNT + 5]);
+    buffers.shim_index = static_cast<const std::int32_t*>(raw[TISSUE_COUNT + 6]);
     buffers.output_real = output_real;
     buffers.output_imag = output_imag;
     buffers.atom_count = atom_count;
     buffers.train_count = train_count;
     buffers.flow_scale = flow_scale;
     buffers.washout_scale = washout_scale;
+    buffers.shim_count = shim_count;
     return buffers;
 }
 
@@ -3918,9 +3946,10 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     int real_axis = -1;
     double flow_scale = 0.0;
     double washout_scale = 0.0;
+    long long shim_count = 1;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiidd",
+            "OLLLLLiiddL",
             &pointers,
             &atom_count,
             &train_count,
@@ -3930,7 +3959,8 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             &requested_threads,
             &real_axis,
             &flow_scale,
-            &washout_scale
+            &washout_scale,
+            &shim_count
         )) {
         return nullptr;
     }
@@ -3958,7 +3988,8 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(atom_count),
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
-        static_cast<float>(washout_scale)
+        static_cast<float>(washout_scale),
+        static_cast<std::int64_t>(shim_count)
     );
 
     // TORCHSIM_LANES=1 selects a lane-vectorized forward that walks the
@@ -3969,6 +4000,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     const char* const lane_override = std::getenv("TORCHSIM_LANES");
     const bool lanes_enabled = lane_override != nullptr && lane_override[0] == '1';
     const bool vectorize = lanes_enabled && train_count >= 4
+        && buffers.shim_count == 1
         && !any_diffusion(buffers.diffusion, buffers.atom_count)
         && !any_diffusion(buffers.velocity, buffers.atom_count);
     const std::int64_t lane_blocks =
@@ -3979,7 +4011,9 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     void (*kernel)(
         const Buffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = vectorize ? &simulate_lane_range : &simulate_range;
+    ) = vectorize ? &simulate_lane_range
+                  : (buffers.shim_count > 1 ? &simulate_range<true>
+                                            : &simulate_range<false>);
     // The caller establishes the real-subspace conditions; axis 1 puts the
     // signal on the imaginary axis, which is the representation below.
     if (real_axis == 1) {
@@ -4051,9 +4085,10 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     int real_axis = -1;
     double flow_scale = 0.0;
     double washout_scale = 0.0;
+    long long shim_count = 1;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiidd",
+            "OLLLLLiiddL",
             &pointers,
             &atom_count,
             &train_count,
@@ -4063,7 +4098,8 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
             &requested_threads,
             &real_axis,
             &flow_scale,
-            &washout_scale
+            &washout_scale,
+            &shim_count
         )) {
         return nullptr;
     }
@@ -4093,7 +4129,8 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(atom_count),
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
-        static_cast<float>(washout_scale)
+        static_cast<float>(washout_scale),
+        static_cast<std::int64_t>(shim_count)
     );
     const JvpBuffers buffers{
         primal,
@@ -4131,9 +4168,10 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     int requested_threads = 0;
     double flow_scale = 0.0;
     double washout_scale = 0.0;
+    long long shim_count = 1;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLidd",
+            "OLLLLLiddL",
             &pointers,
             &atom_count,
             &train_count,
@@ -4142,7 +4180,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             &output_count,
             &requested_threads,
             &flow_scale,
-            &washout_scale
+            &washout_scale,
+            &shim_count
         )) {
         return nullptr;
     }
@@ -4170,7 +4209,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(atom_count),
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
-        static_cast<float>(washout_scale)
+        static_cast<float>(washout_scale),
+        static_cast<std::int64_t>(shim_count)
     );
     VjpBuffers buffers{};
     buffers.primal = primal;
@@ -4366,9 +4406,10 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     int real_axis = -1;
     double flow_scale = 0.0;
     double washout_scale = 0.0;
+    long long shim_count = 1;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiidd",
+            "OLLLLLiiddL",
             &pointers,
             &atom_count,
             &train_count,
@@ -4378,7 +4419,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
             &requested_threads,
             &real_axis,
             &flow_scale,
-            &washout_scale
+            &washout_scale,
+            &shim_count
         )) {
         return nullptr;
     }
@@ -4404,7 +4446,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(atom_count),
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
-        static_cast<float>(washout_scale)
+        static_cast<float>(washout_scale),
+        static_cast<std::int64_t>(shim_count)
     );
     VjpJvpBuffers buffers{};
     buffers.primal = primal;
@@ -4545,7 +4588,8 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         // order-weighted terms have no geometry to act through. The Python side
         // refuses a tissue that asks for them.
         0.0F,
-        0.0F
+        0.0F,
+        1
     );
     const JvpBuffers forward{
         primal,

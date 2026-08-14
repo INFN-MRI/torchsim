@@ -94,11 +94,16 @@ EVENT_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("phase"),
     Parameter("action", differentiable=False),
     Parameter("output_index", differentiable=False),
+    # Which row of the transmit buffers this pulse drives. The shim itself is
+    # differentiable, but through the field it produces rather than through the
+    # row it is stored in, so the index carries no gradient.
+    Parameter("shim_index", differentiable=False),
 )
 
 PACKED_PARAMETERS: tuple[Parameter, ...] = (*TISSUE_PARAMETERS, *EVENT_PARAMETERS)
 
 TISSUE_COUNT = len(TISSUE_PARAMETERS)
+EVENT_COUNT = len(EVENT_PARAMETERS)
 PACKED_COUNT = len(PACKED_PARAMETERS)
 
 # Where the differentiable buffers sit among the packed ones. Gradient tuples

@@ -59,14 +59,7 @@ def _case(trains, device):
         device=torch.device(device),
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     # Off-resonance and transmit phase keep both kernels on their complex path.
     tissue = TissueProperties(
         t1_ms=torch.tensor([800.0, 1400.0]),
@@ -99,14 +92,7 @@ def _real_case(trains, device, atoms=2):
         device=torch.device(device),
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     tissue = TissueProperties(
         t1_ms=torch.linspace(600.0, 1400.0, atoms),
         t2_ms=torch.linspace(40.0, 120.0, atoms),
@@ -293,7 +279,7 @@ def _second_order(device, trains, atoms, seed_index=1, inversion=None):
         action = events[4].clone()
         pulses = ((events[1] == 1) & ((action & 4) == 0)).nonzero().flatten()
         action[pulses[inversion]] |= 4
-        events = (*events[:4], action.contiguous(), events[5])
+        events = (*events[:4], action.contiguous(), *events[5:])
     tissue_seed, event_seed = _seeds(events, prepared, tissue_index=seed_index)
     generator = torch.Generator().manual_seed(7)
     shape = (trains, atoms, count) if trains > 1 else (atoms, count)
@@ -447,6 +433,7 @@ def _spgr_case(device, trains, atoms):
         stack("phase"),
         packed[0].action,
         packed[0].output_index,
+        packed[0].shim_index,
     )
     tissue = TissueProperties(
         t1_ms=torch.linspace(600.0, 1400.0, atoms),

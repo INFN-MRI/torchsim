@@ -25,7 +25,7 @@ from .. import epg
 from ._accelerators import geometry_of, simulate_native
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
 from ._parameters import TISSUE_NAMES
-from ._transmit import transmit_field
+from ._transmit import shim_rows, transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
 
@@ -39,6 +39,11 @@ RecordMode = Literal["all", "acquired", "echo"]
 # also keeps the gradient finite, since clamped entries simply stop
 # contributing to the backward pass.
 MINIMUM_RELAXATION_TIME_MS = 1e-6
+
+# The two tissue buffers a shim gives a row of its own.
+_TRANSMIT = frozenset(
+    (TISSUE_NAMES.index("b1"), TISSUE_NAMES.index("b1_phase_rad"))
+)
 
 
 @dataclass(frozen=True)
@@ -162,8 +167,10 @@ class EpgSimulator:
         if record not in {"all", "acquired", "echo"}:
             raise ValueError("record must be 'all', 'acquired', or 'echo'")
 
-        tissue = _resolve_transmit(tissue, description, device)
-        prepared, output_shape, target_device = _prepare_tissue(tissue, device)
+        tissue, shims = _resolve_transmit(tissue, description, device)
+        prepared, output_shape, target_device = _prepare_tissue(
+            tissue, device, shims
+        )
         (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
             velocity,
@@ -430,14 +437,15 @@ def _resolve_transmit(
     tissue: TissueProperties,
     description: SequenceDescription,
     device: torch.device | str | None,
-) -> TissueProperties:
-    """Reduce a transmit array to the single field it puts in each voxel.
+) -> tuple[TissueProperties, int]:
+    """Reduce a transmit array to the field it puts in each voxel per shim.
 
     Leaves a single-channel sequence exactly as it was, so it reaches the
-    kernels through the same buffers and the same arithmetic.
+    kernels through the same buffers and the same arithmetic. Returns the
+    tissue alongside how many shim rows its transmit buffers hold.
     """
     if not description.shim_definitions:
-        return tissue
+        return tissue, 1
     resolved = torch.device(
         device
         if device is not None
@@ -453,12 +461,16 @@ def _resolve_transmit(
     magnitude, phase = transmit_field(
         description, tissue.b1, tissue.b1_phase_rad, resolved
     )
-    return replace(tissue, b1=magnitude, b1_phase_rad=phase)
+    return (
+        replace(tissue, b1=magnitude, b1_phase_rad=phase),
+        max(1, len(shim_rows(description))),
+    )
 
 
 def _prepare_tissue(
     tissue: TissueProperties,
     device: torch.device | str | None,
+    shims: int = 1,
 ) -> tuple[tuple[torch.Tensor, ...], torch.Size, torch.device]:
     values = tuple(getattr(tissue, name) for name in TISSUE_NAMES)
     if device is None:
@@ -467,13 +479,24 @@ def _prepare_tissue(
             torch.device("cpu"),
         )
     device = torch.device(device)
+    given = [_as_float_tensor(value, device) for value in values]
+    # The transmit buffers may lead with a shim axis, which is not a voxel axis
+    # and must stay out of the broadcast that decides how many voxels there are.
     tensors = torch.broadcast_tensors(
-        *(_as_float_tensor(value, device) for value in values)
+        *(
+            value[0] if shims > 1 and index in _TRANSMIT else value
+            for index, value in enumerate(given)
+        )
     )
     shape = tensors[0].shape
     # Broadcasting leaves a scalar property as a stride-0 view. The kernels index
     # raw pointers, so materialize before anyone hands one to them.
-    flat = [value.reshape(-1).contiguous() for value in tensors]
+    flat = [
+        given[index].expand(shims, *shape).reshape(-1).contiguous()
+        if shims > 1 and index in _TRANSMIT
+        else value.reshape(-1).contiguous()
+        for index, value in enumerate(tensors)
+    ]
     # t1_ms and t2_ms are the two entries used as denominators downstream.
     flat[0] = flat[0].clamp_min(MINIMUM_RELAXATION_TIME_MS)
     flat[1] = flat[1].clamp_min(MINIMUM_RELAXATION_TIME_MS)

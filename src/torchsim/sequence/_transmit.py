@@ -53,7 +53,7 @@ as a function of position.
 
 from __future__ import annotations
 
-__all__ = ["channel_count", "transmit_field"]
+__all__ = ["channel_count", "shim_rows", "transmit_field"]
 
 from typing import Any
 
@@ -83,71 +83,86 @@ def channel_count(description: SequenceDescription) -> int:
     return widths.pop()
 
 
+def shim_rows(description: SequenceDescription) -> dict[int, int]:
+    """Which row of the transmit buffers each shim the sequence drives holds.
+
+    Empty for a sequence that declares no shim, whose transmit buffers are the
+    single row every pulse reads.
+
+    Raises:
+        KeyError: if a pulse names a shim the description does not define.
+    """
+    if not description.shim_definitions:
+        return {}
+    referenced = sorted(
+        {
+            event.rf_shim_id
+            for event in description.events
+            if event.type is EventType.RF
+        }
+        or set(description.shim_definitions)
+    )
+    missing = [
+        identifier
+        for identifier in referenced
+        if identifier not in description.shim_definitions
+    ]
+    if missing:
+        raise KeyError(f"no shim definition with id {missing[0]}")
+    return {identifier: row for row, identifier in enumerate(referenced)}
+
+
 def transmit_field(
     description: SequenceDescription,
     b1: Any,
     b1_phase_rad: Any,
     device: torch.device,
 ) -> tuple[Any, Any]:
-    """The field the array produces, as a per-voxel magnitude and phase.
+    """The field the array produces, as a magnitude and phase per voxel.
 
     ``b1`` and ``b1_phase_rad`` describe one channel each along a leading axis
     when the sequence declares a multi-channel shim; a value with no such axis
     is taken to be the same sensitivity on every channel. A sequence with no
     shim passes them straight back.
 
-    Returns the pair the kernels take, differentiable in both arguments and in
-    the shim weights.
+    A sequence whose pulses drive several shims returns one field per shim
+    along a leading axis, ordered as :func:`shim_rows` says; one shim returns
+    the bare per-voxel pair, so it reaches the kernels through exactly the
+    buffers and the indexing a sequence without an array would have used.
+
+    Differentiable in both arguments and in the shim weights.
 
     Raises:
         ValueError: if the leading axis disagrees with the shim width.
-        NotImplementedError: if the RF events reference more than one shim.
+        KeyError: if a pulse names a shim the description does not define.
     """
     channels = channel_count(description)
     if channels == 1 and not description.shim_definitions:
         return b1, b1_phase_rad
 
-    shim = _single_shim(description)
-    weights = torch.polar(
-        _as_tensor(shim.magnitudes, device), _as_tensor(shim.phases_rad, device)
-    )
     sensitivity = torch.polar(
         *_aligned(
             _per_channel(b1, channels, device, "b1", 1.0),
             _per_channel(b1_phase_rad, channels, device, "b1_phase_rad", 0.0),
         )
     )
-    field = (sensitivity * weights.reshape(-1, *(1,) * (sensitivity.dim() - 1))).sum(
-        dim=0
-    )
+    rows = shim_rows(description)
+    fields = [
+        _drive(sensitivity, description.shim_definitions[identifier], device)
+        for identifier in sorted(rows, key=rows.__getitem__)
+    ]
+    field = fields[0] if len(fields) == 1 else torch.stack(fields)
     return field.abs(), field.angle()
 
 
-def _single_shim(description: SequenceDescription) -> Any:
-    """The one shim every RF event in the sequence drives.
-
-    Raises:
-        NotImplementedError: if the events reference more than one, which needs
-            a shim axis on the transmit buffers rather than one field.
-        KeyError: if an event names a shim the description does not define.
-    """
-    referenced = {
-        event.rf_shim_id
-        for event in description.events
-        if event.type is EventType.RF
-    }
-    if not referenced:
-        referenced = set(description.shim_definitions)
-    if len(referenced) > 1:
-        raise NotImplementedError(
-            "the transmit array is resolved into one field per voxel, so every "
-            f"pulse must drive the same shim; this sequence drives "
-            f"{sorted(referenced)}"
-        )
-    identifier = referenced.pop()
-    if identifier not in description.shim_definitions:
-        raise KeyError(f"no shim definition with id {identifier}")
-    return description.shim_definitions[identifier]
+def _drive(sensitivity: torch.Tensor, shim: Any, device: torch.device) -> torch.Tensor:
+    """The field one shim setting puts in each voxel."""
+    weights = torch.polar(
+        _as_tensor(shim.magnitudes, device), _as_tensor(shim.phases_rad, device)
+    )
+    return (
+        sensitivity * weights.reshape(-1, *(1,) * (sensitivity.dim() - 1))
+    ).sum(dim=0)
 
 
 def _as_tensor(values: Any, device: torch.device) -> torch.Tensor:

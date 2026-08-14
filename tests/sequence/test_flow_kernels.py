@@ -77,14 +77,7 @@ def _packed(velocity: float = VELOCITY):
         device=resolved,
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     return prepared, events, packed.output_count
 
 
@@ -186,14 +179,7 @@ def test_flow_takes_the_states_out_of_the_real_subspace() -> None:
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     still = TissueProperties(
         t1_ms=torch.tensor([800.0, 1200.0]), t2_ms=torch.tensor([50.0, 90.0])
     )
@@ -242,6 +228,7 @@ def test_the_adjoint_matches_the_reference() -> None:
         events[3].detach().clone().requires_grad_(True),
         events[4],
         events[5],
+        events[6],
     )
     reference = simulate_packed(
         leaves,

@@ -6,7 +6,7 @@ __all__: list[str] = []
 
 import torch
 
-from ._accelerators import _train_count
+from ._accelerators import _shim_count, _train_count
 import triton
 import triton.language as tl
 
@@ -344,6 +344,7 @@ def _epg_vjp_jvp_kernel(
     phase,
     action,
     output_index,
+    shim_index,
     dot_t1,
     dot_t2,
     dot_m0,
@@ -383,6 +384,7 @@ def _epg_vjp_jvp_kernel(
     flow_scale,
     washout_scale,
     state_count: tl.constexpr,
+    shims: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -556,6 +558,18 @@ def _epg_vjp_jvp_kernel(
         event_dot_phase = tl.load(
             dot_phase + event_base + event, mask=active_atom, other=0.0
         )
+        # One shim is the whole sequence's transmit field, loaded once above;
+        # several give each pulse a row of its own.
+        if shims > 1:
+            row = tl.load(shim_index + event).to(tl.int64) * atom_count
+            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1_phase = tl.load(
+                b1_phase + row + atom, mask=active_atom, other=0.0
+            )
+            d_b1 = tl.load(dot_b1 + row + atom, mask=active_atom, other=0.0)
+            d_b1_phase = tl.load(
+                dot_b1_phase + row + atom, mask=active_atom, other=0.0
+            )
         alpha_value = event_flip * atom_b1
         alpha_tangent = event_dot_flip * atom_b1 + event_flip * d_b1
         phi_value = event_phase + atom_b1_phase
@@ -846,6 +860,18 @@ def _epg_vjp_jvp_kernel(
         zbtr = tl.where(invert, itr, zbtr)
         zbti = tl.where(invert, iti, zbti)
 
+        # One shim is the whole sequence's transmit field, loaded once above;
+        # several give each pulse a row of its own.
+        if shims > 1:
+            row = tl.load(shim_index + event).to(tl.int64) * atom_count
+            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1_phase = tl.load(
+                b1_phase + row + atom, mask=active_atom, other=0.0
+            )
+            d_b1 = tl.load(dot_b1 + row + atom, mask=active_atom, other=0.0)
+            d_b1_phase = tl.load(
+                dot_b1_phase + row + atom, mask=active_atom, other=0.0
+            )
         alpha_value = event_flip * atom_b1
         alpha_tangent = event_dot_flip * atom_b1 + event_flip * d_b1
         phi_value = event_phase + atom_b1_phase
@@ -2114,6 +2140,7 @@ def _epg_kernel(
     phase,
     action,
     output_index,
+    shim_index,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -2127,6 +2154,7 @@ def _epg_kernel(
     flow_scale,
     washout_scale,
     state_count: tl.constexpr,
+    shims: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -2229,6 +2257,14 @@ def _epg_kernel(
             invert, -atom_inversion * longitudinal_imag, longitudinal_imag
         )
 
+        # One shim is the whole sequence's transmit field, loaded once above;
+        # several give each pulse a row of its own.
+        if shims > 1:
+            row = tl.load(shim_index + event).to(tl.int64) * atom_count
+            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1_phase = tl.load(
+                b1_phase + row + atom, mask=active_atom, other=0.0
+            )
         alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0) * atom_b1
         phi = tl.load(phase + event_base + event, mask=active_atom, other=0.0) + atom_b1_phase
         cosine = tl.cos(alpha)
@@ -2330,6 +2366,7 @@ def _epg_jvp_kernel(
     phase,
     action,
     output_index,
+    shim_index,
     tangent_t1,
     tangent_t2,
     tangent_m0,
@@ -2355,6 +2392,7 @@ def _epg_jvp_kernel(
     flow_scale,
     washout_scale,
     state_count: tl.constexpr,
+    shims: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -2578,6 +2616,18 @@ def _epg_jvp_kernel(
 
         event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
         event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        # One shim is the whole sequence's transmit field, loaded once above;
+        # several give each pulse a row of its own.
+        if shims > 1:
+            row = tl.load(shim_index + event).to(tl.int64) * atom_count
+            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1_phase = tl.load(
+                b1_phase + row + atom, mask=active_atom, other=0.0
+            )
+            db1 = tl.load(tangent_b1 + row + atom, mask=active_atom, other=0.0)
+            db1_phase = tl.load(
+                tangent_b1_phase + row + atom, mask=active_atom, other=0.0
+            )
         alpha = event_flip * atom_b1
         dalpha = tl.load(tangent_flip + event_base + event, mask=active_atom, other=0.0) * atom_b1 + event_flip * db1
         phi = event_phase + atom_b1_phase
@@ -2834,8 +2884,9 @@ def simulate_into(
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
     ) = tissue
-    duration, kind, flip, phase, action, output_index = events
+    duration, kind, flip, phase, action, output_index, shim_index = events
     train_count = _train_count(events)
+    shims = _shim_count(tissue)
     block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
     problems = _problems_per_program(total, block_states)
@@ -2887,6 +2938,7 @@ def simulate_into(
         phase,
         action,
         output_index,
+        shim_index,
         output_real,
         output_imag,
         *scratch,
@@ -2897,6 +2949,7 @@ def simulate_into(
         geometry.flow_scale,
         geometry.washout_scale,
         state_count=state_count,
+        shims=shims,
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -2967,9 +3020,10 @@ def simulate_jvp_into(
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
     ) = tissue
-    duration, kind, flip, phase, action, output_index = events
+    duration, kind, flip, phase, action, output_index, shim_index = events
     tangent_duration, tangent_flip, tangent_phase = event_tangents
     train_count = _train_count(events)
+    shims = _shim_count(tissue)
     block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
     problems = _problems_per_program(total, block_states)
@@ -3022,6 +3076,7 @@ def simulate_jvp_into(
         phase,
         action,
         output_index,
+        shim_index,
         *tissue_tangents,
         tangent_duration,
         tangent_flip,
@@ -3036,6 +3091,7 @@ def simulate_jvp_into(
         geometry.flow_scale,
         geometry.washout_scale,
         state_count=state_count,
+        shims=shims,
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -3076,7 +3132,7 @@ class AdjointBuffers:
         output_count: int,
         real_axis: int | None = None,
     ) -> None:
-        duration, kind, flip, phase, _action, _output_index = events
+        duration, kind, flip, phase, _action, _output_index, _shim = events
         device = kind.device
         train_count = _train_count(events)
         event_count = kind.numel()
@@ -3167,7 +3223,7 @@ def simulate_vjp_jvp_into(
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
     ) = tissue
-    duration, kind, flip, phase, action, output_index = events
+    duration, kind, flip, phase, action, output_index, shim_index = events
     train_count = _train_count(events)
     event_count = kind.numel()
     total = train_count * atom_count
@@ -3254,6 +3310,7 @@ def simulate_vjp_jvp_into(
                 output_count,
                 geometry.flow_scale,
                 geometry.washout_scale,
+                shims=_shim_count(tissue),
                 **shape,
             )
 

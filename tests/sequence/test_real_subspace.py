@@ -52,14 +52,7 @@ def _axis(phases, excitation, b0_hz=0.0, b1_phase_rad=0.0):
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
-    events = (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    events = packed.buffers
     prepared, _, _ = _prepare_tissue(_tissue(b0_hz, b1_phase_rad), "cpu")
     signal = FSE().simulate(description, _tissue(b0_hz, b1_phase_rad)).signal
     return real_subspace_axis(events, prepared), signal
@@ -110,14 +103,7 @@ def test_quarter_turn_excitation_is_rejected_despite_a_real_signal():
 
 
 def _buffers(packed):
-    return (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    return packed.buffers
 
 
 @pytest.mark.parametrize("phase", [0.0, torch.pi / 4, torch.pi / 2])

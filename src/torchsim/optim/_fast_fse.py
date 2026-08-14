@@ -28,6 +28,7 @@ from ..sequence._accelerators import (
     real_subspace_axis,
 )
 from ..sequence._builders import fse_description
+from ..sequence._parameters import EVENT_COUNT as _EVENT_COUNT
 from ..sequence._parameters import TISSUE_COUNT as _TISSUE_COUNT
 from ..sequence._parameters import TISSUE_NAMES as _TISSUE_NAMES
 from ..sequence._simulation import TissueProperties, _prepare_tissue
@@ -42,7 +43,6 @@ _DURATION, _FLIP, _PHASE = (
     _TISSUE_COUNT + 2,
 )
 # This function's own inputs: the packed events, then the tissue properties.
-_EVENT_COUNT = 6
 _TISSUE_END = _EVENT_COUNT + _TISSUE_COUNT
 # Those same inputs, for the three directions a real kernel cannot follow:
 # the RF phase among the events, transmit phase and off-resonance among the
@@ -117,6 +117,7 @@ class FseT2Plan:
         self.kind = packed.kind
         self.action = packed.action
         self.output_index = packed.output_index
+        self.shim_index = packed.shim_index
         self._duration = packed.duration
         self._flip_template = packed.flip
         self._phase_template = packed.phase
@@ -171,7 +172,15 @@ class FseT2Plan:
         flip = torch.cat((head_flip, refocus_flip), dim=1).contiguous()
         phase = torch.cat((head_phase, phase_pairs), dim=1).contiguous()
         duration = self._duration.expand(trains, -1).contiguous()
-        return (duration, self.kind, flip, phase, self.action, self.output_index)
+        return (
+            duration,
+            self.kind,
+            flip,
+            phase,
+            self.action,
+            self.output_index,
+            self.shim_index,
+        )
 
     def t2_jacobian(
         self,
@@ -306,7 +315,7 @@ class _T2Jacobian(torch.autograd.Function):
             for gradient, needed in zip(gradients, ctx.needs_input_grad, strict=False)
         ]
         # tissue/event tangents, state_count, output_count, threads, real_axis
-        return (*result, None, None, None, None, None, None)
+        return (*result, None, None, None, None, None, None, None)
 
 
 class FseT2Optimizer:

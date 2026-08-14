@@ -57,7 +57,9 @@ def test_plan_buffers_match_the_generic_packer(trains, echoes):
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
-    duration, kind, flip, phase, action, output_index = _plan(echoes).buffers(flip_rad)
+    duration, kind, flip, phase, action, output_index, shim = _plan(echoes).buffers(
+        flip_rad
+    )
 
     assert torch.equal(duration, generic.duration.expand(trains, -1))
     assert torch.equal(flip, generic.flip)

@@ -21,7 +21,14 @@ import torch
 
 from torchsim import FSE, TissueProperties, fse_description
 from torchsim.sequence._description import EventType, SequenceEvent, ShimDefinition
-from torchsim.sequence._transmit import channel_count, transmit_field
+from torchsim.sequence._accelerators import _pack_events, _run_packed
+from torchsim.sequence._simulation import _prepare_tissue, _resolve_transmit
+from torchsim.sequence._transmit import (
+    channel_count,
+    shim_rows,
+    transmit_field,
+)
+from utils.packed_reference import simulate_packed
 
 ECHOES = 4
 CHANNELS = 8
@@ -53,6 +60,22 @@ def _description(shim: ShimDefinition | None = None, shim_ids: tuple[int, ...] =
         events = tuple(events)
     return replace(
         description, events=events, shim_definitions={shim.id: shim}
+    )
+
+
+def _two_shim_description():
+    """Excitation on one shim, every refocusing pulse on another."""
+    quadrature = ShimDefinition(
+        0, (1.0 / CHANNELS,) * CHANNELS, (0.0,) * CHANNELS
+    )
+    shaped = ShimDefinition(
+        1,
+        tuple(0.05 * (index + 1) for index in range(CHANNELS)),
+        tuple(0.3 * index for index in range(CHANNELS)),
+    )
+    description = _description(quadrature, shim_ids=(0, 1, 1, 1, 1, 1, 1))
+    return replace(
+        description, shim_definitions={0: quadrature, 1: shaped}
     )
 
 
@@ -161,12 +184,127 @@ def test_shims_of_different_widths_are_refused() -> None:
         channel_count(description)
 
 
-def test_pulses_driving_different_shims_are_refused() -> None:
-    """One field per voxel cannot describe a shim that changes mid-sequence."""
+def test_pulses_driving_different_shims_get_a_row_each() -> None:
+    """Excitation on one shim and refocusing on another is two fields."""
+    voxels = 3
+    b1, b1_phase = _sensitivity(voxels)
+    description = _two_shim_description()
+    magnitude, phase = transmit_field(
+        description, b1, b1_phase, torch.device("cpu")
+    )
+
+    assert magnitude.shape == (2, voxels)
+    assert phase.shape == (2, voxels)
+    assert not torch.allclose(magnitude[0], magnitude[1])
+
+
+def test_the_shim_rows_follow_the_ids_the_pulses_name() -> None:
+    description = _two_shim_description()
+    assert shim_rows(description) == {0: 0, 1: 1}
+    assert shim_rows(_description(_uniform_shim())) == {0: 0}
+    assert shim_rows(_description()) == {}
+
+
+def test_a_pulse_naming_an_undefined_shim_is_refused() -> None:
+    description = _description(_uniform_shim(), shim_ids=(0, 7, 0, 7, 0))
+    with pytest.raises(KeyError, match="no shim definition with id 7"):
+        shim_rows(description)
+
+
+def _two_shim_packed(voxels: int = 3, device: str = "cpu"):
+    """Prepared tissue and packed events for the two-shim train."""
+    b1, b1_phase = _sensitivity(voxels)
+    description = _two_shim_description()
+    tissue, shims = _resolve_transmit(
+        _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), description, device
+    )
+    prepared, _, resolved = _prepare_tissue(tissue, device, shims)
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=resolved,
+        rf_raster_time_s=1e-6,
+        shim_rows=shim_rows(description),
+    )
+    return prepared, packed.buffers, packed.output_count
+
+
+def test_each_pulse_reads_the_shim_it_names() -> None:
+    """Against the oracle, which indexes the rows independently."""
+    tissue, events, output_count = _two_shim_packed()
+    assert tissue[3].numel() == 2 * tissue[0].numel()
+    expected = simulate_packed(
+        tissue, events, state_count=8, output_count=output_count
+    )
+    actual = _run_packed(tissue, events, state_count=8, output_count=output_count,
+                         threads=1)
+    assert (expected - actual).abs().max() / expected.abs().max() < 1e-5
+
+
+def test_the_shim_a_pulse_names_is_the_one_that_reaches_it() -> None:
+    """Changing a row no pulse reads leaves the signal alone, bit for bit."""
+    tissue, events, output_count = _two_shim_packed()
+    atoms = tissue[0].numel()
+    arguments = dict(state_count=8, output_count=output_count, threads=1)
+    reference = _run_packed(tissue, events, **arguments)
+
+    # Every pulse here names shim 0 or shim 1, so a third row is dead weight.
+    padded = list(tissue)
+    for index in (3, 4):
+        padded[index] = torch.cat(
+            (tissue[index], torch.full((atoms,), 7.0))
+        ).contiguous()
+    assert torch.equal(_run_packed(tuple(padded), events, **arguments), reference)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_the_cuda_forward_agrees_with_the_cpu_one_across_shims() -> None:
+    tissue, events, output_count = _two_shim_packed()
+    device = torch.device("cuda")
+    arguments = dict(state_count=8, output_count=output_count, threads=1)
+    expected = _run_packed(tissue, events, **arguments)
+    actual = _run_packed(
+        tuple(value.to(device) for value in tissue),
+        tuple(value.to(device) for value in events),
+        **arguments,
+    )
+    assert (expected - actual.cpu()).abs().max() / expected.abs().max() < 1e-5
+
+
+def test_two_identical_shims_are_the_same_as_one() -> None:
+    """The row a pulse reads is the only thing the second shim changes."""
+    voxels = 3
+    b1, b1_phase = _sensitivity(voxels)
     shim = _uniform_shim()
-    description = _description(shim, shim_ids=(0, 1, 0, 1, 0))
-    with pytest.raises(NotImplementedError, match="same shim"):
-        transmit_field(description, 1.0, 0.0, torch.device("cpu"))
+    doubled = replace(
+        _description(shim, shim_ids=(0, 1, 0, 1, 0)),
+        shim_definitions={
+            0: shim,
+            1: ShimDefinition(1, shim.magnitudes, shim.phases_rad),
+        },
+    )
+    tissue = _tissue(voxels, b1=b1, b1_phase_rad=b1_phase)
+
+    assert torch.equal(
+        FSE().simulate(doubled, tissue, nstates=8).signal,
+        FSE().simulate(_description(shim), tissue, nstates=8).signal,
+    )
+
+
+def test_a_derivative_through_several_shims_is_refused() -> None:
+    """Each shim needs a gradient row of its own, which the adjoints lack."""
+    voxels = 3
+    b1, b1_phase = _sensitivity(voxels)
+    leaf = b1.clone().requires_grad_(True)
+    signal = FSE().simulate(
+        _two_shim_description(),
+        _tissue(voxels, b1=leaf, b1_phase_rad=b1_phase),
+        nstates=8,
+    ).signal
+    with pytest.raises(NotImplementedError, match="drives 2 shims"):
+        signal.abs().square().sum().backward()
 
 
 def test_a_uniform_array_reproduces_the_single_channel_signal() -> None:

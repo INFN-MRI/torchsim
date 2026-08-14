@@ -43,14 +43,7 @@ def _pack(flip: torch.Tensor):
 
 
 def _buffers(packed):
-    return (
-        packed.duration,
-        packed.kind,
-        packed.flip,
-        packed.phase,
-        packed.action,
-        packed.output_index,
-    )
+    return packed.buffers
 
 
 def test_packing_matches_stacked_single_trains():
@@ -170,8 +163,10 @@ def test_mismatched_train_widths_are_rejected():
     """A width mismatch would stride out of bounds inside the kernel."""
     flip = _schedules(3, 12)
     prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
-    duration, kind, flips, phase, action, output_index = _buffers(_pack(flip))
-    broken = (duration[0], kind, flips, phase, action, output_index)
+    duration, kind, flips, phase, action, output_index, shim = _buffers(
+        _pack(flip)
+    )
+    broken = (duration[0], kind, flips, phase, action, output_index, shim)
     with pytest.raises(ValueError, match="disagree on train count"):
         _run_packed(prepared, broken, 10, int(output_index.max()) + 1, 1)
 

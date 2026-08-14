@@ -61,9 +61,13 @@ def simulate_packed(
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, velocity,
     ) = tissue
+    # ``b1`` and ``b1_phase`` hold one row per shim the sequence drives, so a
+    # pulse reads the field of the shim its event names.
+    transmit = b1.reshape(-1, t1.numel())
+    transmit_phase = b1_phase.reshape(-1, t1.numel())
     flow = velocity * geometry.flow_scale
     washout = velocity.abs() * geometry.washout_scale
-    duration, kind, flip, phase, action, _output_index = events
+    duration, kind, flip, phase, action, _output_index, shim_index = events
     atom_count = t1.numel()
     shape = (atom_count, state_count)
     # The dephasing order each state sits at, and the b-factor weights that
@@ -118,8 +122,9 @@ def simulate_packed(
             if event_action & _INVERSION:
                 longitudinal = -inversion_efficiency[:, None] * longitudinal
             else:
-                alpha = flip[event] * b1
-                phi = phase[event] + b1_phase
+                row = int(shim_index[event])
+                alpha = flip[event] * transmit[row]
+                phi = phase[event] + transmit_phase[row]
                 fplus, fminus, longitudinal = _rotate(
                     fplus, fminus, longitudinal, alpha, phi
                 )
