@@ -901,6 +901,7 @@ def _auto_real_axis_adjoint(
     state_count: int,
     tangents: tuple[torch.Tensor, ...],
     wanted: tuple[bool, ...] | None,
+    profile: Any = None,
 ) -> int | None:
     """The subspace verdict for an adjoint, given what the caller will read.
 
@@ -917,6 +918,7 @@ def _auto_real_axis_adjoint(
         tissue,
         state_count,
         tuple(tangents[index] for index in _OUTSIDE_THE_SUBSPACE),
+        profile=profile,
     )
 
 
@@ -2088,6 +2090,7 @@ def _run_packed_vjp_jvp(
     wanted: tuple[bool, ...] | None = None,
     *,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
@@ -2102,7 +2105,15 @@ def _run_packed_vjp_jvp(
     """
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
-            events, tissue, state_count, tangents, wanted
+            events, tissue, state_count, tangents, wanted, profile
+        )
+    if profile is not None:
+        _unprofiled(profile, "streaming a volume through a device", _OFFLOAD)
+        _within_the_table(profile, events[2])
+        _unprofiled(
+            profile,
+            "a second-order pass on the card",
+            None if tissue[0].device.type == "cpu" else tissue[0].device.type,
         )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded_vjp_jvp(
@@ -2200,8 +2211,9 @@ def _run_packed_vjp_jvp(
         *value_grads,
         *tangent_grads,
     )
+    table = None if profile is None else profile.packed()
     _epg_cpu.simulate_vjp_jvp(
-        _pointers(pointers),
+        _profiled_pointers(pointers, table),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2212,6 +2224,9 @@ def _run_packed_vjp_jvp(
         geometry.flow_scale,
         geometry.washout_scale,
         _shim_count(tissue),
+        1 if profile is None else profile.points,
+        0 if profile is None else profile.bins,
+        1.0 if profile is None else profile.step,
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
     return tangent_grads, value_grads

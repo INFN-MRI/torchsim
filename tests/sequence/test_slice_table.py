@@ -358,6 +358,105 @@ def test_an_unprofiled_adjoint_is_untouched() -> None:
         assert torch.equal(left, right)
 
 
+def test_the_second_order_pass_follows_the_table() -> None:
+    """Forward-over-reverse, which needs the Hermite's own curvature."""
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+
+    locations, voxels = 3, 2
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(voxels * locations)
+    generator = torch.Generator().manual_seed(6)
+    seed = torch.complex(
+        torch.randn(voxels * locations, outputs, generator=generator),
+        torch.randn(voxels * locations, outputs, generator=generator),
+    )
+    primals = (*tissue, events[0], events[2], events[3])
+    directions = tuple(
+        0.05 * torch.randn(value.shape, generator=generator) for value in primals
+    )
+
+    leaves = tuple(value.clone().requires_grad_(True) for value in primals)
+    signal = simulate_packed(
+        leaves[:9],
+        (leaves[9], events[1], leaves[10], leaves[11], *events[4:]),
+        state_count=STATES,
+        output_count=outputs,
+        profile=table,
+        locations=locations,
+    )
+    first = torch.autograd.grad(
+        (signal.real * seed.real + signal.imag * seed.imag).sum(),
+        leaves,
+        create_graph=True,
+        materialize_grads=True,
+    )
+    second = torch.autograd.grad(
+        sum((grad * step).sum() for grad, step in zip(first, directions)),
+        leaves,
+        materialize_grads=True,
+    )
+    curvature, adjoint = _run_packed_vjp_jvp(
+        tissue, events, directions, seed, STATES, outputs, 1, profile=table
+    )
+
+    names = (
+        "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
+        "velocity", "duration", "flip", "phase",
+    )
+    _compare(tuple(value.detach() for value in first), adjoint, names)
+    _compare(second, curvature, tuple(f"d{name}" for name in names), 1e-3)
+
+
+def test_an_unprofiled_second_order_pass_is_untouched() -> None:
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+
+    tissue, events, outputs = _packed(6)
+    generator = torch.Generator().manual_seed(7)
+    seed = torch.complex(
+        torch.randn(6, outputs, generator=generator),
+        torch.randn(6, outputs, generator=generator),
+    )
+    directions = tuple(
+        0.1 * torch.randn(value.shape, generator=generator)
+        for value in (*tissue, events[0], events[2], events[3])
+    )
+    arguments = (tissue, events, directions, seed, STATES, outputs, 1)
+    plain = _run_packed_vjp_jvp(*arguments)
+    again = _run_packed_vjp_jvp(*arguments, profile=None)
+
+    for left, right in zip(plain, again):
+        for first, second in zip(left, right):
+            assert torch.equal(first, second)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_a_second_order_pass_through_a_table_is_refused_on_the_card() -> None:
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(4)
+    card = torch.device("cuda")
+    moved = tuple(value.to(card) for value in tissue)
+    moved_events = tuple(value.to(card) for value in events)
+    directions = tuple(
+        torch.zeros_like(value)
+        for value in (*moved, moved_events[0], moved_events[2], moved_events[3])
+    )
+    seed = torch.zeros(4, outputs, dtype=torch.complex64, device=card)
+
+    with pytest.raises(NotImplementedError, match="second-order pass on the card"):
+        _run_packed_vjp_jvp(
+            moved, moved_events, directions, seed, STATES, outputs, 1,
+            profile=table,
+        )
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_an_adjoint_through_a_table_is_refused_on_the_card() -> None:
     """The card's adjoint runs the forward-over-reverse kernel, which has none."""

@@ -3002,6 +3002,142 @@ inline void rotate_adjoint_dual(
     grad_phi = grad_phi + phi_sum;
 }
 
+// The table read carrying a tangent in the flip angle. The pair's tangent is
+// the stored slope times it, and the slope's own tangent is the Hermite
+// segment's second derivative -- which its four coefficients give exactly,
+// since the segment is a cubic.
+inline void profile_pair_slope_dual(
+    const Buffers& buffers,
+    const std::int64_t location,
+    const DualFloat theta,
+    DualComplex& a,
+    DualComplex& b,
+    DualComplex& slope_a,
+    DualComplex& slope_b
+) {
+    const float last = static_cast<float>(buffers.profile_bins - 1);
+    const float step = buffers.profile_step;
+    const float scaled = std::min(std::max(theta.value / step, 0.0F), last);
+    const float lower = std::min(std::floor(scaled), last - 1.0F);
+    const float u = scaled - lower;
+    const float* const near = buffers.profile
+        + (location * buffers.profile_bins + static_cast<std::int64_t>(lower))
+            * PROFILE_STRIDE;
+    const float* const far = near + PROFILE_STRIDE;
+
+    const float u2 = u * u;
+    const float u3 = u2 * u;
+    const float h00 = 2.0F * u3 - 3.0F * u2 + 1.0F;
+    const float h10 = (u3 - 2.0F * u2 + u) * step;
+    const float h01 = -2.0F * u3 + 3.0F * u2;
+    const float h11 = (u3 - u2) * step;
+    const float g00 = (6.0F * u2 - 6.0F * u) / step;
+    const float g10 = 3.0F * u2 - 4.0F * u + 1.0F;
+    const float g01 = (-6.0F * u2 + 6.0F * u) / step;
+    const float g11 = 3.0F * u2 - 2.0F * u;
+    const float c00 = (12.0F * u - 6.0F) / (step * step);
+    const float c10 = (6.0F * u - 4.0F) / step;
+    const float c01 = (6.0F - 12.0F * u) / (step * step);
+    const float c11 = (6.0F * u - 2.0F) / step;
+
+    float value[4];
+    float slope[4];
+    float curve[4];
+    for (std::size_t part = 0; part < 4; ++part) {
+        value[part] = h00 * near[part] + h10 * near[part + 4]
+            + h01 * far[part] + h11 * far[part + 4];
+        slope[part] = g00 * near[part] + g10 * near[part + 4]
+            + g01 * far[part] + g11 * far[part + 4];
+        curve[part] = c00 * near[part] + c10 * near[part + 4]
+            + c01 * far[part] + c11 * far[part + 4];
+    }
+    a = DualComplex{
+        Complex(value[0], value[1]), theta.tangent * Complex(slope[0], slope[1])
+    };
+    b = DualComplex{
+        Complex(value[2], value[3]), theta.tangent * Complex(slope[2], slope[3])
+    };
+    slope_a = DualComplex{
+        Complex(slope[0], slope[1]), theta.tangent * Complex(curve[0], curve[1])
+    };
+    slope_b = DualComplex{
+        Complex(slope[2], slope[3]), theta.tangent * Complex(curve[2], curve[3])
+    };
+}
+
+// The spinor rotation's adjoint on dual numbers: the same closed form as
+// `rotate_adjoint_spinor`, differentiated once more by the arithmetic itself.
+inline void rotate_adjoint_spinor_dual(
+    const DualState& fplus_in,
+    const DualState& fminus_in,
+    const DualState& longitudinal_in,
+    DualState& fplus_bar,
+    DualState& fminus_bar,
+    DualState& longitudinal_bar,
+    const DualComplex a,
+    const DualComplex b,
+    DualComplex& grad_a,
+    DualComplex& grad_b
+) {
+    const DualComplex conj_a = conjugate(a);
+    const DualComplex conj_b = conjugate(b);
+    const DualComplex two{Complex(2.0F, 0.0F), Complex{}};
+    const DualComplex minus_two{Complex(-2.0F, 0.0F), Complex{}};
+    const DualComplex minus_one{Complex(-1.0F, 0.0F), Complex{}};
+
+    const DualComplex t00 = conj_a * conj_a;
+    const DualComplex t01 = minus_one * (conj_b * conj_b);
+    const DualComplex t02 = minus_two * conjugate(a * b);
+    const DualComplex t10 = minus_one * (b * b);
+    const DualComplex t11 = a * a;
+    const DualComplex t12 = minus_two * (a * b);
+    const DualComplex t20 = conj_a * b;
+    const DualComplex t21 = a * conj_b;
+    const DualComplex t22 = (a * conj_a) - (b * conj_b);
+
+    DualComplex m[3][3]{};
+    for (std::size_t state = 0; state < fplus_bar.size(); ++state) {
+        const DualComplex a0 = fplus_bar[state];
+        const DualComplex a1 = fminus_bar[state];
+        const DualComplex a2 = longitudinal_bar[state];
+        const DualComplex x0 = fplus_in[state];
+        const DualComplex x1 = fminus_in[state];
+        const DualComplex x2 = longitudinal_in[state];
+
+        const DualComplex s0 = conjugate(a0);
+        const DualComplex s1 = conjugate(a1);
+        const DualComplex s2 = conjugate(a2);
+        m[0][0] = m[0][0] + s0 * x0;
+        m[0][1] = m[0][1] + s0 * x1;
+        m[0][2] = m[0][2] + s0 * x2;
+        m[1][0] = m[1][0] + s1 * x0;
+        m[1][1] = m[1][1] + s1 * x1;
+        m[1][2] = m[1][2] + s1 * x2;
+        m[2][0] = m[2][0] + s2 * x0;
+        m[2][1] = m[2][1] + s2 * x1;
+        m[2][2] = m[2][2] + s2 * x2;
+
+        fplus_bar[state] =
+            conjugate(t00) * a0 + conjugate(t10) * a1 + conjugate(t20) * a2;
+        fminus_bar[state] =
+            conjugate(t01) * a0 + conjugate(t11) * a1 + conjugate(t21) * a2;
+        longitudinal_bar[state] =
+            conjugate(t02) * a0 + conjugate(t12) * a1 + conjugate(t22) * a2;
+    }
+
+    const DualComplex holding_conj_a = two * (a * m[1][1])
+        + minus_two * (b * m[1][2]) + conj_b * m[2][1] + conj_a * m[2][2];
+    const DualComplex holding_a = two * (conj_a * m[0][0])
+        + minus_two * (conj_b * m[0][2]) + b * m[2][0] + a * m[2][2];
+    const DualComplex holding_conj_b = minus_two * (b * m[1][0])
+        + minus_two * (a * m[1][2]) + conj_a * m[2][0]
+        + minus_one * (conj_b * m[2][2]);
+    const DualComplex holding_b = minus_two * (conj_b * m[0][1])
+        + minus_two * (conj_a * m[0][2]) + a * m[2][1] + minus_one * (b * m[2][2]);
+    grad_a = grad_a + conjugate(holding_conj_a) + holding_a;
+    grad_b = grad_b + conjugate(holding_conj_b) + holding_b;
+}
+
 inline DualFloat dual_inverse_square(const DualFloat a) {
     const float inverse = 1.0F / (a.value * a.value);
     return {inverse, -2.0F * a.tangent * inverse / a.value};
@@ -3765,7 +3901,7 @@ inline DualFloat shim_dual(
     }
 }
 
-template <bool SHIMMED>
+template <bool SHIMMED, bool PROFILED>
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
@@ -3808,6 +3944,7 @@ void simulate_vjp_jvp_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(primal, work, event_count, output_count);
         const std::int64_t atom = view.atom;
+        const std::int64_t location = slice_row<PROFILED>(primal, atom);
         const float* const dot_duration = buffers.dot_duration + view.event_base;
         const float* const dot_flip = buffers.dot_flip + view.event_base;
         const float* const dot_phase = buffers.dot_phase + view.event_base;
@@ -3909,7 +4046,25 @@ void simulate_vjp_jvp_range(
                             primal.b1_phase, buffers.dot_b1_phase, transmit,
                             b1_phase
                         );
-                    rotate_dual(fplus, fminus, longitudinal, alpha, phi);
+                    if constexpr (PROFILED) {
+                        DualComplex pair_a{};
+                        DualComplex pair_b{};
+                        DualComplex slope_a{};
+                        DualComplex slope_b{};
+                        profile_pair_slope_dual(
+                            primal, location, alpha, pair_a, pair_b, slope_a,
+                            slope_b
+                        );
+                        rotate_spinor(
+                            fplus,
+                            fminus,
+                            longitudinal,
+                            pair_a,
+                            pair_b * dual_polar(DualFloat{0.0F, 0.0F} - phi)
+                        );
+                    } else {
+                        rotate_dual(fplus, fminus, longitudinal, alpha, phi);
+                    }
                 }
             }
             if ((action & POST_SHIFT) != 0) {
@@ -4072,18 +4227,51 @@ void simulate_vjp_jvp_range(
                     }
                     DualFloat grad_alpha{0.0F, 0.0F};
                     DualFloat grad_phi{0.0F, 0.0F};
-                    rotate_adjoint_dual(
-                        fplus_shifted,
-                        fminus_shifted,
-                        longitudinal_relaxed,
-                        fplus_bar,
-                        fminus_bar,
-                        longitudinal_bar,
-                        alpha,
-                        phi,
-                        grad_alpha,
-                        grad_phi
-                    );
+                    if constexpr (PROFILED) {
+                        DualComplex pair_a{};
+                        DualComplex pair_b{};
+                        DualComplex slope_a{};
+                        DualComplex slope_b{};
+                        profile_pair_slope_dual(
+                            primal, location, alpha, pair_a, pair_b, slope_a,
+                            slope_b
+                        );
+                        const DualComplex turn =
+                            dual_polar(DualFloat{0.0F, 0.0F} - phi);
+                        const DualComplex spun = pair_b * turn;
+                        DualComplex grad_a{};
+                        DualComplex grad_b{};
+                        rotate_adjoint_spinor_dual(
+                            fplus_shifted,
+                            fminus_shifted,
+                            longitudinal_relaxed,
+                            fplus_bar,
+                            fminus_bar,
+                            longitudinal_bar,
+                            pair_a,
+                            spun,
+                            grad_a,
+                            grad_b
+                        );
+                        grad_alpha = real_part(conjugate(grad_a) * slope_a)
+                            + real_part(conjugate(grad_b) * (slope_b * turn));
+                        grad_phi = real_part(
+                            conjugate(grad_b) * (Complex(0.0F, -1.0F) * spun)
+                        );
+                    } else {
+                        rotate_adjoint_dual(
+                            fplus_shifted,
+                            fminus_shifted,
+                            longitudinal_relaxed,
+                            fplus_bar,
+                            fminus_bar,
+                            longitudinal_bar,
+                            alpha,
+                            phi,
+                            grad_alpha,
+                            grad_phi
+                        );
+                    }
                     grad_flip_train[event] =
                         grad_flip_train[event] + grad_alpha * pulse_b1;
                     grad_b1 = grad_b1 + grad_alpha * flip_value;
@@ -4898,11 +5086,21 @@ void dispatch_second_order(
     void (*kernel)(
         const VjpJvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, DualFloat*, DualFloat*, DualFloat*, DualFloat*
-    ) = lanes ? &simulate_real_vjp_jvp_lane_range
-              : (real_axis == 1 ? &simulate_real_vjp_jvp_range
-                                : (buffers.primal.shim_count > 1
-                                       ? &simulate_vjp_jvp_range<true>
-                                       : &simulate_vjp_jvp_range<false>));
+    ) = &simulate_vjp_jvp_range<false, false>;
+    if (lanes) {
+        kernel = &simulate_real_vjp_jvp_lane_range;
+    } else if (real_axis == 1) {
+        kernel = &simulate_real_vjp_jvp_range;
+    } else {
+        const bool shimmed = buffers.primal.shim_count > 1;
+        const bool profiled = buffers.primal.profile != nullptr;
+        if (shimmed) {
+            kernel = profiled ? &simulate_vjp_jvp_range<true, true>
+                              : &simulate_vjp_jvp_range<true, false>;
+        } else if (profiled) {
+            kernel = &simulate_vjp_jvp_range<false, true>;
+        }
+    }
     const std::int64_t work_count =
         atom_count * (lanes ? lane_blocks(train_count) : train_count);
     const unsigned int thread_count = worker_count(requested_threads, work_count);
@@ -4997,9 +5195,12 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     double flow_scale = 0.0;
     double washout_scale = 0.0;
     long long shim_count = 1;
+    long long locations = 1;
+    long long profile_bins = 0;
+    double profile_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddL",
+            "OLLLLLiiddLLLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -5010,11 +5211,16 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
             &real_axis,
             &flow_scale,
             &washout_scale,
-            &shim_count
+            &shim_count,
+            &locations,
+            &profile_bins,
+            &profile_step
         )) {
         return nullptr;
     }
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2;
+    // The packed buffers, the tangents, the two seed planes, both gradient
+    // blocks, then the transition table -- null when there is none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 1;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -5037,7 +5243,11 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
-        static_cast<std::int64_t>(shim_count)
+        static_cast<std::int64_t>(shim_count),
+        raw[expected - 1],
+        static_cast<std::int64_t>(profile_bins),
+        static_cast<std::int64_t>(locations),
+        static_cast<float>(profile_step)
     );
     VjpJvpBuffers buffers{};
     buffers.primal = primal;
