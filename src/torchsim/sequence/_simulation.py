@@ -16,7 +16,7 @@ __all__ = [
     "simulate_subspace",
 ]
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 import torch
@@ -25,6 +25,7 @@ from .. import epg
 from ._accelerators import geometry_of, simulate_native
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
 from ._parameters import TISSUE_NAMES
+from ._transmit import transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
 
@@ -156,6 +157,7 @@ class EpgSimulator:
         if record not in {"all", "acquired", "echo"}:
             raise ValueError("record must be 'all', 'acquired', or 'echo'")
 
+        tissue = _resolve_transmit(tissue, description, device)
         prepared, output_shape, target_device = _prepare_tissue(tissue, device)
         (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
@@ -417,6 +419,36 @@ def simulate_subspace(
 
 
 # %% private module subroutines
+
+
+def _resolve_transmit(
+    tissue: TissueProperties,
+    description: SequenceDescription,
+    device: torch.device | str | None,
+) -> TissueProperties:
+    """Reduce a transmit array to the single field it puts in each voxel.
+
+    Leaves a single-channel sequence exactly as it was, so it reaches the
+    kernels through the same buffers and the same arithmetic.
+    """
+    if not description.shim_definitions:
+        return tissue
+    resolved = torch.device(
+        device
+        if device is not None
+        else next(
+            (
+                value.device
+                for value in (tissue.b1, tissue.b1_phase_rad)
+                if isinstance(value, torch.Tensor)
+            ),
+            torch.device("cpu"),
+        )
+    )
+    magnitude, phase = transmit_field(
+        description, tissue.b1, tissue.b1_phase_rad, resolved
+    )
+    return replace(tissue, b1=magnitude, b1_phase_rad=phase)
 
 
 def _prepare_tissue(
