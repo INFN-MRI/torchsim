@@ -236,6 +236,101 @@ def test_a_pulse_split_in_two_is_the_two_pulses_composed():
     assert torch.allclose(composed, stepwise, atol=1e-6)
 
 
+def _pair_cotangents(a, b, seed, state):
+    """What a cotangent on the rotated states makes of the pair.
+
+    Every entry of the operator is a product of two factors drawn from the pair
+    and its conjugate, so the two Wirtinger halves are read off the outer
+    product of the seed and the state the rotation acted on. The kernels'
+    adjoints have to reproduce this, and a sign wrong anywhere in it is a
+    gradient that is wrong only for shaped pulses -- which is exactly where
+    nothing else would catch it.
+    """
+    m = torch.outer(seed.conj(), state)
+    ca, cb = a.conj(), b.conj()
+    holding_conj_a = 2 * a * m[1, 1] - 2 * b * m[1, 2] + cb * m[2, 1] + ca * m[2, 2]
+    holding_a = 2 * ca * m[0, 0] - 2 * cb * m[0, 2] + b * m[2, 0] + a * m[2, 2]
+    holding_conj_b = -2 * b * m[1, 0] - 2 * a * m[1, 2] + ca * m[2, 0] - cb * m[2, 2]
+    holding_b = -2 * cb * m[0, 1] - 2 * ca * m[0, 2] + a * m[2, 1] - b * m[2, 2]
+    return holding_conj_a.conj() + holding_a, holding_conj_b.conj() + holding_b
+
+
+def _random_rotation(generator):
+    pair = torch.randn(4, generator=generator, dtype=torch.float64)
+    a = torch.complex(pair[0], pair[1])
+    b = torch.complex(pair[2], pair[3])
+    scale = torch.sqrt(a.abs() ** 2 + b.abs() ** 2)
+    return (a / scale).detach(), (b / scale).detach()
+
+
+def test_the_adjoint_sends_the_states_back_through_the_conjugate_transpose():
+    generator = torch.Generator().manual_seed(3)
+    for _ in range(10):
+        a, b = _random_rotation(generator)
+        state = torch.complex(
+            torch.randn(3, generator=generator, dtype=torch.float64),
+            torch.randn(3, generator=generator, dtype=torch.float64),
+        ).requires_grad_(True)
+        seed = torch.complex(
+            torch.randn(3, generator=generator, dtype=torch.float64),
+            torch.randn(3, generator=generator, dtype=torch.float64),
+        )
+        rotation = _matrix(epg.spinor_rf_pulse_op(a, b)).to(torch.complex128)
+        loss = ((rotation @ state).conj() * seed).real.sum()
+
+        assert torch.allclose(
+            torch.autograd.grad(loss, state)[0], rotation.conj().T @ seed, atol=1e-12
+        )
+
+
+def test_the_adjoint_reaches_the_pair_in_closed_form():
+    generator = torch.Generator().manual_seed(4)
+    for _ in range(10):
+        a0, b0 = _random_rotation(generator)
+        state = torch.complex(
+            torch.randn(3, generator=generator, dtype=torch.float64),
+            torch.randn(3, generator=generator, dtype=torch.float64),
+        )
+        seed = torch.complex(
+            torch.randn(3, generator=generator, dtype=torch.float64),
+            torch.randn(3, generator=generator, dtype=torch.float64),
+        )
+        a = a0.clone().requires_grad_(True)
+        b = b0.clone().requires_grad_(True)
+        rotation = _matrix(epg.spinor_rf_pulse_op(a, b)).to(torch.complex128)
+        loss = ((rotation @ state).conj() * seed).real.sum()
+        grad_a, grad_b = torch.autograd.grad(loss, (a, b))
+
+        expected_a, expected_b = _pair_cotangents(a0, b0, seed, state)
+        assert torch.allclose(grad_a, expected_a, atol=1e-12)
+        assert torch.allclose(grad_b, expected_b, atol=1e-12)
+
+
+def test_a_parameter_behind_the_pair_reaches_it_through_the_slope():
+    """A flip angle moves both halves of the pair, and this is the chain."""
+    generator = torch.Generator().manual_seed(5)
+    for _ in range(10):
+        a0, b0 = _random_rotation(generator)
+        slope_a, slope_b = _random_rotation(generator)
+        state = torch.complex(
+            torch.randn(3, generator=generator, dtype=torch.float64),
+            torch.randn(3, generator=generator, dtype=torch.float64),
+        )
+        seed = torch.complex(
+            torch.randn(3, generator=generator, dtype=torch.float64),
+            torch.randn(3, generator=generator, dtype=torch.float64),
+        )
+        theta = torch.zeros((), dtype=torch.float64, requires_grad=True)
+        rotation = _matrix(
+            epg.spinor_rf_pulse_op(a0 + slope_a * theta, b0 + slope_b * theta)
+        ).to(torch.complex128)
+        loss = ((rotation @ state).conj() * seed).real.sum()
+
+        grad_a, grad_b = _pair_cotangents(a0, b0, seed, state)
+        expected = (grad_a.conj() * slope_a).real + (grad_b.conj() * slope_b).real
+        assert torch.allclose(torch.autograd.grad(loss, theta)[0], expected, atol=1e-12)
+
+
 def test_initialize_mt_sat():
     duration = torch.tensor(0.001)  # 1 ms
     b1rms = torch.tensor(0.05)  # Tesla
