@@ -226,19 +226,83 @@ def test_a_pulse_past_the_end_of_the_table_is_refused() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-def test_streaming_a_profiled_volume_is_refused() -> None:
-    """The table has not reached the chunked path yet."""
-    tissue, events, outputs = _packed(64)
+def test_a_streamed_volume_reads_the_table_a_whole_one_does() -> None:
+    """A chunk boundary must not fall inside a voxel's slice copies."""
+    locations = 3
+    voxels = 32
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
         rf_raster_time_s=RASTER,
     )
-    with offload(["cuda"], budget_bytes=1 << 20):
-        with pytest.raises(NotImplementedError, match="transition table"):
-            _run_packed(
-                tissue, events, state_count=STATES, output_count=outputs,
-                threads=1, profile=table,
-            )
+    tissue, events, outputs = _packed(voxels * locations)
+    arguments = dict(
+        state_count=STATES, output_count=outputs, threads=1, profile=table
+    )
+    whole = _run_packed(tissue, events, **arguments)
+    # Small enough that the planner's own chunk (17 voxels here) is not a
+    # multiple of the profile's width, so the rounding is doing the work.
+    with offload(["cuda"], budget_bytes=1 << 12):
+        streamed = _run_packed(tissue, events, **arguments)
+
+    assert (whole - streamed).abs().max() < 1e-4 * whole.abs().max()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_a_chunk_holds_whole_voxels_when_a_table_is_read() -> None:
+    """The kernel takes the row from the index within the chunk.
+
+    So a chunk boundary inside a voxel's slice copies shifts every row after
+    it, which returns a plausible signal for an entirely different slice.
+    """
+    from torchsim.sequence._accelerators import _Offload, _offload_plan
+
+    _, events, outputs = _packed(96)
+    plan = _Offload(
+        devices=(torch.device("cuda"),), budget_bytes=1 << 12, lanes=1
+    )
+    bare, _, _ = _offload_plan(plan, "forward", events, 96, outputs, STATES, None)
+    aligned, _, _ = _offload_plan(
+        plan, "forward", events, 96, outputs, STATES, None, locations=3
+    )
+
+    assert bare % 3 != 0
+    assert aligned % 3 == 0
+    assert aligned <= bare
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_a_streamed_adjoint_reads_the_table_a_whole_one_does() -> None:
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+
+    locations, voxels = 3, 24
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(voxels * locations)
+    generator = torch.Generator().manual_seed(11)
+    seed = torch.complex(
+        torch.randn(voxels * locations, outputs, generator=generator),
+        torch.randn(voxels * locations, outputs, generator=generator),
+    )
+    directions = tuple(
+        0.05 * torch.randn(value.shape, generator=generator)
+        for value in (*tissue, events[0], events[2], events[3])
+    )
+    arguments = (tissue, events, directions, seed, STATES, outputs, 1)
+    whole = _run_packed_vjp_jvp(*arguments, profile=table)
+    with offload(["cuda"], budget_bytes=1 << 12):
+        streamed = _run_packed_vjp_jvp(*arguments, profile=table)
+
+    names = (
+        "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
+        "velocity", "duration", "flip", "phase",
+    )
+    _compare(whole[0], streamed[0], names, 1e-3)
+    _compare(
+        whole[1], streamed[1],
+        tuple(f"adjoint {name}" for name in names), 1e-3,
+    )
 
 
 def test_forward_mode_follows_the_table() -> None:

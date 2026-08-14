@@ -141,6 +141,7 @@ def test_autograd_asks_for_exactly_the_differentiable_inputs():
     finally:
         _accelerators._wanted = original
 
-    # The four trailing arguments -- state count, output count, thread count
-    # and the sequence geometry -- follow the packed buffers.
-    assert widths and all(width == PACKED_COUNT + 4 for width in widths)
+    # The five trailing arguments -- state count, output count, thread count,
+    # the sequence geometry and the transition table -- follow the packed
+    # buffers.
+    assert widths and all(width == PACKED_COUNT + 5 for width in widths)

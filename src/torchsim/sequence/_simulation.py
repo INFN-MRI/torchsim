@@ -23,6 +23,7 @@ import torch
 
 from .. import epg
 from ._accelerators import geometry_of, simulate_native
+from ._transition import ExactSliceProfile
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
 from ._parameters import TISSUE_NAMES
 from ._transmit import shim_rows, transmit_field
@@ -184,7 +185,12 @@ class EpgSimulator:
         if nstates < 1:
             raise ValueError("nstates must be positive")
 
-        profile = _as_float_tensor(slice_profile, target_device).reshape(-1)
+        exact = isinstance(slice_profile, ExactSliceProfile)
+        profile = (
+            slice_profile
+            if exact
+            else _as_float_tensor(slice_profile, target_device).reshape(-1)
+        )
         if backend not in {"auto", "torch", "native"}:
             raise ValueError("backend must be 'auto', 'torch', or 'native'")
         if backend != "torch":
@@ -205,6 +211,12 @@ class EpgSimulator:
                 raise RuntimeError(
                     "native EPG backend is unavailable for this device or AD context"
                 )
+        if exact:
+            raise NotImplementedError(
+                "an exact slice profile is a tabulated rotation the fused "
+                "kernels read; the operator loop applies a flip angle and a "
+                "phase, which cannot name that rotation"
+            )
         declared = geometry_of(description)
         if (declared.flow_scale and bool((diffusion != 0.0).any())) or (
             (declared.flow_scale or declared.washout_scale)

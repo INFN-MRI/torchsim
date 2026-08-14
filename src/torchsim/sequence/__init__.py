@@ -4,6 +4,7 @@ from __future__ import annotations
 
 __all__ = [
     "AdcRole",
+    "ExactSliceProfile",
     "EventType",
     "RfDefinition",
     "RfShape",
@@ -24,6 +25,7 @@ __all__ = [
     "decompress_shape",
     "execution",
     "distribute",
+    "exact_slice_profile",
     "fse_description",
     "make_simulator",
     "mpnrage_description",
@@ -54,6 +56,7 @@ from ._description import (
     ShimDefinition,
     decompress_shape,
 )
+from ._transition import ExactSliceProfile, exact_slice_profile
 from ._simulation import (
     BSSFP,
     FSE,

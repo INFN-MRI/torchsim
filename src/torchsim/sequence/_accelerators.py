@@ -13,7 +13,13 @@ from typing import Any
 import torch
 
 from ._calibration import crossover, detection
-from ._description import EventType, RfUse, SequenceDescription, SequenceEvent
+from ._description import (
+    EventType,
+    RfDefinition,
+    RfUse,
+    SequenceDescription,
+    SequenceEvent,
+)
 from ._parameters import (
     FLOAT_INPUTS as _FLOAT_INPUTS,
 )
@@ -36,6 +42,7 @@ from ._parameters import (
     tissue_gradient_height,
     tissue_gradient_rows,
 )
+from ._transition import ExactSliceProfile, transition_table
 from ._transmit import shim_rows
 
 # A forward-mode call appends one tangent per differentiable input to the
@@ -98,10 +105,10 @@ def _across_slice(
 ) -> tuple[tuple[torch.Tensor, ...], int]:
     """Spread each voxel over the slice profile, as many voxels as it has points.
 
-    A slice profile scales the flip angle and nothing else, exactly as the
-    transmit field does, and the recorded signal is the mean over the profile.
-    So a profile of n points is n copies of every voxel at scaled transmit,
-    which the state machine can run without knowing anything about slices.
+    A flip-angle scaling enters exactly as the transmit field does, and the
+    recorded signal is the mean over the profile. So a profile of n points is
+    n copies of every voxel at scaled transmit, which the state machine can run
+    without knowing anything about slices.
 
     Returns the tissue laid out voxel-major, and how many points it holds.
     """
@@ -120,6 +127,58 @@ def _across_slice(
         (tissue[transmit][:, None] * profile[None, :]).reshape(-1).contiguous()
     )
     return tuple(spread), locations
+
+
+def _across_the_table(
+    tissue: tuple[torch.Tensor, ...], locations: int
+) -> tuple[torch.Tensor, ...]:
+    """Copy each voxel once per slice position, leaving the transmit alone.
+
+    A table holds the rotation itself at each position, so a position is not a
+    scaling of anything -- the kernels pick the row from the voxel's index and
+    the transmit field keeps the meaning it has everywhere else.
+    """
+    if locations == 1:
+        return tissue
+    return tuple(
+        value[:, None].expand(-1, locations).reshape(-1).contiguous()
+        for value in tissue
+    )
+
+
+def _one_pulse_shape(
+    description: SequenceDescription, rf_raster_time_s: float
+) -> RfDefinition:
+    """The RF definition a table is built from.
+
+    The table is indexed by slice position and effective flip angle, so one
+    covers every pulse that shares a shape however they differ in flip. Pulses
+    of different shapes would each need a table and an index saying which,
+    which the kernels do not carry.
+
+    Raises:
+        ValueError: if the sequence plays no shaped pulse, or more than one
+            distinct shape.
+    """
+    used: dict[int, RfDefinition] = {}
+    for event in description.events:
+        if event.type is not EventType.RF or event.rf_use is RfUse.INVERSION:
+            continue
+        definition = description.rf_definitions[event.rf_definition_id]
+        used[definition.id] = definition
+    if not used:
+        raise ValueError(
+            "an exact slice profile is the rotation a pulse performs, and this "
+            "sequence plays no shaped pulse to take it from"
+        )
+    if len(used) > 1:
+        names = ", ".join(str(key) for key in sorted(used))
+        raise ValueError(
+            f"an exact slice profile covers one pulse shape, and this sequence "
+            f"plays {len(used)} ({names}); the kernels carry one table and no "
+            f"index saying which pulse reads it"
+        )
+    return next(iter(used.values()))
 
 
 # The apparent diffusion coefficient is given in um**2/ms; the b-factor wants
@@ -208,7 +267,19 @@ def simulate_native(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
     tissue = _order_weighted_rates(tissue, description)
-    tissue, locations = _across_slice(tissue, slice_profile)
+    table = None
+    if isinstance(slice_profile, ExactSliceProfile):
+        table = transition_table(
+            _one_pulse_shape(description, rf_raster_time_s),
+            slice_profile.positions(),
+            bins=slice_profile.bins,
+            theta_max=slice_profile.theta_max,
+            rf_raster_time_s=rf_raster_time_s,
+        )
+        locations = table.points
+        tissue = _across_the_table(tissue, locations)
+    else:
+        tissue, locations = _across_slice(tissue, slice_profile)
     threads = int(os.environ.get("TORCHSIM_NUM_THREADS", str(torch.get_num_threads())))
     signal = _NativeEpg.apply(
         *tissue,
@@ -223,6 +294,7 @@ def simulate_native(
         packed.output_count,
         threads,
         geometry_of(description),
+        table,
     )
     leading = (packed.train_count,) if packed.is_batched else ()
     if locations > 1:
@@ -531,6 +603,7 @@ class _NativeEpg(torch.autograd.Function):
         output_count: int,
         threads: int,
         geometry: Geometry,
+        profile: Any,
     ) -> torch.Tensor:
         tissue = (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
@@ -538,7 +611,8 @@ class _NativeEpg(torch.autograd.Function):
         )
         events = (duration, kind, flip, phase, action, output_index, shim_index)
         return _run_packed(
-            tissue, events, state_count, output_count, threads, geometry=geometry
+            tissue, events, state_count, output_count, threads, geometry=geometry,
+            profile=profile,
         )
 
     @staticmethod
@@ -550,6 +624,7 @@ class _NativeEpg(torch.autograd.Function):
         ctx.output_count = inputs[_PACKED_COUNT + 1]
         ctx.threads = inputs[_PACKED_COUNT + 2]
         ctx.geometry = inputs[_PACKED_COUNT + 3]
+        ctx.profile = inputs[_PACKED_COUNT + 4]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
@@ -567,6 +642,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.output_count,
             ctx.threads,
             ctx.geometry,
+            ctx.profile,
         )
 
     @staticmethod
@@ -581,8 +657,11 @@ class _NativeEpg(torch.autograd.Function):
             ctx.threads,
             wanted,
             ctx.geometry,
+            ctx.profile,
         )
-        return (*_spread(fused, ctx.needs_input_grad), None, None, None, None)
+        return (
+            *_spread(fused, ctx.needs_input_grad), None, None, None, None, None
+        )
 
     @staticmethod
     def vmap(
@@ -615,6 +694,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             threads=inputs[_SEED_INPUT + 3],
             wanted=inputs[_SEED_INPUT + 4],
             geometry=inputs[_SEED_INPUT + 5],
+            profile=inputs[_SEED_INPUT + 6],
         )
 
     @staticmethod
@@ -626,6 +706,7 @@ class _NativeEpgVjp(torch.autograd.Function):
         ctx.output_count = inputs[_SEED_INPUT + 2]
         ctx.threads = inputs[_SEED_INPUT + 3]
         ctx.geometry = inputs[_SEED_INPUT + 5]
+        ctx.profile = inputs[_SEED_INPUT + 6]
 
     @staticmethod
     def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
@@ -648,6 +729,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             threads=ctx.threads,
             wanted=wanted,
             geometry=ctx.geometry,
+            profile=ctx.profile,
         )
         seed_grad = None
         if ctx.needs_input_grad[_SEED_INPUT]:
@@ -660,11 +742,12 @@ class _NativeEpgVjp(torch.autograd.Function):
                 ctx.output_count,
                 ctx.threads,
                 geometry=ctx.geometry,
+                profile=ctx.profile,
             )
         guarded = _last(
             (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
         )
-        return (*guarded, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None)
 
 
 class _NativeEpgJvp(torch.autograd.Function):
@@ -683,6 +766,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             inputs[_TANGENT_END + 1],
             inputs[_TANGENT_END + 2],
             geometry=inputs[_TANGENT_END + 3],
+            profile=inputs[_TANGENT_END + 4],
         )
 
     @staticmethod
@@ -691,6 +775,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.state_count = inputs[_TANGENT_END]
         ctx.output_count = inputs[_TANGENT_END + 1]
         ctx.geometry = inputs[_TANGENT_END + 3]
+        ctx.profile = inputs[_TANGENT_END + 4]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
@@ -714,6 +799,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             threads=getattr(ctx, "threads", 0),
             wanted=wanted,
             geometry=ctx.geometry,
+            profile=ctx.profile,
         )
         directions = tuple(
             gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
@@ -722,7 +808,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         guarded = _last(
             (*_spread(primal_grads, ctx.needs_input_grad), *directions), saved
         )
-        return (*guarded, None, None, None, None)
+        return (*guarded, None, None, None, None, None)
 
     @staticmethod
     def vmap(
@@ -1581,8 +1667,14 @@ def _offload_plan(
     real_axis: int | None,
     voxel_inputs: int = _TISSUE_COUNT,
     shims: int = 1,
+    locations: int = 1,
 ) -> tuple[int, dict[torch.device, tuple[torch.Tensor, ...]], list[_Lane]]:
-    """Chunk width, the events replicated per device, and the lanes."""
+    """Chunk width, the events replicated per device, and the lanes.
+
+    A kernel reading a transition table takes a voxel's slice position from its
+    index within the chunk, so ``locations`` rounds the chunk to whole voxels
+    and a chunk boundary never falls inside one.
+    """
     train_count = _train_count(events)
     shape = (
         train_count,
@@ -1593,6 +1685,8 @@ def _offload_plan(
         shims,
     )
     chunk = min(voxels, _chunk_voxels(plan, kind, *shape))
+    if locations > 1:
+        chunk = max(locations, (chunk // locations) * locations)
     per_device = {
         device: _to_device(events, device) for device in plan.devices
     }
@@ -1639,6 +1733,7 @@ def _run_offloaded(
     output_count: int,
     real_axis: int | None,
     geometry: Geometry,
+    profile: Any = None,
 ) -> torch.Tensor:
     """Stream a host-resident volume through the devices, chunk by chunk."""
     from ._epg_triton import simulate_into
@@ -1648,6 +1743,7 @@ def _run_offloaded(
     chunk, per_device, lanes = _offload_plan(
         plan, "forward", events, voxels, output_count, state_count, real_axis,
         shims=_shim_count(tissue),
+        locations=1 if profile is None else profile.points,
     )
     signal = _host_signal(train_count, voxels, output_count)
 
@@ -1666,6 +1762,7 @@ def _run_offloaded(
             real_axis=real_axis,
             geometry=geometry,
             atom_count=width,
+            profile=profile,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -1684,6 +1781,7 @@ def _run_offloaded_jvp(
     output_count: int,
     real_axis: int | None,
     geometry: Geometry,
+    profile: Any = None,
 ) -> torch.Tensor:
     """Stream a forward-mode pass; the seeds ride along with the tissue.
 
@@ -1704,6 +1802,7 @@ def _run_offloaded_jvp(
         real_axis,
         voxel_inputs=2 * _TISSUE_COUNT,
         shims=_shim_count(tissue),
+        locations=1 if profile is None else profile.points,
     )
     seeds = {
         device: _to_device(event_tangents, device) for device in plan.devices
@@ -1728,6 +1827,7 @@ def _run_offloaded_jvp(
             real_axis=real_axis,
             geometry=geometry,
             atom_count=width,
+            profile=profile,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -1746,6 +1846,7 @@ def _run_offloaded_vjp_jvp(
     output_count: int,
     real_axis: int | None,
     geometry: Geometry,
+    profile: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Stream a forward-over-reverse pass through the devices, chunk by chunk.
 
@@ -1767,6 +1868,11 @@ def _run_offloaded_vjp_jvp(
         train_count, event_count, output_count, state_count, real_axis, shims
     )
     chunk = min(voxels, _chunk_voxels(plan, "adjoint", *shape))
+    if profile is not None and profile.points > 1:
+        # A chunk boundary must not fall inside a voxel's slice copies: the
+        # kernel takes the table row from the index within the chunk.
+        locations = profile.points
+        chunk = max(locations, (chunk // locations) * locations)
     grad_output = grad_output.resolve_conj()
     batched = train_count > 1
 
@@ -1828,6 +1934,7 @@ def _run_offloaded_vjp_jvp(
             real_axis=real_axis,
             geometry=geometry,
             atom_count=width,
+            profile=profile,
         )
         for plane, side in enumerate(voxel_grads):
             for index, count in enumerate(rows):
@@ -1903,12 +2010,11 @@ def _run_packed(
             "forward", events, tissue, state_count, profile=profile
         )
     if profile is not None:
-        _unprofiled(profile, "streaming a volume through a device", _OFFLOAD)
         _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
-            geometry,
+            geometry, profile,
         )
     choice = _choose(
         "forward", tissue, events, output_count, state_count, real_axis
@@ -1917,7 +2023,7 @@ def _run_packed(
     if streaming and tissue[0].device.type == "cpu":
         return _run_offloaded(
             tissue, events, choice.offload, state_count, output_count, real_axis,
-            geometry,
+            geometry, profile,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2108,7 +2214,6 @@ def _run_packed_vjp_jvp(
             events, tissue, state_count, tangents, wanted, profile
         )
     if profile is not None:
-        _unprofiled(profile, "streaming a volume through a device", _OFFLOAD)
         _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded_vjp_jvp(
@@ -2121,6 +2226,7 @@ def _run_packed_vjp_jvp(
             output_count,
             real_axis,
             geometry,
+            profile,
         )
     choice = _choose(
         "adjoint", tissue, events, output_count, state_count, real_axis
@@ -2137,6 +2243,7 @@ def _run_packed_vjp_jvp(
             output_count,
             real_axis,
             geometry,
+            profile,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2256,7 +2363,6 @@ def _run_packed_jvp(
             profile=profile,
         )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
-        _unprofiled(profile, "streaming a volume through a device", _OFFLOAD)
         return _run_offloaded_jvp(
             tissue,
             events,
@@ -2267,6 +2373,7 @@ def _run_packed_jvp(
             output_count,
             real_axis,
             geometry,
+            profile,
         )
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
@@ -2281,6 +2388,7 @@ def _run_packed_jvp(
             output_count,
             real_axis,
             geometry,
+            profile,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)

@@ -29,7 +29,12 @@ about 1e-8, which is far below what float32 states resolve.
 
 from __future__ import annotations
 
-__all__ = ["TransitionTable", "transition_table"]
+__all__ = [
+    "ExactSliceProfile",
+    "TransitionTable",
+    "exact_slice_profile",
+    "transition_table",
+]
 
 from dataclasses import dataclass
 
@@ -252,4 +257,72 @@ def transition_table(
         slope_a=slopes[0].to(torch.complex64).contiguous(),
         slope_b=slopes[1].to(torch.complex64).contiguous(),
         theta_max=float(theta_max),
+    )
+
+
+@dataclass(frozen=True)
+class ExactSliceProfile:
+    """A request for the rotation a sequence's pulse actually performs.
+
+    Passed as ``slice_profile=`` in place of a tensor of flip scalings. The
+    table is built from the sequence's own RF definition when the simulation
+    runs, because that is where the pulse and its raster are known.
+
+    ``points`` are the slice positions sampled, in units of the slice
+    thickness, so the passband is ``[-0.5, 0.5]``. An integer asks for that
+    many evenly spaced across ``extent`` thicknesses; a tensor names them.
+    """
+
+    points: int | torch.Tensor = 21
+    extent: float = 2.0
+    bins: int = 64
+    theta_max: float = 2.0 * torch.pi
+
+    def positions(self) -> torch.Tensor:
+        """Where across the slice the table is sampled."""
+        if isinstance(self.points, int):
+            if self.points < 1:
+                raise ValueError(
+                    f"a slice needs at least one position, got {self.points}"
+                )
+            if self.points == 1:
+                return torch.zeros(1, dtype=torch.float64)
+            half = 0.5 * self.extent
+            return torch.linspace(-half, half, self.points, dtype=torch.float64)
+        return torch.as_tensor(self.points, dtype=torch.float64).reshape(-1)
+
+
+def exact_slice_profile(
+    points: int | torch.Tensor = 21,
+    *,
+    extent: float = 2.0,
+    bins: int = 64,
+    theta_max: float = 2.0 * torch.pi,
+) -> ExactSliceProfile:
+    """Ask for the exact slice profile rather than a flip-angle scaling.
+
+    A slice profile is a Bloch response, and the scaling model treats it as
+    proportional to the pulse driving it -- fitted once at nominal amplitude
+    and then multiplied by the transmit field. That is exact only where the
+    transmit field is one. This asks instead for the rotation the pulse
+    performs at each position, which is right at any transmit scaling.
+
+    Parameters
+    ----------
+    points
+        Slice positions, or how many to space evenly across ``extent``.
+    extent
+        How many slice thicknesses the sampled positions span.
+    bins
+        Knots along the flip-angle axis. 64 carries a sinc to about 1e-8.
+    theta_max
+        Largest effective flip the table covers, in radians. A sequence that
+        drives a pulse past this is refused rather than saturated.
+
+    Returns:
+        The request, resolved against the sequence's RF definition at
+        simulation time.
+    """
+    return ExactSliceProfile(
+        points=points, extent=extent, bins=bins, theta_max=theta_max
     )
