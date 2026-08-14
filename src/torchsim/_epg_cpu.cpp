@@ -2285,6 +2285,80 @@ inline void rotate_adjoint(
     grad_phi += phi_sum;
 }
 
+// The adjoint of the spinor rotation: the states back through the conjugate
+// transpose, and the pair reached in closed form.
+//
+// Every entry of the matrix is a product of two factors drawn from the pair and
+// its conjugate, so both Wirtinger halves of the pair's cotangent are linear in
+// the outer product of the seed with the state the rotation acted on. That
+// outer product is accumulated over the states first, so the pair is worked out
+// once per pulse rather than once per state.
+inline void rotate_adjoint_spinor(
+    const State& fplus_in,
+    const State& fminus_in,
+    const State& longitudinal_in,
+    State& fplus_bar,
+    State& fminus_bar,
+    State& longitudinal_bar,
+    const Complex a,
+    const Complex b,
+    Complex& grad_a,
+    Complex& grad_b
+) {
+    const Complex conj_a = std::conj(a);
+    const Complex conj_b = std::conj(b);
+    const Complex t00 = conj_a * conj_a;
+    const Complex t01 = -conj_b * conj_b;
+    const Complex t02 = -2.0F * std::conj(a * b);
+    const Complex t10 = -b * b;
+    const Complex t11 = a * a;
+    const Complex t12 = -2.0F * a * b;
+    const Complex t20 = conj_a * b;
+    const Complex t21 = a * conj_b;
+    const Complex t22(std::norm(a) - std::norm(b), 0.0F);
+
+    Complex m[3][3]{};
+    for (std::size_t state = 0; state < fplus_bar.size(); ++state) {
+        const Complex a0 = fplus_bar[state];
+        const Complex a1 = fminus_bar[state];
+        const Complex a2 = longitudinal_bar[state];
+        const Complex x0 = fplus_in[state];
+        const Complex x1 = fminus_in[state];
+        const Complex x2 = longitudinal_in[state];
+
+        const Complex s0 = std::conj(a0);
+        const Complex s1 = std::conj(a1);
+        const Complex s2 = std::conj(a2);
+        m[0][0] += s0 * x0;
+        m[0][1] += s0 * x1;
+        m[0][2] += s0 * x2;
+        m[1][0] += s1 * x0;
+        m[1][1] += s1 * x1;
+        m[1][2] += s1 * x2;
+        m[2][0] += s2 * x0;
+        m[2][1] += s2 * x1;
+        m[2][2] += s2 * x2;
+
+        fplus_bar[state] =
+            std::conj(t00) * a0 + std::conj(t10) * a1 + std::conj(t20) * a2;
+        fminus_bar[state] =
+            std::conj(t01) * a0 + std::conj(t11) * a1 + std::conj(t21) * a2;
+        longitudinal_bar[state] =
+            std::conj(t02) * a0 + std::conj(t12) * a1 + std::conj(t22) * a2;
+    }
+
+    const Complex holding_conj_a = 2.0F * a * m[1][1] - 2.0F * b * m[1][2]
+        + conj_b * m[2][1] + conj_a * m[2][2];
+    const Complex holding_a = 2.0F * conj_a * m[0][0] - 2.0F * conj_b * m[0][2]
+        + b * m[2][0] + a * m[2][2];
+    const Complex holding_conj_b = -2.0F * b * m[1][0] - 2.0F * a * m[1][2]
+        + conj_a * m[2][0] - conj_b * m[2][2];
+    const Complex holding_b = -2.0F * conj_b * m[0][1] - 2.0F * conj_a * m[0][2]
+        + a * m[2][1] - b * m[2][2];
+    grad_a += std::conj(holding_conj_a) + holding_a;
+    grad_b += std::conj(holding_conj_b) + holding_b;
+}
+
 // ---------------------------------------------------------------------------
 // Forward-over-reverse.
 //
@@ -2318,7 +2392,7 @@ inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
     }
 }
 
-template <bool SHIMMED>
+template <bool SHIMMED, bool PROFILED>
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
@@ -2365,6 +2439,7 @@ void simulate_vjp_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(primal, work, event_count, output_count);
         const std::int64_t atom = view.atom;
+        const std::int64_t location = slice_row<PROFILED>(primal, atom);
         float* const grad_flip_train = grad_flip_local + view.event_base;
         float* const grad_phase_train = grad_phase_local + view.event_base;
         float* const grad_duration_train = grad_duration_local + view.event_base;
@@ -2431,14 +2506,21 @@ void simulate_vjp_range(
                 } else {
                     const std::int64_t transmit =
                         transmit_row<SHIMMED>(primal, event, atom);
-                    rotate(
-                        fplus,
-                        fminus,
-                        longitudinal,
-                        view.flip[event] * (SHIMMED ? primal.b1[transmit] : b1),
-                        view.phase[event]
-                            + (SHIMMED ? primal.b1_phase[transmit] : b1_phase)
-                    );
+                    const float alpha =
+                        view.flip[event] * (SHIMMED ? primal.b1[transmit] : b1);
+                    const float phi = view.phase[event]
+                        + (SHIMMED ? primal.b1_phase[transmit] : b1_phase);
+                    if constexpr (PROFILED) {
+                        Complex pair_a{};
+                        Complex pair_b{};
+                        profile_pair(primal, location, alpha, pair_a, pair_b);
+                        rotate_spinor(
+                            fplus, fminus, longitudinal, pair_a,
+                            pair_b * std::polar(1.0F, -phi)
+                        );
+                    } else {
+                        rotate(fplus, fminus, longitudinal, alpha, phi);
+                    }
                 }
             }
             if ((action & POST_SHIFT) != 0) {
@@ -2578,18 +2660,53 @@ void simulate_vjp_range(
                     }
                     float grad_alpha = 0.0F;
                     float grad_phi = 0.0F;
-                    rotate_adjoint(
-                        fplus_shifted,
-                        fminus_shifted,
-                        longitudinal_pre,
-                        fplus_bar,
-                        fminus_bar,
-                        longitudinal_bar,
-                        alpha,
-                        phi,
-                        grad_alpha,
-                        grad_phi
-                    );
+                    if constexpr (PROFILED) {
+                        Complex pair_a{};
+                        Complex pair_b{};
+                        Complex slope_a{};
+                        Complex slope_b{};
+                        profile_pair_slope(
+                            primal, location, alpha, pair_a, pair_b, slope_a,
+                            slope_b
+                        );
+                        const Complex turn = std::polar(1.0F, -phi);
+                        const Complex spun = pair_b * turn;
+                        Complex grad_a{};
+                        Complex grad_b{};
+                        rotate_adjoint_spinor(
+                            fplus_shifted,
+                            fminus_shifted,
+                            longitudinal_pre,
+                            fplus_bar,
+                            fminus_bar,
+                            longitudinal_bar,
+                            pair_a,
+                            spun,
+                            grad_a,
+                            grad_b
+                        );
+                        // The flip angle reaches the pair through the slope the
+                        // table stores beside it; the RF phase turns the axis
+                        // once the pair is out, so it reaches ``b`` alone.
+                        grad_alpha = std::real(std::conj(grad_a) * slope_a)
+                            + std::real(std::conj(grad_b) * slope_b * turn);
+                        grad_phi = std::real(
+                            std::conj(grad_b) * Complex(0.0F, -1.0F) * spun
+                        );
+                    } else {
+                        rotate_adjoint(
+                            fplus_shifted,
+                            fminus_shifted,
+                            longitudinal_pre,
+                            fplus_bar,
+                            fminus_bar,
+                            longitudinal_bar,
+                            alpha,
+                            phi,
+                            grad_alpha,
+                            grad_phi
+                        );
+                    }
                     grad_flip_train[event] += grad_alpha * pulse_b1;
                     grad_b1 += grad_alpha * view.flip[event];
                     grad_phase_train[event] += grad_phi;
@@ -4602,9 +4719,12 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     double flow_scale = 0.0;
     double washout_scale = 0.0;
     long long shim_count = 1;
+    long long locations = 1;
+    long long profile_bins = 0;
+    double profile_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiddL",
+            "OLLLLLiddLLLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -4614,11 +4734,16 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             &requested_threads,
             &flow_scale,
             &washout_scale,
-            &shim_count
+            &shim_count,
+            &locations,
+            &profile_bins,
+            &profile_step
         )) {
         return nullptr;
     }
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT;
+    // The packed buffers, the two seed planes, one gradient per differentiable
+    // input, then the transition table -- null when there is none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 1;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -4643,7 +4768,11 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
-        static_cast<std::int64_t>(shim_count)
+        static_cast<std::int64_t>(shim_count),
+        raw[expected - 1],
+        static_cast<std::int64_t>(profile_bins),
+        static_cast<std::int64_t>(locations),
+        static_cast<float>(profile_step)
     );
     VjpBuffers buffers{};
     buffers.primal = primal;
@@ -4683,8 +4812,15 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         void (*kernel)(
             const VjpBuffers&, std::int64_t, std::int64_t, std::int64_t,
             std::int64_t, std::int64_t, float*, float*, float*, float*
-        ) = buffers.primal.shim_count > 1 ? &simulate_vjp_range<true>
-                                          : &simulate_vjp_range<false>;
+        ) = &simulate_vjp_range<false, false>;
+        const bool shimmed = buffers.primal.shim_count > 1;
+        const bool profiled = buffers.primal.profile != nullptr;
+        if (shimmed) {
+            kernel = profiled ? &simulate_vjp_range<true, true>
+                              : &simulate_vjp_range<true, false>;
+        } else if (profiled) {
+            kernel = &simulate_vjp_range<false, true>;
+        }
         const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         WorkerPool::instance().run(thread_count, [&](const unsigned int slot) {
             const std::int64_t begin = static_cast<std::int64_t>(slot) * block;

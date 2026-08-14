@@ -282,6 +282,107 @@ def test_forward_mode_follows_the_table() -> None:
     assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
 
 
+def _compare(expected, actual, names, tolerance=2e-4) -> None:
+    checked = 0
+    for name, want, got in zip(names, expected, actual, strict=True):
+        if want is None:
+            # A parameter this sequence never touches, which the oracle drops
+            # from its graph and the kernel returns as zeros.
+            assert float(got.abs().max()) == 0.0, name
+            continue
+        scale = float(want.abs().max())
+        if scale < 1e-7:
+            continue
+        assert float((want - got).abs().max()) < tolerance * scale, name
+        checked += 1
+    assert checked >= 6
+
+
+def test_the_adjoint_follows_the_table() -> None:
+    """Every gradient the table stands in front of, against the oracle."""
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    locations, voxels = 3, 3
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(voxels * locations)
+    generator = torch.Generator().manual_seed(4)
+    seed = torch.complex(
+        torch.randn(voxels * locations, outputs, generator=generator),
+        torch.randn(voxels * locations, outputs, generator=generator),
+    )
+
+    wrt = (*tissue, events[0], events[2], events[3])
+    tracked = tuple(value.clone().requires_grad_(True) for value in wrt)
+    signal = simulate_packed(
+        tracked[:9],
+        (tracked[9], events[1], tracked[10], tracked[11], *events[4:]),
+        state_count=STATES,
+        output_count=outputs,
+        profile=table,
+        locations=locations,
+    )
+    expected = torch.autograd.grad(
+        signal, tracked, grad_outputs=seed, allow_unused=True
+    )
+
+    actual = _run_packed_vjp(
+        tissue, events, seed, STATES, outputs, 1, profile=table
+    )
+    _compare(
+        expected,
+        actual,
+        (
+            "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
+            "velocity", "duration", "flip", "phase",
+        ),
+    )
+
+
+def test_an_unprofiled_adjoint_is_untouched() -> None:
+    """The table path is another kernel, not a branch inside this one."""
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    tissue, events, outputs = _packed(6)
+    generator = torch.Generator().manual_seed(5)
+    seed = torch.complex(
+        torch.randn(6, outputs, generator=generator),
+        torch.randn(6, outputs, generator=generator),
+    )
+    plain = _run_packed_vjp(tissue, events, seed, STATES, outputs, 1)
+    again = _run_packed_vjp(tissue, events, seed, STATES, outputs, 1, profile=None)
+
+    for left, right in zip(plain, again):
+        assert torch.equal(left, right)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_an_adjoint_through_a_table_is_refused_on_the_card() -> None:
+    """The card's adjoint runs the forward-over-reverse kernel, which has none."""
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(4)
+    card = torch.device("cuda")
+    seed = torch.zeros(4, outputs, dtype=torch.complex64, device=card)
+
+    with pytest.raises(NotImplementedError, match="adjoint on the card"):
+        _run_packed_vjp(
+            tuple(value.to(card) for value in tissue),
+            tuple(value.to(card) for value in events),
+            seed,
+            STATES,
+            outputs,
+            1,
+            profile=table,
+        )
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_forward_mode_through_a_table_is_refused_on_the_card() -> None:
     """Refused rather than ignored: a dropped table returns wrong numbers."""

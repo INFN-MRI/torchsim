@@ -2003,6 +2003,7 @@ def _run_packed_vjp(
     wanted: tuple[bool, ...] | None = None,
     *,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> tuple[torch.Tensor, ...]:
     """Return gradients w.r.t. the tissue and three float event buffers.
 
@@ -2014,7 +2015,10 @@ def _run_packed_vjp(
     the real-subspace kernels -- four of them short -- be chosen. All of them,
     if it is not given.
     """
+    if profile is not None:
+        _within_the_table(profile, events[2])
     if tissue[0].device.type != "cpu":
+        _unprofiled(profile, "an adjoint on the card", tissue[0].device.type)
         # An adjoint does not depend on any forward direction, so the
         # forward-over-reverse kernel given no direction to follow returns it
         # on its own.
@@ -2053,8 +2057,9 @@ def _run_packed_vjp(
         phase_grad,
         duration_grad,
     )
+    table = None if profile is None else profile.packed()
     _epg_cpu.simulate_vjp(
-        _pointers(pointers),
+        _profiled_pointers(pointers, table),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2064,6 +2069,9 @@ def _run_packed_vjp(
         geometry.flow_scale,
         geometry.washout_scale,
         _shim_count(tissue),
+        1 if profile is None else profile.points,
+        0 if profile is None else profile.bins,
+        1.0 if profile is None else profile.step,
     )
     return (*atom_grads, duration_grad, flip_grad, phase_grad)
 
