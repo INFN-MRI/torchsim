@@ -268,7 +268,12 @@ class RfDefinition:
 
 @dataclass(frozen=True)
 class ShimDefinition:
-    """One transmit-shim definition."""
+    """One transmit-shim definition: a complex weight per channel.
+
+    The weights hold for the whole pulse, and every channel plays the same
+    waveform -- static parallel transmit. :mod:`._transmit` combines them with
+    the per-channel sensitivities into the field a voxel sees.
+    """
 
     id: int
     magnitudes: tuple[float, ...]

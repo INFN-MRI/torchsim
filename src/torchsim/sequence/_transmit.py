@@ -19,6 +19,36 @@ shim weights through this without any kernel knowing they exist.
 Summing the magnitudes and the phases separately is a different and wrong
 operation: two channels driven in antiphase must leave the voxel untouched,
 which only the complex sum reproduces.
+
+What this models, and what it does not
+--------------------------------------
+Static parallel transmit: every channel plays the same waveform, weighted by a
+complex number that does not change during the pulse. Writing the pulse as
+``b(t)``,
+
+    B1(r, t) = b(t) * sum_c S_c(r) w_c = b(t) * B1(r)
+
+the spatial factor is constant in time and so comes outside the pulse integral.
+The net rotation is therefore about an axis at ``arg(B1(r))`` through a flip of
+``|B1(r)| * integral(b)`` -- exactly the flip-and-phase pair the RF operator
+already takes. Nothing is approximated here that was not already approximated
+for a single channel with a transmit map.
+
+That inheritance includes the slice profile. The state machine treats a pulse
+as instantaneous and carries its temporal shape as a flip-angle scaling along
+the slice, one voxel copy per profile point. The scaling is computed for the
+nominal amplitude, so it drifts once ``|B1|`` is far from one -- a slice
+profile is a Bloch response, and a response does not simply scale with the
+pulse driving it. A shim makes that drift easier to reach, but it is the
+single-channel approximation, not a new one.
+
+A pulse whose channel weights vary while it plays -- kT-points, spokes -- does
+not factor that way at all. Its effect on a voxel is a rotation about an
+arbitrary axis, three parameters rather than two, and no flip-and-phase pair
+can carry it. Reaching those needs the pulse replaced by a per-voxel rotation
+worked out ahead of time, by Bloch integration or by SLR; the same change would
+retire the flip-scaling slice profile, since an exact profile is that rotation
+as a function of position.
 """
 
 from __future__ import annotations

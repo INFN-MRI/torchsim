@@ -101,7 +101,13 @@ def multidrive_rf_pulse_op(
     B1: float = 1.0,
 ) -> tuple[tuple[torch.Tensor]]:
     """
-    Build RF rotation matrix for a multichannel RF pulse.
+    Build RF rotation matrix for a multichannel RF pulse driven in phase.
+
+    Every channel plays the same waveform with a real weight, so the array
+    excites a voxel through the sum of what each channel puts there. Use
+    :func:`phased_multidrive_rf_pulse_op` where the weights or the transmit
+    sensitivities carry a phase: channels that differ in phase can cancel, and
+    that only comes out of a complex sum.
 
     Parameters
     ----------
@@ -121,8 +127,8 @@ def multidrive_rf_pulse_op(
         RF rotation matrix elements.
 
     """
-    # apply B1 effect
-    fa = B1 * fa
+    # the array drives the voxel through the sum of its channels
+    fa = (B1 * fa).sum(axis=-1)
 
     # apply slice profile
     fa = slice_prof * fa
@@ -139,6 +145,22 @@ def phased_multidrive_rf_pulse_op(
 ) -> tuple[tuple[tuple[torch.Tensor]], torch.Tensor]:
     """
     Build RF rotation matrix for a multichannel RF pulse along arbitrary axis.
+
+    This is static parallel transmit: every channel plays the same waveform,
+    weighted by a complex number that does not change during the pulse. The
+    weights and the transmit sensitivities then combine into one complex field
+    per voxel,
+
+        B1(r) = sum_c  B1_c(r) * exp(1j * B1phase_c) * fa_c * exp(1j * phi_c)
+
+    whose magnitude is the flip angle the voxel sees and whose argument is the
+    axis it turns about. The sum is what lets channels cancel: two driven in
+    antiphase leave the voxel untouched.
+
+    Because the spatial factor is constant in time it comes outside the pulse
+    integral, so this is exactly as accurate as the single-channel model with a
+    transmit map -- no further approximation. A pulse whose channel weights
+    vary during it does not factor that way and is not this operator.
 
     Parameters
     ----------
@@ -164,17 +186,21 @@ def phased_multidrive_rf_pulse_op(
     T : tuple[tuple[torch.Tensor]]
         RF rotation matrix elements.
     phi : torch.Tensor
-        Nominal net RF phase for signal demodulation.
+        Nominal net RF phase for signal demodulation, which is the argument of
+        the commanded drive alone: the receive reference is the phase that was
+        asked for, not the one the transmit field added to it.
 
     """
-    # apply B1 effect
-    fa = (B1 * fa).sum(axis=-1)
-    _phi = (B1phase + phi).sum(axis=-1)
+    # the array drives the voxel through the complex sum of its channels
+    commanded = (fa * torch.exp(1j * phi)).sum(axis=-1)
+    field = (B1 * torch.exp(1j * B1phase) * fa * torch.exp(1j * phi)).sum(axis=-1)
+    _fa = field.abs()
+    _phi = field.angle()
 
     # apply slice profile
-    fa = slice_prof * fa
+    _fa = slice_prof * _fa
 
-    return _prep_phased_rf(fa, _phi), phi.sum(axis=-1)
+    return _prep_phased_rf(_fa, _phi), commanded.angle()
 
 
 def initialize_mt_sat(
@@ -354,8 +380,14 @@ def multidrive_mt_sat_op(
     -------
     exp_WT : torch.Tensor
         RF saturation operator.
+
+    Notes
+    -----
+    Saturation goes as the square of the field, so the channels are summed
+    before squaring rather than after. The sum is real, which assumes the array
+    is driven in phase.
     """
-    # apply B1 effect to fa
+    # the array saturates through the sum of its channels
     fa = (B1 * fa).sum(axis=-1)
 
     # apply slice profile

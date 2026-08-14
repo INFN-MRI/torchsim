@@ -56,6 +56,11 @@ class TissueProperties:
     through a phase rather than damping it, which is what takes the states out
     of any real subspace. Across the voxel itself it washes the spins out and
     replaces them with unexcited magnetization, which needs no gradient at all.
+
+    ``b1`` and ``b1_phase_rad`` are the transmit field a voxel sees. Where the
+    sequence declares a shim they carry one transmit channel each along a
+    leading axis and are combined into that field; see :mod:`._transmit` for
+    what the array model assumes.
     """
 
     t1_ms: Any

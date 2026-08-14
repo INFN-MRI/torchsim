@@ -223,6 +223,65 @@ def test_the_resolved_field_matches_a_hand_built_single_channel_run() -> None:
     assert torch.equal(array, equivalent)
 
 
+def test_a_common_phase_on_every_channel_only_turns_the_axis() -> None:
+    """A static shim is a flip scaling and an axis turn, nothing more.
+
+    Turning the whole array together cannot change how far a voxel tips, only
+    which way it tips -- which is what makes the array reducible to the pair of
+    buffers the state machine carries.
+    """
+    voxels = 3
+    b1, b1_phase = _sensitivity(voxels)
+    turn = 0.7
+    plain = transmit_field(
+        _description(_uniform_shim()), b1, b1_phase, torch.device("cpu")
+    )
+    turned = transmit_field(
+        _description(
+            ShimDefinition(0, (1.0 / CHANNELS,) * CHANNELS, (turn,) * CHANNELS)
+        ),
+        b1,
+        b1_phase,
+        torch.device("cpu"),
+    )
+    assert torch.allclose(plain[0], turned[0], atol=1e-6)
+    drift = turned[1] - plain[1] - turn
+    drift = torch.remainder(drift + torch.pi, 2.0 * torch.pi) - torch.pi
+    assert torch.allclose(drift, torch.zeros_like(drift), atol=1e-5)
+
+
+def test_the_array_matches_the_operator_library() -> None:
+    """Two implementations of the same superposition, written out separately."""
+    from torchsim.epg import phased_multidrive_rf_pulse_op
+
+    voxels = 1
+    b1, b1_phase = _sensitivity(voxels)
+    flip = 0.6
+    shim = ShimDefinition(
+        0,
+        tuple(0.1 * (index + 1) for index in range(CHANNELS)),
+        tuple(0.4 * index for index in range(CHANNELS)),
+    )
+    magnitude, phase = transmit_field(
+        _description(shim), b1, b1_phase, torch.device("cpu")
+    )
+
+    _rotation, _net = phased_multidrive_rf_pulse_op(
+        flip * torch.tensor(shim.magnitudes),
+        torch.tensor(shim.phases_rad),
+        1.0,
+        b1.reshape(-1),
+        b1_phase.reshape(-1),
+    )
+    field = (
+        torch.polar(b1.reshape(-1), b1_phase.reshape(-1))
+        * flip
+        * torch.polar(torch.tensor(shim.magnitudes), torch.tensor(shim.phases_rad))
+    ).sum()
+    assert torch.allclose(flip * magnitude.reshape(()), field.abs(), atol=1e-6)
+    assert torch.allclose(phase.reshape(()), field.angle(), atol=1e-6)
+
+
 def test_a_gradient_reaches_each_channel_of_the_array() -> None:
     """Autograd carries it through the sum, so no kernel has to know."""
     voxels = 3

@@ -67,6 +67,80 @@ def test_multidrive_rf_pulse_op():
     assert isinstance(RF[0][0], torch.Tensor)
 
 
+def test_an_in_phase_array_drives_the_sum_of_its_channels():
+    """Two channels are one channel at their combined weight."""
+    fa = torch.tensor([0.3, 0.4])
+    B1 = torch.tensor([0.8, 0.9])
+    together = epg.multidrive_rf_pulse_op(fa, torch.tensor(1.0), B1)
+    alone = epg.rf_pulse_op((B1 * fa).sum(), torch.tensor(1.0), 1.0)
+
+    for left, right in zip(together, alone):
+        for one, other in zip(left, right):
+            assert torch.allclose(one, other, atol=1e-6)
+
+
+def test_channels_in_antiphase_leave_the_voxel_untouched():
+    """The check that separates a complex sum from two independent ones.
+
+    Summing the magnitudes and the phases apart from each other cannot
+    cancel, and would turn this into a rotation of the full flip angle.
+    """
+    fa = torch.tensor([0.5, 0.5])
+    phi = torch.tensor([0.0, torch.pi])
+    B1 = torch.tensor([1.0, 1.0])
+    B1phase = torch.zeros(2)
+
+    RF, _phi = epg.phased_multidrive_rf_pulse_op(
+        fa, phi, torch.tensor(1.0), B1, B1phase
+    )
+
+    identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    for row, reference in zip(RF, identity):
+        for element, value in zip(row, reference):
+            assert torch.allclose(
+                element, torch.as_tensor(value, dtype=element.dtype), atol=1e-6
+            )
+
+
+def test_a_transmit_phase_turns_the_axis_without_changing_the_flip():
+    """A phase common to every channel rotates the drive, nothing more."""
+    fa = torch.tensor([0.3, 0.4])
+    B1 = torch.tensor([0.8, 0.9])
+    turn = 0.7
+
+    RF, _ = epg.phased_multidrive_rf_pulse_op(
+        fa, torch.full((2,), turn), torch.tensor(1.0), B1, torch.zeros(2)
+    )
+    reference = epg.phased_rf_pulse_op(
+        (B1 * fa).sum(), torch.tensor(turn), torch.tensor(1.0), 1.0
+    )
+
+    for left, right in zip(RF, reference):
+        for one, other in zip(left, right):
+            assert torch.allclose(one, other, atol=1e-6)
+
+
+def test_a_single_channel_array_is_the_single_channel_pulse():
+    fa = torch.tensor([0.4])
+    phi = torch.tensor([0.25])
+    B1 = torch.tensor([0.9])
+    B1phase = torch.tensor([0.15])
+
+    RF, net = epg.phased_multidrive_rf_pulse_op(
+        fa, phi, torch.tensor(1.0), B1, B1phase
+    )
+    reference = epg.phased_rf_pulse_op(
+        B1 * fa, phi + B1phase, torch.tensor(1.0), 1.0
+    )
+
+    for left, right in zip(RF, reference):
+        for one, other in zip(left, right):
+            assert torch.allclose(one, other, atol=1e-6)
+    # The demodulation reference is the phase that was asked for, which the
+    # transmit field's own phase does not enter.
+    assert torch.allclose(net, phi.reshape(()), atol=1e-6)
+
+
 def test_phased_multidrive_rf_pulse_op():
     fa = torch.tensor([0.3, 0.4])
     phi = torch.tensor([0.1, 0.2])
@@ -79,7 +153,8 @@ def test_phased_multidrive_rf_pulse_op():
     assert len(RF) == 3
     assert len(RF[0]) == 3
     assert isinstance(RF[0][0], torch.Tensor)
-    assert torch.allclose(phi_out, torch.tensor([0.3]))
+    commanded = (fa * torch.exp(1j * phi)).sum()
+    assert torch.allclose(phi_out, commanded.angle())
 
 
 def test_initialize_mt_sat():
