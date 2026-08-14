@@ -662,6 +662,59 @@ inline void rotate(
     }
 }
 
+// The pair and its derivative in the flip angle, from the same cubic. The
+// derivative of a Hermite segment is another polynomial in the same four knot
+// values, so reading both costs one extra combination rather than a second
+// table.
+//
+// Past the ends the value is clamped and the derivative is that of the clamped
+// curve, which is the last segment's -- callers refuse a pulse that reaches
+// there, so this only has to stay finite.
+inline void profile_pair_slope(
+    const Buffers& buffers,
+    const std::int64_t location,
+    const float theta,
+    Complex& a,
+    Complex& b,
+    Complex& slope_a,
+    Complex& slope_b
+) {
+    const float last = static_cast<float>(buffers.profile_bins - 1);
+    const float scaled = std::min(std::max(theta / buffers.profile_step, 0.0F), last);
+    const float lower = std::min(std::floor(scaled), last - 1.0F);
+    const float u = scaled - lower;
+    const float* const near = buffers.profile
+        + (location * buffers.profile_bins + static_cast<std::int64_t>(lower))
+            * PROFILE_STRIDE;
+    const float* const far = near + PROFILE_STRIDE;
+
+    const float u2 = u * u;
+    const float u3 = u2 * u;
+    const float step = buffers.profile_step;
+    const float h00 = 2.0F * u3 - 3.0F * u2 + 1.0F;
+    const float h10 = (u3 - 2.0F * u2 + u) * step;
+    const float h01 = -2.0F * u3 + 3.0F * u2;
+    const float h11 = (u3 - u2) * step;
+    // d/dtheta is d/du over the knot spacing.
+    const float g00 = (6.0F * u2 - 6.0F * u) / step;
+    const float g10 = 3.0F * u2 - 4.0F * u + 1.0F;
+    const float g01 = (-6.0F * u2 + 6.0F * u) / step;
+    const float g11 = 3.0F * u2 - 2.0F * u;
+
+    float value[4];
+    float slope[4];
+    for (std::size_t part = 0; part < 4; ++part) {
+        value[part] = h00 * near[part] + h10 * near[part + 4]
+            + h01 * far[part] + h11 * far[part + 4];
+        slope[part] = g00 * near[part] + g10 * near[part + 4]
+            + g01 * far[part] + g11 * far[part + 4];
+    }
+    a = Complex(value[0], value[1]);
+    b = Complex(value[2], value[3]);
+    slope_a = Complex(slope[0], slope[1]);
+    slope_b = Complex(slope[2], slope[3]);
+}
+
 // The rotation a pulse of any shape performs, named by its Cayley-Klein pair:
 //
 //   T = [ conj(a)^2   -conj(b)^2   -2 conj(a b) ]
@@ -721,6 +774,61 @@ inline DualComplex add(
         first.value + second.value + third.value,
         first.tangent + second.tangent + third.tangent,
     };
+}
+
+// The spinor rotation carrying a forward-mode tangent. Every entry of the
+// matrix is a product of two factors drawn from the pair and its conjugate, so
+// its tangent is the same product differentiated once.
+inline void rotate_spinor(
+    std::vector<DualComplex>& fplus,
+    std::vector<DualComplex>& fminus,
+    std::vector<DualComplex>& longitudinal,
+    const DualComplex a,
+    const DualComplex b
+) {
+    const DualComplex conj_a{std::conj(a.value), std::conj(a.tangent)};
+    const DualComplex conj_b{std::conj(b.value), std::conj(b.tangent)};
+
+    auto product = [](const DualComplex left, const DualComplex right) {
+        return DualCoefficient{
+            left.value * right.value,
+            left.tangent * right.value + left.value * right.tangent,
+        };
+    };
+    auto scaled = [](const DualCoefficient term, const float factor) {
+        return DualCoefficient{factor * term.value, factor * term.tangent};
+    };
+
+    const DualCoefficient aa = product(conj_a, conj_a);
+    const DualCoefficient bb = product(conj_b, conj_b);
+    const DualCoefficient ab = product(conj_a, conj_b);
+    const DualCoefficient plain_bb = product(b, b);
+    const DualCoefficient plain_aa = product(a, a);
+    const DualCoefficient plain_ab = product(a, b);
+
+    const DualCoefficient t00 = aa;
+    const DualCoefficient t01 = scaled(bb, -1.0F);
+    const DualCoefficient t02 = scaled(ab, -2.0F);
+    const DualCoefficient t10 = scaled(plain_bb, -1.0F);
+    const DualCoefficient t11 = plain_aa;
+    const DualCoefficient t12 = scaled(plain_ab, -2.0F);
+    const DualCoefficient t20 = product(conj_a, b);
+    const DualCoefficient t21 = product(a, conj_b);
+    const DualCoefficient norm_a = product(a, conj_a);
+    const DualCoefficient norm_b = product(b, conj_b);
+    const DualCoefficient t22{
+        norm_a.value - norm_b.value, norm_a.tangent - norm_b.tangent
+    };
+
+    for (std::size_t state = 0; state < fplus.size(); ++state) {
+        const DualComplex fp = fplus[state];
+        const DualComplex fm = fminus[state];
+        const DualComplex z = longitudinal[state];
+        fplus[state] = add(apply(t00, fp), apply(t01, fm), apply(t02, z));
+        fminus[state] = add(apply(t10, fp), apply(t11, fm), apply(t12, z));
+        longitudinal[state] =
+            add(apply(t20, fp), apply(t21, fm), apply(t22, z));
+    }
 }
 
 inline void shift(
@@ -810,7 +918,7 @@ inline void rotate(
     }
 }
 
-template <bool SHIMMED>
+template <bool SHIMMED, bool PROFILED>
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
@@ -832,6 +940,7 @@ void simulate_jvp_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(primal, work, event_count, output_count);
         const std::int64_t atom = view.atom;
+        const std::int64_t location = slice_row<PROFILED>(primal, atom);
         const float* const dot_duration = buffers.duration + view.event_base;
         const float* const dot_flip = buffers.flip + view.event_base;
         const float* const dot_phase = buffers.phase + view.event_base;
@@ -958,15 +1067,41 @@ void simulate_jvp_range(
                     const float phi = view.phase[event] + primal.b1_phase[transmit];
                     const float phi_tangent =
                         dot_phase[event] + buffers.b1_phase[transmit];
-                    rotate(
-                        fplus,
-                        fminus,
-                        longitudinal,
-                        alpha,
-                        alpha_tangent,
-                        phi,
-                        phi_tangent
-                    );
+                    if constexpr (PROFILED) {
+                        Complex pair_a{};
+                        Complex pair_b{};
+                        Complex slope_a{};
+                        Complex slope_b{};
+                        profile_pair_slope(
+                            primal, location, alpha, pair_a, pair_b, slope_a,
+                            slope_b
+                        );
+                        // The flip angle carries the tangent into the table;
+                        // the RF phase turns the axis after it comes out.
+                        const Complex turn = std::polar(1.0F, -phi);
+                        const Complex spun = pair_b * turn;
+                        rotate_spinor(
+                            fplus,
+                            fminus,
+                            longitudinal,
+                            DualComplex{pair_a, slope_a * alpha_tangent},
+                            DualComplex{
+                                spun,
+                                slope_b * turn * alpha_tangent
+                                    - Complex(0.0F, phi_tangent) * spun,
+                            }
+                        );
+                    } else {
+                        rotate(
+                            fplus,
+                            fminus,
+                            longitudinal,
+                            alpha,
+                            alpha_tangent,
+                            phi,
+                            phi_tangent
+                        );
+                    }
                 }
             } else if (primal.kind[event] == 2 && (action & RECORD) != 0) {
                 const std::int64_t output = primal.output_index[event];
@@ -4331,11 +4466,21 @@ void dispatch_jvp(
     void (*kernel)(
         const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = lanes ? &simulate_real_jvp_lane_range
-              : (real_axis == 1 ? &simulate_real_jvp_range
-                                : (buffers.primal.shim_count > 1
-                                       ? &simulate_jvp_range<true>
-                                       : &simulate_jvp_range<false>));
+    ) = &simulate_jvp_range<false, false>;
+    if (lanes) {
+        kernel = &simulate_real_jvp_lane_range;
+    } else if (real_axis == 1) {
+        kernel = &simulate_real_jvp_range;
+    } else {
+        const bool shimmed = buffers.primal.shim_count > 1;
+        const bool profiled = buffers.primal.profile != nullptr;
+        if (shimmed) {
+            kernel = profiled ? &simulate_jvp_range<true, true>
+                              : &simulate_jvp_range<true, false>;
+        } else if (profiled) {
+            kernel = &simulate_jvp_range<false, true>;
+        }
+    }
     // A lane kernel's work item covers a block of trains rather than one train.
     const std::int64_t work_count =
         atom_count * (lanes ? lane_blocks(train_count) : train_count);
@@ -4362,9 +4507,12 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     double flow_scale = 0.0;
     double washout_scale = 0.0;
     long long shim_count = 1;
+    long long locations = 1;
+    long long profile_bins = 0;
+    double profile_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddL",
+            "OLLLLLiiddLLLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -4375,11 +4523,16 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
             &real_axis,
             &flow_scale,
             &washout_scale,
-            &shim_count
+            &shim_count,
+            &locations,
+            &profile_bins,
+            &profile_step
         )) {
         return nullptr;
     }
-    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 2;
+    // The packed buffers, one tangent per differentiable input, the two output
+    // planes, then the transition table -- null when there is none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 3;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -4406,7 +4559,11 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(train_count),
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
-        static_cast<std::int64_t>(shim_count)
+        static_cast<std::int64_t>(shim_count),
+        raw[expected - 1],
+        static_cast<std::int64_t>(profile_bins),
+        static_cast<std::int64_t>(locations),
+        static_cast<float>(profile_step)
     );
     const JvpBuffers buffers{
         primal,

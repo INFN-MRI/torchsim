@@ -2220,7 +2220,15 @@ def _run_packed_jvp(
     real_axis: int | None = None,
     *,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> torch.Tensor:
+    if profile is not None:
+        _within_the_table(profile, events[2])
+        if tissue[0].device.type != "cpu":
+            raise NotImplementedError(
+                "forward mode through a transition table runs on the host; "
+                "the CUDA kernel does not carry one yet"
+            )
     if real_axis is None:
         # b1_phase, b0 and RF phase are the directions that leave the subspace,
         # and the real kernels do not produce derivatives along them.
@@ -2230,8 +2238,10 @@ def _run_packed_jvp(
             tissue,
             state_count,
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
+            profile=profile,
         )
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        _unprofiled(profile, "streaming a volume through a device", _OFFLOAD)
         return _run_offloaded_jvp(
             tissue,
             events,
@@ -2322,8 +2332,9 @@ def _run_packed_jvp(
         output_real,
         output_imag,
     )
+    table = None if profile is None else profile.packed()
     _epg_cpu.simulate_jvp(
-        _pointers(pointers),
+        _profiled_pointers(pointers, table),
         tissue[0].numel(),
         trains,
         events[1].numel(),
@@ -2334,5 +2345,8 @@ def _run_packed_jvp(
         geometry.flow_scale,
         geometry.washout_scale,
         _shim_count(tissue),
+        1 if profile is None else profile.points,
+        0 if profile is None else profile.bins,
+        1.0 if profile is None else profile.step,
     )
     return torch.complex(output_real, output_imag)

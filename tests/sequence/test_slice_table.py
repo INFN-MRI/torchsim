@@ -239,3 +239,67 @@ def test_streaming_a_profiled_volume_is_refused() -> None:
                 tissue, events, state_count=STATES, output_count=outputs,
                 threads=1, profile=table,
             )
+
+
+def test_forward_mode_follows_the_table() -> None:
+    """The tangent rides the slope the table already stores."""
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    locations, voxels = 3, 3
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(voxels * locations)
+    generator = torch.Generator().manual_seed(2)
+    tissue_dot = tuple(
+        0.1 * torch.randn(value.shape, generator=generator) for value in tissue
+    )
+    event_dot = tuple(
+        0.01 * torch.randn(events[index].shape, generator=generator)
+        for index in (0, 2, 3)
+    )
+
+    def forward(*values):
+        return simulate_packed(
+            values[:9],
+            (values[9], events[1], values[10], values[11], *events[4:]),
+            state_count=STATES,
+            output_count=outputs,
+            profile=table,
+            locations=locations,
+        )
+
+    _, expected = torch.func.jvp(
+        forward,
+        (*tissue, events[0], events[2], events[3]),
+        (*tissue_dot, *event_dot),
+    )
+    actual = _run_packed_jvp(
+        tissue, events, tissue_dot, event_dot, STATES, outputs, 1, profile=table
+    )
+
+    assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_forward_mode_through_a_table_is_refused_on_the_card() -> None:
+    """Refused rather than ignored: a dropped table returns wrong numbers."""
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    table = transition_table(
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        rf_raster_time_s=RASTER,
+    )
+    tissue, events, outputs = _packed(4)
+    card = torch.device("cuda")
+    moved = tuple(value.to(card) for value in tissue)
+    moved_events = tuple(value.to(card) for value in events)
+    zeros = tuple(torch.zeros_like(value) for value in moved)
+    event_zeros = tuple(torch.zeros_like(moved_events[i]) for i in (0, 2, 3))
+
+    with pytest.raises(NotImplementedError, match="does not carry one yet"):
+        _run_packed_jvp(
+            moved, moved_events, zeros, event_zeros, STATES, outputs, 1,
+            profile=table,
+        )
