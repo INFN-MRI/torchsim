@@ -4,8 +4,8 @@ Diffusion damps each dephasing order; flow turns each through a phase instead.
 That difference is what takes the states out of any real subspace, and it is
 why these check the subspace verdict alongside the arithmetic.
 
-The adjoints do not carry the term yet, so the last tests here pin the refusal
-rather than a derivative.
+Both backends carry it through every order of derivative, so the refusal that
+stood here while the adjoints were being written is gone.
 """
 
 from __future__ import annotations
@@ -20,10 +20,11 @@ from torchsim.sequence._accelerators import (
     _run_packed,
     _run_packed_jvp,
     _run_packed_vjp,
+    _run_packed_vjp_jvp,
     dephasing_per_m,
     real_subspace_axis,
 )
-from torchsim.sequence._parameters import TISSUE_NAMES
+from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_NAMES
 from torchsim.sequence._simulation import _prepare_tissue
 from utils.packed_reference import simulate_packed
 
@@ -206,35 +207,141 @@ def test_the_cuda_forward_agrees_with_the_cpu_one() -> None:
     assert (expected - actual.cpu()).abs().max() / expected.abs().max() < 1e-5
 
 
-def test_a_derivative_through_flow_is_refused() -> None:
-    """Silently dropping the term would be wrong where nothing could see it."""
+def test_the_adjoint_matches_the_reference() -> None:
+    """Every gradient, including the one w.r.t. the flow rate itself."""
     tissue, events, output_count = _packed()
-    seed = torch.randn((tissue[0].numel(), output_count), dtype=torch.complex64)
+    seed = torch.randn(
+        (tissue[0].numel(), output_count),
+        dtype=torch.complex64,
+        generator=torch.Generator().manual_seed(0),
+    )
+    leaves = tuple(value.detach().clone().requires_grad_(True) for value in tissue)
+    differentiable = (
+        events[0].detach().clone().requires_grad_(True),
+        events[1],
+        events[2].detach().clone().requires_grad_(True),
+        events[3].detach().clone().requires_grad_(True),
+        events[4],
+        events[5],
+    )
+    reference = simulate_packed(
+        leaves, differentiable, state_count=STATE_COUNT, output_count=output_count
+    )
+    reference.backward(seed)
+    expected = tuple(value.grad for value in leaves) + (
+        differentiable[0].grad,
+        differentiable[2].grad,
+        differentiable[3].grad,
+    )
+    actual = _run_packed_vjp(
+        tissue,
+        events,
+        seed,
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        threads=1,
+    )
+    scale = max(g.abs().max().item() for g in expected if g is not None)
+    compared = []
+    for name, want, got in zip(FLOAT_NAMES, expected, actual, strict=True):
+        if want is None or want.abs().max().item() <= 1e-6 * scale:
+            continue
+        assert (want - got).abs().max().item() / want.abs().max().item() < 1e-4
+        compared.append(name)
+    assert "velocity_m_per_s" in compared
+
+
+def test_the_velocity_gradient_matches_a_finite_difference() -> None:
+    """An independent check on the chain, velocity through to signal."""
+    tissue, events, output_count = _packed()
+    seed = torch.randn(
+        (tissue[0].numel(), output_count),
+        dtype=torch.complex64,
+        generator=torch.Generator().manual_seed(1),
+    )
     arguments = dict(state_count=STATE_COUNT, output_count=output_count, threads=1)
 
-    with pytest.raises(NotImplementedError, match="no adjoint"):
-        _run_packed_vjp(tissue, events, seed, **arguments)
+    def loss(rate: torch.Tensor) -> torch.Tensor:
+        shifted = tuple(
+            rate if index == VELOCITY_INDEX else value
+            for index, value in enumerate(tissue)
+        )
+        return torch.real(torch.sum(_run_packed(shifted, events, **arguments).conj() * seed))
+
+    rate = tissue[VELOCITY_INDEX]
+    step = 1e-4 * rate.abs().max()
+    analytic = _run_packed_vjp(tissue, events, seed, **arguments)[VELOCITY_INDEX]
+    for voxel in range(rate.numel()):
+        bump = torch.zeros_like(rate)
+        bump[voxel] = step
+        numeric = (loss(rate + bump) - loss(rate - bump)) / (2.0 * step)
+        assert abs(numeric - analytic[voxel]) < 5e-3 * abs(analytic[voxel])
 
 
-def test_a_direction_along_velocity_is_refused() -> None:
-    """Even a still voxel has a derivative along velocity, and it is not zero."""
+def test_forward_mode_along_velocity_matches_the_reference() -> None:
+    """A still voxel still has a derivative along velocity, and it is not zero."""
     tissue, events, output_count = _packed(velocity=0.0)
     tissue_tangents = tuple(
         torch.ones_like(value) if index == VELOCITY_INDEX else torch.zeros_like(value)
         for index, value in enumerate(tissue)
     )
     event_tangents = tuple(torch.zeros_like(events[i]) for i in (0, 2, 3))
+    actual = _run_packed_jvp(
+        tissue,
+        events,
+        tissue_tangents,
+        event_tangents,
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        threads=1,
+    )
 
-    with pytest.raises(NotImplementedError, match="no adjoint"):
-        _run_packed_jvp(
-            tissue,
-            events,
-            tissue_tangents,
-            event_tangents,
-            state_count=STATE_COUNT,
-            output_count=output_count,
-            threads=1,
+    def forward(*values):
+        return simulate_packed(
+            values, events, state_count=STATE_COUNT, output_count=output_count
         )
+
+    _signal, expected = torch.func.jvp(forward, tuple(tissue), tissue_tangents)
+    assert expected.abs().max() > 0
+    assert (expected - actual).abs().max() / expected.abs().max() < 1e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_the_cuda_adjoint_agrees_with_the_cpu_one() -> None:
+    """Second order on the card, against the same pass on the host."""
+    tissue, events, output_count = _packed()
+    device = torch.device("cuda")
+    tangents = tuple(
+        torch.ones_like(value) if index == VELOCITY_INDEX else torch.zeros_like(value)
+        for index, value in enumerate(tissue)
+    ) + tuple(torch.zeros_like(events[i]) for i in (0, 2, 3))
+    seed = torch.randn(
+        (tissue[0].numel(), output_count),
+        dtype=torch.complex64,
+        generator=torch.Generator().manual_seed(2),
+    )
+    arguments = dict(state_count=STATE_COUNT, output_count=output_count, threads=1)
+
+    expected, _ = _run_packed_vjp_jvp(tissue, events, tangents, seed, **arguments)
+    actual, _ = _run_packed_vjp_jvp(
+        tuple(value.to(device) for value in tissue),
+        tuple(value.to(device) for value in events),
+        tuple(value.to(device) for value in tangents),
+        seed.to(device),
+        **arguments,
+    )
+    # These span twelve orders of magnitude -- an echo train refocuses
+    # off-resonance, leaving that one as rounding noise about zero -- so the
+    # ones far below the largest carry no signal of their own.
+    largest = max(value.abs().max().item() for value in expected)
+    compared = []
+    for name, want, got in zip(FLOAT_NAMES, expected, actual, strict=True):
+        scale = want.abs().max().item()
+        if scale <= 1e-6 * largest:
+            continue
+        assert (want - got.cpu()).abs().max().item() / scale < 1e-4, name
+        compared.append(name)
+    assert "velocity_m_per_s" in compared
 
 
 def test_the_operator_loop_refuses_flow() -> None:

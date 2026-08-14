@@ -93,11 +93,14 @@ FLOAT_NAMES: tuple[str, ...] = tuple(
     PACKED_PARAMETERS[index].name for index in FLOAT_INPUTS
 )
 
-# Where the differentiable-input order carries the three gradients a real
-# adjoint leaves at zero: transmit phase, off-resonance and RF phase all point
-# out of the subspace.
+# Where the differentiable-input order carries the gradients a real adjoint
+# leaves at zero. Transmit phase, off-resonance and RF phase all point out of
+# the subspace, and so does velocity at any value: flow turns each dephasing
+# order through a phase, so the derivative is imaginary even where the states
+# themselves are still real.
 OUTSIDE_THE_SUBSPACE: tuple[int, ...] = tuple(
-    FLOAT_NAMES.index(name) for name in ("b1_phase_rad", "b0_hz", "phase")
+    FLOAT_NAMES.index(name)
+    for name in ("b1_phase_rad", "b0_hz", "velocity_m_per_s", "phase")
 )
 
 def at_identity(parameter: Parameter, value: Any) -> bool:

@@ -425,6 +425,21 @@ inline void flow_turn(
     transverse = -(order + 0.5F) * turn;
 }
 
+// The same turn carried on dual numbers, for the kernels that differentiate.
+template <typename Scalar>
+inline void flow_turn_dual(
+    const Scalar rate,
+    const Scalar dt,
+    const std::size_t state,
+    Scalar& longitudinal,
+    Scalar& transverse
+) {
+    const Scalar turn = rate * dt;
+    const float order = static_cast<float>(state);
+    longitudinal = (-order) * turn;
+    transverse = (-(order + 0.5F)) * turn;
+}
+
 // Whether any atom carries diffusion. The lane kernels keep transcendentals
 // out of their state loops, which per-order damping would undo, so they are
 // selected only when this is false.
@@ -631,10 +646,12 @@ void simulate_jvp_range(
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.diffusion[atom]
         };
+        const DualFloat flow_rate{primal.velocity[atom], buffers.velocity[atom]};
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
             const float dt_tangent = dot_duration[event];
-            damping.set(damping_rate, DualFloat{dt, dt_tangent});
+            const DualFloat interval{dt, dt_tangent};
+            damping.set(damping_rate, interval);
             const float e1 = std::exp(-r1 * dt);
             const float e2 = std::exp(-r2 * dt);
             const float e1_tangent = e1 * (
@@ -664,16 +681,36 @@ void simulate_jvp_range(
                 DualComplex& fp = fplus[index];
                 DualComplex& fm = fminus[index];
                 DualComplex& z = longitudinal[index];
-                const Complex off = off_resonance * damp_transverse.value;
-                const Complex off_tangent =
+                DualFloat turn_longitudinal{};
+                DualFloat turn_transverse{};
+                flow_turn_dual(
+                    flow_rate, interval, index, turn_longitudinal, turn_transverse
+                );
+                const Complex spin_transverse =
+                    std::polar(1.0F, turn_transverse.value);
+                const Complex spin_transverse_tangent =
+                    Complex(0.0F, turn_transverse.tangent) * spin_transverse;
+                const Complex spin_longitudinal =
+                    std::polar(1.0F, turn_longitudinal.value);
+                const Complex spin_longitudinal_tangent =
+                    Complex(0.0F, turn_longitudinal.tangent) * spin_longitudinal;
+                const Complex damped = off_resonance * damp_transverse.value;
+                const Complex damped_tangent =
                     off_resonance_tangent * damp_transverse.value
                     + off_resonance * damp_transverse.tangent;
+                const Complex off = damped * spin_transverse;
+                const Complex off_tangent =
+                    damped_tangent * spin_transverse + damped * spin_transverse_tangent;
                 const Complex conjugate_off = std::conj(off);
                 const Complex conjugate_tangent = std::conj(off_tangent);
-                const float relaxation = e1 * damp_longitudinal.value;
-                const float relaxation_tangent =
+                const float recovered = e1 * damp_longitudinal.value;
+                const float recovered_tangent =
                     e1_tangent * damp_longitudinal.value
                     + e1 * damp_longitudinal.tangent;
+                const Complex relaxation = recovered * spin_longitudinal;
+                const Complex relaxation_tangent =
+                    recovered_tangent * spin_longitudinal
+                    + recovered * spin_longitudinal_tangent;
                 fp.tangent = fp.tangent * off + fp.value * off_tangent;
                 fp.value *= off;
                 fm.tangent =
@@ -1978,6 +2015,7 @@ void simulate_vjp_range(
         const float b1_phase = primal.b1_phase[atom];
         const float efficiency = primal.inversion_efficiency[atom];
         const float damping_rate = primal.diffusion[atom];
+        const float flow_rate = primal.velocity[atom];
 
         // ---- forward, recording the state entering each event ----
         for (std::int64_t event = 0; event < event_count; ++event) {
@@ -1991,13 +2029,19 @@ void simulate_vjp_range(
             damping.set(damping_rate, dt);
             const float e1 = std::exp(-r1 * dt);
             const float e2 = std::exp(-r2 * dt);
-            const Complex off_resonance = std::polar(e2, -2.0F * PI * b0 * dt);
-            const Complex conjugate_off = std::conj(off_resonance);
+            const float off_angle = -2.0F * PI * b0 * dt;
             for (std::size_t state = 0; state < states; ++state) {
-                const float damp_transverse = damping.transverse[state];
-                fplus[state] *= off_resonance * damp_transverse;
-                fminus[state] *= conjugate_off * damp_transverse;
-                longitudinal[state] *= e1 * damping.longitudinal[state];
+                float turn_longitudinal = 0.0F;
+                float turn_transverse = 0.0F;
+                flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
+                const Complex transverse = std::polar(
+                    e2 * damping.transverse[state], off_angle + turn_transverse
+                );
+                fplus[state] *= transverse;
+                fminus[state] *= std::conj(transverse);
+                longitudinal[state] *= std::polar(
+                    e1 * damping.longitudinal[state], turn_longitudinal
+                );
             }
             longitudinal[0] += Complex(1.0F - e1, 0.0F);
 
@@ -2043,6 +2087,7 @@ void simulate_vjp_range(
         float grad_b0 = 0.0F;
         float grad_efficiency = 0.0F;
         float grad_damping = 0.0F;
+        float grad_flow = 0.0F;
 
         for (std::int64_t event = event_count - 1; event >= 0; --event) {
             const Complex* slot = trajectory.data()
@@ -2063,12 +2108,17 @@ void simulate_vjp_range(
 
             // replay this event to recover the intra-event states
             for (std::size_t state = 0; state < states; ++state) {
-                const float damp_transverse = damping.transverse[state];
-                fplus_relaxed[state] = fplus[state] * off_resonance * damp_transverse;
-                fminus_relaxed[state] =
-                    fminus[state] * conjugate_off * damp_transverse;
-                longitudinal_relaxed[state] =
-                    longitudinal[state] * e1 * damping.longitudinal[state];
+                float turn_longitudinal = 0.0F;
+                float turn_transverse = 0.0F;
+                flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
+                const Complex transverse = std::polar(
+                    e2 * damping.transverse[state], angle + turn_transverse
+                );
+                fplus_relaxed[state] = fplus[state] * transverse;
+                fminus_relaxed[state] = fminus[state] * std::conj(transverse);
+                longitudinal_relaxed[state] = longitudinal[state] * std::polar(
+                    e1 * damping.longitudinal[state], turn_longitudinal
+                );
             }
             longitudinal_relaxed[0] += Complex(1.0F - e1, 0.0F);
 
@@ -2156,6 +2206,9 @@ void simulate_vjp_range(
             // its gradient is a separate weighted sum rather than a rescaling
             // of the relaxation gradients.
             float grad_b_factor = 0.0F;
+            // Flow reaches each order through a turn of its own, so like the
+            // b-factor it collects a weighted sum rather than a scalar one.
+            float grad_turn = 0.0F;
             const Complex imaginary(0.0F, 1.0F);
             // Z[0] also carries the affine recovery term (1 - e1), whose
             // derivative contributes -Re(adjoint) exactly once. Order zero is
@@ -2167,37 +2220,56 @@ void simulate_vjp_range(
                 const Complex az = longitudinal_bar[state];
                 const float damp_transverse = damping.transverse[state];
                 const float damp_longitudinal = damping.longitudinal[state];
+                float turn_longitudinal = 0.0F;
+                float turn_transverse = 0.0F;
+                flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
+                const Complex spin_transverse = std::polar(1.0F, turn_transverse);
+                const Complex spin_longitudinal =
+                    std::polar(1.0F, turn_longitudinal);
+                const Complex carried = phase * damp_transverse * spin_transverse;
+                const Complex full_transverse = e2 * carried;
+                const Complex full_longitudinal =
+                    e1 * damp_longitudinal * spin_longitudinal;
                 const float transverse_term = std::real(
-                    std::conj(ap) * phase * damp_transverse * fplus[state]
-                    + std::conj(am) * std::conj(phase) * damp_transverse
-                        * fminus[state]
+                    std::conj(ap) * carried * fplus[state]
+                    + std::conj(am) * std::conj(carried) * fminus[state]
                 );
                 grad_e2 += transverse_term;
-                grad_angle += std::real(
-                    std::conj(ap) * imaginary * off_resonance * damp_transverse
-                        * fplus[state]
-                    - std::conj(am) * imaginary * conjugate_off * damp_transverse
+                // A turn of the transverse states and the off-resonance angle
+                // are the same derivative; only the weight they carry differs.
+                const float angle_term = std::real(
+                    std::conj(ap) * imaginary * full_transverse * fplus[state]
+                    - std::conj(am) * imaginary * std::conj(full_transverse)
                         * fminus[state]
                 );
+                grad_angle += angle_term;
                 const float longitudinal_term = std::real(
-                    std::conj(az) * damp_longitudinal * longitudinal[state]
+                    std::conj(az) * damp_longitudinal * spin_longitudinal
+                        * longitudinal[state]
                 );
                 grad_e1 += longitudinal_term;
+                const float longitudinal_angle_term = std::real(
+                    std::conj(az) * imaginary * full_longitudinal * longitudinal[state]
+                );
                 grad_b_factor -= e2 * transverse_term * transverse_weight(state)
                     + e1 * longitudinal_term * longitudinal_weight(state);
-                fplus_bar[state] = std::conj(off_resonance * damp_transverse) * ap;
-                fminus_bar[state] = off_resonance * damp_transverse * am;
-                longitudinal_bar[state] = e1 * damp_longitudinal * az;
+                grad_turn -= angle_term * (static_cast<float>(state) + 0.5F)
+                    + longitudinal_angle_term * static_cast<float>(state);
+                fplus_bar[state] = std::conj(full_transverse) * ap;
+                fminus_bar[state] = full_transverse * am;
+                longitudinal_bar[state] = std::conj(full_longitudinal) * az;
             }
 
             grad_t1 += grad_e1 * e1 * 1000.0F * dt / (t1 * t1);
             grad_t2 += grad_e2 * e2 * 1000.0F * dt / (t2 * t2);
             grad_b0 += grad_angle * (-2.0F * PI * dt);
             grad_damping += grad_b_factor * dt;
+            grad_flow += grad_turn * dt;
             grad_duration_train[event] +=
                 grad_e1 * (-r1 * e1) + grad_e2 * (-r2 * e2)
                 + grad_angle * (-2.0F * PI * b0)
-                + grad_b_factor * damping_rate;
+                + grad_b_factor * damping_rate
+                + grad_turn * flow_rate;
         }
 
         const std::int64_t atoms = primal.atom_count;
@@ -2209,6 +2281,7 @@ void simulate_vjp_range(
         grad_tissue_local[5 * atoms + atom] += grad_b0;
         grad_tissue_local[6 * atoms + atom] += grad_efficiency;
         grad_tissue_local[7 * atoms + atom] += grad_damping;
+        grad_tissue_local[8 * atoms + atom] += grad_flow;
     }
 }
 
@@ -3200,6 +3273,9 @@ void simulate_vjp_jvp_range(
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.dot_diffusion[atom]
         };
+        const DualFloat flow_rate{
+            primal.velocity[atom], buffers.dot_velocity[atom]
+        };
 
         std::fill(fplus.begin(), fplus.end(), DualComplex{});
         std::fill(fminus.begin(), fminus.end(), DualComplex{});
@@ -3225,10 +3301,19 @@ void simulate_vjp_jvp_range(
             const DualComplex off_conj = conjugate(off);
             for (std::size_t state = 0; state < states; ++state) {
                 const DualFloat damp_transverse = damping.transverse[state];
-                fplus[state] = off * fplus[state] * damp_transverse;
-                fminus[state] = off_conj * fminus[state] * damp_transverse;
-                longitudinal[state] =
-                    e1 * longitudinal[state] * damping.longitudinal[state];
+                DualFloat turn_longitudinal{};
+                DualFloat turn_transverse{};
+                flow_turn_dual(
+                    flow_rate, dt, state, turn_longitudinal, turn_transverse
+                );
+                const DualComplex spin_transverse = dual_polar(turn_transverse);
+                const DualComplex spin_longitudinal = dual_polar(turn_longitudinal);
+                fplus[state] =
+                    off * fplus[state] * damp_transverse * spin_transverse;
+                fminus[state] = off_conj * fminus[state] * damp_transverse
+                    * conjugate(spin_transverse);
+                longitudinal[state] = e1 * longitudinal[state]
+                    * damping.longitudinal[state] * spin_longitudinal;
             }
             longitudinal[0].value += Complex(1.0F - e1.value, 0.0F);
             longitudinal[0].tangent -= Complex(e1.tangent, 0.0F);
@@ -3275,6 +3360,7 @@ void simulate_vjp_jvp_range(
         DualFloat grad_b0{0.0F, 0.0F};
         DualFloat grad_efficiency{0.0F, 0.0F};
         DualFloat grad_damping{0.0F, 0.0F};
+        DualFloat grad_flow{0.0F, 0.0F};
 
         for (std::int64_t event = event_count - 1; event >= 0; --event) {
             const DualComplex* slot = trajectory.data()
@@ -3297,10 +3383,19 @@ void simulate_vjp_jvp_range(
 
             for (std::size_t state = 0; state < states; ++state) {
                 const DualFloat damp_transverse = damping.transverse[state];
-                fplus_relaxed[state] = off * fplus[state] * damp_transverse;
-                fminus_relaxed[state] = off_conj * fminus[state] * damp_transverse;
-                longitudinal_relaxed[state] =
-                    e1 * longitudinal[state] * damping.longitudinal[state];
+                DualFloat turn_longitudinal{};
+                DualFloat turn_transverse{};
+                flow_turn_dual(
+                    flow_rate, dt, state, turn_longitudinal, turn_transverse
+                );
+                const DualComplex spin_transverse = dual_polar(turn_transverse);
+                const DualComplex spin_longitudinal = dual_polar(turn_longitudinal);
+                fplus_relaxed[state] =
+                    off * fplus[state] * damp_transverse * spin_transverse;
+                fminus_relaxed[state] = off_conj * fminus[state] * damp_transverse
+                    * conjugate(spin_transverse);
+                longitudinal_relaxed[state] = e1 * longitudinal[state]
+                    * damping.longitudinal[state] * spin_longitudinal;
             }
             longitudinal_relaxed[0].value += Complex(1.0F - e1.value, 0.0F);
             longitudinal_relaxed[0].tangent -= Complex(e1.tangent, 0.0F);
@@ -3398,6 +3493,7 @@ void simulate_vjp_jvp_range(
             DualFloat grad_e2{0.0F, 0.0F};
             DualFloat grad_angle{0.0F, 0.0F};
             DualFloat grad_b_factor{0.0F, 0.0F};
+            DualFloat grad_turn{0.0F, 0.0F};
             const Complex imaginary(0.0F, 1.0F);
             grad_e1 = grad_e1 - real_part(longitudinal_bar[0]);
             for (std::size_t state = 0; state < states; ++state) {
@@ -3406,31 +3502,50 @@ void simulate_vjp_jvp_range(
                 const DualComplex az = longitudinal_bar[state];
                 const DualFloat damp_transverse = damping.transverse[state];
                 const DualFloat damp_longitudinal = damping.longitudinal[state];
+                DualFloat turn_longitudinal{};
+                DualFloat turn_transverse{};
+                flow_turn_dual(
+                    flow_rate, dt, state, turn_longitudinal, turn_transverse
+                );
+                const DualComplex spin_transverse = dual_polar(turn_transverse);
+                const DualComplex spin_longitudinal = dual_polar(turn_longitudinal);
+                const DualComplex carried =
+                    phase * damp_transverse * spin_transverse;
+                const DualComplex full_transverse =
+                    off * damp_transverse * spin_transverse;
+                const DualComplex full_longitudinal =
+                    e1 * damp_longitudinal * spin_longitudinal;
                 const DualFloat transverse_term = real_part(
-                    conjugate(ap) * phase * damp_transverse * fplus[state]
-                    + conjugate(am) * conjugate(phase) * damp_transverse
-                        * fminus[state]
+                    conjugate(ap) * carried * fplus[state]
+                    + conjugate(am) * conjugate(carried) * fminus[state]
                 );
                 grad_e2 = grad_e2 + transverse_term;
-                grad_angle = grad_angle
-                    + real_part(
-                        conjugate(ap)
-                        * (imaginary * (off * fplus[state] * damp_transverse))
-                    )
+                // A turn of the transverse states and the off-resonance angle
+                // are the same derivative; only the weight they carry differs.
+                const DualFloat angle_term =
+                    real_part(conjugate(ap) * (imaginary * (full_transverse * fplus[state])))
                     - real_part(
                         conjugate(am)
-                        * (imaginary * (off_conj * fminus[state] * damp_transverse))
+                        * (imaginary * (conjugate(full_transverse) * fminus[state]))
                     );
+                grad_angle = grad_angle + angle_term;
                 const DualFloat longitudinal_term = real_part(
-                    conjugate(az) * damp_longitudinal * longitudinal[state]
+                    conjugate(az) * damp_longitudinal * spin_longitudinal
+                        * longitudinal[state]
                 );
                 grad_e1 = grad_e1 + longitudinal_term;
+                const DualFloat longitudinal_angle_term = real_part(
+                    conjugate(az) * (imaginary * (full_longitudinal * longitudinal[state]))
+                );
                 grad_b_factor = grad_b_factor
                     - transverse_weight(state) * (e2 * transverse_term)
                     - longitudinal_weight(state) * (e1 * longitudinal_term);
-                fplus_bar[state] = conjugate(off * damp_transverse) * ap;
-                fminus_bar[state] = off * damp_transverse * am;
-                longitudinal_bar[state] = e1 * damp_longitudinal * az;
+                grad_turn = grad_turn
+                    - (static_cast<float>(state) + 0.5F) * angle_term
+                    - static_cast<float>(state) * longitudinal_angle_term;
+                fplus_bar[state] = conjugate(full_transverse) * ap;
+                fminus_bar[state] = full_transverse * am;
+                longitudinal_bar[state] = conjugate(full_longitudinal) * az;
             }
 
             const DualFloat inverse_t1_squared =
@@ -3441,17 +3556,19 @@ void simulate_vjp_jvp_range(
             grad_t2 = grad_t2 + grad_e2 * e2 * (1000.0F * (dt * inverse_t2_squared));
             grad_b0 = grad_b0 + grad_angle * (-2.0F * PI * dt);
             grad_damping = grad_damping + grad_b_factor * dt;
+            grad_flow = grad_flow + grad_turn * dt;
             grad_duration_train[event] = grad_duration_train[event]
                 + (DualFloat{0.0F, 0.0F} - (grad_e1 * (r1 * e1)))
                 - (grad_e2 * (r2 * e2))
                 + grad_angle * (-2.0F * PI * b0)
-                + grad_b_factor * damping_rate;
+                + grad_b_factor * damping_rate
+                + grad_turn * flow_rate;
         }
 
         const std::int64_t atoms = primal.atom_count;
         const DualFloat contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, grad_b1_phase, grad_b0,
-            grad_efficiency, grad_damping, DualFloat{0.0F, 0.0F},
+            grad_efficiency, grad_damping, grad_flow,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             DualFloat& slot = grad_tissue_local[parameter * atoms + atom];

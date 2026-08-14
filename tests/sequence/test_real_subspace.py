@@ -9,6 +9,13 @@ import torch
 
 from torchsim import FSE, fse_description
 from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
+
+# The gradients a real adjoint does produce: every differentiable input the
+# subspace contains. Derived rather than listed, so a new parameter cannot
+# leave a stale index pointing at whatever moved into its slot.
+INSIDE_THE_SUBSPACE = tuple(
+    index for index in range(len(FLOAT_NAMES)) if index not in OUTSIDE_THE_SUBSPACE
+)
 from torchsim.sequence._accelerators import _pack_events, real_subspace_axis
 from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
 
@@ -229,8 +236,7 @@ def test_real_second_order_kernel_reproduces_the_complex_one():
         prepared, events, tangents, seed, real_axis=1, **arguments
     )
 
-    # t1, t2, m0, b1, inversion efficiency, duration, flip.
-    for index in (0, 1, 2, 3, 6, 7, 8):
+    for index in INSIDE_THE_SUBSPACE:
         scale = expected[index].abs().max()
         if scale == 0:
             assert actual[index].abs().max() == 0
@@ -302,9 +308,9 @@ def test_partial_train_blocks_match_the_complex_kernel(trains):
     result, _ = _run_packed_vjp_jvp(
         prepared, events, tangents, seed, real_axis=1, **keywords
     )
-    # t1, t2, m0, b1 and inversion efficiency sum across the whole block, so a
-    # repeated lane would show up here as a gradient counted more than once.
-    for index in (0, 1, 2, 3, 6, 7, 8):
+    # The per-atom gradients sum across the whole block, so a repeated lane
+    # would show up here as one counted more than once.
+    for index in INSIDE_THE_SUBSPACE:
         magnitude = reference[index].abs().max()
         if magnitude == 0:
             assert result[index].abs().max() == 0
@@ -465,10 +471,10 @@ def test_the_adjoint_verdict_follows_what_the_caller_will_read(wanted, expected)
 
 
 @pytest.mark.parametrize(
-    "position", OUTSIDE_THE_SUBSPACE, ids=["b1_phase", "b0", "phase"]
+    "position", OUTSIDE_THE_SUBSPACE, ids=["b1_phase", "b0", "velocity", "phase"]
 )
 def test_wanting_a_gradient_outside_the_subspace_keeps_the_complex_kernel(position):
-    """Those three are genuinely non-zero; returning zero would be wrong."""
+    """Each is genuinely non-zero; returning zero would be wrong."""
     from torchsim.sequence._accelerators import (
         _auto_real_axis_adjoint,
         _run_packed_vjp_jvp,

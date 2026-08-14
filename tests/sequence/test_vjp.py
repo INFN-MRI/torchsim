@@ -19,20 +19,12 @@ from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed_vjp,
 )
-from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_COUNT, TISSUE_NAMES
+from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue
 from utils.packed_reference import simulate_packed
 
 # Gradient tuples arrive in the packing order, so name them from the same place.
 PARAMETER_NAMES = list(FLOAT_NAMES)
-_VELOCITY = TISSUE_NAMES.index("velocity_m_per_s")
-# The reference differentiates the flow rate; the kernels carry flow forward
-# only, so they return zero for it. The comparison skips it rather than
-# asserting agreement the kernels cannot yet reach. A caller is not exposed to
-# the gap: the rate is the velocity times the sequence's winding, so where no
-# crusher is declared the user-facing gradient is zero either way, and where
-# one is the adjoint refuses outright.
-_UNDIFFERENTIATED = {"velocity_m_per_s"}
 ECHOES = 6
 
 
@@ -137,7 +129,7 @@ def _agree(expected, actual, names, tolerance: float = 1e-3) -> None:
     floor = 1e-6 * max(scales.values())
     compared = 0
     for name, want, got in zip(names, expected, actual, strict=True):
-        if want is None or scales[name] <= floor or name in _UNDIFFERENTIATED:
+        if want is None or scales[name] <= floor:
             continue
         error = (want - got).abs().max().item() / scales[name]
         assert error < tolerance, f"{name} differs by {error:.2e}"
@@ -209,7 +201,7 @@ def test_fused_vjp_matches_the_reference(name: str, threads: int) -> None:
     for parameter, expected, actual in zip(
         PARAMETER_NAMES, reference, fused, strict=True
     ):
-        if expected is None or parameter in _UNDIFFERENTIATED:
+        if expected is None:
             continue
         scale = expected.abs().max().item()
         if scale < 1e-7:
@@ -263,12 +255,7 @@ def _forward_over_reverse(route: str):
     prepared, events, output_count, state_count = _packed()
     tissue, differentiable_events = _leaves(prepared, events)
     inputs = (*tissue, differentiable_events[0], differentiable_events[2])
-    # Every direction but velocity: flow reaches the forward kernels only, and
-    # the adjoint refuses a direction it would have to drop.
-    tangents = tuple(
-        torch.zeros_like(value) if index == _VELOCITY else torch.ones_like(value)
-        for index, value in enumerate(inputs)
-    )
+    tangents = tuple(torch.ones_like(value) for value in inputs)
 
     def simulate(*values):
         # The tissue properties, then duration, the untouched kind buffer, and
@@ -326,13 +313,8 @@ def _second_order(route: str):
         generator=generator,
         dtype=torch.complex64,
     ).requires_grad_(True)
-    # Velocity is left out: flow reaches the forward kernels only, so the
-    # adjoint refuses a direction whose term it would have to drop.
     directions = tuple(
-        torch.zeros(value.shape)
-        if index == _VELOCITY
-        else torch.randn(value.shape, generator=generator)
-        for index, value in enumerate(inputs)
+        torch.randn(value.shape, generator=generator) for value in inputs
     )
 
     signal = _route(route, tissue, differentiable_events, output_count, state_count)

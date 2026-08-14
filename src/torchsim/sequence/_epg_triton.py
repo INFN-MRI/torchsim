@@ -407,6 +407,8 @@ def _epg_vjp_jvp_kernel(
     )
     atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
     d_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
+    atom_flow = tl.load(velocity + atom, mask=active_atom, other=0.0)
+    d_flow = tl.load(dot_velocity + atom, mask=active_atom, other=0.0)
     order = state.to(tl.float32)
     longitudinal_weight = order * order
     transverse_weight = longitudinal_weight + order + 0.3333333333333333
@@ -450,16 +452,24 @@ def _epg_vjp_jvp_kernel(
         e1_value = bare1_value * damp_z
         e2_tangent = e2_tangent * damp_t + bare2_value * damp_t_tangent
         e2_value = bare2_value * damp_t
-        angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value)
+        turn_z, turn_t = _flow(atom_flow, dt_value, order)
+        d_turn = d_flow * dt_value + atom_flow * dt_tangent
+        dturn_z = -order * d_turn
+        dturn_t = -(order + 0.5) * d_turn
+        szr, szi, sztr, szti = _dual_polar(turn_z, dturn_z)
+        angle_value = (
+            -2.0 * 3.141592653589793 * (atom_b0 * dt_value) + turn_t
+        )
         angle_tangent = -2.0 * 3.141592653589793 * (
             d_b0 * dt_value + atom_b0 * dt_tangent
-        )
+        ) + dturn_t
         qr, qi, qtr, qti = _dual_polar(angle_value, angle_tangent)
         ovr, ovi, otr, oti = _dual_scale(e2_value, e2_tangent, qr, qi, qtr, qti)
+        lvr, lvi, ltr, lti = _dual_scale(e1_value, e1_tangent, szr, szi, sztr, szti)
 
         pvr, pvi, ptr, pti = _dual_mul(ovr, ovi, otr, oti, pvr, pvi, ptr, pti)
         mvr, mvi, mtr, mti = _dual_mul(ovr, -ovi, otr, -oti, mvr, mvi, mtr, mti)
-        zvr, zvi, ztr, zti = _dual_scale(e1_value, e1_tangent, zvr, zvi, ztr, zti)
+        zvr, zvi, ztr, zti = _dual_mul(lvr, lvi, ltr, lti, zvr, zvi, ztr, zti)
         zvr += tl.where(state == 0, recovery_value, 0.0)
         ztr += tl.where(state == 0, recovery_tangent, 0.0)
 
@@ -636,12 +646,20 @@ def _epg_vjp_jvp_kernel(
         e1_value = bare1_value * damp_z
         e2_tangent = e2_tangent * damp_t + bare2_value * damp_t_tangent
         e2_value = bare2_value * damp_t
-        angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value)
+        turn_z, turn_t = _flow(atom_flow, dt_value, order)
+        d_turn = d_flow * dt_value + atom_flow * dt_tangent
+        dturn_z = -order * d_turn
+        dturn_t = -(order + 0.5) * d_turn
+        szr, szi, sztr, szti = _dual_polar(turn_z, dturn_z)
+        angle_value = (
+            -2.0 * 3.141592653589793 * (atom_b0 * dt_value) + turn_t
+        )
         angle_tangent = -2.0 * 3.141592653589793 * (
             d_b0 * dt_value + atom_b0 * dt_tangent
-        )
+        ) + dturn_t
         qr, qi, qtr, qti = _dual_polar(angle_value, angle_tangent)
         ovr, ovi, otr, oti = _dual_scale(e2_value, e2_tangent, qr, qi, qtr, qti)
+        lvr, lvi, ltr, lti = _dual_scale(e1_value, e1_tangent, szr, szi, sztr, szti)
 
         # Replay the intra-event stages from the recorded entry state.
         rpvr, rpvi, rptr, rpti = _dual_mul(
@@ -650,8 +668,8 @@ def _epg_vjp_jvp_kernel(
         rmvr, rmvi, rmtr, rmti = _dual_mul(
             ovr, -ovi, otr, -oti, xmvr, xmvi, xmtr, xmti
         )
-        rzvr, rzvi, rztr, rzti = _dual_scale(
-            e1_value, e1_tangent, xzvr, xzvi, xztr, xzti
+        rzvr, rzvi, rztr, rzti = _dual_mul(
+            lvr, lvi, ltr, lti, xzvr, xzvi, xztr, xzti
         )
         rzvr += tl.where(state == 0, recovery_value, 0.0)
         rztr += tl.where(state == 0, recovery_tangent, 0.0)
@@ -951,11 +969,16 @@ def _epg_vjp_jvp_kernel(
         part_v, part_t = _dual_real_conj_mul(
             mbvr, mbvi, mbtr, mbti, mo[0], mo[1], mo[2], mo[3]
         )
-        grad_angle_v = tl.sum(angle_v - part_v, axis=1)[:, None]
-        grad_angle_t = tl.sum(angle_t - part_t, axis=1)[:, None]
+        # A turn of the transverse states and the off-resonance angle are the
+        # same derivative; only the weight each order carries differs.
+        per_angle_v = angle_v - part_v
+        per_angle_t = angle_t - part_t
+        grad_angle_v = tl.sum(per_angle_v, axis=1)[:, None]
+        grad_angle_t = tl.sum(per_angle_t, axis=1)[:, None]
 
+        spun = _dual_mul(szr, szi, sztr, szti, xzvr, xzvi, xztr, xzti)
         e1_v, e1_t = _dual_real_conj_mul(
-            zbvr, zbvi, zbtr, zbti, xzvr, xzvi, xztr, xzti
+            zbvr, zbvi, zbtr, zbti, spun[0], spun[1], spun[2], spun[3]
         )
         grad_e1_v = tl.sum(e1_v * damp_z, axis=1)[:, None]
         grad_e1_t = tl.sum(e1_v * damp_z_tangent + e1_t * damp_z, axis=1)[:, None]
@@ -983,14 +1006,30 @@ def _epg_vjp_jvp_kernel(
         g_diffv += -spread_v * dt_value
         g_difft += -(spread_v * dt_tangent + spread_t * dt_value)
 
+        # The longitudinal states turn too, and by a whole order rather than
+        # the transverse half-order more.
+        zo = _dual_mul(lvr, lvi, ltr, lti, xzvr, xzvi, xztr, xzti)
+        zo = _dual_times_i(zo[0], zo[1], zo[2], zo[3])
+        zangle_v, zangle_t = _dual_real_conj_mul(
+            zbvr, zbvi, zbtr, zbti, zo[0], zo[1], zo[2], zo[3]
+        )
+        wound_v = tl.sum(
+            per_angle_v * (order + 0.5) + zangle_v * order, axis=1
+        )[:, None]
+        wound_t = tl.sum(
+            per_angle_t * (order + 0.5) + zangle_t * order, axis=1
+        )[:, None]
+        g_flowv += -wound_v * dt_value
+        g_flowt += -(wound_v * dt_tangent + wound_t * dt_value)
+
         pbvr, pbvi, pbtr, pbti = _dual_mul(
             ovr, -ovi, otr, -oti, pbvr, pbvi, pbtr, pbti
         )
         mbvr, mbvi, mbtr, mbti = _dual_mul(
             ovr, ovi, otr, oti, mbvr, mbvi, mbtr, mbti
         )
-        zbvr, zbvi, zbtr, zbti = _dual_scale(
-            e1_value, e1_tangent, zbvr, zbvi, zbtr, zbti
+        zbvr, zbvi, zbtr, zbti = _dual_mul(
+            lvr, -lvi, ltr, -lti, zbvr, zbvi, zbtr, zbti
         )
 
         inverse1_value = 1000.0 / (atom_t1 * atom_t1)
@@ -1027,8 +1066,9 @@ def _epg_vjp_jvp_kernel(
         duration_t = -(grad_e1_v * decay1_tangent + grad_e1_t * decay1_value)
         duration_t -= grad_e2_v * decay2_tangent + grad_e2_t * decay2_value
         duration_t += grad_angle_v * (turn * d_b0) + grad_angle_t * (turn * atom_b0)
-        duration_v += -spread_v * atom_damping
+        duration_v += -spread_v * atom_damping - wound_v * atom_flow
         duration_t += -(spread_v * d_damping + spread_t * atom_damping)
+        duration_t += -(wound_v * d_flow + wound_t * atom_flow)
         tl.atomic_add(
             grad_duration_value + event_base + event, duration_v, mask=active_atom
         )
@@ -2272,6 +2312,8 @@ def _epg_jvp_kernel(
     )
     atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
     d_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
+    atom_flow = tl.load(velocity + atom, mask=active_atom, other=0.0)
+    d_flow = tl.load(tangent_velocity + atom, mask=active_atom, other=0.0)
     order = state.to(tl.float32)
     dt1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
     dt2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
@@ -2302,10 +2344,16 @@ def _epg_jvp_kernel(
         e1 = e1 * damp_z
         de2 = de2 * damp_t + e2 * ddamp_t
         e2 = e2 * damp_t
-        off_phase = -2.0 * 3.141592653589793 * atom_b0 * event_dt
+        turn_z, turn_t = _flow(atom_flow, event_dt, order)
+        d_turn = d_flow * event_dt + atom_flow * ddt
+        dturn_z = -order * d_turn
+        dturn_t = -(order + 0.5) * d_turn
+        # Flow winds the transverse states through the same rotation
+        # off-resonance does, so the two phases add before either is taken.
+        off_phase = -2.0 * 3.141592653589793 * atom_b0 * event_dt + turn_t
         doff_phase = -2.0 * 3.141592653589793 * (
             db0 * event_dt + atom_b0 * ddt
-        )
+        ) + dturn_t
         off_cos = tl.cos(off_phase)
         off_sin = tl.sin(off_phase)
         doff_cos = -off_sin * doff_phase
@@ -2353,12 +2401,34 @@ def _epg_jvp_kernel(
             + old_fmi * doff_cos
         )
 
+        # The longitudinal states carry a phase of their own, which nothing
+        # else in the state machine gives them.
+        turn_cos = tl.cos(turn_z)
+        turn_sin = tl.sin(turn_z)
+        dturn_cos = -turn_sin * dturn_z
+        dturn_sin = turn_cos * dturn_z
         old_zr = zr
         old_zi = zi
-        dzr = dzr * e1 + old_zr * de1 + tl.where(state == 0, drecovery, 0.0)
-        dzi = dzi * e1 + old_zi * de1
-        zr = old_zr * e1 + tl.where(state == 0, recovery, 0.0)
-        zi = old_zi * e1
+        old_dzr = dzr
+        old_dzi = dzi
+        spun_zr = old_zr * turn_cos - old_zi * turn_sin
+        spun_zi = old_zr * turn_sin + old_zi * turn_cos
+        dspun_zr = (
+            old_dzr * turn_cos
+            + old_zr * dturn_cos
+            - old_dzi * turn_sin
+            - old_zi * dturn_sin
+        )
+        dspun_zi = (
+            old_dzr * turn_sin
+            + old_zr * dturn_sin
+            + old_dzi * turn_cos
+            + old_zi * dturn_cos
+        )
+        dzr = dspun_zr * e1 + spun_zr * de1 + tl.where(state == 0, drecovery, 0.0)
+        dzi = dspun_zi * e1 + spun_zi * de1
+        zr = spun_zr * e1 + tl.where(state == 0, recovery, 0.0)
+        zi = spun_zi * e1
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
