@@ -3,6 +3,7 @@
 __all__ = [
     "rf_pulse_op",
     "phased_rf_pulse_op",
+    "spinor_rf_pulse_op",
     "multidrive_rf_pulse_op",
     "phased_multidrive_rf_pulse_op",
     "initialize_mt_sat",
@@ -514,6 +515,62 @@ def mt_sat(
 
 
 # %% utils
+def spinor_rf_pulse_op(
+    a: torch.Tensor, b: torch.Tensor
+) -> tuple[tuple[torch.Tensor]]:
+    """Build the RF rotation matrix from a pulse's Cayley-Klein pair.
+
+    A pulse of any shape acts on a spin as one element of SU(2),
+
+        U = [[a, b], [-conj(b), conj(a)]],   |a|^2 + |b|^2 = 1,
+
+    and the EPG rotation is that element carried into the (F+, F-, Z) basis.
+    Where :func:`phased_rf_pulse_op` names the two numbers an instantaneous
+    pulse turns through, this names the four a real one leaves behind, which is
+    what a shaped or slice-selective pulse needs: its rotation is about an
+    arbitrary axis, and no flip-and-phase pair reaches those.
+
+    Parameters
+    ----------
+    a : torch.Tensor
+        Cayley-Klein ``a``, complex.
+    b : torch.Tensor
+        Cayley-Klein ``b``, complex.
+
+    Returns
+    -------
+    T : tuple[tuple[torch.Tensor]]
+        RF rotation matrix elements.
+
+    Notes
+    -----
+    ``a = cos(fa / 2)`` and ``b = -1j * exp(-1j * phi) * sin(fa / 2)`` recovers
+    :func:`phased_rf_pulse_op`.
+    """
+    a = torch.as_tensor(a)
+    b = torch.as_tensor(b)
+    if not a.is_complex():
+        a = a.to(torch.complex64)
+    if not b.is_complex():
+        b = b.to(torch.complex64)
+
+    T00 = a.conj() ** 2
+    T01 = -(b.conj() ** 2)
+    T02 = -2.0 * (a * b).conj()
+    T10 = -(b**2)
+    T11 = a**2
+    T12 = -2.0 * a * b
+    T20 = a.conj() * b
+    T21 = a * b.conj()
+    T22 = a.abs() ** 2 - b.abs() ** 2
+
+    T0 = [T00[..., None], T01[..., None], T02[..., None]]
+    T1 = [T10[..., None], T11[..., None], T12[..., None]]
+    T2 = [T20[..., None], T21[..., None], T22[..., None] + 0j]
+
+    return [T0, T1, T2]
+
+
 def _prep_rf(fa):
     # calculate operator
     T00 = torch.cos(fa / 2) ** 2

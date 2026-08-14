@@ -157,6 +157,85 @@ def test_phased_multidrive_rf_pulse_op():
     assert torch.allclose(phi_out, commanded.angle())
 
 
+def _matrix(operator):
+    """The operator as a plain 3x3, for comparing whole rotations."""
+    return torch.stack(
+        [torch.stack([entry.reshape(()) for entry in row]) for row in operator]
+    )
+
+
+def _spinor(fa, phi):
+    """The Cayley-Klein pair of an instantaneous pulse."""
+    fa = torch.as_tensor(fa, dtype=torch.float32)
+    phi = torch.as_tensor(phi, dtype=torch.float32)
+    a = torch.cos(fa / 2).to(torch.complex64)
+    b = -1j * torch.exp(-1j * phi.to(torch.complex64)) * torch.sin(fa / 2)
+    return a, b
+
+
+@pytest.mark.parametrize("fa_deg", [0.0, 17.0, 90.0, 180.0, 250.0])
+@pytest.mark.parametrize("phi_deg", [0.0, 33.0, 90.0, 200.0])
+def test_the_spinor_operator_is_the_phased_one_written_another_way(fa_deg, phi_deg):
+    """The general form has to contain the instantaneous pulse as a case."""
+    fa = torch.deg2rad(torch.tensor(fa_deg))
+    phi = torch.deg2rad(torch.tensor(phi_deg))
+    expected = _matrix(epg.phased_rf_pulse_op(fa, phi))
+    actual = _matrix(epg.spinor_rf_pulse_op(*_spinor(fa, phi)))
+
+    assert torch.allclose(expected, actual, atol=1e-6)
+
+
+def test_the_spinor_operator_conserves_the_magnetization():
+    """A rotation is unitary in the EPG basis under its own inner product.
+
+    ``|F+|^2 + |F-|^2 + 2|Z|^2`` is what the (F+, F-, Z) basis makes of the
+    length of the magnetization vector, so a genuine rotation preserves it and
+    a matrix with a sign wrong in it does not.
+    """
+    generator = torch.Generator().manual_seed(0)
+    for _ in range(20):
+        pair = torch.randn(4, generator=generator)
+        a = torch.complex(pair[0], pair[1])
+        b = torch.complex(pair[2], pair[3])
+        scale = torch.sqrt(a.abs() ** 2 + b.abs() ** 2)
+        a, b = a / scale, b / scale
+
+        rotation = _matrix(epg.spinor_rf_pulse_op(a, b))
+        state = torch.complex(
+            torch.randn(3, generator=generator), torch.randn(3, generator=generator)
+        )
+        # F- is the conjugate of F+ for a physical state.
+        state[1] = state[0].conj()
+        state[2] = state[2].real + 0j
+        turned = rotation @ state
+
+        def length(value):
+            return (
+                value[0].abs() ** 2 + value[1].abs() ** 2 + 2.0 * value[2].abs() ** 2
+            )
+
+        assert torch.allclose(length(turned), length(state), atol=1e-4)
+
+
+def test_a_pulse_split_in_two_is_the_two_pulses_composed():
+    """SU(2) composes, so the operator built from the product is the product.
+
+    This is what makes a shaped pulse expressible at all: its rotation is the
+    ordered product of the rotations of its samples.
+    """
+    first, second = _spinor(0.7, 0.3), _spinor(1.1, -0.9)
+    # (a, b) of the product of the two SU(2) elements, second acting last.
+    a = second[0] * first[0] - second[1] * first[1].conj()
+    b = second[0] * first[1] + second[1] * first[0].conj()
+
+    composed = _matrix(epg.spinor_rf_pulse_op(a, b))
+    stepwise = _matrix(epg.spinor_rf_pulse_op(*second)) @ _matrix(
+        epg.spinor_rf_pulse_op(*first)
+    )
+
+    assert torch.allclose(composed, stepwise, atol=1e-6)
+
+
 def test_initialize_mt_sat():
     duration = torch.tensor(0.001)  # 1 ms
     b1rms = torch.tensor(0.05)  # Tesla
