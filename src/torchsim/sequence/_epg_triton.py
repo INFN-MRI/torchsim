@@ -10,6 +10,7 @@ from ._accelerators import _train_count
 import triton
 import triton.language as tl
 
+from ._parameters import NO_GEOMETRY, Geometry
 from ._parameters import TISSUE_COUNT as _TISSUE_PARAMETERS
 
 # Triton reads globals only through its own constexpr wrapper.
@@ -126,6 +127,32 @@ def _flow(rate, dt, order):
     """
     turn = rate * dt
     return -order * turn, -(order + 0.5) * turn
+
+
+@triton.jit
+def _washout(rate, dt):
+    """The fraction of a voxel's spins that stay put over one interval.
+
+    Inflowing spins are taken to be fully relaxed and unexcited, which makes
+    washout an affine map of the shape longitudinal recovery already has:
+
+        wout * (Z * e1 + (1 - e1)) + win  ==  Z * (e1 * wout) + (1 - e1 * wout)
+
+    so scaling both relaxation factors by it carries the whole term. Clamped at
+    one, past which the interval has replaced the voxel outright.
+    """
+    return 1.0 - tl.minimum(rate * dt, 1.0)
+
+
+@triton.jit
+def _washout_jvp(rate, rate_tangent, dt, dt_tangent):
+    """The same fraction and its directional derivative."""
+    fraction = rate * dt
+    live = fraction < 1.0
+    return (
+        tl.where(live, 1.0 - fraction, 0.0),
+        tl.where(live, -(rate_tangent * dt + rate * dt_tangent), 0.0),
+    )
 
 
 @triton.jit
@@ -353,6 +380,8 @@ def _epg_vjp_jvp_kernel(
     train_count,
     event_count,
     output_count,
+    flow_scale,
+    washout_scale,
     state_count: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
@@ -407,8 +436,16 @@ def _epg_vjp_jvp_kernel(
     )
     atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
     d_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
-    atom_flow = tl.load(velocity + atom, mask=active_atom, other=0.0)
-    d_flow = tl.load(dot_velocity + atom, mask=active_atom, other=0.0)
+    atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+    d_velocity = tl.load(dot_velocity + atom, mask=active_atom, other=0.0)
+    atom_flow = atom_velocity * flow_scale
+    d_flow = d_velocity * flow_scale
+    # |v| has no derivative at the origin, so a still voxel contributes none.
+    direction = (atom_velocity > 0.0).to(tl.float32) - (atom_velocity < 0.0).to(
+        tl.float32
+    )
+    atom_washout = tl.abs(atom_velocity) * washout_scale
+    d_washout = direction * d_velocity * washout_scale
     order = state.to(tl.float32)
     longitudinal_weight = order * order
     transverse_weight = longitudinal_weight + order + 0.3333333333333333
@@ -437,10 +474,21 @@ def _epg_vjp_jvp_kernel(
         dt_tangent = tl.load(
             dot_duration + event_base + event, mask=active_atom, other=0.0
         )
-        e1_value = tl.exp(-r1_value * dt_value)
-        e1_tangent = -e1_value * (r1_value * dt_tangent + r1_tangent * dt_value)
-        e2_value = tl.exp(-r2_value * dt_value)
-        e2_tangent = -e2_value * (r2_value * dt_tangent + r2_tangent * dt_value)
+        wout_value, wout_tangent = _washout_jvp(
+            atom_washout, d_washout, dt_value, dt_tangent
+        )
+        dry1_value = tl.exp(-r1_value * dt_value)
+        dry1_tangent = -dry1_value * (
+            r1_value * dt_tangent + r1_tangent * dt_value
+        )
+        dry2_value = tl.exp(-r2_value * dt_value)
+        dry2_tangent = -dry2_value * (
+            r2_value * dt_tangent + r2_tangent * dt_value
+        )
+        e1_value = dry1_value * wout_value
+        e1_tangent = dry1_tangent * wout_value + dry1_value * wout_tangent
+        e2_value = dry2_value * wout_value
+        e2_tangent = dry2_tangent * wout_value + dry2_value * wout_tangent
         damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
             atom_damping, d_damping, dt_value, dt_tangent, order
         )
@@ -594,6 +642,8 @@ def _epg_vjp_jvp_kernel(
     g_difft = zero
     g_flowv = zero
     g_flowt = zero
+    g_washv = zero
+    g_washt = zero
     g_t1v = zero
     g_t1t = zero
     g_t2v = zero
@@ -631,10 +681,21 @@ def _epg_vjp_jvp_kernel(
         dt_tangent = tl.load(
             dot_duration + event_base + event, mask=active_atom, other=0.0
         )
-        e1_value = tl.exp(-r1_value * dt_value)
-        e1_tangent = -e1_value * (r1_value * dt_tangent + r1_tangent * dt_value)
-        e2_value = tl.exp(-r2_value * dt_value)
-        e2_tangent = -e2_value * (r2_value * dt_tangent + r2_tangent * dt_value)
+        wout_value, wout_tangent = _washout_jvp(
+            atom_washout, d_washout, dt_value, dt_tangent
+        )
+        dry1_value = tl.exp(-r1_value * dt_value)
+        dry1_tangent = -dry1_value * (
+            r1_value * dt_tangent + r1_tangent * dt_value
+        )
+        dry2_value = tl.exp(-r2_value * dt_value)
+        dry2_tangent = -dry2_value * (
+            r2_value * dt_tangent + r2_tangent * dt_value
+        )
+        e1_value = dry1_value * wout_value
+        e1_tangent = dry1_tangent * wout_value + dry1_value * wout_tangent
+        e2_value = dry2_value * wout_value
+        e2_tangent = dry2_tangent * wout_value + dry2_value * wout_tangent
         damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
             atom_damping, d_damping, dt_value, dt_tangent, order
         )
@@ -1022,6 +1083,19 @@ def _epg_vjp_jvp_kernel(
         g_flowv += -wound_v * dt_value
         g_flowt += -(wound_v * dt_tangent + wound_t * dt_value)
 
+        # Washout scales both relaxation factors, so its gradient is the one
+        # they already carry, taken against the factors before that scaling.
+        # Past the clamp the interval has replaced the voxel outright and
+        # nothing further depends on the rate.
+        washing = (atom_washout * dt_value < 1.0).to(tl.float32)
+        wash_v = -washing * (grad_e1_v * dry1_value + grad_e2_v * dry2_value)
+        wash_t = -washing * (
+            grad_e1_v * dry1_tangent + grad_e1_t * dry1_value
+            + grad_e2_v * dry2_tangent + grad_e2_t * dry2_value
+        )
+        g_washv += wash_v * dt_value
+        g_washt += wash_v * dt_tangent + wash_t * dt_value
+
         pbvr, pbvi, pbtr, pbti = _dual_mul(
             ovr, -ovi, otr, -oti, pbvr, pbvi, pbtr, pbti
         )
@@ -1069,6 +1143,8 @@ def _epg_vjp_jvp_kernel(
         duration_v += -spread_v * atom_damping - wound_v * atom_flow
         duration_t += -(spread_v * d_damping + spread_t * atom_damping)
         duration_t += -(wound_v * d_flow + wound_t * atom_flow)
+        duration_v += wash_v * atom_washout
+        duration_t += wash_v * d_washout + wash_t * atom_washout
         tl.atomic_add(
             grad_duration_value + event_base + event, duration_v, mask=active_atom
         )
@@ -1076,11 +1152,13 @@ def _epg_vjp_jvp_kernel(
             grad_duration_tangent + event_base + event, duration_t, mask=active_atom
         )
 
+    velocity_v = g_flowv * flow_scale + g_washv * direction * washout_scale
+    velocity_t = g_flowt * flow_scale + g_washt * direction * washout_scale
     values = (
-        g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv, g_flowv,
+        g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv, velocity_v,
     )
     tangents = (
-        g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt, g_difft, g_flowt,
+        g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt, g_difft, velocity_t,
     )
     for parameter in tl.static_range(_TISSUE_COUNT):
         tl.atomic_add(
@@ -2046,6 +2124,8 @@ def _epg_kernel(
     train_count,
     event_count,
     output_count,
+    flow_scale,
+    washout_scale,
     state_count: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
@@ -2082,14 +2162,17 @@ def _epg_kernel(
         inversion_efficiency + atom, mask=active_atom, other=1.0
     )
     atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-    atom_flow = tl.load(velocity + atom, mask=active_atom, other=0.0)
+    atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+    atom_flow = atom_velocity * flow_scale
+    atom_washout = tl.abs(atom_velocity) * washout_scale
     order = state.to(tl.float32)
 
     event_base = train * event_count
     for event in range(0, event_count):
         dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        e1 = tl.exp(-(1000.0 / atom_t1) * dt)
-        e2 = tl.exp(-(1000.0 / atom_t2) * dt)
+        wout = _washout(atom_washout, dt)
+        e1 = tl.exp(-(1000.0 / atom_t1) * dt) * wout
+        e2 = tl.exp(-(1000.0 / atom_t2) * dt) * wout
         damp_z, damp_t = _damping(atom_damping, dt, order)
         turn_z, turn_t = _flow(atom_flow, dt, order)
         recovery = 1.0 - e1
@@ -2269,6 +2352,8 @@ def _epg_jvp_kernel(
     train_count,
     event_count,
     output_count,
+    flow_scale,
+    washout_scale,
     state_count: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
@@ -2312,8 +2397,16 @@ def _epg_jvp_kernel(
     )
     atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
     d_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
-    atom_flow = tl.load(velocity + atom, mask=active_atom, other=0.0)
-    d_flow = tl.load(tangent_velocity + atom, mask=active_atom, other=0.0)
+    atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+    d_velocity = tl.load(tangent_velocity + atom, mask=active_atom, other=0.0)
+    atom_flow = atom_velocity * flow_scale
+    d_flow = d_velocity * flow_scale
+    # |v| has no derivative at the origin, so a still voxel contributes none.
+    direction = (atom_velocity > 0.0).to(tl.float32) - (atom_velocity < 0.0).to(
+        tl.float32
+    )
+    atom_washout = tl.abs(atom_velocity) * washout_scale
+    d_washout = direction * d_velocity * washout_scale
     order = state.to(tl.float32)
     dt1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
     dt2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
@@ -2331,10 +2424,17 @@ def _epg_jvp_kernel(
         ddt = tl.load(tangent_duration + event_base + event, mask=active_atom, other=0.0)
         r1 = 1000.0 / atom_t1
         r2 = 1000.0 / atom_t2
-        e1 = tl.exp(-r1 * event_dt)
-        e2 = tl.exp(-r2 * event_dt)
-        de1 = e1 * (1000.0 * event_dt * dt1 / (atom_t1 * atom_t1) - r1 * ddt)
-        de2 = e2 * (1000.0 * event_dt * dt2 / (atom_t2 * atom_t2) - r2 * ddt)
+        wout, dwout = _washout_jvp(atom_washout, d_washout, event_dt, ddt)
+        dry1 = tl.exp(-r1 * event_dt)
+        dry2 = tl.exp(-r2 * event_dt)
+        e1 = dry1 * wout
+        e2 = dry2 * wout
+        de1 = e1 * (
+            1000.0 * event_dt * dt1 / (atom_t1 * atom_t1) - r1 * ddt
+        ) + dry1 * dwout
+        de2 = e2 * (
+            1000.0 * event_dt * dt2 / (atom_t2 * atom_t2) - r2 * ddt
+        ) + dry2 * dwout
         damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
             atom_damping, d_damping, event_dt, ddt, order
         )
@@ -2678,6 +2778,7 @@ def simulate(
     state_count: int,
     output_count: int,
     real_axis: int | None = None,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> torch.Tensor:
     """Run a packed state machine on CUDA and return complex signals.
 
@@ -2702,6 +2803,7 @@ def simulate(
         output_count=output_count,
         real_axis=real_axis,
         atom_count=atom_count,
+        geometry=geometry,
     )
     return torch.complex(output_real, output_imag)
 
@@ -2717,6 +2819,7 @@ def simulate_into(
     output_count: int,
     real_axis: int | None,
     atom_count: int,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> None:
     """Run the forward machine into buffers the caller owns.
 
@@ -2791,6 +2894,8 @@ def simulate_into(
         train_count,
         kind.numel(),
         output_count,
+        geometry.flow_scale,
+        geometry.washout_scale,
         state_count=state_count,
         block_states=block_states,
         problems=problems,
@@ -2807,6 +2912,7 @@ def simulate_jvp(
     state_count: int,
     output_count: int,
     real_axis: int | None = None,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> torch.Tensor:
     """Run one fused state-machine Jacobian-vector product on CUDA.
 
@@ -2834,6 +2940,7 @@ def simulate_jvp(
         output_count=output_count,
         real_axis=real_axis,
         atom_count=atom_count,
+        geometry=geometry,
     )
     return torch.complex(output_real, output_imag)
 
@@ -2851,6 +2958,7 @@ def simulate_jvp_into(
     output_count: int,
     real_axis: int | None,
     atom_count: int,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> None:
     """Run one Jacobian-vector product into buffers the caller owns.
 
@@ -2925,6 +3033,8 @@ def simulate_jvp_into(
         train_count,
         kind.numel(),
         output_count,
+        geometry.flow_scale,
+        geometry.washout_scale,
         state_count=state_count,
         block_states=block_states,
         problems=problems,
@@ -3042,6 +3152,7 @@ def simulate_vjp_jvp_into(
     output_count: int,
     real_axis: int | None = None,
     atom_count: int,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> tuple[tuple[torch.Tensor, ...], ...]:
     """Forward-over-reverse for one chunk of voxels, into caller-owned buffers.
 
@@ -3141,6 +3252,8 @@ def simulate_vjp_jvp_into(
                 train_count,
                 event_count,
                 output_count,
+                geometry.flow_scale,
+                geometry.washout_scale,
                 **shape,
             )
 
@@ -3157,6 +3270,7 @@ def simulate_vjp_jvp(
     state_count: int,
     output_count: int,
     real_axis: int | None = None,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse through the state machine on CUDA.
 
@@ -3191,6 +3305,7 @@ def simulate_vjp_jvp(
         output_count=output_count,
         real_axis=real_axis,
         atom_count=atom_count,
+        geometry=geometry,
     )
     return tuple(
         (*voxels, *per_event)

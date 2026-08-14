@@ -10,6 +10,7 @@ import torch
 
 from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._accelerators import (
+    geometry_of,
     _pack_events,
     _run_packed,
     _run_packed_jvp,
@@ -389,6 +390,27 @@ def test_the_directions_outside_the_subspace_stay_zero():
             assert side[index].abs().max() == 0
 
 
+# The spoiler this case declares, and the voxel it winds across. Both are
+# needed for a spin velocity to reach the signal at all: the winding is what
+# flow dephasing turns each order through, and the voxel is what washout
+# replaces.
+SPGR_CRUSHER_RAD = 8.0 * torch.pi
+SPGR_VOXEL_M = 5e-4
+
+
+def _spgr_description(flip):
+    from torchsim.sequence._builders import spgr_description
+
+    return spgr_description(
+        flip,
+        repetition_time_s=10e-3,
+        echo_time_s=4e-3,
+        phases_rad=torch.pi / 3,
+        crusher_dephasing_rad=SPGR_CRUSHER_RAD,
+        voxel_size_m=SPGR_VOXEL_M,
+    )
+
+
 def _spgr_case(device, trains, atoms):
     """A spoiled train, which unlike FSE leaves off-resonance in the signal.
 
@@ -399,17 +421,12 @@ def _spgr_case(device, trains, atoms):
     The builder emits one train at a time, so the float buffers are stacked to
     batch them; the structural buffers are shared, as the kernels expect.
     """
-    from torchsim.sequence._builders import spgr_description
-
     generator = torch.Generator().manual_seed(0)
     packed = [
         _pack_events(
             "spgr",
-            spgr_description(
+            _spgr_description(
                 torch.deg2rad(5.0 + 20.0 * torch.rand(12, generator=generator)),
-                repetition_time_s=10e-3,
-                echo_time_s=4e-3,
-                phases_rad=torch.pi / 3,
             ),
             repetitions=1,
             record="all",
@@ -436,6 +453,7 @@ def _spgr_case(device, trains, atoms):
         t2_ms=torch.linspace(40.0, 120.0, atoms),
         b0_hz=torch.linspace(20.0, 200.0, atoms),
         b1_phase_rad=torch.linspace(0.0, 0.3, atoms),
+        velocity_m_per_s=torch.linspace(-0.02, 0.02, atoms),
     )
     prepared, _, _ = _prepare_tissue(tissue, device)
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
@@ -457,6 +475,7 @@ def _complex_second_order(device, trains, atoms, seed_index=1):
         output_count=count,
         threads=1,
         real_axis=-1,
+        geometry=geometry_of(_spgr_description(torch.zeros(12))),
     )
 
 

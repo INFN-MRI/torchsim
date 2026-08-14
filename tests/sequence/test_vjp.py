@@ -15,6 +15,7 @@ from torchsim import (
 )
 from torchsim.sequence import _accelerators
 from torchsim.sequence._accelerators import (
+    NO_GEOMETRY,
     _NativeEpg,
     _pack_events,
     _run_packed_vjp,
@@ -107,7 +108,9 @@ def _leaves(prepared, events):
 
 def _route(route: str, tissue, events, output_count: int, state_count: int):
     if route == "kernel":
-        return _NativeEpg.apply(*tissue, *events, state_count, output_count, 1)
+        return _NativeEpg.apply(
+            *tissue, *events, state_count, output_count, 1, NO_GEOMETRY
+        )
     return simulate_packed(
         tissue, events, state_count=state_count, output_count=output_count
     )

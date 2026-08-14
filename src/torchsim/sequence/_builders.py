@@ -34,7 +34,7 @@ def fse_description(
     excitation_phase_rad: Any = torch.pi / 2,
     repetition_time_s: Any | None = None,
     crusher_dephasing_rad: float = 0.0,
-    voxel_size_m: float = 1.0,
+    voxel_size_m: float | None = None,
 ) -> SequenceDescription:
     """Build an ideal FSE echo-train description.
 
@@ -99,7 +99,7 @@ def mrf_description(
     inversion_time_s: Any = 0.0,
     phases_rad: Any = 0.0,
     crusher_dephasing_rad: float = 0.0,
-    voxel_size_m: float = 1.0,
+    voxel_size_m: float | None = None,
 ) -> SequenceDescription:
     """Build an inversion-prepared unbalanced SSFP fingerprint description."""
     flip = torch.atleast_1d(flip_rad)
@@ -156,7 +156,7 @@ def mpnrage_description(
     inversion_time_s: Any = 0.0,
     phases_rad: Any = 0.0,
     crusher_dephasing_rad: float = 0.0,
-    voxel_size_m: float = 1.0,
+    voxel_size_m: float | None = None,
 ) -> SequenceDescription:
     """Build an inversion-prepared spoiled GRE echo train."""
     if nshots < 1:
@@ -186,7 +186,7 @@ def mprage_description(
     *,
     phases_rad: Any = 0.0,
     crusher_dephasing_rad: float = 0.0,
-    voxel_size_m: float = 1.0,
+    voxel_size_m: float | None = None,
 ) -> SequenceDescription:
     """Build an MPRAGE train whose sole acquired ADC is the k-space center."""
     if nshots_before < 0 or nshots_after < 0:
@@ -217,7 +217,7 @@ def spgr_description(
     *,
     phases_rad: Any = 0.0,
     crusher_dephasing_rad: float = 0.0,
-    voxel_size_m: float = 1.0,
+    voxel_size_m: float | None = None,
 ) -> SequenceDescription:
     """Build a spoiled GRE train description."""
     flip = torch.atleast_1d(flip_rad)
@@ -285,7 +285,7 @@ def _inversion_prepared_gre_description(
     phases_rad: Any,
     center_index: int | None,
     crusher_dephasing_rad: float,
-    voxel_size_m: float,
+    voxel_size_m: float | None,
 ) -> SequenceDescription:
     repetition_time = _expand_like(repetition_time_s, flip, "TR")
     phases = _expand_like(phases_rad, flip, "phase")

@@ -177,6 +177,14 @@ struct Buffers {
     // which is what lets threads write event gradients without sharing a slot.
     std::int64_t atom_count;
     std::int64_t train_count;
+    // The sequence's gradient geometry, which turns a spin velocity into the
+    // two rates it drives: ``flow_scale`` in rad/m is the winding an unbalanced
+    // gradient puts across a metre, and ``washout_scale`` in 1/m is the
+    // reciprocal voxel size. They are separate because washout depends on the
+    // speed a spin leaves the voxel at whether or not a gradient is playing,
+    // while flow dephasing depends on the winding it crosses.
+    float flow_scale;
+    float washout_scale;
 };
 
 // Per-work-item view of the buffers that vary along the train axis.
@@ -440,6 +448,40 @@ inline void flow_turn_dual(
     transverse = (-(order + 0.5F)) * turn;
 }
 
+// The fraction of a voxel's spins replaced by inflowing ones over an interval,
+// at a rate of ``|v| / voxel_size`` per second. Clamped at one: a spin cannot
+// leave the voxel more than once, and past that the whole voxel has turned over.
+//
+// The inflowing spins are taken to be fully relaxed and unexcited -- no
+// transverse magnetization and unit longitudinal -- which is the single
+// compartment a state machine over one voxel can see. That makes washout an
+// affine map of exactly the shape longitudinal recovery already has, and
+//
+//     wout * (Z * e1 + (1 - e1)) + win  ==  Z * (e1 * wout) + (1 - e1 * wout)
+//
+// so it needs no term of its own: scaling e1 and e2 by ``wout`` carries it,
+// derivatives included.
+inline float washout_out(const float rate, const float dt) {
+    return 1.0F - std::min(rate * dt, 1.0F);
+}
+
+// The same fraction carried on dual numbers. Past the clamp the interval has
+// replaced the voxel outright and nothing further depends on the rate, so the
+// tangent is zero there.
+inline DualFloat washout_out(const DualFloat rate, const DualFloat dt) {
+    const DualFloat fraction = rate * dt;
+    if (fraction.value >= 1.0F) {
+        return DualFloat{0.0F, 0.0F};
+    }
+    return DualFloat{1.0F - fraction.value, -fraction.tangent};
+}
+
+// Which way a velocity points, and nothing at all where it is zero: washout
+// depends on the speed, and |v| has no derivative at the origin.
+inline float speed_direction(const float velocity) {
+    return static_cast<float>(velocity > 0.0F) - static_cast<float>(velocity < 0.0F);
+}
+
 // Whether any atom carries diffusion. The lane kernels keep transcendentals
 // out of their state loops, which per-order damping would undo, so they are
 // selected only when this is false.
@@ -646,22 +688,33 @@ void simulate_jvp_range(
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.diffusion[atom]
         };
-        const DualFloat flow_rate{primal.velocity[atom], buffers.velocity[atom]};
+        const float velocity = primal.velocity[atom];
+        const float dot_velocity = buffers.velocity[atom];
+        const DualFloat flow_rate{
+            velocity * primal.flow_scale, dot_velocity * primal.flow_scale
+        };
+        const DualFloat washout_rate{
+            std::fabs(velocity) * primal.washout_scale,
+            speed_direction(velocity) * dot_velocity * primal.washout_scale,
+        };
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
             const float dt_tangent = dot_duration[event];
             const DualFloat interval{dt, dt_tangent};
             damping.set(damping_rate, interval);
-            const float e1 = std::exp(-r1 * dt);
-            const float e2 = std::exp(-r2 * dt);
+            const DualFloat wout = washout_out(washout_rate, interval);
+            const float dry1 = std::exp(-r1 * dt);
+            const float dry2 = std::exp(-r2 * dt);
+            const float e1 = dry1 * wout.value;
+            const float e2 = dry2 * wout.value;
             const float e1_tangent = e1 * (
                 1000.0F * dt * buffers.t1[atom] / (t1 * t1)
                 - r1 * dt_tangent
-            );
+            ) + dry1 * wout.tangent;
             const float e2_tangent = e2 * (
                 1000.0F * dt * buffers.t2[atom] / (t2 * t2)
                 - r2 * dt_tangent
-            );
+            ) + dry2 * wout.tangent;
             const float angle = -2.0F * PI * primal.b0[atom] * dt;
             const float angle_tangent = -2.0F * PI * (
                 buffers.b0[atom] * dt + primal.b0[atom] * dt_tangent
@@ -1725,12 +1778,15 @@ void simulate_range(
         const float r1 = 1000.0F / buffers.t1[atom];
         const float r2 = 1000.0F / buffers.t2[atom];
         const float damping_rate = buffers.diffusion[atom];
-        const float flow_rate = buffers.velocity[atom];
+        const float flow_rate = buffers.velocity[atom] * buffers.flow_scale;
+        const float washout_rate =
+            std::fabs(buffers.velocity[atom]) * buffers.washout_scale;
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
-            const float e1 = std::exp(-r1 * dt);
-            const float e2 = std::exp(-r2 * dt);
+            const float wout = washout_out(washout_rate, dt);
+            const float e1 = std::exp(-r1 * dt) * wout;
+            const float e2 = std::exp(-r2 * dt) * wout;
             const float off_angle = -2.0F * PI * buffers.b0[atom] * dt;
             for (std::int64_t state = 0; state < state_count; ++state) {
                 const std::size_t index = static_cast<std::size_t>(state);
@@ -2015,7 +2071,9 @@ void simulate_vjp_range(
         const float b1_phase = primal.b1_phase[atom];
         const float efficiency = primal.inversion_efficiency[atom];
         const float damping_rate = primal.diffusion[atom];
-        const float flow_rate = primal.velocity[atom];
+        const float velocity = primal.velocity[atom];
+        const float flow_rate = velocity * primal.flow_scale;
+        const float washout_rate = std::fabs(velocity) * primal.washout_scale;
 
         // ---- forward, recording the state entering each event ----
         for (std::int64_t event = 0; event < event_count; ++event) {
@@ -2027,8 +2085,9 @@ void simulate_vjp_range(
 
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
-            const float e1 = std::exp(-r1 * dt);
-            const float e2 = std::exp(-r2 * dt);
+            const float wout = washout_out(washout_rate, dt);
+            const float e1 = std::exp(-r1 * dt) * wout;
+            const float e2 = std::exp(-r2 * dt) * wout;
             const float off_angle = -2.0F * PI * b0 * dt;
             for (std::size_t state = 0; state < states; ++state) {
                 float turn_longitudinal = 0.0F;
@@ -2088,6 +2147,7 @@ void simulate_vjp_range(
         float grad_efficiency = 0.0F;
         float grad_damping = 0.0F;
         float grad_flow = 0.0F;
+        float grad_washout = 0.0F;
 
         for (std::int64_t event = event_count - 1; event >= 0; --event) {
             const Complex* slot = trajectory.data()
@@ -2098,8 +2158,11 @@ void simulate_vjp_range(
 
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
-            const float e1 = std::exp(-r1 * dt);
-            const float e2 = std::exp(-r2 * dt);
+            const float dry1 = std::exp(-r1 * dt);
+            const float dry2 = std::exp(-r2 * dt);
+            const float wout = washout_out(washout_rate, dt);
+            const float e1 = dry1 * wout;
+            const float e2 = dry2 * wout;
             const float angle = -2.0F * PI * b0 * dt;
             const Complex phase = std::polar(1.0F, angle);
             const Complex off_resonance = e2 * phase;
@@ -2260,16 +2323,26 @@ void simulate_vjp_range(
                 longitudinal_bar[state] = std::conj(full_longitudinal) * az;
             }
 
+            // Washout scales both relaxation factors, so its gradient is the
+            // one they already carry, taken against those factors as they
+            // stand before that scaling. Past the clamp nothing depends on the
+            // rate any more.
+            const float grad_wout = washout_rate * dt < 1.0F
+                ? -(dry1 * grad_e1 + dry2 * grad_e2)
+                : 0.0F;
+
             grad_t1 += grad_e1 * e1 * 1000.0F * dt / (t1 * t1);
             grad_t2 += grad_e2 * e2 * 1000.0F * dt / (t2 * t2);
             grad_b0 += grad_angle * (-2.0F * PI * dt);
             grad_damping += grad_b_factor * dt;
             grad_flow += grad_turn * dt;
+            grad_washout += grad_wout * dt;
             grad_duration_train[event] +=
                 grad_e1 * (-r1 * e1) + grad_e2 * (-r2 * e2)
                 + grad_angle * (-2.0F * PI * b0)
                 + grad_b_factor * damping_rate
-                + grad_turn * flow_rate;
+                + grad_turn * flow_rate
+                + grad_wout * washout_rate;
         }
 
         const std::int64_t atoms = primal.atom_count;
@@ -2281,7 +2354,10 @@ void simulate_vjp_range(
         grad_tissue_local[5 * atoms + atom] += grad_b0;
         grad_tissue_local[6 * atoms + atom] += grad_efficiency;
         grad_tissue_local[7 * atoms + atom] += grad_damping;
-        grad_tissue_local[8 * atoms + atom] += grad_flow;
+        // One buffer drives two rates, so the velocity gradient is the sum of
+        // what each geometry carries back.
+        grad_tissue_local[8 * atoms + atom] += grad_flow * primal.flow_scale
+            + grad_washout * speed_direction(velocity) * primal.washout_scale;
     }
 }
 
@@ -3273,8 +3349,14 @@ void simulate_vjp_jvp_range(
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.dot_diffusion[atom]
         };
+        const float velocity = primal.velocity[atom];
+        const float dot_velocity = buffers.dot_velocity[atom];
         const DualFloat flow_rate{
-            primal.velocity[atom], buffers.dot_velocity[atom]
+            velocity * primal.flow_scale, dot_velocity * primal.flow_scale
+        };
+        const DualFloat washout_rate{
+            std::fabs(velocity) * primal.washout_scale,
+            speed_direction(velocity) * dot_velocity * primal.washout_scale,
         };
 
         std::fill(fplus.begin(), fplus.end(), DualComplex{});
@@ -3294,8 +3376,11 @@ void simulate_vjp_jvp_range(
                 view.duration[event], dot_duration[event]
             };
             damping.set(damping_rate, dt);
-            const DualFloat e1 = dual_exp(DualFloat{0.0F, 0.0F} - (r1 * dt));
-            const DualFloat e2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
+            const DualFloat wout = washout_out(washout_rate, dt);
+            const DualFloat dry1 = dual_exp(DualFloat{0.0F, 0.0F} - (r1 * dt));
+            const DualFloat dry2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
+            const DualFloat e1 = dry1 * wout;
+            const DualFloat e2 = dry2 * wout;
             const DualFloat angle = -2.0F * PI * (b0 * dt);
             const DualComplex off = e2 * dual_polar(angle);
             const DualComplex off_conj = conjugate(off);
@@ -3361,6 +3446,7 @@ void simulate_vjp_jvp_range(
         DualFloat grad_efficiency{0.0F, 0.0F};
         DualFloat grad_damping{0.0F, 0.0F};
         DualFloat grad_flow{0.0F, 0.0F};
+        DualFloat grad_washout{0.0F, 0.0F};
 
         for (std::int64_t event = event_count - 1; event >= 0; --event) {
             const DualComplex* slot = trajectory.data()
@@ -3373,8 +3459,11 @@ void simulate_vjp_jvp_range(
                 view.duration[event], dot_duration[event]
             };
             damping.set(damping_rate, dt);
-            const DualFloat e1 = dual_exp(DualFloat{0.0F, 0.0F} - (r1 * dt));
-            const DualFloat e2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
+            const DualFloat wout = washout_out(washout_rate, dt);
+            const DualFloat dry1 = dual_exp(DualFloat{0.0F, 0.0F} - (r1 * dt));
+            const DualFloat dry2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
+            const DualFloat e1 = dry1 * wout;
+            const DualFloat e2 = dry2 * wout;
             const DualFloat angle = -2.0F * PI * (b0 * dt);
             const DualComplex phase = dual_polar(angle);
             const DualComplex off = e2 * phase;
@@ -3555,20 +3644,29 @@ void simulate_vjp_jvp_range(
             grad_t1 = grad_t1 + grad_e1 * e1 * (1000.0F * (dt * inverse_t1_squared));
             grad_t2 = grad_t2 + grad_e2 * e2 * (1000.0F * (dt * inverse_t2_squared));
             grad_b0 = grad_b0 + grad_angle * (-2.0F * PI * dt);
+            const DualFloat grad_wout =
+                washout_rate.value * dt.value < 1.0F
+                    ? DualFloat{0.0F, 0.0F} - (dry1 * grad_e1 + dry2 * grad_e2)
+                    : DualFloat{0.0F, 0.0F};
             grad_damping = grad_damping + grad_b_factor * dt;
             grad_flow = grad_flow + grad_turn * dt;
+            grad_washout = grad_washout + grad_wout * dt;
             grad_duration_train[event] = grad_duration_train[event]
                 + (DualFloat{0.0F, 0.0F} - (grad_e1 * (r1 * e1)))
                 - (grad_e2 * (r2 * e2))
                 + grad_angle * (-2.0F * PI * b0)
                 + grad_b_factor * damping_rate
-                + grad_turn * flow_rate;
+                + grad_turn * flow_rate
+                + grad_wout * washout_rate;
         }
 
         const std::int64_t atoms = primal.atom_count;
         const DualFloat contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, grad_b1_phase, grad_b0,
-            grad_efficiency, grad_damping, grad_flow,
+            grad_efficiency, grad_damping,
+            primal.flow_scale * grad_flow
+                + (speed_direction(velocity) * primal.washout_scale)
+                    * grad_washout,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             DualFloat& slot = grad_tissue_local[parameter * atoms + atom];
@@ -3586,7 +3684,9 @@ inline Buffers packed_buffers(
     float* const output_real,
     float* const output_imag,
     const std::int64_t atom_count,
-    const std::int64_t train_count
+    const std::int64_t train_count,
+    const float flow_scale,
+    const float washout_scale
 ) {
     Buffers buffers{};
     const float** tissue[TISSUE_COUNT] = {
@@ -3608,6 +3708,8 @@ inline Buffers packed_buffers(
     buffers.output_imag = output_imag;
     buffers.atom_count = atom_count;
     buffers.train_count = train_count;
+    buffers.flow_scale = flow_scale;
+    buffers.washout_scale = washout_scale;
     return buffers;
 }
 
@@ -3814,9 +3916,11 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     long long output_count = 0;
     int requested_threads = 0;
     int real_axis = -1;
+    double flow_scale = 0.0;
+    double washout_scale = 0.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLii",
+            "OLLLLLiidd",
             &pointers,
             &atom_count,
             &train_count,
@@ -3824,7 +3928,9 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             &state_count,
             &output_count,
             &requested_threads,
-            &real_axis
+            &real_axis,
+            &flow_scale,
+            &washout_scale
         )) {
         return nullptr;
     }
@@ -3850,7 +3956,9 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<float*>(raw[PACKED_COUNT]),
         static_cast<float*>(raw[PACKED_COUNT + 1]),
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count)
+        static_cast<std::int64_t>(train_count),
+        static_cast<float>(flow_scale),
+        static_cast<float>(washout_scale)
     );
 
     // TORCHSIM_LANES=1 selects a lane-vectorized forward that walks the
@@ -3941,9 +4049,11 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     long long output_count = 0;
     int requested_threads = 0;
     int real_axis = -1;
+    double flow_scale = 0.0;
+    double washout_scale = 0.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLii",
+            "OLLLLLiidd",
             &pointers,
             &atom_count,
             &train_count,
@@ -3951,7 +4061,9 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
             &state_count,
             &output_count,
             &requested_threads,
-            &real_axis
+            &real_axis,
+            &flow_scale,
+            &washout_scale
         )) {
         return nullptr;
     }
@@ -3979,7 +4091,9 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<float*>(raw[outputs]),
         static_cast<float*>(raw[outputs + 1]),
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count)
+        static_cast<std::int64_t>(train_count),
+        static_cast<float>(flow_scale),
+        static_cast<float>(washout_scale)
     );
     const JvpBuffers buffers{
         primal,
@@ -4015,16 +4129,20 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     long long state_count = 0;
     long long output_count = 0;
     int requested_threads = 0;
+    double flow_scale = 0.0;
+    double washout_scale = 0.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLi",
+            "OLLLLLidd",
             &pointers,
             &atom_count,
             &train_count,
             &event_count,
             &state_count,
             &output_count,
-            &requested_threads
+            &requested_threads,
+            &flow_scale,
+            &washout_scale
         )) {
         return nullptr;
     }
@@ -4050,7 +4168,9 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     const Buffers primal = packed_buffers(
         raw, nullptr, nullptr,
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count)
+        static_cast<std::int64_t>(train_count),
+        static_cast<float>(flow_scale),
+        static_cast<float>(washout_scale)
     );
     VjpBuffers buffers{};
     buffers.primal = primal;
@@ -4244,9 +4364,11 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     long long output_count = 0;
     int requested_threads = 0;
     int real_axis = -1;
+    double flow_scale = 0.0;
+    double washout_scale = 0.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLii",
+            "OLLLLLiidd",
             &pointers,
             &atom_count,
             &train_count,
@@ -4254,7 +4376,9 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
             &state_count,
             &output_count,
             &requested_threads,
-            &real_axis
+            &real_axis,
+            &flow_scale,
+            &washout_scale
         )) {
         return nullptr;
     }
@@ -4278,7 +4402,9 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     const Buffers primal = packed_buffers(
         raw, nullptr, nullptr,
         static_cast<std::int64_t>(atom_count),
-        static_cast<std::int64_t>(train_count)
+        static_cast<std::int64_t>(train_count),
+        static_cast<float>(flow_scale),
+        static_cast<float>(washout_scale)
     );
     VjpJvpBuffers buffers{};
     buffers.primal = primal;
@@ -4414,7 +4540,12 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         static_cast<float*>(raw[signal]),
         static_cast<float*>(raw[signal + 1]),
         atom_count,
-        train_count
+        train_count,
+        // This recipe declares no unbalanced gradient and no voxel size, so the
+        // order-weighted terms have no geometry to act through. The Python side
+        // refuses a tissue that asks for them.
+        0.0F,
+        0.0F
     );
     const JvpBuffers forward{
         primal,

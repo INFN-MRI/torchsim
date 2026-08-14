@@ -23,6 +23,7 @@ from torchsim.sequence._accelerators import (
     _SHIFT_AFTER,
     _SPOIL_AFTER,
 )
+from torchsim.sequence._parameters import NO_GEOMETRY, Geometry
 
 __all__ = ["simulate_packed"]
 
@@ -33,6 +34,7 @@ def simulate_packed(
     *,
     state_count: int,
     output_count: int,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> torch.Tensor:
     """Run one echo train and return its recorded signal.
 
@@ -47,6 +49,9 @@ def simulate_packed(
         Configuration orders to carry.
     output_count
         Recorded echoes, used only for the shape of an empty result.
+    geometry
+        The two scales the velocity is read through, exactly as the kernels
+        take them.
 
     Returns
     -------
@@ -54,8 +59,10 @@ def simulate_packed(
         Complex signal of shape ``(voxels, recorded echoes)``.
     """
     (
-        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, flow,
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, velocity,
     ) = tissue
+    flow = velocity * geometry.flow_scale
+    washout = velocity.abs() * geometry.washout_scale
     duration, kind, flip, phase, action, _output_index = events
     atom_count = t1.numel()
     shape = (atom_count, state_count)
@@ -77,8 +84,12 @@ def simulate_packed(
 
     for event in range(kind.numel()):
         dt = duration[event]
-        e1 = torch.exp(-(1000.0 / t1) * dt)
-        e2 = torch.exp(-(1000.0 / t2) * dt)
+        # Inflowing spins are fully relaxed and unexcited, which makes washout
+        # a scaling of both relaxation factors and nothing more: the affine
+        # recovery term ``1 - e1`` already carries the magnetization they bring.
+        wout = 1.0 - (washout * dt).clamp(max=1.0)
+        e1 = torch.exp(-(1000.0 / t1) * dt) * wout
+        e2 = torch.exp(-(1000.0 / t2) * dt) * wout
         off = e2 * torch.exp(-2j * torch.pi * b0 * dt)
         b_factor = (damping * dt)[:, None]
         transverse_damping = torch.exp(-b_factor * transverse_weight[None, :])

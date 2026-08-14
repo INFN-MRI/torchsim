@@ -1,11 +1,11 @@
-"""Flow dephasing through the fused forward kernels.
+"""Flow dephasing through the fused kernels.
 
 Diffusion damps each dephasing order; flow turns each through a phase instead.
 That difference is what takes the states out of any real subspace, and it is
 why these check the subspace verdict alongside the arithmetic.
 
-Both backends carry it through every order of derivative, so the refusal that
-stood here while the adjoints were being written is gone.
+Washout is the other term a velocity drives, and it needs no gradient to act
+through; ``test_washout_kernels`` covers it and the two together.
 """
 
 from __future__ import annotations
@@ -21,7 +21,9 @@ from torchsim.sequence._accelerators import (
     _run_packed_jvp,
     _run_packed_vjp,
     _run_packed_vjp_jvp,
+    Geometry,
     dephasing_per_m,
+    geometry_of,
     real_subspace_axis,
 )
 from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_NAMES
@@ -61,14 +63,12 @@ def _tissue(velocity: float = VELOCITY) -> TissueProperties:
     )
 
 
+GEOMETRY = geometry_of(_description())
+
+
 def _packed(velocity: float = VELOCITY):
     """Prepared tissue and packed events, as the kernels take them."""
     prepared, _, resolved = _prepare_tissue(_tissue(velocity), "cpu")
-    scale = dephasing_per_m(_description())
-    prepared = tuple(
-        value * scale if index == VELOCITY_INDEX else value
-        for index, value in enumerate(prepared)
-    )
     packed = _pack_events(
         "fse",
         _description(),
@@ -113,7 +113,12 @@ def test_flow_actually_moves_the_signal() -> None:
         torch.zeros_like(value) if index == VELOCITY_INDEX else value
         for index, value in enumerate(tissue)
     )
-    arguments = dict(state_count=STATE_COUNT, output_count=output_count, threads=1)
+    arguments = dict(
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        threads=1,
+        geometry=GEOMETRY,
+    )
     moving_signal = _run_packed(tissue, events, **arguments)
     still_signal = _run_packed(still, events, **arguments)
     relative = (moving_signal - still_signal).abs().max() / still_signal.abs().max()
@@ -123,34 +128,43 @@ def test_flow_actually_moves_the_signal() -> None:
 def test_the_forward_kernel_matches_the_reference() -> None:
     tissue, events, output_count = _packed()
     expected = simulate_packed(
-        tissue, events, state_count=STATE_COUNT, output_count=output_count
+        tissue, events, state_count=STATE_COUNT, output_count=output_count,
+        geometry=GEOMETRY,
     )
     actual = _run_packed(
-        tissue, events, state_count=STATE_COUNT, output_count=output_count, threads=1
+        tissue,
+        events,
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        threads=1,
+        geometry=GEOMETRY,
     )
     assert (expected - actual).abs().max() / expected.abs().max() < 1e-5
 
 
-def test_no_crusher_leaves_the_signal_untouched() -> None:
-    """A sequence with no unbalanced gradient gives a zero rate, and no phase."""
-    assert dephasing_per_m(_description(crusher_rad=0.0)) == 0.0
-    prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
-    _tissue_unused, events, output_count = _packed()
+def test_no_crusher_leaves_no_phase_to_turn_through() -> None:
+    """Flow dephasing needs a gradient; without one only washout is left.
+
+    So a sequence with no crusher gives bit for bit what the same sequence
+    gives when the two terms are separated and only washout is asked for.
+    """
+    assert geometry_of(_description(crusher_rad=0.0)).flow_scale == 0.0
+    tissue, events, output_count = _packed()
     arguments = dict(state_count=STATE_COUNT, output_count=output_count, threads=1)
 
-    without_crusher = tuple(
-        value * dephasing_per_m(_description(crusher_rad=0.0))
-        if index == VELOCITY_INDEX
-        else value
-        for index, value in enumerate(prepared)
-    )
-    still = tuple(
-        torch.zeros_like(value) if index == VELOCITY_INDEX else value
-        for index, value in enumerate(prepared)
-    )
     assert torch.equal(
-        _run_packed(without_crusher, events, **arguments),
-        _run_packed(still, events, **arguments),
+        _run_packed(
+            tissue,
+            events,
+            geometry=geometry_of(_description(crusher_rad=0.0)),
+            **arguments,
+        ),
+        _run_packed(
+            tissue,
+            events,
+            geometry=Geometry(flow_scale=0.0, washout_scale=1.0 / VOXEL_M),
+            **arguments,
+        ),
     )
 
 
@@ -197,7 +211,12 @@ def test_flow_takes_the_states_out_of_the_real_subspace() -> None:
 def test_the_cuda_forward_agrees_with_the_cpu_one() -> None:
     tissue, events, output_count = _packed()
     device = torch.device("cuda")
-    arguments = dict(state_count=STATE_COUNT, output_count=output_count, threads=1)
+    arguments = dict(
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        threads=1,
+        geometry=GEOMETRY,
+    )
     expected = _run_packed(tissue, events, **arguments)
     actual = _run_packed(
         tuple(value.to(device) for value in tissue),
@@ -225,7 +244,11 @@ def test_the_adjoint_matches_the_reference() -> None:
         events[5],
     )
     reference = simulate_packed(
-        leaves, differentiable, state_count=STATE_COUNT, output_count=output_count
+        leaves,
+        differentiable,
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        geometry=GEOMETRY,
     )
     reference.backward(seed)
     expected = tuple(value.grad for value in leaves) + (
@@ -240,6 +263,7 @@ def test_the_adjoint_matches_the_reference() -> None:
         state_count=STATE_COUNT,
         output_count=output_count,
         threads=1,
+        geometry=GEOMETRY,
     )
     scale = max(g.abs().max().item() for g in expected if g is not None)
     compared = []
@@ -259,7 +283,12 @@ def test_the_velocity_gradient_matches_a_finite_difference() -> None:
         dtype=torch.complex64,
         generator=torch.Generator().manual_seed(1),
     )
-    arguments = dict(state_count=STATE_COUNT, output_count=output_count, threads=1)
+    arguments = dict(
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        threads=1,
+        geometry=GEOMETRY,
+    )
 
     def loss(rate: torch.Tensor) -> torch.Tensor:
         shifted = tuple(
@@ -294,11 +323,16 @@ def test_forward_mode_along_velocity_matches_the_reference() -> None:
         state_count=STATE_COUNT,
         output_count=output_count,
         threads=1,
+        geometry=GEOMETRY,
     )
 
     def forward(*values):
         return simulate_packed(
-            values, events, state_count=STATE_COUNT, output_count=output_count
+            values,
+            events,
+            state_count=STATE_COUNT,
+            output_count=output_count,
+            geometry=GEOMETRY,
         )
 
     _signal, expected = torch.func.jvp(forward, tuple(tissue), tissue_tangents)
@@ -320,7 +354,12 @@ def test_the_cuda_adjoint_agrees_with_the_cpu_one() -> None:
         dtype=torch.complex64,
         generator=torch.Generator().manual_seed(2),
     )
-    arguments = dict(state_count=STATE_COUNT, output_count=output_count, threads=1)
+    arguments = dict(
+        state_count=STATE_COUNT,
+        output_count=output_count,
+        threads=1,
+        geometry=GEOMETRY,
+    )
 
     expected, _ = _run_packed_vjp_jvp(tissue, events, tangents, seed, **arguments)
     actual, _ = _run_packed_vjp_jvp(

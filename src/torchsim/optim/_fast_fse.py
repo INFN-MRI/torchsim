@@ -391,6 +391,14 @@ class FseT2Optimizer:
         prepared = tuple(
             value.to(dtype=torch.float32).contiguous() for value in prepared
         )
+        # This recipe carries no gradient geometry, so the order-weighted terms
+        # have nothing to act through and would be silently dropped.
+        for name in ("diffusion_um2_per_ms", "velocity_m_per_s"):
+            if bool((prepared[_TISSUE_NAMES.index(name)] != 0.0).any()):
+                raise NotImplementedError(
+                    f"the fused loop declares no voxel geometry, so it cannot "
+                    f"carry {name}; use FseT2Plan with an autograd loop instead"
+                )
         atoms = prepared[0].numel()
         events = plan.buffers(torch.deg2rad(flip_deg))
         events = tuple(

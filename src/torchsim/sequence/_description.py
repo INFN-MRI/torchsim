@@ -280,10 +280,16 @@ class SequenceDescription:
     """Event stream and RF resources for one sequence or subsequence.
 
     ``crusher_dephasing_rad`` is the dephasing the sequence's unbalanced
-    gradient winds across one voxel of ``voxel_size_m``, and it is what sets
-    the b-factor diffusion and flow are damped by. Only the ratio of the two
-    enters, and a dephasing of zero leaves both terms out however large the
-    diffusion coefficient is.
+    gradient winds across one voxel of ``voxel_size_m``. Their ratio sets the
+    b-factor diffusion is damped by and the phase each dephasing order turns
+    through under flow, so a dephasing of zero leaves both terms out however
+    large the coefficient behind them.
+
+    ``voxel_size_m`` also stands on its own: spins cross a voxel of that size
+    at their own speed whether or not a gradient is playing, which is what
+    washes the voxel out and replaces it with unexcited magnetization. Leaving
+    it ``None`` declares no voxel, and a spin velocity then has nothing to
+    cross.
     """
 
     subsequence_index: int
@@ -292,7 +298,7 @@ class SequenceDescription:
     rf_definitions: dict[int, RfDefinition]
     shim_definitions: dict[int, ShimDefinition] = field(default_factory=dict)
     crusher_dephasing_rad: float = 0.0
-    voxel_size_m: float = 1.0
+    voxel_size_m: float | None = None
 
     @property
     def adc_events(self) -> tuple[SequenceEvent, ...]:

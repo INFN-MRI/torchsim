@@ -480,13 +480,26 @@ def test_wanting_a_gradient_outside_the_subspace_keeps_the_complex_kernel(positi
         _run_packed_vjp_jvp,
     )
 
+    from torchsim.sequence._parameters import Geometry
+
     events, tissue, tangents, cotangent, count = _adjoint_case(_trains_worth(8))
     wanted = _only(_FLIP, position)
 
     assert _auto_real_axis_adjoint(events, tissue, 10, tangents, wanted) is None
 
     gradients, _ = _run_packed_vjp_jvp(
-        tissue, events, tangents, cotangent, 10, count, 1, wanted=wanted
+        tissue,
+        events,
+        tangents,
+        cotangent,
+        10,
+        count,
+        1,
+        wanted=wanted,
+        # The velocity gradient is imaginary at any velocity, this case's zero
+        # included -- but only where the sequence declares a gradient for the
+        # spins to wind across.
+        geometry=Geometry(flow_scale=8.0 * torch.pi / 5e-4),
     )
     assert gradients[position].abs().max() > 0.0
 

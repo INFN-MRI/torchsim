@@ -22,7 +22,7 @@ from typing import Any, Literal
 import torch
 
 from .. import epg
-from ._accelerators import dephasing_per_m, simulate_native
+from ._accelerators import geometry_of, simulate_native
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
 from ._parameters import TISSUE_NAMES
 
@@ -48,9 +48,13 @@ class TissueProperties:
     milliseconds; off-resonance uses Hz. The apparent diffusion coefficient
     uses um**2/ms, so free water at body temperature is about 3; it damps the
     states only where the sequence also declares the gradient that dephases
-    them, and costs nothing at its default of zero. Velocity uses m/s along
-    that same gradient and, unlike diffusion, turns the damping into a
-    per-order phase, which is why it takes the states out of any real subspace.
+    them, and costs nothing at its default of zero.
+
+    Velocity uses m/s and drives two terms through the geometry the sequence
+    declares. Across an unbalanced gradient it turns each dephasing order
+    through a phase rather than damping it, which is what takes the states out
+    of any real subspace. Across the voxel itself it washes the spins out and
+    replaces them with unexcited magnetization, which needs no gradient at all.
     """
 
     t1_ms: Any
@@ -187,13 +191,15 @@ class EpgSimulator:
                 raise RuntimeError(
                     "native EPG backend is unavailable for this device or AD context"
                 )
-        if dephasing_per_m(description) and bool(
-            (diffusion != 0.0).any() or (velocity != 0.0).any()
+        declared = geometry_of(description)
+        if (declared.flow_scale and bool((diffusion != 0.0).any())) or (
+            (declared.flow_scale or declared.washout_scale)
+            and bool((velocity != 0.0).any())
         ):
             raise NotImplementedError(
-                "diffusion and flow are carried by the fused kernels only; this "
-                "sequence fell back to the operator loop, which does not weight "
-                "by dephasing order"
+                "diffusion, flow and washout are carried by the fused kernels "
+                "only; this sequence fell back to the operator loop, which does "
+                "not weight by dephasing order"
             )
         states = epg.states_matrix(
             device=target_device,

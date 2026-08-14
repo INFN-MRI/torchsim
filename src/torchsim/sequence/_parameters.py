@@ -14,7 +14,13 @@ It is what lets a run decide which terms the kernel actually has to execute.
 
 from __future__ import annotations
 
-__all__ = ["Parameter", "EVENT_PARAMETERS", "TISSUE_PARAMETERS", "at_identity"]
+__all__ = [
+    "Parameter",
+    "Geometry",
+    "EVENT_PARAMETERS",
+    "TISSUE_PARAMETERS",
+    "at_identity",
+]
 
 from dataclasses import dataclass
 from typing import Any
@@ -42,6 +48,29 @@ class Parameter:
     differentiable: bool = True
     identity: float | None = None
     feature: str | None = None
+
+
+@dataclass(frozen=True)
+class Geometry:
+    """The sequence geometry a velocity has to be read through.
+
+    A spin velocity drives two unrelated terms. Flow dephasing turns each
+    order through ``k0 * v``, so it needs the winding the unbalanced gradient
+    puts across a metre. Washout replaces the voxel's spins at ``|v| / L``,
+    which happens whether or not a gradient is playing and so needs the voxel
+    size on its own. Neither can be folded into the other, and the absolute
+    value cannot be folded into the buffer at all without losing the sign flow
+    dephasing needs, so both scales travel to the kernels as they are.
+
+    Both zero is a sequence that declares no geometry, which leaves every
+    velocity-driven term out.
+    """
+
+    flow_scale: float = 0.0
+    washout_scale: float = 0.0
+
+
+NO_GEOMETRY = Geometry()
 
 
 # Order is the ABI. Anything appended here is appended to the pointer arrays
@@ -95,9 +124,9 @@ FLOAT_NAMES: tuple[str, ...] = tuple(
 
 # Where the differentiable-input order carries the gradients a real adjoint
 # leaves at zero. Transmit phase, off-resonance and RF phase all point out of
-# the subspace, and so does velocity at any value: flow turns each dephasing
-# order through a phase, so the derivative is imaginary even where the states
-# themselves are still real.
+# the subspace, and so does velocity at any value the sequence gives it a
+# gradient to wind across: flow turns each dephasing order through a phase, so
+# the derivative is imaginary even where the states themselves are still real.
 OUTSIDE_THE_SUBSPACE: tuple[int, ...] = tuple(
     FLOAT_NAMES.index(name)
     for name in ("b1_phase_rad", "b0_hz", "velocity_m_per_s", "phase")

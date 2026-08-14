@@ -15,6 +15,7 @@ import torch
 from torchsim import FSE, TissueProperties, fse_description
 from torchsim.epg import diffusion_op
 from torchsim.sequence._accelerators import (
+    NO_GEOMETRY,
     _NativeEpg,
     _pack_events,
     _run_packed,
@@ -372,7 +373,9 @@ def test_autograd_reaches_the_diffusion_coefficient() -> None:
         coefficient if index == DIFFUSION_INDEX else value
         for index, value in enumerate(tissue)
     )
-    signal = _NativeEpg.apply(*inputs, *events, STATE_COUNT, output_count, 1)
+    signal = _NativeEpg.apply(
+        *inputs, *events, STATE_COUNT, output_count, 1, NO_GEOMETRY
+    )
     signal.abs().square().sum().backward()
     assert coefficient.grad is not None
     assert coefficient.grad.abs().max() > 0

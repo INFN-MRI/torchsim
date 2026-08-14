@@ -16,7 +16,7 @@ import pytest
 import torch
 
 from torchsim.sequence import offload
-from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
+from torchsim.sequence._parameters import NO_GEOMETRY, OUTSIDE_THE_SUBSPACE, Geometry
 from torchsim.sequence._accelerators import (
     _Lane,
     _Offload,
@@ -233,6 +233,15 @@ def test_the_previous_setting_comes_back_after_a_failure():
     assert _accelerators._OFFLOAD is None
 
 
+# The spoiler this volume declares and the voxel it winds across, without
+# which a spin velocity would reach neither the dephasing nor the washout.
+SPGR_CRUSHER_RAD = 8.0 * torch.pi
+SPGR_VOXEL_M = 5e-4
+SPGR_GEOMETRY = Geometry(
+    flow_scale=SPGR_CRUSHER_RAD / SPGR_VOXEL_M, washout_scale=1.0 / SPGR_VOXEL_M
+)
+
+
 def _spgr_volume(voxels, trains=1, pulses=12):
     """A spoiled train over voxels, where off-resonance reaches the signal.
 
@@ -251,6 +260,8 @@ def _spgr_volume(voxels, trains=1, pulses=12):
                 repetition_time_s=10e-3,
                 echo_time_s=4e-3,
                 phases_rad=torch.pi / 3,
+                crusher_dephasing_rad=SPGR_CRUSHER_RAD,
+                voxel_size_m=SPGR_VOXEL_M,
             ),
             repetitions=1,
             record="all",
@@ -277,6 +288,7 @@ def _spgr_volume(voxels, trains=1, pulses=12):
         t2_ms=torch.linspace(20.0, 200.0, voxels),
         b0_hz=torch.linspace(-150.0, 150.0, voxels),
         b1_phase_rad=torch.linspace(0.0, 0.4, voxels),
+        velocity_m_per_s=torch.linspace(-0.02, 0.02, voxels),
     )
     prepared, _, _ = _prepare_tissue(tissue, torch.device("cpu"))
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
@@ -332,7 +344,8 @@ def test_an_event_seed_reaches_every_chunk():
     assert ((expected - actual).abs().max() / expected.abs().max()) < 1e-5
 
 
-def _adjoint(events, prepared, outputs, voxels, trains, real_axis, budget):
+def _adjoint(events, prepared, outputs, voxels, trains, real_axis, budget,
+             geometry=NO_GEOMETRY):
     from torchsim.sequence._accelerators import _run_packed_vjp_jvp
 
     tissue_seed, event_seed = _seeds(events, prepared, 1)
@@ -349,9 +362,9 @@ def _adjoint(events, prepared, outputs, voxels, trains, real_axis, budget):
         0,
     )
     if budget is None:
-        return _run_packed_vjp_jvp(*arguments, real_axis=real_axis)
+        return _run_packed_vjp_jvp(*arguments, real_axis=real_axis, geometry=geometry)
     with offload(["cuda"], budget_bytes=budget, lanes=2):
-        return _run_packed_vjp_jvp(*arguments, real_axis=real_axis)
+        return _run_packed_vjp_jvp(*arguments, real_axis=real_axis, geometry=geometry)
 
 
 def _compare_gradients(expected, actual):
@@ -385,8 +398,12 @@ def test_a_streamed_complex_adjoint_matches_the_cpu_run(budget, trains):
     """On SPGR, so b0 and the RF phase are live rather than refocused away."""
     voxels = 2000
     events, prepared, outputs = _spgr_volume(voxels, trains=trains)
-    expected = _adjoint(events, prepared, outputs, voxels, trains, -1, None)
-    actual = _adjoint(events, prepared, outputs, voxels, trains, -1, budget)
+    expected = _adjoint(
+        events, prepared, outputs, voxels, trains, -1, None, SPGR_GEOMETRY
+    )
+    actual = _adjoint(
+        events, prepared, outputs, voxels, trains, -1, budget, SPGR_GEOMETRY
+    )
 
     # The gradients the real-subspace kernel cannot produce, checked here.
     for index in OUTSIDE_THE_SUBSPACE:

@@ -29,7 +29,7 @@ from ._parameters import (
 from ._parameters import (
     TISSUE_COUNT as _TISSUE_COUNT,
 )
-from ._parameters import TISSUE_NAMES
+from ._parameters import NO_GEOMETRY, TISSUE_NAMES, Geometry
 
 # A forward-mode call appends one tangent per differentiable input to the
 # packed buffers; the scalar arguments follow those.
@@ -112,6 +112,13 @@ def dephasing_per_m(description: SequenceDescription) -> float:
     Zero when no such gradient is declared, which is what leaves every
     order-weighted term out at once.
     """
+    if not description.crusher_dephasing_rad:
+        return 0.0
+    if description.voxel_size_m is None:
+        raise ValueError(
+            "a crusher winds its dephasing across a voxel, so a sequence that "
+            "declares crusher_dephasing_rad must declare voxel_size_m too"
+        )
     return description.crusher_dephasing_rad / description.voxel_size_m
 
 
@@ -121,23 +128,27 @@ def damping_scale(description: SequenceDescription) -> float:
     return dephasing * dephasing * _DIFFUSION_UNIT
 
 
+def geometry_of(description: SequenceDescription) -> Geometry:
+    """The two scales the kernels read a velocity through."""
+    voxel = description.voxel_size_m
+    return Geometry(
+        flow_scale=dephasing_per_m(description),
+        washout_scale=0.0 if voxel is None else 1.0 / voxel,
+    )
+
+
 def _order_weighted_rates(
     tissue: tuple[torch.Tensor, ...], description: SequenceDescription
 ) -> tuple[torch.Tensor, ...]:
-    """Fold the sequence's gradient geometry into the terms it weights.
+    """Fold the gradient geometry into the diffusion coefficient.
 
     What the state machine needs of a coefficient and the geometry is one rate
     that an interval multiplies: ``k0**2 * D`` for the b-factor a state
-    accumulates, and ``k0 * v`` for the phase one turns through per unit order.
-    Combining them here keeps the geometry out of the kernels entirely. Each is
-    a plain multiply, so a gradient with respect to the coefficient flows back
-    through it, and a sequence that declares no crusher leaves both buffers
-    exactly zero.
+    accumulates. It is a plain multiply, so a gradient with respect to the
+    coefficient flows back through it, and a sequence that declares no crusher
+    leaves the buffer exactly zero.
     """
-    scaled = {
-        "diffusion_um2_per_ms": damping_scale(description),
-        "velocity_m_per_s": dephasing_per_m(description),
-    }
+    scaled = {"diffusion_um2_per_ms": damping_scale(description)}
     return tuple(
         value * scaled[name] if name in scaled else value
         for name, value in zip(TISSUE_NAMES, tissue, strict=True)
@@ -188,6 +199,7 @@ def simulate_native(
         nstates,
         packed.output_count,
         threads,
+        geometry_of(description),
     )
     leading = (packed.train_count,) if packed.is_batched else ()
     if locations > 1:
@@ -483,13 +495,16 @@ class _NativeEpg(torch.autograd.Function):
         state_count: int,
         output_count: int,
         threads: int,
+        geometry: Geometry,
     ) -> torch.Tensor:
         tissue = (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
             velocity,
         )
         events = (duration, kind, flip, phase, action, output_index)
-        return _run_packed(tissue, events, state_count, output_count, threads)
+        return _run_packed(
+            tissue, events, state_count, output_count, threads, geometry=geometry
+        )
 
     @staticmethod
     def setup_context(ctx: Any, inputs: tuple[Any, ...], _output: torch.Tensor) -> None:
@@ -499,6 +514,7 @@ class _NativeEpg(torch.autograd.Function):
         ctx.state_count = inputs[_PACKED_COUNT]
         ctx.output_count = inputs[_PACKED_COUNT + 1]
         ctx.threads = inputs[_PACKED_COUNT + 2]
+        ctx.geometry = inputs[_PACKED_COUNT + 3]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
@@ -515,6 +531,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.state_count,
             ctx.output_count,
             ctx.threads,
+            ctx.geometry,
         )
 
     @staticmethod
@@ -528,8 +545,9 @@ class _NativeEpg(torch.autograd.Function):
             ctx.output_count,
             ctx.threads,
             wanted,
+            ctx.geometry,
         )
-        return (*_spread(fused, ctx.needs_input_grad), None, None, None)
+        return (*_spread(fused, ctx.needs_input_grad), None, None, None, None)
 
     @staticmethod
     def vmap(
@@ -561,6 +579,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             output_count=inputs[_SEED_INPUT + 2],
             threads=inputs[_SEED_INPUT + 3],
             wanted=inputs[_SEED_INPUT + 4],
+            geometry=inputs[_SEED_INPUT + 5],
         )
 
     @staticmethod
@@ -571,6 +590,7 @@ class _NativeEpgVjp(torch.autograd.Function):
         ctx.state_count = inputs[_SEED_INPUT + 1]
         ctx.output_count = inputs[_SEED_INPUT + 2]
         ctx.threads = inputs[_SEED_INPUT + 3]
+        ctx.geometry = inputs[_SEED_INPUT + 5]
 
     @staticmethod
     def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
@@ -592,6 +612,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             output_count=ctx.output_count,
             threads=ctx.threads,
             wanted=wanted,
+            geometry=ctx.geometry,
         )
         seed_grad = None
         if ctx.needs_input_grad[_SEED_INPUT]:
@@ -603,11 +624,12 @@ class _NativeEpgVjp(torch.autograd.Function):
                 ctx.state_count,
                 ctx.output_count,
                 ctx.threads,
+                geometry=ctx.geometry,
             )
         guarded = _last(
             (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
         )
-        return (*guarded, None, None, None, None)
+        return (*guarded, None, None, None, None, None)
 
 
 class _NativeEpgJvp(torch.autograd.Function):
@@ -625,6 +647,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             inputs[_TANGENT_END],
             inputs[_TANGENT_END + 1],
             inputs[_TANGENT_END + 2],
+            geometry=inputs[_TANGENT_END + 3],
         )
 
     @staticmethod
@@ -632,6 +655,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.save_for_backward(*inputs[:_TANGENT_END])
         ctx.state_count = inputs[_TANGENT_END]
         ctx.output_count = inputs[_TANGENT_END + 1]
+        ctx.geometry = inputs[_TANGENT_END + 3]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
@@ -654,6 +678,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             output_count=ctx.output_count,
             threads=getattr(ctx, "threads", 0),
             wanted=wanted,
+            geometry=ctx.geometry,
         )
         directions = tuple(
             gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
@@ -662,7 +687,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         guarded = _last(
             (*_spread(primal_grads, ctx.needs_input_grad), *directions), saved
         )
-        return (*guarded, None, None, None)
+        return (*guarded, None, None, None, None)
 
     @staticmethod
     def vmap(
@@ -711,11 +736,14 @@ def real_subspace_axis(
     """The real axis the states are confined to, or ``None``.
 
     Returns 1 when the refocusing pulses share one phase, the excitation shares
-    it too, and there is neither off-resonance, transmit phase, nor flow. The
-    state machine then never leaves the axis on which the signal is pure
-    imaginary. Flow belongs on that list because it turns each dephasing order
-    through a phase of its own, which is a rotation out of the axis rather than
-    a scaling along it.
+    it too, and there is neither off-resonance, transmit phase, nor spin
+    velocity. The state machine then never leaves the axis on which the signal
+    is pure imaginary. Flow dephasing belongs on that list because it turns each
+    dephasing order through a phase of its own, which is a rotation out of the
+    axis rather than a scaling along it. Washout stays on the axis -- it scales
+    both relaxation factors and nothing more -- but the real kernels do not
+    carry it, so any velocity at all is refused here whatever geometry drives
+    it.
 
     Two arrangements make the recorded echoes look real without confining the
     states, and both are refused. Off-resonance is refocused at the echo
@@ -751,9 +779,9 @@ def _summarize(
     transfer whatever the device.
 
     Returns whether off-resonance is absent, whether transmit phase is absent,
-    whether flow is absent, whether the sequence has refocusing and excitation
-    pulses, how far the per-role phases spread, and how far excitation sits
-    from refocusing.
+    whether the spins are still, whether the sequence has refocusing and
+    excitation pulses, how far the per-role phases spread, and how far
+    excitation sits from refocusing.
     """
     b1_phase, b0 = tissue[4], tissue[5]
     velocity = tissue[TISSUE_NAMES.index("velocity_m_per_s")]
@@ -1478,6 +1506,7 @@ def _run_offloaded(
     state_count: int,
     output_count: int,
     real_axis: int | None,
+    geometry: Geometry,
 ) -> torch.Tensor:
     """Stream a host-resident volume through the devices, chunk by chunk."""
     from ._epg_triton import simulate_into
@@ -1502,6 +1531,7 @@ def _run_offloaded(
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
+            geometry=geometry,
             atom_count=width,
         )
         torch.complex(real, imag, out=staged)
@@ -1520,6 +1550,7 @@ def _run_offloaded_jvp(
     state_count: int,
     output_count: int,
     real_axis: int | None,
+    geometry: Geometry,
 ) -> torch.Tensor:
     """Stream a forward-mode pass; the seeds ride along with the tissue.
 
@@ -1561,6 +1592,7 @@ def _run_offloaded_jvp(
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
+            geometry=geometry,
             atom_count=width,
         )
         torch.complex(real, imag, out=staged)
@@ -1579,6 +1611,7 @@ def _run_offloaded_vjp_jvp(
     state_count: int,
     output_count: int,
     real_axis: int | None,
+    geometry: Geometry,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Stream a forward-over-reverse pass through the devices, chunk by chunk.
 
@@ -1651,6 +1684,7 @@ def _run_offloaded_vjp_jvp(
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
+            geometry=geometry,
             atom_count=width,
         )
         for plane, side in enumerate(voxel_grads):
@@ -1703,6 +1737,8 @@ def _run_packed(
     output_count: int,
     threads: int,
     real_axis: int | None = None,
+    *,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> torch.Tensor:
     """Run the forward state machine.
 
@@ -1713,7 +1749,8 @@ def _run_packed(
         real_axis = _auto_real_axis("forward", events, tissue, state_count)
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded(
-            tissue, events, _OFFLOAD, state_count, output_count, real_axis
+            tissue, events, _OFFLOAD, state_count, output_count, real_axis,
+            geometry,
         )
     choice = _choose(
         "forward", tissue, events, output_count, state_count, real_axis
@@ -1721,7 +1758,8 @@ def _run_packed(
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
         return _run_offloaded(
-            tissue, events, choice.offload, state_count, output_count, real_axis
+            tissue, events, choice.offload, state_count, output_count, real_axis,
+            geometry,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -1733,6 +1771,7 @@ def _run_packed(
                 output_count,
                 threads,
                 real_axis,
+                geometry=geometry,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
@@ -1751,6 +1790,7 @@ def _run_packed(
                         state_count=state_count,
                         output_count=output_count,
                         real_axis=real_axis,
+                        geometry=geometry,
                     ),
                 )
                 for begin, end, device in shards
@@ -1762,6 +1802,7 @@ def _run_packed(
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
+            geometry=geometry,
         )
     from torchsim import _epg_cpu
 
@@ -1783,6 +1824,8 @@ def _run_packed(
         output_count,
         threads,
         real_axis if real_axis is not None else -1,
+        geometry.flow_scale,
+        geometry.washout_scale,
     )
     return torch.complex(output_real, output_imag)
 
@@ -1795,6 +1838,8 @@ def _run_packed_vjp(
     output_count: int,
     threads: int,
     wanted: tuple[bool, ...] | None = None,
+    *,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> tuple[torch.Tensor, ...]:
     """Return gradients w.r.t. the seven tissue and three float event buffers.
 
@@ -1822,6 +1867,7 @@ def _run_packed_vjp(
             output_count=output_count,
             threads=threads,
             wanted=wanted,
+            geometry=geometry,
         )
         return adjoint
     from torchsim import _epg_cpu
@@ -1851,6 +1897,8 @@ def _run_packed_vjp(
         state_count,
         output_count,
         threads,
+        geometry.flow_scale,
+        geometry.washout_scale,
     )
     return (*atom_grads, duration_grad, flip_grad, phase_grad)
 
@@ -1865,6 +1913,8 @@ def _run_packed_vjp_jvp(
     threads: int,
     real_axis: int | None = None,
     wanted: tuple[bool, ...] | None = None,
+    *,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
@@ -1890,6 +1940,7 @@ def _run_packed_vjp_jvp(
             state_count,
             output_count,
             real_axis,
+            geometry,
         )
     choice = _choose(
         "adjoint", tissue, events, output_count, state_count, real_axis
@@ -1905,6 +1956,7 @@ def _run_packed_vjp_jvp(
             state_count,
             output_count,
             real_axis,
+            geometry,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -1918,6 +1970,7 @@ def _run_packed_vjp_jvp(
                 output_count,
                 threads,
                 real_axis,
+                geometry=geometry,
             )
         origin = tissue[0].device
         return tuple(
@@ -1941,6 +1994,7 @@ def _run_packed_vjp_jvp(
                     state_count=state_count,
                     output_count=output_count,
                     real_axis=real_axis,
+                    geometry=geometry,
                 )
                 for begin, end, device in shards
             ]
@@ -1954,6 +2008,7 @@ def _run_packed_vjp_jvp(
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
+            geometry=geometry,
         )
     from torchsim import _epg_cpu
 
@@ -1980,6 +2035,8 @@ def _run_packed_vjp_jvp(
         output_count,
         threads,
         real_axis if real_axis is not None else -1,
+        geometry.flow_scale,
+        geometry.washout_scale,
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
     return tangent_grads, value_grads
@@ -1994,6 +2051,8 @@ def _run_packed_jvp(
     output_count: int,
     threads: int,
     real_axis: int | None = None,
+    *,
+    geometry: Geometry = NO_GEOMETRY,
 ) -> torch.Tensor:
     if real_axis is None:
         # b1_phase, b0 and RF phase are the directions that leave the subspace,
@@ -2015,6 +2074,7 @@ def _run_packed_jvp(
             state_count,
             output_count,
             real_axis,
+            geometry,
         )
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
@@ -2028,6 +2088,7 @@ def _run_packed_jvp(
             state_count,
             output_count,
             real_axis,
+            geometry,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2041,6 +2102,7 @@ def _run_packed_jvp(
                 output_count,
                 threads,
                 real_axis,
+                geometry=geometry,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
@@ -2059,6 +2121,7 @@ def _run_packed_jvp(
                         state_count=state_count,
                         output_count=output_count,
                         real_axis=real_axis,
+                        geometry=geometry,
                     ),
                 )
                 for begin, end, device in shards
@@ -2072,6 +2135,7 @@ def _run_packed_jvp(
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
+            geometry=geometry,
         )
     from torchsim import _epg_cpu
 
@@ -2100,5 +2164,7 @@ def _run_packed_jvp(
         output_count,
         threads,
         real_axis if real_axis is not None else -1,
+        geometry.flow_scale,
+        geometry.washout_scale,
     )
     return torch.complex(output_real, output_imag)
