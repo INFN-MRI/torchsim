@@ -2247,11 +2247,6 @@ def _run_packed_jvp(
 ) -> torch.Tensor:
     if profile is not None:
         _within_the_table(profile, events[2])
-        if tissue[0].device.type != "cpu":
-            raise NotImplementedError(
-                "forward mode through a transition table runs on the host; "
-                "the CUDA kernel does not carry one yet"
-            )
     if real_axis is None:
         # b1_phase, b0 and RF phase are the directions that leave the subspace,
         # and the real kernels do not produce derivatives along them.
@@ -2322,6 +2317,7 @@ def _run_packed_jvp(
                         output_count=output_count,
                         real_axis=real_axis,
                         geometry=geometry,
+                        profile=profile,
                     ),
                 )
                 for begin, end, device in shards
@@ -2336,6 +2332,7 @@ def _run_packed_jvp(
             output_count=output_count,
             real_axis=real_axis,
             geometry=geometry,
+            profile=profile,
         )
     from torchsim import _epg_cpu
 

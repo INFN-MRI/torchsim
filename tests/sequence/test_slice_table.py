@@ -483,23 +483,34 @@ def test_an_adjoint_through_a_table_is_refused_on_the_card() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-def test_forward_mode_through_a_table_is_refused_on_the_card() -> None:
-    """Refused rather than ignored: a dropped table returns wrong numbers."""
+def test_the_card_follows_the_table_in_forward_mode() -> None:
     from torchsim.sequence._accelerators import _run_packed_jvp
 
+    locations, voxels = 3, 3
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
         rf_raster_time_s=RASTER,
     )
-    tissue, events, outputs = _packed(4)
+    tissue, events, outputs = _packed(voxels * locations)
+    generator = torch.Generator().manual_seed(8)
+    tissue_dot = tuple(
+        0.1 * torch.randn(value.shape, generator=generator) for value in tissue
+    )
+    event_dot = tuple(
+        0.01 * torch.randn(events[index].shape, generator=generator)
+        for index in (0, 2, 3)
+    )
+    arguments = dict(profile=table)
+    expected = _run_packed_jvp(
+        tissue, events, tissue_dot, event_dot, STATES, outputs, 1, **arguments
+    )
     card = torch.device("cuda")
-    moved = tuple(value.to(card) for value in tissue)
-    moved_events = tuple(value.to(card) for value in events)
-    zeros = tuple(torch.zeros_like(value) for value in moved)
-    event_zeros = tuple(torch.zeros_like(moved_events[i]) for i in (0, 2, 3))
+    actual = _run_packed_jvp(
+        tuple(value.to(card) for value in tissue),
+        tuple(value.to(card) for value in events),
+        tuple(value.to(card) for value in tissue_dot),
+        tuple(value.to(card) for value in event_dot),
+        STATES, outputs, 1, **arguments,
+    )
 
-    with pytest.raises(NotImplementedError, match="does not carry one yet"):
-        _run_packed_jvp(
-            moved, moved_events, zeros, event_zeros, STATES, outputs, 1,
-            profile=table,
-        )
+    assert (expected - actual.cpu()).abs().max() < 1e-4 * expected.abs().max()

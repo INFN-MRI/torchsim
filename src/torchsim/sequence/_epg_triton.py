@@ -338,6 +338,160 @@ def _profile_pair(profile, location, theta, bins: tl.constexpr, step):
 
 
 @triton.jit
+def _profile_pair_slope(profile, location, theta, bins: tl.constexpr, step):
+    """The pair and its derivative in the flip angle, from the same cubic.
+
+    The derivative of a Hermite segment is another polynomial in the same four
+    knot values, so reading both costs one extra combination rather than a
+    second table. Returned interleaved: each component's value then its slope,
+    in the order ``a`` real, ``a`` imaginary, ``b`` real, ``b`` imaginary.
+    """
+    last = bins - 1
+    scaled = tl.minimum(tl.maximum(theta / step, 0.0), last + 0.0)
+    lower = tl.minimum(tl.floor(scaled), last - 1.0)
+    u = scaled - lower
+    u2 = u * u
+    u3 = u2 * u
+    h00 = 2.0 * u3 - 3.0 * u2 + 1.0
+    h10 = (u3 - 2.0 * u2 + u) * step
+    h01 = -2.0 * u3 + 3.0 * u2
+    h11 = (u3 - u2) * step
+    # d/dtheta is d/du over the knot spacing.
+    g00 = (6.0 * u2 - 6.0 * u) / step
+    g10 = 3.0 * u2 - 4.0 * u + 1.0
+    g01 = (6.0 * u - 6.0 * u2) / step
+    g11 = 3.0 * u2 - 2.0 * u
+
+    base = (location * bins + lower.to(tl.int64)) * 8
+    read = ()
+    for component in tl.static_range(4):
+        near = tl.load(profile + base + component)
+        near_slope = tl.load(profile + base + 4 + component)
+        far = tl.load(profile + base + 8 + component)
+        far_slope = tl.load(profile + base + 12 + component)
+        read = read + (
+            h00 * near + h10 * near_slope + h01 * far + h11 * far_slope,
+            g00 * near + g10 * near_slope + g01 * far + g11 * far_slope,
+        )
+    return read
+
+
+@triton.jit
+def _spinor_coefficients(ar, ai, br, bi, dar, dai, dbr, dbi):
+    """The rotation's nine coefficients and their tangents.
+
+    Every entry is a product of two factors drawn from the pair and its
+    conjugate, so five products carry all nine: ``a^2``, ``b^2``, ``a b``,
+    ``a conj(b)`` and the norm difference.
+    """
+    aa_r = ar * ar - ai * ai
+    aa_i = 2.0 * ar * ai
+    daa_r = 2.0 * (ar * dar - ai * dai)
+    daa_i = 2.0 * (dar * ai + ar * dai)
+
+    bb_r = br * br - bi * bi
+    bb_i = 2.0 * br * bi
+    dbb_r = 2.0 * (br * dbr - bi * dbi)
+    dbb_i = 2.0 * (dbr * bi + br * dbi)
+
+    ab_r = ar * br - ai * bi
+    ab_i = ar * bi + ai * br
+    dab_r = dar * br + ar * dbr - dai * bi - ai * dbi
+    dab_i = dar * bi + ar * dbi + dai * br + ai * dbr
+
+    cross_r = ar * br + ai * bi
+    cross_i = ar * bi - ai * br
+    dcross_r = dar * br + ar * dbr + dai * bi + ai * dbi
+    dcross_i = dar * bi + ar * dbi - dai * br - ai * dbr
+
+    t22 = ar * ar + ai * ai - br * br - bi * bi
+    dt22 = 2.0 * (ar * dar + ai * dai - br * dbr - bi * dbi)
+
+    return (
+        (aa_r, -aa_i, daa_r, -daa_i),
+        (-bb_r, bb_i, -dbb_r, dbb_i),
+        (-2.0 * ab_r, 2.0 * ab_i, -2.0 * dab_r, 2.0 * dab_i),
+        (-bb_r, -bb_i, -dbb_r, -dbb_i),
+        (aa_r, aa_i, daa_r, daa_i),
+        (-2.0 * ab_r, -2.0 * ab_i, -2.0 * dab_r, -2.0 * dab_i),
+        (cross_r, cross_i, dcross_r, dcross_i),
+        (cross_r, -cross_i, dcross_r, -dcross_i),
+        (t22, 0.0 * t22, dt22, 0.0 * dt22),
+    )
+
+
+@triton.jit
+def _rotate_spinor_dual(
+    ar, ai, br, bi,
+    dar, dai, dbr, dbi,
+    fp_r, fp_i, fm_r, fm_i, z_r, z_i,
+    dfp_r, dfp_i, dfm_r, dfm_i, dz_r, dz_i,
+):
+    """The spinor rotation carrying a forward-mode tangent.
+
+    Both the states and the pair naming the rotation move, so the tangent is
+    ``T dx + dT x``.
+    """
+    t00, t01, t02, t10, t11, t12, t20, t21, t22 = _spinor_coefficients(
+        ar, ai, br, bi, dar, dai, dbr, dbi
+    )
+
+    out_pr, out_pi = _dual_row(t00, t01, t02, fp_r, fp_i, fm_r, fm_i, z_r, z_i)
+    out_mr, out_mi = _dual_row(t10, t11, t12, fp_r, fp_i, fm_r, fm_i, z_r, z_i)
+    out_zr, out_zi = _dual_row(t20, t21, t22, fp_r, fp_i, fm_r, fm_i, z_r, z_i)
+
+    dpr, dpi = _dual_row(
+        t00, t01, t02, dfp_r, dfp_i, dfm_r, dfm_i, dz_r, dz_i
+    )
+    dmr, dmi = _dual_row(
+        t10, t11, t12, dfp_r, dfp_i, dfm_r, dfm_i, dz_r, dz_i
+    )
+    dzr, dzi = _dual_row(
+        t20, t21, t22, dfp_r, dfp_i, dfm_r, dfm_i, dz_r, dz_i
+    )
+    tpr, tpi = _tangent_row(t00, t01, t02, fp_r, fp_i, fm_r, fm_i, z_r, z_i)
+    tmr, tmi = _tangent_row(t10, t11, t12, fp_r, fp_i, fm_r, fm_i, z_r, z_i)
+    tzr, tzi = _tangent_row(t20, t21, t22, fp_r, fp_i, fm_r, fm_i, z_r, z_i)
+
+    return (
+        out_pr, out_pi, out_mr, out_mi, out_zr, out_zi,
+        dpr + tpr, dpi + tpi, dmr + tmr, dmi + tmi, dzr + tzr, dzi + tzi,
+    )
+
+
+@triton.jit
+def _dual_row(first, second, third, fp_r, fp_i, fm_r, fm_i, z_r, z_i):
+    """One row of the rotation applied to the states, values only."""
+    real = (
+        first[0] * fp_r - first[1] * fp_i
+        + second[0] * fm_r - second[1] * fm_i
+        + third[0] * z_r - third[1] * z_i
+    )
+    imag = (
+        first[0] * fp_i + first[1] * fp_r
+        + second[0] * fm_i + second[1] * fm_r
+        + third[0] * z_i + third[1] * z_r
+    )
+    return real, imag
+
+
+@triton.jit
+def _tangent_row(first, second, third, fp_r, fp_i, fm_r, fm_i, z_r, z_i):
+    """The same row built from the coefficients' tangents instead."""
+    real = (
+        first[2] * fp_r - first[3] * fp_i
+        + second[2] * fm_r - second[3] * fm_i
+        + third[2] * z_r - third[3] * z_i
+    )
+    imag = (
+        first[2] * fp_i + first[3] * fp_r
+        + second[2] * fm_i + second[3] * fm_r
+        + third[2] * z_i + third[3] * z_r
+    )
+    return real, imag
+
+
+@triton.jit
 def _rotate_spinor(ar, ai, br, bi, fp_r, fp_i, fm_r, fm_i, z_r, z_i):
     """The rotation named by its Cayley-Klein pair, applied to the states.
 
@@ -2553,6 +2707,7 @@ def _epg_jvp_kernel(
     tangent_duration,
     tangent_flip,
     tangent_phase,
+    profile,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -2565,8 +2720,11 @@ def _epg_jvp_kernel(
     output_count,
     flow_scale,
     washout_scale,
+    profile_step,
     state_count: tl.constexpr,
     shims: tl.constexpr,
+    locations: tl.constexpr,
+    profile_bins: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -2578,6 +2736,9 @@ def _epg_jvp_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
+    # Voxels are spread over the slice voxel-major, so a voxel's row in the
+    # transition table is its index modulo the profile's width.
+    location = atom % locations
     workspace_offset = problem * state_count
     scratch_pr = scratch_fplus_real + workspace_offset
     scratch_pi = scratch_fplus_imag + workspace_offset
@@ -2806,6 +2967,30 @@ def _epg_jvp_kernel(
         dalpha = tl.load(tangent_flip + event_base + event, mask=active_atom, other=0.0) * atom_b1 + event_flip * db1
         phi = event_phase + atom_b1_phase
         dphi = tl.load(tangent_phase + event_base + event, mask=active_atom, other=0.0) + db1_phase
+        if profile_bins > 0:
+            read = _profile_pair_slope(
+                profile, location, alpha, profile_bins, profile_step
+            )
+            # The flip angle carries the tangent into the table; the RF phase
+            # turns the axis after the pair comes out, and so reaches ``b``.
+            turn_r = tl.cos(phi)
+            turn_i = -tl.sin(phi)
+            spun_br = read[4] * turn_r - read[6] * turn_i
+            spun_bi = read[4] * turn_i + read[6] * turn_r
+            slope_br = read[5] * dalpha
+            slope_bi = read[7] * dalpha
+            (
+                shaped_pr, shaped_pi, shaped_mr, shaped_mi, shaped_zr,
+                shaped_zi, shaped_dpr, shaped_dpi, shaped_dmr, shaped_dmi,
+                shaped_dzr, shaped_dzi,
+            ) = _rotate_spinor_dual(
+                read[0], read[2], spun_br, spun_bi,
+                read[1] * dalpha, read[3] * dalpha,
+                slope_br * turn_r - slope_bi * turn_i + dphi * spun_bi,
+                slope_br * turn_i + slope_bi * turn_r - dphi * spun_br,
+                fpr, fpi, fmr, fmi, zr, zi,
+                dfpr, dfpi, dfmr, dfmi, dzr, dzi,
+            )
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
         dcosine = -sine * dalpha
@@ -2876,6 +3061,20 @@ def _epg_jvp_kernel(
         rotated_dzi = -0.5 * (dsine * zi_a + sine * dzi_a)
         rotated_dzi += 0.5 * (dsine * zi_b + sine * dzi_b)
         rotated_dzi += dcosine * zi + cosine * dzi
+
+        if profile_bins > 0:
+            rotated_pr = shaped_pr
+            rotated_pi = shaped_pi
+            rotated_mr = shaped_mr
+            rotated_mi = shaped_mi
+            rotated_zr = shaped_zr
+            rotated_zi = shaped_zi
+            rotated_dpr = shaped_dpr
+            rotated_dpi = shaped_dpi
+            rotated_dmr = shaped_dmr
+            rotated_dmi = shaped_dmi
+            rotated_dzr = shaped_dzr
+            rotated_dzi = shaped_dzi
 
         rotate = is_rf & ~is_inversion
         fpr = tl.where(rotate, rotated_pr, fpr)
@@ -3150,6 +3349,7 @@ def simulate_jvp(
     output_count: int,
     real_axis: int | None = None,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> torch.Tensor:
     """Run one fused state-machine Jacobian-vector product on CUDA.
 
@@ -3178,6 +3378,7 @@ def simulate_jvp(
         real_axis=real_axis,
         atom_count=atom_count,
         geometry=geometry,
+        profile=profile,
     )
     return torch.complex(output_real, output_imag)
 
@@ -3196,6 +3397,7 @@ def simulate_jvp_into(
     real_axis: int | None,
     atom_count: int,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
 ) -> None:
     """Run one Jacobian-vector product into buffers the caller owns.
 
@@ -3252,6 +3454,7 @@ def simulate_jvp_into(
         )
         return
 
+    table = None if profile is None else profile.packed(t1.device)
     _epg_jvp_kernel[grid](
         *tissue,
         duration,
@@ -3265,6 +3468,7 @@ def simulate_jvp_into(
         tangent_duration,
         tangent_flip,
         tangent_phase,
+        table,
         output_real,
         output_imag,
         *scratch,
@@ -3274,8 +3478,11 @@ def simulate_jvp_into(
         output_count,
         geometry.flow_scale,
         geometry.washout_scale,
+        1.0 if profile is None else profile.step,
         state_count=state_count,
         shims=shims,
+        locations=1 if profile is None else profile.points,
+        profile_bins=0 if profile is None else profile.bins,
         block_states=block_states,
         problems=problems,
         num_warps=1,
