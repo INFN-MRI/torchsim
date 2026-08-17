@@ -718,7 +718,6 @@ class _NativeEpg(torch.autograd.Function):
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
-        _one_transverse_pool(ctx.exchanging)
         saved = ctx.saved_tensors
         float_tangents = tuple(
             torch.zeros_like(saved[index])
@@ -735,6 +734,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.geometry,
             ctx.profile,
             ctx.lineshape,
+            ctx.exchanging,
         )
 
     @staticmethod
@@ -867,6 +867,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             geometry=inputs[_TANGENT_END + 3],
             profile=inputs[_TANGENT_END + 4],
             lineshape=inputs[_TANGENT_END + 5],
+            exchanging=inputs[_TANGENT_END + 6],
         )
 
     @staticmethod
@@ -877,9 +878,11 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.geometry = inputs[_TANGENT_END + 3]
         ctx.profile = inputs[_TANGENT_END + 4]
         ctx.lineshape = inputs[_TANGENT_END + 5]
+        ctx.exchanging = inputs[_TANGENT_END + 6]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
+        _one_transverse_pool(ctx.exchanging)
         saved = ctx.saved_tensors
         primal = saved[:_PACKED_COUNT]
         tangent = saved[_PACKED_COUNT:_TANGENT_END]
@@ -910,7 +913,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         guarded = _last(
             (*_spread(primal_grads, ctx.needs_input_grad), *directions), saved
         )
-        return (*guarded, None, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None, None)
 
     @staticmethod
     def vmap(
@@ -1178,6 +1181,23 @@ def _pool_kind(lineshape: Any, exchanging: bool) -> int:
     if exchanging:
         return _POOL_EXCHANGING
     return _POOL_SEMISOLID if lineshape is not None else _POOL_ONE
+
+
+def _on_the_host(exchanging: bool, device: torch.device) -> None:
+    """Refuse a forward direction through an exchanging pool on the card.
+
+    The CUDA forward carries the second transverse pool; its forward-mode
+    kernel does not yet, and a launch that quietly ran the single-pool one
+    would return a plausible tangent for the wrong physics.
+
+    Raises:
+        NotImplementedError: if the run is on a device and carries the pool.
+    """
+    if exchanging and device.type != "cpu":
+        raise NotImplementedError(
+            "forward mode through a chemically exchanging pool runs on the "
+            "host; the CUDA kernel carries one transverse pool"
+        )
 
 
 def _one_transverse_pool(exchanging: bool) -> None:
@@ -1971,6 +1991,7 @@ def _run_offloaded_jvp(
     geometry: Geometry,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> torch.Tensor:
     """Stream a forward-mode pass; the seeds ride along with the tissue.
 
@@ -2435,8 +2456,9 @@ def _run_packed_vjp_jvp(
         real_axis = _auto_real_axis_adjoint(
             events, tissue, state_count, tangents, wanted, profile
         )
-    # A bound pool is outside every real subspace the reduced kernels stand
-    # for; see the forward path for why.
+    # A semisolid pool is outside every real subspace the reduced kernels
+    # stand for; see the forward path for why. An exchanging one is refused
+    # before it reaches here.
     if lineshape is not None:
         real_axis = None
     if profile is not None:
@@ -2584,6 +2606,7 @@ def _run_packed_jvp(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> torch.Tensor:
     profile = _tables(profile, events)
     if profile is not None:
@@ -2599,10 +2622,12 @@ def _run_packed_jvp(
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
             profile=profile,
         )
-    # A bound pool is outside every real subspace the reduced kernels stand
+    # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
-    if lineshape is not None:
+    if lineshape is not None or exchanging:
         real_axis = None
+    if exchanging and (_OFFLOAD is not None or _DEVICES):
+        _on_the_host(exchanging, torch.device("cuda"))
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded_jvp(
             tissue,
@@ -2616,6 +2641,7 @@ def _run_packed_jvp(
             geometry,
             profile,
             lineshape,
+            exchanging,
         )
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
@@ -2632,6 +2658,7 @@ def _run_packed_jvp(
             geometry,
             profile,
             lineshape,
+            exchanging,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2647,10 +2674,13 @@ def _run_packed_jvp(
                 real_axis,
                 geometry=geometry,
                 lineshape=lineshape,
+                exchanging=exchanging,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate_jvp
+
+        _on_the_host(exchanging, tissue[0].device)
 
         shards = _shard_bounds(_train_count(events))
         if shards:
@@ -2668,6 +2698,7 @@ def _run_packed_jvp(
                         geometry=geometry,
                         profile=profile,
                         lineshape=lineshape,
+                        exchanging=exchanging,
                     ),
                 )
                 for begin, end, device in shards
@@ -2684,6 +2715,7 @@ def _run_packed_jvp(
             geometry=geometry,
             profile=profile,
             lineshape=lineshape,
+            exchanging=exchanging,
         )
     from torchsim import _epg_cpu
 
@@ -2723,5 +2755,6 @@ def _run_packed_jvp(
         1.0 if profile is None else profile.step,
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
+        _pool_kind(lineshape, exchanging),
     )
     return torch.complex(output_real, output_imag)

@@ -5081,6 +5081,7 @@ def simulate_jvp(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> torch.Tensor:
     """Run one fused state-machine Jacobian-vector product on CUDA.
 
@@ -5111,6 +5112,7 @@ def simulate_jvp(
         geometry=geometry,
         profile=profile,
         lineshape=lineshape,
+        exchanging=exchanging,
     )
     return torch.complex(output_real, output_imag)
 
@@ -5131,6 +5133,7 @@ def simulate_jvp_into(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> None:
     """Run one Jacobian-vector product into buffers the caller owns.
 
@@ -5138,9 +5141,8 @@ def simulate_jvp_into(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
-        _bound_fraction, _bound_exchange, _t1_bound,
-        _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
-        _pool_b_shift,
+        bound_fraction, bound_exchange, t1_bound,
+        pool_b_fraction, pool_b_exchange, t1_pool_b, t2_pool_b, pool_b_shift,
     ) = tissue
     (
         duration, kind, flip, phase, action, output_index, shim_index,

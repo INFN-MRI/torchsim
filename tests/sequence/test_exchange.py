@@ -264,11 +264,224 @@ def test_a_pulse_turns_both_pools_alike():
     assert abs(complex(turned) - expected) / abs(expected) < 1e-5
 
 
+# --- forward mode ---
+
+
+# One tissue whose every exchanging term is live at once: enough exchange to
+# move magnetization over the read, relaxation the two pools do not share, and
+# an offset far enough out to put the pools well apart in phase.
+LIVE = dict(
+    t1_ms=1000.0,
+    t2_ms=80.0,
+    pool_b_fraction=0.25,
+    pool_b_exchange_hz=40.0,
+    t1_pool_b_ms=300.0,
+    t2_pool_b_ms=25.0,
+    pool_b_shift_hz=FAT_SHIFT_HZ,
+    b0_hz=90.0,
+)
+READ_TIMES_S = (1.0e-3, 4.0e-3)
+
+# The probe excites once and reads the transverse magnetization; nothing puts
+# anything back on the longitudinal axis, so neither pool's T1 reaches the
+# answer and differencing along one measures float32 noise.
+DIRECTIONS = sorted(set(LIVE) - {"t1_ms", "t1_pool_b_ms"})
+
+
+def _prepared(device="cpu", **properties):
+    prepared, _, _ = _prepare_tissue(TissueProperties(**properties), device)
+    return tuple(value.to(torch.float32).contiguous() for value in prepared)
+
+
+def _live_events():
+    from torchsim.sequence._accelerators import _EXCITATION, _RECORD
+
+    times = READ_TIMES_S
+    intervals = [
+        after - before for before, after in zip((0.0, *times), times)
+    ]
+    return (
+        torch.tensor([0.0, *intervals], dtype=torch.float32),
+        torch.tensor([1, *([2] * len(times))], dtype=torch.int32),
+        torch.tensor(
+            [0.5 * torch.pi, *([0.0] * len(times))], dtype=torch.float32
+        ),
+        torch.zeros(1 + len(times), dtype=torch.float32),
+        torch.tensor(
+            [_EXCITATION, *([_RECORD] * len(times))], dtype=torch.uint8
+        ),
+        torch.tensor([-1, *range(len(times))], dtype=torch.int32),
+        torch.zeros(1 + len(times), dtype=torch.int32),
+        torch.zeros(1 + len(times), dtype=torch.float32),
+        torch.zeros(1 + len(times), dtype=torch.float32),
+    )
+
+
+def _live_readout(prepared, seed=None):
+    """The free-induction reading, or its directional derivative."""
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    events = _live_events()
+    if seed is None:
+        return _run_packed(
+            prepared, events, STATES, len(READ_TIMES_S), 1, exchanging=True
+        ).flatten()
+    return _run_packed_jvp(
+        prepared,
+        events,
+        seed,
+        tuple(torch.zeros_like(events[0]) for _ in range(3)),
+        STATES,
+        len(READ_TIMES_S),
+        1,
+        exchanging=True,
+    ).flatten()
+
+
+@pytest.mark.parametrize("name", DIRECTIONS)
+def test_forward_mode_matches_finite_differences(name: str) -> None:
+    """Every direction the exchanging pool adds, and every one it changes.
+
+    The step is a hundredth of the value: differencing a float32 kernel at a
+    thousandth leaves the answer under the rounding of the two runs, and at a
+    tenth the difference has curved away from the tangent.
+    """
+    index = TISSUE_NAMES.index(name)
+    prepared = _prepared(**LIVE)
+    seed = tuple(
+        torch.ones_like(value) if position == index else torch.zeros_like(value)
+        for position, value in enumerate(prepared)
+    )
+    tangent = _live_readout(prepared, seed)
+
+    step = abs(LIVE[name]) * 1e-2
+    forward = _live_readout(_prepared(**{**LIVE, name: LIVE[name] + step}))
+    backward = _live_readout(_prepared(**{**LIVE, name: LIVE[name] - step}))
+    difference = (forward - backward) / (2.0 * step)
+
+    scale = float(difference.abs().max())
+    assert scale > 0.0, "the probe leaves this direction dead"
+    assert float((tangent - difference).abs().max()) / scale < 5e-3
+
+
+def test_the_shift_is_the_off_resonance_of_the_pool_it_belongs_to():
+    """The two are the same knob, pointed at different pools.
+
+    Give the whole voxel to pool b and switch the exchange off, and it is the
+    only pool there is -- so a direction along its chemical shift must equal a
+    direction along the voxel's own off-resonance, exactly. A kernel that put
+    the shift on the wrong diagonal entry, or on both, still passes a
+    finite-difference check on the operator and fails here.
+    """
+    alone = dict(LIVE, pool_b_fraction=1.0, pool_b_exchange_hz=0.0)
+    prepared = _prepared(**alone)
+
+    def along(name):
+        index = TISSUE_NAMES.index(name)
+        seed = tuple(
+            torch.ones_like(value) if position == index
+            else torch.zeros_like(value)
+            for position, value in enumerate(prepared)
+        )
+        return _live_readout(prepared, seed)
+
+    shifted = along("pool_b_shift_hz")
+    detuned = along("b0_hz")
+
+    scale = float(detuned.abs().max())
+    assert scale > 0.0
+    assert float((shifted - detuned).abs().max()) / scale < 1e-5
+
+
+def test_forward_mode_leaves_the_single_pool_answer_untouched():
+    """A tissue at the default fraction takes the single-pool kernel in forward
+    mode too, so its directions are bit for bit what they were.
+    """
+    t2 = torch.tensor([80.0])
+
+    def signal(value):
+        return FSE().simulate(
+            _description(),
+            TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=value),
+            nstates=STATES,
+        ).signal
+
+    def gated(value):
+        return FSE().simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0]),
+                t2_ms=value,
+                pool_b_fraction=0.0,
+                pool_b_shift_hz=FAT_SHIFT_HZ,
+            ),
+            nstates=STATES,
+        ).signal
+
+    _, plain = torch.func.jvp(signal, (t2,), (torch.ones_like(t2),))
+    _, still = torch.func.jvp(gated, (t2,), (torch.ones_like(t2),))
+
+    assert torch.equal(plain, still)
+
+
+def test_forward_mode_reaches_an_exchanging_pool_through_the_public_api():
+    """The path an optimizer takes, rather than the packed buffers directly."""
+    fraction = torch.tensor([FRACTION])
+
+    def signal(value):
+        return FSE().simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0]),
+                t2_ms=torch.tensor([80.0]),
+                pool_b_fraction=value,
+                pool_b_exchange_hz=RATE_HZ,
+                t2_pool_b_ms=torch.tensor([25.0]),
+                pool_b_shift_hz=FAT_SHIFT_HZ,
+            ),
+            nstates=STATES,
+        ).signal
+
+    reading, tangent = torch.func.jvp(
+        signal, (fraction,), (torch.ones_like(fraction),)
+    )
+    step = 1e-3
+    difference = (signal(fraction + step) - signal(fraction - step)) / (2.0 * step)
+
+    assert float(reading.abs().max()) > 0.0
+    scale = float(difference.abs().max())
+    assert float((tangent - difference).abs().max()) / scale < 5e-3
+
+
 # --- what the derivative kernels will not do yet ---
 
 
-def test_a_derivative_of_an_exchanging_run_is_refused():
-    """The forward carries the second transverse pool; the Jacobian does not.
+def test_forward_mode_through_an_exchanging_pool_runs_on_the_host():
+    """The CUDA forward carries the second transverse pool; its forward-mode
+    kernel does not yet, and a launch that quietly ran the single-pool one
+    would return a plausible tangent for the wrong physics.
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    prepared = _prepared("cuda", **LIVE)
+    events = tuple(value.to("cuda") for value in _live_events())
+    with pytest.raises(NotImplementedError, match="runs on the host"):
+        _run_packed_jvp(
+            prepared,
+            events,
+            tuple(torch.ones_like(value) for value in prepared),
+            tuple(torch.zeros_like(events[0]) for _ in range(3)),
+            STATES,
+            len(READ_TIMES_S),
+            1,
+            exchanging=True,
+        )
+
+
+def test_an_adjoint_of_an_exchanging_run_is_refused():
+    """The forward carries the second transverse pool; the adjoint does not.
 
     Answering with the single-pool one would be a wrong number rather than a
     missing one, so it is refused instead.
