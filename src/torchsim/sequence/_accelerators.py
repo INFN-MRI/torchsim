@@ -2039,6 +2039,7 @@ def _run_offloaded_jvp(
             atom_count=width,
             profile=profile,
             lineshape=lineshape,
+            exchanging=exchanging,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -2626,8 +2627,6 @@ def _run_packed_jvp(
     # for; see the forward path for why.
     if lineshape is not None or exchanging:
         real_axis = None
-    if exchanging and (_OFFLOAD is not None or _DEVICES):
-        _on_the_host(exchanging, torch.device("cuda"))
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded_jvp(
             tissue,
@@ -2679,8 +2678,6 @@ def _run_packed_jvp(
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
         from ._epg_triton import simulate_jvp
-
-        _on_the_host(exchanging, tissue[0].device)
 
         shards = _shard_bounds(_train_count(events))
         if shards:

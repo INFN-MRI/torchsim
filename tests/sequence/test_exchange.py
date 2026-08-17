@@ -456,30 +456,6 @@ def test_forward_mode_reaches_an_exchanging_pool_through_the_public_api():
 # --- what the derivative kernels will not do yet ---
 
 
-def test_forward_mode_through_an_exchanging_pool_runs_on_the_host():
-    """The CUDA forward carries the second transverse pool; its forward-mode
-    kernel does not yet, and a launch that quietly ran the single-pool one
-    would return a plausible tangent for the wrong physics.
-    """
-    if not torch.cuda.is_available():
-        pytest.skip("CUDA is unavailable")
-    from torchsim.sequence._accelerators import _run_packed_jvp
-
-    prepared = _prepared("cuda", **LIVE)
-    events = tuple(value.to("cuda") for value in _live_events())
-    with pytest.raises(NotImplementedError, match="runs on the host"):
-        _run_packed_jvp(
-            prepared,
-            events,
-            tuple(torch.ones_like(value) for value in prepared),
-            tuple(torch.zeros_like(events[0]) for _ in range(3)),
-            STATES,
-            len(READ_TIMES_S),
-            1,
-            exchanging=True,
-        )
-
-
 def test_an_adjoint_of_an_exchanging_run_is_refused():
     """The forward carries the second transverse pool; the adjoint does not.
 
@@ -528,6 +504,82 @@ def test_the_single_pool_gradient_still_reaches_every_property():
 
 
 # --- the other backend ---
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_cuda_forward_mode_matches_the_cpu_kernel():
+    """The tangent of the complex two-pool step on the card.
+
+    The two backends share no code, so agreement is what keeps the second
+    transverse pool's derivative honest there: a shift dropped from the
+    tangent alone still produces a plausible direction.
+    """
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    voxels = 6
+    spread = dict(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+        pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    events = _live_events()
+
+    def run(device):
+        prepared = _prepared(device, **spread)
+        return _run_packed_jvp(
+            prepared,
+            tuple(value.to(device) for value in events),
+            tuple(torch.ones_like(value) for value in prepared),
+            tuple(torch.zeros_like(events[0]).to(device) for _ in range(3)),
+            STATES,
+            len(READ_TIMES_S),
+            1,
+            exchanging=True,
+        )
+
+    host = run("cpu")
+    card = run("cuda").cpu()
+
+    assert float(host.abs().max()) > 0.0
+    assert float((host - card).abs().max() / host.abs().max()) < 1e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_streamed_forward_mode_matches_the_whole_one():
+    """Streaming cuts the voxel axis, which the second pool's seeds follow."""
+    from torchsim.sequence._accelerators import _run_packed_jvp, offload
+
+    voxels = 3000
+    prepared = _prepared(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+        pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    events = _live_events()
+    arguments = (
+        prepared,
+        events,
+        tuple(torch.ones_like(value) for value in prepared),
+        tuple(torch.zeros_like(events[0]) for _ in range(3)),
+        STATES,
+        len(READ_TIMES_S),
+        1,
+    )
+
+    whole = _run_packed_jvp(*arguments, exchanging=True)
+    with offload(["cuda"], budget_bytes=1 << 20):
+        streamed = _run_packed_jvp(*arguments, exchanging=True)
+
+    assert float((whole - streamed).abs().max() / whole.abs().max()) < 5e-5
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")

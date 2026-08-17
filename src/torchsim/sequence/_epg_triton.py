@@ -324,6 +324,206 @@ def _two_pool_transverse_step(
 
 
 @triton.jit
+def _complex_sqrt_jvp(real, imag, d_real, d_imag):
+    """A complex square root and its directional derivative.
+
+    The derivative divides by twice the root, so a caller keeps the origin --
+    where the root has none -- on its series branch.
+    """
+    root_real, root_imag = _complex_sqrt(real, imag)
+    guard = 2.0 * (root_real * root_real + root_imag * root_imag)
+    live = guard > 0.0
+    guarded = tl.where(live, guard, 1.0)
+    # dz / (2 w) == dz * conj(2 w) / |2 w|^2
+    tangent_real = tl.where(
+        live, (d_real * root_real + d_imag * root_imag) / guarded, 0.0
+    )
+    tangent_imag = tl.where(
+        live, (d_imag * root_real - d_real * root_imag) / guarded, 0.0
+    )
+    return root_real, root_imag, tangent_real, tangent_imag
+
+
+@triton.jit
+def _complex_exp_jvp(real, imag, d_real, d_imag):
+    """``e^z`` and its directional derivative, which is ``e^z`` times it."""
+    value_real, value_imag = _complex_exp(real, imag)
+    return (
+        value_real,
+        value_imag,
+        value_real * d_real - value_imag * d_imag,
+        value_real * d_imag + value_imag * d_real,
+    )
+
+
+@triton.jit
+def _two_pool_transverse_step_jvp(
+    r2_free, d_r2_free,
+    r2_bound, d_r2_bound,
+    exchange, d_exchange,
+    bound, d_bound,
+    shift_hz, d_shift_hz,
+    dt, d_dt,
+    attenuation, d_attenuation,
+):
+    """The transverse operator and its directional derivative.
+
+    The same closed form :func:`_two_pool_transverse_step` evaluates, carried
+    alongside a tangent. Returned as the four entries then their four tangents,
+    each a pair of floats.
+    """
+    free = 1.0 - bound
+    d_free = -d_bound
+    kab = exchange * bound
+    d_kab = d_exchange * bound + exchange * d_bound
+    kba = exchange * free
+    d_kba = d_exchange * free + exchange * d_free
+    l11 = (-kab - r2_free) * dt
+    d_l11 = (-d_kab - d_r2_free) * dt + (-kab - r2_free) * d_dt
+    l12 = kba * dt
+    d_l12 = d_kba * dt + kba * d_dt
+    l21 = kab * dt
+    d_l21 = d_kab * dt + kab * d_dt
+    l22 = (-kba - r2_bound) * dt
+    d_l22 = (-d_kba - d_r2_bound) * dt + (-kba - r2_bound) * d_dt
+    turn = -2.0 * 3.141592653589793
+    l22_imag = turn * shift_hz * dt
+    d_l22_imag = turn * (d_shift_hz * dt + shift_hz * d_dt)
+
+    trace_real = 0.5 * (l11 + l22)
+    d_trace_real = 0.5 * (d_l11 + d_l22)
+    trace_imag = 0.5 * l22_imag
+    d_trace_imag = 0.5 * d_l22_imag
+    gap_real = 0.5 * (l11 - l22)
+    d_gap_real = 0.5 * (d_l11 - d_l22)
+    gap_imag = -0.5 * l22_imag
+    d_gap_imag = -0.5 * d_l22_imag
+
+    square_real = gap_real * gap_real - gap_imag * gap_imag + l12 * l21
+    d_square_real = (
+        2.0 * gap_real * d_gap_real - 2.0 * gap_imag * d_gap_imag
+        + d_l12 * l21 + l12 * d_l21
+    )
+    square_imag = 2.0 * gap_real * gap_imag
+    d_square_imag = 2.0 * (d_gap_real * gap_imag + gap_real * d_gap_imag)
+
+    root_real, root_imag, d_root_real, d_root_imag = _complex_sqrt_jvp(
+        square_real, square_imag, d_square_real, d_square_imag
+    )
+    upper_real, upper_imag, d_upper_real, d_upper_imag = _complex_exp_jvp(
+        trace_real + root_real, trace_imag + root_imag,
+        d_trace_real + d_root_real, d_trace_imag + d_root_imag,
+    )
+    lower_real, lower_imag, d_lower_real, d_lower_imag = _complex_exp_jvp(
+        trace_real - root_real, trace_imag - root_imag,
+        d_trace_real - d_root_real, d_trace_imag - d_root_imag,
+    )
+    cos_real = 0.5 * (upper_real + lower_real)
+    cos_imag = 0.5 * (upper_imag + lower_imag)
+    d_cos_real = 0.5 * (d_upper_real + d_lower_real)
+    d_cos_imag = 0.5 * (d_upper_imag + d_lower_imag)
+
+    turning = square_real * square_real + square_imag * square_imag > 1e-24
+    half_real = 0.5 * (upper_real - lower_real)
+    half_imag = 0.5 * (upper_imag - lower_imag)
+    d_half_real = 0.5 * (d_upper_real - d_lower_real)
+    d_half_imag = 0.5 * (d_upper_imag - d_lower_imag)
+    norm = root_real * root_real + root_imag * root_imag
+    guard = tl.where(turning, norm, 1.0)
+    d_norm = tl.where(
+        turning, 2.0 * (root_real * d_root_real + root_imag * d_root_imag), 0.0
+    )
+    # (a / w) with w complex: a * conj(w) / |w|^2, differentiated as a quotient.
+    top_real = half_real * root_real + half_imag * root_imag
+    top_imag = half_imag * root_real - half_real * root_imag
+    d_top_real = (
+        d_half_real * root_real + half_real * d_root_real
+        + d_half_imag * root_imag + half_imag * d_root_imag
+    )
+    d_top_imag = (
+        d_half_imag * root_real + half_imag * d_root_real
+        - d_half_real * root_imag - half_real * d_root_imag
+    )
+    divided_real = top_real / guard
+    divided_imag = top_imag / guard
+    d_divided_real = (d_top_real - divided_real * d_norm) / guard
+    d_divided_imag = (d_top_imag - divided_imag * d_norm) / guard
+
+    plain_real, plain_imag, d_plain_real, d_plain_imag = _complex_exp_jvp(
+        trace_real, trace_imag, d_trace_real, d_trace_imag
+    )
+    square2_real = square_real * square_real - square_imag * square_imag
+    square2_imag = 2.0 * square_real * square_imag
+    d_square2_real = (
+        2.0 * square_real * d_square_real - 2.0 * square_imag * d_square_imag
+    )
+    d_square2_imag = 2.0 * (
+        d_square_real * square_imag + square_real * d_square_imag
+    )
+    poly_real = 1.0 + square_real / 6.0 + square2_real / 120.0
+    poly_imag = square_imag / 6.0 + square2_imag / 120.0
+    d_poly_real = d_square_real / 6.0 + d_square2_real / 120.0
+    d_poly_imag = d_square_imag / 6.0 + d_square2_imag / 120.0
+    series_real = plain_real * poly_real - plain_imag * poly_imag
+    series_imag = plain_real * poly_imag + plain_imag * poly_real
+    d_series_real = (
+        d_plain_real * poly_real + plain_real * d_poly_real
+        - d_plain_imag * poly_imag - plain_imag * d_poly_imag
+    )
+    d_series_imag = (
+        d_plain_real * poly_imag + plain_real * d_poly_imag
+        + d_plain_imag * poly_real + plain_imag * d_poly_real
+    )
+
+    scale_real = tl.where(turning, divided_real, series_real)
+    scale_imag = tl.where(turning, divided_imag, series_imag)
+    d_scale_real = tl.where(turning, d_divided_real, d_series_real)
+    d_scale_imag = tl.where(turning, d_divided_imag, d_series_imag)
+
+    off_real = scale_real * gap_real - scale_imag * gap_imag
+    off_imag = scale_real * gap_imag + scale_imag * gap_real
+    d_off_real = (
+        d_scale_real * gap_real + scale_real * d_gap_real
+        - d_scale_imag * gap_imag - scale_imag * d_gap_imag
+    )
+    d_off_imag = (
+        d_scale_real * gap_imag + scale_real * d_gap_imag
+        + d_scale_imag * gap_real + scale_imag * d_gap_real
+    )
+
+    e11_real = cos_real + off_real
+    e11_imag = cos_imag + off_imag
+    d_e11_real = d_cos_real + d_off_real
+    d_e11_imag = d_cos_imag + d_off_imag
+    e22_real = cos_real - off_real
+    e22_imag = cos_imag - off_imag
+    d_e22_real = d_cos_real - d_off_real
+    d_e22_imag = d_cos_imag - d_off_imag
+    return (
+        attenuation * e11_real,
+        attenuation * e11_imag,
+        attenuation * scale_real * l12,
+        attenuation * scale_imag * l12,
+        attenuation * scale_real * l21,
+        attenuation * scale_imag * l21,
+        attenuation * e22_real,
+        attenuation * e22_imag,
+        d_attenuation * e11_real + attenuation * d_e11_real,
+        d_attenuation * e11_imag + attenuation * d_e11_imag,
+        d_attenuation * scale_real * l12
+        + attenuation * (d_scale_real * l12 + scale_real * d_l12),
+        d_attenuation * scale_imag * l12
+        + attenuation * (d_scale_imag * l12 + scale_imag * d_l12),
+        d_attenuation * scale_real * l21
+        + attenuation * (d_scale_real * l21 + scale_real * d_l21),
+        d_attenuation * scale_imag * l21
+        + attenuation * (d_scale_imag * l21 + scale_imag * d_l21),
+        d_attenuation * e22_real + attenuation * d_e22_real,
+        d_attenuation * e22_imag + attenuation * d_e22_imag,
+    )
+
+
+@triton.jit
 def _lineshape_at(lineshape, offset_hz, bins: tl.constexpr, step):
     """How well the bound pool absorbs a pulse this far off its resonance.
 
@@ -4225,6 +4425,85 @@ def _epg_kernel(
 
 
 @triton.jit
+def _rotate_flip_phase_jvp(
+    cosine, dcosine, sine, dsine,
+    cos_phi, dcos_phi, sin_phi, dsin_phi,
+    cos_2phi, dcos_2phi, sin_2phi, dsin_2phi,
+    fpr, fpi, fmr, fmi, zr, zi,
+    dfpr, dfpi, dfmr, dfmi, dzr, dzi,
+):
+    """One pool through a hard pulse, carried alongside a tangent.
+
+    Pulled out of the kernel body so a second pool can take the same
+    rotation: a chemical shift moves where a pool precesses, not what a
+    pulse does to it.
+    """
+    ch = 0.5 * (1.0 + cosine)
+    sh = 0.5 * (1.0 - cosine)
+    dch = 0.5 * dcosine
+    dsh = -0.5 * dcosine
+    pr_a = cos_2phi * fmr - sin_2phi * fmi
+    dpr_a = dcos_2phi * fmr + cos_2phi * dfmr
+    dpr_a -= dsin_2phi * fmi + sin_2phi * dfmi
+    pr_b = sin_phi * zr + cos_phi * zi
+    dpr_b = dsin_phi * zr + sin_phi * dzr + dcos_phi * zi + cos_phi * dzi
+    rotated_pr = ch * fpr + sh * pr_a + sine * pr_b
+    rotated_dpr = dch * fpr + ch * dfpr + dsh * pr_a + sh * dpr_a
+    rotated_dpr += dsine * pr_b + sine * dpr_b
+
+    pi_a = sin_2phi * fmr + cos_2phi * fmi
+    dpi_a = dsin_2phi * fmr + sin_2phi * dfmr
+    dpi_a += dcos_2phi * fmi + cos_2phi * dfmi
+    pi_b = sin_phi * zi - cos_phi * zr
+    dpi_b = dsin_phi * zi + sin_phi * dzi - dcos_phi * zr - cos_phi * dzr
+    rotated_pi = ch * fpi + sh * pi_a + sine * pi_b
+    rotated_dpi = dch * fpi + ch * dfpi + dsh * pi_a + sh * dpi_a
+    rotated_dpi += dsine * pi_b + sine * dpi_b
+
+    mr_a = cos_2phi * fpr + sin_2phi * fpi
+    dmr_a = dcos_2phi * fpr + cos_2phi * dfpr
+    dmr_a += dsin_2phi * fpi + sin_2phi * dfpi
+    mr_b = sin_phi * zr - cos_phi * zi
+    dmr_b = dsin_phi * zr + sin_phi * dzr - dcos_phi * zi - cos_phi * dzi
+    rotated_mr = sh * mr_a + ch * fmr + sine * mr_b
+    rotated_dmr = dsh * mr_a + sh * dmr_a + dch * fmr + ch * dfmr
+    rotated_dmr += dsine * mr_b + sine * dmr_b
+
+    mi_a = -sin_2phi * fpr + cos_2phi * fpi
+    dmi_a = -dsin_2phi * fpr - sin_2phi * dfpr
+    dmi_a += dcos_2phi * fpi + cos_2phi * dfpi
+    mi_b = cos_phi * zr + sin_phi * zi
+    dmi_b = dcos_phi * zr + cos_phi * dzr + dsin_phi * zi + sin_phi * dzi
+    rotated_mi = sh * mi_a + ch * fmi + sine * mi_b
+    rotated_dmi = dsh * mi_a + sh * dmi_a + dch * fmi + ch * dfmi
+    rotated_dmi += dsine * mi_b + sine * dmi_b
+
+    zr_a = sin_phi * fpr - cos_phi * fpi
+    dzr_a = dsin_phi * fpr + sin_phi * dfpr - dcos_phi * fpi - cos_phi * dfpi
+    zr_b = sin_phi * fmr + cos_phi * fmi
+    dzr_b = dsin_phi * fmr + sin_phi * dfmr + dcos_phi * fmi + cos_phi * dfmi
+    rotated_zr = -0.5 * sine * zr_a - 0.5 * sine * zr_b + cosine * zr
+    rotated_dzr = -0.5 * (dsine * zr_a + sine * dzr_a)
+    rotated_dzr -= 0.5 * (dsine * zr_b + sine * dzr_b)
+    rotated_dzr += dcosine * zr + cosine * dzr
+
+    zi_a = cos_phi * fpr + sin_phi * fpi
+    dzi_a = dcos_phi * fpr + cos_phi * dfpr + dsin_phi * fpi + sin_phi * dfpi
+    zi_b = cos_phi * fmr - sin_phi * fmi
+    dzi_b = dcos_phi * fmr + cos_phi * dfmr - dsin_phi * fmi - sin_phi * dfmi
+    rotated_zi = -0.5 * sine * zi_a + 0.5 * sine * zi_b + cosine * zi
+    rotated_dzi = -0.5 * (dsine * zi_a + sine * dzi_a)
+    rotated_dzi += 0.5 * (dsine * zi_b + sine * dzi_b)
+    rotated_dzi += dcosine * zi + cosine * dzi
+
+    return (
+        rotated_pr, rotated_pi, rotated_mr, rotated_mi, rotated_zr,
+        rotated_zi, rotated_dpr, rotated_dpi, rotated_dmr, rotated_dmi,
+        rotated_dzr, rotated_dzi,
+    )
+
+
+@triton.jit
 def _epg_jvp_kernel(
     t1,
     t2,
@@ -4301,6 +4580,7 @@ def _epg_jvp_kernel(
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
     lineshape_bins: tl.constexpr,
+    pools: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -4336,7 +4616,11 @@ def _epg_jvp_kernel(
     d_exchange = 0.0
     atom_r1_bound = 0.0
     d_r1_bound = 0.0
-    if lineshape_bins > 0:
+    atom_r2_bound = 0.0
+    d_r2_bound = 0.0
+    atom_shift = 0.0
+    d_shift = 0.0
+    if pools == 1:
         atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
         d_bound = tl.load(
             tangent_bound_fraction + atom, mask=active_atom, other=0.0
@@ -4350,6 +4634,31 @@ def _epg_jvp_kernel(
         d_r1_bound = -1000.0 * tl.load(
             tangent_t1_bound + atom, mask=active_atom, other=0.0
         ) / (held_t1 * held_t1)
+    if pools == 2:
+        atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
+        d_bound = tl.load(
+            tangent_pool_b_fraction + atom, mask=active_atom, other=0.0
+        )
+        atom_exchange = tl.load(
+            pool_b_exchange + atom, mask=active_atom, other=0.0
+        )
+        d_exchange = tl.load(
+            tangent_pool_b_exchange + atom, mask=active_atom, other=0.0
+        )
+        held_t1 = tl.load(t1_pool_b + atom, mask=active_atom, other=1.0)
+        atom_r1_bound = 1000.0 / held_t1
+        d_r1_bound = -1000.0 * tl.load(
+            tangent_t1_pool_b + atom, mask=active_atom, other=0.0
+        ) / (held_t1 * held_t1)
+        held_t2 = tl.load(t2_pool_b + atom, mask=active_atom, other=1.0)
+        atom_r2_bound = 1000.0 / held_t2
+        d_r2_bound = -1000.0 * tl.load(
+            tangent_t2_pool_b + atom, mask=active_atom, other=0.0
+        ) / (held_t2 * held_t2)
+        atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
+        d_shift = tl.load(
+            tangent_pool_b_shift + atom, mask=active_atom, other=0.0
+        )
     zr = empty + tl.where(state == 0, 1.0 - atom_bound, 0.0)
     zi = empty
     br = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
@@ -4362,6 +4671,14 @@ def _epg_jvp_kernel(
     dzi = empty
     dbr = empty + tl.where(state == 0, d_bound + 0.0, 0.0)
     dbi = empty
+    bpr = empty
+    bpi = empty
+    bmr = empty
+    bmi = empty
+    dbpr = empty
+    dbpi = empty
+    dbmr = empty
+    dbmi = empty
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
@@ -4436,47 +4753,150 @@ def _epg_jvp_kernel(
         doff_cos = -off_sin * doff_phase
         doff_sin = off_cos * doff_phase
 
-        old_fpr = fpr
-        old_fpi = fpi
-        old_dfpr = dfpr
-        old_dfpi = dfpi
-        fpr = e2 * (old_fpr * off_cos - old_fpi * off_sin)
-        fpi = e2 * (old_fpr * off_sin + old_fpi * off_cos)
-        dfpr = de2 * (old_fpr * off_cos - old_fpi * off_sin)
-        dfpr += e2 * (
-            old_dfpr * off_cos
-            + old_fpr * doff_cos
-            - old_dfpi * off_sin
-            - old_fpi * doff_sin
-        )
-        dfpi = de2 * (old_fpr * off_sin + old_fpi * off_cos)
-        dfpi += e2 * (
-            old_dfpr * off_sin
-            + old_fpr * doff_sin
-            + old_dfpi * off_cos
-            + old_fpi * doff_cos
-        )
+        if pools == 2:
+            # Both pools take the same off-resonance and per-order damping;
+            # what separates them is the chemical shift, which the exchange
+            # operator already carries.
+            (
+                x11r, x11i, x12r, x12i, x21r, x21i, x22r, x22i,
+                d11r, d11i, d12r, d12i, d21r, d21i, d22r, d22i,
+            ) = _two_pool_transverse_step_jvp(
+                r2, -1000.0 * dt2 / (atom_t2 * atom_t2),
+                atom_r2_bound, d_r2_bound,
+                atom_exchange, d_exchange,
+                atom_bound, d_bound,
+                atom_shift, d_shift,
+                event_dt, ddt,
+                wout, dwout,
+            )
+            mix_pr = x11r * fpr - x11i * fpi + x12r * bpr - x12i * bpi
+            mix_pi = x11r * fpi + x11i * fpr + x12r * bpi + x12i * bpr
+            dmix_pr = (
+                d11r * fpr + x11r * dfpr - d11i * fpi - x11i * dfpi
+                + d12r * bpr + x12r * dbpr - d12i * bpi - x12i * dbpi
+            )
+            dmix_pi = (
+                d11r * fpi + x11r * dfpi + d11i * fpr + x11i * dfpr
+                + d12r * bpi + x12r * dbpi + d12i * bpr + x12i * dbpr
+            )
+            mix_br = x21r * fpr - x21i * fpi + x22r * bpr - x22i * bpi
+            mix_bi = x21r * fpi + x21i * fpr + x22r * bpi + x22i * bpr
+            dmix_br = (
+                d21r * fpr + x21r * dfpr - d21i * fpi - x21i * dfpi
+                + d22r * bpr + x22r * dbpr - d22i * bpi - x22i * dbpi
+            )
+            dmix_bi = (
+                d21r * fpi + x21r * dfpi + d21i * fpr + x21i * dfpr
+                + d22r * bpi + x22r * dbpi + d22i * bpr + x22i * dbpr
+            )
+            # ``F-`` follows the conjugate of the operator entry by entry.
+            mix_mr = x11r * fmr + x11i * fmi + x12r * bmr + x12i * bmi
+            mix_mi = x11r * fmi - x11i * fmr + x12r * bmi - x12i * bmr
+            dmix_mr = (
+                d11r * fmr + x11r * dfmr + d11i * fmi + x11i * dfmi
+                + d12r * bmr + x12r * dbmr + d12i * bmi + x12i * dbmi
+            )
+            dmix_mi = (
+                d11r * fmi + x11r * dfmi - d11i * fmr - x11i * dfmr
+                + d12r * bmi + x12r * dbmi - d12i * bmr - x12i * dbmr
+            )
+            mix_nr = x21r * fmr + x21i * fmi + x22r * bmr + x22i * bmi
+            mix_ni = x21r * fmi - x21i * fmr + x22r * bmi - x22i * bmr
+            dmix_nr = (
+                d21r * fmr + x21r * dfmr + d21i * fmi + x21i * dfmi
+                + d22r * bmr + x22r * dbmr + d22i * bmi + x22i * dbmi
+            )
+            dmix_ni = (
+                d21r * fmi + x21r * dfmi - d21i * fmr - x21i * dfmr
+                + d22r * bmi + x22r * dbmi - d22i * bmr - x22i * dbmr
+            )
+            # The damping and off-resonance both pools share, applied after.
+            carry_r = damp_t * off_cos
+            carry_i = damp_t * off_sin
+            dcarry_r = ddamp_t * off_cos + damp_t * doff_cos
+            dcarry_i = ddamp_t * off_sin + damp_t * doff_sin
+            fpr = mix_pr * carry_r - mix_pi * carry_i
+            fpi = mix_pr * carry_i + mix_pi * carry_r
+            dfpr = (
+                dmix_pr * carry_r + mix_pr * dcarry_r
+                - dmix_pi * carry_i - mix_pi * dcarry_i
+            )
+            dfpi = (
+                dmix_pr * carry_i + mix_pr * dcarry_i
+                + dmix_pi * carry_r + mix_pi * dcarry_r
+            )
+            bpr = mix_br * carry_r - mix_bi * carry_i
+            bpi = mix_br * carry_i + mix_bi * carry_r
+            dbpr = (
+                dmix_br * carry_r + mix_br * dcarry_r
+                - dmix_bi * carry_i - mix_bi * dcarry_i
+            )
+            dbpi = (
+                dmix_br * carry_i + mix_br * dcarry_i
+                + dmix_bi * carry_r + mix_bi * dcarry_r
+            )
+            fmr = mix_mr * carry_r + mix_mi * carry_i
+            fmi = -mix_mr * carry_i + mix_mi * carry_r
+            dfmr = (
+                dmix_mr * carry_r + mix_mr * dcarry_r
+                + dmix_mi * carry_i + mix_mi * dcarry_i
+            )
+            dfmi = (
+                -dmix_mr * carry_i - mix_mr * dcarry_i
+                + dmix_mi * carry_r + mix_mi * dcarry_r
+            )
+            bmr = mix_nr * carry_r + mix_ni * carry_i
+            bmi = -mix_nr * carry_i + mix_ni * carry_r
+            dbmr = (
+                dmix_nr * carry_r + mix_nr * dcarry_r
+                + dmix_ni * carry_i + mix_ni * dcarry_i
+            )
+            dbmi = (
+                -dmix_nr * carry_i - mix_nr * dcarry_i
+                + dmix_ni * carry_r + mix_ni * dcarry_r
+            )
+        else:
+            old_fpr = fpr
+            old_fpi = fpi
+            old_dfpr = dfpr
+            old_dfpi = dfpi
+            fpr = e2 * (old_fpr * off_cos - old_fpi * off_sin)
+            fpi = e2 * (old_fpr * off_sin + old_fpi * off_cos)
+            dfpr = de2 * (old_fpr * off_cos - old_fpi * off_sin)
+            dfpr += e2 * (
+                old_dfpr * off_cos
+                + old_fpr * doff_cos
+                - old_dfpi * off_sin
+                - old_fpi * doff_sin
+            )
+            dfpi = de2 * (old_fpr * off_sin + old_fpi * off_cos)
+            dfpi += e2 * (
+                old_dfpr * off_sin
+                + old_fpr * doff_sin
+                + old_dfpi * off_cos
+                + old_fpi * doff_cos
+            )
 
-        old_fmr = fmr
-        old_fmi = fmi
-        old_dfmr = dfmr
-        old_dfmi = dfmi
-        fmr = e2 * (old_fmr * off_cos + old_fmi * off_sin)
-        fmi = e2 * (-old_fmr * off_sin + old_fmi * off_cos)
-        dfmr = de2 * (old_fmr * off_cos + old_fmi * off_sin)
-        dfmr += e2 * (
-            old_dfmr * off_cos
-            + old_fmr * doff_cos
-            + old_dfmi * off_sin
-            + old_fmi * doff_sin
-        )
-        dfmi = de2 * (-old_fmr * off_sin + old_fmi * off_cos)
-        dfmi += e2 * (
-            -old_dfmr * off_sin
-            - old_fmr * doff_sin
-            + old_dfmi * off_cos
-            + old_fmi * doff_cos
-        )
+            old_fmr = fmr
+            old_fmi = fmi
+            old_dfmr = dfmr
+            old_dfmi = dfmi
+            fmr = e2 * (old_fmr * off_cos + old_fmi * off_sin)
+            fmi = e2 * (-old_fmr * off_sin + old_fmi * off_cos)
+            dfmr = de2 * (old_fmr * off_cos + old_fmi * off_sin)
+            dfmr += e2 * (
+                old_dfmr * off_cos
+                + old_fmr * doff_cos
+                + old_dfmi * off_sin
+                + old_fmi * doff_sin
+            )
+            dfmi = de2 * (-old_fmr * off_sin + old_fmi * off_cos)
+            dfmi += e2 * (
+                -old_dfmr * off_sin
+                - old_fmr * doff_sin
+                + old_dfmi * off_cos
+                + old_fmi * doff_cos
+            )
 
         # The longitudinal states carry a phase of their own, which nothing
         # else in the state machine gives them.
@@ -4502,7 +4922,7 @@ def _epg_jvp_kernel(
             + old_dzi * turn_cos
             + old_zi * dturn_cos
         )
-        if lineshape_bins > 0:
+        if pools > 0:
             # The exchange operator belongs to the interval, not to a dephasing
             # order, so it is formed once and carries its own tangent; the
             # per-order damping multiplies both pools, whose order-n states
@@ -4620,6 +5040,25 @@ def _epg_jvp_kernel(
         dfpi = tl.where(pre_shift, shifted_dpi, dfpi)
         dfmr = tl.where(pre_shift, shifted_dmr, dfmr)
         dfmi = tl.where(pre_shift, shifted_dmi, dfmi)
+        if pools == 2:
+            s_bpr, s_bpi, s_bmr, s_bmi = _shift(
+                bpr, bpi, bmr, bmi,
+                scratch_pr, scratch_pi, scratch_mr, scratch_mi,
+                state, state_mask, state_count,
+            )
+            s_dbpr, s_dbpi, s_dbmr, s_dbmi = _shift(
+                dbpr, dbpi, dbmr, dbmi,
+                scratch_pr, scratch_pi, scratch_mr, scratch_mi,
+                state, state_mask, state_count,
+            )
+            bpr = tl.where(pre_shift, s_bpr, bpr)
+            bpi = tl.where(pre_shift, s_bpi, bpi)
+            bmr = tl.where(pre_shift, s_bmr, bmr)
+            bmi = tl.where(pre_shift, s_bmi, bmi)
+            dbpr = tl.where(pre_shift, s_dbpr, dbpr)
+            dbpi = tl.where(pre_shift, s_dbpi, dbpi)
+            dbmr = tl.where(pre_shift, s_dbmr, dbmr)
+            dbmi = tl.where(pre_shift, s_dbmi, dbmi)
 
         event_kind = tl.load(kind + event)
         is_rf = event_kind == 1
@@ -4629,6 +5068,13 @@ def _epg_jvp_kernel(
         dzi = tl.where(invert, -dinversion * zi - atom_inversion * dzi, dzi)
         zr = tl.where(invert, -atom_inversion * zr, zr)
         zi = tl.where(invert, -atom_inversion * zi, zi)
+        if pools == 2:
+            # A chemically exchanging pool is free water and turns over like
+            # any other; a semisolid one is saturated instead.
+            dbr = tl.where(invert, -dinversion * br - atom_inversion * dbr, dbr)
+            dbi = tl.where(invert, -dinversion * bi - atom_inversion * dbi, dbi)
+            br = tl.where(invert, -atom_inversion * br, br)
+            bi = tl.where(invert, -atom_inversion * bi, bi)
 
         event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
         event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
@@ -4693,14 +5139,24 @@ def _epg_jvp_kernel(
                 fpr, fpi, fmr, fmi, zr, zi,
                 dfpr, dfpi, dfmr, dfmi, dzr, dzi,
             )
+            if pools == 2:
+                # The same pulse, the same rotation.
+                (
+                    held_pr, held_pi, held_mr, held_mi, held_zr, held_zi,
+                    held_dpr, held_dpi, held_dmr, held_dmi, held_dzr,
+                    held_dzi,
+                ) = _rotate_spinor_dual(
+                    read[0], read[2], spun_br, spun_bi,
+                    read[1] * dalpha, read[3] * dalpha,
+                    slope_br * turn_r - slope_bi * turn_i + dphi * spun_bi,
+                    slope_br * turn_i + slope_bi * turn_r - dphi * spun_br,
+                    bpr, bpi, bmr, bmi, br, bi,
+                    dbpr, dbpi, dbmr, dbmi, dbr, dbi,
+                )
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
         dcosine = -sine * dalpha
         dsine = cosine * dalpha
-        ch = 0.5 * (1.0 + cosine)
-        sh = 0.5 * (1.0 - cosine)
-        dch = 0.5 * dcosine
-        dsh = -0.5 * dcosine
         cos_phi = tl.cos(phi)
         sin_phi = tl.sin(phi)
         cos_2phi = tl.cos(2.0 * phi)
@@ -4710,60 +5166,28 @@ def _epg_jvp_kernel(
         dcos_2phi = -2.0 * sin_2phi * dphi
         dsin_2phi = 2.0 * cos_2phi * dphi
 
-        pr_a = cos_2phi * fmr - sin_2phi * fmi
-        dpr_a = dcos_2phi * fmr + cos_2phi * dfmr
-        dpr_a -= dsin_2phi * fmi + sin_2phi * dfmi
-        pr_b = sin_phi * zr + cos_phi * zi
-        dpr_b = dsin_phi * zr + sin_phi * dzr + dcos_phi * zi + cos_phi * dzi
-        rotated_pr = ch * fpr + sh * pr_a + sine * pr_b
-        rotated_dpr = dch * fpr + ch * dfpr + dsh * pr_a + sh * dpr_a
-        rotated_dpr += dsine * pr_b + sine * dpr_b
-
-        pi_a = sin_2phi * fmr + cos_2phi * fmi
-        dpi_a = dsin_2phi * fmr + sin_2phi * dfmr
-        dpi_a += dcos_2phi * fmi + cos_2phi * dfmi
-        pi_b = sin_phi * zi - cos_phi * zr
-        dpi_b = dsin_phi * zi + sin_phi * dzi - dcos_phi * zr - cos_phi * dzr
-        rotated_pi = ch * fpi + sh * pi_a + sine * pi_b
-        rotated_dpi = dch * fpi + ch * dfpi + dsh * pi_a + sh * dpi_a
-        rotated_dpi += dsine * pi_b + sine * dpi_b
-
-        mr_a = cos_2phi * fpr + sin_2phi * fpi
-        dmr_a = dcos_2phi * fpr + cos_2phi * dfpr
-        dmr_a += dsin_2phi * fpi + sin_2phi * dfpi
-        mr_b = sin_phi * zr - cos_phi * zi
-        dmr_b = dsin_phi * zr + sin_phi * dzr - dcos_phi * zi - cos_phi * dzi
-        rotated_mr = sh * mr_a + ch * fmr + sine * mr_b
-        rotated_dmr = dsh * mr_a + sh * dmr_a + dch * fmr + ch * dfmr
-        rotated_dmr += dsine * mr_b + sine * dmr_b
-
-        mi_a = -sin_2phi * fpr + cos_2phi * fpi
-        dmi_a = -dsin_2phi * fpr - sin_2phi * dfpr
-        dmi_a += dcos_2phi * fpi + cos_2phi * dfpi
-        mi_b = cos_phi * zr + sin_phi * zi
-        dmi_b = dcos_phi * zr + cos_phi * dzr + dsin_phi * zi + sin_phi * dzi
-        rotated_mi = sh * mi_a + ch * fmi + sine * mi_b
-        rotated_dmi = dsh * mi_a + sh * dmi_a + dch * fmi + ch * dfmi
-        rotated_dmi += dsine * mi_b + sine * dmi_b
-
-        zr_a = sin_phi * fpr - cos_phi * fpi
-        dzr_a = dsin_phi * fpr + sin_phi * dfpr - dcos_phi * fpi - cos_phi * dfpi
-        zr_b = sin_phi * fmr + cos_phi * fmi
-        dzr_b = dsin_phi * fmr + sin_phi * dfmr + dcos_phi * fmi + cos_phi * dfmi
-        rotated_zr = -0.5 * sine * zr_a - 0.5 * sine * zr_b + cosine * zr
-        rotated_dzr = -0.5 * (dsine * zr_a + sine * dzr_a)
-        rotated_dzr -= 0.5 * (dsine * zr_b + sine * dzr_b)
-        rotated_dzr += dcosine * zr + cosine * dzr
-
-        zi_a = cos_phi * fpr + sin_phi * fpi
-        dzi_a = dcos_phi * fpr + cos_phi * dfpr + dsin_phi * fpi + sin_phi * dfpi
-        zi_b = cos_phi * fmr - sin_phi * fmi
-        dzi_b = dcos_phi * fmr + cos_phi * dfmr - dsin_phi * fmi - sin_phi * dfmi
-        rotated_zi = -0.5 * sine * zi_a + 0.5 * sine * zi_b + cosine * zi
-        rotated_dzi = -0.5 * (dsine * zi_a + sine * dzi_a)
-        rotated_dzi += 0.5 * (dsine * zi_b + sine * dzi_b)
-        rotated_dzi += dcosine * zi + cosine * dzi
-
+        (
+            rotated_pr, rotated_pi, rotated_mr, rotated_mi, rotated_zr,
+            rotated_zi, rotated_dpr, rotated_dpi, rotated_dmr, rotated_dmi,
+            rotated_dzr, rotated_dzi,
+        ) = _rotate_flip_phase_jvp(
+            cosine, dcosine, sine, dsine,
+            cos_phi, dcos_phi, sin_phi, dsin_phi,
+            cos_2phi, dcos_2phi, sin_2phi, dsin_2phi,
+            fpr, fpi, fmr, fmi, zr, zi,
+            dfpr, dfpi, dfmr, dfmi, dzr, dzi,
+        )
+        if pools == 2:
+            (
+                b_pr, b_pi, b_mr, b_mi, b_zr, b_zi,
+                b_dpr, b_dpi, b_dmr, b_dmi, b_dzr, b_dzi,
+            ) = _rotate_flip_phase_jvp(
+                cosine, dcosine, sine, dsine,
+                cos_phi, dcos_phi, sin_phi, dsin_phi,
+                cos_2phi, dcos_2phi, sin_2phi, dsin_2phi,
+                bpr, bpi, bmr, bmi, br, bi,
+                dbpr, dbpi, dbmr, dbmi, dbr, dbi,
+            )
         if profile_bins > 0:
             rotated_pr = shaped_pr
             rotated_pi = shaped_pi
@@ -4777,6 +5201,19 @@ def _epg_jvp_kernel(
             rotated_dmi = shaped_dmi
             rotated_dzr = shaped_dzr
             rotated_dzi = shaped_dzi
+            if pools == 2:
+                b_pr = held_pr
+                b_pi = held_pi
+                b_mr = held_mr
+                b_mi = held_mi
+                b_zr = held_zr
+                b_zi = held_zi
+                b_dpr = held_dpr
+                b_dpi = held_dpi
+                b_dmr = held_dmr
+                b_dmi = held_dmi
+                b_dzr = held_dzr
+                b_dzi = held_dzi
 
         rotate = is_rf & ~is_inversion
         fpr = tl.where(rotate, rotated_pr, fpr)
@@ -4791,6 +5228,19 @@ def _epg_jvp_kernel(
         dfmi = tl.where(rotate, rotated_dmi, dfmi)
         dzr = tl.where(rotate, rotated_dzr, dzr)
         dzi = tl.where(rotate, rotated_dzi, dzi)
+        if pools == 2:
+            bpr = tl.where(rotate, b_pr, bpr)
+            bpi = tl.where(rotate, b_pi, bpi)
+            bmr = tl.where(rotate, b_mr, bmr)
+            bmi = tl.where(rotate, b_mi, bmi)
+            br = tl.where(rotate, b_zr, br)
+            bi = tl.where(rotate, b_zi, bi)
+            dbpr = tl.where(rotate, b_dpr, dbpr)
+            dbpi = tl.where(rotate, b_dpi, dbpi)
+            dbmr = tl.where(rotate, b_dmr, dbmr)
+            dbmi = tl.where(rotate, b_dmi, dbmi)
+            dbr = tl.where(rotate, b_dzr, dbr)
+            dbi = tl.where(rotate, b_dzi, dbi)
 
         record = ((event_action & 32) != 0) & (event_kind == 2)
         adc_cos = tl.cos(event_phase)
@@ -4798,13 +5248,24 @@ def _epg_jvp_kernel(
         dadc_phase = tl.load(tangent_phase + event_base + event, mask=active_atom, other=0.0)
         dadc_cos = -adc_sin * dadc_phase
         dadc_sin = adc_cos * dadc_phase
-        signal_real = dm0 * (fpr * adc_cos + fpi * adc_sin)
+        read_r = fpr
+        read_i = fpi
+        dread_r = dfpr
+        dread_i = dfpi
+        if pools == 2:
+            read_r = fpr + bpr
+            read_i = fpi + bpi
+            dread_r = dfpr + dbpr
+            dread_i = dfpi + dbpi
+        signal_real = dm0 * (read_r * adc_cos + read_i * adc_sin)
         signal_real += atom_m0 * (
-            dfpr * adc_cos + fpr * dadc_cos + dfpi * adc_sin + fpi * dadc_sin
+            dread_r * adc_cos + read_r * dadc_cos
+            + dread_i * adc_sin + read_i * dadc_sin
         )
-        signal_imag = dm0 * (fpi * adc_cos - fpr * adc_sin)
+        signal_imag = dm0 * (read_i * adc_cos - read_r * adc_sin)
         signal_imag += atom_m0 * (
-            dfpi * adc_cos + fpi * dadc_cos - dfpr * adc_sin - fpr * dadc_sin
+            dread_i * adc_cos + read_i * dadc_cos
+            - dread_r * adc_sin - read_r * dadc_sin
         )
         out = tl.load(output_index + event)
         output_offset = problem * output_count + out
@@ -4856,6 +5317,25 @@ def _epg_jvp_kernel(
         dfpi = tl.where(spoil, 0.0, dfpi)
         dfmr = tl.where(spoil, 0.0, dfmr)
         dfmi = tl.where(spoil, 0.0, dfmi)
+        if pools == 2:
+            s_bpr, s_bpi, s_bmr, s_bmi = _shift(
+                bpr, bpi, bmr, bmi,
+                scratch_pr, scratch_pi, scratch_mr, scratch_mi,
+                state, state_mask, state_count,
+            )
+            s_dbpr, s_dbpi, s_dbmr, s_dbmi = _shift(
+                dbpr, dbpi, dbmr, dbmi,
+                scratch_pr, scratch_pi, scratch_mr, scratch_mi,
+                state, state_mask, state_count,
+            )
+            bpr = tl.where(spoil, 0.0, tl.where(do_shift, s_bpr, bpr))
+            bpi = tl.where(spoil, 0.0, tl.where(do_shift, s_bpi, bpi))
+            bmr = tl.where(spoil, 0.0, tl.where(do_shift, s_bmr, bmr))
+            bmi = tl.where(spoil, 0.0, tl.where(do_shift, s_bmi, bmi))
+            dbpr = tl.where(spoil, 0.0, tl.where(do_shift, s_dbpr, dbpr))
+            dbpi = tl.where(spoil, 0.0, tl.where(do_shift, s_dbpi, dbpi))
+            dbmr = tl.where(spoil, 0.0, tl.where(do_shift, s_dbmr, dbmr))
+            dbmi = tl.where(spoil, 0.0, tl.where(do_shift, s_dbmi, dbmi))
 
 
 def _problems_per_program(total: int, block_states: int) -> int:
@@ -5232,6 +5712,7 @@ def simulate_jvp_into(
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
+        pools=2 if exchanging else (1 if lineshape is not None else 0),
         block_states=block_states,
         problems=problems,
         num_warps=1,
