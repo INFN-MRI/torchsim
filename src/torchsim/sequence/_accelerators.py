@@ -739,7 +739,6 @@ class _NativeEpg(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
-        _one_transverse_pool(ctx.exchanging)
         saved = ctx.saved_tensors
         wanted = _wanted(ctx.needs_input_grad)
         fused = _NativeEpgVjp.apply(
@@ -752,6 +751,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.geometry,
             ctx.profile,
             ctx.lineshape,
+            ctx.exchanging,
         )
         return (
             *_spread(fused, ctx.needs_input_grad),
@@ -791,6 +791,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             geometry=inputs[_SEED_INPUT + 5],
             profile=inputs[_SEED_INPUT + 6],
             lineshape=inputs[_SEED_INPUT + 7],
+            exchanging=inputs[_SEED_INPUT + 8],
         )
 
     @staticmethod
@@ -804,6 +805,7 @@ class _NativeEpgVjp(torch.autograd.Function):
         ctx.geometry = inputs[_SEED_INPUT + 5]
         ctx.profile = inputs[_SEED_INPUT + 6]
         ctx.lineshape = inputs[_SEED_INPUT + 7]
+        ctx.exchanging = inputs[_SEED_INPUT + 8]
 
     @staticmethod
     def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
@@ -828,6 +830,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             geometry=ctx.geometry,
             profile=ctx.profile,
             lineshape=ctx.lineshape,
+            exchanging=ctx.exchanging,
         )
         seed_grad = None
         if ctx.needs_input_grad[_SEED_INPUT]:
@@ -842,11 +845,12 @@ class _NativeEpgVjp(torch.autograd.Function):
                 geometry=ctx.geometry,
                 profile=ctx.profile,
                 lineshape=ctx.lineshape,
+                exchanging=ctx.exchanging,
             )
         guarded = _last(
             (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
         )
-        return (*guarded, None, None, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None, None, None)
 
 
 class _NativeEpgJvp(torch.autograd.Function):
@@ -882,7 +886,6 @@ class _NativeEpgJvp(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
-        _one_transverse_pool(ctx.exchanging)
         saved = ctx.saved_tensors
         primal = saved[:_PACKED_COUNT]
         tangent = saved[_PACKED_COUNT:_TANGENT_END]
@@ -905,6 +908,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             geometry=ctx.geometry,
             profile=ctx.profile,
             lineshape=ctx.lineshape,
+            exchanging=ctx.exchanging,
         )
         directions = tuple(
             gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
@@ -1181,40 +1185,6 @@ def _pool_kind(lineshape: Any, exchanging: bool) -> int:
     if exchanging:
         return _POOL_EXCHANGING
     return _POOL_SEMISOLID if lineshape is not None else _POOL_ONE
-
-
-def _on_the_host(exchanging: bool, device: torch.device) -> None:
-    """Refuse a forward direction through an exchanging pool on the card.
-
-    The CUDA forward carries the second transverse pool; its forward-mode
-    kernel does not yet, and a launch that quietly ran the single-pool one
-    would return a plausible tangent for the wrong physics.
-
-    Raises:
-        NotImplementedError: if the run is on a device and carries the pool.
-    """
-    if exchanging and device.type != "cpu":
-        raise NotImplementedError(
-            "forward mode through a chemically exchanging pool runs on the "
-            "host; the CUDA kernel carries one transverse pool"
-        )
-
-
-def _one_transverse_pool(exchanging: bool) -> None:
-    """Refuse a derivative of a chemically exchanging run.
-
-    The derivative kernels carry one transverse pool, so asked for the
-    Jacobian of a two-pool one they would answer with the single-pool
-    machine's -- a wrong number rather than a missing one.
-
-    Raises:
-        NotImplementedError: if the forward carried an exchanging pool.
-    """
-    if exchanging:
-        raise NotImplementedError(
-            "the derivative kernels carry one transverse pool; a chemically "
-            "exchanging pool reaches the forward machine only"
-        )
 
 
 def _one_second_pool(bound: bool, exchanging: bool) -> None:
@@ -2060,6 +2030,7 @@ def _run_offloaded_vjp_jvp(
     geometry: Geometry,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Stream a forward-over-reverse pass through the devices, chunk by chunk.
 
@@ -2128,7 +2099,7 @@ def _run_offloaded_vjp_jvp(
             output_count=output_count,
             real_axis=real_axis,
             shims=shims,
-            pools=1 if lineshape is None else 2,
+            pools=2 if exchanging else (1 if lineshape is not None else 0),
         )
     staged_inputs = (*tissue, *tangents[:_TISSUE_COUNT])
 
@@ -2150,6 +2121,7 @@ def _run_offloaded_vjp_jvp(
             atom_count=width,
             profile=profile,
             lineshape=lineshape,
+            exchanging=exchanging,
         )
         for plane, side in enumerate(voxel_grads):
             for index, count in enumerate(rows):
@@ -2349,6 +2321,7 @@ def _run_packed_vjp(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> tuple[torch.Tensor, ...]:
     """Return gradients w.r.t. the tissue and three float event buffers.
 
@@ -2383,6 +2356,7 @@ def _run_packed_vjp(
             geometry=geometry,
             profile=profile,
             lineshape=lineshape,
+            exchanging=exchanging,
         )
         return adjoint
     from torchsim import _epg_cpu
@@ -2423,6 +2397,7 @@ def _run_packed_vjp(
         1.0 if profile is None else profile.step,
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
+        _pool_kind(lineshape, exchanging),
     )
     return (*atom_grads, duration_grad, flip_grad, phase_grad)
 
@@ -2441,6 +2416,7 @@ def _run_packed_vjp_jvp(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
@@ -2457,10 +2433,9 @@ def _run_packed_vjp_jvp(
         real_axis = _auto_real_axis_adjoint(
             events, tissue, state_count, tangents, wanted, profile
         )
-    # A semisolid pool is outside every real subspace the reduced kernels
-    # stand for; see the forward path for why. An exchanging one is refused
-    # before it reaches here.
-    if lineshape is not None:
+    # Neither second pool is inside a real subspace the reduced kernels stand
+    # for; see the forward path for why.
+    if lineshape is not None or exchanging:
         real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
@@ -2477,6 +2452,7 @@ def _run_packed_vjp_jvp(
             geometry,
             profile,
             lineshape,
+            exchanging,
         )
     choice = _choose(
         "adjoint", tissue, events, output_count, state_count, real_axis
@@ -2495,6 +2471,7 @@ def _run_packed_vjp_jvp(
             geometry,
             profile,
             lineshape,
+            exchanging,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2510,6 +2487,7 @@ def _run_packed_vjp_jvp(
                 real_axis,
                 geometry=geometry,
                 lineshape=lineshape,
+                exchanging=exchanging,
             )
         origin = tissue[0].device
         return tuple(
@@ -2536,6 +2514,7 @@ def _run_packed_vjp_jvp(
                     geometry=geometry,
                     profile=profile,
                     lineshape=lineshape,
+                    exchanging=exchanging,
                 )
                 for begin, end, device in shards
             ]
@@ -2552,6 +2531,7 @@ def _run_packed_vjp_jvp(
             geometry=geometry,
             profile=profile,
             lineshape=lineshape,
+            exchanging=exchanging,
         )
     from torchsim import _epg_cpu
 
@@ -2589,6 +2569,7 @@ def _run_packed_vjp_jvp(
         1.0 if profile is None else profile.step,
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
+        _pool_kind(lineshape, exchanging),
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
     return tangent_grads, value_grads

@@ -45,7 +45,7 @@ def _description():
 def _signal(**properties):
     return FSE().simulate(
         _description(),
-        TissueProperties(t1_ms=1000.0, t2_ms=80.0, **properties),
+        TissueProperties(**{"t1_ms": 1000.0, "t2_ms": 80.0, **properties}),
         nstates=STATES,
     ).signal
 
@@ -453,29 +453,175 @@ def test_forward_mode_reaches_an_exchanging_pool_through_the_public_api():
     assert float((tangent - difference).abs().max()) / scale < 5e-3
 
 
-# --- what the derivative kernels will not do yet ---
+# --- the adjoint ---
 
 
-def test_an_adjoint_of_an_exchanging_run_is_refused():
-    """The forward carries the second transverse pool; the adjoint does not.
+def _live_adjoint(prepared, seed):
+    """The gradients a cotangent on the free-induction reading leaves."""
+    from torchsim.sequence._accelerators import _run_packed_vjp
 
-    Answering with the single-pool one would be a wrong number rather than a
-    missing one, so it is refused instead.
+    return _run_packed_vjp(
+        prepared,
+        _live_events(),
+        seed,
+        state_count=STATES,
+        output_count=len(READ_TIMES_S),
+        threads=1,
+        exchanging=True,
+    )
+
+
+def _cotangent(seed=7):
+    generator = torch.Generator().manual_seed(seed)
+    shape = (1, len(READ_TIMES_S))
+    return torch.complex(
+        torch.rand(shape, generator=generator) * 2.0 - 1.0,
+        torch.rand(shape, generator=generator) * 2.0 - 1.0,
+    )
+
+
+@pytest.mark.parametrize("name", DIRECTIONS)
+def test_the_adjoint_matches_finite_differences(name: str) -> None:
+    """Every direction the exchanging pool adds, and every one it changes."""
+    index = TISSUE_NAMES.index(name)
+    seed = _cotangent()
+
+    def reading(**properties):
+        return float(
+            (seed.conj() * _live_readout(_prepared(**properties)).reshape(seed.shape))
+            .real.sum()
+        )
+
+    gradient = float(_live_adjoint(_prepared(**LIVE), seed)[index].sum())
+    step = abs(LIVE[name]) * 1e-2
+    difference = (
+        reading(**{**LIVE, name: LIVE[name] + step})
+        - reading(**{**LIVE, name: LIVE[name] - step})
+    ) / (2.0 * step)
+
+    assert abs(difference) > 0.0, "the probe leaves this direction dead"
+    assert abs(gradient - difference) / abs(difference) < 5e-3
+
+
+def test_the_adjoint_transposes_the_forward_direction():
+    """``<w, J v> == <J^T w, v>``, at a tolerance that separates float32 from
+    a dropped term.
+
+    Taken against the sum of the terms' magnitudes rather than their total, so
+    one small gradient going wrong is not hidden by two large ones that did
+    not.
     """
-    t2 = torch.tensor([80.0], requires_grad=True)
-    signal = FSE().simulate(
-        _description(),
-        TissueProperties(
-            t1_ms=torch.tensor([1000.0]),
-            t2_ms=t2,
-            pool_b_fraction=FRACTION,
-            pool_b_shift_hz=FAT_SHIFT_HZ,
-        ),
-        nstates=STATES,
-    ).signal
+    prepared = _prepared(**LIVE)
+    generator = torch.Generator().manual_seed(19)
+    directions = tuple(
+        torch.rand(value.shape, generator=generator) * 2.0 - 1.0
+        for value in prepared
+    )
+    seed = _cotangent(23)
 
-    with pytest.raises(NotImplementedError, match="one transverse pool"):
+    forward = _live_readout(prepared, directions).reshape(seed.shape)
+    left = float((seed.conj() * forward).real.sum())
+    terms = [
+        float((gradient * direction).sum())
+        for gradient, direction in zip(
+            _live_adjoint(prepared, seed)[: len(prepared)], directions
+        )
+    ]
+    scale = sum(abs(term) for term in terms)
+
+    assert scale > 0.0
+    assert abs(left - sum(terms)) / scale < 1e-6
+
+
+def test_a_refocused_train_carries_the_gradient_through_the_pulses():
+    """The probe above never refocuses, so it leaves the rotation, the shifts
+    and the spoil untested on the exchanging pool. A train exercises all three.
+    """
+    live = dict(
+        pool_b_fraction=0.25, pool_b_exchange_hz=40.0, t1_pool_b_ms=300.0,
+        t2_pool_b_ms=25.0, pool_b_shift_hz=FAT_SHIFT_HZ,
+    )
+
+    def loss(**over):
+        return float(_signal(**{**live, **over}).abs().square().sum())
+
+    held = dict(live, t1_ms=1000.0, t2_ms=80.0)
+    leaves = {
+        name: torch.tensor([value], requires_grad=True)
+        for name, value in held.items()
+    }
+    FSE().simulate(
+        _description(), TissueProperties(**leaves), nstates=STATES
+    ).signal.abs().square().sum().backward()
+
+    for name in ("t2_ms", "pool_b_fraction", "pool_b_exchange_hz", "t2_pool_b_ms"):
+        step = abs(held[name]) * 1e-3
+        difference = (
+            loss(**{name: held[name] + step}) - loss(**{name: held[name] - step})
+        ) / (2.0 * step)
+        assert abs(difference) > 0.0, name
+        gradient = float(leaves[name].grad)
+        assert abs(gradient - difference) / abs(difference) < 5e-3, name
+
+
+def test_the_second_order_pass_differentiates_the_adjoint():
+    """A curvature the optimizers ask for: the gradient in one property,
+    differentiated along another.
+    """
+    live = dict(
+        t1_ms=1000.0, t2_ms=80.0, pool_b_exchange_hz=40.0,
+        t1_pool_b_ms=300.0, t2_pool_b_ms=25.0, pool_b_shift_hz=FAT_SHIFT_HZ,
+    )
+
+    def gradient(fraction, *, graph):
+        t2 = torch.tensor([live["t2_ms"]], requires_grad=True)
+        leaves = {
+            name: torch.tensor([value])
+            for name, value in live.items() if name != "t2_ms"
+        }
+        signal = FSE().simulate(
+            _description(),
+            TissueProperties(t2_ms=t2, pool_b_fraction=fraction, **leaves),
+            nstates=STATES,
+        ).signal
+        return torch.autograd.grad(
+            signal.abs().square().sum(), t2, create_graph=graph
+        )[0]
+
+    fraction = torch.tensor([0.25], requires_grad=True)
+    curvature = float(
+        torch.autograd.grad(gradient(fraction, graph=True), fraction)[0]
+    )
+    step = 1e-3
+    difference = float(
+        gradient(torch.tensor([0.25 + step]), graph=False)
+        - gradient(torch.tensor([0.25 - step]), graph=False)
+    ) / (2.0 * step)
+
+    assert abs(difference) > 0.0
+    assert abs(curvature - difference) / abs(difference) < 5e-3
+
+
+def test_the_adjoint_leaves_the_single_pool_answer_untouched():
+    """A tissue at the default fraction takes the single-pool kernel in reverse
+    mode too, so its gradients are bit for bit what they were.
+    """
+    def gradient(**extra):
+        t2 = torch.tensor([80.0], requires_grad=True)
+        signal = FSE().simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0]), t2_ms=t2, **extra
+            ),
+            nstates=STATES,
+        ).signal
         signal.abs().square().sum().backward()
+        return t2.grad
+
+    plain = gradient()
+    gated = gradient(pool_b_fraction=0.0, pool_b_shift_hz=FAT_SHIFT_HZ)
+
+    assert torch.equal(plain, gated)
 
 
 def test_the_single_pool_gradient_still_reaches_every_property():
@@ -654,3 +800,102 @@ def test_a_streamed_volume_matches_the_whole_one():
         streamed = _run_packed(*arguments, exchanging=True)
 
     assert float((whole - streamed).abs().max() / whole.abs().max()) < 5e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_cuda_adjoint_matches_the_cpu_kernel():
+    """The two backends share no code, so agreement is what keeps the second
+    transverse pool's cotangent honest there.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    voxels = 6
+    spread = dict(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+        pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    generator = torch.Generator().manual_seed(11)
+    shape = (voxels, len(READ_TIMES_S))
+    seed = torch.complex(
+        torch.rand(shape, generator=generator) * 2.0 - 1.0,
+        torch.rand(shape, generator=generator) * 2.0 - 1.0,
+    )
+    events = _live_events()
+
+    def run(device):
+        prepared = _prepared(device, **spread)
+        return _run_packed_vjp(
+            prepared,
+            tuple(value.to(device) for value in events),
+            seed.to(device),
+            state_count=STATES,
+            output_count=len(READ_TIMES_S),
+            threads=1,
+            exchanging=True,
+        )
+
+    host = run("cpu")
+    card = run("cuda")
+    for expected, measured in zip(host, card, strict=True):
+        scale = float(expected.abs().max())
+        if scale == 0.0:
+            assert float(measured.abs().max()) == 0.0
+            continue
+        assert float((expected - measured.cpu()).abs().max()) / scale < 1e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_streamed_adjoint_matches_the_whole_one():
+    """Streaming cuts the voxel axis, which the second pool's planes follow.
+
+    The forward-over-reverse pass is the one that streams, and it is also what
+    a first-order adjoint on the card runs with no direction to follow.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp, offload
+
+    voxels = 3000
+    prepared = _prepared(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+        pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    events = _live_events()
+    generator = torch.Generator().manual_seed(5)
+    shape = (voxels, len(READ_TIMES_S))
+    seed = torch.complex(
+        torch.rand(shape, generator=generator) * 2.0 - 1.0,
+        torch.rand(shape, generator=generator) * 2.0 - 1.0,
+    )
+    directions = tuple(
+        torch.rand(value.shape, generator=generator) * 2.0 - 1.0
+        for value in prepared
+    ) + tuple(torch.zeros_like(events[0]) for _ in range(3))
+    arguments = (prepared, events, directions, seed)
+    options = dict(
+        state_count=STATES,
+        output_count=len(READ_TIMES_S),
+        threads=1,
+        exchanging=True,
+    )
+
+    whole = _run_packed_vjp_jvp(*arguments, **options)
+    with offload(["cuda"], budget_bytes=1 << 20):
+        streamed = _run_packed_vjp_jvp(*arguments, **options)
+
+    for side, other in zip(whole, streamed, strict=True):
+        for expected, measured in zip(side, other, strict=True):
+            scale = float(expected.abs().max())
+            if scale == 0.0:
+                assert float(measured.abs().max()) == 0.0
+                continue
+            assert float((expected - measured).abs().max()) / scale < 5e-4

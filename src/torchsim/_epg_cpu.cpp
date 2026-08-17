@@ -322,9 +322,8 @@ struct JvpBuffers {
     const float* bound_fraction;
     const float* exchange_rate;
     const float* t1_bound;
-    // The chemically exchanging pool's five. The derivative kernels carry the
-    // semisolid pool alone, so nothing reads these; they hold the ABI's shape,
-    // and the dispatch refuses a gradient of an exchanging run.
+    // The chemically exchanging pool's five. Read only by the kernels that
+    // carry it; a run declaring the semisolid pool instead leaves them alone.
     const float* pool_b_fraction;
     const float* pool_b_exchange;
     const float* t1_pool_b;
@@ -530,6 +529,10 @@ inline Complex widen(const float a) {
 
 inline Complex as_imaginary(const float a) {
     return Complex(0.0F, a);
+}
+
+inline float real_part(const Complex a) {
+    return a.real();
 }
 
 inline DualComplex widen(const DualFloat a) {
@@ -968,6 +971,130 @@ inline TwoPoolTransverse<Cplx> two_pool_transverse_step(
     step.e21 = attenuation * (scale * l21);
     step.e22 = attenuation * (cosine - scale * half_gap);
     return step;
+}
+
+// What a cotangent on the transverse step leaves on the seven real numbers it
+// was formed from.
+template <typename Real>
+struct TwoPoolTransverseGradient {
+    Real r2_free;
+    Real r2_bound;
+    Real exchange;
+    Real bound;
+    Real shift_hz;
+    Real dt;
+    Real attenuation;
+};
+
+// The reverse sweep of ``two_pool_transverse_step``.
+//
+// Every step from the four generator entries to the four operator entries is
+// holomorphic, so the sweep is the longitudinal one with complex numbers in
+// place of real ones -- no conjugates appear along the way. That holds because
+// the cotangents come in as row covectors: ``bar_e`` is the number with
+// ``dL = Re(bar_e de)``, which for a caller carrying the usual ``dL =
+// Re(conj(z_bar) dz)`` convention means handing over ``conj(z_bar) dz/de``.
+// Only where a complex intermediate meets one of the real inputs does a real
+// part get taken.
+template <typename Real, typename Cplx>
+inline TwoPoolTransverseGradient<Real> two_pool_transverse_adjoint(
+    const Real r2_free,
+    const Real r2_bound,
+    const Real exchange,
+    const Real bound,
+    const Real shift_hz,
+    const Real dt,
+    const Real attenuation,
+    const Cplx bar_e11,
+    const Cplx bar_e12,
+    const Cplx bar_e21,
+    const Cplx bar_e22
+) {
+    const Real free = Real{1.0F} - bound;
+    const Real kab = exchange * bound;
+    const Real kba = exchange * free;
+    const Cplx l11 = widen((Real{} - kab - r2_free) * dt);
+    const Cplx l12 = widen(kba * dt);
+    const Cplx l21 = widen(kab * dt);
+    const Cplx l22 = widen((Real{} - kba - r2_bound) * dt)
+        - as_imaginary((2.0F * PI) * (shift_hz * dt));
+
+    const Cplx half_trace = 0.5F * (l11 + l22);
+    const Cplx half_gap = 0.5F * (l11 - l22);
+    const Cplx square = half_gap * half_gap + l12 * l21;
+    const bool series = !(primal_norm(square) > 1e-24F);
+    const Cplx delta = root(square);
+    const Cplx upper = exponential(half_trace + delta);
+    const Cplx lower = exponential(half_trace - delta);
+    const Cplx plain = exponential(half_trace);
+    const Cplx cosine = 0.5F * (upper + lower);
+    const Cplx scale = series
+        ? plain
+            * (widen(Real{1.0F}) + (1.0F / 6.0F) * square
+               + (1.0F / 120.0F) * (square * square))
+        : 0.5F * (upper - lower) * reciprocal(delta);
+
+    const Cplx bare_11 = cosine + scale * half_gap;
+    const Cplx bare_12 = scale * l12;
+    const Cplx bare_21 = scale * l21;
+    const Cplx bare_22 = cosine - scale * half_gap;
+
+    const Cplx bar_attenuation = bar_e11 * bare_11 + bar_e12 * bare_12
+        + bar_e21 * bare_21 + bar_e22 * bare_22;
+    const Cplx scaled_11 = attenuation * bar_e11;
+    const Cplx scaled_12 = attenuation * bar_e12;
+    const Cplx scaled_21 = attenuation * bar_e21;
+    const Cplx scaled_22 = attenuation * bar_e22;
+
+    const Cplx bar_cosine = scaled_11 + scaled_22;
+    const Cplx bar_scale = (scaled_11 - scaled_22) * half_gap
+        + scaled_12 * l12 + scaled_21 * l21;
+    Cplx bar_half_gap = scale * (scaled_11 - scaled_22);
+    Cplx bar_l12 = scale * scaled_12;
+    Cplx bar_l21 = scale * scaled_21;
+
+    Cplx bar_half_trace{};
+    Cplx bar_square{};
+    if (series) {
+        bar_half_trace = bar_cosine * cosine + bar_scale * scale;
+        bar_square = plain
+            * (bar_cosine * (widen(Real{0.5F}) + (1.0F / 12.0F) * square)
+               + bar_scale * (widen(Real{1.0F / 6.0F}) + (1.0F / 60.0F) * square));
+    } else {
+        const Cplx inverse = reciprocal(delta);
+        const Cplx bar_upper = 0.5F * (bar_cosine + bar_scale * inverse);
+        const Cplx bar_lower = 0.5F * (bar_cosine - bar_scale * inverse);
+        bar_half_trace = bar_upper * upper + bar_lower * lower;
+        const Cplx bar_delta = bar_upper * upper - bar_lower * lower
+            - bar_scale * scale * inverse;
+        bar_square = 0.5F * (bar_delta * inverse);
+    }
+
+    bar_half_gap = bar_half_gap + 2.0F * (bar_square * half_gap);
+    bar_l12 = bar_l12 + bar_square * l21;
+    bar_l21 = bar_l21 + bar_square * l12;
+
+    const Cplx bar_l11 = 0.5F * (bar_half_trace + bar_half_gap);
+    const Cplx bar_l22 = 0.5F * (bar_half_trace - bar_half_gap);
+
+    const Cplx bar_kab = dt * (bar_l21 - bar_l11);
+    const Cplx bar_kba = dt * (bar_l12 - bar_l22);
+    const Cplx bar_dt = (Real{} - kab - r2_free) * bar_l11
+        + kba * bar_l12 + kab * bar_l21
+        + (widen(Real{} - kba - r2_bound)
+           - as_imaginary((2.0F * PI) * shift_hz)) * bar_l22;
+
+    TwoPoolTransverseGradient<Real> gradient{};
+    gradient.r2_free = Real{} - real_part(dt * bar_l11);
+    gradient.r2_bound = Real{} - real_part(dt * bar_l22);
+    gradient.exchange = real_part(bound * bar_kab + free * bar_kba);
+    gradient.bound = real_part(exchange * bar_kab - exchange * bar_kba);
+    gradient.shift_hz = real_part(
+        (Real{} - dt) * ((2.0F * PI) * as_imaginary(Real{1.0F}) * bar_l22)
+    );
+    gradient.dt = real_part(bar_dt);
+    gradient.attenuation = real_part(bar_attenuation);
+    return gradient;
 }
 
 // How well the bound pool absorbs a pulse this far off its resonance, by the
@@ -3127,9 +3254,8 @@ struct VjpBuffers {
     float* grad_bound_fraction;
     float* grad_exchange_rate;
     float* grad_t1_bound;
-    // The chemically exchanging pool's five. The derivative kernels carry the
-    // semisolid pool alone, so nothing reads these; they hold the ABI's shape,
-    // and the dispatch refuses a gradient of an exchanging run.
+    // The chemically exchanging pool's five. Read only by the kernels that
+    // carry it; a run declaring the semisolid pool instead leaves them alone.
     float* grad_pool_b_fraction;
     float* grad_pool_b_exchange;
     float* grad_t1_pool_b;
@@ -3346,7 +3472,7 @@ inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool SHIMMED, bool PROFILED, bool MT>
+template <bool SHIMMED, bool PROFILED, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_vjp_range(
     const VjpBuffers& buffers,
     const std::int64_t work_begin,
@@ -3362,14 +3488,19 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     // several threads reach the same atom and every train contributes to it.
     float* grad_tissue_local
 ) {
+    constexpr bool MT = POOLS == Pools::SEMISOLID;
+    constexpr bool BM = POOLS == Pools::EXCHANGING;
+    constexpr bool TWO_POOL = MT || BM;
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
     const std::size_t states = static_cast<std::size_t>(state_count);
-    // The bound pool rides along the trajectory as a fourth block of states: it
-    // enters an event as its own vector and the RF operator scales it, so the
-    // reverse sweep cannot replay it from the free pool's.
-    const std::size_t trajectory_stride = (MT ? 4U : 3U) * states;
+    // A second pool rides along the trajectory as blocks of its own: it enters
+    // an event as its own vector and the RF operator acts on it, so the
+    // reverse sweep cannot replay it from the free pool's. The semisolid pool
+    // adds one block, the chemically exchanging one three.
+    const std::size_t trajectory_stride =
+        (BM ? 6U : (MT ? 4U : 3U)) * states;
 
     // State at the start of every event; intra-event intermediates are cheap
     // enough to replay from it during the reverse sweep.
@@ -3388,9 +3519,17 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     State fplus_shifted(states);
     State fminus_shifted(states);
     State longitudinal_pre(states);
-    State bound(MT ? states : 0U);
-    State bound_bar(MT ? states : 0U);
-    State bound_relaxed(MT ? states : 0U);
+    State bound(TWO_POOL ? states : 0U);
+    State bound_bar(TWO_POOL ? states : 0U);
+    State bound_relaxed(TWO_POOL ? states : 0U);
+    State bound_plus(BM ? states : 0U);
+    State bound_minus(BM ? states : 0U);
+    State bound_plus_bar(BM ? states : 0U);
+    State bound_minus_bar(BM ? states : 0U);
+    State bound_plus_relaxed(BM ? states : 0U);
+    State bound_minus_relaxed(BM ? states : 0U);
+    State bound_plus_shifted(BM ? states : 0U);
+    State bound_minus_shifted(BM ? states : 0U);
     Damping<float> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -3403,20 +3542,33 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
-        const float bound_fraction = MT ? primal.bound_fraction[atom] : 0.0F;
+        const float bound_fraction = MT
+            ? primal.bound_fraction[atom]
+            : (BM ? primal.pool_b_fraction[atom] : 0.0F);
         longitudinal[0] = Complex(1.0F - bound_fraction, 0.0F);
-        if constexpr (MT) {
+        if constexpr (TWO_POOL) {
             std::fill(bound.begin(), bound.end(), Complex{});
             bound[0] = Complex(bound_fraction, 0.0F);
+        }
+        if constexpr (BM) {
+            std::fill(bound_plus.begin(), bound_plus.end(), Complex{});
+            std::fill(bound_minus.begin(), bound_minus.end(), Complex{});
         }
 
         const float t1 = primal.t1[atom];
         const float t2 = primal.t2[atom];
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
-        const float t1_bound = MT ? primal.t1_bound[atom] : 0.0F;
-        const float r1_bound = MT ? 1000.0F / t1_bound : 0.0F;
-        const float exchange = MT ? primal.bound_exchange[atom] : 0.0F;
+        const float t1_bound = MT
+            ? primal.t1_bound[atom]
+            : (BM ? primal.t1_pool_b[atom] : 0.0F);
+        const float r1_bound = TWO_POOL ? 1000.0F / t1_bound : 0.0F;
+        const float t2_bound = BM ? primal.t2_pool_b[atom] : 0.0F;
+        const float r2_bound = BM ? 1000.0F / t2_bound : 0.0F;
+        const float pool_shift = BM ? primal.pool_b_shift[atom] : 0.0F;
+        const float exchange = MT
+            ? primal.bound_exchange[atom]
+            : (BM ? primal.pool_b_exchange[atom] : 0.0F);
         const float b0 = primal.b0[atom];
         const float m0 = primal.m0[atom];
         // With one shim the transmit field is a property of the voxel and
@@ -3437,8 +3589,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             std::copy(fplus.begin(), fplus.end(), slot);
             std::copy(fminus.begin(), fminus.end(), slot + states);
             std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 std::copy(bound.begin(), bound.end(), slot + 3U * states);
+            }
+            if constexpr (BM) {
+                std::copy(bound_plus.begin(), bound_plus.end(), slot + 4U * states);
+                std::copy(
+                    bound_minus.begin(), bound_minus.end(), slot + 5U * states
+                );
             }
 
             const float dt = view.duration[event];
@@ -3446,23 +3604,47 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             const float wout = washout_out(washout_rate, dt);
             const float e1 = std::exp(-r1 * dt) * wout;
             const float e2 = std::exp(-r2 * dt) * wout;
-            const TwoPoolStep<float> pools = MT
+            const TwoPoolStep<float> pools = TWO_POOL
                 ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
                 : TwoPoolStep<float>{};
+            const TwoPoolTransverse<Complex> across = BM
+                ? two_pool_transverse_step<float, Complex>(
+                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                )
+                : TwoPoolTransverse<Complex>{};
             const float off_angle = -2.0F * PI * b0 * dt;
             for (std::size_t state = 0; state < states; ++state) {
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
                 flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
-                const Complex transverse = std::polar(
-                    e2 * damping.transverse[state], off_angle + turn_transverse
-                );
-                fplus[state] *= transverse;
-                fminus[state] *= std::conj(transverse);
+                if constexpr (BM) {
+                    const Complex carried = std::polar(
+                        damping.transverse[state], off_angle + turn_transverse
+                    );
+                    const Complex free_plus = fplus[state];
+                    const Complex pool_plus = bound_plus[state];
+                    const Complex free_minus = fminus[state];
+                    const Complex pool_minus = bound_minus[state];
+                    fplus[state] =
+                        (across.e11 * free_plus + across.e12 * pool_plus) * carried;
+                    bound_plus[state] =
+                        (across.e21 * free_plus + across.e22 * pool_plus) * carried;
+                    const Complex conjugated = std::conj(carried);
+                    fminus[state] = (std::conj(across.e11) * free_minus
+                        + std::conj(across.e12) * pool_minus) * conjugated;
+                    bound_minus[state] = (std::conj(across.e21) * free_minus
+                        + std::conj(across.e22) * pool_minus) * conjugated;
+                } else {
+                    const Complex transverse = std::polar(
+                        e2 * damping.transverse[state], off_angle + turn_transverse
+                    );
+                    fplus[state] *= transverse;
+                    fminus[state] *= std::conj(transverse);
+                }
                 const Complex spin = std::polar(
                     damping.longitudinal[state], turn_longitudinal
                 );
-                if constexpr (MT) {
+                if constexpr (TWO_POOL) {
                     const Complex free_state = longitudinal[state];
                     const Complex bound_state = bound[state];
                     longitudinal[state] =
@@ -3473,7 +3655,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     longitudinal[state] *= e1 * spin;
                 }
             }
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 longitudinal[0] += Complex(pools.recovery_free, 0.0F);
                 bound[0] += Complex(pools.recovery_bound, 0.0F);
             } else {
@@ -3483,11 +3665,19 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             const std::uint8_t action = primal.action[event];
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus, fminus);
+                if constexpr (BM) {
+                    shift(bound_plus, bound_minus);
+                }
             }
             if (primal.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
                     for (Complex& value : longitudinal) {
                         value *= -efficiency;
+                    }
+                    if constexpr (BM) {
+                        for (Complex& value : bound) {
+                            value *= -efficiency;
+                        }
                     }
                 } else {
                     const std::int64_t transmit =
@@ -3515,23 +3705,41 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             table_row<PROFILED>(primal, event, location),
                             alpha, pair_a, pair_b
                         );
+                        const Complex spun = pair_b * std::polar(1.0F, -phi);
                         rotate_spinor(
-                            fplus, fminus, longitudinal, pair_a,
-                            pair_b * std::polar(1.0F, -phi)
+                            fplus, fminus, longitudinal, pair_a, spun
                         );
+                        if constexpr (BM) {
+                            rotate_spinor(
+                                bound_plus, bound_minus, bound, pair_a, spun
+                            );
+                        }
                     } else {
                         rotate(fplus, fminus, longitudinal, alpha, phi);
+                        if constexpr (BM) {
+                            rotate(bound_plus, bound_minus, bound, alpha, phi);
+                        }
                     }
                 }
             }
             if ((action & POST_SHIFT) != 0) {
                 shift(fplus, fminus);
+                if constexpr (BM) {
+                    shift(bound_plus, bound_minus);
+                }
             }
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus.begin(), fplus.end(), Complex{});
                 std::fill(fminus.begin(), fminus.end(), Complex{});
+                if constexpr (BM) {
+                    std::fill(bound_plus.begin(), bound_plus.end(), Complex{});
+                    std::fill(bound_minus.begin(), bound_minus.end(), Complex{});
+                }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift(fplus, fminus);
+                if constexpr (BM) {
+                    shift(bound_plus, bound_minus);
+                }
             }
         }
 
@@ -3539,9 +3747,15 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
         std::fill(fplus_bar.begin(), fplus_bar.end(), Complex{});
         std::fill(fminus_bar.begin(), fminus_bar.end(), Complex{});
         std::fill(longitudinal_bar.begin(), longitudinal_bar.end(), Complex{});
-        if constexpr (MT) {
+        if constexpr (TWO_POOL) {
             std::fill(bound_bar.begin(), bound_bar.end(), Complex{});
         }
+        if constexpr (BM) {
+            std::fill(bound_plus_bar.begin(), bound_plus_bar.end(), Complex{});
+            std::fill(bound_minus_bar.begin(), bound_minus_bar.end(), Complex{});
+        }
+        float grad_t2_bound = 0.0F;
+        float grad_pool_shift = 0.0F;
         float grad_t1_bound = 0.0F;
         float grad_exchange = 0.0F;
         float grad_bound_fraction = 0.0F;
@@ -3566,8 +3780,16 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             std::copy(slot, slot + states, fplus.begin());
             std::copy(slot + states, slot + 2U * states, fminus.begin());
             std::copy(slot + 2U * states, slot + 3U * states, longitudinal.begin());
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 std::copy(slot + 3U * states, slot + 4U * states, bound.begin());
+            }
+            if constexpr (BM) {
+                std::copy(
+                    slot + 4U * states, slot + 5U * states, bound_plus.begin()
+                );
+                std::copy(
+                    slot + 5U * states, slot + 6U * states, bound_minus.begin()
+                );
             }
 
             const float dt = view.duration[event];
@@ -3577,9 +3799,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             const float wout = washout_out(washout_rate, dt);
             const float e1 = dry1 * wout;
             const float e2 = dry2 * wout;
-            const TwoPoolStep<float> pools = MT
+            const TwoPoolStep<float> pools = TWO_POOL
                 ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
                 : TwoPoolStep<float>{};
+            const TwoPoolTransverse<Complex> across = BM
+                ? two_pool_transverse_step<float, Complex>(
+                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                )
+                : TwoPoolTransverse<Complex>{};
             const float angle = -2.0F * PI * b0 * dt;
             const Complex phase = std::polar(1.0F, angle);
             const Complex off_resonance = e2 * phase;
@@ -3591,15 +3818,34 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
                 flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
-                const Complex transverse = std::polar(
-                    e2 * damping.transverse[state], angle + turn_transverse
-                );
-                fplus_relaxed[state] = fplus[state] * transverse;
-                fminus_relaxed[state] = fminus[state] * std::conj(transverse);
+                if constexpr (BM) {
+                    const Complex carried = std::polar(
+                        damping.transverse[state], angle + turn_transverse
+                    );
+                    const Complex free_plus = fplus[state];
+                    const Complex pool_plus = bound_plus[state];
+                    const Complex free_minus = fminus[state];
+                    const Complex pool_minus = bound_minus[state];
+                    fplus_relaxed[state] =
+                        (across.e11 * free_plus + across.e12 * pool_plus) * carried;
+                    bound_plus_relaxed[state] =
+                        (across.e21 * free_plus + across.e22 * pool_plus) * carried;
+                    const Complex conjugated = std::conj(carried);
+                    fminus_relaxed[state] = (std::conj(across.e11) * free_minus
+                        + std::conj(across.e12) * pool_minus) * conjugated;
+                    bound_minus_relaxed[state] = (std::conj(across.e21) * free_minus
+                        + std::conj(across.e22) * pool_minus) * conjugated;
+                } else {
+                    const Complex transverse = std::polar(
+                        e2 * damping.transverse[state], angle + turn_transverse
+                    );
+                    fplus_relaxed[state] = fplus[state] * transverse;
+                    fminus_relaxed[state] = fminus[state] * std::conj(transverse);
+                }
                 const Complex spin = std::polar(
                     damping.longitudinal[state], turn_longitudinal
                 );
-                if constexpr (MT) {
+                if constexpr (TWO_POOL) {
                     const Complex free_state = longitudinal[state];
                     const Complex bound_state = bound[state];
                     longitudinal_relaxed[state] =
@@ -3610,7 +3856,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     longitudinal_relaxed[state] = longitudinal[state] * e1 * spin;
                 }
             }
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 longitudinal_relaxed[0] += Complex(pools.recovery_free, 0.0F);
                 bound_relaxed[0] += Complex(pools.recovery_bound, 0.0F);
             } else {
@@ -3620,19 +3866,40 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             fplus_shifted = fplus_relaxed;
             fminus_shifted = fminus_relaxed;
             longitudinal_pre = longitudinal_relaxed;
+            if constexpr (BM) {
+                bound_plus_shifted = bound_plus_relaxed;
+                bound_minus_shifted = bound_minus_relaxed;
+            }
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus_shifted, fminus_shifted);
+                if constexpr (BM) {
+                    shift(bound_plus_shifted, bound_minus_shifted);
+                }
             }
 
             // --- adjoint of the trailing shift/spoil ---
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus_bar.begin(), fplus_bar.end(), Complex{});
                 std::fill(fminus_bar.begin(), fminus_bar.end(), Complex{});
+                if constexpr (BM) {
+                    std::fill(
+                        bound_plus_bar.begin(), bound_plus_bar.end(), Complex{}
+                    );
+                    std::fill(
+                        bound_minus_bar.begin(), bound_minus_bar.end(), Complex{}
+                    );
+                }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
+                if constexpr (BM) {
+                    shift_adjoint(bound_plus_bar, bound_minus_bar);
+                }
             }
             if ((action & POST_SHIFT) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
+                if constexpr (BM) {
+                    shift_adjoint(bound_plus_bar, bound_minus_bar);
+                }
             }
 
             // --- adjoint of the ADC ---
@@ -3646,13 +3913,19 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 const Complex demodulation = std::polar(1.0F, -view.phase[event]);
                 // an ADC event carries no RF, so the recorded state is the one
                 // left by the pre-shift
-                const Complex recorded = fplus_shifted[0];
+                const Complex recorded = BM
+                    ? fplus_shifted[0] + bound_plus_shifted[0]
+                    : fplus_shifted[0];
                 grad_m0 += std::real(std::conj(seed) * recorded * demodulation);
                 grad_phase_train[event] += std::real(
                     std::conj(seed) * m0 * recorded * Complex(0.0F, -1.0F)
                         * demodulation
                 );
-                fplus_bar[0] += std::conj(m0 * demodulation) * seed;
+                const Complex weighted = std::conj(m0 * demodulation) * seed;
+                fplus_bar[0] += weighted;
+                if constexpr (BM) {
+                    bound_plus_bar[0] += weighted;
+                }
             }
 
             // --- adjoint of the RF ---
@@ -3664,6 +3937,12 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             * (-longitudinal_pre[state])
                         );
                         longitudinal_bar[state] *= -efficiency;
+                        if constexpr (BM) {
+                            grad_efficiency += std::real(
+                                std::conj(bound_bar[state]) * (-bound_relaxed[state])
+                            );
+                            bound_bar[state] *= -efficiency;
+                        }
                     }
                 } else {
                     const std::int64_t transmit =
@@ -3713,6 +3992,20 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             grad_a,
                             grad_b
                         );
+                        if constexpr (BM) {
+                            rotate_adjoint_spinor(
+                                bound_plus_shifted,
+                                bound_minus_shifted,
+                                bound_relaxed,
+                                bound_plus_bar,
+                                bound_minus_bar,
+                                bound_bar,
+                                pair_a,
+                                spun,
+                                grad_a,
+                                grad_b
+                            );
+                        }
                         // The flip angle reaches the pair through the slope the
                         // table stores beside it; the RF phase turns the axis
                         // once the pair is out, so it reaches ``b`` alone.
@@ -3734,6 +4027,20 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             grad_alpha,
                             grad_phi
                         );
+                        if constexpr (BM) {
+                            rotate_adjoint(
+                                bound_plus_shifted,
+                                bound_minus_shifted,
+                                bound_relaxed,
+                                bound_plus_bar,
+                                bound_minus_bar,
+                                bound_bar,
+                                alpha,
+                                phi,
+                                grad_alpha,
+                                grad_phi
+                            );
+                        }
                     }
                     if constexpr (MT) {
                         // The pulse scales every order of the bound pool by one
@@ -3771,6 +4078,9 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
 
             if ((action & PRE_SHIFT) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
+                if constexpr (BM) {
+                    shift_adjoint(bound_plus_bar, bound_minus_bar);
+                }
             }
 
             // --- adjoint of relaxation and precession ---
@@ -3791,15 +4101,23 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             float grad_e12 = 0.0F;
             float grad_e21 = 0.0F;
             float grad_e22 = 0.0F;
+            // The transverse operator's four entries, collected the same way.
+            // They stay complex to the end: the map from the generator to them
+            // is holomorphic, so nothing is projected onto the real line until
+            // the sweep reaches the properties themselves.
+            Complex grad_across_11{};
+            Complex grad_across_12{};
+            Complex grad_across_21{};
+            Complex grad_across_22{};
             const Complex imaginary(0.0F, 1.0F);
             // Z[0] also carries the affine recovery term (1 - e1), whose
             // derivative contributes -Re(adjoint) exactly once. Order zero is
             // undamped, so that term takes the bare factor.
             const float grad_recovery_free =
-                MT ? std::real(longitudinal_bar[0]) : 0.0F;
+                TWO_POOL ? std::real(longitudinal_bar[0]) : 0.0F;
             const float grad_recovery_bound =
-                MT ? std::real(bound_bar[0]) : 0.0F;
-            if constexpr (!MT) {
+                TWO_POOL ? std::real(bound_bar[0]) : 0.0F;
+            if constexpr (!TWO_POOL) {
                 grad_e1 -= std::real(longitudinal_bar[0]);
             }
             for (std::size_t state = 0; state < states; ++state) {
@@ -3816,18 +4134,70 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     std::polar(1.0F, turn_longitudinal);
                 const Complex carried = phase * damp_transverse * spin_transverse;
                 const Complex full_transverse = e2 * carried;
-                const float transverse_term = std::real(
-                    std::conj(ap) * carried * fplus[state]
-                    + std::conj(am) * std::conj(carried) * fminus[state]
-                );
-                grad_e2 += transverse_term;
+                // The damping is homogeneous of degree one in every transverse
+                // state it acts on, so its gradient times the damping itself is
+                // the cotangent taken against the states the interval leaves.
+                float transverse_scaled = 0.0F;
+                float angle_term = 0.0F;
+                if constexpr (BM) {
+                    const Complex abp = bound_plus_bar[state];
+                    const Complex abm = bound_minus_bar[state];
+                    const Complex fp = fplus[state];
+                    const Complex bp = bound_plus[state];
+                    const Complex fm = fminus[state];
+                    const Complex bm = bound_minus[state];
+                    const Complex out_fp = fplus_relaxed[state];
+                    const Complex out_bp = bound_plus_relaxed[state];
+                    const Complex out_fm = fminus_relaxed[state];
+                    const Complex out_bm = bound_minus_relaxed[state];
+                    transverse_scaled = std::real(
+                        std::conj(ap) * out_fp + std::conj(abp) * out_bp
+                        + std::conj(am) * out_fm + std::conj(abm) * out_bm
+                    );
+                    angle_term = std::real(
+                        imaginary * (std::conj(ap) * out_fp
+                            + std::conj(abp) * out_bp
+                            - std::conj(am) * out_fm
+                            - std::conj(abm) * out_bm)
+                    );
+                    // ``F-`` follows the conjugate of the operator, so its
+                    // cotangent lands on the entry itself rather than on the
+                    // conjugate of it.
+                    grad_across_11 +=
+                        (std::conj(ap) * fp + am * std::conj(fm)) * carried;
+                    grad_across_12 +=
+                        (std::conj(ap) * bp + am * std::conj(bm)) * carried;
+                    grad_across_21 +=
+                        (std::conj(abp) * fp + abm * std::conj(fm)) * carried;
+                    grad_across_22 +=
+                        (std::conj(abp) * bp + abm * std::conj(bm)) * carried;
+                    const Complex step_11 = across.e11 * carried;
+                    const Complex step_12 = across.e12 * carried;
+                    const Complex step_21 = across.e21 * carried;
+                    const Complex step_22 = across.e22 * carried;
+                    fplus_bar[state] =
+                        std::conj(step_11) * ap + std::conj(step_21) * abp;
+                    bound_plus_bar[state] =
+                        std::conj(step_12) * ap + std::conj(step_22) * abp;
+                    fminus_bar[state] = step_11 * am + step_21 * abm;
+                    bound_minus_bar[state] = step_12 * am + step_22 * abm;
+                } else {
+                    const float transverse_term = std::real(
+                        std::conj(ap) * carried * fplus[state]
+                        + std::conj(am) * std::conj(carried) * fminus[state]
+                    );
+                    grad_e2 += transverse_term;
+                    transverse_scaled = e2 * transverse_term;
+                    angle_term = std::real(
+                        std::conj(ap) * imaginary * full_transverse * fplus[state]
+                        - std::conj(am) * imaginary * std::conj(full_transverse)
+                            * fminus[state]
+                    );
+                    fplus_bar[state] = std::conj(full_transverse) * ap;
+                    fminus_bar[state] = full_transverse * am;
+                }
                 // A turn of the transverse states and the off-resonance angle
                 // are the same derivative; only the weight they carry differs.
-                const float angle_term = std::real(
-                    std::conj(ap) * imaginary * full_transverse * fplus[state]
-                    - std::conj(am) * imaginary * std::conj(full_transverse)
-                        * fminus[state]
-                );
                 grad_angle += angle_term;
                 // The damping carries the b-factor and the turn carries the
                 // flow; both terms are taken against the state the interval
@@ -3835,7 +4205,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 const Complex spin = damp_longitudinal * spin_longitudinal;
                 float longitudinal_damp_term = 0.0F;
                 float longitudinal_angle_term = 0.0F;
-                if constexpr (MT) {
+                if constexpr (TWO_POOL) {
                     const Complex ab = bound_bar[state];
                     const Complex free_state = longitudinal[state];
                     const Complex bound_state = bound[state];
@@ -3871,17 +4241,15 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     );
                     longitudinal_bar[state] = std::conj(full_longitudinal) * az;
                 }
-                grad_b_factor -= e2 * transverse_term * transverse_weight(state)
+                grad_b_factor -= transverse_scaled * transverse_weight(state)
                     + longitudinal_damp_term * longitudinal_weight(state);
                 grad_turn -= angle_term * (static_cast<float>(state) + 0.5F)
                     + longitudinal_angle_term * static_cast<float>(state);
-                fplus_bar[state] = std::conj(full_transverse) * ap;
-                fminus_bar[state] = full_transverse * am;
             }
 
             float grad_exchange_attenuation = 0.0F;
             float grad_two_pool_duration = 0.0F;
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 const TwoPoolGradient<float> back = two_pool_step_adjoint(
                     r1, r1_bound, exchange, bound_fraction, dt, wout,
                     grad_e11, grad_e12, grad_e21, grad_e22,
@@ -3893,6 +4261,22 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 grad_bound_fraction += back.bound;
                 grad_exchange_attenuation = back.attenuation;
                 grad_two_pool_duration = back.dt;
+            }
+            if constexpr (BM) {
+                const TwoPoolTransverseGradient<float> across_back =
+                    two_pool_transverse_adjoint<float, Complex>(
+                        r2, r2_bound, exchange, bound_fraction, pool_shift, dt,
+                        wout, grad_across_11, grad_across_12, grad_across_21,
+                        grad_across_22
+                    );
+                grad_t2 += across_back.r2_free * (-1000.0F / (t2 * t2));
+                grad_t2_bound +=
+                    across_back.r2_bound * (-1000.0F / (t2_bound * t2_bound));
+                grad_exchange += across_back.exchange;
+                grad_bound_fraction += across_back.bound;
+                grad_pool_shift += across_back.shift_hz;
+                grad_exchange_attenuation += across_back.attenuation;
+                grad_two_pool_duration += across_back.dt;
             }
 
             // Washout scales both relaxation factors, so its gradient is the
@@ -3918,14 +4302,23 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 + grad_wout * washout_rate;
         }
 
-        if constexpr (MT) {
+        if constexpr (TWO_POOL) {
             // The fraction also sets where each pool starts, which the walk
             // back reaches last.
             grad_bound_fraction +=
                 std::real(bound_bar[0]) - std::real(longitudinal_bar[0]);
+        }
+        if constexpr (MT) {
             grad_tissue_local[layout.base[9] * atoms + atom] += grad_bound_fraction;
             grad_tissue_local[layout.base[10] * atoms + atom] += grad_exchange;
             grad_tissue_local[layout.base[11] * atoms + atom] += grad_t1_bound;
+        }
+        if constexpr (BM) {
+            grad_tissue_local[layout.base[12] * atoms + atom] += grad_bound_fraction;
+            grad_tissue_local[layout.base[13] * atoms + atom] += grad_exchange;
+            grad_tissue_local[layout.base[14] * atoms + atom] += grad_t1_bound;
+            grad_tissue_local[layout.base[15] * atoms + atom] += grad_t2_bound;
+            grad_tissue_local[layout.base[16] * atoms + atom] += grad_pool_shift;
         }
         grad_tissue_local[layout.base[0] * atoms + atom] += grad_t1;
         grad_tissue_local[layout.base[1] * atoms + atom] += grad_t2;
@@ -3961,9 +4354,8 @@ struct VjpJvpBuffers {
     const float* dot_bound_fraction;
     const float* dot_exchange_rate;
     const float* dot_t1_bound;
-    // The chemically exchanging pool's five. The derivative kernels carry the
-    // semisolid pool alone, so nothing reads these; they hold the ABI's shape,
-    // and the dispatch refuses a gradient of an exchanging run.
+    // The chemically exchanging pool's five. Read only by the kernels that
+    // carry it; a run declaring the semisolid pool instead leaves them alone.
     const float* dot_pool_b_fraction;
     const float* dot_pool_b_exchange;
     const float* dot_t1_pool_b;
@@ -3987,9 +4379,8 @@ struct VjpJvpBuffers {
     float* grad_dot_bound_fraction;
     float* grad_dot_exchange_rate;
     float* grad_dot_t1_bound;
-    // The chemically exchanging pool's five. The derivative kernels carry the
-    // semisolid pool alone, so nothing reads these; they hold the ABI's shape,
-    // and the dispatch refuses a gradient of an exchanging run.
+    // The chemically exchanging pool's five. Read only by the kernels that
+    // carry it; a run declaring the semisolid pool instead leaves them alone.
     float* grad_dot_pool_b_fraction;
     float* grad_dot_pool_b_exchange;
     float* grad_dot_t1_pool_b;
@@ -4011,9 +4402,8 @@ struct VjpJvpBuffers {
     float* grad_bound_fraction;
     float* grad_exchange_rate;
     float* grad_t1_bound;
-    // The chemically exchanging pool's five. The derivative kernels carry the
-    // semisolid pool alone, so nothing reads these; they hold the ABI's shape,
-    // and the dispatch refuses a gradient of an exchanging run.
+    // The chemically exchanging pool's five. Read only by the kernels that
+    // carry it; a run declaring the semisolid pool instead leaves them alone.
     float* grad_pool_b_fraction;
     float* grad_pool_b_exchange;
     float* grad_t1_pool_b;
@@ -5075,7 +5465,7 @@ inline DualFloat shim_dual(
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool SHIMMED, bool PROFILED, bool MT>
+template <bool SHIMMED, bool PROFILED, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -5090,11 +5480,14 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     // for the rows and for why these cannot be written directly.
     DualFloat* grad_tissue_local
 ) {
+    constexpr bool MT = POOLS == Pools::SEMISOLID;
+    constexpr bool BM = POOLS == Pools::EXCHANGING;
+    constexpr bool TWO_POOL = MT || BM;
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
     const std::size_t states = static_cast<std::size_t>(state_count);
-    const std::size_t stride = (MT ? 4U : 3U) * states;
+    const std::size_t stride = (BM ? 6U : (MT ? 4U : 3U)) * states;
 
     std::vector<DualComplex> trajectory(
         static_cast<std::size_t>(event_count) * stride
@@ -5110,9 +5503,17 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     DualState longitudinal_relaxed(states);
     DualState fplus_shifted(states);
     DualState fminus_shifted(states);
-    DualState bound(MT ? states : 0U);
-    DualState bound_bar(MT ? states : 0U);
-    DualState bound_relaxed(MT ? states : 0U);
+    DualState bound(TWO_POOL ? states : 0U);
+    DualState bound_bar(TWO_POOL ? states : 0U);
+    DualState bound_relaxed(TWO_POOL ? states : 0U);
+    DualState bound_plus(BM ? states : 0U);
+    DualState bound_minus(BM ? states : 0U);
+    DualState bound_plus_bar(BM ? states : 0U);
+    DualState bound_minus_bar(BM ? states : 0U);
+    DualState bound_plus_relaxed(BM ? states : 0U);
+    DualState bound_minus_relaxed(BM ? states : 0U);
+    DualState bound_plus_shifted(BM ? states : 0U);
+    DualState bound_minus_shifted(BM ? states : 0U);
     Damping<DualFloat> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -5143,17 +5544,39 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             ? DualFloat{
                 primal.bound_fraction[atom], buffers.dot_bound_fraction[atom]
             }
-            : DualFloat{};
+            : (BM
+                ? DualFloat{
+                    primal.pool_b_fraction[atom],
+                    buffers.dot_pool_b_fraction[atom],
+                }
+                : DualFloat{});
         const DualFloat exchange = MT
             ? DualFloat{
                 primal.bound_exchange[atom], buffers.dot_exchange_rate[atom]
             }
-            : DualFloat{};
+            : (BM
+                ? DualFloat{
+                    primal.pool_b_exchange[atom],
+                    buffers.dot_pool_b_exchange[atom],
+                }
+                : DualFloat{});
         const DualFloat t1_bound = MT
             ? DualFloat{primal.t1_bound[atom], buffers.dot_t1_bound[atom]}
-            : DualFloat{1.0F, 0.0F};
+            : (BM
+                ? DualFloat{primal.t1_pool_b[atom], buffers.dot_t1_pool_b[atom]}
+                : DualFloat{1.0F, 0.0F});
         const DualFloat r1_bound =
-            MT ? 1000.0F * dual_reciprocal(t1_bound) : DualFloat{};
+            TWO_POOL ? 1000.0F * dual_reciprocal(t1_bound) : DualFloat{};
+        const DualFloat t2_bound = BM
+            ? DualFloat{primal.t2_pool_b[atom], buffers.dot_t2_pool_b[atom]}
+            : DualFloat{1.0F, 0.0F};
+        const DualFloat r2_bound =
+            BM ? 1000.0F * dual_reciprocal(t2_bound) : DualFloat{};
+        const DualFloat pool_shift = BM
+            ? DualFloat{
+                primal.pool_b_shift[atom], buffers.dot_pool_b_shift[atom]
+            }
+            : DualFloat{};
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.dot_diffusion[atom]
         };
@@ -5174,12 +5597,16 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             Complex(1.0F - bound_fraction.value, 0.0F),
             Complex(-bound_fraction.tangent, 0.0F),
         };
-        if constexpr (MT) {
+        if constexpr (TWO_POOL) {
             std::fill(bound.begin(), bound.end(), DualComplex{});
             bound[0] = DualComplex{
                 Complex(bound_fraction.value, 0.0F),
                 Complex(bound_fraction.tangent, 0.0F),
             };
+        }
+        if constexpr (BM) {
+            std::fill(bound_plus.begin(), bound_plus.end(), DualComplex{});
+            std::fill(bound_minus.begin(), bound_minus.end(), DualComplex{});
         }
 
         // ---- dual forward, recording the state entering each event ----
@@ -5189,8 +5616,14 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             std::copy(fplus.begin(), fplus.end(), slot);
             std::copy(fminus.begin(), fminus.end(), slot + states);
             std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 std::copy(bound.begin(), bound.end(), slot + 3U * states);
+            }
+            if constexpr (BM) {
+                std::copy(bound_plus.begin(), bound_plus.end(), slot + 4U * states);
+                std::copy(
+                    bound_minus.begin(), bound_minus.end(), slot + 5U * states
+                );
             }
 
             const DualFloat dt{
@@ -5202,11 +5635,17 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             const DualFloat dry2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
             const DualFloat e1 = dry1 * wout;
             const DualFloat e2 = dry2 * wout;
-            const TwoPoolStep<DualFloat> pools = MT
+            const TwoPoolStep<DualFloat> pools = TWO_POOL
                 ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
                 : TwoPoolStep<DualFloat>{};
+            const TwoPoolTransverse<DualComplex> across = BM
+                ? two_pool_transverse_step<DualFloat, DualComplex>(
+                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                )
+                : TwoPoolTransverse<DualComplex>{};
             const DualFloat angle = -2.0F * PI * (b0 * dt);
-            const DualComplex off = e2 * dual_polar(angle);
+            const DualComplex phase = dual_polar(angle);
+            const DualComplex off = e2 * phase;
             const DualComplex off_conj = conjugate(off);
             for (std::size_t state = 0; state < states; ++state) {
                 const DualFloat damp_transverse = damping.transverse[state];
@@ -5217,13 +5656,31 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 );
                 const DualComplex spin_transverse = dual_polar(turn_transverse);
                 const DualComplex spin_longitudinal = dual_polar(turn_longitudinal);
-                fplus[state] =
-                    off * fplus[state] * damp_transverse * spin_transverse;
-                fminus[state] = off_conj * fminus[state] * damp_transverse
-                    * conjugate(spin_transverse);
+                if constexpr (BM) {
+                    const DualComplex carried =
+                        phase * damp_transverse * spin_transverse;
+                    const DualComplex free_plus = fplus[state];
+                    const DualComplex pool_plus = bound_plus[state];
+                    const DualComplex free_minus = fminus[state];
+                    const DualComplex pool_minus = bound_minus[state];
+                    fplus[state] =
+                        (across.e11 * free_plus + across.e12 * pool_plus) * carried;
+                    bound_plus[state] =
+                        (across.e21 * free_plus + across.e22 * pool_plus) * carried;
+                    const DualComplex conjugated = conjugate(carried);
+                    fminus[state] = (conjugate(across.e11) * free_minus
+                        + conjugate(across.e12) * pool_minus) * conjugated;
+                    bound_minus[state] = (conjugate(across.e21) * free_minus
+                        + conjugate(across.e22) * pool_minus) * conjugated;
+                } else {
+                    fplus[state] =
+                        off * fplus[state] * damp_transverse * spin_transverse;
+                    fminus[state] = off_conj * fminus[state] * damp_transverse
+                        * conjugate(spin_transverse);
+                }
                 const DualComplex spin =
                     damping.longitudinal[state] * spin_longitudinal;
-                if constexpr (MT) {
+                if constexpr (TWO_POOL) {
                     const DualComplex free_state = longitudinal[state];
                     const DualComplex bound_state = bound[state];
                     longitudinal[state] =
@@ -5234,7 +5691,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     longitudinal[state] = e1 * longitudinal[state] * spin;
                 }
             }
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 longitudinal[0].value += Complex(pools.recovery_free.value, 0.0F);
                 longitudinal[0].tangent +=
                     Complex(pools.recovery_free.tangent, 0.0F);
@@ -5248,12 +5705,20 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             const std::uint8_t action = primal.action[event];
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus, fminus);
+                if constexpr (BM) {
+                    shift(bound_plus, bound_minus);
+                }
             }
             if (primal.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
                     const DualFloat negated = DualFloat{0.0F, 0.0F} - efficiency;
                     for (DualComplex& value : longitudinal) {
                         value = negated * value;
+                    }
+                    if constexpr (BM) {
+                        for (DualComplex& value : bound) {
+                            value = negated * value;
+                        }
                     }
                 } else {
                     const std::int64_t transmit =
@@ -5289,26 +5754,48 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                             primal, table_row<PROFILED>(primal, event, location),
                             alpha, pair_a, pair_b, slope_a, slope_b
                         );
+                        const DualComplex spun =
+                            pair_b * dual_polar(DualFloat{0.0F, 0.0F} - phi);
                         rotate_spinor(
-                            fplus,
-                            fminus,
-                            longitudinal,
-                            pair_a,
-                            pair_b * dual_polar(DualFloat{0.0F, 0.0F} - phi)
+                            fplus, fminus, longitudinal, pair_a, spun
                         );
+                        if constexpr (BM) {
+                            rotate_spinor(
+                                bound_plus, bound_minus, bound, pair_a, spun
+                            );
+                        }
                     } else {
                         rotate_dual(fplus, fminus, longitudinal, alpha, phi);
+                        if constexpr (BM) {
+                            rotate_dual(
+                                bound_plus, bound_minus, bound, alpha, phi
+                            );
+                        }
                     }
                 }
             }
             if ((action & POST_SHIFT) != 0) {
                 shift(fplus, fminus);
+                if constexpr (BM) {
+                    shift(bound_plus, bound_minus);
+                }
             }
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus.begin(), fplus.end(), DualComplex{});
                 std::fill(fminus.begin(), fminus.end(), DualComplex{});
+                if constexpr (BM) {
+                    std::fill(
+                        bound_plus.begin(), bound_plus.end(), DualComplex{}
+                    );
+                    std::fill(
+                        bound_minus.begin(), bound_minus.end(), DualComplex{}
+                    );
+                }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift(fplus, fminus);
+                if constexpr (BM) {
+                    shift(bound_plus, bound_minus);
+                }
             }
         }
 
@@ -5316,9 +5803,17 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
         std::fill(fplus_bar.begin(), fplus_bar.end(), DualComplex{});
         std::fill(fminus_bar.begin(), fminus_bar.end(), DualComplex{});
         std::fill(longitudinal_bar.begin(), longitudinal_bar.end(), DualComplex{});
-        if constexpr (MT) {
+        if constexpr (TWO_POOL) {
             std::fill(bound_bar.begin(), bound_bar.end(), DualComplex{});
         }
+        if constexpr (BM) {
+            std::fill(bound_plus_bar.begin(), bound_plus_bar.end(), DualComplex{});
+            std::fill(
+                bound_minus_bar.begin(), bound_minus_bar.end(), DualComplex{}
+            );
+        }
+        DualFloat grad_t2_bound{0.0F, 0.0F};
+        DualFloat grad_pool_shift{0.0F, 0.0F};
         DualFloat grad_t1_bound{0.0F, 0.0F};
         DualFloat grad_exchange{0.0F, 0.0F};
         DualFloat grad_bound_fraction{0.0F, 0.0F};
@@ -5342,8 +5837,16 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             std::copy(slot, slot + states, fplus.begin());
             std::copy(slot + states, slot + 2U * states, fminus.begin());
             std::copy(slot + 2U * states, slot + 3U * states, longitudinal.begin());
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 std::copy(slot + 3U * states, slot + 4U * states, bound.begin());
+            }
+            if constexpr (BM) {
+                std::copy(
+                    slot + 4U * states, slot + 5U * states, bound_plus.begin()
+                );
+                std::copy(
+                    slot + 5U * states, slot + 6U * states, bound_minus.begin()
+                );
             }
 
             const DualFloat dt{
@@ -5355,9 +5858,14 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             const DualFloat dry2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
             const DualFloat e1 = dry1 * wout;
             const DualFloat e2 = dry2 * wout;
-            const TwoPoolStep<DualFloat> pools = MT
+            const TwoPoolStep<DualFloat> pools = TWO_POOL
                 ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
                 : TwoPoolStep<DualFloat>{};
+            const TwoPoolTransverse<DualComplex> across = BM
+                ? two_pool_transverse_step<DualFloat, DualComplex>(
+                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                )
+                : TwoPoolTransverse<DualComplex>{};
             const DualFloat angle = -2.0F * PI * (b0 * dt);
             const DualComplex phase = dual_polar(angle);
             const DualComplex off = e2 * phase;
@@ -5373,13 +5881,31 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 );
                 const DualComplex spin_transverse = dual_polar(turn_transverse);
                 const DualComplex spin_longitudinal = dual_polar(turn_longitudinal);
-                fplus_relaxed[state] =
-                    off * fplus[state] * damp_transverse * spin_transverse;
-                fminus_relaxed[state] = off_conj * fminus[state] * damp_transverse
-                    * conjugate(spin_transverse);
+                if constexpr (BM) {
+                    const DualComplex carried =
+                        phase * damp_transverse * spin_transverse;
+                    const DualComplex free_plus = fplus[state];
+                    const DualComplex pool_plus = bound_plus[state];
+                    const DualComplex free_minus = fminus[state];
+                    const DualComplex pool_minus = bound_minus[state];
+                    fplus_relaxed[state] =
+                        (across.e11 * free_plus + across.e12 * pool_plus) * carried;
+                    bound_plus_relaxed[state] =
+                        (across.e21 * free_plus + across.e22 * pool_plus) * carried;
+                    const DualComplex conjugated = conjugate(carried);
+                    fminus_relaxed[state] = (conjugate(across.e11) * free_minus
+                        + conjugate(across.e12) * pool_minus) * conjugated;
+                    bound_minus_relaxed[state] = (conjugate(across.e21) * free_minus
+                        + conjugate(across.e22) * pool_minus) * conjugated;
+                } else {
+                    fplus_relaxed[state] =
+                        off * fplus[state] * damp_transverse * spin_transverse;
+                    fminus_relaxed[state] = off_conj * fminus[state]
+                        * damp_transverse * conjugate(spin_transverse);
+                }
                 const DualComplex spin =
                     damping.longitudinal[state] * spin_longitudinal;
-                if constexpr (MT) {
+                if constexpr (TWO_POOL) {
                     const DualComplex free_state = longitudinal[state];
                     const DualComplex bound_state = bound[state];
                     longitudinal_relaxed[state] =
@@ -5390,7 +5916,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     longitudinal_relaxed[state] = e1 * longitudinal[state] * spin;
                 }
             }
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 longitudinal_relaxed[0].value +=
                     Complex(pools.recovery_free.value, 0.0F);
                 longitudinal_relaxed[0].tangent +=
@@ -5405,18 +5931,40 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
 
             fplus_shifted = fplus_relaxed;
             fminus_shifted = fminus_relaxed;
+            if constexpr (BM) {
+                bound_plus_shifted = bound_plus_relaxed;
+                bound_minus_shifted = bound_minus_relaxed;
+            }
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus_shifted, fminus_shifted);
+                if constexpr (BM) {
+                    shift(bound_plus_shifted, bound_minus_shifted);
+                }
             }
 
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus_bar.begin(), fplus_bar.end(), DualComplex{});
                 std::fill(fminus_bar.begin(), fminus_bar.end(), DualComplex{});
+                if constexpr (BM) {
+                    std::fill(
+                        bound_plus_bar.begin(), bound_plus_bar.end(), DualComplex{}
+                    );
+                    std::fill(
+                        bound_minus_bar.begin(), bound_minus_bar.end(),
+                        DualComplex{}
+                    );
+                }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
+                if constexpr (BM) {
+                    shift_adjoint(bound_plus_bar, bound_minus_bar);
+                }
             }
             if ((action & POST_SHIFT) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
+                if constexpr (BM) {
+                    shift_adjoint(bound_plus_bar, bound_minus_bar);
+                }
             }
 
             if (primal.kind[event] == 2 && (action & RECORD) != 0) {
@@ -5434,7 +5982,9 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 };
                 const DualComplex demodulation =
                     dual_polar(DualFloat{0.0F, 0.0F} - adc_phase);
-                const DualComplex recorded = fplus_shifted[0];
+                const DualComplex recorded = BM
+                    ? fplus_shifted[0] + bound_plus_shifted[0]
+                    : fplus_shifted[0];
                 grad_m0 = grad_m0
                     + real_part(conjugate(seed) * recorded * demodulation);
                 grad_phase_train[event] = grad_phase_train[event]
@@ -5443,8 +5993,11 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                         * DualComplex{Complex(0.0F, -1.0F), Complex{}}
                         * demodulation
                     );
-                fplus_bar[0] =
-                    fplus_bar[0] + conjugate(m0 * demodulation) * seed;
+                const DualComplex weighted = conjugate(m0 * demodulation) * seed;
+                fplus_bar[0] = fplus_bar[0] + weighted;
+                if constexpr (BM) {
+                    bound_plus_bar[0] = bound_plus_bar[0] + weighted;
+                }
             }
 
             if (primal.kind[event] == 1) {
@@ -5458,6 +6011,17 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                                    * longitudinal_relaxed[state])
                             );
                         longitudinal_bar[state] = negated * longitudinal_bar[state];
+                        if constexpr (BM) {
+                            grad_efficiency = grad_efficiency
+                                + real_part(
+                                    conjugate(bound_bar[state])
+                                    * (DualComplex{
+                                           Complex(-1.0F, 0.0F), Complex{}
+                                       }
+                                       * bound_relaxed[state])
+                                );
+                            bound_bar[state] = negated * bound_bar[state];
+                        }
                     }
                 } else {
                     const DualFloat flip_value{
@@ -5519,6 +6083,20 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                             grad_a,
                             grad_b
                         );
+                        if constexpr (BM) {
+                            rotate_adjoint_spinor_dual(
+                                bound_plus_shifted,
+                                bound_minus_shifted,
+                                bound_relaxed,
+                                bound_plus_bar,
+                                bound_minus_bar,
+                                bound_bar,
+                                pair_a,
+                                spun,
+                                grad_a,
+                                grad_b
+                            );
+                        }
                         grad_alpha = real_part(conjugate(grad_a) * slope_a)
                             + real_part(conjugate(grad_b) * (slope_b * turn));
                         grad_phi = real_part(
@@ -5537,6 +6115,20 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                             grad_alpha,
                             grad_phi
                         );
+                        if constexpr (BM) {
+                            rotate_adjoint_dual(
+                                bound_plus_shifted,
+                                bound_minus_shifted,
+                                bound_relaxed,
+                                bound_plus_bar,
+                                bound_minus_bar,
+                                bound_bar,
+                                alpha,
+                                phi,
+                                grad_alpha,
+                                grad_phi
+                            );
+                        }
                     }
                     if constexpr (MT) {
                         const DualFloat offset =
@@ -5573,6 +6165,9 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
 
             if ((action & PRE_SHIFT) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
+                if constexpr (BM) {
+                    shift_adjoint(bound_plus_bar, bound_minus_bar);
+                }
             }
 
             DualFloat grad_e1{0.0F, 0.0F};
@@ -5584,12 +6179,16 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             DualFloat grad_e12{0.0F, 0.0F};
             DualFloat grad_e21{0.0F, 0.0F};
             DualFloat grad_e22{0.0F, 0.0F};
+            DualComplex grad_across_11{};
+            DualComplex grad_across_12{};
+            DualComplex grad_across_21{};
+            DualComplex grad_across_22{};
             const Complex imaginary(0.0F, 1.0F);
             const DualFloat grad_recovery_free =
-                MT ? real_part(longitudinal_bar[0]) : DualFloat{};
+                TWO_POOL ? real_part(longitudinal_bar[0]) : DualFloat{};
             const DualFloat grad_recovery_bound =
-                MT ? real_part(bound_bar[0]) : DualFloat{};
-            if constexpr (!MT) {
+                TWO_POOL ? real_part(bound_bar[0]) : DualFloat{};
+            if constexpr (!TWO_POOL) {
                 grad_e1 = grad_e1 - real_part(longitudinal_bar[0]);
             }
             for (std::size_t state = 0; state < states; ++state) {
@@ -5609,24 +6208,73 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     phase * damp_transverse * spin_transverse;
                 const DualComplex full_transverse =
                     off * damp_transverse * spin_transverse;
-                const DualFloat transverse_term = real_part(
-                    conjugate(ap) * carried * fplus[state]
-                    + conjugate(am) * conjugate(carried) * fminus[state]
-                );
-                grad_e2 = grad_e2 + transverse_term;
+                // The damping is homogeneous of degree one in every transverse
+                // state it acts on, so its gradient times the damping itself is
+                // the cotangent taken against the states the interval leaves.
+                DualFloat transverse_scaled{0.0F, 0.0F};
+                DualFloat angle_term{0.0F, 0.0F};
+                if constexpr (BM) {
+                    const DualComplex abp = bound_plus_bar[state];
+                    const DualComplex abm = bound_minus_bar[state];
+                    const DualComplex fp = fplus[state];
+                    const DualComplex bp = bound_plus[state];
+                    const DualComplex fm = fminus[state];
+                    const DualComplex bm = bound_minus[state];
+                    const DualComplex out_fp = fplus_relaxed[state];
+                    const DualComplex out_bp = bound_plus_relaxed[state];
+                    const DualComplex out_fm = fminus_relaxed[state];
+                    const DualComplex out_bm = bound_minus_relaxed[state];
+                    const DualComplex plus_side =
+                        conjugate(ap) * out_fp + conjugate(abp) * out_bp;
+                    const DualComplex minus_side =
+                        conjugate(am) * out_fm + conjugate(abm) * out_bm;
+                    transverse_scaled = real_part(plus_side + minus_side);
+                    angle_term =
+                        real_part(imaginary * (plus_side - minus_side));
+                    // ``F-`` follows the conjugate of the operator, so its
+                    // cotangent lands on the entry itself rather than on the
+                    // conjugate of it.
+                    grad_across_11 = grad_across_11
+                        + (conjugate(ap) * fp + am * conjugate(fm)) * carried;
+                    grad_across_12 = grad_across_12
+                        + (conjugate(ap) * bp + am * conjugate(bm)) * carried;
+                    grad_across_21 = grad_across_21
+                        + (conjugate(abp) * fp + abm * conjugate(fm)) * carried;
+                    grad_across_22 = grad_across_22
+                        + (conjugate(abp) * bp + abm * conjugate(bm)) * carried;
+                    const DualComplex step_11 = across.e11 * carried;
+                    const DualComplex step_12 = across.e12 * carried;
+                    const DualComplex step_21 = across.e21 * carried;
+                    const DualComplex step_22 = across.e22 * carried;
+                    fplus_bar[state] =
+                        conjugate(step_11) * ap + conjugate(step_21) * abp;
+                    bound_plus_bar[state] =
+                        conjugate(step_12) * ap + conjugate(step_22) * abp;
+                    fminus_bar[state] = step_11 * am + step_21 * abm;
+                    bound_minus_bar[state] = step_12 * am + step_22 * abm;
+                } else {
+                    const DualFloat transverse_term = real_part(
+                        conjugate(ap) * carried * fplus[state]
+                        + conjugate(am) * conjugate(carried) * fminus[state]
+                    );
+                    grad_e2 = grad_e2 + transverse_term;
+                    transverse_scaled = e2 * transverse_term;
+                    angle_term =
+                        real_part(conjugate(ap) * (imaginary * (full_transverse * fplus[state])))
+                        - real_part(
+                            conjugate(am)
+                            * (imaginary * (conjugate(full_transverse) * fminus[state]))
+                        );
+                    fplus_bar[state] = conjugate(full_transverse) * ap;
+                    fminus_bar[state] = full_transverse * am;
+                }
                 // A turn of the transverse states and the off-resonance angle
                 // are the same derivative; only the weight they carry differs.
-                const DualFloat angle_term =
-                    real_part(conjugate(ap) * (imaginary * (full_transverse * fplus[state])))
-                    - real_part(
-                        conjugate(am)
-                        * (imaginary * (conjugate(full_transverse) * fminus[state]))
-                    );
                 grad_angle = grad_angle + angle_term;
                 const DualComplex spin = damp_longitudinal * spin_longitudinal;
                 DualFloat longitudinal_damp_term{0.0F, 0.0F};
                 DualFloat longitudinal_angle_term{0.0F, 0.0F};
-                if constexpr (MT) {
+                if constexpr (TWO_POOL) {
                     const DualComplex ab = bound_bar[state];
                     const DualComplex free_state = longitudinal[state];
                     const DualComplex bound_state = bound[state];
@@ -5668,18 +6316,16 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     longitudinal_bar[state] = conjugate(full_longitudinal) * az;
                 }
                 grad_b_factor = grad_b_factor
-                    - transverse_weight(state) * (e2 * transverse_term)
+                    - transverse_weight(state) * transverse_scaled
                     - longitudinal_weight(state) * longitudinal_damp_term;
                 grad_turn = grad_turn
                     - (static_cast<float>(state) + 0.5F) * angle_term
                     - static_cast<float>(state) * longitudinal_angle_term;
-                fplus_bar[state] = conjugate(full_transverse) * ap;
-                fminus_bar[state] = full_transverse * am;
             }
 
             DualFloat grad_exchange_attenuation{0.0F, 0.0F};
             DualFloat grad_two_pool_duration{0.0F, 0.0F};
-            if constexpr (MT) {
+            if constexpr (TWO_POOL) {
                 const TwoPoolGradient<DualFloat> back = two_pool_step_adjoint(
                     r1, r1_bound, exchange, bound_fraction, dt, wout,
                     grad_e11, grad_e12, grad_e21, grad_e22,
@@ -5694,6 +6340,26 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 grad_bound_fraction = grad_bound_fraction + back.bound;
                 grad_exchange_attenuation = back.attenuation;
                 grad_two_pool_duration = back.dt;
+            }
+            if constexpr (BM) {
+                const TwoPoolTransverseGradient<DualFloat> across_back =
+                    two_pool_transverse_adjoint<DualFloat, DualComplex>(
+                        r2, r2_bound, exchange, bound_fraction, pool_shift, dt,
+                        wout, grad_across_11, grad_across_12, grad_across_21,
+                        grad_across_22
+                    );
+                grad_t2 = grad_t2
+                    - across_back.r2_free * (1000.0F * dual_reciprocal(t2 * t2));
+                grad_t2_bound = grad_t2_bound
+                    - across_back.r2_bound
+                        * (1000.0F * dual_reciprocal(t2_bound * t2_bound));
+                grad_exchange = grad_exchange + across_back.exchange;
+                grad_bound_fraction = grad_bound_fraction + across_back.bound;
+                grad_pool_shift = grad_pool_shift + across_back.shift_hz;
+                grad_exchange_attenuation =
+                    grad_exchange_attenuation + across_back.attenuation;
+                grad_two_pool_duration =
+                    grad_two_pool_duration + across_back.dt;
             }
 
             const DualFloat inverse_t1_squared =
@@ -5722,24 +6388,27 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 + grad_wout * washout_rate;
         }
 
-        if constexpr (MT) {
+        if constexpr (TWO_POOL) {
             grad_bound_fraction = grad_bound_fraction
                 + real_part(bound_bar[0]) - real_part(longitudinal_bar[0]);
         }
 
+        // A run carries one second pool or none, so the rows of the other are
+        // left at zero -- the true gradient, the kernel not having read them.
         const DualFloat contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, grad_b1_phase, grad_b0,
             grad_efficiency, grad_damping,
             primal.flow_scale * grad_flow
                 + (speed_direction(velocity) * primal.washout_scale)
                     * grad_washout,
-            grad_bound_fraction, grad_exchange, grad_t1_bound,
-            // The chemically exchanging pool's five. This kernel carries the
-            // semisolid pool alone, and the dispatch refuses a gradient of an
-            // exchanging run rather than answering with these zeros.
-            DualFloat{0.0F, 0.0F}, DualFloat{0.0F, 0.0F},
-            DualFloat{0.0F, 0.0F}, DualFloat{0.0F, 0.0F},
-            DualFloat{0.0F, 0.0F},
+            MT ? grad_bound_fraction : DualFloat{},
+            MT ? grad_exchange : DualFloat{},
+            MT ? grad_t1_bound : DualFloat{},
+            BM ? grad_bound_fraction : DualFloat{},
+            BM ? grad_exchange : DualFloat{},
+            BM ? grad_t1_bound : DualFloat{},
+            BM ? grad_t2_bound : DualFloat{},
+            BM ? grad_pool_shift : DualFloat{},
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             const std::size_t plane = layout.base[parameter]
@@ -5802,7 +6471,7 @@ void simulate_vjp_single_pool(
     float* grad_duration_local,
     float* grad_tissue_local
 ) {
-    simulate_vjp_range<SHIMMED, PROFILED, false>(
+    simulate_vjp_range<SHIMMED, PROFILED, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count,
         grad_flip_local, grad_phase_local, grad_duration_local,
         grad_tissue_local
@@ -5823,7 +6492,7 @@ void simulate_vjp_jvp_single_pool(
     DualFloat* grad_duration_local,
     DualFloat* grad_tissue_local
 ) {
-    simulate_vjp_jvp_range<SHIMMED, PROFILED, false>(
+    simulate_vjp_jvp_range<SHIMMED, PROFILED, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count,
         grad_flip_local, grad_phase_local, grad_duration_local,
         grad_tissue_local
@@ -6379,7 +7048,6 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         PyErr_SetString(PyExc_ValueError, "invalid EPG buffer dimensions");
         return nullptr;
     }
-
     void* raw[expected]{};
     for (Py_ssize_t index = 0; index < expected; ++index) {
         if (!parse_pointer(pointers, index, &raw[index])) {
@@ -6451,9 +7119,10 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     double profile_step = 1.0;
     long long lineshape_bins = 0;
     double lineshape_step = 1.0;
+    int pool_kind = 0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiddLLLdLd",
+            "OLLLLLiddLLLdLdi",
             &pointers,
             &atom_count,
             &train_count,
@@ -6468,7 +7137,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             &profile_bins,
             &profile_step,
             &lineshape_bins,
-            &lineshape_step
+            &lineshape_step,
+            &pool_kind
         )) {
         return nullptr;
     }
@@ -6557,14 +7227,25 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         ) = &simulate_vjp_single_pool<false, false>;
         const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
-        const bool bound = buffers.primal.lineshape != nullptr;
-        if (bound) {
+        if (pool_kind == 2) {
             if (shimmed) {
-                kernel = profiled ? &simulate_vjp_range<true, true, true>
-                                  : &simulate_vjp_range<true, false, true>;
+                kernel = profiled
+                    ? &simulate_vjp_range<true, true, Pools::EXCHANGING>
+                    : &simulate_vjp_range<true, false, Pools::EXCHANGING>;
             } else {
-                kernel = profiled ? &simulate_vjp_range<false, true, true>
-                                  : &simulate_vjp_range<false, false, true>;
+                kernel = profiled
+                    ? &simulate_vjp_range<false, true, Pools::EXCHANGING>
+                    : &simulate_vjp_range<false, false, Pools::EXCHANGING>;
+            }
+        } else if (pool_kind == 1) {
+            if (shimmed) {
+                kernel = profiled
+                    ? &simulate_vjp_range<true, true, Pools::SEMISOLID>
+                    : &simulate_vjp_range<true, false, Pools::SEMISOLID>;
+            } else {
+                kernel = profiled
+                    ? &simulate_vjp_range<false, true, Pools::SEMISOLID>
+                    : &simulate_vjp_range<false, false, Pools::SEMISOLID>;
             }
         } else if (shimmed) {
             kernel = profiled ? &simulate_vjp_single_pool<true, true>
@@ -6645,9 +7326,10 @@ void dispatch_second_order(
     const std::int64_t state_count,
     const std::int64_t output_count,
     const int requested_threads,
-    const int real_axis
+    const int real_axis,
+    const Pools pools
 ) {
-    const bool bound = buffers.primal.lineshape != nullptr;
+    const bool bound = pools != Pools::ONE;
     const bool lanes = real_axis == 1 && !bound && lane_kernels_enabled()
         && !any_diffusion(buffers.primal.diffusion, atom_count)
         && !any_diffusion(buffers.dot_diffusion, atom_count);
@@ -6662,13 +7344,25 @@ void dispatch_second_order(
     } else {
         const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
-        if (bound) {
+        if (pools == Pools::EXCHANGING) {
             if (shimmed) {
-                kernel = profiled ? &simulate_vjp_jvp_range<true, true, true>
-                                  : &simulate_vjp_jvp_range<true, false, true>;
+                kernel = profiled
+                    ? &simulate_vjp_jvp_range<true, true, Pools::EXCHANGING>
+                    : &simulate_vjp_jvp_range<true, false, Pools::EXCHANGING>;
             } else {
-                kernel = profiled ? &simulate_vjp_jvp_range<false, true, true>
-                                  : &simulate_vjp_jvp_range<false, false, true>;
+                kernel = profiled
+                    ? &simulate_vjp_jvp_range<false, true, Pools::EXCHANGING>
+                    : &simulate_vjp_jvp_range<false, false, Pools::EXCHANGING>;
+            }
+        } else if (pools == Pools::SEMISOLID) {
+            if (shimmed) {
+                kernel = profiled
+                    ? &simulate_vjp_jvp_range<true, true, Pools::SEMISOLID>
+                    : &simulate_vjp_jvp_range<true, false, Pools::SEMISOLID>;
+            } else {
+                kernel = profiled
+                    ? &simulate_vjp_jvp_range<false, true, Pools::SEMISOLID>
+                    : &simulate_vjp_jvp_range<false, false, Pools::SEMISOLID>;
             }
         } else if (shimmed) {
             kernel = profiled ? &simulate_vjp_jvp_single_pool<true, true>
@@ -6784,9 +7478,10 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     double profile_step = 1.0;
     long long lineshape_bins = 0;
     double lineshape_step = 1.0;
+    int pool_kind = 0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLdLd",
+            "OLLLLLiiddLLLdLdi",
             &pointers,
             &atom_count,
             &train_count,
@@ -6802,7 +7497,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
             &profile_bins,
             &profile_step,
             &lineshape_bins,
-            &lineshape_step
+            &lineshape_step,
+            &pool_kind
         )) {
         return nullptr;
     }
@@ -6820,6 +7516,9 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         PyErr_SetString(PyExc_ValueError, "invalid EPG buffer dimensions");
         return nullptr;
     }
+    const Pools pools = pool_kind == 2
+        ? Pools::EXCHANGING
+        : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE);
 
     void* raw[expected]{};
     for (Py_ssize_t index = 0; index < expected; ++index) {
@@ -6902,7 +7601,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     Py_BEGIN_ALLOW_THREADS
     dispatch_second_order(
         buffers, atom_count, train_count, event_count, state_count, output_count,
-        requested_threads, real_axis
+        requested_threads, real_axis, pools
     );
     Py_END_ALLOW_THREADS
 
@@ -7100,7 +7799,7 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         );
         dispatch_second_order(
             second, atom_count, train_count, event_count, state_count,
-            output_count, requested_threads, real_axis
+            output_count, requested_threads, real_axis, Pools::ONE
         );
         // The kernel differentiates the event buffer; only the refocusing slots
         // trace back to a parameter, and the chain rule to degrees is constant.
