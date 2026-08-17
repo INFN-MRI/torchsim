@@ -710,7 +710,6 @@ class _NativeEpg(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
-        _differentiable_pools(ctx.lineshape)
         saved = ctx.saved_tensors
         wanted = _wanted(ctx.needs_input_grad)
         fused = _NativeEpgVjp.apply(
@@ -722,6 +721,7 @@ class _NativeEpg(torch.autograd.Function):
             wanted,
             ctx.geometry,
             ctx.profile,
+            ctx.lineshape,
         )
         return (
             *_spread(fused, ctx.needs_input_grad),
@@ -740,7 +740,7 @@ class _NativeEpg(torch.autograd.Function):
 class _NativeEpgVjp(torch.autograd.Function):
     """The adjoint ``J(x)^T w``, itself differentiable once more.
 
-    Its own backward is two more kernel calls. Contracting the ten gradients
+    Its own backward is two more kernel calls. Contracting the gradients
     with a direction ``v`` gives ``<v, J(x)^T w> = <J(x) v, w>``, a form that is
     linear in ``w`` and whose derivatives are therefore the two passes already
     written: the forward-over-reverse contraction for ``d/dx``, and a plain
@@ -760,6 +760,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             wanted=inputs[_SEED_INPUT + 4],
             geometry=inputs[_SEED_INPUT + 5],
             profile=inputs[_SEED_INPUT + 6],
+            lineshape=inputs[_SEED_INPUT + 7],
         )
 
     @staticmethod
@@ -772,6 +773,7 @@ class _NativeEpgVjp(torch.autograd.Function):
         ctx.threads = inputs[_SEED_INPUT + 3]
         ctx.geometry = inputs[_SEED_INPUT + 5]
         ctx.profile = inputs[_SEED_INPUT + 6]
+        ctx.lineshape = inputs[_SEED_INPUT + 7]
 
     @staticmethod
     def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
@@ -795,6 +797,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             wanted=wanted,
             geometry=ctx.geometry,
             profile=ctx.profile,
+            lineshape=ctx.lineshape,
         )
         seed_grad = None
         if ctx.needs_input_grad[_SEED_INPUT]:
@@ -808,11 +811,12 @@ class _NativeEpgVjp(torch.autograd.Function):
                 ctx.threads,
                 geometry=ctx.geometry,
                 profile=ctx.profile,
+                lineshape=ctx.lineshape,
             )
         guarded = _last(
             (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
         )
-        return (*guarded, None, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None, None)
 
 
 class _NativeEpgJvp(torch.autograd.Function):
@@ -849,14 +853,13 @@ class _NativeEpgJvp(torch.autograd.Function):
         saved = ctx.saved_tensors
         primal = saved[:_PACKED_COUNT]
         tangent = saved[_PACKED_COUNT:_TANGENT_END]
-        # Each of the ten is wanted if either the primal input or its forward
-        # direction is being differentiated.
+        # Each is wanted if either the primal input or its forward direction
+        # is being differentiated.
         wanted = tuple(
             bool(ctx.needs_input_grad[index])
             or bool(ctx.needs_input_grad[_PACKED_COUNT + position])
             for position, index in enumerate(_FLOAT_INPUTS)
         )
-        _differentiable_pools(ctx.lineshape)
         primal_grads, tangent_grads = _run_packed_vjp_jvp(
             primal[:_TISSUE_COUNT],
             primal[_TISSUE_COUNT:_PACKED_COUNT],
@@ -868,6 +871,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             wanted=wanted,
             geometry=ctx.geometry,
             profile=ctx.profile,
+            lineshape=ctx.lineshape,
         )
         directions = tuple(
             gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
@@ -1161,29 +1165,6 @@ def _within_the_table(profile: Any, flip: torch.Tensor) -> None:
         raise ValueError(
             f"the sequence drives a pulse to {largest:.3f} rad, past the "
             f"{profile.theta_max:.3f} rad the transition table covers"
-        )
-
-
-def _differentiable_pools(lineshape: Any) -> None:
-    """Refuse a derivative of a two-pool forward.
-
-    The derivative kernels carry one pool, so asked for the Jacobian of a
-    bound-pool run they would answer with the single-pool one -- a wrong number
-    rather than a missing one.
-
-    A run at the default bound fraction is not that case. Nothing then builds a
-    lineshape, and the machine that runs is the single-pool one, which does not
-    take the bound pool's properties as arguments at all: their gradients come
-    back at zero because the answer does not depend on them, not because the
-    kernels declined to look.
-
-    Raises:
-        NotImplementedError: if the forward ran with a bound pool.
-    """
-    if lineshape is not None:
-        raise NotImplementedError(
-            "the derivative kernels carry one pool; a bound pool reaches the "
-            "forward machine only"
         )
 
 
@@ -1975,6 +1956,7 @@ def _run_offloaded_vjp_jvp(
     real_axis: int | None,
     geometry: Geometry,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Stream a forward-over-reverse pass through the devices, chunk by chunk.
 
@@ -2043,6 +2025,7 @@ def _run_offloaded_vjp_jvp(
             output_count=output_count,
             real_axis=real_axis,
             shims=shims,
+            pools=1 if lineshape is None else 2,
         )
     staged_inputs = (*tissue, *tangents[:_TISSUE_COUNT])
 
@@ -2063,6 +2046,7 @@ def _run_offloaded_vjp_jvp(
             geometry=geometry,
             atom_count=width,
             profile=profile,
+            lineshape=lineshape,
         )
         for plane, side in enumerate(voxel_grads):
             for index, count in enumerate(rows):
@@ -2255,12 +2239,13 @@ def _run_packed_vjp(
     *,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> tuple[torch.Tensor, ...]:
     """Return gradients w.r.t. the tissue and three float event buffers.
 
-    The result is ordered ``(t1, t2, m0, b1, b1_phase, b0, inversion_efficiency,
-    diffusion, velocity, duration, flip, phase)``, each shaped like the buffer
-    it belongs to -- so the transmit pair carries a row per shim.
+    The result follows the differentiable-input order -- every tissue
+    property, then event duration, flip and phase -- each shaped like the
+    buffer it belongs to, so the transmit pair carries a row per shim.
 
     ``wanted`` says which of those the caller will read, which is what lets
     the real-subspace kernels -- four of them short -- be chosen. All of them,
@@ -2288,6 +2273,7 @@ def _run_packed_vjp(
             wanted=wanted,
             geometry=geometry,
             profile=profile,
+            lineshape=lineshape,
         )
         return adjoint
     from torchsim import _epg_cpu
@@ -2311,8 +2297,9 @@ def _run_packed_vjp(
     )
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
+    absorption = None if lineshape is None else lineshape.packed()
     _epg_cpu.simulate_vjp(
-        _profiled_pointers(pointers, table, table_rows),
+        _bound_pointers(pointers, table, table_rows, absorption),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2325,6 +2312,8 @@ def _run_packed_vjp(
         1 if profile is None else profile.points,
         0 if profile is None else profile.bins,
         1.0 if profile is None else profile.step,
+        0 if lineshape is None else lineshape.bins,
+        1.0 if lineshape is None else lineshape.step,
     )
     return (*atom_grads, duration_grad, flip_grad, phase_grad)
 
@@ -2342,13 +2331,13 @@ def _run_packed_vjp_jvp(
     *,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
-    ``tangents`` follows the differentiable-input order ``(t1, t2, m0, b1,
-    b1_phase, b0, inversion_efficiency, diffusion, velocity, duration, flip,
-    phase)``. Returns ``(primal_gradients, tangent_gradients)`` in that same
-    order.
+    ``tangents`` follows the differentiable-input order -- every tissue
+    property, then event duration, flip and phase. Returns
+    ``(primal_gradients, tangent_gradients)`` in that same order.
 
     ``wanted`` says which of those the caller will read, which is what
     decides whether the real-subspace adjoint -- four of them short -- may be
@@ -2359,6 +2348,10 @@ def _run_packed_vjp_jvp(
         real_axis = _auto_real_axis_adjoint(
             events, tissue, state_count, tangents, wanted, profile
         )
+    # A bound pool is outside every real subspace the reduced kernels stand
+    # for; see the forward path for why.
+    if lineshape is not None:
+        real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
@@ -2373,6 +2366,7 @@ def _run_packed_vjp_jvp(
             real_axis,
             geometry,
             profile,
+            lineshape,
         )
     choice = _choose(
         "adjoint", tissue, events, output_count, state_count, real_axis
@@ -2390,6 +2384,7 @@ def _run_packed_vjp_jvp(
             real_axis,
             geometry,
             profile,
+            lineshape,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2404,6 +2399,7 @@ def _run_packed_vjp_jvp(
                 threads,
                 real_axis,
                 geometry=geometry,
+                lineshape=lineshape,
             )
         origin = tissue[0].device
         return tuple(
@@ -2429,6 +2425,7 @@ def _run_packed_vjp_jvp(
                     real_axis=real_axis,
                     geometry=geometry,
                     profile=profile,
+                    lineshape=lineshape,
                 )
                 for begin, end, device in shards
             ]
@@ -2444,6 +2441,7 @@ def _run_packed_vjp_jvp(
             real_axis=real_axis,
             geometry=geometry,
             profile=profile,
+            lineshape=lineshape,
         )
     from torchsim import _epg_cpu
 
@@ -2463,8 +2461,9 @@ def _run_packed_vjp_jvp(
     )
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
+    absorption = None if lineshape is None else lineshape.packed()
     _epg_cpu.simulate_vjp_jvp(
-        _profiled_pointers(pointers, table, table_rows),
+        _bound_pointers(pointers, table, table_rows, absorption),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2478,6 +2477,8 @@ def _run_packed_vjp_jvp(
         1 if profile is None else profile.points,
         0 if profile is None else profile.bins,
         1.0 if profile is None else profile.step,
+        0 if lineshape is None else lineshape.bins,
+        1.0 if lineshape is None else lineshape.step,
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
     return tangent_grads, value_grads

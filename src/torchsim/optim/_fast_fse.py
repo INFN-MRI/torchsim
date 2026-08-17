@@ -59,13 +59,16 @@ _OUTSIDE_THE_SUBSPACE_INPUTS = (
 def _single_pool(tissue: TissueProperties) -> None:
     """Refuse a bound pool on a path whose kernels carry one pool.
 
+    This plan drives the reduced real-subspace kernels directly, and a two-pool
+    system is outside the subspace they stand for.
+
     Raises:
         NotImplementedError: if the tissue declares a bound pool.
     """
     if wants_bound_pool(tissue.bound_fraction):
         raise NotImplementedError(
-            "the fused T2 Jacobian carries one pool; a bound pool reaches the "
-            "forward machine only"
+            "the fused T2 Jacobian carries one pool; a bound pool needs the "
+            "general kernels"
         )
 
 

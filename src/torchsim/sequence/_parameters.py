@@ -157,9 +157,9 @@ TRANSMIT_INPUTS: tuple[int, ...] = tuple(
 # than by reducing over a buffer.
 BOUND_FRACTION_INPUT: int = TISSUE_NAMES.index("bound_fraction")
 
-# The bound pool's properties, as positions among the packed buffers. The
-# derivative kernels carry one pool, so a gradient along any of these is
-# refused rather than answered with the zero the single-pool machine leaves.
+# The bound pool's properties, as positions among the packed buffers. They sit
+# past everything the free pool alone accounts for, which is what lets a
+# single-pool kernel index the ones it takes without knowing they are there.
 BOUND_POOL_INPUTS: tuple[int, ...] = tuple(
     index
     for index, parameter in enumerate(TISSUE_PARAMETERS)

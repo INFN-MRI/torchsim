@@ -27,10 +27,11 @@ from ._parameters import TRANSMIT_INPUTS as _TRANSMIT_INPUTS
 # Triton reads globals only through its own constexpr wrapper.
 _TISSUE_COUNT = tl.constexpr(_TISSUE_PARAMETERS)
 
-# How many tissue parameters the free pool alone accounts for. The bound pool's
-# sit past them, and the derivative kernels carry one pool, so their gradient
-# planes are left at the zero they were cleared to.
+# How many tissue parameters the free pool alone accounts for. The bound
+# pool's sit past them, and are written by the bound-pool kernels alone; a
+# single-pool run leaves their planes at the zero they were cleared to.
 _FREE_POOL_COUNT = tl.constexpr(_TISSUE_PARAMETERS - len(_BOUND_POOL_INPUTS))
+_BOUND_ROW = tl.constexpr(_BOUND_POOL_INPUTS[0])
 
 # The gradient plane holds a row of voxels per tissue parameter, except that
 # the transmit pair holds one per shim. Both sit ahead of everything that
@@ -390,6 +391,314 @@ def _lineshape_at_slope(lineshape, offset_hz, bins: tl.constexpr, step):
         + (3.0 * u2 - 2.0 * u) * far_slope
     )
     return value, tl.where(magnitude > last, 0.0, slope)
+
+
+@triton.jit
+def _lineshape_at_curve(lineshape, offset_hz, bins: tl.constexpr, step):
+    """The lineshape, its slope and its curvature, from the same cubic.
+
+    The table covers the magnitude, so the slope changes sign with the offset
+    and the curvature does not: an even function's second derivative is even.
+    """
+    last = bins - 1
+    magnitude = tl.abs(offset_hz) / step
+    scaled = tl.minimum(magnitude, last + 0.0)
+    lower = tl.minimum(tl.floor(scaled), last - 1.0)
+    u = scaled - lower
+    u2 = u * u
+    u3 = u2 * u
+    base = lower.to(tl.int64) * 2
+    near = tl.load(lineshape + base)
+    near_slope = tl.load(lineshape + base + 1)
+    far = tl.load(lineshape + base + 2)
+    far_slope = tl.load(lineshape + base + 3)
+    value = (
+        (2.0 * u3 - 3.0 * u2 + 1.0) * near
+        + (u3 - 2.0 * u2 + u) * step * near_slope
+        + (-2.0 * u3 + 3.0 * u2) * far
+        + (u3 - u2) * step * far_slope
+    )
+    direction = tl.where(offset_hz < 0.0, -1.0, 1.0)
+    slope = direction * (
+        (6.0 * u2 - 6.0 * u) * near / step
+        + (3.0 * u2 - 4.0 * u + 1.0) * near_slope
+        + (-6.0 * u2 + 6.0 * u) * far / step
+        + (3.0 * u2 - 2.0 * u) * far_slope
+    )
+    curve = (
+        (12.0 * u - 6.0) * near / (step * step)
+        + (6.0 * u - 4.0) * near_slope / step
+        + (-12.0 * u + 6.0) * far / (step * step)
+        + (6.0 * u - 2.0) * far_slope / step
+    )
+    beyond = magnitude > last
+    return (
+        value,
+        tl.where(beyond, 0.0, slope),
+        tl.where(beyond, 0.0, curve),
+    )
+
+
+@triton.jit
+def _two_pool_step_adjoint_jvp(
+    r1_free,
+    d_r1_free,
+    r1_bound,
+    d_r1_bound,
+    exchange,
+    d_exchange,
+    bound,
+    d_bound,
+    dt,
+    d_dt,
+    attenuation,
+    d_attenuation,
+    bar_e11,
+    d_bar_e11,
+    bar_e12,
+    d_bar_e12,
+    bar_e21,
+    d_bar_e21,
+    bar_e22,
+    d_bar_e22,
+    bar_free,
+    d_bar_free,
+    bar_bound,
+    d_bar_bound,
+):
+    """The reverse sweep of :func:`_two_pool_step`, carried on a direction.
+
+    Recomputes the forward rather than carrying it across the event: the whole
+    thing is a handful of transcendentals once per interval, against a state
+    loop that runs per dephasing order.
+
+    Where the discriminant is small the value is still formed from the two
+    eigenvalues -- a sum, which loses nothing -- but the derivative is taken
+    from the series, because ``d cosh(d)/d(d^2)`` reached through
+    ``(e^{t+d} - e^{t-d})/2d`` is a cancellation divided by a small number.
+
+    Returned as the gradients w.r.t. ``(r1_free, r1_bound, exchange, bound,
+    dt, attenuation)`` then their six tangents.
+    """
+    free = 1.0 - bound
+    d_free = -d_bound
+    kab = exchange * bound
+    d_kab = d_exchange * bound + exchange * d_bound
+    kba = exchange * free
+    d_kba = d_exchange * free + exchange * d_free
+    l11 = (-kab - r1_free) * dt
+    d_l11 = (-d_kab - d_r1_free) * dt + (-kab - r1_free) * d_dt
+    l12 = kba * dt
+    d_l12 = d_kba * dt + kba * d_dt
+    l21 = kab * dt
+    d_l21 = d_kab * dt + kab * d_dt
+    l22 = (-kba - r1_bound) * dt
+    d_l22 = (-d_kba - d_r1_bound) * dt + (-kba - r1_bound) * d_dt
+
+    half_trace = 0.5 * (l11 + l22)
+    d_half_trace = 0.5 * (d_l11 + d_l22)
+    half_gap = 0.5 * (l11 - l22)
+    d_half_gap = 0.5 * (d_l11 - d_l22)
+    square = half_gap * half_gap + l12 * l21
+    d_square = 2.0 * half_gap * d_half_gap + d_l12 * l21 + l12 * d_l21
+
+    turning = square > 1e-12
+    root = tl.sqrt(tl.maximum(square, 0.0))
+    guarded = tl.where(turning, root, 1.0)
+    d_root = tl.where(turning, 0.5 * d_square / guarded, 0.0)
+    upper = tl.exp(half_trace + root)
+    d_upper = upper * (d_half_trace + d_root)
+    lower = tl.exp(half_trace - root)
+    d_lower = lower * (d_half_trace - d_root)
+    cosine = 0.5 * (upper + lower)
+    d_cosine = 0.5 * (d_upper + d_lower)
+    plain = tl.exp(half_trace)
+    d_plain = plain * d_half_trace
+    poly = 1.0 + square / 6.0 + square * square / 120.0
+    d_poly = d_square / 6.0 + square * d_square / 60.0
+    scale = tl.where(turning, 0.5 * (upper - lower) / guarded, plain * poly)
+    d_scale = tl.where(
+        turning,
+        0.5 * (d_upper - d_lower) / guarded
+        - 0.5 * (upper - lower) * d_root / (guarded * guarded),
+        d_plain * poly + plain * d_poly,
+    )
+
+    bare11 = cosine + scale * half_gap
+    d_bare11 = d_cosine + d_scale * half_gap + scale * d_half_gap
+    bare12 = scale * l12
+    d_bare12 = d_scale * l12 + scale * d_l12
+    bare21 = scale * l21
+    d_bare21 = d_scale * l21 + scale * d_l21
+    bare22 = cosine - scale * half_gap
+    d_bare22 = d_cosine - d_scale * half_gap - scale * d_half_gap
+
+    # The recovery reaches the operator's four entries and the two fractions.
+    carried11 = bar_e11 - bar_free * free
+    d_carried11 = d_bar_e11 - (d_bar_free * free + bar_free * d_free)
+    carried12 = bar_e12 - bar_free * bound
+    d_carried12 = d_bar_e12 - (d_bar_free * bound + bar_free * d_bound)
+    carried21 = bar_e21 - bar_bound * free
+    d_carried21 = d_bar_e21 - (d_bar_bound * free + bar_bound * d_free)
+    carried22 = bar_e22 - bar_bound * bound
+    d_carried22 = d_bar_e22 - (d_bar_bound * bound + bar_bound * d_bound)
+
+    e11 = attenuation * bare11
+    d_e11 = d_attenuation * bare11 + attenuation * d_bare11
+    e12 = attenuation * bare12
+    d_e12 = d_attenuation * bare12 + attenuation * d_bare12
+    e21 = attenuation * bare21
+    d_e21 = d_attenuation * bare21 + attenuation * d_bare21
+    e22 = attenuation * bare22
+    d_e22 = d_attenuation * bare22 + attenuation * d_bare22
+
+    back_free = bar_free * (1.0 - e11) - bar_bound * e21
+    d_back_free = (
+        d_bar_free * (1.0 - e11) - bar_free * d_e11
+        - (d_bar_bound * e21 + bar_bound * d_e21)
+    )
+    back_bound = bar_bound * (1.0 - e22) - bar_free * e12
+    d_back_bound = (
+        d_bar_bound * (1.0 - e22) - bar_bound * d_e22
+        - (d_bar_free * e12 + bar_free * d_e12)
+    )
+
+    back_attenuation = (
+        carried11 * bare11 + carried12 * bare12
+        + carried21 * bare21 + carried22 * bare22
+    )
+    d_back_attenuation = (
+        d_carried11 * bare11 + carried11 * d_bare11
+        + d_carried12 * bare12 + carried12 * d_bare12
+        + d_carried21 * bare21 + carried21 * d_bare21
+        + d_carried22 * bare22 + carried22 * d_bare22
+    )
+
+    scaled11 = attenuation * carried11
+    d_scaled11 = d_attenuation * carried11 + attenuation * d_carried11
+    scaled12 = attenuation * carried12
+    d_scaled12 = d_attenuation * carried12 + attenuation * d_carried12
+    scaled21 = attenuation * carried21
+    d_scaled21 = d_attenuation * carried21 + attenuation * d_carried21
+    scaled22 = attenuation * carried22
+    d_scaled22 = d_attenuation * carried22 + attenuation * d_carried22
+
+    bar_cosine = scaled11 + scaled22
+    d_bar_cosine = d_scaled11 + d_scaled22
+    gap = scaled11 - scaled22
+    d_gap = d_scaled11 - d_scaled22
+    bar_scale = gap * half_gap + scaled12 * l12 + scaled21 * l21
+    d_bar_scale = (
+        d_gap * half_gap + gap * d_half_gap
+        + d_scaled12 * l12 + scaled12 * d_l12
+        + d_scaled21 * l21 + scaled21 * d_l21
+    )
+    bar_half_gap = scale * gap
+    d_bar_half_gap = d_scale * gap + scale * d_gap
+    bar_l12 = scale * scaled12
+    d_bar_l12 = d_scale * scaled12 + scale * d_scaled12
+    bar_l21 = scale * scaled21
+    d_bar_l21 = d_scale * scaled21 + scale * d_scaled21
+
+    series_trace = bar_cosine * cosine + bar_scale * scale
+    d_series_trace = (
+        d_bar_cosine * cosine + bar_cosine * d_cosine
+        + d_bar_scale * scale + bar_scale * d_scale
+    )
+    cosine_poly = 0.5 + square / 12.0
+    d_cosine_poly = d_square / 12.0
+    scale_poly = 1.0 / 6.0 + square / 60.0
+    d_scale_poly = d_square / 60.0
+    series_square = plain * (bar_cosine * cosine_poly + bar_scale * scale_poly)
+    d_series_square = d_plain * (
+        bar_cosine * cosine_poly + bar_scale * scale_poly
+    ) + plain * (
+        d_bar_cosine * cosine_poly + bar_cosine * d_cosine_poly
+        + d_bar_scale * scale_poly + bar_scale * d_scale_poly
+    )
+
+    inverse = tl.where(turning, 1.0 / guarded, 0.0)
+    d_inverse = tl.where(turning, -d_root / (guarded * guarded), 0.0)
+    bar_upper = 0.5 * (bar_cosine + bar_scale * inverse)
+    d_bar_upper = 0.5 * (
+        d_bar_cosine + d_bar_scale * inverse + bar_scale * d_inverse
+    )
+    bar_lower = 0.5 * (bar_cosine - bar_scale * inverse)
+    d_bar_lower = 0.5 * (
+        d_bar_cosine - d_bar_scale * inverse - bar_scale * d_inverse
+    )
+    root_trace = bar_upper * upper + bar_lower * lower
+    d_root_trace = (
+        d_bar_upper * upper + bar_upper * d_upper
+        + d_bar_lower * lower + bar_lower * d_lower
+    )
+    bar_root = (
+        bar_upper * upper - bar_lower * lower - bar_scale * scale * inverse
+    )
+    d_bar_root = (
+        d_bar_upper * upper + bar_upper * d_upper
+        - d_bar_lower * lower - bar_lower * d_lower
+        - (
+            d_bar_scale * scale * inverse
+            + bar_scale * d_scale * inverse
+            + bar_scale * scale * d_inverse
+        )
+    )
+    root_square = 0.5 * bar_root * inverse
+    d_root_square = 0.5 * (d_bar_root * inverse + bar_root * d_inverse)
+
+    bar_half_trace = tl.where(turning, root_trace, series_trace)
+    d_bar_half_trace = tl.where(turning, d_root_trace, d_series_trace)
+    bar_square = tl.where(turning, root_square, series_square)
+    d_bar_square = tl.where(turning, d_root_square, d_series_square)
+
+    bar_half_gap += 2.0 * bar_square * half_gap
+    d_bar_half_gap += 2.0 * (d_bar_square * half_gap + bar_square * d_half_gap)
+    bar_l12 += bar_square * l21
+    d_bar_l12 += d_bar_square * l21 + bar_square * d_l21
+    bar_l21 += bar_square * l12
+    d_bar_l21 += d_bar_square * l12 + bar_square * d_l12
+
+    bar_l11 = 0.5 * (bar_half_trace + bar_half_gap)
+    d_bar_l11 = 0.5 * (d_bar_half_trace + d_bar_half_gap)
+    bar_l22 = 0.5 * (bar_half_trace - bar_half_gap)
+    d_bar_l22 = 0.5 * (d_bar_half_trace - d_bar_half_gap)
+
+    bar_kab = (bar_l21 - bar_l11) * dt
+    d_bar_kab = (d_bar_l21 - d_bar_l11) * dt + (bar_l21 - bar_l11) * d_dt
+    bar_kba = (bar_l12 - bar_l22) * dt
+    d_bar_kba = (d_bar_l12 - d_bar_l22) * dt + (bar_l12 - bar_l22) * d_dt
+    back_dt = (
+        bar_l11 * (-kab - r1_free) + bar_l12 * kba + bar_l21 * kab
+        + bar_l22 * (-kba - r1_bound)
+    )
+    d_back_dt = (
+        d_bar_l11 * (-kab - r1_free) + bar_l11 * (-d_kab - d_r1_free)
+        + d_bar_l12 * kba + bar_l12 * d_kba
+        + d_bar_l21 * kab + bar_l21 * d_kab
+        + d_bar_l22 * (-kba - r1_bound) + bar_l22 * (-d_kba - d_r1_bound)
+    )
+
+    back_bound += bar_kab * exchange
+    d_back_bound += d_bar_kab * exchange + bar_kab * d_exchange
+    back_free += bar_kba * exchange
+    d_back_free += d_bar_kba * exchange + bar_kba * d_exchange
+
+    return (
+        -bar_l11 * dt,
+        -bar_l22 * dt,
+        bar_kab * bound + bar_kba * free,
+        back_bound - back_free,
+        back_dt,
+        back_attenuation,
+        -(d_bar_l11 * dt + bar_l11 * d_dt),
+        -(d_bar_l22 * dt + bar_l22 * d_dt),
+        d_bar_kab * bound + bar_kab * d_bound
+        + d_bar_kba * free + bar_kba * d_free,
+        d_back_bound - d_back_free,
+        d_back_dt,
+        d_back_attenuation,
+    )
 
 
 @triton.jit
@@ -1011,9 +1320,6 @@ def _epg_vjp_jvp_kernel(
     inversion_efficiency,
     diffusion,
     velocity,
-    # The bound pool's three. These kernels carry one pool; the pointers hold
-    # the ABI's shape and the dispatch refuses a bound pool rather than
-    # answering with the single-pool derivative.
     bound_fraction,
     exchange_rate,
     t1_bound,
@@ -1028,6 +1334,7 @@ def _epg_vjp_jvp_kernel(
     rf_frequency,
     profile,
     profile_index,
+    lineshape,
     dot_t1,
     dot_t2,
     dot_m0,
@@ -1070,10 +1377,12 @@ def _epg_vjp_jvp_kernel(
     flow_scale,
     washout_scale,
     profile_step,
+    lineshape_step,
     state_count: tl.constexpr,
     shims: tl.constexpr,
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
+    lineshape_bins: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -1094,10 +1403,14 @@ def _epg_vjp_jvp_kernel(
     sp_i = scratch_pi + scratch_offset
     sm_r = scratch_mr + scratch_offset
     sm_i = scratch_mi + scratch_offset
-    record_stride = 3 * state_count
+    # The bound pool rides along as a fourth plane: it enters an event as its
+    # own vector and the RF operator scales it, so the reverse sweep cannot
+    # replay it from the free pool's.
+    record_stride = (4 if lineshape_bins > 0 else 3) * state_count
     trajectory = local * event_count * record_stride + state
     minus_plane = state_count
     long_plane = 2 * state_count
+    bound_plane = 3 * state_count
 
     empty = tl.zeros((problems, block_states), tl.float32)
     pvr = empty
@@ -1108,9 +1421,31 @@ def _epg_vjp_jvp_kernel(
     mvi = empty
     mtr = empty
     mti = empty
-    zvr = empty + tl.where(state == 0, 1.0, 0.0)
+    bvr = empty
+    bvi = empty
+    btr = empty
+    bti = empty
+    if lineshape_bins > 0:
+        atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
+        d_boundf = tl.load(
+            dot_bound_fraction + atom, mask=active_atom, other=0.0
+        )
+        atom_exchange = tl.load(exchange_rate + atom, mask=active_atom, other=0.0)
+        d_exchange = tl.load(
+            dot_exchange_rate + atom, mask=active_atom, other=0.0
+        )
+        atom_t1b = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        d_t1b = tl.load(dot_t1_bound + atom, mask=active_atom, other=0.0)
+        r1b_value = 1000.0 / atom_t1b
+        r1b_tangent = -1000.0 * d_t1b / (atom_t1b * atom_t1b)
+        zvr = empty + tl.where(state == 0, 1.0 - atom_bound, 0.0)
+        ztr = empty + tl.where(state == 0, -d_boundf, 0.0)
+        bvr = empty + tl.where(state == 0, atom_bound, 0.0)
+        btr = empty + tl.where(state == 0, d_boundf, 0.0)
+    else:
+        zvr = empty + tl.where(state == 0, 1.0, 0.0)
+        ztr = empty
     zvi = empty
-    ztr = empty
     zti = empty
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
@@ -1164,6 +1499,11 @@ def _epg_vjp_jvp_kernel(
         tl.store(trajectory_vi + slot + long_plane, zvi, mask=state_mask)
         tl.store(trajectory_tr + slot + long_plane, ztr, mask=state_mask)
         tl.store(trajectory_ti + slot + long_plane, zti, mask=state_mask)
+        if lineshape_bins > 0:
+            tl.store(trajectory_vr + slot + bound_plane, bvr, mask=state_mask)
+            tl.store(trajectory_vi + slot + bound_plane, bvi, mask=state_mask)
+            tl.store(trajectory_tr + slot + bound_plane, btr, mask=state_mask)
+            tl.store(trajectory_ti + slot + bound_plane, bti, mask=state_mask)
 
         dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
         dt_tangent = tl.load(
@@ -1212,9 +1552,41 @@ def _epg_vjp_jvp_kernel(
 
         pvr, pvi, ptr, pti = _dual_mul(ovr, ovi, otr, oti, pvr, pvi, ptr, pti)
         mvr, mvi, mtr, mti = _dual_mul(ovr, -ovi, otr, -oti, mvr, mvi, mtr, mti)
-        zvr, zvi, ztr, zti = _dual_mul(lvr, lvi, ltr, lti, zvr, zvi, ztr, zti)
-        zvr += tl.where(state == 0, recovery_value, 0.0)
-        ztr += tl.where(state == 0, recovery_tangent, 0.0)
+        if lineshape_bins > 0:
+            # The exchange operator is a property of the interval, not of a
+            # dephasing order, so it is formed once and the per-order damping
+            # and turn multiply it.
+            (
+                pe11, pe12, pe21, pe22, prec_f, prec_b,
+                de11, de12, de21, de22, drec_f, drec_b,
+            ) = _two_pool_step_jvp(
+                r1_value, r1_tangent, r1b_value, r1b_tangent,
+                atom_exchange, d_exchange, atom_bound, d_boundf,
+                dt_value, dt_tangent, wout_value, wout_tangent,
+            )
+            spin = _dual_scale(damp_z, damp_z_tangent, szr, szi, sztr, szti)
+            free_part = _dual_scale(pe11, de11, zvr, zvi, ztr, zti)
+            cross_in = _dual_scale(pe12, de12, bvr, bvi, btr, bti)
+            cross_out = _dual_scale(pe21, de21, zvr, zvi, ztr, zti)
+            bound_part = _dual_scale(pe22, de22, bvr, bvi, btr, bti)
+            zvr, zvi, ztr, zti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3],
+                free_part[0] + cross_in[0], free_part[1] + cross_in[1],
+                free_part[2] + cross_in[2], free_part[3] + cross_in[3],
+            )
+            bvr, bvi, btr, bti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3],
+                cross_out[0] + bound_part[0], cross_out[1] + bound_part[1],
+                cross_out[2] + bound_part[2], cross_out[3] + bound_part[3],
+            )
+            zvr += tl.where(state == 0, prec_f, 0.0)
+            ztr += tl.where(state == 0, drec_f, 0.0)
+            bvr += tl.where(state == 0, prec_b, 0.0)
+            btr += tl.where(state == 0, drec_b, 0.0)
+        else:
+            zvr, zvi, ztr, zti = _dual_mul(lvr, lvi, ltr, lti, zvr, zvi, ztr, zti)
+            zvr += tl.where(state == 0, recovery_value, 0.0)
+            ztr += tl.where(state == 0, recovery_tangent, 0.0)
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
@@ -1267,6 +1639,32 @@ def _epg_vjp_jvp_kernel(
         alpha_tangent = event_dot_flip * atom_b1 + event_flip * d_b1
         phi_value = event_phase + atom_b1_phase
         phi_tangent = event_dot_phase + d_b1_phase
+        if lineshape_bins > 0:
+            # The bound pool absorbs the power the pulse deposits, so it reads
+            # the bare flip the transmit field gives the voxel -- not the
+            # slice-shaped rotation the free pool takes from the table.
+            offset_value = tl.load(rf_frequency + event) - atom_b0
+            shape_value, shape_slope = _lineshape_at_slope(
+                lineshape, offset_value, lineshape_bins, lineshape_step
+            )
+            shape_tangent = shape_slope * -d_b0
+            event_saturation = tl.load(saturation + event)
+            power_value = event_saturation * alpha_value * alpha_value
+            power_tangent = (
+                event_saturation * 2.0 * alpha_value * alpha_tangent
+            )
+            absorbed_value = tl.exp(power_value * shape_value)
+            absorbed_tangent = absorbed_value * (
+                power_tangent * shape_value + power_value * shape_tangent
+            )
+            sat_b = _dual_scale(
+                absorbed_value, absorbed_tangent, bvr, bvi, btr, bti
+            )
+            saturating = is_rf & ~is_inversion
+            bvr = tl.where(saturating, sat_b[0], bvr)
+            bvi = tl.where(saturating, sat_b[1], bvi)
+            btr = tl.where(saturating, sat_b[2], btr)
+            bti = tl.where(saturating, sat_b[3], bti)
         cos_value = tl.cos(alpha_value)
         sin_value = tl.sin(alpha_value)
         cos_tangent = -sin_value * alpha_tangent
@@ -1374,7 +1772,17 @@ def _epg_vjp_jvp_kernel(
     zbvi = empty
     zbtr = empty
     zbti = empty
+    bbvr = empty
+    bbvi = empty
+    bbtr = empty
+    bbti = empty
     zero = tl.zeros((problems, 1), tl.float32)
+    g_boundv = zero
+    g_boundt = zero
+    g_exchv = zero
+    g_excht = zero
+    g_t1bv = zero
+    g_t1bt = zero
     g_diffv = zero
     g_difft = zero
     g_flowv = zero
@@ -1411,6 +1819,23 @@ def _epg_vjp_jvp_kernel(
         xzvi = tl.load(trajectory_vi + slot + long_plane, mask=state_mask, other=0.0)
         xztr = tl.load(trajectory_tr + slot + long_plane, mask=state_mask, other=0.0)
         xzti = tl.load(trajectory_ti + slot + long_plane, mask=state_mask, other=0.0)
+        xbvr = empty
+        xbvi = empty
+        xbtr = empty
+        xbti = empty
+        if lineshape_bins > 0:
+            xbvr = tl.load(
+                trajectory_vr + slot + bound_plane, mask=state_mask, other=0.0
+            )
+            xbvi = tl.load(
+                trajectory_vi + slot + bound_plane, mask=state_mask, other=0.0
+            )
+            xbtr = tl.load(
+                trajectory_tr + slot + bound_plane, mask=state_mask, other=0.0
+            )
+            xbti = tl.load(
+                trajectory_ti + slot + bound_plane, mask=state_mask, other=0.0
+            )
 
         event_action = tl.load(action + event).to(tl.int32)
         event_kind = tl.load(kind + event)
@@ -1466,11 +1891,48 @@ def _epg_vjp_jvp_kernel(
         rmvr, rmvi, rmtr, rmti = _dual_mul(
             ovr, -ovi, otr, -oti, xmvr, xmvi, xmtr, xmti
         )
-        rzvr, rzvi, rztr, rzti = _dual_mul(
-            lvr, lvi, ltr, lti, xzvr, xzvi, xztr, xzti
-        )
-        rzvr += tl.where(state == 0, recovery_value, 0.0)
-        rztr += tl.where(state == 0, recovery_tangent, 0.0)
+        rbvr = empty
+        rbvi = empty
+        rbtr = empty
+        rbti = empty
+        if lineshape_bins > 0:
+            (
+                pe11, pe12, pe21, pe22, prec_f, prec_b,
+                de11, de12, de21, de22, drec_f, drec_b,
+            ) = _two_pool_step_jvp(
+                r1_value, r1_tangent, r1b_value, r1b_tangent,
+                atom_exchange, d_exchange, atom_bound, d_boundf,
+                dt_value, dt_tangent, wout_value, wout_tangent,
+            )
+            spin = _dual_scale(damp_z, damp_z_tangent, szr, szi, sztr, szti)
+            free_part = _dual_scale(pe11, de11, xzvr, xzvi, xztr, xzti)
+            cross_in = _dual_scale(pe12, de12, xbvr, xbvi, xbtr, xbti)
+            cross_out = _dual_scale(pe21, de21, xzvr, xzvi, xztr, xzti)
+            bound_part = _dual_scale(pe22, de22, xbvr, xbvi, xbtr, xbti)
+            mixed_free = (
+                free_part[0] + cross_in[0], free_part[1] + cross_in[1],
+                free_part[2] + cross_in[2], free_part[3] + cross_in[3],
+            )
+            mixed_bound = (
+                cross_out[0] + bound_part[0], cross_out[1] + bound_part[1],
+                cross_out[2] + bound_part[2], cross_out[3] + bound_part[3],
+            )
+            rzvr, rzvi, rztr, rzti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_free
+            )
+            rbvr, rbvi, rbtr, rbti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_bound
+            )
+            rzvr += tl.where(state == 0, prec_f, 0.0)
+            rztr += tl.where(state == 0, drec_f, 0.0)
+            rbvr += tl.where(state == 0, prec_b, 0.0)
+            rbtr += tl.where(state == 0, drec_b, 0.0)
+        else:
+            rzvr, rzvi, rztr, rzti = _dual_mul(
+                lvr, lvi, ltr, lti, xzvr, xzvi, xztr, xzti
+            )
+            rzvr += tl.where(state == 0, recovery_value, 0.0)
+            rztr += tl.where(state == 0, recovery_tangent, 0.0)
 
         pre_shift = (event_action & 1) != 0
         svr, svi, wvr, wvi = _shift(
@@ -1599,6 +2061,65 @@ def _epg_vjp_jvp_kernel(
         alpha_tangent = event_dot_flip * atom_b1 + event_flip * d_b1
         phi_value = event_phase + atom_b1_phase
         phi_tangent = event_dot_phase + d_b1_phase
+        sat_alpha_v = zero
+        sat_alpha_t = zero
+        sat_b0_v = zero
+        sat_b0_t = zero
+        if lineshape_bins > 0:
+            # The pulse scales every order of the bound pool by one real
+            # number, so its cotangent is a single sum over the states it
+            # multiplied. The lineshape's own slope is differentiated too,
+            # which is what the curvature the reader returns is for.
+            offset_value = tl.load(rf_frequency + event) - atom_b0
+            shape_value, shape_slope, shape_curve = _lineshape_at_curve(
+                lineshape, offset_value, lineshape_bins, lineshape_step
+            )
+            shape_tangent = shape_slope * -d_b0
+            slope_tangent = shape_curve * -d_b0
+            event_saturation = tl.load(saturation + event)
+            power_value = event_saturation * alpha_value * alpha_value
+            power_tangent = (
+                event_saturation * 2.0 * alpha_value * alpha_tangent
+            )
+            absorbed_value = tl.exp(power_value * shape_value)
+            absorbed_tangent = absorbed_value * (
+                power_tangent * shape_value + power_value * shape_tangent
+            )
+            per_state_v, per_state_t = _dual_real_conj_mul(
+                bbvr, bbvi, bbtr, bbti, rbvr, rbvi, rbtr, rbti
+            )
+            grad_absorbed_v = tl.sum(per_state_v, axis=1)[:, None]
+            grad_absorbed_t = tl.sum(per_state_t, axis=1)[:, None]
+            grad_exponent_v = grad_absorbed_v * absorbed_value
+            grad_exponent_t = (
+                grad_absorbed_t * absorbed_value
+                + grad_absorbed_v * absorbed_tangent
+            )
+            twice = event_saturation * 2.0
+            sat_alpha_v = grad_exponent_v * (twice * alpha_value * shape_value)
+            sat_alpha_t = grad_exponent_t * (
+                twice * alpha_value * shape_value
+            ) + grad_exponent_v * twice * (
+                alpha_tangent * shape_value + alpha_value * shape_tangent
+            )
+            # The lineshape is read at the pulse's offset from the voxel, so a
+            # step in the voxel's own off-resonance moves the read the other
+            # way.
+            sat_b0_v = -grad_exponent_v * (power_value * shape_slope)
+            sat_b0_t = -(
+                grad_exponent_t * (power_value * shape_slope)
+                + grad_exponent_v * (
+                    power_tangent * shape_slope + power_value * slope_tangent
+                )
+            )
+            damped = _dual_scale(
+                absorbed_value, absorbed_tangent, bbvr, bbvi, bbtr, bbti
+            )
+            saturating = is_rf & ~is_inversion
+            bbvr = tl.where(saturating, damped[0], bbvr)
+            bbvi = tl.where(saturating, damped[1], bbvi)
+            bbtr = tl.where(saturating, damped[2], bbtr)
+            bbti = tl.where(saturating, damped[3], bbti)
         cos_value = tl.cos(alpha_value)
         sin_value = tl.sin(alpha_value)
         cos_tangent = -sin_value * alpha_tangent
@@ -1730,6 +2251,12 @@ def _epg_vjp_jvp_kernel(
         grad_alpha_t = tl.sum(tl.where(rotate, alpha_t, 0.0), axis=1)[:, None]
         grad_phi_v = tl.sum(tl.where(rotate, phi_v, 0.0), axis=1)[:, None]
         grad_phi_t = tl.sum(tl.where(rotate, phi_t, 0.0), axis=1)[:, None]
+        if lineshape_bins > 0:
+            turning = tl.where(rotate, 1.0, 0.0)
+            grad_alpha_v += sat_alpha_v * turning
+            grad_alpha_t += sat_alpha_t * turning
+            g_b0v += sat_b0_v * turning
+            g_b0t += sat_b0_t * turning
 
         # Conjugate transpose of the rotation.
         n0 = _dual_mul(t00[0], -t00[1], t00[2], -t00[3], pbvr, pbvi, pbtr, pbti)
@@ -1866,27 +2393,161 @@ def _epg_vjp_jvp_kernel(
         grad_angle_v = tl.sum(per_angle_v, axis=1)[:, None]
         grad_angle_t = tl.sum(per_angle_t, axis=1)[:, None]
 
-        spun = _dual_mul(szr, szi, sztr, szti, xzvr, xzvi, xztr, xzti)
-        e1_v, e1_t = _dual_real_conj_mul(
-            zbvr, zbvi, zbtr, zbti, spun[0], spun[1], spun[2], spun[3]
-        )
-        grad_e1_v = tl.sum(e1_v * damp_z, axis=1)[:, None]
-        grad_e1_t = tl.sum(e1_v * damp_z_tangent + e1_t * damp_z, axis=1)[:, None]
-        grad_e1_v -= tl.sum(tl.where(state == 0, zbvr, 0.0), axis=1)[:, None]
-        grad_e1_t -= tl.sum(tl.where(state == 0, zbtr, 0.0), axis=1)[:, None]
+        grad_e1_v = zero
+        grad_e1_t = zero
+        attenuation_v = zero
+        attenuation_t = zero
+        two_pool_dt_v = zero
+        two_pool_dt_t = zero
+        if lineshape_bins > 0:
+            # The four entries of the exchange operator and the two recoveries,
+            # summed over the orders that share them, then pushed back through
+            # the closed form once for the whole interval.
+            free_bar = (zbvr, zbvi, zbtr, zbti)
+            bound_bar = (bbvr, bbvi, bbtr, bbti)
+            spun_free = _dual_mul(spin[0], spin[1], spin[2], spin[3],
+                                  xzvr, xzvi, xztr, xzti)
+            spun_bound = _dual_mul(spin[0], spin[1], spin[2], spin[3],
+                                   xbvr, xbvi, xbtr, xbti)
+            e11_v, e11_t = _dual_real_conj_mul(*free_bar, *spun_free)
+            e12_v, e12_t = _dual_real_conj_mul(*free_bar, *spun_bound)
+            e21_v, e21_t = _dual_real_conj_mul(*bound_bar, *spun_free)
+            e22_v, e22_t = _dual_real_conj_mul(*bound_bar, *spun_bound)
+            bar_e11_v = tl.sum(e11_v, axis=1)[:, None]
+            bar_e11_t = tl.sum(e11_t, axis=1)[:, None]
+            bar_e12_v = tl.sum(e12_v, axis=1)[:, None]
+            bar_e12_t = tl.sum(e12_t, axis=1)[:, None]
+            bar_e21_v = tl.sum(e21_v, axis=1)[:, None]
+            bar_e21_t = tl.sum(e21_t, axis=1)[:, None]
+            bar_e22_v = tl.sum(e22_v, axis=1)[:, None]
+            bar_e22_t = tl.sum(e22_t, axis=1)[:, None]
+            rec_f_v = tl.sum(tl.where(state == 0, zbvr, 0.0), axis=1)[:, None]
+            rec_f_t = tl.sum(tl.where(state == 0, zbtr, 0.0), axis=1)[:, None]
+            rec_b_v = tl.sum(tl.where(state == 0, bbvr, 0.0), axis=1)[:, None]
+            rec_b_t = tl.sum(tl.where(state == 0, bbtr, 0.0), axis=1)[:, None]
+            (
+                back_r1_v, back_r1b_v, back_exch_v, back_bound_v, back_dt_v,
+                back_att_v,
+                back_r1_t, back_r1b_t, back_exch_t, back_bound_t, back_dt_t,
+                back_att_t,
+            ) = _two_pool_step_adjoint_jvp(
+                r1_value, r1_tangent, r1b_value, r1b_tangent,
+                atom_exchange, d_exchange, atom_bound, d_boundf,
+                dt_value, dt_tangent, wout_value, wout_tangent,
+                bar_e11_v, bar_e11_t, bar_e12_v, bar_e12_t,
+                bar_e21_v, bar_e21_t, bar_e22_v, bar_e22_t,
+                rec_f_v, rec_f_t, rec_b_v, rec_b_t,
+            )
+            # r1 = 1000/t1, so a rate gradient reaches the time through the
+            # square of it.
+            slope1_v = -1000.0 / (atom_t1 * atom_t1)
+            slope1_t = 2000.0 * d_t1 / (atom_t1 * atom_t1 * atom_t1)
+            slope1b_v = -1000.0 / (atom_t1b * atom_t1b)
+            slope1b_t = 2000.0 * d_t1b / (atom_t1b * atom_t1b * atom_t1b)
+            g_t1v += back_r1_v * slope1_v
+            g_t1t += back_r1_t * slope1_v + back_r1_v * slope1_t
+            g_t1bv += back_r1b_v * slope1b_v
+            g_t1bt += back_r1b_t * slope1b_v + back_r1b_v * slope1b_t
+            g_exchv += back_exch_v
+            g_excht += back_exch_t
+            g_boundv += back_bound_v
+            g_boundt += back_bound_t
+            attenuation_v = back_att_v
+            attenuation_t = back_att_t
+            two_pool_dt_v = back_dt_v
+            two_pool_dt_t = back_dt_t
+            # Both pools take the same per-order damping and turn, so each
+            # collects the cotangent of the mixture that reached it.
+            damp_pair_v, damp_pair_t = _dual_real_conj_mul(*free_bar, *_dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_free
+            ))
+            other_v, other_t = _dual_real_conj_mul(*bound_bar, *_dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_bound
+            ))
+            long_damp_v = damp_pair_v + other_v
+            long_damp_t = damp_pair_t + other_t
+            spun_mix_free = _dual_times_i(*_dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_free
+            ))
+            spun_mix_bound = _dual_times_i(*_dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_bound
+            ))
+            zangle_v, zangle_t = _dual_real_conj_mul(*free_bar, *spun_mix_free)
+            part_v, part_t = _dual_real_conj_mul(*bound_bar, *spun_mix_bound)
+            zangle_v += part_v
+            zangle_t += part_t
+            back_z = _dual_mul(
+                pe11 * spin[0], -(pe11 * spin[1]),
+                de11 * spin[0] + pe11 * spin[2],
+                -(de11 * spin[1] + pe11 * spin[3]),
+                *free_bar,
+            )
+            cross_z = _dual_mul(
+                pe21 * spin[0], -(pe21 * spin[1]),
+                de21 * spin[0] + pe21 * spin[2],
+                -(de21 * spin[1] + pe21 * spin[3]),
+                *bound_bar,
+            )
+            back_b = _dual_mul(
+                pe12 * spin[0], -(pe12 * spin[1]),
+                de12 * spin[0] + pe12 * spin[2],
+                -(de12 * spin[1] + pe12 * spin[3]),
+                *free_bar,
+            )
+            cross_b = _dual_mul(
+                pe22 * spin[0], -(pe22 * spin[1]),
+                de22 * spin[0] + pe22 * spin[2],
+                -(de22 * spin[1] + pe22 * spin[3]),
+                *bound_bar,
+            )
+            next_zbvr = back_z[0] + cross_z[0]
+            next_zbvi = back_z[1] + cross_z[1]
+            next_zbtr = back_z[2] + cross_z[2]
+            next_zbti = back_z[3] + cross_z[3]
+            bbvr = back_b[0] + cross_b[0]
+            bbvi = back_b[1] + cross_b[1]
+            bbtr = back_b[2] + cross_b[2]
+            bbti = back_b[3] + cross_b[3]
+            zbvr = next_zbvr
+            zbvi = next_zbvi
+            zbtr = next_zbtr
+            zbti = next_zbti
+        else:
+            spun = _dual_mul(szr, szi, sztr, szti, xzvr, xzvi, xztr, xzti)
+            e1_v, e1_t = _dual_real_conj_mul(
+                zbvr, zbvi, zbtr, zbti, spun[0], spun[1], spun[2], spun[3]
+            )
+            grad_e1_v = tl.sum(e1_v * damp_z, axis=1)[:, None]
+            grad_e1_t = tl.sum(
+                e1_v * damp_z_tangent + e1_t * damp_z, axis=1
+            )[:, None]
+            grad_e1_v -= tl.sum(tl.where(state == 0, zbvr, 0.0), axis=1)[:, None]
+            grad_e1_t -= tl.sum(tl.where(state == 0, zbtr, 0.0), axis=1)[:, None]
+            long_damp_v = e1_v * bare1_value * damp_z
+            long_damp_t = (
+                e1_t * bare1_value * damp_z
+                + e1_v * bare1_tangent * damp_z
+                + e1_v * bare1_value * damp_z_tangent
+            )
+            # The longitudinal states turn too, and by a whole order rather
+            # than the transverse half-order more.
+            zo = _dual_mul(lvr, lvi, ltr, lti, xzvr, xzvi, xztr, xzti)
+            zo = _dual_times_i(zo[0], zo[1], zo[2], zo[3])
+            zangle_v, zangle_t = _dual_real_conj_mul(
+                zbvr, zbvi, zbtr, zbti, zo[0], zo[1], zo[2], zo[3]
+            )
+            zbvr, zbvi, zbtr, zbti = _dual_mul(
+                lvr, -lvi, ltr, -lti, zbvr, zbvi, zbtr, zbti
+            )
 
         # The rate and the interval multiply every order's b-weight, so both
         # take a weighted sum rather than one scalar. Order zero carries no
         # longitudinal weight, which keeps recovery out of this.
         weighted_v = (
-            e1_v * bare1_value * damp_z * longitudinal_weight
+            long_damp_v * longitudinal_weight
             + cot2_v * bare2_value * damp_t * transverse_weight
         )
-        weighted_t = (
-            e1_t * bare1_value * damp_z
-            + e1_v * bare1_tangent * damp_z
-            + e1_v * bare1_value * damp_z_tangent
-        ) * longitudinal_weight + (
+        weighted_t = long_damp_t * longitudinal_weight + (
             cot2_t * bare2_value * damp_t
             + cot2_v * bare2_tangent * damp_t
             + cot2_v * bare2_value * damp_t_tangent
@@ -1896,13 +2557,6 @@ def _epg_vjp_jvp_kernel(
         g_diffv += -spread_v * dt_value
         g_difft += -(spread_v * dt_tangent + spread_t * dt_value)
 
-        # The longitudinal states turn too, and by a whole order rather than
-        # the transverse half-order more.
-        zo = _dual_mul(lvr, lvi, ltr, lti, xzvr, xzvi, xztr, xzti)
-        zo = _dual_times_i(zo[0], zo[1], zo[2], zo[3])
-        zangle_v, zangle_t = _dual_real_conj_mul(
-            zbvr, zbvi, zbtr, zbti, zo[0], zo[1], zo[2], zo[3]
-        )
         wound_v = tl.sum(
             per_angle_v * (order + 0.5) + zangle_v * order, axis=1
         )[:, None]
@@ -1917,10 +2571,13 @@ def _epg_vjp_jvp_kernel(
         # Past the clamp the interval has replaced the voxel outright and
         # nothing further depends on the rate.
         washing = (atom_washout * dt_value < 1.0).to(tl.float32)
-        wash_v = -washing * (grad_e1_v * dry1_value + grad_e2_v * dry2_value)
+        wash_v = -washing * (
+            grad_e1_v * dry1_value + grad_e2_v * dry2_value + attenuation_v
+        )
         wash_t = -washing * (
             grad_e1_v * dry1_tangent + grad_e1_t * dry1_value
             + grad_e2_v * dry2_tangent + grad_e2_t * dry2_value
+            + attenuation_t
         )
         g_washv += wash_v * dt_value
         g_washt += wash_v * dt_tangent + wash_t * dt_value
@@ -1930,9 +2587,6 @@ def _epg_vjp_jvp_kernel(
         )
         mbvr, mbvi, mbtr, mbti = _dual_mul(
             ovr, ovi, otr, oti, mbvr, mbvi, mbtr, mbti
-        )
-        zbvr, zbvi, zbtr, zbti = _dual_mul(
-            lvr, -lvi, ltr, -lti, zbvr, zbvi, zbtr, zbti
         )
 
         inverse1_value = 1000.0 / (atom_t1 * atom_t1)
@@ -1965,10 +2619,11 @@ def _epg_vjp_jvp_kernel(
             r2_value * bare2_tangent + r2_tangent * bare2_value
         )
         duration_v = -grad_e1_v * decay1_value - grad_e2_v * decay2_value
-        duration_v += grad_angle_v * (turn * atom_b0)
+        duration_v += grad_angle_v * (turn * atom_b0) + two_pool_dt_v
         duration_t = -(grad_e1_v * decay1_tangent + grad_e1_t * decay1_value)
         duration_t -= grad_e2_v * decay2_tangent + grad_e2_t * decay2_value
         duration_t += grad_angle_v * (turn * d_b0) + grad_angle_t * (turn * atom_b0)
+        duration_t += two_pool_dt_t
         duration_v += -spread_v * atom_damping - wound_v * atom_flow
         duration_t += -(spread_v * d_damping + spread_t * atom_damping)
         duration_t += -(wound_v * d_flow + wound_t * atom_flow)
@@ -1983,6 +2638,45 @@ def _epg_vjp_jvp_kernel(
 
     velocity_v = g_flowv * flow_scale + g_washv * direction * washout_scale
     velocity_t = g_flowt * flow_scale + g_washt * direction * washout_scale
+    if lineshape_bins > 0:
+        # The fraction also sets where each pool starts, which the walk back
+        # reaches last.
+        g_boundv += tl.sum(
+            tl.where(state == 0, bbvr - zbvr, 0.0), axis=1
+        )[:, None]
+        g_boundt += tl.sum(
+            tl.where(state == 0, bbtr - zbtr, 0.0), axis=1
+        )[:, None]
+        tl.atomic_add(
+            grad_tissue_value + (_BOUND_ROW + 2 * (shims - 1)) * atom_count + atom,
+            g_boundv,
+            mask=active_atom,
+        )
+        tl.atomic_add(
+            grad_tissue_tangent + (_BOUND_ROW + 2 * (shims - 1)) * atom_count + atom,
+            g_boundt,
+            mask=active_atom,
+        )
+        tl.atomic_add(
+            grad_tissue_value + ((_BOUND_ROW + 2 * (shims - 1)) + 1) * atom_count + atom,
+            g_exchv,
+            mask=active_atom,
+        )
+        tl.atomic_add(
+            grad_tissue_tangent + ((_BOUND_ROW + 2 * (shims - 1)) + 1) * atom_count + atom,
+            g_excht,
+            mask=active_atom,
+        )
+        tl.atomic_add(
+            grad_tissue_value + ((_BOUND_ROW + 2 * (shims - 1)) + 2) * atom_count + atom,
+            g_t1bv,
+            mask=active_atom,
+        )
+        tl.atomic_add(
+            grad_tissue_tangent + ((_BOUND_ROW + 2 * (shims - 1)) + 2) * atom_count + atom,
+            g_t1bt,
+            mask=active_atom,
+        )
     values = (
         g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv, velocity_v,
     )
@@ -3268,9 +3962,9 @@ def _epg_jvp_kernel(
     inversion_efficiency,
     diffusion,
     velocity,
-    # The bound pool's three. These kernels carry one pool; the pointers hold
-    # the ABI's shape and the dispatch refuses a bound pool rather than
-    # answering with the single-pool derivative.
+    # The bound pool's three. A bound pool is outside the real subspace this
+    # kernel stands for, so the dispatch never sends one here; the pointers
+    # hold the ABI's shape.
     bound_fraction,
     exchange_rate,
     t1_bound,
@@ -4250,10 +4944,10 @@ _TRAJECTORY_BUDGET_BYTES = 256 << 20
 
 
 def _trajectory_wave(
-    event_count: int, state_count: int, total: int, planes: int
+    event_count: int, state_count: int, total: int, planes: int, blocks: int = 3
 ) -> int:
     """How many problems can record their trajectory in one launch."""
-    per_problem = event_count * 3 * state_count * planes * 4
+    per_problem = event_count * blocks * state_count * planes * 4
     return max(1, min(total, _TRAJECTORY_BUDGET_BYTES // max(1, per_problem)))
 
 
@@ -4277,6 +4971,7 @@ class AdjointBuffers:
         output_count: int,
         real_axis: int | None = None,
         shims: int = 1,
+        pools: int = 1,
     ) -> None:
         (
             duration, kind, flip, phase, _action, _output_index, _shim,
@@ -4286,6 +4981,10 @@ class AdjointBuffers:
         train_count = _train_count(events)
         event_count = kind.numel()
         self.planes = 2 if real_axis == 1 else 4
+        # A bound pool records a fourth block of states per event: the RF
+        # operator scales it, so the reverse sweep cannot replay it from the
+        # free pool's.
+        self.blocks = 3 + (pools - 1)
         self.chunk = chunk
         self.shims = shims
         self.rows = tissue_gradient_height(shims)
@@ -4310,11 +5009,12 @@ class AdjointBuffers:
             for _ in range(2)
         ]
         self.wave = _trajectory_wave(
-            event_count, state_count, train_count * chunk, self.planes
+            event_count, state_count, train_count * chunk, self.planes,
+            self.blocks,
         )
         self.trajectory = [
             torch.empty(
-                (self.wave, event_count * 3 * state_count),
+                (self.wave, event_count * self.blocks * state_count),
                 dtype=torch.float32,
                 device=device,
             )
@@ -4368,6 +5068,7 @@ def simulate_vjp_jvp_into(
     atom_count: int,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], ...]:
     """Forward-over-reverse for one chunk of voxels, into caller-owned buffers.
 
@@ -4407,6 +5108,7 @@ def simulate_vjp_jvp_into(
     trajectory, scratch = buffers.trajectory, buffers.scratch
     table = None if profile is None else profile.packed(t1.device)
     table_rows = None if profile is None else profile.rows(kind.device)
+    absorption = None if lineshape is None else lineshape.packed(t1.device)
 
     wave = buffers.wave
     problems = _problems_per_program(wave, block_states)
@@ -4460,6 +5162,7 @@ def simulate_vjp_jvp_into(
                 *events,
                 t1 if table is None else table,
                 kind if table_rows is None else table_rows,
+                t1 if absorption is None else absorption,
                 *tangents,
                 grad_real,
                 grad_imag,
@@ -4478,9 +5181,11 @@ def simulate_vjp_jvp_into(
                 geometry.flow_scale,
                 geometry.washout_scale,
                 1.0 if profile is None else profile.step,
+                1.0 if lineshape is None else lineshape.step,
                 shims=_shim_count(tissue),
                 locations=1 if profile is None else profile.points,
                 profile_bins=0 if profile is None else profile.bins,
+                lineshape_bins=0 if lineshape is None else lineshape.bins,
                 **shape,
             )
 
@@ -4499,18 +5204,19 @@ def simulate_vjp_jvp(
     real_axis: int | None = None,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse through the state machine on CUDA.
 
-    ``tangents`` follows the differentiable-input order ``(t1, t2, m0, b1,
-    b1_phase, b0, inversion_efficiency, duration, flip, phase)``, and the two
-    returned tuples -- gradients with respect to the primal inputs, then to the
-    tangent inputs -- follow it too.
+    ``tangents`` follows the differentiable-input order -- every tissue
+    property, then event duration, flip and phase -- and the two returned
+    tuples, gradients with respect to the primal inputs then to the tangent
+    inputs, follow it too.
 
     ``real_axis`` of 1 selects the real-subspace adjoint. That representation
     divides the RF phase out, so it leaves ``b1_phase``, ``b0`` and ``phase`` at
-    zero and callers must not ask for those; the complex adjoint produces all
-    ten.
+    zero and callers must not ask for those; the complex adjoint produces every
+    one of them.
 
     Gradients land through atomic accumulation, so repeated runs agree to
     floating-point tolerance rather than bit for bit.
@@ -4523,6 +5229,7 @@ def simulate_vjp_jvp(
         output_count=output_count,
         real_axis=real_axis,
         shims=_shim_count(tissue),
+        pools=1 if lineshape is None else 2,
     )
     voxel_grads = simulate_vjp_jvp_into(
         tissue,
@@ -4536,6 +5243,7 @@ def simulate_vjp_jvp(
         atom_count=atom_count,
         geometry=geometry,
         profile=profile,
+        lineshape=lineshape,
     )
     return tuple(
         (*voxels, *per_event)

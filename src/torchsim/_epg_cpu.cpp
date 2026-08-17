@@ -307,10 +307,8 @@ struct JvpBuffers {
     const float* inversion_efficiency;
     const float* diffusion;
     const float* velocity;
-    // The bound pool's three properties. The derivative kernels carry one
-    // pool, so nothing reads or writes these; they hold the ABI's shape, and
-    // the dispatch refuses a bound pool rather than answering with the
-    // single-pool derivative.
+    // The bound pool's three properties. A single-pool run has no direction
+    // to follow along them, and the kernel it selects does not read them.
     const float* bound_fraction;
     const float* exchange_rate;
     const float* t1_bound;
@@ -673,6 +671,137 @@ inline TwoPoolStep<Scalar> two_pool_step(
     return step;
 }
 
+// What a cotangent on the two-pool step leaves on the six numbers it was
+// formed from.
+template <typename Scalar>
+struct TwoPoolGradient {
+    Scalar r1_free;
+    Scalar r1_bound;
+    Scalar exchange;
+    Scalar bound;
+    Scalar dt;
+    Scalar attenuation;
+};
+
+// The reverse sweep of ``two_pool_step``, which recomputes the forward rather
+// than carrying it across the event: the whole thing is a handful of
+// transcendentals once per interval, against a state loop that runs per
+// dephasing order.
+//
+// Where the discriminant is small the value is still formed from the two
+// eigenvalues -- a sum, which loses nothing -- but the derivative is taken from
+// the series, because ``d cosh(d)/d(d^2)`` reached through ``(e^{t+d} -
+// e^{t-d})/2d`` is a cancellation divided by a small number.
+template <typename Scalar>
+inline TwoPoolGradient<Scalar> two_pool_step_adjoint(
+    const Scalar r1_free,
+    const Scalar r1_bound,
+    const Scalar exchange,
+    const Scalar bound,
+    const Scalar dt,
+    const Scalar attenuation,
+    const Scalar bar_e11,
+    const Scalar bar_e12,
+    const Scalar bar_e21,
+    const Scalar bar_e22,
+    const Scalar bar_recovery_free,
+    const Scalar bar_recovery_bound
+) {
+    const Scalar free = Scalar{1.0F} - bound;
+    const Scalar kab = exchange * bound;
+    const Scalar kba = exchange * free;
+    const Scalar l11 = (Scalar{} - kab - r1_free) * dt;
+    const Scalar l12 = kba * dt;
+    const Scalar l21 = kab * dt;
+    const Scalar l22 = (Scalar{} - kba - r1_bound) * dt;
+
+    const Scalar half_trace = 0.5F * (l11 + l22);
+    const Scalar half_gap = 0.5F * (l11 - l22);
+    const Scalar square = half_gap * half_gap + l12 * l21;
+    const bool series = !(primal(square) > 1e-12F);
+    const Scalar delta = root(square);
+    const Scalar upper = exponential(half_trace + delta);
+    const Scalar lower = exponential(half_trace - delta);
+    const Scalar plain = exponential(half_trace);
+    const Scalar cosine = 0.5F * (upper + lower);
+    const Scalar scale = series
+        ? plain
+            * (Scalar{1.0F} + (1.0F / 6.0F) * square
+               + (1.0F / 120.0F) * (square * square))
+        : 0.5F * (upper - lower) * reciprocal(delta);
+
+    const Scalar bare_11 = cosine + scale * half_gap;
+    const Scalar bare_12 = scale * l12;
+    const Scalar bare_21 = scale * l21;
+    const Scalar bare_22 = cosine - scale * half_gap;
+
+    // The recovery reaches the operator's four entries and the two fractions.
+    const Scalar carried_11 = bar_e11 - bar_recovery_free * free;
+    const Scalar carried_12 = bar_e12 - bar_recovery_free * bound;
+    const Scalar carried_21 = bar_e21 - bar_recovery_bound * free;
+    const Scalar carried_22 = bar_e22 - bar_recovery_bound * bound;
+    Scalar bar_free = bar_recovery_free * (Scalar{1.0F} - attenuation * bare_11)
+        - bar_recovery_bound * (attenuation * bare_21);
+    Scalar bar_bound = bar_recovery_bound * (Scalar{1.0F} - attenuation * bare_22)
+        - bar_recovery_free * (attenuation * bare_12);
+
+    const Scalar bar_attenuation = carried_11 * bare_11 + carried_12 * bare_12
+        + carried_21 * bare_21 + carried_22 * bare_22;
+    const Scalar scaled_11 = attenuation * carried_11;
+    const Scalar scaled_12 = attenuation * carried_12;
+    const Scalar scaled_21 = attenuation * carried_21;
+    const Scalar scaled_22 = attenuation * carried_22;
+
+    const Scalar bar_cosine = scaled_11 + scaled_22;
+    const Scalar bar_scale = (scaled_11 - scaled_22) * half_gap
+        + scaled_12 * l12 + scaled_21 * l21;
+    Scalar bar_half_gap = scale * (scaled_11 - scaled_22);
+    Scalar bar_l12 = scale * scaled_12;
+    Scalar bar_l21 = scale * scaled_21;
+
+    Scalar bar_half_trace{};
+    Scalar bar_square{};
+    if (series) {
+        bar_half_trace = bar_cosine * cosine + bar_scale * scale;
+        bar_square = plain
+            * (bar_cosine * (Scalar{0.5F} + (1.0F / 12.0F) * square)
+               + bar_scale * (Scalar{1.0F / 6.0F} + (1.0F / 60.0F) * square));
+    } else {
+        const Scalar inverse = reciprocal(delta);
+        const Scalar bar_upper = 0.5F * (bar_cosine + bar_scale * inverse);
+        const Scalar bar_lower = 0.5F * (bar_cosine - bar_scale * inverse);
+        bar_half_trace = bar_upper * upper + bar_lower * lower;
+        const Scalar bar_delta = bar_upper * upper - bar_lower * lower
+            - bar_scale * scale * inverse;
+        bar_square = 0.5F * bar_delta * inverse;
+    }
+
+    bar_half_gap = bar_half_gap + 2.0F * bar_square * half_gap;
+    bar_l12 = bar_l12 + bar_square * l21;
+    bar_l21 = bar_l21 + bar_square * l12;
+
+    const Scalar bar_l11 = 0.5F * (bar_half_trace + bar_half_gap);
+    const Scalar bar_l22 = 0.5F * (bar_half_trace - bar_half_gap);
+
+    const Scalar bar_kab = (bar_l21 - bar_l11) * dt;
+    const Scalar bar_kba = (bar_l12 - bar_l22) * dt;
+    const Scalar bar_dt = bar_l11 * (Scalar{} - kab - r1_free)
+        + bar_l12 * kba + bar_l21 * kab
+        + bar_l22 * (Scalar{} - kba - r1_bound);
+
+    bar_bound = bar_bound + bar_kab * exchange;
+    bar_free = bar_free + bar_kba * exchange;
+
+    TwoPoolGradient<Scalar> gradient{};
+    gradient.r1_free = Scalar{} - bar_l11 * dt;
+    gradient.r1_bound = Scalar{} - bar_l22 * dt;
+    gradient.exchange = bar_kab * bound + bar_kba * free;
+    gradient.bound = bar_bound - bar_free;
+    gradient.dt = bar_dt;
+    gradient.attenuation = bar_attenuation;
+    return gradient;
+}
+
 // How well the bound pool absorbs a pulse this far off its resonance, by the
 // same cubic Hermite the transition table is read with. Taken in magnitude,
 // the lineshape being even, and clamped at the far end: a pulse driven past
@@ -726,6 +855,73 @@ inline void lineshape_at_slope(
         + (-6.0F * u2 + 6.0F * u) * near[2] / step
         + (3.0F * u2 - 2.0F * u) * near[3]
     );
+}
+
+// The lineshape, its slope and its curvature, for a pass that differentiates
+// the slope in turn. The table covers the magnitude, so the slope changes sign
+// with the offset and the curvature does not: an even function's second
+// derivative is even.
+inline void lineshape_at_curve(
+    const Buffers& buffers,
+    const float offset_hz,
+    float& value,
+    float& slope,
+    float& curve
+) {
+    const float last = static_cast<float>(buffers.lineshape_bins - 1);
+    const float magnitude = std::fabs(offset_hz) / buffers.lineshape_step;
+    const float scaled = std::min(magnitude, last);
+    const float lower = std::min(std::floor(scaled), last - 1.0F);
+    const float u = scaled - lower;
+    const float* const near = buffers.lineshape
+        + static_cast<std::int64_t>(lower) * LINESHAPE_STRIDE;
+    const float u2 = u * u;
+    const float u3 = u2 * u;
+    const float step = buffers.lineshape_step;
+    value = (2.0F * u3 - 3.0F * u2 + 1.0F) * near[0]
+        + (u3 - 2.0F * u2 + u) * step * near[1]
+        + (-2.0F * u3 + 3.0F * u2) * near[2]
+        + (u3 - u2) * step * near[3];
+    if (magnitude > last) {
+        slope = 0.0F;
+        curve = 0.0F;
+        return;
+    }
+    const float direction = offset_hz < 0.0F ? -1.0F : 1.0F;
+    slope = direction * (
+        (6.0F * u2 - 6.0F * u) * near[0] / step
+        + (3.0F * u2 - 4.0F * u + 1.0F) * near[1]
+        + (-6.0F * u2 + 6.0F * u) * near[2] / step
+        + (3.0F * u2 - 2.0F * u) * near[3]
+    );
+    curve = (12.0F * u - 6.0F) * near[0] / (step * step)
+        + (6.0F * u - 4.0F) * near[1] / step
+        + (-12.0F * u + 6.0F) * near[2] / (step * step)
+        + (6.0F * u - 2.0F) * near[3] / step;
+}
+
+// The lineshape read along a direction in the offset.
+inline DualFloat lineshape_at(const Buffers& buffers, const DualFloat offset_hz) {
+    float value = 0.0F;
+    float slope = 0.0F;
+    lineshape_at_slope(buffers, offset_hz.value, value, slope);
+    return DualFloat{value, slope * offset_hz.tangent};
+}
+
+// The lineshape and its slope, both carried along a direction in the offset:
+// what a pass that differentiates the adjoint needs from the table.
+inline void lineshape_at_slope(
+    const Buffers& buffers,
+    const DualFloat offset_hz,
+    DualFloat& value,
+    DualFloat& slope
+) {
+    float shape = 0.0F;
+    float first = 0.0F;
+    float second = 0.0F;
+    lineshape_at_curve(buffers, offset_hz.value, shape, first, second);
+    value = DualFloat{shape, first * offset_hz.tangent};
+    slope = DualFloat{first, second * offset_hz.tangent};
 }
 
 // Where an event's pulse reads the transmit field. Templated rather than
@@ -1134,11 +1330,11 @@ inline void rotate(
     }
 }
 
+// Inlined into the vector clones below rather than called from them: a
+// clone is a copy of the caller, so a body reached through a call is
+// compiled once for the baseline instruction set and no more.
 template <bool SHIMMED, bool PROFILED, bool MT>
-#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-__attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
-#endif
-void simulate_jvp_range(
+__attribute__((always_inline)) inline void simulate_jvp_range(
     const JvpBuffers& buffers,
     const std::int64_t work_begin,
     const std::int64_t work_end,
@@ -2550,10 +2746,9 @@ struct VjpBuffers {
     float* grad_inversion_efficiency;
     float* grad_diffusion;
     float* grad_velocity;
-    // The bound pool's three properties. The derivative kernels carry one
-    // pool, so nothing reads or writes these; they hold the ABI's shape, and
-    // the dispatch refuses a bound pool rather than answering with the
-    // single-pool derivative.
+    // The bound pool's three properties. A single-pool run leaves them at
+    // zero, which is the true gradient: the kernel it selects does not take
+    // them as arguments.
     float* grad_bound_fraction;
     float* grad_exchange_rate;
     float* grad_t1_bound;
@@ -2765,11 +2960,11 @@ inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
     }
 }
 
-template <bool SHIMMED, bool PROFILED>
-#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-__attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
-#endif
-void simulate_vjp_range(
+// Inlined into the vector clones below rather than called from them: a
+// clone is a copy of the caller, so a body reached through a call is
+// compiled once for the baseline instruction set and no more.
+template <bool SHIMMED, bool PROFILED, bool MT>
+__attribute__((always_inline)) inline void simulate_vjp_range(
     const VjpBuffers& buffers,
     const std::int64_t work_begin,
     const std::int64_t work_end,
@@ -2788,7 +2983,10 @@ void simulate_vjp_range(
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
     const std::size_t states = static_cast<std::size_t>(state_count);
-    const std::size_t trajectory_stride = 3U * states;
+    // The bound pool rides along the trajectory as a fourth block of states: it
+    // enters an event as its own vector and the RF operator scales it, so the
+    // reverse sweep cannot replay it from the free pool's.
+    const std::size_t trajectory_stride = (MT ? 4U : 3U) * states;
 
     // State at the start of every event; intra-event intermediates are cheap
     // enough to replay from it during the reverse sweep.
@@ -2807,6 +3005,9 @@ void simulate_vjp_range(
     State fplus_shifted(states);
     State fminus_shifted(states);
     State longitudinal_pre(states);
+    State bound(MT ? states : 0U);
+    State bound_bar(MT ? states : 0U);
+    State bound_relaxed(MT ? states : 0U);
     Damping<float> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -2819,12 +3020,20 @@ void simulate_vjp_range(
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
-        longitudinal[0] = Complex(1.0F, 0.0F);
+        const float bound_fraction = MT ? primal.bound_fraction[atom] : 0.0F;
+        longitudinal[0] = Complex(1.0F - bound_fraction, 0.0F);
+        if constexpr (MT) {
+            std::fill(bound.begin(), bound.end(), Complex{});
+            bound[0] = Complex(bound_fraction, 0.0F);
+        }
 
         const float t1 = primal.t1[atom];
         const float t2 = primal.t2[atom];
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
+        const float t1_bound = MT ? primal.t1_bound[atom] : 0.0F;
+        const float r1_bound = MT ? 1000.0F / t1_bound : 0.0F;
+        const float exchange = MT ? primal.exchange_rate[atom] : 0.0F;
         const float b0 = primal.b0[atom];
         const float m0 = primal.m0[atom];
         // With one shim the transmit field is a property of the voxel and
@@ -2845,12 +3054,18 @@ void simulate_vjp_range(
             std::copy(fplus.begin(), fplus.end(), slot);
             std::copy(fminus.begin(), fminus.end(), slot + states);
             std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
+            if constexpr (MT) {
+                std::copy(bound.begin(), bound.end(), slot + 3U * states);
+            }
 
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
             const float wout = washout_out(washout_rate, dt);
             const float e1 = std::exp(-r1 * dt) * wout;
             const float e2 = std::exp(-r2 * dt) * wout;
+            const TwoPoolStep<float> pools = MT
+                ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
+                : TwoPoolStep<float>{};
             const float off_angle = -2.0F * PI * b0 * dt;
             for (std::size_t state = 0; state < states; ++state) {
                 float turn_longitudinal = 0.0F;
@@ -2861,11 +3076,26 @@ void simulate_vjp_range(
                 );
                 fplus[state] *= transverse;
                 fminus[state] *= std::conj(transverse);
-                longitudinal[state] *= std::polar(
-                    e1 * damping.longitudinal[state], turn_longitudinal
+                const Complex spin = std::polar(
+                    damping.longitudinal[state], turn_longitudinal
                 );
+                if constexpr (MT) {
+                    const Complex free_state = longitudinal[state];
+                    const Complex bound_state = bound[state];
+                    longitudinal[state] =
+                        (pools.e11 * free_state + pools.e12 * bound_state) * spin;
+                    bound[state] =
+                        (pools.e21 * free_state + pools.e22 * bound_state) * spin;
+                } else {
+                    longitudinal[state] *= e1 * spin;
+                }
             }
-            longitudinal[0] += Complex(1.0F - e1, 0.0F);
+            if constexpr (MT) {
+                longitudinal[0] += Complex(pools.recovery_free, 0.0F);
+                bound[0] += Complex(pools.recovery_bound, 0.0F);
+            } else {
+                longitudinal[0] += Complex(1.0F - e1, 0.0F);
+            }
 
             const std::uint8_t action = primal.action[event];
             if ((action & PRE_SHIFT) != 0) {
@@ -2883,6 +3113,17 @@ void simulate_vjp_range(
                         view.flip[event] * (SHIMMED ? primal.b1[transmit] : b1);
                     const float phi = view.phase[event]
                         + (SHIMMED ? primal.b1_phase[transmit] : b1_phase);
+                    if constexpr (MT) {
+                        const float absorbed = std::exp(
+                            primal.saturation[event] * alpha * alpha
+                            * lineshape_at(
+                                primal, primal.rf_frequency[event] - b0
+                            )
+                        );
+                        for (Complex& value : bound) {
+                            value *= absorbed;
+                        }
+                    }
                     if constexpr (PROFILED) {
                         Complex pair_a{};
                         Complex pair_b{};
@@ -2915,6 +3156,12 @@ void simulate_vjp_range(
         std::fill(fplus_bar.begin(), fplus_bar.end(), Complex{});
         std::fill(fminus_bar.begin(), fminus_bar.end(), Complex{});
         std::fill(longitudinal_bar.begin(), longitudinal_bar.end(), Complex{});
+        if constexpr (MT) {
+            std::fill(bound_bar.begin(), bound_bar.end(), Complex{});
+        }
+        float grad_t1_bound = 0.0F;
+        float grad_exchange = 0.0F;
+        float grad_bound_fraction = 0.0F;
         float grad_t1 = 0.0F;
         float grad_t2 = 0.0F;
         float grad_m0 = 0.0F;
@@ -2936,6 +3183,9 @@ void simulate_vjp_range(
             std::copy(slot, slot + states, fplus.begin());
             std::copy(slot + states, slot + 2U * states, fminus.begin());
             std::copy(slot + 2U * states, slot + 3U * states, longitudinal.begin());
+            if constexpr (MT) {
+                std::copy(slot + 3U * states, slot + 4U * states, bound.begin());
+            }
 
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
@@ -2944,6 +3194,9 @@ void simulate_vjp_range(
             const float wout = washout_out(washout_rate, dt);
             const float e1 = dry1 * wout;
             const float e2 = dry2 * wout;
+            const TwoPoolStep<float> pools = MT
+                ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
+                : TwoPoolStep<float>{};
             const float angle = -2.0F * PI * b0 * dt;
             const Complex phase = std::polar(1.0F, angle);
             const Complex off_resonance = e2 * phase;
@@ -2960,11 +3213,26 @@ void simulate_vjp_range(
                 );
                 fplus_relaxed[state] = fplus[state] * transverse;
                 fminus_relaxed[state] = fminus[state] * std::conj(transverse);
-                longitudinal_relaxed[state] = longitudinal[state] * std::polar(
-                    e1 * damping.longitudinal[state], turn_longitudinal
+                const Complex spin = std::polar(
+                    damping.longitudinal[state], turn_longitudinal
                 );
+                if constexpr (MT) {
+                    const Complex free_state = longitudinal[state];
+                    const Complex bound_state = bound[state];
+                    longitudinal_relaxed[state] =
+                        (pools.e11 * free_state + pools.e12 * bound_state) * spin;
+                    bound_relaxed[state] =
+                        (pools.e21 * free_state + pools.e22 * bound_state) * spin;
+                } else {
+                    longitudinal_relaxed[state] = longitudinal[state] * e1 * spin;
+                }
             }
-            longitudinal_relaxed[0] += Complex(1.0F - e1, 0.0F);
+            if constexpr (MT) {
+                longitudinal_relaxed[0] += Complex(pools.recovery_free, 0.0F);
+                bound_relaxed[0] += Complex(pools.recovery_bound, 0.0F);
+            } else {
+                longitudinal_relaxed[0] += Complex(1.0F - e1, 0.0F);
+            }
 
             fplus_shifted = fplus_relaxed;
             fminus_shifted = fminus_relaxed;
@@ -3037,6 +3305,33 @@ void simulate_vjp_range(
                     }
                     float grad_alpha = 0.0F;
                     float grad_phi = 0.0F;
+                    if constexpr (MT) {
+                        // The pulse scales every order of the bound pool by one
+                        // real number, so its cotangent is a single sum over the
+                        // states it multiplied.
+                        const float offset = primal.rf_frequency[event] - b0;
+                        float shape = 0.0F;
+                        float shape_slope = 0.0F;
+                        lineshape_at_slope(primal, offset, shape, shape_slope);
+                        const float exponent =
+                            primal.saturation[event] * alpha * alpha * shape;
+                        const float absorbed = std::exp(exponent);
+                        float grad_absorbed = 0.0F;
+                        for (std::size_t state = 0; state < states; ++state) {
+                            grad_absorbed += std::real(
+                                std::conj(bound_bar[state]) * bound_relaxed[state]
+                            );
+                            bound_bar[state] *= absorbed;
+                        }
+                        const float grad_exponent = grad_absorbed * absorbed;
+                        grad_alpha += grad_exponent * primal.saturation[event]
+                            * 2.0F * alpha * shape;
+                        // The lineshape is read at the pulse's offset from the
+                        // voxel, so a step in the voxel's own off-resonance
+                        // moves the read the other way.
+                        grad_b0 -= grad_exponent * primal.saturation[event]
+                            * alpha * alpha * shape_slope;
+                    }
                     if constexpr (PROFILED) {
                         Complex pair_a{};
                         Complex pair_b{};
@@ -3106,11 +3401,24 @@ void simulate_vjp_range(
             // Flow reaches each order through a turn of its own, so like the
             // b-factor it collects a weighted sum rather than a scalar one.
             float grad_turn = 0.0F;
+            // The four entries of the exchange operator and the two recoveries,
+            // summed over the orders that share them, then pushed back through
+            // the closed form once for the whole interval.
+            float grad_e11 = 0.0F;
+            float grad_e12 = 0.0F;
+            float grad_e21 = 0.0F;
+            float grad_e22 = 0.0F;
             const Complex imaginary(0.0F, 1.0F);
             // Z[0] also carries the affine recovery term (1 - e1), whose
             // derivative contributes -Re(adjoint) exactly once. Order zero is
             // undamped, so that term takes the bare factor.
-            grad_e1 -= std::real(longitudinal_bar[0]);
+            const float grad_recovery_free =
+                MT ? std::real(longitudinal_bar[0]) : 0.0F;
+            const float grad_recovery_bound =
+                MT ? std::real(bound_bar[0]) : 0.0F;
+            if constexpr (!MT) {
+                grad_e1 -= std::real(longitudinal_bar[0]);
+            }
             for (std::size_t state = 0; state < states; ++state) {
                 const Complex ap = fplus_bar[state];
                 const Complex am = fminus_bar[state];
@@ -3125,8 +3433,6 @@ void simulate_vjp_range(
                     std::polar(1.0F, turn_longitudinal);
                 const Complex carried = phase * damp_transverse * spin_transverse;
                 const Complex full_transverse = e2 * carried;
-                const Complex full_longitudinal =
-                    e1 * damp_longitudinal * spin_longitudinal;
                 const float transverse_term = std::real(
                     std::conj(ap) * carried * fplus[state]
                     + std::conj(am) * std::conj(carried) * fminus[state]
@@ -3140,21 +3446,70 @@ void simulate_vjp_range(
                         * fminus[state]
                 );
                 grad_angle += angle_term;
-                const float longitudinal_term = std::real(
-                    std::conj(az) * damp_longitudinal * spin_longitudinal
-                        * longitudinal[state]
-                );
-                grad_e1 += longitudinal_term;
-                const float longitudinal_angle_term = std::real(
-                    std::conj(az) * imaginary * full_longitudinal * longitudinal[state]
-                );
+                // The damping carries the b-factor and the turn carries the
+                // flow; both terms are taken against the state the interval
+                // leaves, so a second pool changes what is summed, not how.
+                const Complex spin = damp_longitudinal * spin_longitudinal;
+                float longitudinal_damp_term = 0.0F;
+                float longitudinal_angle_term = 0.0F;
+                if constexpr (MT) {
+                    const Complex ab = bound_bar[state];
+                    const Complex free_state = longitudinal[state];
+                    const Complex bound_state = bound[state];
+                    const Complex mixed_free =
+                        pools.e11 * free_state + pools.e12 * bound_state;
+                    const Complex mixed_bound =
+                        pools.e21 * free_state + pools.e22 * bound_state;
+                    grad_e11 += std::real(std::conj(az) * spin * free_state);
+                    grad_e12 += std::real(std::conj(az) * spin * bound_state);
+                    grad_e21 += std::real(std::conj(ab) * spin * free_state);
+                    grad_e22 += std::real(std::conj(ab) * spin * bound_state);
+                    longitudinal_damp_term = std::real(
+                        std::conj(az) * spin * mixed_free
+                        + std::conj(ab) * spin * mixed_bound
+                    );
+                    longitudinal_angle_term = std::real(
+                        std::conj(az) * imaginary * spin * mixed_free
+                        + std::conj(ab) * imaginary * spin * mixed_bound
+                    );
+                    longitudinal_bar[state] = std::conj(pools.e11 * spin) * az
+                        + std::conj(pools.e21 * spin) * ab;
+                    bound_bar[state] = std::conj(pools.e12 * spin) * az
+                        + std::conj(pools.e22 * spin) * ab;
+                } else {
+                    const Complex full_longitudinal = e1 * spin;
+                    const float longitudinal_term =
+                        std::real(std::conj(az) * spin * longitudinal[state]);
+                    grad_e1 += longitudinal_term;
+                    longitudinal_damp_term = e1 * longitudinal_term;
+                    longitudinal_angle_term = std::real(
+                        std::conj(az) * imaginary * full_longitudinal
+                            * longitudinal[state]
+                    );
+                    longitudinal_bar[state] = std::conj(full_longitudinal) * az;
+                }
                 grad_b_factor -= e2 * transverse_term * transverse_weight(state)
-                    + e1 * longitudinal_term * longitudinal_weight(state);
+                    + longitudinal_damp_term * longitudinal_weight(state);
                 grad_turn -= angle_term * (static_cast<float>(state) + 0.5F)
                     + longitudinal_angle_term * static_cast<float>(state);
                 fplus_bar[state] = std::conj(full_transverse) * ap;
                 fminus_bar[state] = full_transverse * am;
-                longitudinal_bar[state] = std::conj(full_longitudinal) * az;
+            }
+
+            float grad_exchange_attenuation = 0.0F;
+            float grad_two_pool_duration = 0.0F;
+            if constexpr (MT) {
+                const TwoPoolGradient<float> back = two_pool_step_adjoint(
+                    r1, r1_bound, exchange, bound_fraction, dt, wout,
+                    grad_e11, grad_e12, grad_e21, grad_e22,
+                    grad_recovery_free, grad_recovery_bound
+                );
+                grad_t1 += back.r1_free * (-1000.0F / (t1 * t1));
+                grad_t1_bound += back.r1_bound * (-1000.0F / (t1_bound * t1_bound));
+                grad_exchange += back.exchange;
+                grad_bound_fraction += back.bound;
+                grad_exchange_attenuation = back.attenuation;
+                grad_two_pool_duration = back.dt;
             }
 
             // Washout scales both relaxation factors, so its gradient is the
@@ -3162,7 +3517,7 @@ void simulate_vjp_range(
             // stand before that scaling. Past the clamp nothing depends on the
             // rate any more.
             const float grad_wout = washout_rate * dt < 1.0F
-                ? -(dry1 * grad_e1 + dry2 * grad_e2)
+                ? -(dry1 * grad_e1 + dry2 * grad_e2 + grad_exchange_attenuation)
                 : 0.0F;
 
             grad_t1 += grad_e1 * e1 * 1000.0F * dt / (t1 * t1);
@@ -3173,12 +3528,22 @@ void simulate_vjp_range(
             grad_washout += grad_wout * dt;
             grad_duration_train[event] +=
                 grad_e1 * (-r1 * e1) + grad_e2 * (-r2 * e2)
+                + grad_two_pool_duration
                 + grad_angle * (-2.0F * PI * b0)
                 + grad_b_factor * damping_rate
                 + grad_turn * flow_rate
                 + grad_wout * washout_rate;
         }
 
+        if constexpr (MT) {
+            // The fraction also sets where each pool starts, which the walk
+            // back reaches last.
+            grad_bound_fraction +=
+                std::real(bound_bar[0]) - std::real(longitudinal_bar[0]);
+            grad_tissue_local[layout.base[9] * atoms + atom] += grad_bound_fraction;
+            grad_tissue_local[layout.base[10] * atoms + atom] += grad_exchange;
+            grad_tissue_local[layout.base[11] * atoms + atom] += grad_t1_bound;
+        }
         grad_tissue_local[layout.base[0] * atoms + atom] += grad_t1;
         grad_tissue_local[layout.base[1] * atoms + atom] += grad_t2;
         grad_tissue_local[layout.base[2] * atoms + atom] += grad_m0;
@@ -3208,10 +3573,8 @@ struct VjpJvpBuffers {
     const float* dot_inversion_efficiency;
     const float* dot_diffusion;
     const float* dot_velocity;
-    // The bound pool's three properties. The derivative kernels carry one
-    // pool, so nothing reads or writes these; they hold the ABI's shape, and
-    // the dispatch refuses a bound pool rather than answering with the
-    // single-pool derivative.
+    // The bound pool's three properties. A single-pool run has no direction to
+    // follow along them, and the kernel it selects does not read them.
     const float* dot_bound_fraction;
     const float* dot_exchange_rate;
     const float* dot_t1_bound;
@@ -3851,8 +4214,9 @@ void simulate_real_vjp_jvp_range(
             grad_t1, grad_t2, grad_m0, grad_b1, DualFloat{0.0F, 0.0F},
             DualFloat{0.0F, 0.0F}, grad_inversion, grad_damping,
             DualFloat{0.0F, 0.0F},
-            // The bound pool's three, left at zero: the derivative kernels
-            // carry one pool, and the dispatch refuses a gradient along them.
+            // The bound pool's three, left at zero: a bound pool is outside
+            // the real subspace this kernel stands for, so the dispatch never
+            // sends one here.
             DualFloat{0.0F, 0.0F}, DualFloat{0.0F, 0.0F},
             DualFloat{0.0F, 0.0F},
         };
@@ -4265,8 +4629,9 @@ void simulate_real_vjp_jvp_lane_range(
         const DualLane contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, zero, zero, grad_inversion,
             grad_damping, zero,
-            // The bound pool's three, left at zero: the derivative kernels
-            // carry one pool, and the dispatch refuses a gradient along them.
+            // The bound pool's three, left at zero: a bound pool is outside
+            // the real subspace this kernel stands for, so the dispatch never
+            // sends one here.
             zero, zero, zero,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
@@ -4298,11 +4663,11 @@ inline DualFloat shim_dual(
     }
 }
 
-template <bool SHIMMED, bool PROFILED>
-#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
-__attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
-#endif
-void simulate_vjp_jvp_range(
+// Inlined into the vector clones below rather than called from them: a
+// clone is a copy of the caller, so a body reached through a call is
+// compiled once for the baseline instruction set and no more.
+template <bool SHIMMED, bool PROFILED, bool MT>
+__attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,
     const std::int64_t work_end,
@@ -4320,7 +4685,7 @@ void simulate_vjp_jvp_range(
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
     const std::size_t states = static_cast<std::size_t>(state_count);
-    const std::size_t stride = 3U * states;
+    const std::size_t stride = (MT ? 4U : 3U) * states;
 
     std::vector<DualComplex> trajectory(
         static_cast<std::size_t>(event_count) * stride
@@ -4336,6 +4701,9 @@ void simulate_vjp_jvp_range(
     DualState longitudinal_relaxed(states);
     DualState fplus_shifted(states);
     DualState fminus_shifted(states);
+    DualState bound(MT ? states : 0U);
+    DualState bound_bar(MT ? states : 0U);
+    DualState bound_relaxed(MT ? states : 0U);
     Damping<DualFloat> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -4362,6 +4730,21 @@ void simulate_vjp_jvp_range(
         };
         const DualFloat r1 = 1000.0F * dual_reciprocal(t1);
         const DualFloat r2 = 1000.0F * dual_reciprocal(t2);
+        const DualFloat bound_fraction = MT
+            ? DualFloat{
+                primal.bound_fraction[atom], buffers.dot_bound_fraction[atom]
+            }
+            : DualFloat{};
+        const DualFloat exchange = MT
+            ? DualFloat{
+                primal.exchange_rate[atom], buffers.dot_exchange_rate[atom]
+            }
+            : DualFloat{};
+        const DualFloat t1_bound = MT
+            ? DualFloat{primal.t1_bound[atom], buffers.dot_t1_bound[atom]}
+            : DualFloat{1.0F, 0.0F};
+        const DualFloat r1_bound =
+            MT ? 1000.0F * dual_reciprocal(t1_bound) : DualFloat{};
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.dot_diffusion[atom]
         };
@@ -4378,7 +4761,17 @@ void simulate_vjp_jvp_range(
         std::fill(fplus.begin(), fplus.end(), DualComplex{});
         std::fill(fminus.begin(), fminus.end(), DualComplex{});
         std::fill(longitudinal.begin(), longitudinal.end(), DualComplex{});
-        longitudinal[0].value = Complex(1.0F, 0.0F);
+        longitudinal[0] = DualComplex{
+            Complex(1.0F - bound_fraction.value, 0.0F),
+            Complex(-bound_fraction.tangent, 0.0F),
+        };
+        if constexpr (MT) {
+            std::fill(bound.begin(), bound.end(), DualComplex{});
+            bound[0] = DualComplex{
+                Complex(bound_fraction.value, 0.0F),
+                Complex(bound_fraction.tangent, 0.0F),
+            };
+        }
 
         // ---- dual forward, recording the state entering each event ----
         for (std::int64_t event = 0; event < event_count; ++event) {
@@ -4387,6 +4780,9 @@ void simulate_vjp_jvp_range(
             std::copy(fplus.begin(), fplus.end(), slot);
             std::copy(fminus.begin(), fminus.end(), slot + states);
             std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
+            if constexpr (MT) {
+                std::copy(bound.begin(), bound.end(), slot + 3U * states);
+            }
 
             const DualFloat dt{
                 view.duration[event], dot_duration[event]
@@ -4397,6 +4793,9 @@ void simulate_vjp_jvp_range(
             const DualFloat dry2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
             const DualFloat e1 = dry1 * wout;
             const DualFloat e2 = dry2 * wout;
+            const TwoPoolStep<DualFloat> pools = MT
+                ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
+                : TwoPoolStep<DualFloat>{};
             const DualFloat angle = -2.0F * PI * (b0 * dt);
             const DualComplex off = e2 * dual_polar(angle);
             const DualComplex off_conj = conjugate(off);
@@ -4413,11 +4812,29 @@ void simulate_vjp_jvp_range(
                     off * fplus[state] * damp_transverse * spin_transverse;
                 fminus[state] = off_conj * fminus[state] * damp_transverse
                     * conjugate(spin_transverse);
-                longitudinal[state] = e1 * longitudinal[state]
-                    * damping.longitudinal[state] * spin_longitudinal;
+                const DualComplex spin =
+                    damping.longitudinal[state] * spin_longitudinal;
+                if constexpr (MT) {
+                    const DualComplex free_state = longitudinal[state];
+                    const DualComplex bound_state = bound[state];
+                    longitudinal[state] =
+                        (pools.e11 * free_state + pools.e12 * bound_state) * spin;
+                    bound[state] =
+                        (pools.e21 * free_state + pools.e22 * bound_state) * spin;
+                } else {
+                    longitudinal[state] = e1 * longitudinal[state] * spin;
+                }
             }
-            longitudinal[0].value += Complex(1.0F - e1.value, 0.0F);
-            longitudinal[0].tangent -= Complex(e1.tangent, 0.0F);
+            if constexpr (MT) {
+                longitudinal[0].value += Complex(pools.recovery_free.value, 0.0F);
+                longitudinal[0].tangent +=
+                    Complex(pools.recovery_free.tangent, 0.0F);
+                bound[0].value += Complex(pools.recovery_bound.value, 0.0F);
+                bound[0].tangent += Complex(pools.recovery_bound.tangent, 0.0F);
+            } else {
+                longitudinal[0].value += Complex(1.0F - e1.value, 0.0F);
+                longitudinal[0].tangent -= Complex(e1.tangent, 0.0F);
+            }
 
             const std::uint8_t action = primal.action[event];
             if ((action & PRE_SHIFT) != 0) {
@@ -4443,6 +4860,17 @@ void simulate_vjp_jvp_range(
                             primal.b1_phase, buffers.dot_b1_phase, transmit,
                             b1_phase
                         );
+                    if constexpr (MT) {
+                        const DualFloat offset =
+                            DualFloat{primal.rf_frequency[event], 0.0F} - b0;
+                        const DualFloat absorbed = dual_exp(
+                            primal.saturation[event]
+                            * (alpha * alpha * lineshape_at(primal, offset))
+                        );
+                        for (DualComplex& value : bound) {
+                            value = absorbed * value;
+                        }
+                    }
                     if constexpr (PROFILED) {
                         DualComplex pair_a{};
                         DualComplex pair_b{};
@@ -4479,6 +4907,12 @@ void simulate_vjp_jvp_range(
         std::fill(fplus_bar.begin(), fplus_bar.end(), DualComplex{});
         std::fill(fminus_bar.begin(), fminus_bar.end(), DualComplex{});
         std::fill(longitudinal_bar.begin(), longitudinal_bar.end(), DualComplex{});
+        if constexpr (MT) {
+            std::fill(bound_bar.begin(), bound_bar.end(), DualComplex{});
+        }
+        DualFloat grad_t1_bound{0.0F, 0.0F};
+        DualFloat grad_exchange{0.0F, 0.0F};
+        DualFloat grad_bound_fraction{0.0F, 0.0F};
         DualFloat grad_t1{0.0F, 0.0F};
         DualFloat grad_t2{0.0F, 0.0F};
         DualFloat grad_m0{0.0F, 0.0F};
@@ -4499,6 +4933,9 @@ void simulate_vjp_jvp_range(
             std::copy(slot, slot + states, fplus.begin());
             std::copy(slot + states, slot + 2U * states, fminus.begin());
             std::copy(slot + 2U * states, slot + 3U * states, longitudinal.begin());
+            if constexpr (MT) {
+                std::copy(slot + 3U * states, slot + 4U * states, bound.begin());
+            }
 
             const DualFloat dt{
                 view.duration[event], dot_duration[event]
@@ -4509,6 +4946,9 @@ void simulate_vjp_jvp_range(
             const DualFloat dry2 = dual_exp(DualFloat{0.0F, 0.0F} - (r2 * dt));
             const DualFloat e1 = dry1 * wout;
             const DualFloat e2 = dry2 * wout;
+            const TwoPoolStep<DualFloat> pools = MT
+                ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
+                : TwoPoolStep<DualFloat>{};
             const DualFloat angle = -2.0F * PI * (b0 * dt);
             const DualComplex phase = dual_polar(angle);
             const DualComplex off = e2 * phase;
@@ -4528,11 +4968,31 @@ void simulate_vjp_jvp_range(
                     off * fplus[state] * damp_transverse * spin_transverse;
                 fminus_relaxed[state] = off_conj * fminus[state] * damp_transverse
                     * conjugate(spin_transverse);
-                longitudinal_relaxed[state] = e1 * longitudinal[state]
-                    * damping.longitudinal[state] * spin_longitudinal;
+                const DualComplex spin =
+                    damping.longitudinal[state] * spin_longitudinal;
+                if constexpr (MT) {
+                    const DualComplex free_state = longitudinal[state];
+                    const DualComplex bound_state = bound[state];
+                    longitudinal_relaxed[state] =
+                        (pools.e11 * free_state + pools.e12 * bound_state) * spin;
+                    bound_relaxed[state] =
+                        (pools.e21 * free_state + pools.e22 * bound_state) * spin;
+                } else {
+                    longitudinal_relaxed[state] = e1 * longitudinal[state] * spin;
+                }
             }
-            longitudinal_relaxed[0].value += Complex(1.0F - e1.value, 0.0F);
-            longitudinal_relaxed[0].tangent -= Complex(e1.tangent, 0.0F);
+            if constexpr (MT) {
+                longitudinal_relaxed[0].value +=
+                    Complex(pools.recovery_free.value, 0.0F);
+                longitudinal_relaxed[0].tangent +=
+                    Complex(pools.recovery_free.tangent, 0.0F);
+                bound_relaxed[0].value += Complex(pools.recovery_bound.value, 0.0F);
+                bound_relaxed[0].tangent +=
+                    Complex(pools.recovery_bound.tangent, 0.0F);
+            } else {
+                longitudinal_relaxed[0].value += Complex(1.0F - e1.value, 0.0F);
+                longitudinal_relaxed[0].tangent -= Complex(e1.tangent, 0.0F);
+            }
 
             fplus_shifted = fplus_relaxed;
             fminus_shifted = fminus_relaxed;
@@ -4624,6 +5084,31 @@ void simulate_vjp_jvp_range(
                     }
                     DualFloat grad_alpha{0.0F, 0.0F};
                     DualFloat grad_phi{0.0F, 0.0F};
+                    if constexpr (MT) {
+                        const DualFloat offset =
+                            DualFloat{primal.rf_frequency[event], 0.0F} - b0;
+                        DualFloat shape{};
+                        DualFloat shape_slope{};
+                        lineshape_at_slope(primal, offset, shape, shape_slope);
+                        const DualFloat power =
+                            primal.saturation[event] * (alpha * alpha);
+                        const DualFloat absorbed = dual_exp(power * shape);
+                        DualFloat grad_absorbed{0.0F, 0.0F};
+                        for (std::size_t state = 0; state < states; ++state) {
+                            grad_absorbed = grad_absorbed
+                                + real_part(
+                                    conjugate(bound_bar[state])
+                                    * bound_relaxed[state]
+                                );
+                            bound_bar[state] = absorbed * bound_bar[state];
+                        }
+                        const DualFloat grad_exponent = grad_absorbed * absorbed;
+                        grad_alpha = grad_alpha
+                            + (primal.saturation[event] * 2.0F)
+                                * (grad_exponent * (alpha * shape));
+                        grad_b0 = grad_b0
+                            - grad_exponent * (power * shape_slope);
+                    }
                     if constexpr (PROFILED) {
                         DualComplex pair_a{};
                         DualComplex pair_b{};
@@ -4686,8 +5171,18 @@ void simulate_vjp_jvp_range(
             DualFloat grad_angle{0.0F, 0.0F};
             DualFloat grad_b_factor{0.0F, 0.0F};
             DualFloat grad_turn{0.0F, 0.0F};
+            DualFloat grad_e11{0.0F, 0.0F};
+            DualFloat grad_e12{0.0F, 0.0F};
+            DualFloat grad_e21{0.0F, 0.0F};
+            DualFloat grad_e22{0.0F, 0.0F};
             const Complex imaginary(0.0F, 1.0F);
-            grad_e1 = grad_e1 - real_part(longitudinal_bar[0]);
+            const DualFloat grad_recovery_free =
+                MT ? real_part(longitudinal_bar[0]) : DualFloat{};
+            const DualFloat grad_recovery_bound =
+                MT ? real_part(bound_bar[0]) : DualFloat{};
+            if constexpr (!MT) {
+                grad_e1 = grad_e1 - real_part(longitudinal_bar[0]);
+            }
             for (std::size_t state = 0; state < states; ++state) {
                 const DualComplex ap = fplus_bar[state];
                 const DualComplex am = fminus_bar[state];
@@ -4705,8 +5200,6 @@ void simulate_vjp_jvp_range(
                     phase * damp_transverse * spin_transverse;
                 const DualComplex full_transverse =
                     off * damp_transverse * spin_transverse;
-                const DualComplex full_longitudinal =
-                    e1 * damp_longitudinal * spin_longitudinal;
                 const DualFloat transverse_term = real_part(
                     conjugate(ap) * carried * fplus[state]
                     + conjugate(am) * conjugate(carried) * fminus[state]
@@ -4721,23 +5214,77 @@ void simulate_vjp_jvp_range(
                         * (imaginary * (conjugate(full_transverse) * fminus[state]))
                     );
                 grad_angle = grad_angle + angle_term;
-                const DualFloat longitudinal_term = real_part(
-                    conjugate(az) * damp_longitudinal * spin_longitudinal
-                        * longitudinal[state]
-                );
-                grad_e1 = grad_e1 + longitudinal_term;
-                const DualFloat longitudinal_angle_term = real_part(
-                    conjugate(az) * (imaginary * (full_longitudinal * longitudinal[state]))
-                );
+                const DualComplex spin = damp_longitudinal * spin_longitudinal;
+                DualFloat longitudinal_damp_term{0.0F, 0.0F};
+                DualFloat longitudinal_angle_term{0.0F, 0.0F};
+                if constexpr (MT) {
+                    const DualComplex ab = bound_bar[state];
+                    const DualComplex free_state = longitudinal[state];
+                    const DualComplex bound_state = bound[state];
+                    const DualComplex mixed_free =
+                        pools.e11 * free_state + pools.e12 * bound_state;
+                    const DualComplex mixed_bound =
+                        pools.e21 * free_state + pools.e22 * bound_state;
+                    grad_e11 = grad_e11
+                        + real_part(conjugate(az) * (spin * free_state));
+                    grad_e12 = grad_e12
+                        + real_part(conjugate(az) * (spin * bound_state));
+                    grad_e21 = grad_e21
+                        + real_part(conjugate(ab) * (spin * free_state));
+                    grad_e22 = grad_e22
+                        + real_part(conjugate(ab) * (spin * bound_state));
+                    longitudinal_damp_term = real_part(
+                        conjugate(az) * (spin * mixed_free)
+                        + conjugate(ab) * (spin * mixed_bound)
+                    );
+                    longitudinal_angle_term = real_part(
+                        conjugate(az) * (imaginary * (spin * mixed_free))
+                        + conjugate(ab) * (imaginary * (spin * mixed_bound))
+                    );
+                    longitudinal_bar[state] =
+                        conjugate(pools.e11 * spin) * az
+                        + conjugate(pools.e21 * spin) * ab;
+                    bound_bar[state] = conjugate(pools.e12 * spin) * az
+                        + conjugate(pools.e22 * spin) * ab;
+                } else {
+                    const DualComplex full_longitudinal = e1 * spin;
+                    const DualFloat longitudinal_term =
+                        real_part(conjugate(az) * (spin * longitudinal[state]));
+                    grad_e1 = grad_e1 + longitudinal_term;
+                    longitudinal_damp_term = e1 * longitudinal_term;
+                    longitudinal_angle_term = real_part(
+                        conjugate(az)
+                        * (imaginary * (full_longitudinal * longitudinal[state]))
+                    );
+                    longitudinal_bar[state] = conjugate(full_longitudinal) * az;
+                }
                 grad_b_factor = grad_b_factor
                     - transverse_weight(state) * (e2 * transverse_term)
-                    - longitudinal_weight(state) * (e1 * longitudinal_term);
+                    - longitudinal_weight(state) * longitudinal_damp_term;
                 grad_turn = grad_turn
                     - (static_cast<float>(state) + 0.5F) * angle_term
                     - static_cast<float>(state) * longitudinal_angle_term;
                 fplus_bar[state] = conjugate(full_transverse) * ap;
                 fminus_bar[state] = full_transverse * am;
-                longitudinal_bar[state] = conjugate(full_longitudinal) * az;
+            }
+
+            DualFloat grad_exchange_attenuation{0.0F, 0.0F};
+            DualFloat grad_two_pool_duration{0.0F, 0.0F};
+            if constexpr (MT) {
+                const TwoPoolGradient<DualFloat> back = two_pool_step_adjoint(
+                    r1, r1_bound, exchange, bound_fraction, dt, wout,
+                    grad_e11, grad_e12, grad_e21, grad_e22,
+                    grad_recovery_free, grad_recovery_bound
+                );
+                grad_t1 = grad_t1
+                    - back.r1_free * (1000.0F * dual_reciprocal(t1 * t1));
+                grad_t1_bound = grad_t1_bound
+                    - back.r1_bound
+                        * (1000.0F * dual_reciprocal(t1_bound * t1_bound));
+                grad_exchange = grad_exchange + back.exchange;
+                grad_bound_fraction = grad_bound_fraction + back.bound;
+                grad_exchange_attenuation = back.attenuation;
+                grad_two_pool_duration = back.dt;
             }
 
             const DualFloat inverse_t1_squared =
@@ -4749,7 +5296,9 @@ void simulate_vjp_jvp_range(
             grad_b0 = grad_b0 + grad_angle * (-2.0F * PI * dt);
             const DualFloat grad_wout =
                 washout_rate.value * dt.value < 1.0F
-                    ? DualFloat{0.0F, 0.0F} - (dry1 * grad_e1 + dry2 * grad_e2)
+                    ? DualFloat{0.0F, 0.0F}
+                        - (dry1 * grad_e1 + dry2 * grad_e2
+                           + grad_exchange_attenuation)
                     : DualFloat{0.0F, 0.0F};
             grad_damping = grad_damping + grad_b_factor * dt;
             grad_flow = grad_flow + grad_turn * dt;
@@ -4757,10 +5306,16 @@ void simulate_vjp_jvp_range(
             grad_duration_train[event] = grad_duration_train[event]
                 + (DualFloat{0.0F, 0.0F} - (grad_e1 * (r1 * e1)))
                 - (grad_e2 * (r2 * e2))
+                + grad_two_pool_duration
                 + grad_angle * (-2.0F * PI * b0)
                 + grad_b_factor * damping_rate
                 + grad_turn * flow_rate
                 + grad_wout * washout_rate;
+        }
+
+        if constexpr (MT) {
+            grad_bound_fraction = grad_bound_fraction
+                + real_part(bound_bar[0]) - real_part(longitudinal_bar[0]);
         }
 
         const DualFloat contributions[TISSUE_COUNT] = {
@@ -4769,10 +5324,7 @@ void simulate_vjp_jvp_range(
             primal.flow_scale * grad_flow
                 + (speed_direction(velocity) * primal.washout_scale)
                     * grad_washout,
-            // The bound pool's three, left at zero: the derivative kernels
-            // carry one pool, and the dispatch refuses a gradient along them.
-            DualFloat{0.0F, 0.0F}, DualFloat{0.0F, 0.0F},
-            DualFloat{0.0F, 0.0F},
+            grad_bound_fraction, grad_exchange, grad_t1_bound,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             const std::size_t plane = layout.base[parameter]
@@ -4783,6 +5335,84 @@ void simulate_vjp_jvp_range(
             slot = slot + contributions[parameter];
         }
     }
+}
+
+// Vector clones of the single-pool derivative kernels.
+//
+// ``target_clones`` multiplies a function by its instruction sets and the pool
+// flag multiplies the instantiations, so cloning all eight of each takes the
+// object past twice the size it had with one pool. The two-pool step is a 2x2
+// matvec once per interval, which the wider registers do not shorten, so the
+// clones are spent on the single-pool instantiations instead -- whose scalar
+// state loop they do.
+//
+// A clone is a copy of the *caller*, so the body has to reach it by inlining;
+// that is what the ``always_inline`` on the range kernels is for. Taking the
+// address of one still emits an out-of-line copy, which is what the two-pool
+// dispatch selects.
+#if defined(__GNUC__) && !defined(__clang__) \
+    && (defined(__x86_64__) || defined(__i386__))
+#define CLONED_KERNEL \
+    __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
+#else
+#define CLONED_KERNEL
+#endif
+
+template <bool SHIMMED, bool PROFILED>
+CLONED_KERNEL
+void simulate_jvp_single_pool(
+    const JvpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count
+) {
+    simulate_jvp_range<SHIMMED, PROFILED, false>(
+        buffers, work_begin, work_end, event_count, state_count, output_count
+    );
+}
+
+template <bool SHIMMED, bool PROFILED>
+CLONED_KERNEL
+void simulate_vjp_single_pool(
+    const VjpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count,
+    float* grad_flip_local,
+    float* grad_phase_local,
+    float* grad_duration_local,
+    float* grad_tissue_local
+) {
+    simulate_vjp_range<SHIMMED, PROFILED, false>(
+        buffers, work_begin, work_end, event_count, state_count, output_count,
+        grad_flip_local, grad_phase_local, grad_duration_local,
+        grad_tissue_local
+    );
+}
+
+template <bool SHIMMED, bool PROFILED>
+CLONED_KERNEL
+void simulate_vjp_jvp_single_pool(
+    const VjpJvpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count,
+    DualFloat* grad_flip_local,
+    DualFloat* grad_phase_local,
+    DualFloat* grad_duration_local,
+    DualFloat* grad_tissue_local
+) {
+    simulate_vjp_jvp_range<SHIMMED, PROFILED, false>(
+        buffers, work_begin, work_end, event_count, state_count, output_count,
+        grad_flip_local, grad_phase_local, grad_duration_local,
+        grad_tissue_local
+    );
 }
 
 // The packed pointers arrive in the order the parameter registry declares:
@@ -5205,7 +5835,7 @@ void dispatch_jvp(
     void (*kernel)(
         const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = &simulate_jvp_range<false, false, false>;
+    ) = &simulate_jvp_single_pool<false, false>;
     if (lanes) {
         kernel = &simulate_real_jvp_lane_range;
     } else if (real_axis == 1 && !bound) {
@@ -5222,10 +5852,10 @@ void dispatch_jvp(
                                   : &simulate_jvp_range<false, false, true>;
             }
         } else if (shimmed) {
-            kernel = profiled ? &simulate_jvp_range<true, true, false>
-                              : &simulate_jvp_range<true, false, false>;
+            kernel = profiled ? &simulate_jvp_single_pool<true, true>
+                              : &simulate_jvp_single_pool<true, false>;
         } else if (profiled) {
-            kernel = &simulate_jvp_range<false, true, false>;
+            kernel = &simulate_jvp_single_pool<false, true>;
         }
     }
     // A lane kernel's work item covers a block of trains rather than one train.
@@ -5365,9 +5995,11 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     long long locations = 1;
     long long profile_bins = 0;
     double profile_step = 1.0;
+    long long lineshape_bins = 0;
+    double lineshape_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiddLLLd",
+            "OLLLLLiddLLLdLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -5380,14 +6012,17 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             &shim_count,
             &locations,
             &profile_bins,
-            &profile_step
+            &profile_step,
+            &lineshape_bins,
+            &lineshape_step
         )) {
         return nullptr;
     }
     // The packed buffers, the two seed planes, one gradient per differentiable
     // input, then the transition tables and the per-event index that says
-    // which an event reads -- both null when there is no table.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 2;
+    // which an event reads -- both null when there is no table -- and the
+    // bound pool's lineshape, null when there is no bound pool.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 3;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -5413,11 +6048,14 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 3],
         raw[expected - 2],
-        raw[expected - 1],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
-        static_cast<float>(profile_step)
+        static_cast<float>(profile_step),
+        raw[expected - 1],
+        static_cast<std::int64_t>(lineshape_bins),
+        static_cast<float>(lineshape_step)
     );
     VjpBuffers buffers{};
     buffers.primal = primal;
@@ -5459,14 +6097,23 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         void (*kernel)(
             const VjpBuffers&, std::int64_t, std::int64_t, std::int64_t,
             std::int64_t, std::int64_t, float*, float*, float*, float*
-        ) = &simulate_vjp_range<false, false>;
+        ) = &simulate_vjp_single_pool<false, false>;
         const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
-        if (shimmed) {
-            kernel = profiled ? &simulate_vjp_range<true, true>
-                              : &simulate_vjp_range<true, false>;
+        const bool bound = buffers.primal.lineshape != nullptr;
+        if (bound) {
+            if (shimmed) {
+                kernel = profiled ? &simulate_vjp_range<true, true, true>
+                                  : &simulate_vjp_range<true, false, true>;
+            } else {
+                kernel = profiled ? &simulate_vjp_range<false, true, true>
+                                  : &simulate_vjp_range<false, false, true>;
+            }
+        } else if (shimmed) {
+            kernel = profiled ? &simulate_vjp_single_pool<true, true>
+                              : &simulate_vjp_single_pool<true, false>;
         } else if (profiled) {
-            kernel = &simulate_vjp_range<false, true>;
+            kernel = &simulate_vjp_single_pool<false, true>;
         }
         const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         WorkerPool::instance().run(thread_count, [&](const unsigned int slot) {
@@ -5540,25 +6187,34 @@ void dispatch_second_order(
     const int requested_threads,
     const int real_axis
 ) {
-    const bool lanes = real_axis == 1 && lane_kernels_enabled()
+    const bool bound = buffers.primal.lineshape != nullptr;
+    const bool lanes = real_axis == 1 && !bound && lane_kernels_enabled()
         && !any_diffusion(buffers.primal.diffusion, atom_count)
         && !any_diffusion(buffers.dot_diffusion, atom_count);
     void (*kernel)(
         const VjpJvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, DualFloat*, DualFloat*, DualFloat*, DualFloat*
-    ) = &simulate_vjp_jvp_range<false, false>;
+    ) = &simulate_vjp_jvp_single_pool<false, false>;
     if (lanes) {
         kernel = &simulate_real_vjp_jvp_lane_range;
-    } else if (real_axis == 1) {
+    } else if (real_axis == 1 && !bound) {
         kernel = &simulate_real_vjp_jvp_range;
     } else {
         const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
-        if (shimmed) {
-            kernel = profiled ? &simulate_vjp_jvp_range<true, true>
-                              : &simulate_vjp_jvp_range<true, false>;
+        if (bound) {
+            if (shimmed) {
+                kernel = profiled ? &simulate_vjp_jvp_range<true, true, true>
+                                  : &simulate_vjp_jvp_range<true, false, true>;
+            } else {
+                kernel = profiled ? &simulate_vjp_jvp_range<false, true, true>
+                                  : &simulate_vjp_jvp_range<false, false, true>;
+            }
+        } else if (shimmed) {
+            kernel = profiled ? &simulate_vjp_jvp_single_pool<true, true>
+                              : &simulate_vjp_jvp_single_pool<true, false>;
         } else if (profiled) {
-            kernel = &simulate_vjp_jvp_range<false, true>;
+            kernel = &simulate_vjp_jvp_single_pool<false, true>;
         }
     }
     const std::int64_t work_count =
@@ -5660,9 +6316,11 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     long long locations = 1;
     long long profile_bins = 0;
     double profile_step = 1.0;
+    long long lineshape_bins = 0;
+    double lineshape_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLd",
+            "OLLLLLiiddLLLdLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -5676,14 +6334,17 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
             &shim_count,
             &locations,
             &profile_bins,
-            &profile_step
+            &profile_step,
+            &lineshape_bins,
+            &lineshape_step
         )) {
         return nullptr;
     }
     // The packed buffers, the tangents, the two seed planes, both gradient
     // blocks, then the transition tables and the per-event index that says
-    // which an event reads -- both null when there is no table.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 2;
+    // which an event reads -- both null when there is no table -- and the
+    // bound pool's lineshape, null when there is no bound pool.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 3;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -5707,11 +6368,14 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 3],
         raw[expected - 2],
-        raw[expected - 1],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
-        static_cast<float>(profile_step)
+        static_cast<float>(profile_step),
+        raw[expected - 1],
+        static_cast<std::int64_t>(lineshape_bins),
+        static_cast<float>(lineshape_step)
     );
     VjpJvpBuffers buffers{};
     buffers.primal = primal;
