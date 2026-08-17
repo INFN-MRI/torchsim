@@ -72,39 +72,47 @@ def test_the_stored_slope_is_the_derivative_of_the_integration(table) -> None:
 
 
 def test_the_lineshape_is_even_so_its_slope_at_resonance_is_zero(table) -> None:
-    """The one property the fill has to respect.
+    """The property the fill has to respect, and the reason it is mirrored.
 
     The integrand depends on the offset only through its square, so the
-    lineshape is even and its derivative at zero vanishes. A fill that misses
-    that puts a kink at resonance, which the second-order pass differentiates.
+    lineshape is even and its derivative at zero vanishes. The fill is
+    interpolated through knots mirrored about resonance, and an interpolant
+    through symmetric data is its own reflection, so evenness survives it.
+    A fill that missed this would put a kink at resonance, which the
+    second-order pass differentiates.
     """
-    assert float(table.slopes[0]) == 0.0
+    assert abs(float(table.slopes[0])) < 1e-20
     positive = table.at(torch.tensor([250.0, 500.0, 750.0]))
     negative = table.at(torch.tensor([-250.0, -500.0, -750.0]))
     assert torch.equal(positive, negative)
 
 
-def test_the_fill_joins_the_integral_at_a_knot(table) -> None:
-    """The two curves meet at a knot, in value and in slope.
+def test_the_join_is_as_smooth_as_any_other_knot(table) -> None:
+    """The fill and the integral disagree in slope; the table does not.
 
-    Snapped there deliberately: with the cutoff between knots, one segment
-    would interpolate a filled knot against an integrated one and pass through
-    neither curve.
+    The fill is extrapolated inward from a flatter part of the curve and
+    reaches the cutoff about 13% shallower than the integral. That never
+    reaches the table: a knot carries one slope, the cutoff knot carries the
+    integral's, and the Hermite matches it from both sides. So the join is C1,
+    which is what the second-order pass needs of it.
     """
     edge = table.cutoff_hz
     index = int(round(edge / table.step))
     assert abs(edge - index * table.step) < 1e-6
-
     assert abs(float(table.values[index]) - float(_integral(edge)[0])) < 1e-11
-    numeric = (_integral(edge + 1.0) - _integral(edge - 1.0))[0] / 2.0
-    assert abs(numeric - float(table.slopes[index])) < 1e-13
 
-    # and the fill reaches the same place from below
-    curvature = float(table.slopes[index]) / (2.0 * edge)
-    level = float(table.values[index]) - curvature * edge * edge
-    assert abs(float(table.values[index - 1]) - (
-        level + curvature * (edge - table.step) ** 2
-    )) < 1e-11
+    def slope(offset, step=0.05):
+        above = table.at(torch.tensor(offset + step, dtype=torch.float64))
+        below = table.at(torch.tensor(offset - step, dtype=torch.float64))
+        return float((above - below) / (2.0 * step))
+
+    across_join = abs(slope(edge + 0.5) - slope(edge - 0.5)) / abs(slope(edge - 0.5))
+    ordinary = 40 * table.step
+    across_knot = abs(
+        slope(ordinary + 0.5) - slope(ordinary - 0.5)
+    ) / abs(slope(ordinary - 0.5))
+    assert across_join < 0.01
+    assert across_join < 10.0 * max(across_knot, 1e-4)
 
 
 def test_the_lineshape_falls_away_from_resonance(table) -> None:
@@ -181,6 +189,30 @@ def test_the_table_agrees_with_the_package_lineshape_past_the_cutoff(table) -> N
     got = table.at(torch.as_tensor(offsets, dtype=torch.float32)).numpy()
 
     assert np.abs(got / expected - 1.0).max() < 0.25
+
+
+def test_the_fill_follows_the_package_near_resonance() -> None:
+    """The convention this table adopts, held against the function it copies.
+
+    Both fills are even -- the package's support points are symmetric, so its
+    interpolant is too -- and both extrapolate inward from the same band. What
+    is left between them is the package's coarser quadrature and its 520 Hz
+    grid, so they agree to a few percent rather than exactly.
+    """
+    from torchsim.epg._rf_pulse import super_lorentzian_lineshape
+
+    built = lineshape_table(bins=128)
+    offsets = np.array([0.0, 300.0, 600.0, 900.0])
+    expected = np.asarray(super_lorentzian_lineshape(offsets), dtype=np.float64)
+    got = built.at(torch.as_tensor(offsets, dtype=torch.float32)).numpy()
+
+    assert np.abs(got / expected - 1.0).max() < 0.12
+
+
+def test_a_fill_needs_knots_to_interpolate_from() -> None:
+    """Too coarse a table leaves the band between cutoff and twice it empty."""
+    with pytest.raises(ValueError, match="fill is interpolated"):
+        lineshape_table(bins=8, cutoff_hz=1e3)
 
 
 def test_a_table_needs_two_knots_and_a_cutoff_inside_it() -> None:

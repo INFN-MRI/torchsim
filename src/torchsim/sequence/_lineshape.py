@@ -12,9 +12,8 @@ which no kernel can integrate per voxel per pulse. It is tabulated here
 instead, over the offset alone, because of what it depends on:
 
 * **It is even in the offset.** The integrand depends on ``df`` only through
-  its square, so the table covers ``|df|`` and half of it is never stored.
-  Evenness also fixes the slope at resonance at exactly zero, which is what
-  chooses the fill below.
+  its square, so the table covers ``|df|`` and half of it is never stored,
+  and the slope at resonance is zero.
 * **The bound pool's T2 is a model constant**, so the table stays
   one-dimensional. Making it a tissue property would make it two.
 
@@ -26,11 +25,19 @@ back through the same cubic Hermite.
 **Near resonance the integral diverges** -- the ``1 / |3u^2 - 1|`` singularity
 stops being suppressed -- and the divergence is an artefact of the model
 rather than physics, so the region inside ``cutoff_hz`` is filled instead.
-The fill is the lowest-order curve that is even in the offset and joins the
-integral with a continuous value and slope: ``a + b df^2``. Note that
-:func:`torchsim.epg.super_lorentzian_lineshape` fills the same region with an
-unconstrained cubic spline, which does not respect evenness and lands about
-15% lower at resonance; the two agree once past the cutoff.
+
+The fill follows :func:`torchsim.epg.super_lorentzian_lineshape`: a cubic
+spline through the knots in ``[cutoff, 2 * cutoff)``, mirrored about
+resonance and extrapolated inward. Mirroring is what keeps it even, the
+interpolant through symmetric data being unique and therefore its own
+reflection, so the slope at resonance still comes out at zero.
+
+The fill is fitted further out, where the lineshape is flatter, and arrives
+at the cutoff about 13% shallower than the integral does. That does not reach
+the table: a knot carries one slope, the cutoff knot carries the integral's,
+and the Hermite matches it from both sides -- so what the kernels read is C1
+across the join exactly as it is across any other knot. The two conventions
+differ only in the values they give inside the cutoff, by a couple of percent.
 """
 
 from __future__ import annotations
@@ -39,7 +46,9 @@ __all__ = ["LineshapeTable", "lineshape_table"]
 
 from dataclasses import dataclass
 
+import numpy as np
 import torch
+from scipy.interpolate import InterpolatedUnivariateSpline
 
 # T2 of the semisolid compartment, in seconds. The conventional value for
 # white matter, and the default the package's lineshape carries.
@@ -170,10 +179,11 @@ def lineshape_table(
         Knots along the offset axis. 128 over 33 kHz carries the lineshape to
         about 2e-10, which is five decades below its value at resonance.
     cutoff_hz
-        Below this the integral diverges and is replaced by the even fill
-        described in the module docstring. Snapped to the nearest knot, so
-        that the fill and the integral meet at one; the table reports the
-        snapped value.
+        Below this the integral diverges and is replaced by the fill
+        described in the module docstring, interpolated from the knots
+        between the cutoff and twice it. Snapped to the nearest knot, so that
+        the fill and the integral meet at one; the table reports the snapped
+        value.
     quadrature
         Points in the orientation integral. The integrand has a pole, so this
         converges slowly; it is paid once, on the host.
@@ -183,8 +193,9 @@ def lineshape_table(
         rather than by differencing it.
 
     Raises:
-        ValueError: if ``bins`` is below two, or the cutoff does not sit
-            inside the offset range.
+        ValueError: if ``bins`` is below two, the cutoff does not sit inside
+            the offset range, or too few knots fall in the band the fill is
+            interpolated from.
     """
     if bins < 2:
         raise ValueError(f"a Hermite table needs at least two knots, got {bins}")
@@ -205,26 +216,36 @@ def lineshape_table(
         integrate, (knots,), (torch.ones_like(knots),)
     )
 
-    # The fill: a + b * df^2, matched to the integral's value and slope at the
-    # cutoff. Even by construction, so the slope at resonance is exactly zero.
-    #
-    # The cutoff is snapped to a knot so that the two curves meet at one, and
-    # no single segment interpolates between a filled knot and an integrated
-    # one. The snapped value is what the table reports.
+    # The cutoff is snapped to a knot so that the fill and the integral meet
+    # at one, and no single segment interpolates between a filled knot and an
+    # integrated one. The snapped value is what the table reports.
     step = offset_max_hz / (bins - 1)
     edge_index = max(1, min(bins - 2, int(round(cutoff_hz / step))))
-    edge = knots[edge_index]
-    at_edge, slope_at_edge = torch.func.jvp(
-        integrate,
-        (edge.reshape(1),),
-        (torch.ones(1, dtype=torch.float64, device=device),),
-    )
-    curvature = slope_at_edge[0] / (2.0 * edge)
-    level = at_edge[0] - curvature * edge * edge
+    edge = float(knots[edge_index])
 
-    inside = knots < edge
-    values = torch.where(inside, level + curvature * knots * knots, values)
-    slopes = torch.where(inside, 2.0 * curvature * knots, slopes)
+    support = knots[(knots >= edge) & (knots < 2.0 * edge)]
+    if support.numel() < 2:
+        raise ValueError(
+            f"the fill is interpolated from the knots between {edge:.0f} and "
+            f"{2 * edge:.0f} Hz, and this table has {support.numel()} of them; "
+            f"use more bins or a smaller cutoff"
+        )
+    mirrored = torch.cat((-support.flip(0), support)).cpu().numpy()
+    sampled = _absorption(support, bound_t2_s, quadrature).cpu().numpy()
+    curve = InterpolatedUnivariateSpline(
+        mirrored,
+        np.concatenate((sampled[::-1], sampled)),
+        k=min(3, mirrored.size - 1),
+    )
+
+    inside = (knots < edge).cpu().numpy()
+    filled = knots.cpu().numpy()[inside]
+    values[torch.as_tensor(inside, device=values.device)] = torch.as_tensor(
+        curve(filled), dtype=values.dtype, device=values.device
+    )
+    slopes[torch.as_tensor(inside, device=slopes.device)] = torch.as_tensor(
+        curve.derivative()(filled), dtype=slopes.dtype, device=slopes.device
+    )
 
     return LineshapeTable(
         values=values.to(torch.float32).contiguous(),
