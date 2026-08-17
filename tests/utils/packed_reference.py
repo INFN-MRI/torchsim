@@ -8,10 +8,10 @@ from one place.
 
 It is deliberately slow and deliberately naive: it composes whole-array
 operations per event with no fusion and no state truncation, which is what
-makes it independent of the kernels it checks. The two-pool longitudinal step
-goes further and reaches its exponential through ``torch.matrix_exp``, so the
-closed form the kernels evaluate is checked against a different algorithm and
-not against a second copy of itself.
+makes it independent of the kernels it checks. Both two-pool steps go further
+and reach their exponential through ``torch.matrix_exp``, so the closed form
+the kernels evaluate is checked against a different algorithm and not against
+a second copy of itself.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ def simulate_packed(
     profile: Any = None,
     locations: int = 1,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> torch.Tensor:
     """Run one echo train and return its recorded signal.
 
@@ -73,6 +74,10 @@ def simulate_packed(
         A :class:`~torchsim.sequence._lineshape.LineshapeTable`, or ``None``
         for a single pool. Given one, the longitudinal step carries a bound
         pool alongside the free water and each pulse saturates it.
+    exchanging
+        Whether to carry a chemically exchanging pool: a second pool with a
+        transverse pair of its own, its own T2 and chemical shift, which a
+        pulse rotates rather than saturates.
 
     Returns
     -------
@@ -82,9 +87,12 @@ def simulate_packed(
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, velocity,
         bound_fraction, exchange_rate, t1_bound,
-        _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
-        _pool_b_shift,
+        pool_b_fraction, pool_b_exchange, t1_pool_b, t2_pool_b, pool_b_shift,
     ) = tissue
+    if exchanging:
+        bound_fraction = pool_b_fraction
+        exchange_rate = pool_b_exchange
+        t1_bound = t1_pool_b
     # ``b1`` and ``b1_phase`` hold one row per shim the sequence drives, so a
     # pulse reads the field of the shim its event names.
     transmit = b1.reshape(-1, t1.numel())
@@ -111,7 +119,16 @@ def simulate_packed(
     fminus = torch.zeros_like(fplus)
     longitudinal = torch.zeros_like(fplus)
     bound = torch.zeros_like(fplus)
-    if lineshape is None:
+    bound_plus = torch.zeros_like(fplus)
+    bound_minus = torch.zeros_like(fplus)
+    across_generator = (
+        _transverse_generator(
+            t2, t2_pool_b, exchange_rate, bound_fraction, pool_b_shift
+        )
+        if exchanging
+        else None
+    )
+    if lineshape is None and not exchanging:
         longitudinal = longitudinal + _at_order_zero(longitudinal, 1.0)
         generator = None
     else:
@@ -146,11 +163,42 @@ def simulate_packed(
         turn = (flow * dt)[:, None]
         transverse_phase = torch.exp(-1j * turn * transverse_turn[None, :])
         longitudinal_phase = torch.exp(-1j * turn * longitudinal_turn[None, :])
-        fplus = fplus * off[:, None] * transverse_damping * transverse_phase
-        fminus = (
-            fminus * off.conj()[:, None] * transverse_damping
-            * transverse_phase.conj()
-        )
+        if across_generator is None:
+            fplus = fplus * off[:, None] * transverse_damping * transverse_phase
+            fminus = (
+                fminus * off.conj()[:, None] * transverse_damping
+                * transverse_phase.conj()
+            )
+        else:
+            # The relaxation of both pools sits inside the operator; what stays
+            # outside is the off-resonance the whole voxel takes and the
+            # per-order damping and turn.
+            across = torch.matrix_exp(across_generator * dt) * wout[:, None, None]
+            shared = (
+                torch.exp(-2j * torch.pi * b0 * dt)[:, None]
+                * transverse_damping * transverse_phase
+            )
+            free_plus = (
+                across[:, 0, 0, None] * fplus + across[:, 0, 1, None] * bound_plus
+            )
+            pool_plus = (
+                across[:, 1, 0, None] * fplus + across[:, 1, 1, None] * bound_plus
+            )
+            # ``F-`` follows the conjugate of the operator entry by entry, not
+            # its transpose: it is the conjugate state.
+            conjugated = across.conj()
+            free_minus = (
+                conjugated[:, 0, 0, None] * fminus
+                + conjugated[:, 0, 1, None] * bound_minus
+            )
+            pool_minus = (
+                conjugated[:, 1, 0, None] * fminus
+                + conjugated[:, 1, 1, None] * bound_minus
+            )
+            fplus = free_plus * shared
+            bound_plus = pool_plus * shared
+            fminus = free_minus * shared.conj()
+            bound_minus = pool_minus * shared.conj()
         carried = longitudinal_damping * longitudinal_phase
         if generator is None:
             longitudinal = longitudinal * e1[:, None] * carried
@@ -179,10 +227,16 @@ def simulate_packed(
         event_action = int(action[event])
         if event_action & _PRE_SHIFT:
             fplus, fminus = _shift(fplus, fminus)
+            if exchanging:
+                bound_plus, bound_minus = _shift(bound_plus, bound_minus)
         event_kind = int(kind[event])
         if event_kind == 1:
             if event_action & _INVERSION:
                 longitudinal = -inversion_efficiency[:, None] * longitudinal
+                if exchanging:
+                    # A chemically exchanging pool is free water, so a sweep
+                    # turns it over rather than saturating it.
+                    bound = -inversion_efficiency[:, None] * bound
             else:
                 row = int(shim_index[event])
                 alpha = flip[event] * transmit[row]
@@ -200,26 +254,41 @@ def simulate_packed(
                     fplus, fminus, longitudinal = _rotate(
                         fplus, fminus, longitudinal, alpha, phi
                     )
+                    if exchanging:
+                        bound_plus, bound_minus, bound = _rotate(
+                            bound_plus, bound_minus, bound, alpha, phi
+                        )
                 else:
                     # The table is built at zero RF phase, which turns the
                     # rotation axis and so multiplies ``b`` alone.
                     spinor_a, spinor_b = profile.at(slice_index, alpha)
+                    spun = spinor_b * torch.exp(-1j * phi)
                     fplus, fminus, longitudinal = _rotate_spinor(
-                        fplus,
-                        fminus,
-                        longitudinal,
-                        spinor_a,
-                        spinor_b * torch.exp(-1j * phi),
+                        fplus, fminus, longitudinal, spinor_a, spun
                     )
+                    if exchanging:
+                        bound_plus, bound_minus, bound = _rotate_spinor(
+                            bound_plus, bound_minus, bound, spinor_a, spun
+                        )
         elif event_kind == 2 and event_action & _RECORD:
-            signals.append(m0 * fplus[:, 0] * torch.exp(-1j * phase[event]))
+            # A coil sees the whole voxel, so what it records is the sum over
+            # pools; each pool's share is already in its own state.
+            recorded = fplus[:, 0] + bound_plus[:, 0] if exchanging else fplus[:, 0]
+            signals.append(m0 * recorded * torch.exp(-1j * phase[event]))
         if event_action & _POST_SHIFT:
             fplus, fminus = _shift(fplus, fminus)
+            if exchanging:
+                bound_plus, bound_minus = _shift(bound_plus, bound_minus)
         if event_action & _SPOIL_AFTER:
             fplus = torch.zeros_like(fplus)
             fminus = torch.zeros_like(fminus)
+            if exchanging:
+                bound_plus = torch.zeros_like(bound_plus)
+                bound_minus = torch.zeros_like(bound_minus)
         elif event_action & _SHIFT_AFTER:
             fplus, fminus = _shift(fplus, fminus)
+            if exchanging:
+                bound_plus, bound_minus = _shift(bound_plus, bound_minus)
 
     if not signals:
         return torch.empty(
@@ -257,6 +326,32 @@ def _exchange_generator(
         ),
         dim=-2,
     )
+
+
+def _transverse_generator(
+    t2: torch.Tensor,
+    t2_pool_b: torch.Tensor,
+    exchange_rate: torch.Tensor,
+    fraction: torch.Tensor,
+    shift_hz: torch.Tensor,
+) -> torch.Tensor:
+    """``K - diag(R2) - 2 pi i diag(df)``, the transverse step's generator.
+
+    Only pool b's offset appears: pool a sits at whatever off-resonance the
+    free precession already carries the whole voxel through.
+    """
+    free = 1.0 - fraction
+    kab = exchange_rate * fraction
+    kba = exchange_rate * free
+    rates = torch.stack(
+        (
+            torch.stack((-kab - 1000.0 / t2, kba), dim=-1),
+            torch.stack((kab, -kba - 1000.0 / t2_pool_b), dim=-1),
+        ),
+        dim=-2,
+    ).to(torch.complex64)
+    offsets = torch.stack((torch.zeros_like(shift_hz), shift_hz), dim=-1)
+    return rates + torch.diag_embed(-2j * torch.pi * offsets)
 
 
 def _two_pool_step(

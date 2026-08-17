@@ -24,6 +24,7 @@ from torchsim.sequence._accelerators import (
 )
 from torchsim.sequence._parameters import TISSUE_NAMES
 from torchsim.sequence._simulation import _prepare_tissue
+from utils.packed_reference import simulate_packed
 
 ECHOES = 8
 STATES = 8
@@ -647,6 +648,261 @@ def test_the_single_pool_gradient_still_reaches_every_property():
     for name in TISSUE_NAMES:
         if name.startswith("pool_b") or name.endswith("pool_b_ms"):
             assert float(leaves[name].grad.abs().max()) == 0.0
+
+
+# --- against the state machine written out in torch ---
+
+
+def _train_events():
+    """A refocused train, which exercises the rotation, the shifts and the
+    spoil that a free-induction probe leaves alone.
+    """
+    packed = _pack_events(
+        "fse",
+        _description(),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    return (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+
+
+def _instantaneous_table():
+    """A pulse with no gradient across it: one rotation, every position."""
+    import numpy as np
+
+    from torchsim.sequence._description import RfDefinition, RfShape
+    from torchsim.sequence._transition import transition_table
+
+    flat = RfDefinition(
+        id=0,
+        bandwidth_hz=0.0,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=0.0,
+        total_b1sq_power=1.0,
+        magnitude=RfShape(num_uncompressed=8, samples=np.ones(8, dtype=np.float32)),
+    )
+    return transition_table(flat, torch.zeros(1), bins=1024, rf_raster_time_s=1e-6)
+
+
+def _routes(leaves, events, profile=None):
+    """The kernels and the oracle, fed from one place."""
+    from torchsim.sequence._accelerators import _NativeEpg
+
+    fused = _NativeEpg.apply(
+        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, profile, None, True
+    )
+    reference = simulate_packed(
+        leaves,
+        events,
+        state_count=STATES,
+        output_count=ECHOES,
+        profile=profile,
+        exchanging=True,
+    )
+    return fused, reference
+
+
+def _oracle_leaves():
+    return tuple(
+        value.detach().clone().requires_grad_(True)
+        for value in _prepared(**LIVE)
+    )
+
+
+def _agree(want, got, tolerance: float = 1e-3) -> None:
+    """Compare gradient tuples, skipping what float32 cannot resolve.
+
+    These span many orders of magnitude, and an entry far below the largest is
+    under the rounding of the sums that produced it.
+    """
+    floor = 1e-6 * max(float(value.abs().max()) for value in want)
+    compared = 0
+    for index, (expected, measured) in enumerate(zip(want, got, strict=True)):
+        scale = float(expected.abs().max())
+        if scale <= floor:
+            continue
+        assert float((expected - measured).abs().max()) / scale < tolerance, index
+        compared += 1
+    assert compared > 0
+
+
+def _inverted_events():
+    """An inversion, a delay, then a hard 90 and a read.
+
+    This is where the exchanging pool parts company with the semisolid one: a
+    sweep saturates a bound pool and turns free water over, so the two must
+    start at ``-(1 - f), -f`` rather than at ``-(1 - f), f``.
+    """
+    from torchsim.sequence._accelerators import (
+        _EXCITATION,
+        _INVERSION,
+        _RECORD,
+    )
+
+    return (
+        torch.tensor([0.0, 0.12, 0.0, 0.0], dtype=torch.float32),
+        torch.tensor([1, 0, 1, 2], dtype=torch.int32),
+        torch.tensor([0.0, 0.0, 0.5 * torch.pi, 0.0], dtype=torch.float32),
+        torch.tensor([0.0, 0.0, 0.5 * torch.pi, 0.0], dtype=torch.float32),
+        torch.tensor([_INVERSION, 0, _EXCITATION, _RECORD], dtype=torch.uint8),
+        torch.tensor([-1, -1, -1, 0], dtype=torch.int32),
+        torch.zeros(4, dtype=torch.int32),
+        torch.zeros(4, dtype=torch.float32),
+        torch.zeros(4, dtype=torch.float32),
+    )
+
+
+def test_an_inversion_turns_both_pools_over():
+    """Read against the oracle rather than against a sign: the exchange over
+    the recovery is what tells a pool that was inverted from one that was not.
+    """
+    leaves = _oracle_leaves()
+    events = _inverted_events()
+    from torchsim.sequence._accelerators import _NativeEpg
+
+    fused = _NativeEpg.apply(
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True
+    )
+    reference = simulate_packed(
+        leaves, events, state_count=STATES, output_count=1, exchanging=True
+    )
+
+    reference = reference.detach()
+    assert float(reference.abs().max()) > 0.0
+    assert float(
+        (fused.detach() - reference).abs().max() / reference.abs().max()
+    ) < 1e-4
+
+
+def test_the_inversion_efficiency_carries_a_gradient_from_both_pools():
+    """Both pools are turned over by the same number, so its gradient is the
+    sum of what each leaves; a kernel that inverted one would still produce a
+    plausible one.
+    """
+    leaves = _oracle_leaves()
+    events = _inverted_events()
+    from torchsim.sequence._accelerators import _NativeEpg
+
+    seed = torch.full((1, 1), 1.0 + 1.0j, dtype=torch.complex64)
+    fused = torch.autograd.grad(
+        _NativeEpg.apply(
+            *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True
+        ),
+        leaves,
+        seed,
+        allow_unused=True,
+        materialize_grads=True,
+    )
+    mirrored = _oracle_leaves()
+    reference = torch.autograd.grad(
+        simulate_packed(
+            mirrored, events, state_count=STATES, output_count=1,
+            exchanging=True,
+        ),
+        mirrored,
+        seed,
+        allow_unused=True,
+        materialize_grads=True,
+    )
+
+    index = TISSUE_NAMES.index("inversion_efficiency")
+    assert float(reference[index].abs().max()) > 0.0
+    _agree(reference, fused)
+
+
+@pytest.mark.parametrize("tabulated", [False, True])
+def test_the_fused_forward_matches_the_oracle(tabulated: bool):
+    """The oracle reaches its exponential through Pade rather than through the
+    closed form, so this is the transverse step checked against a different
+    algorithm and not against a second copy of itself.
+
+    Run with and without a tabulated rotation, because the two reach the
+    pulse through different code even though both pools take the same one.
+    """
+    profile = _instantaneous_table() if tabulated else None
+    fused, reference = _routes(_oracle_leaves(), _train_events(), profile)
+
+    reference = reference.detach()
+    assert float(reference.abs().max()) > 0.0
+    assert float(
+        (fused.detach() - reference).abs().max() / reference.abs().max()
+    ) < 1e-4
+
+
+@pytest.mark.parametrize("tabulated", [False, True])
+def test_the_fused_forward_mode_matches_the_oracle(tabulated: bool):
+    """A direction followed through both routes at once."""
+    profile = _instantaneous_table() if tabulated else None
+    events = _train_events()
+    prepared = _prepared(**LIVE)
+    generator = torch.Generator().manual_seed(37)
+    direction = tuple(
+        torch.randn(value.shape, generator=generator, dtype=torch.float32)
+        for value in prepared
+    )
+
+    def followed(route: int):
+        _, tangent = torch.func.jvp(
+            lambda *values: _routes(values, events, profile)[route],
+            prepared,
+            direction,
+        )
+        return tangent
+
+    fused, reference = followed(0), followed(1)
+
+    assert float(reference.abs().max()) > 0.0
+    assert float((fused - reference).abs().max() / reference.abs().max()) < 1e-3
+
+
+@pytest.mark.parametrize("tabulated", [False, True])
+def test_the_fused_derivatives_match_the_oracle(tabulated: bool):
+    """Every pass at once: autograd differentiates the oracle to whatever order
+    is asked of it, so the analytic kernels are checked against it rather than
+    against a difference.
+
+    Per parameter, not against one contracted scalar: a transposed adjoint
+    still transposes when a small gradient is wrong.
+    """
+    profile = _instantaneous_table() if tabulated else None
+    events = _train_events()
+    generator = torch.Generator().manual_seed(31)
+    seed = torch.randn(
+        (1, ECHOES), generator=generator, dtype=torch.float32
+    ) + 1j * torch.randn((1, ECHOES), generator=generator, dtype=torch.float32)
+    # The direction the second pass follows is drawn once, so the two routes
+    # are contracted against the same one rather than each against its own.
+    direction = tuple(
+        torch.randn(value.shape, generator=generator, dtype=torch.float32)
+        for value in _oracle_leaves()
+    )
+
+    def gradients(route: int, order: int):
+        leaves = _oracle_leaves()
+        signal = _routes(leaves, events, profile)[route]
+        first = torch.autograd.grad(
+            signal,
+            leaves,
+            seed,
+            create_graph=order > 1,
+            allow_unused=True,
+            materialize_grads=True,
+        )
+        if order == 1:
+            return first
+        return torch.autograd.grad(
+            first, leaves, direction, allow_unused=True, materialize_grads=True
+        )
+
+    for order in (1, 2):
+        _agree(gradients(1, order), gradients(0, order))
 
 
 # --- the other backend ---
