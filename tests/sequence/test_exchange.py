@@ -7,8 +7,8 @@ it has a T2, it sits at its own chemical shift, and a pulse rotates it rather
 than saturating it. So ``F+`` and ``F-`` double, and with them the shift, the
 spoil, the RF operator and what the ADC reads.
 
-The two second pools are alternatives rather than layers; a tissue declaring
-both is a three-pool system, which is refused.
+A tissue may declare this pool beside the semisolid one; what that system does
+is :mod:`test_both_pools`, and this file holds the exchanging pool on its own.
 """
 
 from __future__ import annotations
@@ -71,15 +71,6 @@ def test_the_default_tissue_runs_the_single_pool_kernel_bit_for_bit():
     )
 
     assert torch.equal(plain, gated)
-
-
-def test_two_second_pools_at_once_are_refused():
-    """Both together is a three-pool system, whose exchange matrix has no
-    closed form of the shape the kernels evaluate. Carrying one of the two
-    would answer a question nobody asked.
-    """
-    with pytest.raises(NotImplementedError, match="three pools"):
-        _signal(bound_fraction=0.1, pool_b_fraction=0.1)
 
 
 def test_a_second_pool_takes_its_share_of_the_first_echo():
