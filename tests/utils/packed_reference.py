@@ -8,7 +8,10 @@ from one place.
 
 It is deliberately slow and deliberately naive: it composes whole-array
 operations per event with no fusion and no state truncation, which is what
-makes it independent of the kernels it checks.
+makes it independent of the kernels it checks. The two-pool longitudinal step
+goes further and reaches its exponential through ``torch.matrix_exp``, so the
+closed form the kernels evaluate is checked against a different algorithm and
+not against a second copy of itself.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ def simulate_packed(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     locations: int = 1,
+    lineshape: Any = None,
 ) -> torch.Tensor:
     """Run one echo train and return its recorded signal.
 
@@ -65,6 +69,10 @@ def simulate_packed(
         Slice positions each voxel was spread over. The prepared tissue runs
         voxel-major, so a voxel's position along the slice is its index modulo
         this, which is the row of the table it reads.
+    lineshape
+        A :class:`~torchsim.sequence._lineshape.LineshapeTable`, or ``None``
+        for a single pool. Given one, the longitudinal step carries a bound
+        pool alongside the free water and each pulse saturates it.
 
     Returns
     -------
@@ -73,7 +81,7 @@ def simulate_packed(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, velocity,
-        _bound_fraction, _exchange_rate, _t1_bound,
+        bound_fraction, exchange_rate, t1_bound,
     ) = tissue
     # ``b1`` and ``b1_phase`` hold one row per shim the sequence drives, so a
     # pulse reads the field of the shim its event names.
@@ -83,7 +91,7 @@ def simulate_packed(
     washout = velocity.abs() * geometry.washout_scale
     (
         duration, kind, flip, phase, action, _output_index, shim_index,
-        _saturation, _rf_frequency,
+        saturation, rf_frequency,
     ) = events
     atom_count = t1.numel()
     shape = (atom_count, state_count)
@@ -100,7 +108,20 @@ def simulate_packed(
     fplus = torch.zeros(shape, dtype=torch.complex64, device=t1.device)
     fminus = torch.zeros_like(fplus)
     longitudinal = torch.zeros_like(fplus)
-    longitudinal[:, 0] = 1.0
+    bound = torch.zeros_like(fplus)
+    if lineshape is None:
+        longitudinal = longitudinal + _at_order_zero(longitudinal, 1.0)
+        generator = None
+    else:
+        # Equilibrium is split between the pools, so the free water starts at
+        # what the bound pool leaves it.
+        longitudinal = longitudinal + _at_order_zero(
+            longitudinal, 1.0 - bound_fraction
+        )
+        bound = bound + _at_order_zero(bound, bound_fraction)
+        generator = _exchange_generator(
+            t1, t1_bound, exchange_rate, bound_fraction
+        )
     signals = []
     slice_index = (
         torch.arange(atom_count, device=t1.device) % locations
@@ -128,13 +149,30 @@ def simulate_packed(
             fminus * off.conj()[:, None] * transverse_damping
             * transverse_phase.conj()
         )
-        longitudinal = (
-            longitudinal * e1[:, None] * longitudinal_damping * longitudinal_phase
-        )
-        # Order zero is undamped, so recovery is unaffected by diffusion.
-        recovery = torch.zeros_like(longitudinal)
-        recovery[:, 0] = 1.0 - e1
-        longitudinal = longitudinal + recovery
+        carried = longitudinal_damping * longitudinal_phase
+        if generator is None:
+            longitudinal = longitudinal * e1[:, None] * carried
+            # Order zero is undamped, so recovery is unaffected by diffusion.
+            longitudinal = longitudinal + _at_order_zero(longitudinal, 1.0 - e1)
+        else:
+            # Exchange mixes the two pools over the interval, which is one 2x2
+            # exponential for the whole event; the per-order damping and turn
+            # multiply what it leaves.
+            operator, restored = _two_pool_step(
+                generator, bound_fraction, t1, t1_bound, dt, wout
+            )
+            free_row = (
+                operator[:, 0, 0, None] * longitudinal
+                + operator[:, 0, 1, None] * bound
+            )
+            bound_row = (
+                operator[:, 1, 0, None] * longitudinal
+                + operator[:, 1, 1, None] * bound
+            )
+            longitudinal = free_row * carried + _at_order_zero(
+                longitudinal, restored[:, 0]
+            )
+            bound = bound_row * carried + _at_order_zero(bound, restored[:, 1])
 
         event_action = int(action[event])
         if event_action & _PRE_SHIFT:
@@ -147,6 +185,15 @@ def simulate_packed(
                 row = int(shim_index[event])
                 alpha = flip[event] * transmit[row]
                 phi = phase[event] + transmit_phase[row]
+                if lineshape is not None:
+                    # The bound pool absorbs the power the pulse deposits, so
+                    # it reads the bare flip the transmit field gives the
+                    # voxel rather than the slice-shaped rotation below.
+                    absorbed = torch.exp(
+                        saturation[event] * alpha.square()
+                        * lineshape.at(rf_frequency[event] - b0)
+                    )
+                    bound = bound * absorbed[:, None]
                 if profile is None:
                     fplus, fminus, longitudinal = _rotate(
                         fplus, fminus, longitudinal, alpha, phi
@@ -177,6 +224,71 @@ def simulate_packed(
             (atom_count, output_count), dtype=torch.complex64, device=t1.device
         )
     return torch.stack(signals, dim=-1)
+
+
+def _at_order_zero(like: torch.Tensor, value: Any) -> torch.Tensor:
+    """A state vector carrying ``value`` at order zero and nothing elsewhere."""
+    orders = torch.zeros(like.shape[-1], dtype=like.dtype, device=like.device)
+    orders[0] = 1.0
+    carried = torch.as_tensor(value, device=like.device).to(like.dtype)
+    return carried.reshape(-1, 1) * orders
+
+
+def _exchange_generator(
+    t1: torch.Tensor,
+    t1_bound: torch.Tensor,
+    exchange_rate: torch.Tensor,
+    bound_fraction: torch.Tensor,
+) -> torch.Tensor:
+    """``K - diag(R1)``, the generator of the two-pool longitudinal step.
+
+    A pool leaves at the rate scaled by the *other* pool's fraction, so the
+    exchange part conserves the total magnetization on its own.
+    """
+    free = 1.0 - bound_fraction
+    kab = exchange_rate * bound_fraction
+    kba = exchange_rate * free
+    return torch.stack(
+        (
+            torch.stack((-kab - 1000.0 / t1, kba), dim=-1),
+            torch.stack((kab, -kba - 1000.0 / t1_bound), dim=-1),
+        ),
+        dim=-2,
+    )
+
+
+def _two_pool_step(
+    generator: torch.Tensor,
+    bound_fraction: torch.Tensor,
+    t1: torch.Tensor,
+    t1_bound: torch.Tensor,
+    dt: Any,
+    wout: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """The interval's exchange operator and the recovery that goes with it.
+
+    Reached through ``torch.matrix_exp`` and a linear solve -- Pade with
+    scaling and squaring, and the textbook affine solution ``(e^{Lt} - I)
+    L^-1 C`` -- so neither the closed form the kernels evaluate nor the
+    identity that saves them the solve is assumed here.
+
+    Washout replaces a share of the voxel with fully relaxed spins, which
+    scales the operator and leaves the rest at equilibrium.
+    """
+    free = 1.0 - bound_fraction
+    equilibrium = torch.stack((free, bound_fraction), dim=-1)
+    source = torch.stack(
+        (free * 1000.0 / t1, bound_fraction * 1000.0 / t1_bound), dim=-1
+    )
+    exponential = torch.matrix_exp(generator * dt)
+    settled = torch.linalg.solve(generator, source)
+    identity = torch.eye(2, dtype=generator.dtype, device=generator.device)
+    restored = ((exponential - identity) @ settled[..., None])[..., 0]
+    attenuation = wout[:, None]
+    return (
+        exponential * attenuation[..., None],
+        attenuation * restored + (1.0 - attenuation) * equilibrium,
+    )
 
 
 def _shift(

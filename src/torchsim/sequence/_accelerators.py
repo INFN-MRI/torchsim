@@ -189,6 +189,23 @@ def _pulse_shapes(
     return used
 
 
+def largest_pulse_offset(description: SequenceDescription) -> float:
+    """How far off centre the sequence drives a pulse, in Hz.
+
+    A bound pool reads its lineshape at the pulse's frequency less the voxel's
+    own off-resonance, and this is the half of that read the sequence fixes.
+    Inversions count: they saturate the bound pool like any other pulse.
+    """
+    return max(
+        (
+            abs(float(event.rf_frequency_hz))
+            for event in description.events
+            if event.type is EventType.RF
+        ),
+        default=0.0,
+    )
+
+
 # The apparent diffusion coefficient is given in um**2/ms; the b-factor wants
 # it in m**2/s.
 _DIFFUSION_UNIT = 1e-9

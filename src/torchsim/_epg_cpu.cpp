@@ -3305,33 +3305,6 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     }
                     float grad_alpha = 0.0F;
                     float grad_phi = 0.0F;
-                    if constexpr (MT) {
-                        // The pulse scales every order of the bound pool by one
-                        // real number, so its cotangent is a single sum over the
-                        // states it multiplied.
-                        const float offset = primal.rf_frequency[event] - b0;
-                        float shape = 0.0F;
-                        float shape_slope = 0.0F;
-                        lineshape_at_slope(primal, offset, shape, shape_slope);
-                        const float exponent =
-                            primal.saturation[event] * alpha * alpha * shape;
-                        const float absorbed = std::exp(exponent);
-                        float grad_absorbed = 0.0F;
-                        for (std::size_t state = 0; state < states; ++state) {
-                            grad_absorbed += std::real(
-                                std::conj(bound_bar[state]) * bound_relaxed[state]
-                            );
-                            bound_bar[state] *= absorbed;
-                        }
-                        const float grad_exponent = grad_absorbed * absorbed;
-                        grad_alpha += grad_exponent * primal.saturation[event]
-                            * 2.0F * alpha * shape;
-                        // The lineshape is read at the pulse's offset from the
-                        // voxel, so a step in the voxel's own off-resonance
-                        // moves the read the other way.
-                        grad_b0 -= grad_exponent * primal.saturation[event]
-                            * alpha * alpha * shape_slope;
-                    }
                     if constexpr (PROFILED) {
                         Complex pair_a{};
                         Complex pair_b{};
@@ -3378,6 +3351,33 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             grad_alpha,
                             grad_phi
                         );
+                    }
+                    if constexpr (MT) {
+                        // The pulse scales every order of the bound pool by one
+                        // real number, so its cotangent is a single sum over the
+                        // states it multiplied.
+                        const float offset = primal.rf_frequency[event] - b0;
+                        float shape = 0.0F;
+                        float shape_slope = 0.0F;
+                        lineshape_at_slope(primal, offset, shape, shape_slope);
+                        const float exponent =
+                            primal.saturation[event] * alpha * alpha * shape;
+                        const float absorbed = std::exp(exponent);
+                        float grad_absorbed = 0.0F;
+                        for (std::size_t state = 0; state < states; ++state) {
+                            grad_absorbed += std::real(
+                                std::conj(bound_bar[state]) * bound_relaxed[state]
+                            );
+                            bound_bar[state] *= absorbed;
+                        }
+                        const float grad_exponent = grad_absorbed * absorbed;
+                        grad_alpha += grad_exponent * primal.saturation[event]
+                            * 2.0F * alpha * shape;
+                        // The lineshape is read at the pulse's offset from the
+                        // voxel, so a step in the voxel's own off-resonance
+                        // moves the read the other way.
+                        grad_b0 -= grad_exponent * primal.saturation[event]
+                            * alpha * alpha * shape_slope;
                     }
                     grad_flip_train[event] += grad_alpha * pulse_b1;
                     grad_b1 += grad_alpha * view.flip[event];
@@ -5084,31 +5084,6 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     }
                     DualFloat grad_alpha{0.0F, 0.0F};
                     DualFloat grad_phi{0.0F, 0.0F};
-                    if constexpr (MT) {
-                        const DualFloat offset =
-                            DualFloat{primal.rf_frequency[event], 0.0F} - b0;
-                        DualFloat shape{};
-                        DualFloat shape_slope{};
-                        lineshape_at_slope(primal, offset, shape, shape_slope);
-                        const DualFloat power =
-                            primal.saturation[event] * (alpha * alpha);
-                        const DualFloat absorbed = dual_exp(power * shape);
-                        DualFloat grad_absorbed{0.0F, 0.0F};
-                        for (std::size_t state = 0; state < states; ++state) {
-                            grad_absorbed = grad_absorbed
-                                + real_part(
-                                    conjugate(bound_bar[state])
-                                    * bound_relaxed[state]
-                                );
-                            bound_bar[state] = absorbed * bound_bar[state];
-                        }
-                        const DualFloat grad_exponent = grad_absorbed * absorbed;
-                        grad_alpha = grad_alpha
-                            + (primal.saturation[event] * 2.0F)
-                                * (grad_exponent * (alpha * shape));
-                        grad_b0 = grad_b0
-                            - grad_exponent * (power * shape_slope);
-                    }
                     if constexpr (PROFILED) {
                         DualComplex pair_a{};
                         DualComplex pair_b{};
@@ -5153,6 +5128,31 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                             grad_alpha,
                             grad_phi
                         );
+                    }
+                    if constexpr (MT) {
+                        const DualFloat offset =
+                            DualFloat{primal.rf_frequency[event], 0.0F} - b0;
+                        DualFloat shape{};
+                        DualFloat shape_slope{};
+                        lineshape_at_slope(primal, offset, shape, shape_slope);
+                        const DualFloat power =
+                            primal.saturation[event] * (alpha * alpha);
+                        const DualFloat absorbed = dual_exp(power * shape);
+                        DualFloat grad_absorbed{0.0F, 0.0F};
+                        for (std::size_t state = 0; state < states; ++state) {
+                            grad_absorbed = grad_absorbed
+                                + real_part(
+                                    conjugate(bound_bar[state])
+                                    * bound_relaxed[state]
+                                );
+                            bound_bar[state] = absorbed * bound_bar[state];
+                        }
+                        const DualFloat grad_exponent = grad_absorbed * absorbed;
+                        grad_alpha = grad_alpha
+                            + (primal.saturation[event] * 2.0F)
+                                * (grad_exponent * (alpha * shape));
+                        grad_b0 = grad_b0
+                            - grad_exponent * (power * shape_slope);
                     }
                     grad_flip_train[event] =
                         grad_flip_train[event] + grad_alpha * pulse_b1;

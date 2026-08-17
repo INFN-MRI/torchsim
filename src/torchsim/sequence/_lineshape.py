@@ -42,9 +42,10 @@ differ only in the values they give inside the cutoff, by a couple of percent.
 
 from __future__ import annotations
 
-__all__ = ["LineshapeTable", "lineshape_table"]
+__all__ = ["LineshapeTable", "lineshape_reaching", "lineshape_table"]
 
 import functools
+import math
 
 from dataclasses import dataclass
 
@@ -55,6 +56,13 @@ from scipy.interpolate import InterpolatedUnivariateSpline
 # T2 of the semisolid compartment, in seconds. The conventional value for
 # white matter, and the default the package's lineshape carries.
 BOUND_T2_S = 12e-6
+
+# How far off resonance a table reaches, and over how many knots, before a
+# sequence asks for more. 33 kHz is where the package's own lineshape stops,
+# and 128 knots across it carry the shape to five decades below its value at
+# resonance.
+OFFSET_MAX_HZ = 33e3
+OFFSET_BINS = 128
 
 
 @dataclass(frozen=True)
@@ -157,8 +165,8 @@ def _absorption(
 def lineshape_table(
     *,
     bound_t2_s: float = BOUND_T2_S,
-    offset_max_hz: float = 33e3,
-    bins: int = 128,
+    offset_max_hz: float = OFFSET_MAX_HZ,
+    bins: int = OFFSET_BINS,
     cutoff_hz: float = 1e3,
     quadrature: int = 20000,
     device: torch.device | str | None = None,
@@ -170,8 +178,9 @@ def lineshape_table(
     bound_t2_s
         T2 of the semisolid compartment. 12 us for white matter.
     offset_max_hz
-        Largest offset the table covers. A pulse driven past this is refused
-        rather than read at the last knot.
+        Largest offset the table covers. A read past it takes the last knot;
+        :func:`lineshape_reaching` is what sizes a table so that a sequence
+        never gets there.
     bins
         Knots along the offset axis. 128 over 33 kHz carries the lineshape to
         about 2e-10, which is five decades below its value at resonance.
@@ -243,4 +252,31 @@ def lineshape_table(
         slopes=torch.tensor(slopes, dtype=torch.float32, device=device),
         offset_max_hz=float(offset_max_hz),
         cutoff_hz=float(edge),
+    )
+
+
+def lineshape_reaching(
+    offset_hz: float, *, device: torch.device | str | None = None
+) -> LineshapeTable:
+    """A table that reaches this far off resonance.
+
+    The knot spacing is held at the default's, so a sequence played further
+    out gets more knots rather than coarser ones -- and the extent is rounded
+    up to a whole number of default tables, so runs asking for similar ranges
+    share one instead of each integrating its own.
+
+    Parameters
+    ----------
+    offset_hz
+        The largest ``|pulse frequency - voxel off-resonance|`` the run can
+        read the lineshape at.
+
+    Returns:
+        The table, memoized with every other of its size.
+    """
+    blocks = max(1, math.ceil(abs(offset_hz) / OFFSET_MAX_HZ))
+    return lineshape_table(
+        offset_max_hz=blocks * OFFSET_MAX_HZ,
+        bins=blocks * (OFFSET_BINS - 1) + 1,
+        device=device,
     )

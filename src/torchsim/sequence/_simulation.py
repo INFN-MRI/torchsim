@@ -22,10 +22,10 @@ from typing import Any, Literal
 import torch
 
 from .. import epg
-from ._accelerators import geometry_of, simulate_native
+from ._accelerators import geometry_of, largest_pulse_offset, simulate_native
 from ._transition import ExactSliceProfile
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
-from ._lineshape import lineshape_table
+from ._lineshape import lineshape_reaching
 from ._parameters import TISSUE_NAMES, wants_bound_pool
 from ._transmit import shim_rows, transmit_field
 
@@ -51,6 +51,25 @@ _TRANSMIT = frozenset(
 _RELAXATION_TIMES = tuple(
     TISSUE_NAMES.index(name) for name in ("t1_ms", "t2_ms", "t1_bound_ms")
 )
+
+
+def _absorption_table(
+    description: SequenceDescription,
+    b0_hz: torch.Tensor,
+    device: torch.device | str | None,
+) -> Any:
+    """The bound pool's lineshape, reaching as far off centre as this run goes.
+
+    The read is the pulse's frequency less the voxel's own off-resonance, so
+    the sequence fixes one half of it and the tissue the other. Sizing the
+    table to their sum is what keeps a pulse played far off resonance from
+    reading the last knot -- which would saturate the pool by the value at the
+    table's edge rather than by the far smaller one out where the pulse is.
+    """
+    voxel = float(b0_hz.abs().max()) if b0_hz.numel() else 0.0
+    return lineshape_reaching(
+        largest_pulse_offset(description) + voxel, device=device
+    )
 
 
 @dataclass(frozen=True)
@@ -222,7 +241,7 @@ class EpgSimulator:
                 nstates=nstates,
                 slice_profile=profile,
                 rf_raster_time_s=rf_raster_time_s,
-                lineshape=lineshape_table(device=target_device)
+                lineshape=_absorption_table(description, b0, target_device)
                 if bound_pool
                 else None,
             )

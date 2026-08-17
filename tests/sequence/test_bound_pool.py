@@ -23,10 +23,11 @@ from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed,
 )
-from torchsim.sequence._description import RfDefinition, RfShape
+from torchsim.sequence._description import EventType, RfDefinition, RfShape
 from torchsim.sequence._lineshape import lineshape_table
 from torchsim.sequence._parameters import TISSUE_NAMES
 from torchsim.sequence._simulation import _prepare_tissue
+from utils.packed_reference import simulate_packed
 
 ECHOES = 8
 STATES = 8
@@ -343,12 +344,12 @@ def _saturation_events(saturation, offset_hz, delay_s=0.3):
     )
 
     return (
-        torch.tensor([[0.0, delay_s, 0.0, 0.0]], dtype=torch.float32),
+        torch.tensor([0.0, delay_s, 0.0, 0.0], dtype=torch.float32),
         torch.tensor([1, 0, 1, 2], dtype=torch.int32),
         torch.tensor(
-            [[0.5 * torch.pi, 0.0, 0.5 * torch.pi, 0.0]], dtype=torch.float32
+            [0.5 * torch.pi, 0.0, 0.5 * torch.pi, 0.0], dtype=torch.float32
         ),
-        torch.zeros((1, 4), dtype=torch.float32),
+        torch.zeros(4, dtype=torch.float32),
         torch.tensor(
             [_EXCITATION | _SPOIL_AFTER, 0, _EXCITATION, _RECORD],
             dtype=torch.uint8,
@@ -637,7 +638,7 @@ def _live_events():
     return _saturation_events(MILLISECOND_PULSE, PULSE_OFFSET_HZ, delay_s=0.4)
 
 
-def _live_adjoint(prepared, seed):
+def _live_adjoint(prepared, seed, profile=None):
     """Gradients of ``Re(<seed, y>)`` w.r.t. every differentiable input."""
     from torchsim.sequence._accelerators import _run_packed_vjp
 
@@ -648,6 +649,7 @@ def _live_adjoint(prepared, seed):
         state_count=STATES,
         output_count=1,
         threads=1,
+        profile=profile,
         lineshape=lineshape_table(),
     )
 
@@ -660,7 +662,10 @@ def _directions(prepared, events, generator):
     )
 
 
-def test_the_adjoint_is_the_transpose_of_the_forward_direction() -> None:
+@pytest.mark.parametrize("tabulated", [False, True])
+def test_the_adjoint_is_the_transpose_of_the_forward_direction(
+    tabulated: bool,
+) -> None:
     """``<w, J v> == <J^T w, v>``, which no finite difference can fake.
 
     Both sides are exact linear algebra on the same Jacobian, so this pins the
@@ -668,9 +673,14 @@ def test_the_adjoint_is_the_transpose_of_the_forward_direction() -> None:
     and of the split the fraction starts the two pools at -- against a forward
     mode that finite differences have already checked. A sign or a factor
     dropped anywhere in the adjoint breaks it; a tolerance cannot hide it.
+
+    Run with and without a tabulated rotation, because the transmit field
+    reaches the answer through both the rotation and the power the pulse
+    deposits, and the two arrive at its gradient by different routes.
     """
     from torchsim.sequence._accelerators import _run_packed_jvp
 
+    profile = _instantaneous_table() if tabulated else None
     prepared = _prepared(**LIVE)
     events = _live_events()
     generator = torch.Generator().manual_seed(11)
@@ -687,18 +697,25 @@ def test_the_adjoint_is_the_transpose_of_the_forward_direction() -> None:
         STATES,
         1,
         1,
+        profile=profile,
         lineshape=lineshape_table(),
     )
     forward = float((seed.conj() * tangent).real.sum())
 
-    gradients = _live_adjoint(prepared, seed)
-    reverse = sum(
+    gradients = _live_adjoint(prepared, seed, profile)
+    terms = [
         float((gradient * value).sum())
         for gradient, value in zip(gradients, direction, strict=True)
-    )
+    ]
+    reverse = sum(terms)
 
-    assert abs(forward) > 0.0
-    assert abs(forward - reverse) / abs(forward) < 1e-4
+    # Measured against the size of the terms rather than of their sum, which
+    # can cancel. The tolerance is two orders above the residual float32
+    # leaves and two below what dropping one contribution to the transmit
+    # field's gradient costs, so it is tight enough to see that happen.
+    scale = sum(abs(term) for term in terms)
+    assert scale > 0.0
+    assert abs(forward - reverse) / scale < 1e-6
 
 
 @pytest.mark.parametrize("name", DIRECTIONS)
@@ -855,6 +872,116 @@ def test_the_single_pool_gradient_still_reaches_every_property():
         assert float(leaves[name].grad.abs().max()) == 0.0
 
 
+# --- sizing the table to what the sequence asks of it ---
+
+
+def _tuned(offset_hz: float):
+    """The echo train with every pulse driven this far off centre."""
+    from dataclasses import replace
+
+    description = _description()
+    return replace(
+        description,
+        events=tuple(
+            replace(event, params=(*event.params[:4], offset_hz, *event.params[5:]))
+            if event.type is EventType.RF
+            else event
+            for event in description.events
+        ),
+    )
+
+
+def test_the_offset_a_sequence_drives_its_pulses_to_is_read_off_the_events():
+    from torchsim.sequence._accelerators import largest_pulse_offset
+
+    assert largest_pulse_offset(_description()) == 0.0
+    assert largest_pulse_offset(_tuned(-6.0e3)) == 6.0e3
+
+
+def test_a_table_stopping_short_cannot_tell_two_far_pulses_apart():
+    """What the sizing is for.
+
+    The lineshape falls steeply, so a read past the last knot returns the
+    value at the table's edge -- which saturates the bound pool by orders of
+    magnitude more than the pulse actually does. A default-sized table gives
+    a pulse at 60 kHz and one at 90 kHz the same answer; one sized to reach
+    them does not.
+    """
+    from torchsim.sequence._lineshape import lineshape_reaching
+
+    near, far = torch.tensor(60.0e3), torch.tensor(90.0e3)
+    stops_short = lineshape_table()
+    assert float(stops_short.at(near)) == float(stops_short.at(far))
+
+    reaches = lineshape_reaching(90.0e3)
+    assert float(reaches.at(near)) > float(reaches.at(far)) > 0.0
+    assert float(reaches.at(near)) < float(stops_short.at(near))
+
+
+def test_reaching_further_adds_knots_rather_than_spreading_them():
+    """A sequence played further out gets a longer table, not a coarser one."""
+    from torchsim.sequence._lineshape import lineshape_reaching
+
+    default = lineshape_table()
+    stretched = lineshape_reaching(90.0e3)
+
+    assert stretched.offset_max_hz >= 90.0e3
+    assert stretched.bins > default.bins
+    assert abs(stretched.step - default.step) < 1e-9 * default.step
+
+
+def test_sequences_asking_for_similar_ranges_share_one_table():
+    """The integral costs far more than a simulation does, so runs that can use
+    the same table have to get the same object rather than each paying for it.
+
+    Rounding the extent up to a whole number of default tables is what makes
+    that happen for ranges that merely differ, rather than only for ones that
+    match to the hertz.
+    """
+    from torchsim.sequence._lineshape import OFFSET_MAX_HZ, lineshape_reaching
+
+    assert lineshape_reaching(0.0) is lineshape_reaching(30.0e3)
+    assert lineshape_reaching(0.0).offset_max_hz == OFFSET_MAX_HZ
+    assert lineshape_reaching(40.0e3) is lineshape_reaching(60.0e3)
+    assert lineshape_reaching(40.0e3) is not lineshape_reaching(30.0e3)
+
+
+def test_the_voxel_is_counted_beside_the_pulse():
+    """The read is the pulse's frequency less the voxel's own, so a table sized
+    from the sequence alone still stops short of what an off-resonant voxel
+    reads.
+    """
+    from torchsim.sequence._simulation import _absorption_table
+
+    still = _absorption_table(_tuned(33.0e3), torch.zeros(1), None)
+    spread = _absorption_table(
+        _tuned(33.0e3), torch.tensor([-8.0e3, 8.0e3]), None
+    )
+
+    assert still.offset_max_hz >= 33.0e3
+    assert spread.offset_max_hz >= 41.0e3
+
+
+def test_a_far_off_resonance_prep_reaches_the_public_api():
+    """The whole path: a description whose pulses sit past the default table,
+    simulated through the public API rather than through the packed buffers.
+    """
+    def signal(offset_hz):
+        return FSE().simulate(
+            _tuned(offset_hz),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0]),
+                t2_ms=torch.tensor([80.0]),
+                bound_fraction=FRACTION,
+                exchange_rate_hz=RATE_HZ,
+            ),
+            nstates=STATES,
+        ).signal
+
+    assert float(signal(60.0e3).abs().max()) > 0.0
+    assert not torch.equal(signal(60.0e3), signal(0.0))
+
+
 # --- the bound pool beside a tabulated rotation ---
 
 
@@ -959,6 +1086,118 @@ def test_a_tabulated_bound_pool_run_is_differentiable_both_ways():
     assert abs(difference) > 0.0
     assert abs(forward - difference) / abs(difference) < 5e-3
     assert abs(gradient - difference) / abs(difference) < 5e-3
+
+
+# --- against the state machine written out in torch ---
+
+
+def _routes(leaves, events, profile=None):
+    """The kernels and the oracle, fed from one place."""
+    from torchsim.sequence._accelerators import _NativeEpg
+
+    table = lineshape_table()
+    fused = _NativeEpg.apply(
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, table
+    )
+    reference = simulate_packed(
+        leaves,
+        events,
+        state_count=STATES,
+        output_count=1,
+        profile=profile,
+        lineshape=table,
+    )
+    return fused, reference
+
+
+def _live_leaves():
+    return tuple(
+        value.detach().clone().requires_grad_(True)
+        for value in _prepared(**LIVE)
+    )
+
+
+@pytest.mark.parametrize("tabulated", [False, True])
+def test_the_fused_forward_matches_the_oracle(tabulated: bool):
+    """The oracle reaches its exponential through Pade rather than through the
+    closed form, so this is the two-pool step checked against a different
+    algorithm and not against a second copy of itself.
+
+    Run with and without a tabulated rotation, because the two pools read a
+    pulse differently and only a table separates the readings.
+    """
+    profile = _instantaneous_table() if tabulated else None
+    fused, reference = _routes(_live_leaves(), _live_events(), profile)
+
+    reference = reference.detach()
+    assert float(reference.abs().max()) > 0.0
+    assert float(
+        (fused.detach() - reference).abs().max() / reference.abs().max()
+    ) < 1e-4
+
+
+@pytest.mark.parametrize("tabulated", [False, True])
+def test_the_fused_forward_mode_matches_the_oracle(tabulated: bool):
+    """A direction followed through both routes at once."""
+    profile = _instantaneous_table() if tabulated else None
+    events = _live_events()
+    prepared = _prepared(**LIVE)
+    generator = torch.Generator().manual_seed(37)
+    direction = tuple(
+        torch.randn(value.shape, generator=generator, dtype=torch.float32)
+        for value in prepared
+    )
+
+    def followed(route: int):
+        _, tangent = torch.func.jvp(
+            lambda *values: _routes(values, events, profile)[route],
+            prepared,
+            direction,
+        )
+        return tangent
+
+    fused, reference = followed(0), followed(1)
+
+    assert float(reference.abs().max()) > 0.0
+    assert float((fused - reference).abs().max() / reference.abs().max()) < 1e-3
+
+
+@pytest.mark.parametrize("tabulated", [False, True])
+def test_the_fused_derivatives_match_the_oracle(tabulated: bool):
+    """Every pass at once: autograd differentiates the oracle to whatever order
+    is asked of it, so the analytic kernels are checked against it rather than
+    against a difference.
+    """
+    profile = _instantaneous_table() if tabulated else None
+    seed = torch.full((1, 1), 1.0 + 1.0j, dtype=torch.complex64)
+    generator = torch.Generator().manual_seed(31)
+    events = _live_events()
+    # The direction the second pass follows is drawn once, so the two routes
+    # are contracted against the same one rather than each against its own.
+    direction = tuple(
+        torch.randn(value.shape, generator=generator, dtype=torch.float32)
+        for value in _live_leaves()
+    )
+
+    def gradients(route: int, order: int):
+        leaves = _live_leaves()
+        signal = _routes(leaves, events, profile)[route]
+        first = torch.autograd.grad(
+            signal,
+            leaves,
+            seed,
+            create_graph=order > 1,
+            allow_unused=True,
+            materialize_grads=True,
+        )
+        if order == 1:
+            return first
+        return torch.autograd.grad(
+            first, leaves, direction, allow_unused=True, materialize_grads=True
+        )
+
+    for order in (1, 2):
+        _agree(gradients(1, order), gradients(0, order), tolerance=1e-3)
 
 
 # --- the other backends ---
@@ -1240,3 +1479,73 @@ def test_a_streamed_adjoint_matches_the_whole_one():
 
     for side in range(2):
         _agree(whole[side], streamed[side])
+
+
+def _volume(voxels: int, **leaves) -> TissueProperties:
+    """A tissue spread over a volume too large to hold on the card at once."""
+    return TissueProperties(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-300.0, 300.0, voxels),
+        **leaves,
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_streamed_public_simulation_matches_the_whole_one():
+    """The path a user takes: a volume simulated through the public API with
+    the devices given less memory than it needs, so it arrives in chunks.
+    """
+    from torchsim.sequence._accelerators import offload
+
+    voxels = 3000
+    tissue = _volume(
+        voxels,
+        bound_fraction=torch.linspace(0.02, 0.25, voxels),
+        exchange_rate_hz=torch.linspace(5.0, 80.0, voxels),
+        t1_bound_ms=torch.linspace(50.0, 900.0, voxels),
+    )
+
+    def run():
+        return FSE().simulate(_description(), tissue, nstates=STATES).signal
+
+    whole = run()
+    with offload(["cuda"], budget_bytes=1 << 20):
+        streamed = run()
+
+    assert float(whole.abs().max()) > 0.0
+    assert float((whole - streamed).abs().max() / whole.abs().max()) < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_gradient_taken_after_a_streamed_forward_matches_the_whole_one():
+    """Fitting a bound fraction over a volume is the reason the adjoint exists.
+
+    An offload plan reaches the forward, which arrives in chunks; the adjoint
+    replays the trajectory from the inputs rather than from anything the
+    forward left, so the two halves have to agree across that boundary.
+    """
+    from torchsim.sequence._accelerators import offload
+
+    voxels = 3000
+
+    def gradient():
+        leaves = {
+            name: value.clone().requires_grad_(True)
+            for name, value in (
+                ("bound_fraction", torch.linspace(0.02, 0.25, voxels)),
+                ("exchange_rate_hz", torch.linspace(5.0, 80.0, voxels)),
+                ("t1_bound_ms", torch.linspace(50.0, 900.0, voxels)),
+            )
+        }
+        signal = FSE().simulate(
+            _description(), _volume(voxels, **leaves), nstates=STATES
+        ).signal
+        signal.abs().square().sum().backward()
+        return tuple(leaves[name].grad for name in leaves)
+
+    whole = gradient()
+    with offload(["cuda"], budget_bytes=1 << 20):
+        streamed = gradient()
+
+    _agree(whole, streamed, tolerance=1e-3)
