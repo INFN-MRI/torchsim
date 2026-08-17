@@ -23,7 +23,6 @@ import torch
 
 from .. import epg
 from ._accelerators import (
-    _one_second_pool,
     geometry_of,
     largest_pulse_offset,
     simulate_native,
@@ -238,7 +237,7 @@ class EpgSimulator:
         ) = prepared
         bound_pool = wants_bound_pool(tissue.bound_fraction)
         exchange_pool = wants_exchange_pool(tissue.pool_b_fraction)
-        _one_second_pool(bound_pool, exchange_pool)
+        _within_one_voxel(tissue.bound_fraction, tissue.pool_b_fraction)
 
         minimum_states = 1 + repetitions * self.shifts_per_repetition(description)
         if nstates is None:
@@ -592,6 +591,25 @@ def _as_float_tensor(value: Any, device: torch.device) -> torch.Tensor:
     if isinstance(value, torch.Tensor):
         return value.to(device=device, dtype=torch.float32)
     return torch.as_tensor(value, dtype=torch.float32, device=device)
+
+
+def _within_one_voxel(bound_fraction: Any, pool_b_fraction: Any) -> None:
+    """Refuse fractions that give away more of the voxel than there is.
+
+    The free water is whatever the two second pools leave, so their fractions
+    have to sum to at most one. Past that the free pool starts at a negative
+    magnetization, which every pass afterwards would carry as though it meant
+    something.
+
+    Raises:
+        ValueError: if the two fractions sum past one anywhere.
+    """
+    total = torch.as_tensor(bound_fraction) + torch.as_tensor(pool_b_fraction)
+    if bool((total > 1.0).any()):
+        raise ValueError(
+            "bound_fraction and pool_b_fraction share the voxel with the free "
+            "water, so they cannot sum past one"
+        )
 
 
 def _as_integer(value: Any, name: str) -> int:

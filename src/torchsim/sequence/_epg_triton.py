@@ -11,6 +11,7 @@ import torch
 from ._accelerators import _shim_count, _train_count
 import triton
 import triton.language as tl
+from triton.language.extra import libdevice
 
 from ._parameters import (
     NO_GEOMETRY,
@@ -229,6 +230,195 @@ def _two_pool_step(r1_free, r1_bound, exchange, bound, dt, attenuation):
         e22,
         free - (e11 * free + e12 * bound),
         bound - (e21 * free + e22 * bound),
+    )
+
+
+# The three-pool longitudinal step is the one operator the state machine forms
+# in double. A 2x2's closed form loses accuracy like the interval; a 3x3's
+# loses it like the square of it, because the answer's entries are order one
+# while the terms that build them are order |L dt|^2. That is intrinsic to
+# writing the answer as a polynomial in the generator, so it is met with
+# precision rather than with rearrangement. It is formed once per interval, not
+# once per dephasing order, so the cost stays out of the state loop.
+_SPREAD_CUT = tl.constexpr(1.0)
+_SINCH_CUT = tl.constexpr(1e-4)
+# Where two roots meet the sorted roots have a vertical tangent the operator
+# itself does not, so the arc cosine is held a hair off its endpoints.
+_ARG_LIMIT = tl.constexpr(1.0 - 1e-16)
+_TURN_THIRD = tl.constexpr(2.09439510239319549231)
+
+
+@triton.jit
+def _exp_difference(lower, upper, exp_lower, exp_upper):
+    """``[a, b] exp``, from exponentials the caller has already taken.
+
+    Near the coalescence ``sinh(d)/d`` is even in the gap, so the series is a
+    polynomial in its square; the exponential of the midpoint is reached from
+    the lower one by a series too, because over a gap this small it is one.
+    """
+    half = 0.5 * (upper - lower)
+    near = tl.abs(half) < _SINCH_CUT
+    square = half * half
+    # exp(mid) * sinh(half)/half, with both factors expanded about zero.
+    series = exp_lower * (1.0 + half + 0.5 * square) * (1.0 + square / 6.0)
+    gap = tl.where(near, 1.0, upper - lower)
+    return tl.where(near, series, (exp_upper - exp_lower) / gap)
+
+
+@triton.jit
+def _three_pool_step(
+    r1_free, r1_pool_b, r1_bound, exchange_b, exchange_c,
+    fraction_b, fraction_c, dt, attenuation,
+):
+    """``expm((K - diag(R1)) t)`` for free water beside both second pools.
+
+    Free water is pool a, the chemically exchanging pool b and the semisolid
+    pool c; each second pool exchanges with the free water and not with the
+    other. Returns the nine entries and the three recoveries, narrowed to
+    float32 once they are an operator.
+
+    Two branches, by how far apart the eigenvalues are. Where they are close
+    the exponential's own series is reduced modulo the characteristic
+    polynomial, which forms no root at all. Where they are far apart the
+    interpolating polynomial is taken in Newton form at the three roots, each
+    of which is non-positive, so a long interval cannot overflow.
+    """
+    step = dt.to(tl.float64)
+    free = (1.0 - fraction_b - fraction_c).to(tl.float64)
+    pool_b = fraction_b.to(tl.float64)
+    pool_c = fraction_c.to(tl.float64)
+    kab = exchange_b.to(tl.float64) * pool_b
+    kba = exchange_b.to(tl.float64) * free
+    kac = exchange_c.to(tl.float64) * pool_c
+    kca = exchange_c.to(tl.float64) * free
+    a00 = (-kab - kac - r1_free.to(tl.float64)) * step
+    a01 = kba * step
+    a02 = kca * step
+    a10 = kab * step
+    a11 = (-kba - r1_pool_b.to(tl.float64)) * step
+    a20 = kac * step
+    a22 = (-kca - r1_bound.to(tl.float64)) * step
+
+    third = (a00 + a11 + a22) / 3.0
+    s00 = a00 - third
+    s11 = a11 - third
+    s22 = a22 - third
+    # The two second pools do not exchange, so the generator keeps a pair of
+    # structural zeros the products below are written around.
+    minors = s00 * s11 - a01 * a10 + s00 * s22 - a02 * a20 + s11 * s22
+    determinant = s00 * s11 * s22 - a01 * (a10 * s22) + a02 * (-s11 * a20)
+
+    # --- close together: the series reduced modulo x^3 + minors x - det ---
+    flat = 1.0 + 0.0 * third
+    linear = 0.0 * third
+    square = 0.0 * third
+    sum_flat = flat
+    sum_linear = linear
+    sum_square = square
+    factorial = 1.0
+    for order in tl.static_range(1, 16):
+        next_flat = square * determinant
+        next_linear = flat - square * minors
+        next_square = linear
+        flat = next_flat
+        linear = next_linear
+        square = next_square
+        factorial = factorial * order
+        weight = 1.0 / factorial
+        sum_flat = sum_flat + weight * flat
+        sum_linear = sum_linear + weight * linear
+        sum_square = sum_square + weight * square
+    q00 = s00 * s00 + a01 * a10 + a02 * a20
+    q01 = s00 * a01 + a01 * s11
+    q02 = s00 * a02 + a02 * s22
+    q10 = a10 * s00 + s11 * a10
+    q11 = a10 * a01 + s11 * s11
+    q12 = a10 * a02
+    q20 = a20 * s00 + s22 * a20
+    q21 = a20 * a01
+    q22 = a20 * a02 + s22 * s22
+    lift = tl.exp(third)
+    c00 = lift * (sum_flat + sum_linear * s00 + sum_square * q00)
+    c01 = lift * (sum_linear * a01 + sum_square * q01)
+    c02 = lift * (sum_linear * a02 + sum_square * q02)
+    c10 = lift * (sum_linear * a10 + sum_square * q10)
+    c11 = lift * (sum_flat + sum_linear * s11 + sum_square * q11)
+    c12 = lift * (sum_square * q12)
+    c20 = lift * (sum_linear * a20 + sum_square * q20)
+    c21 = lift * (sum_square * q21)
+    c22 = lift * (sum_flat + sum_linear * s22 + sum_square * q22)
+
+    # --- far apart: the Newton form at the three roots ---
+    radius = tl.sqrt(tl.maximum(-minors * (1.0 / 3.0), 1e-300))
+    argument = tl.minimum(
+        tl.maximum(0.5 * determinant / (radius * radius * radius), -_ARG_LIMIT),
+        _ARG_LIMIT,
+    )
+    angle = libdevice.acos(argument) / 3.0
+    root_a = 2.0 * radius * tl.cos(angle) + third
+    root_b = 2.0 * radius * tl.cos(angle - _TURN_THIRD) + third
+    root_c = 2.0 * radius * tl.cos(angle - 2.0 * _TURN_THIRD) + third
+    low = tl.minimum(tl.minimum(root_a, root_b), root_c)
+    high = tl.maximum(tl.maximum(root_a, root_b), root_c)
+    middle = tl.maximum(
+        tl.minimum(root_a, root_b), tl.minimum(tl.maximum(root_a, root_b), root_c)
+    )
+    # Three exponentials serve every divided difference between them.
+    leading = tl.exp(low)
+    centre = tl.exp(middle)
+    trailing = tl.exp(high)
+    first = _exp_difference(low, middle, leading, centre)
+    span = high - low
+    second = (
+        _exp_difference(middle, high, centre, trailing) - first
+    ) / tl.where(span > 0.0, span, 1.0)
+    m00 = a00 - low
+    m11 = a11 - low
+    m22 = a22 - low
+    n00 = a00 - middle
+    n11 = a11 - middle
+    n22 = a22 - middle
+    p00 = m00 * n00 + a01 * a10 + a02 * a20
+    p01 = m00 * a01 + a01 * n11
+    p02 = m00 * a02 + a02 * n22
+    p10 = a10 * n00 + m11 * a10
+    p11 = a10 * a01 + m11 * n11
+    p12 = a10 * a02
+    p20 = a20 * n00 + m22 * a20
+    p21 = a20 * a01
+    p22 = a20 * a02 + m22 * n22
+    d00 = leading + first * m00 + second * p00
+    d01 = first * a01 + second * p01
+    d02 = first * a02 + second * p02
+    d10 = first * a10 + second * p10
+    d11 = leading + first * m11 + second * p11
+    d12 = second * p12
+    d20 = first * a20 + second * p20
+    d21 = second * p21
+    d22 = leading + first * m22 + second * p22
+
+    # The shifted roots sum to zero, so the sum of their squares is -2 * minors
+    # and none is larger than the root of that.
+    close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
+    damp = attenuation.to(tl.float64)
+    e00 = damp * tl.where(close, c00, d00)
+    e01 = damp * tl.where(close, c01, d01)
+    e02 = damp * tl.where(close, c02, d02)
+    e10 = damp * tl.where(close, c10, d10)
+    e11 = damp * tl.where(close, c11, d11)
+    e12 = damp * tl.where(close, c12, d12)
+    e20 = damp * tl.where(close, c20, d20)
+    e21 = damp * tl.where(close, c21, d21)
+    e22 = damp * tl.where(close, c22, d22)
+    grow_free = free - (e00 * free + e01 * pool_b + e02 * pool_c)
+    grow_pool_b = pool_b - (e10 * free + e11 * pool_b + e12 * pool_c)
+    grow_bound = pool_c - (e20 * free + e21 * pool_b + e22 * pool_c)
+    return (
+        e00.to(tl.float32), e01.to(tl.float32), e02.to(tl.float32),
+        e10.to(tl.float32), e11.to(tl.float32), e12.to(tl.float32),
+        e20.to(tl.float32), e21.to(tl.float32), e22.to(tl.float32),
+        grow_free.to(tl.float32), grow_pool_b.to(tl.float32),
+        grow_bound.to(tl.float32),
     )
 
 
@@ -4965,18 +5155,26 @@ def _epg_kernel(
     # carries longitudinal states alone -- nothing dephases it, so it reaches
     # the higher orders only through exchange with the free pool's -- while the
     # chemically exchanging one carries a transverse pair of its own.
+    #
+    # ``bound`` is whichever second pool the longitudinal step pairs the free
+    # water with -- the semisolid one when it is the only one, the exchanging
+    # one otherwise -- and ``semisolid`` is the third, which only a three-pool
+    # run carries.
     atom_bound = 0.0
     atom_exchange = 0.0
     atom_r1_bound = 0.0
     atom_r2_bound = 0.0
     atom_shift = 0.0
+    atom_semisolid = 0.0
+    atom_semisolid_exchange = 0.0
+    atom_r1_semisolid = 0.0
     if pools == 1:
         atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
         atom_exchange = tl.load(bound_exchange + atom, mask=active_atom, other=0.0)
         atom_r1_bound = 1000.0 / tl.load(
             t1_bound + atom, mask=active_atom, other=1.0
         )
-    if pools == 2:
+    if pools == 2 or pools == 3:
         atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
         atom_exchange = tl.load(
             pool_b_exchange + atom, mask=active_atom, other=0.0
@@ -4988,10 +5186,24 @@ def _epg_kernel(
             t2_pool_b + atom, mask=active_atom, other=1.0
         )
         atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
-    longitudinal_real = empty + tl.where(state == 0, 1.0 - atom_bound, 0.0)
+    if pools == 3:
+        atom_semisolid = tl.load(
+            bound_fraction + atom, mask=active_atom, other=0.0
+        )
+        atom_semisolid_exchange = tl.load(
+            bound_exchange + atom, mask=active_atom, other=0.0
+        )
+        atom_r1_semisolid = 1000.0 / tl.load(
+            t1_bound + atom, mask=active_atom, other=1.0
+        )
+    longitudinal_real = empty + tl.where(
+        state == 0, 1.0 - atom_bound - atom_semisolid, 0.0
+    )
     longitudinal_imag = empty
     bound_real = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
     bound_imag = empty
+    semisolid_real = empty + tl.where(state == 0, atom_semisolid + 0.0, 0.0)
+    semisolid_imag = empty
     bplus_real = empty
     bplus_imag = empty
     bminus_real = empty
@@ -5028,7 +5240,7 @@ def _epg_kernel(
         off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt + turn_t
         off_cos = tl.cos(off_phase)
         off_sin = tl.sin(off_phase)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             # Both pools take the same off-resonance and the same per-order
             # damping; what separates them is the chemical shift, which the
             # exchange operator already carries.
@@ -5092,7 +5304,54 @@ def _epg_kernel(
         # else in the state machine gives them.
         turn_cos = tl.cos(turn_z)
         turn_sin = tl.sin(turn_z)
-        if pools > 0:
+        if pools == 3:
+            # Three pools mix through a 3x3 formed in double; every pool takes
+            # the same per-order damping and flow phase, their order-n states
+            # describing one dephasing configuration.
+            (
+                t11, t12, t13, t21, t22, t23, t31, t32, t33,
+                grow_free, grow_pool_b, grow_semisolid,
+            ) = _three_pool_step(
+                1000.0 / atom_t1, atom_r1_bound, atom_r1_semisolid,
+                atom_exchange, atom_semisolid_exchange,
+                atom_bound, atom_semisolid, dt, wout,
+            )
+            free_real = (
+                t11 * longitudinal_real + t12 * bound_real + t13 * semisolid_real
+            )
+            free_imag = (
+                t11 * longitudinal_imag + t12 * bound_imag + t13 * semisolid_imag
+            )
+            held_real = (
+                t21 * longitudinal_real + t22 * bound_real + t23 * semisolid_real
+            )
+            held_imag = (
+                t21 * longitudinal_imag + t22 * bound_imag + t23 * semisolid_imag
+            )
+            stuck_real = (
+                t31 * longitudinal_real + t32 * bound_real + t33 * semisolid_real
+            )
+            stuck_imag = (
+                t31 * longitudinal_imag + t32 * bound_imag + t33 * semisolid_imag
+            )
+            longitudinal_real = damp_z * (
+                free_real * turn_cos - free_imag * turn_sin
+            )
+            longitudinal_imag = damp_z * (
+                free_real * turn_sin + free_imag * turn_cos
+            )
+            bound_real = damp_z * (held_real * turn_cos - held_imag * turn_sin)
+            bound_imag = damp_z * (held_real * turn_sin + held_imag * turn_cos)
+            semisolid_real = damp_z * (
+                stuck_real * turn_cos - stuck_imag * turn_sin
+            )
+            semisolid_imag = damp_z * (
+                stuck_real * turn_sin + stuck_imag * turn_cos
+            )
+            longitudinal_real += tl.where(state == 0, grow_free, 0.0)
+            bound_real += tl.where(state == 0, grow_pool_b, 0.0)
+            semisolid_real += tl.where(state == 0, grow_semisolid, 0.0)
+        elif pools > 0:
             # The exchange operator is a property of the interval, not of a
             # dephasing order, so it is formed once and the per-order damping
             # multiplies it. Both pools take that damping and the flow phase:
@@ -5144,7 +5403,7 @@ def _epg_kernel(
         fplus_imag = tl.where(pre_shift, shifted_pi, fplus_imag)
         fminus_real = tl.where(pre_shift, shifted_mr, fminus_real)
         fminus_imag = tl.where(pre_shift, shifted_mi, fminus_imag)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             b_pr, b_pi, b_mr, b_mi = _shift(
                 bplus_real, bplus_imag, bminus_real, bminus_imag,
                 scratch_pr, scratch_pi, scratch_mr, scratch_mi,
@@ -5165,7 +5424,7 @@ def _epg_kernel(
         longitudinal_imag = tl.where(
             invert, -atom_inversion * longitudinal_imag, longitudinal_imag
         )
-        if pools == 2:
+        if pools == 2 or pools == 3:
             # A chemically exchanging pool is free water and turns over like
             # any other; a semisolid one is saturated instead, which its own
             # saturation term already carries.
@@ -5220,7 +5479,7 @@ def _epg_kernel(
             longitudinal_real, longitudinal_imag,
         )
 
-        if pools == 2:
+        if pools == 2 or pools == 3:
             (
                 b_rot_pr, b_rot_pi, b_rot_mr, b_rot_mi, b_rot_zr, b_rot_zi,
             ) = _rotate_flip_phase(
@@ -5247,16 +5506,16 @@ def _epg_kernel(
             rotated_zi = shaped_zi
 
         rotate = is_rf & ~is_inversion
-        if pools == 2:
+        if pools == 2 or pools == 3:
             bplus_real = tl.where(rotate, b_rot_pr, bplus_real)
             bplus_imag = tl.where(rotate, b_rot_pi, bplus_imag)
             bminus_real = tl.where(rotate, b_rot_mr, bminus_real)
             bminus_imag = tl.where(rotate, b_rot_mi, bminus_imag)
             bound_real = tl.where(rotate, b_rot_zr, bound_real)
             bound_imag = tl.where(rotate, b_rot_zi, bound_imag)
-        if pools == 1:
-            # The bound pool absorbs the power the pulse deposits, so it reads
-            # the bare flip the transmit field gives the voxel -- not the
+        if pools == 1 or pools == 3:
+            # The semisolid pool absorbs the power the pulse deposits, so it
+            # reads the bare flip the transmit field gives the voxel -- not the
             # slice-shaped rotation the free pool takes from the table.
             offset = tl.load(rf_frequency + event) - atom_b0
             absorbed = tl.exp(
@@ -5265,8 +5524,16 @@ def _epg_kernel(
                 * alpha
                 * _lineshape_at(lineshape, offset, lineshape_bins, lineshape_step)
             )
-            bound_real = tl.where(rotate, absorbed * bound_real, bound_real)
-            bound_imag = tl.where(rotate, absorbed * bound_imag, bound_imag)
+            if pools == 1:
+                bound_real = tl.where(rotate, absorbed * bound_real, bound_real)
+                bound_imag = tl.where(rotate, absorbed * bound_imag, bound_imag)
+            else:
+                semisolid_real = tl.where(
+                    rotate, absorbed * semisolid_real, semisolid_real
+                )
+                semisolid_imag = tl.where(
+                    rotate, absorbed * semisolid_imag, semisolid_imag
+                )
         fplus_real = tl.where(rotate, rotated_pr, fplus_real)
         fplus_imag = tl.where(rotate, rotated_pi, fplus_imag)
         fminus_real = tl.where(rotate, rotated_mr, fminus_real)
@@ -5282,7 +5549,7 @@ def _epg_kernel(
         # pools; each pool's share is already in its own state.
         read_real = fplus_real
         read_imag = fplus_imag
-        if pools == 2:
+        if pools == 2 or pools == 3:
             read_real = fplus_real + bplus_real
             read_imag = fplus_imag + bplus_imag
         signal_real = atom_m0 * (read_real * adc_cos + read_imag * adc_sin)
@@ -5316,7 +5583,7 @@ def _epg_kernel(
         fplus_imag = tl.where(spoil, 0.0, fplus_imag)
         fminus_real = tl.where(spoil, 0.0, fminus_real)
         fminus_imag = tl.where(spoil, 0.0, fminus_imag)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             b_pr, b_pi, b_mr, b_mi = _shift(
                 bplus_real, bplus_imag, bminus_real, bminus_imag,
                 scratch_pr, scratch_pi, scratch_mr, scratch_mi,
@@ -6243,6 +6510,19 @@ def _epg_jvp_kernel(
             dbmi = tl.where(spoil, 0.0, tl.where(do_shift, s_dbmi, dbmi))
 
 
+def _pool_flag(lineshape: Any, exchanging: bool) -> int:
+    """Which pools a launch is to carry, as the kernels' own constexpr reads it.
+
+    Kept in one place so a launcher cannot describe the tissue one way and the
+    kernel read it another.
+    """
+    if lineshape is not None and exchanging:
+        return 3
+    if exchanging:
+        return 2
+    return 1 if lineshape is not None else 0
+
+
 def _problems_per_program(total: int, block_states: int) -> int:
     """How many independent problems to carry on one program's lane axis.
 
@@ -6447,7 +6727,7 @@ def simulate_into(
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
-        pools=2 if exchanging else (1 if lineshape is not None else 0),
+        pools=_pool_flag(lineshape, exchanging),
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -6617,7 +6897,7 @@ def simulate_jvp_into(
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
-        pools=2 if exchanging else (1 if lineshape is not None else 0),
+        pools=_pool_flag(lineshape, exchanging),
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -6876,7 +7156,7 @@ def simulate_vjp_jvp_into(
                 locations=1 if profile is None else profile.points,
                 profile_bins=0 if profile is None else profile.bins,
                 lineshape_bins=0 if lineshape is None else lineshape.bins,
-                pools=2 if exchanging else (1 if lineshape is not None else 0),
+                pools=_pool_flag(lineshape, exchanging),
                 **shape,
             )
 
@@ -6921,7 +7201,7 @@ def simulate_vjp_jvp(
         output_count=output_count,
         real_axis=real_axis,
         shims=_shim_count(tissue),
-        pools=2 if exchanging else (1 if lineshape is not None else 0),
+        pools=_pool_flag(lineshape, exchanging),
     )
     voxel_grads = simulate_vjp_jvp_into(
         tissue,

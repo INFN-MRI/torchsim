@@ -1172,35 +1172,33 @@ def _bound_pointers(
     return (*profiled, *_pointers((absorption,)))
 
 
-# Which second pool a kernel is to carry, as the extension's own enum reads it.
-_POOL_ONE, _POOL_SEMISOLID, _POOL_EXCHANGING = 0, 1, 2
+# Which pools a kernel is to carry, as the extension's own enum reads it.
+_POOL_ONE, _POOL_SEMISOLID, _POOL_EXCHANGING, _POOL_THREE = 0, 1, 2, 3
 
 
 def _pool_kind(lineshape: Any, exchanging: bool) -> int:
-    """Which second pool the kernels are to carry, if either.
-
-    The two are alternatives, and a caller asking for both has already been
-    refused by the time this is read.
-    """
+    """Which pools the kernels are to carry beside the free water."""
+    if lineshape is not None and exchanging:
+        return _POOL_THREE
     if exchanging:
         return _POOL_EXCHANGING
     return _POOL_SEMISOLID if lineshape is not None else _POOL_ONE
 
 
-def _one_second_pool(bound: bool, exchanging: bool) -> None:
-    """Refuse a tissue that declares both second pools.
+def _one_or_two_pools(lineshape: Any, exchanging: bool) -> None:
+    """Refuse a derivative of a three-pool run.
 
-    Two of them at once is a three-pool system, whose exchange matrix has no
-    closed-form exponential of the shape the kernels evaluate. Refusing says
-    so; carrying one of the two would answer a question nobody asked.
+    The forward carries all three pools; the derivative kernels carry two, so
+    asked for the Jacobian of a three-pool run they would answer with a
+    two-pool machine's -- a wrong number rather than a missing one.
 
     Raises:
-        NotImplementedError: if both pools are declared.
+        NotImplementedError: if the forward carried three pools.
     """
-    if bound and exchanging:
+    if lineshape is not None and exchanging:
         raise NotImplementedError(
-            "a semisolid pool and a chemically exchanging one are three pools "
-            "together; the kernels carry two"
+            "the derivative kernels carry two pools; a semisolid pool beside a "
+            "chemically exchanging one reaches the forward machine only"
         )
 
 
@@ -2333,6 +2331,7 @@ def _run_packed_vjp(
     the real-subspace kernels -- four of them short -- be chosen. All of them,
     if it is not given.
     """
+    _one_or_two_pools(lineshape, exchanging)
     profile = _tables(profile, events)
     if profile is not None:
         _within_the_table(profile, events[2])
@@ -2428,6 +2427,7 @@ def _run_packed_vjp_jvp(
     decides whether the real-subspace adjoint -- four of them short -- may be
     chosen when ``real_axis`` is left open. All of them, if it is not given.
     """
+    _one_or_two_pools(lineshape, exchanging)
     profile = _tables(profile, events)
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
@@ -2590,6 +2590,7 @@ def _run_packed_jvp(
     lineshape: Any = None,
     exchanging: bool = False,
 ) -> torch.Tensor:
+    _one_or_two_pools(lineshape, exchanging)
     profile = _tables(profile, events)
     if profile is not None:
         _within_the_table(profile, events[2])

@@ -27,6 +27,9 @@ constexpr std::uint8_t SPOIL_AFTER = 8;
 constexpr std::uint8_t SHIFT_AFTER = 16;
 constexpr std::uint8_t RECORD = 32;
 constexpr float PI = 3.14159265358979323846F;
+// The cubic that gives the three-pool roots is solved in double, where the
+// single-precision constant would cost more than the arithmetic around it.
+constexpr double TURN_THIRD = 2.09439510239319549231;
 
 // The kernels' input list, mirrored by sequence/_parameters.py: the tissue
 // properties, then the packed per-event buffers. The pointer arrays below are
@@ -488,6 +491,35 @@ inline DualFloat reciprocal(const DualFloat a) {
     return dual_reciprocal(a);
 }
 
+// The same handful of operations in double, for the one operator the state
+// machine forms there. A 2x2's closed form loses accuracy like the interval; a
+// 3x3's loses it like the square of it, because the answer's entries are order
+// one while the terms that build them are order |L dt|^2. See
+// tests/epg/test_three_pool.py, which measures both.
+inline double primal(const double a) {
+    return a;
+}
+
+inline double root(const double a) {
+    return std::sqrt(std::max(a, 0.0));
+}
+
+inline double exponential(const double a) {
+    return std::exp(a);
+}
+
+inline double reciprocal(const double a) {
+    return 1.0 / a;
+}
+
+inline double arc_cosine(const double a) {
+    return std::acos(a);
+}
+
+inline double cosine(const double a) {
+    return std::cos(a);
+}
+
 inline bool is_zero(const float a) {
     return a == 0.0F;
 }
@@ -703,16 +735,20 @@ inline float speed_direction(const float velocity) {
 // The equilibrium each pool relaxes toward is its own fraction -- ``L (1-f, f)
 // = -C`` holds identically -- so the recovery is ``(I - E1) (1-f, f)`` and
 // needs no 2x2 solve.
-// Which second pool a kernel carries, if any. The two are alternatives rather
-// than layers: a tissue declaring both is a three-pool system, whose exchange
-// matrix has no closed-form exponential of this shape, and the dispatch
-// refuses it rather than dropping one. Naming the choice rather than passing
-// two flags is what holds the instantiations at three per shim-and-profile
-// pair instead of four.
+// Which second pools a kernel carries, if any. Naming the combination rather
+// than passing two flags is what keeps the instantiations to one per case
+// instead of one per flag product, and lets the blocks below read as the
+// physics they are.
+//
+// Free water always carries ``F+``, ``F-`` and ``Z``. The chemically
+// exchanging pool carries all three as well; the semisolid pool carries ``Z``
+// alone, so the transverse operator is the same 2x2 whether or not it is
+// there and only the longitudinal one grows.
 enum class Pools {
     ONE,
     SEMISOLID,
     EXCHANGING,
+    THREE,
 };
 
 template <typename Scalar>
@@ -901,6 +937,212 @@ inline TwoPoolGradient<Scalar> two_pool_step_adjoint(
     gradient.dt = bar_dt;
     gradient.attenuation = bar_attenuation;
     return gradient;
+}
+
+// The three-pool longitudinal step: free water beside both second pools at
+// once, over one interval.
+//
+// This is the one operator the state machine forms in double, and the reason
+// is measured in tests/epg/test_three_pool.py: a 2x2's closed form loses
+// accuracy like the interval, a 3x3's like the square of it, because the
+// answer's entries are order one while the terms that build them are order
+// |L dt|^2. That is intrinsic to writing the answer as a polynomial in the
+// generator, so it is met with precision rather than with rearrangement. The
+// operator is formed once per interval and narrowed as soon as it is an
+// operator, so the cost stays out of the per-order loop.
+//
+// Two branches, by how far apart the eigenvalues are. Where they are close the
+// exponential's own series is reduced modulo the characteristic polynomial,
+// which forms no root at all -- so it stays differentiable exactly where the
+// roots stop being. Where they are far apart the interpolating polynomial is
+// taken in Newton form at the three roots, each of which is non-positive, so
+// each exponential of one is at most one and a long interval cannot overflow.
+//
+// Free water is pool a, the chemically exchanging pool b and the semisolid
+// pool c. Each second pool exchanges with the free water and not with the
+// other, which is what makes each two-pool system a limit of this one.
+constexpr double SPREAD_CUT = 1.0;
+constexpr double SINCH_CUT = 1e-4;
+// Where two roots meet the sorted roots have a vertical tangent the operator
+// itself does not, so the arc cosine is held a hair off its endpoints. At this
+// guard the operator is bit for bit what an unguarded one returns and the bias
+// at an exact degeneracy is four orders under the float32 that follows.
+constexpr double ARG_GUARD = 1e-16;
+constexpr int SERIES_TERMS = 16;
+
+template <typename Scalar>
+struct ThreePoolStep {
+    Scalar entry[3][3];
+    Scalar recovery[3];
+};
+
+template <typename Scalar>
+inline Scalar three_pool_minors(const Scalar (&a)[3][3]) {
+    return a[0][0] * a[1][1] - a[0][1] * a[1][0]
+        + a[0][0] * a[2][2] - a[0][2] * a[2][0]
+        + a[1][1] * a[2][2] - a[1][2] * a[2][1];
+}
+
+template <typename Scalar>
+inline Scalar three_pool_determinant(const Scalar (&a)[3][3]) {
+    return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+        - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+        + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+}
+
+// ``[a, b] exp``, by series where the two points nearly meet. sinh(d)/d is
+// even in the gap, so the series is a polynomial in its square.
+template <typename Scalar>
+inline Scalar three_pool_difference(const Scalar lower, const Scalar upper) {
+    const Scalar half = Scalar{0.5} * (upper - lower);
+    if (std::fabs(primal(half)) < SINCH_CUT) {
+        const Scalar square = half * half;
+        const Scalar series = Scalar{1.0}
+            + square * (Scalar{1.0 / 6.0}
+                + square * (Scalar{1.0 / 120.0} + square * Scalar{1.0 / 5040.0}));
+        return exponential(Scalar{0.5} * (lower + upper)) * series;
+    }
+    return (exponential(upper) - exponential(lower)) * reciprocal(upper - lower);
+}
+
+template <typename Scalar>
+inline ThreePoolStep<Scalar> three_pool_step(
+    const Scalar r1_free,
+    const Scalar r1_pool_b,
+    const Scalar r1_bound,
+    const Scalar exchange_b,
+    const Scalar exchange_c,
+    const Scalar fraction_b,
+    const Scalar fraction_c,
+    const Scalar dt,
+    const Scalar attenuation
+) {
+    const Scalar free = Scalar{1.0} - fraction_b - fraction_c;
+    const Scalar kab = exchange_b * fraction_b;
+    const Scalar kba = exchange_b * free;
+    const Scalar kac = exchange_c * fraction_c;
+    const Scalar kca = exchange_c * free;
+    Scalar a[3][3]{};
+    a[0][0] = (Scalar{} - kab - kac - r1_free) * dt;
+    a[0][1] = kba * dt;
+    a[0][2] = kca * dt;
+    a[1][0] = kab * dt;
+    a[1][1] = (Scalar{} - kba - r1_pool_b) * dt;
+    a[2][0] = kac * dt;
+    a[2][2] = (Scalar{} - kca - r1_bound) * dt;
+
+    const Scalar third = Scalar{1.0 / 3.0} * (a[0][0] + a[1][1] + a[2][2]);
+    Scalar shifted[3][3];
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            shifted[row][column] =
+                row == column ? a[row][column] - third : a[row][column];
+        }
+    }
+    const Scalar minors = three_pool_minors(shifted);
+    const Scalar determinant = three_pool_determinant(shifted);
+
+    Scalar operator_[3][3]{};
+    // The shifted generator's roots sum to zero, so the sum of their squares
+    // is -2 * minors and none is larger than the root of that.
+    if (-2.0 * primal(minors) < SPREAD_CUT * SPREAD_CUT) {
+        // x^k reduced modulo x^3 + minors x - determinant, carried as the
+        // three coefficients of 1, x and x^2 and stepped by the recurrence
+        // that reduction gives.
+        Scalar flat{1.0};
+        Scalar linear{};
+        Scalar square{};
+        Scalar sum_flat{1.0};
+        Scalar sum_linear{};
+        Scalar sum_square{};
+        double factorial = 1.0;
+        for (int order = 1; order < SERIES_TERMS; ++order) {
+            const Scalar next_flat = square * determinant;
+            const Scalar next_linear = flat - square * minors;
+            const Scalar next_square = linear;
+            flat = next_flat;
+            linear = next_linear;
+            square = next_square;
+            factorial *= static_cast<double>(order);
+            const Scalar weight{1.0 / factorial};
+            sum_flat = sum_flat + weight * flat;
+            sum_linear = sum_linear + weight * linear;
+            sum_square = sum_square + weight * square;
+        }
+        const Scalar scale = exponential(third);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                Scalar squared{};
+                for (int inner = 0; inner < 3; ++inner) {
+                    squared = squared + shifted[row][inner] * shifted[inner][column];
+                }
+                const Scalar identity = row == column ? sum_flat : Scalar{};
+                operator_[row][column] = scale
+                    * (identity + sum_linear * shifted[row][column]
+                       + sum_square * squared);
+            }
+        }
+    } else {
+        const Scalar radius = root(Scalar{-1.0 / 3.0} * minors);
+        // The depressed cubic's constant term is minus this determinant, and
+        // the trigonometric solution wants that term over twice the radius
+        // cubed -- so the two signs cancel and this one is positive.
+        Scalar argument =
+            Scalar{0.5} * determinant * reciprocal(radius * radius * radius);
+        constexpr double limit = 1.0 - ARG_GUARD;
+        if (primal(argument) > limit) {
+            argument = Scalar{limit};
+        } else if (primal(argument) < -limit) {
+            argument = Scalar{-limit};
+        }
+        const Scalar angle = Scalar{1.0 / 3.0} * arc_cosine(argument);
+        Scalar roots[3];
+        for (int turn = 0; turn < 3; ++turn) {
+            roots[turn] = Scalar{2.0} * radius
+                * cosine(angle - Scalar{TURN_THIRD * turn}) + third;
+        }
+        for (int pass = 0; pass < 2; ++pass) {
+            for (int index = 0; index + 1 < 3; ++index) {
+                if (primal(roots[index]) > primal(roots[index + 1])) {
+                    const Scalar held = roots[index];
+                    roots[index] = roots[index + 1];
+                    roots[index + 1] = held;
+                }
+            }
+        }
+        const Scalar low = three_pool_difference(roots[0], roots[1]);
+        const Scalar high = three_pool_difference(roots[1], roots[2]);
+        const Scalar second = (high - low) * reciprocal(roots[2] - roots[0]);
+        const Scalar leading = exponential(roots[0]);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                Scalar product{};
+                for (int inner = 0; inner < 3; ++inner) {
+                    const Scalar first = row == inner
+                        ? a[row][inner] - roots[0] : a[row][inner];
+                    const Scalar next = inner == column
+                        ? a[inner][column] - roots[1] : a[inner][column];
+                    product = product + first * next;
+                }
+                const Scalar shift = row == column
+                    ? a[row][column] - roots[0] : a[row][column];
+                const Scalar identity = row == column ? leading : Scalar{};
+                operator_[row][column] = identity + low * shift + second * product;
+            }
+        }
+    }
+
+    ThreePoolStep<Scalar> step{};
+    const Scalar equilibrium[3] = {free, fraction_b, fraction_c};
+    for (int row = 0; row < 3; ++row) {
+        Scalar carried{};
+        for (int column = 0; column < 3; ++column) {
+            step.entry[row][column] = attenuation * operator_[row][column];
+            carried = carried + step.entry[row][column] * equilibrium[column];
+        }
+        step.recovery[row] = equilibrium[row] - carried;
+    }
+    return step;
 }
 
 // The transverse step of two chemically exchanging pools: ``F+ <- E2 F+``
@@ -2973,11 +3215,19 @@ void simulate_range(
     const std::int64_t state_count,
     const std::int64_t output_count
 ) {
-    // Named rather than passed as two flags, so the blocks below read as the
-    // physics they are; see ``Pools``.
+    // Named rather than passed as flags, so the blocks below read as the
+    // physics they are; see ``Pools``. ``bound`` is whichever second pool the
+    // longitudinal step pairs the free water with -- the semisolid one when it
+    // is the only one, the exchanging one otherwise -- and ``semisolid`` is the
+    // third, which only a three-pool run carries.
     constexpr bool MT = POOLS == Pools::SEMISOLID;
     constexpr bool BM = POOLS == Pools::EXCHANGING;
+    constexpr bool THREE = POOLS == Pools::THREE;
     constexpr bool TWO_POOL = MT || BM;
+    // Which pool carries a transverse pair of its own, and which run absorbs
+    // the power a pulse deposits.
+    constexpr bool PAIRED = BM || THREE;
+    constexpr bool SATURATED = MT || THREE;
     const std::size_t states = static_cast<std::size_t>(state_count);
     std::vector<Complex> fplus(states);
     std::vector<Complex> fminus(states);
@@ -2987,9 +3237,10 @@ void simulate_range(
     // gradient to dephase -- while the chemically exchanging one carries a
     // full transverse pair of its own, which shifts and rotates alongside the
     // free water's.
-    std::vector<Complex> bound(TWO_POOL ? states : 0U);
-    std::vector<Complex> bound_plus(BM ? states : 0U);
-    std::vector<Complex> bound_minus(BM ? states : 0U);
+    std::vector<Complex> bound((TWO_POOL || THREE) ? states : 0U);
+    std::vector<Complex> semisolid(THREE ? states : 0U);
+    std::vector<Complex> bound_plus(PAIRED ? states : 0U);
+    std::vector<Complex> bound_minus(PAIRED ? states : 0U);
     Damping<float> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -2999,29 +3250,41 @@ void simulate_range(
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
-        const float bound_fraction = MT
-            ? buffers.bound_fraction[atom]
-            : (BM ? buffers.pool_b_fraction[atom] : 0.0F);
-        longitudinal[0] = Complex(1.0F - bound_fraction, 0.0F);
-        if constexpr (TWO_POOL) {
+        const float bound_fraction = (BM || THREE)
+            ? buffers.pool_b_fraction[atom]
+            : (MT ? buffers.bound_fraction[atom] : 0.0F);
+        const float semisolid_fraction =
+            SATURATED ? buffers.bound_fraction[atom] : 0.0F;
+        longitudinal[0] = Complex(
+            1.0F - bound_fraction - (THREE ? semisolid_fraction : 0.0F), 0.0F
+        );
+        if constexpr (TWO_POOL || THREE) {
             std::fill(bound.begin(), bound.end(), Complex{});
             bound[0] = Complex(bound_fraction, 0.0F);
         }
-        if constexpr (BM) {
+        if constexpr (THREE) {
+            std::fill(semisolid.begin(), semisolid.end(), Complex{});
+            semisolid[0] = Complex(semisolid_fraction, 0.0F);
+        }
+        if constexpr (PAIRED) {
             std::fill(bound_plus.begin(), bound_plus.end(), Complex{});
             std::fill(bound_minus.begin(), bound_minus.end(), Complex{});
         }
 
         const float r1 = 1000.0F / buffers.t1[atom];
         const float r2 = 1000.0F / buffers.t2[atom];
-        const float r1_bound = MT
-            ? 1000.0F / buffers.t1_bound[atom]
-            : (BM ? 1000.0F / buffers.t1_pool_b[atom] : 0.0F);
-        const float r2_bound = BM ? 1000.0F / buffers.t2_pool_b[atom] : 0.0F;
-        const float pool_shift = BM ? buffers.pool_b_shift[atom] : 0.0F;
-        const float exchange = MT
-            ? buffers.bound_exchange[atom]
-            : (BM ? buffers.pool_b_exchange[atom] : 0.0F);
+        const float r1_bound = (BM || THREE)
+            ? 1000.0F / buffers.t1_pool_b[atom]
+            : (MT ? 1000.0F / buffers.t1_bound[atom] : 0.0F);
+        const float r1_semisolid =
+            SATURATED ? 1000.0F / buffers.t1_bound[atom] : 0.0F;
+        const float r2_bound = PAIRED ? 1000.0F / buffers.t2_pool_b[atom] : 0.0F;
+        const float pool_shift = PAIRED ? buffers.pool_b_shift[atom] : 0.0F;
+        const float exchange = (BM || THREE)
+            ? buffers.pool_b_exchange[atom]
+            : (MT ? buffers.bound_exchange[atom] : 0.0F);
+        const float semisolid_exchange =
+            SATURATED ? buffers.bound_exchange[atom] : 0.0F;
         const float damping_rate = buffers.diffusion[atom];
         const float flow_rate = buffers.velocity[atom] * buffers.flow_scale;
         const float washout_rate =
@@ -3041,7 +3304,16 @@ void simulate_range(
             // The transverse pair is a property of the interval on the same
             // terms, so it is formed once too; a single-pool run has no second
             // transverse state for it to act on.
-            const TwoPoolTransverse<Complex> across = BM
+            // Three pools carry the same 2x2 transverse operator as two: only
+            // the free water and the exchanging pool have transverse states,
+            // and the semisolid pool reaches the answer along Z alone.
+            const ThreePoolStep<double> triple = THREE
+                ? three_pool_step<double>(
+                    r1, r1_bound, r1_semisolid, exchange, semisolid_exchange,
+                    bound_fraction, semisolid_fraction, dt, wout
+                )
+                : ThreePoolStep<double>{};
+            const TwoPoolTransverse<Complex> across = PAIRED
                 ? two_pool_transverse_step<float, Complex>(
                     r2, r2_bound, exchange, bound_fraction, pool_shift, dt,
                     wout
@@ -3057,7 +3329,7 @@ void simulate_range(
                 // Flow winds the transverse states through the same rotation
                 // off-resonance does, so the two phases add before either is
                 // taken; the longitudinal states carry a phase of their own.
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     // Both pools take the same off-resonance and the same
                     // per-order damping; what separates them is the chemical
                     // shift, which the exchange operator already carries.
@@ -3094,7 +3366,26 @@ void simulate_range(
                 // second pool has no diffusion coefficient of its own.
                 const Complex spin =
                     std::polar(damping.longitudinal[index], turn_longitudinal);
-                if constexpr (TWO_POOL) {
+                if constexpr (THREE) {
+                    // The operator was formed in double and is read here as
+                    // the float32 it has been narrowed to; the state loop is
+                    // the same arithmetic as every other pool count's.
+                    const Complex pools_in[3] = {
+                        longitudinal[index], bound[index], semisolid[index]
+                    };
+                    Complex mixed[3];
+                    for (int row = 0; row < 3; ++row) {
+                        Complex carried{};
+                        for (int column = 0; column < 3; ++column) {
+                            carried += static_cast<float>(triple.entry[row][column])
+                                * pools_in[column];
+                        }
+                        mixed[row] = carried * spin;
+                    }
+                    longitudinal[index] = mixed[0];
+                    bound[index] = mixed[1];
+                    semisolid[index] = mixed[2];
+                } else if constexpr (TWO_POOL) {
                     const Complex free_state = longitudinal[index];
                     const Complex bound_state = bound[index];
                     longitudinal[index] =
@@ -3105,7 +3396,11 @@ void simulate_range(
                     longitudinal[index] *= e1 * spin;
                 }
             }
-            if constexpr (TWO_POOL) {
+            if constexpr (THREE) {
+                longitudinal[0] += Complex(static_cast<float>(triple.recovery[0]), 0.0F);
+                bound[0] += Complex(static_cast<float>(triple.recovery[1]), 0.0F);
+                semisolid[0] += Complex(static_cast<float>(triple.recovery[2]), 0.0F);
+            } else if constexpr (TWO_POOL) {
                 longitudinal[0] += Complex(pools.recovery_free, 0.0F);
                 bound[0] += Complex(pools.recovery_bound, 0.0F);
             } else {
@@ -3115,7 +3410,7 @@ void simulate_range(
             const std::uint8_t action = buffers.action[event];
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
@@ -3130,7 +3425,7 @@ void simulate_range(
                     for (Complex& value : longitudinal) {
                         value *= efficiency;
                     }
-                    if constexpr (BM) {
+                    if constexpr (PAIRED) {
                         for (Complex& value : bound) {
                             value *= efficiency;
                         }
@@ -3141,18 +3436,18 @@ void simulate_range(
                     const float theta = view.flip[event] * buffers.b1[transmit];
                     const float phi =
                         view.phase[event] + buffers.b1_phase[transmit];
-                    if constexpr (MT) {
-                        // The bound pool absorbs the power the pulse deposits,
-                        // so it reads the bare flip the transmit field gives
-                        // the voxel -- not the slice-shaped rotation the free
-                        // pool takes from the table.
+                    if constexpr (SATURATED) {
+                        // The semisolid pool absorbs the power the pulse
+                        // deposits, so it reads the bare flip the transmit
+                        // field gives the voxel -- not the slice-shaped
+                        // rotation the free pool takes from the table.
                         const float offset =
                             buffers.rf_frequency[event] - buffers.b0[atom];
                         const float absorbed = std::exp(
                             buffers.saturation[event] * theta * theta
                             * lineshape_at(buffers, offset)
                         );
-                        for (Complex& value : bound) {
+                        for (Complex& value : (THREE ? semisolid : bound)) {
                             value *= absorbed;
                         }
                     }
@@ -3168,7 +3463,7 @@ void simulate_range(
                         // rotation axis and so reaches ``b`` alone.
                         const Complex spun = b * std::polar(1.0F, -phi);
                         rotate_spinor(fplus, fminus, longitudinal, a, spun);
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             // The same pulse, the same rotation. A chemical
                             // shift moves where a pool precesses, not what a
                             // pulse does to it.
@@ -3178,7 +3473,7 @@ void simulate_range(
                         }
                     } else {
                         rotate(fplus, fminus, longitudinal, theta, phi);
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             rotate(bound_plus, bound_minus, bound, theta, phi);
                         }
                     }
@@ -3191,7 +3486,7 @@ void simulate_range(
                 // already in its own state, the fractions having split the
                 // equilibrium at t = 0.
                 const Complex recorded =
-                    BM ? fplus[0] + bound_plus[0] : fplus[0];
+                    PAIRED ? fplus[0] + bound_plus[0] : fplus[0];
                 const Complex signal = buffers.m0[atom] * recorded * demodulation;
                 const std::int64_t index = view.output_base + output;
                 buffers.output_real[index] = signal.real();
@@ -3199,20 +3494,20 @@ void simulate_range(
             }
             if ((action & POST_SHIFT) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus.begin(), fplus.end(), Complex{});
                 std::fill(fminus.begin(), fminus.end(), Complex{});
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     std::fill(bound_plus.begin(), bound_plus.end(), Complex{});
                     std::fill(bound_minus.begin(), bound_minus.end(), Complex{});
                 }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
@@ -6797,9 +7092,11 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         )) {
         return nullptr;
     }
-    const Pools pools = pool_kind == 2
-        ? Pools::EXCHANGING
-        : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE);
+    const Pools pools = pool_kind == 3
+        ? Pools::THREE
+        : (pool_kind == 2
+            ? Pools::EXCHANGING
+            : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE));
     // The packed buffers, the two output planes, then the transition tables
     // and the per-event index that says which an event reads, then the bound
     // pool's lineshape -- all null when the sequence has none.
@@ -6866,7 +7163,17 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     if (!vectorize) {
         const bool shimmed = buffers.shim_count > 1;
         const bool profiled = buffers.profile != nullptr;
-        if (pools == Pools::EXCHANGING) {
+        if (pools == Pools::THREE) {
+            if (shimmed) {
+                kernel = profiled
+                    ? &simulate_range<true, true, Pools::THREE>
+                    : &simulate_range<true, false, Pools::THREE>;
+            } else {
+                kernel = profiled
+                    ? &simulate_range<false, true, Pools::THREE>
+                    : &simulate_range<false, false, Pools::THREE>;
+            }
+        } else if (pools == Pools::EXCHANGING) {
             if (shimmed) {
                 kernel = profiled
                     ? &simulate_range<true, true, Pools::EXCHANGING>
@@ -7031,9 +7338,11 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         )) {
         return nullptr;
     }
-    const Pools pools = pool_kind == 2
-        ? Pools::EXCHANGING
-        : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE);
+    const Pools pools = pool_kind == 3
+        ? Pools::THREE
+        : (pool_kind == 2
+            ? Pools::EXCHANGING
+            : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE));
     // The packed buffers, one tangent per differentiable input, the two output
     // planes, then the transition tables and the per-event index that says
     // which an event reads, then the bound pool's lineshape -- all null when
@@ -7516,9 +7825,11 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         PyErr_SetString(PyExc_ValueError, "invalid EPG buffer dimensions");
         return nullptr;
     }
-    const Pools pools = pool_kind == 2
-        ? Pools::EXCHANGING
-        : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE);
+    const Pools pools = pool_kind == 3
+        ? Pools::THREE
+        : (pool_kind == 2
+            ? Pools::EXCHANGING
+            : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE));
 
     void* raw[expected]{};
     for (Py_ssize_t index = 0; index < expected; ++index) {
