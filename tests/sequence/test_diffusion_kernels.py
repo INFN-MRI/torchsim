@@ -171,6 +171,8 @@ def test_the_adjoint_matches_the_reference() -> None:
         events[4],
         events[5],
         events[6],
+        events[7],
+        events[8],
     )
     reference = simulate_packed(
         leaves, differentiable, state_count=STATE_COUNT, output_count=output_count
@@ -214,6 +216,8 @@ def test_the_second_order_kernel_matches_the_reference() -> None:
         events[4],
         events[5],
         events[6],
+        events[7],
+        events[8],
     )
     inputs = leaves + (differentiable[0], differentiable[2], differentiable[3])
     signal = simulate_packed(
@@ -369,7 +373,7 @@ def test_autograd_reaches_the_diffusion_coefficient() -> None:
         for index, value in enumerate(tissue)
     )
     signal = _NativeEpg.apply(
-        *inputs, *events, STATE_COUNT, output_count, 1, NO_GEOMETRY, None
+        *inputs, *events, STATE_COUNT, output_count, 1, NO_GEOMETRY, None, None
     )
     signal.abs().square().sum().backward()
     assert coefficient.grad is not None

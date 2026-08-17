@@ -242,6 +242,47 @@ class RfDefinition:
         cache[rf_raster_time_s] = area
         return area
 
+    def saturation(self, *, rf_raster_time_s: float = 1e-6) -> float:
+        """Return what this shape deposits in a bound pool, per flip squared.
+
+        The saturation an RF pulse applies to a pool with no transverse
+        magnetization is ``-pi gamma**2 int B1**2 dt * G(df)``. Writing the
+        pulse as a normalized envelope ``w`` driven to a flip angle,
+        ``B1 = w / (gamma int w dt)`` per radian, so
+
+            -pi gamma**2 int B1**2 dt  ==  -pi int |w|**2 dt / |int w dt|**2
+
+        and the gyromagnetic ratio cancels: what is left depends on the shape
+        alone. Multiplied by the square of the flip a voxel actually takes and
+        by the lineshape at the offset it is played at, this is the exponent of
+        the bound pool's saturation.
+
+        In 1/s. A pulse with no area saturates nothing that a flip angle can
+        describe, so it reports zero.
+        """
+        cache = getattr(self, "_saturation_cache", None)
+        if cache is None:
+            cache = {}
+            object.__setattr__(self, "_saturation_cache", cache)
+        elif rf_raster_time_s in cache:
+            return cache[rf_raster_time_s]
+
+        area = abs(self.integral(rf_raster_time_s=rf_raster_time_s))
+        envelope = self.complex_envelope()
+        if area == 0.0 or envelope.size < 2:
+            cache[rf_raster_time_s] = 0.0
+            return 0.0
+        if self.time is None:
+            time_s = (
+                np.arange(envelope.size, dtype=np.float64) + 0.5
+            ) * rf_raster_time_s
+        else:
+            time_s = self.time.decompress(scale=rf_raster_time_s).astype(np.float64)
+        power = float(_trapezoid(np.abs(envelope) ** 2, time_s))
+        value = -np.pi * power / (area * area)
+        cache[rf_raster_time_s] = value
+        return value
+
     def flip_angle(
         self,
         amplitude_hz: Any,

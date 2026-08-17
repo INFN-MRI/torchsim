@@ -73,6 +73,8 @@ class _PackedEvents:
     action: torch.Tensor
     output_index: torch.Tensor
     shim_index: torch.Tensor
+    saturation: torch.Tensor
+    rf_frequency_hz: torch.Tensor
     # Which stacked table each event's pulse reads. Kept beside the event
     # buffers rather than among them: only a sequence with a table has one, and
     # it travels with the table rather than with the events.
@@ -93,6 +95,8 @@ class _PackedEvents:
             self.action,
             self.output_index,
             self.shim_index,
+            self.saturation,
+            self.rf_frequency_hz,
         )
 
     @property
@@ -250,6 +254,7 @@ def simulate_native(
     nstates: int,
     slice_profile: torch.Tensor,
     rf_raster_time_s: float,
+    lineshape: Any = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules."""
     device = prepared_tissue[0].device
@@ -307,11 +312,14 @@ def simulate_native(
         packed.action,
         packed.output_index,
         packed.shim_index,
+        packed.saturation,
+        packed.rf_frequency_hz,
         nstates,
         packed.output_count,
         threads,
         geometry_of(description),
         table,
+        lineshape,
     )
     leading = (packed.train_count,) if packed.is_batched else ()
     if locations > 1:
@@ -356,6 +364,8 @@ def _pack_events(
     output_indices: list[int] = []
     shim_indices: list[int] = []
     profile_indices: list[int] = []
+    saturations: list[float] = []
+    frequencies: list[float] = []
     times: list[Any] = []
     event_indices: list[int] = []
     repetition_indices: list[int] = []
@@ -384,8 +394,14 @@ def _pack_events(
                 if event.type is EventType.RF
                 else 0
             )
+            saturation = 0.0
+            frequency = 0.0
             if event.type is EventType.RF:
                 phase = event.rf_phase_rad
+                frequency = event.rf_frequency_hz
+                saturation = description.rf_definitions[
+                    event.rf_definition_id
+                ].saturation(rf_raster_time_s=rf_raster_time_s)
                 if event.rf_use is RfUse.INVERSION:
                     action |= _INVERSION
                 else:
@@ -417,6 +433,8 @@ def _pack_events(
             flips.append(flip)
             phases.append(phase)
             actions.append(action)
+            saturations.append(saturation)
+            frequencies.append(frequency)
 
     trains = _batch_width([*durations, *flips, *phases])
     return _PackedEvents(
@@ -430,6 +448,12 @@ def _pack_events(
         ).contiguous(),
         shim_index=torch.as_tensor(
             shim_indices, dtype=torch.int32, device=device
+        ).contiguous(),
+        saturation=torch.as_tensor(
+            saturations, dtype=torch.float32, device=device
+        ).contiguous(),
+        rf_frequency_hz=torch.as_tensor(
+            frequencies, dtype=torch.float32, device=device
         ).contiguous(),
         profile_index=torch.as_tensor(
             profile_indices, dtype=torch.int32, device=device
@@ -620,6 +644,9 @@ class _NativeEpg(torch.autograd.Function):
         inversion_efficiency: torch.Tensor,
         diffusion: torch.Tensor,
         velocity: torch.Tensor,
+        bound_fraction: torch.Tensor,
+        exchange_rate: torch.Tensor,
+        t1_bound: torch.Tensor,
         duration: torch.Tensor,
         kind: torch.Tensor,
         flip: torch.Tensor,
@@ -627,20 +654,26 @@ class _NativeEpg(torch.autograd.Function):
         action: torch.Tensor,
         output_index: torch.Tensor,
         shim_index: torch.Tensor,
+        saturation: torch.Tensor,
+        rf_frequency_hz: torch.Tensor,
         state_count: int,
         output_count: int,
         threads: int,
         geometry: Geometry,
         profile: Any,
+        lineshape: Any,
     ) -> torch.Tensor:
         tissue = (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
-            velocity,
+            velocity, bound_fraction, exchange_rate, t1_bound,
         )
-        events = (duration, kind, flip, phase, action, output_index, shim_index)
+        events = (
+            duration, kind, flip, phase, action, output_index, shim_index,
+            saturation, rf_frequency_hz,
+        )
         return _run_packed(
             tissue, events, state_count, output_count, threads, geometry=geometry,
-            profile=profile,
+            profile=profile, lineshape=lineshape,
         )
 
     @staticmethod
@@ -653,9 +686,11 @@ class _NativeEpg(torch.autograd.Function):
         ctx.threads = inputs[_PACKED_COUNT + 2]
         ctx.geometry = inputs[_PACKED_COUNT + 3]
         ctx.profile = inputs[_PACKED_COUNT + 4]
+        ctx.lineshape = inputs[_PACKED_COUNT + 5]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
+        _differentiable_pools(ctx.lineshape)
         saved = ctx.saved_tensors
         float_tangents = tuple(
             torch.zeros_like(saved[index])
@@ -675,6 +710,7 @@ class _NativeEpg(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
+        _differentiable_pools(ctx.lineshape)
         saved = ctx.saved_tensors
         wanted = _wanted(ctx.needs_input_grad)
         fused = _NativeEpgVjp.apply(
@@ -688,7 +724,8 @@ class _NativeEpg(torch.autograd.Function):
             ctx.profile,
         )
         return (
-            *_spread(fused, ctx.needs_input_grad), None, None, None, None, None
+            *_spread(fused, ctx.needs_input_grad),
+            None, None, None, None, None, None,
         )
 
     @staticmethod
@@ -1074,6 +1111,23 @@ def _profiled_pointers(
     return _pointers((*values, table, rows))
 
 
+def _bound_pointers(
+    values: tuple[torch.Tensor, ...],
+    table: torch.Tensor | None,
+    rows: torch.Tensor | None,
+    absorption: torch.Tensor | None,
+) -> tuple[int, ...]:
+    """The profiled addresses with the bound pool's lineshape on the end.
+
+    A sequence with no bound pool passes a null there, which is what selects
+    the single-pool kernel.
+    """
+    profiled = _profiled_pointers(values, table, rows)
+    if absorption is None:
+        return (*profiled, 0)
+    return (*profiled, *_pointers((absorption,)))
+
+
 def _tables(profile: Any, events: tuple[torch.Tensor, ...]) -> Any:
     """A bare table read as the one every pulse drives."""
     if isinstance(profile, TransitionTable):
@@ -1104,6 +1158,29 @@ def _within_the_table(profile: Any, flip: torch.Tensor) -> None:
         raise ValueError(
             f"the sequence drives a pulse to {largest:.3f} rad, past the "
             f"{profile.theta_max:.3f} rad the transition table covers"
+        )
+
+
+def _differentiable_pools(lineshape: Any) -> None:
+    """Refuse a derivative of a two-pool forward.
+
+    The derivative kernels carry one pool, so asked for the Jacobian of a
+    bound-pool run they would answer with the single-pool one -- a wrong number
+    rather than a missing one.
+
+    A run at the default bound fraction is not that case. Nothing then builds a
+    lineshape, and the machine that runs is the single-pool one, which does not
+    take the bound pool's properties as arguments at all: their gradients come
+    back at zero because the answer does not depend on them, not because the
+    kernels declined to look.
+
+    Raises:
+        NotImplementedError: if the forward ran with a bound pool.
+    """
+    if lineshape is not None:
+        raise NotImplementedError(
+            "the derivative kernels carry one pool; a bound pool reaches the "
+            "forward machine only"
         )
 
 
@@ -1218,7 +1295,10 @@ def _shard_events(
     events: tuple[torch.Tensor, ...], begin: int, end: int, device: torch.device
 ) -> tuple[torch.Tensor, ...]:
     """One shard's events: the per-train buffers cut, the shared ones copied."""
-    duration, kind, flip, phase, action, output_index, shim_index = events
+    (
+        duration, kind, flip, phase, action, output_index, shim_index,
+        saturation, rf_frequency,
+    ) = events
     return (
         duration[begin:end].contiguous().to(device),
         kind.to(device),
@@ -1227,6 +1307,8 @@ def _shard_events(
         action.to(device),
         output_index.to(device),
         shim_index.to(device),
+        saturation.to(device),
+        rf_frequency.to(device),
     )
 
 
@@ -1773,6 +1855,7 @@ def _run_offloaded(
     real_axis: int | None,
     geometry: Geometry,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> torch.Tensor:
     """Stream a host-resident volume through the devices, chunk by chunk."""
     from ._epg_triton import simulate_into
@@ -1802,6 +1885,7 @@ def _run_offloaded(
             geometry=geometry,
             atom_count=width,
             profile=profile,
+            lineshape=lineshape,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -2033,6 +2117,7 @@ def _run_packed(
     *,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> torch.Tensor:
     """Run the forward state machine.
 
@@ -2049,12 +2134,18 @@ def _run_packed(
         real_axis = _auto_real_axis(
             "forward", events, tissue, state_count, profile=profile
         )
+    # A bound pool is outside every real subspace the reduced kernels stand
+    # for: they carry one longitudinal component, and there are two here. The
+    # verdict is overruled rather than refused, the full kernel giving the same
+    # answer more slowly.
+    if lineshape is not None:
+        real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
-            geometry, profile,
+            geometry, profile, lineshape,
         )
     choice = _choose(
         "forward", tissue, events, output_count, state_count, real_axis
@@ -2063,7 +2154,7 @@ def _run_packed(
     if streaming and tissue[0].device.type == "cpu":
         return _run_offloaded(
             tissue, events, choice.offload, state_count, output_count, real_axis,
-            geometry, profile,
+            geometry, profile, lineshape,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2076,6 +2167,7 @@ def _run_packed(
                 threads,
                 real_axis,
                 geometry=geometry,
+                lineshape=lineshape,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
@@ -2096,6 +2188,7 @@ def _run_packed(
                         real_axis=real_axis,
                         geometry=geometry,
                         profile=profile,
+                        lineshape=lineshape,
                     ),
                 )
                 for begin, end, device in shards
@@ -2109,6 +2202,7 @@ def _run_packed(
             real_axis=real_axis,
             geometry=geometry,
             profile=profile,
+            lineshape=lineshape,
         )
     from torchsim import _epg_cpu
 
@@ -2123,8 +2217,9 @@ def _run_packed(
     pointers = (*tissue, *events, output_real, output_imag)
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
+    absorption = None if lineshape is None else lineshape.packed()
     _epg_cpu.simulate(
-        _profiled_pointers(pointers, table, table_rows),
+        _bound_pointers(pointers, table, table_rows, absorption),
         tissue[0].numel(),
         trains,
         events[1].numel(),
@@ -2138,6 +2233,8 @@ def _run_packed(
         1 if profile is None else profile.points,
         0 if profile is None else profile.bins,
         1.0 if profile is None else profile.step,
+        0 if lineshape is None else lineshape.bins,
+        1.0 if lineshape is None else lineshape.step,
     )
     return torch.complex(output_real, output_imag)
 

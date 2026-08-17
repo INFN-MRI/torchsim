@@ -30,6 +30,7 @@ from torchsim.sequence._accelerators import (
     _run_packed_vjp_jvp,
     offload,
 )
+from torchsim.sequence._parameters import TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue, _resolve_transmit
 from torchsim.sequence._transmit import (
     channel_count,
@@ -383,8 +384,11 @@ def test_forward_mode_follows_each_shim() -> None:
 
     def forward(*values):
         return simulate_packed(
-            values[:9],
-            (values[9], events[1], values[10], values[11], *events[4:]),
+            values[:TISSUE_COUNT],
+            (
+                values[TISSUE_COUNT], events[1], values[TISSUE_COUNT + 1],
+                values[TISSUE_COUNT + 2], *events[4:],
+            ),
             state_count=8,
             output_count=output_count,
         )
@@ -413,8 +417,11 @@ def test_the_second_order_pass_follows_each_shim() -> None:
 
     leaves = tuple(value.clone().requires_grad_(True) for value in primals)
     signal = simulate_packed(
-        leaves[:9],
-        (leaves[9], events[1], leaves[10], leaves[11], *events[4:]),
+        leaves[:TISSUE_COUNT],
+        (
+            leaves[TISSUE_COUNT], events[1], leaves[TISSUE_COUNT + 1],
+            leaves[TISSUE_COUNT + 2], *events[4:],
+        ),
         state_count=8,
         output_count=output_count,
     )

@@ -163,10 +163,14 @@ def test_mismatched_train_widths_are_rejected():
     """A width mismatch would stride out of bounds inside the kernel."""
     flip = _schedules(3, 12)
     prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
-    duration, kind, flips, phase, action, output_index, shim = _buffers(
-        _pack(flip)
+    (
+        duration, kind, flips, phase, action, output_index, shim, saturation,
+        frequency,
+    ) = _buffers(_pack(flip))
+    broken = (
+        duration[0], kind, flips, phase, action, output_index, shim,
+        saturation, frequency,
     )
-    broken = (duration[0], kind, flips, phase, action, output_index, shim)
     with pytest.raises(ValueError, match="disagree on train count"):
         _run_packed(prepared, broken, 10, int(output_index.max()) + 1, 1)
 

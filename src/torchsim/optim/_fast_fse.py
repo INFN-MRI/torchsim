@@ -28,6 +28,7 @@ from ..sequence._accelerators import (
     real_subspace_axis,
 )
 from ..sequence._builders import fse_description
+from ..sequence._parameters import wants_bound_pool
 from ..sequence._parameters import EVENT_COUNT as _EVENT_COUNT
 from ..sequence._parameters import TISSUE_COUNT as _TISSUE_COUNT
 from ..sequence._parameters import TISSUE_NAMES as _TISSUE_NAMES
@@ -52,6 +53,20 @@ _OUTSIDE_THE_SUBSPACE_INPUTS = (
     _EVENT_COUNT + _TISSUE_NAMES.index("b1_phase_rad"),
     _EVENT_COUNT + _TISSUE_NAMES.index("b0_hz"),
 )
+
+
+
+def _single_pool(tissue: TissueProperties) -> None:
+    """Refuse a bound pool on a path whose kernels carry one pool.
+
+    Raises:
+        NotImplementedError: if the tissue declares a bound pool.
+    """
+    if wants_bound_pool(tissue.bound_fraction):
+        raise NotImplementedError(
+            "the fused T2 Jacobian carries one pool; a bound pool reaches the "
+            "forward machine only"
+        )
 
 
 class FseT2Plan:
@@ -118,6 +133,8 @@ class FseT2Plan:
         self.action = packed.action
         self.output_index = packed.output_index
         self.shim_index = packed.shim_index
+        self.saturation = packed.saturation
+        self.rf_frequency_hz = packed.rf_frequency_hz
         self._duration = packed.duration
         self._flip_template = packed.flip
         self._phase_template = packed.phase
@@ -142,7 +159,8 @@ class FseT2Plan:
     def buffers(self, flip_rad: torch.Tensor) -> tuple[torch.Tensor, ...]:
         """Packed event buffers for ``flip_rad``, shaped ``(n_trains, echoes)``.
 
-        Returns the six-tuple the kernels take. Differentiable in ``flip_rad``.
+        Returns the tuple the kernels take, in the order the registry sets.
+        Differentiable in ``flip_rad``.
         """
         flip_rad = torch.atleast_2d(flip_rad)
         trains = flip_rad.shape[0]
@@ -180,6 +198,8 @@ class FseT2Plan:
             self.action,
             self.output_index,
             self.shim_index,
+            self.saturation,
+            self.rf_frequency_hz,
         )
 
     def t2_jacobian(
@@ -190,6 +210,7 @@ class FseT2Plan:
         threads: int = 0,
     ) -> torch.Tensor:
         """Return ``d signal / d T2``, shaped ``(n_trains, n_atoms, n_echoes)``."""
+        _single_pool(tissue)
         prepared, shape, _ = _prepare_tissue(tissue, self.device)
         # _prepare_tissue broadcasts, so a scalar property arrives as a stride-0
         # view; the kernels index raw pointers and would read past its one float.
@@ -308,6 +329,9 @@ class _T2Jacobian(torch.autograd.Function):
             primal_grads[_PHASE],
             None,  # action
             None,  # output_index
+            None,  # shim_index
+            None,  # saturation
+            None,  # rf_frequency_hz
             *primal_grads[:_TISSUE_COUNT],
         ]
         result = [
@@ -315,7 +339,7 @@ class _T2Jacobian(torch.autograd.Function):
             for gradient, needed in zip(gradients, ctx.needs_input_grad, strict=False)
         ]
         # tissue/event tangents, state_count, output_count, threads, real_axis
-        return (*result, None, None, None, None, None, None, None)
+        return (*result, None, None, None, None, None, None)
 
 
 class FseT2Optimizer:
@@ -396,6 +420,7 @@ class FseT2Optimizer:
                 f"expected {plan.echo_train_length} flip angles, got {echoes}"
             )
 
+        _single_pool(tissue)
         prepared, _, _ = _prepare_tissue(tissue, plan.device)
         prepared = tuple(
             value.to(dtype=torch.float32).contiguous() for value in prepared

@@ -277,6 +277,8 @@ def _spgr_volume(voxels, trains=1, pulses=12):
         packed[0].action,
         packed[0].output_index,
         packed[0].shim_index,
+        packed[0].saturation,
+        packed[0].rf_frequency_hz,
     )
     tissue = TissueProperties(
         t1_ms=torch.linspace(300.0, 2000.0, voxels),
@@ -496,7 +498,7 @@ def _shim_volume(voxels, trains=1):
     pulses = (events[1] == 1).nonzero().flatten()
     # Every second pulse on the other shim, so both rows drive something.
     rows[pulses[1::2]] = 1
-    events = (*events[:6], rows.contiguous())
+    events = (*events[:6], rows.contiguous(), *events[7:])
 
     ramp = torch.linspace(0.0, 0.3, voxels)
     tissue = list(prepared)

@@ -96,6 +96,8 @@ def _leaves(prepared, events):
         events[4],
         events[5],
         events[6],
+        events[7],
+        events[8],
     )
     return tissue, differentiable_events
 
@@ -103,7 +105,7 @@ def _leaves(prepared, events):
 def _route(route: str, tissue, events, output_count: int, state_count: int):
     if route == "kernel":
         return _NativeEpg.apply(
-            *tissue, *events, state_count, output_count, 1, NO_GEOMETRY, None
+            *tissue, *events, state_count, output_count, 1, NO_GEOMETRY, None, None
         )
     return simulate_packed(
         tissue, events, state_count=state_count, output_count=output_count
@@ -160,6 +162,8 @@ def test_fused_vjp_matches_the_reference(name: str, threads: int) -> None:
         events[4],
         events[5],
         events[6],
+        events[7],
+        events[8],
     )
     output = simulate_packed(
         leaves,

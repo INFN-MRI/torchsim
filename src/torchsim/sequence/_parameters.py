@@ -20,6 +20,7 @@ __all__ = [
     "EVENT_PARAMETERS",
     "TISSUE_PARAMETERS",
     "at_identity",
+    "wants_bound_pool",
     "tissue_gradient_bases",
     "tissue_gradient_rows",
     "tissue_gradient_height",
@@ -93,6 +94,12 @@ TISSUE_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("inversion_efficiency", identity=1.0, feature="INVERSION"),
     Parameter("diffusion_um2_per_ms", identity=0.0, feature="DIFFUSION"),
     Parameter("velocity_m_per_s", identity=0.0, feature="FLOW"),
+    # The bound pool. Its fraction is the gate: at zero the exchange matrix is
+    # diagonal and the pool starts empty, so nothing it drives can reach the
+    # free water, and the kernels leave the whole second pool out.
+    Parameter("bound_fraction", identity=0.0, feature="MT"),
+    Parameter("exchange_rate_hz", identity=0.0, feature="MT"),
+    Parameter("t1_bound_ms", feature="MT"),
 )
 
 EVENT_PARAMETERS: tuple[Parameter, ...] = (
@@ -106,6 +113,14 @@ EVENT_PARAMETERS: tuple[Parameter, ...] = (
     # differentiable, but through the field it produces rather than through the
     # row it is stored in, so the index carries no gradient.
     Parameter("shim_index", differentiable=False),
+    # What a pulse deposits in the bound pool, per unit of flip angle squared:
+    # ``-pi gamma**2 b1rms_1rad**2 tau``. The flip itself is differentiable and
+    # reaches the saturation through the square the kernels take of it, so this
+    # buffer holds only the shape's power and carries no gradient of its own.
+    Parameter("saturation", differentiable=False),
+    # Where the pulse is played, in Hz off the scanner's centre frequency. The
+    # lineshape is read at this less the voxel's own off-resonance.
+    Parameter("rf_frequency_hz", differentiable=False),
 )
 
 PACKED_PARAMETERS: tuple[Parameter, ...] = (*TISSUE_PARAMETERS, *EVENT_PARAMETERS)
@@ -135,6 +150,20 @@ TISSUE_NAMES: tuple[str, ...] = tuple(
 # Which tissue buffers hold a row per shim.
 TRANSMIT_INPUTS: tuple[int, ...] = tuple(
     index for index, parameter in enumerate(TISSUE_PARAMETERS) if parameter.transmit
+)
+
+# Which tissue buffer gates the bound pool. Read before broadcasting, so a
+# sequence that never mentions a bound pool decides on a Python float rather
+# than by reducing over a buffer.
+BOUND_FRACTION_INPUT: int = TISSUE_NAMES.index("bound_fraction")
+
+# The bound pool's properties, as positions among the packed buffers. The
+# derivative kernels carry one pool, so a gradient along any of these is
+# refused rather than answered with the zero the single-pool machine leaves.
+BOUND_POOL_INPUTS: tuple[int, ...] = tuple(
+    index
+    for index, parameter in enumerate(TISSUE_PARAMETERS)
+    if parameter.feature == "MT"
 )
 
 
@@ -170,6 +199,16 @@ def at_identity(parameter: Parameter, value: Any) -> bool:
     if numel is not None and numel() == 1:
         return float(value.item()) == parameter.identity
     return False
+
+
+def wants_bound_pool(bound_fraction: Any) -> bool:
+    """Whether this bound fraction gives the second pool anything to do.
+
+    Read from what the caller passed, before broadcasting, on the same terms
+    as :func:`at_identity`: a fraction given as a full tensor is taken to
+    matter rather than reduced over.
+    """
+    return not at_identity(TISSUE_PARAMETERS[BOUND_FRACTION_INPUT], bound_fraction)
 
 
 def tissue_gradient_rows(shims: int) -> tuple[int, ...]:

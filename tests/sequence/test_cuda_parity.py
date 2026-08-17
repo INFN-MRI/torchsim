@@ -434,6 +434,8 @@ def _spgr_case(device, trains, atoms):
         packed[0].action,
         packed[0].output_index,
         packed[0].shim_index,
+        packed[0].saturation,
+        packed[0].rf_frequency_hz,
     )
     tissue = TissueProperties(
         t1_ms=torch.linspace(600.0, 1400.0, atoms),

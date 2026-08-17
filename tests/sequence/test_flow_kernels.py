@@ -229,6 +229,8 @@ def test_the_adjoint_matches_the_reference() -> None:
         events[4],
         events[5],
         events[6],
+        events[7],
+        events[8],
     )
     reference = simulate_packed(
         leaves,

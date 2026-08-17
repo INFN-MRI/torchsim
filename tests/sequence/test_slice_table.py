@@ -19,6 +19,7 @@ import pytest
 import torch
 
 from torchsim import TissueProperties, fse_description
+from torchsim.sequence._parameters import FLOAT_NAMES
 from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed,
@@ -26,6 +27,7 @@ from torchsim.sequence._accelerators import (
     real_subspace_axis,
 )
 from torchsim.sequence._description import RfDefinition, RfShape
+from torchsim.sequence._parameters import TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue
 from torchsim.sequence._transition import transition_table
 from utils.packed_reference import simulate_packed
@@ -294,10 +296,7 @@ def test_a_streamed_adjoint_reads_the_table_a_whole_one_does() -> None:
     with offload(["cuda"], budget_bytes=1 << 12):
         streamed = _run_packed_vjp_jvp(*arguments, profile=table)
 
-    names = (
-        "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
-        "velocity", "duration", "flip", "phase",
-    )
+    names = FLOAT_NAMES
     _compare(whole[0], streamed[0], names, 1e-3)
     _compare(
         whole[1], streamed[1],
@@ -326,8 +325,11 @@ def test_forward_mode_follows_the_table() -> None:
 
     def forward(*values):
         return simulate_packed(
-            values[:9],
-            (values[9], events[1], values[10], values[11], *events[4:]),
+            values[:TISSUE_COUNT],
+            (
+                values[TISSUE_COUNT], events[1], values[TISSUE_COUNT + 1],
+                values[TISSUE_COUNT + 2], *events[4:],
+            ),
             state_count=STATES,
             output_count=outputs,
             profile=table,
@@ -381,8 +383,11 @@ def test_the_adjoint_follows_the_table() -> None:
     wrt = (*tissue, events[0], events[2], events[3])
     tracked = tuple(value.clone().requires_grad_(True) for value in wrt)
     signal = simulate_packed(
-        tracked[:9],
-        (tracked[9], events[1], tracked[10], tracked[11], *events[4:]),
+        tracked[:TISSUE_COUNT],
+        (
+            tracked[TISSUE_COUNT], events[1], tracked[TISSUE_COUNT + 1],
+            tracked[TISSUE_COUNT + 2], *events[4:],
+        ),
         state_count=STATES,
         output_count=outputs,
         profile=table,
@@ -398,10 +403,7 @@ def test_the_adjoint_follows_the_table() -> None:
     _compare(
         expected,
         actual,
-        (
-            "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
-            "velocity", "duration", "flip", "phase",
-        ),
+        FLOAT_NAMES,
     )
 
 
@@ -444,8 +446,11 @@ def test_the_second_order_pass_follows_the_table() -> None:
 
     leaves = tuple(value.clone().requires_grad_(True) for value in primals)
     signal = simulate_packed(
-        leaves[:9],
-        (leaves[9], events[1], leaves[10], leaves[11], *events[4:]),
+        leaves[:TISSUE_COUNT],
+        (
+            leaves[TISSUE_COUNT], events[1], leaves[TISSUE_COUNT + 1],
+            leaves[TISSUE_COUNT + 2], *events[4:],
+        ),
         state_count=STATES,
         output_count=outputs,
         profile=table,
@@ -466,10 +471,7 @@ def test_the_second_order_pass_follows_the_table() -> None:
         tissue, events, directions, seed, STATES, outputs, 1, profile=table
     )
 
-    names = (
-        "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
-        "velocity", "duration", "flip", "phase",
-    )
+    names = FLOAT_NAMES
     _compare(tuple(value.detach() for value in first), adjoint, names)
     _compare(second, curvature, tuple(f"d{name}" for name in names), 1e-3)
 
@@ -531,10 +533,7 @@ def test_the_card_follows_the_table_through_both_adjoint_passes() -> None:
         profile=table,
     )
 
-    names = (
-        "t1", "t2", "m0", "b1", "b1_phase", "b0", "inversion", "diffusion",
-        "velocity", "duration", "flip", "phase",
-    )
+    names = FLOAT_NAMES
     _compare(host[0], tuple(v.cpu() for v in on_card[0]), names, 1e-3)
     _compare(
         host[1], tuple(v.cpu() for v in on_card[1]),

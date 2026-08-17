@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -30,8 +31,8 @@ constexpr float PI = 3.14159265358979323846F;
 // The kernels' input list, mirrored by sequence/_parameters.py: the tissue
 // properties, then the packed per-event buffers. The pointer arrays below are
 // sized from these, so a parameter appended there is appended here too.
-constexpr std::size_t TISSUE_COUNT = 9;
-constexpr std::size_t EVENT_COUNT = 7;
+constexpr std::size_t TISSUE_COUNT = 12;
+constexpr std::size_t EVENT_COUNT = 9;
 constexpr std::size_t PACKED_COUNT = TISSUE_COUNT + EVENT_COUNT;
 // Every tissue property carries a gradient; of the event buffers only
 // duration, flip and phase do.
@@ -190,6 +191,12 @@ struct Buffers {
     const float* inversion_efficiency;
     const float* diffusion;
     const float* velocity;
+    // The bound pool: the share of the magnetization it holds, the rate it
+    // exchanges with the free water at, and its own T1. Its fraction is the
+    // gate -- at zero the exchange is diagonal and the pool starts empty.
+    const float* bound_fraction;
+    const float* exchange_rate;
+    const float* t1_bound;
     const float* duration;
     const std::int32_t* kind;
     const float* flip;
@@ -200,6 +207,14 @@ struct Buffers {
     // ``b1_phase`` hold ``shim_count`` rows of ``atom_count``, so a pulse reads
     // its own shim's field rather than one shared by the whole sequence.
     const std::int32_t* shim_index;
+    // What a pulse deposits in the bound pool per unit of flip angle squared,
+    // and the frequency it is played at. The saturation a voxel takes is
+    // ``saturation[event] * theta^2 * G(rf_frequency[event] - b0)``, with
+    // ``theta`` the flip the voxel's transmit field gives it -- uncorrected by
+    // the slice profile, the bound pool absorbing the power the pulse deposits
+    // rather than the rotation the slice-select gradient shapes out of it.
+    const float* saturation;
+    const float* rf_frequency;
     float* output_real;
     float* output_imag;
     // ``duration``, ``flip`` and ``phase`` are (train_count, event_count)
@@ -234,10 +249,21 @@ struct Buffers {
     std::int64_t profile_bins;
     std::int64_t locations;
     float profile_step;
+    // How well the bound pool absorbs an off-resonance pulse, tabulated over
+    // the offset: ``lineshape_bins`` knots of value and slope, evenly spaced by
+    // ``lineshape_step`` Hz. The lineshape is even, so the table covers the
+    // magnitude of the offset alone. Null when the sequence has no bound pool,
+    // which is what selects the single-pool kernel.
+    const float* lineshape;
+    std::int64_t lineshape_bins;
+    float lineshape_step;
 };
 
 // Floats one knot of the transition table holds.
 constexpr std::int64_t PROFILE_STRIDE = 8;
+
+// Floats one knot of the lineshape table holds: the value and its slope.
+constexpr std::int64_t LINESHAPE_STRIDE = 2;
 
 // Per-work-item view of the buffers that vary along the train axis.
 struct TrainView {
@@ -281,6 +307,13 @@ struct JvpBuffers {
     const float* inversion_efficiency;
     const float* diffusion;
     const float* velocity;
+    // The bound pool's three properties. The derivative kernels carry one
+    // pool, so nothing reads or writes these; they hold the ABI's shape, and
+    // the dispatch refuses a bound pool rather than answering with the
+    // single-pool derivative.
+    const float* bound_fraction;
+    const float* exchange_rate;
+    const float* t1_bound;
     const float* duration;
     const float* flip;
     const float* phase;
@@ -532,6 +565,97 @@ inline DualFloat washout_out(const DualFloat rate, const DualFloat dt) {
 // depends on the speed, and |v| has no derivative at the origin.
 inline float speed_direction(const float velocity) {
     return static_cast<float>(velocity > 0.0F) - static_cast<float>(velocity < 0.0F);
+}
+
+// The longitudinal step of a two-pool system: ``Z <- E1 Z`` over one interval,
+// with the recovery it adds to the zeroth dephasing order.
+//
+// ``E1 = expm(L t)`` for the 2x2 generator ``L = K - diag(R1a, R1b)``, which
+// has an exact closed form,
+//
+//     tau = tr(Lt)/2   d^2 = tau^2 - det(Lt)   expm = e^tau [cosh d I + (sinh
+//     d / d)(Lt - tau I)]
+//
+// and whose discriminant ``d^2 = ((L11-L22)t/2)^2 + k_ab k_ba t^2`` is a sum of
+// a square and a product of two non-negative rates, so it never leaves the real
+// line: no complex branch, and one square root per event rather than an
+// eigendecomposition. ``sinh(d)/d`` is taken by series near the origin, where
+// the root itself has no derivative.
+//
+// The equilibrium each pool relaxes toward is its own fraction -- ``L (1-f, f)
+// = -C`` holds identically -- so the recovery is ``(I - E1) (1-f, f)`` and
+// needs no 2x2 solve.
+struct TwoPoolStep {
+    float e11;
+    float e12;
+    float e21;
+    float e22;
+    float recovery_free;
+    float recovery_bound;
+};
+
+inline TwoPoolStep two_pool_step(
+    const float r1_free,
+    const float r1_bound,
+    const float exchange,
+    const float bound,
+    const float dt,
+    const float attenuation
+) {
+    const float free = 1.0F - bound;
+    const float kab = exchange * bound;
+    const float kba = exchange * free;
+    const float l11 = (-kab - r1_free) * dt;
+    const float l12 = kba * dt;
+    const float l21 = kab * dt;
+    const float l22 = (-kba - r1_bound) * dt;
+
+    const float half_trace = 0.5F * (l11 + l22);
+    const float half_gap = 0.5F * (l11 - l22);
+    const float square = half_gap * half_gap + l12 * l21;
+    // tau +/- d are the eigenvalues, both non-positive for a decaying system,
+    // so their exponentials are bounded by one. Formed that way rather than as
+    // e^tau cosh(d), which over a long interval is an underflow times an
+    // overflow.
+    const float root = std::sqrt(std::max(square, 0.0F));
+    const float upper = std::exp(half_trace + root);
+    const float lower = std::exp(half_trace - root);
+    const float cosine = 0.5F * (upper + lower);
+    const float scale = square > 1e-12F
+        ? 0.5F * (upper - lower) / root
+        : std::exp(half_trace)
+            * (1.0F + square / 6.0F + square * square / 120.0F);
+
+    TwoPoolStep step{};
+    step.e11 = attenuation * (cosine + scale * half_gap);
+    step.e12 = attenuation * scale * l12;
+    step.e21 = attenuation * scale * l21;
+    step.e22 = attenuation * (cosine - scale * half_gap);
+    step.recovery_free = free - (step.e11 * free + step.e12 * bound);
+    step.recovery_bound = bound - (step.e21 * free + step.e22 * bound);
+    return step;
+}
+
+// How well the bound pool absorbs a pulse this far off its resonance, by the
+// same cubic Hermite the transition table is read with. Taken in magnitude,
+// the lineshape being even, and clamped at the far end: a pulse driven past
+// the tabulated offset saturates no less than the last knot says.
+inline float lineshape_at(const Buffers& buffers, const float offset_hz) {
+    const float last = static_cast<float>(buffers.lineshape_bins - 1);
+    const float scaled = std::min(
+        std::fabs(offset_hz) / buffers.lineshape_step, last
+    );
+    const float lower = std::min(std::floor(scaled), last - 1.0F);
+    const float u = scaled - lower;
+    const float* const near = buffers.lineshape
+        + static_cast<std::int64_t>(lower) * LINESHAPE_STRIDE;
+    const float u2 = u * u;
+    const float u3 = u2 * u;
+    const float step = buffers.lineshape_step;
+    return (2.0F * u3 - 3.0F * u2 + 1.0F) * near[0]
+        + (u3 - 2.0F * u2 + u) * step * near[1]
+        + (-2.0F * u3 + 3.0F * u2) * near[2]
+        + (u3 - u2) * step * near[3];
 }
 
 // Where an event's pulse reads the transmit field. Templated rather than
@@ -2071,7 +2195,7 @@ void simulate_lane_range(
     }
 }
 
-template <bool SHIMMED, bool PROFILED>
+template <bool SHIMMED, bool PROFILED, bool MT>
 void simulate_range(
     const Buffers& buffers,
     const std::int64_t work_begin,
@@ -2084,6 +2208,10 @@ void simulate_range(
     std::vector<Complex> fplus(states);
     std::vector<Complex> fminus(states);
     std::vector<Complex> longitudinal(states);
+    // The bound pool carries longitudinal states alone: it has no transverse
+    // magnetization for a gradient to dephase, and reaches the higher orders
+    // only through exchange with the free pool's.
+    std::vector<Complex> bound(MT ? states : 0U);
     Damping<float> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -2093,10 +2221,17 @@ void simulate_range(
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
-        longitudinal[0] = Complex(1.0F, 0.0F);
+        const float bound_fraction = MT ? buffers.bound_fraction[atom] : 0.0F;
+        longitudinal[0] = Complex(1.0F - bound_fraction, 0.0F);
+        if constexpr (MT) {
+            std::fill(bound.begin(), bound.end(), Complex{});
+            bound[0] = Complex(bound_fraction, 0.0F);
+        }
 
         const float r1 = 1000.0F / buffers.t1[atom];
         const float r2 = 1000.0F / buffers.t2[atom];
+        const float r1_bound = MT ? 1000.0F / buffers.t1_bound[atom] : 0.0F;
+        const float exchange = MT ? buffers.exchange_rate[atom] : 0.0F;
         const float damping_rate = buffers.diffusion[atom];
         const float flow_rate = buffers.velocity[atom] * buffers.flow_scale;
         const float washout_rate =
@@ -2107,6 +2242,12 @@ void simulate_range(
             const float wout = washout_out(washout_rate, dt);
             const float e1 = std::exp(-r1 * dt) * wout;
             const float e2 = std::exp(-r2 * dt) * wout;
+            // The exchange operator is a property of the interval, not of a
+            // dephasing order, so it is formed once here; the per-order
+            // diffusion and flow damping multiply it below.
+            const TwoPoolStep pools = MT
+                ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
+                : TwoPoolStep{};
             const float off_angle = -2.0F * PI * buffers.b0[atom] * dt;
             for (std::int64_t state = 0; state < state_count; ++state) {
                 const std::size_t index = static_cast<std::size_t>(state);
@@ -2121,11 +2262,28 @@ void simulate_range(
                     std::polar(e2 * damp_transverse, off_angle + turn_transverse);
                 fplus[index] *= transverse;
                 fminus[index] *= std::conj(transverse);
-                longitudinal[index] *= std::polar(
-                    e1 * damping.longitudinal[index], turn_longitudinal
-                );
+                // Both pools take the same per-order damping and phase: their
+                // order-n states describe one dephasing configuration, and the
+                // bound pool has no diffusion coefficient of its own to damp by.
+                const Complex spin =
+                    std::polar(damping.longitudinal[index], turn_longitudinal);
+                if constexpr (MT) {
+                    const Complex free_state = longitudinal[index];
+                    const Complex bound_state = bound[index];
+                    longitudinal[index] =
+                        (pools.e11 * free_state + pools.e12 * bound_state) * spin;
+                    bound[index] =
+                        (pools.e21 * free_state + pools.e22 * bound_state) * spin;
+                } else {
+                    longitudinal[index] *= e1 * spin;
+                }
             }
-            longitudinal[0] += Complex(1.0F - e1, 0.0F);
+            if constexpr (MT) {
+                longitudinal[0] += Complex(pools.recovery_free, 0.0F);
+                bound[0] += Complex(pools.recovery_bound, 0.0F);
+            } else {
+                longitudinal[0] += Complex(1.0F - e1, 0.0F);
+            }
 
             const std::uint8_t action = buffers.action[event];
             if ((action & PRE_SHIFT) != 0) {
@@ -2133,6 +2291,10 @@ void simulate_range(
             }
             if (buffers.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
+                    // Only the free pool. A bound pool's T2 is short enough
+                    // that an adiabatic sweep saturates it rather than turning
+                    // it over, and what it saturates by is already carried by
+                    // the pulse's own saturation term.
                     const float efficiency = -buffers.inversion_efficiency[atom];
                     for (Complex& value : longitudinal) {
                         value *= efficiency;
@@ -2143,6 +2305,21 @@ void simulate_range(
                     const float theta = view.flip[event] * buffers.b1[transmit];
                     const float phi =
                         view.phase[event] + buffers.b1_phase[transmit];
+                    if constexpr (MT) {
+                        // The bound pool absorbs the power the pulse deposits,
+                        // so it reads the bare flip the transmit field gives
+                        // the voxel -- not the slice-shaped rotation the free
+                        // pool takes from the table.
+                        const float offset =
+                            buffers.rf_frequency[event] - buffers.b0[atom];
+                        const float absorbed = std::exp(
+                            buffers.saturation[event] * theta * theta
+                            * lineshape_at(buffers, offset)
+                        );
+                        for (Complex& value : bound) {
+                            value *= absorbed;
+                        }
+                    }
                     if constexpr (PROFILED) {
                         Complex a{};
                         Complex b{};
@@ -2210,6 +2387,13 @@ struct VjpBuffers {
     float* grad_inversion_efficiency;
     float* grad_diffusion;
     float* grad_velocity;
+    // The bound pool's three properties. The derivative kernels carry one
+    // pool, so nothing reads or writes these; they hold the ABI's shape, and
+    // the dispatch refuses a bound pool rather than answering with the
+    // single-pool derivative.
+    float* grad_bound_fraction;
+    float* grad_exchange_rate;
+    float* grad_t1_bound;
     // Per-event gradients are shared by every atom. Workers accumulate into
     // private buffers which are reduced in a fixed order, so the result does
     // not depend on thread scheduling.
@@ -2861,6 +3045,13 @@ struct VjpJvpBuffers {
     const float* dot_inversion_efficiency;
     const float* dot_diffusion;
     const float* dot_velocity;
+    // The bound pool's three properties. The derivative kernels carry one
+    // pool, so nothing reads or writes these; they hold the ABI's shape, and
+    // the dispatch refuses a bound pool rather than answering with the
+    // single-pool derivative.
+    const float* dot_bound_fraction;
+    const float* dot_exchange_rate;
+    const float* dot_t1_bound;
     const float* dot_duration;
     const float* dot_flip;
     const float* dot_phase;
@@ -2876,6 +3067,9 @@ struct VjpJvpBuffers {
     float* grad_dot_inversion_efficiency;
     float* grad_dot_diffusion;
     float* grad_dot_velocity;
+    float* grad_dot_bound_fraction;
+    float* grad_dot_exchange_rate;
+    float* grad_dot_t1_bound;
     float* grad_dot_duration;
     float* grad_dot_flip;
     float* grad_dot_phase;
@@ -2889,6 +3083,9 @@ struct VjpJvpBuffers {
     float* grad_inversion_efficiency;
     float* grad_diffusion;
     float* grad_velocity;
+    float* grad_bound_fraction;
+    float* grad_exchange_rate;
+    float* grad_t1_bound;
     float* grad_duration;
     float* grad_flip;
     float* grad_phase;
@@ -3491,6 +3688,10 @@ void simulate_real_vjp_jvp_range(
             grad_t1, grad_t2, grad_m0, grad_b1, DualFloat{0.0F, 0.0F},
             DualFloat{0.0F, 0.0F}, grad_inversion, grad_damping,
             DualFloat{0.0F, 0.0F},
+            // The bound pool's three, left at zero: the derivative kernels
+            // carry one pool, and the dispatch refuses a gradient along them.
+            DualFloat{0.0F, 0.0F}, DualFloat{0.0F, 0.0F},
+            DualFloat{0.0F, 0.0F},
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             DualFloat& target = grad_tissue_local[parameter * atoms + atom];
@@ -3901,6 +4102,9 @@ void simulate_real_vjp_jvp_lane_range(
         const DualLane contributions[TISSUE_COUNT] = {
             grad_t1, grad_t2, grad_m0, grad_b1, zero, zero, grad_inversion,
             grad_damping, zero,
+            // The bound pool's three, left at zero: the derivative kernels
+            // carry one pool, and the dispatch refuses a gradient along them.
+            zero, zero, zero,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             DualFloat& target = grad_tissue_local[parameter * atoms + atom];
@@ -4402,6 +4606,10 @@ void simulate_vjp_jvp_range(
             primal.flow_scale * grad_flow
                 + (speed_direction(velocity) * primal.washout_scale)
                     * grad_washout,
+            // The bound pool's three, left at zero: the derivative kernels
+            // carry one pool, and the dispatch refuses a gradient along them.
+            DualFloat{0.0F, 0.0F}, DualFloat{0.0F, 0.0F},
+            DualFloat{0.0F, 0.0F},
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             const std::size_t plane = layout.base[parameter]
@@ -4431,13 +4639,17 @@ inline Buffers packed_buffers(
     const void* const profile_index = nullptr,
     const std::int64_t profile_bins = 0,
     const std::int64_t locations = 1,
-    const float profile_step = 1.0F
+    const float profile_step = 1.0F,
+    const void* const lineshape = nullptr,
+    const std::int64_t lineshape_bins = 0,
+    const float lineshape_step = 1.0F
 ) {
     Buffers buffers{};
     const float** tissue[TISSUE_COUNT] = {
         &buffers.t1, &buffers.t2, &buffers.m0, &buffers.b1,
         &buffers.b1_phase, &buffers.b0, &buffers.inversion_efficiency,
         &buffers.diffusion, &buffers.velocity,
+        &buffers.bound_fraction, &buffers.exchange_rate, &buffers.t1_bound,
     };
     for (std::size_t index = 0; index < TISSUE_COUNT; ++index) {
         *tissue[index] = static_cast<const float*>(raw[index]);
@@ -4450,6 +4662,8 @@ inline Buffers packed_buffers(
     buffers.output_index =
         static_cast<const std::int32_t*>(raw[TISSUE_COUNT + 5]);
     buffers.shim_index = static_cast<const std::int32_t*>(raw[TISSUE_COUNT + 6]);
+    buffers.saturation = static_cast<const float*>(raw[TISSUE_COUNT + 7]);
+    buffers.rf_frequency = static_cast<const float*>(raw[TISSUE_COUNT + 8]);
     buffers.output_real = output_real;
     buffers.output_imag = output_imag;
     buffers.atom_count = atom_count;
@@ -4462,6 +4676,9 @@ inline Buffers packed_buffers(
     buffers.profile_bins = profile_bins;
     buffers.locations = locations;
     buffers.profile_step = profile_step;
+    buffers.lineshape = static_cast<const float*>(lineshape);
+    buffers.lineshape_bins = lineshape_bins;
+    buffers.lineshape_step = lineshape_step;
     return buffers;
 }
 
@@ -4674,9 +4891,11 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     long long locations = 1;
     long long profile_bins = 0;
     double profile_step = 1.0;
+    long long lineshape_bins = 0;
+    double lineshape_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLd",
+            "OLLLLLiiddLLLdLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -4690,14 +4909,16 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             &shim_count,
             &locations,
             &profile_bins,
-            &profile_step
+            &profile_step,
+            &lineshape_bins,
+            &lineshape_step
         )) {
         return nullptr;
     }
     // The packed buffers, the two output planes, then the transition tables
-    // and the per-event index that says which an event reads -- both null when
-    // the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 4;
+    // and the per-event index that says which an event reads, then the bound
+    // pool's lineshape -- all null when the sequence has none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 5;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -4727,7 +4948,10 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         raw[PACKED_COUNT + 3],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
-        static_cast<float>(profile_step)
+        static_cast<float>(profile_step),
+        raw[PACKED_COUNT + 4],
+        static_cast<std::int64_t>(lineshape_bins),
+        static_cast<float>(lineshape_step)
     );
 
     // TORCHSIM_LANES=1 selects a lane-vectorized forward that walks the
@@ -4740,6 +4964,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     const bool vectorize = lanes_enabled && train_count >= 4
         && buffers.shim_count == 1
         && buffers.profile == nullptr
+        && buffers.lineshape == nullptr
         && !any_diffusion(buffers.diffusion, buffers.atom_count)
         && !any_diffusion(buffers.velocity, buffers.atom_count);
     const std::int64_t lane_blocks =
@@ -4750,20 +4975,31 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     void (*kernel)(
         const Buffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = vectorize ? &simulate_lane_range : &simulate_range<false, false>;
+    ) = vectorize ? &simulate_lane_range : &simulate_range<false, false, false>;
     if (!vectorize) {
         const bool shimmed = buffers.shim_count > 1;
         const bool profiled = buffers.profile != nullptr;
-        if (shimmed) {
-            kernel = profiled ? &simulate_range<true, true>
-                              : &simulate_range<true, false>;
+        const bool bound = buffers.lineshape != nullptr;
+        if (bound) {
+            if (shimmed) {
+                kernel = profiled ? &simulate_range<true, true, true>
+                                  : &simulate_range<true, false, true>;
+            } else {
+                kernel = profiled ? &simulate_range<false, true, true>
+                                  : &simulate_range<false, false, true>;
+            }
+        } else if (shimmed) {
+            kernel = profiled ? &simulate_range<true, true, false>
+                              : &simulate_range<true, false, false>;
         } else if (profiled) {
-            kernel = &simulate_range<false, true>;
+            kernel = &simulate_range<false, true, false>;
         }
     }
     // The caller establishes the real-subspace conditions; axis 1 puts the
     // signal on the imaginary axis, which is the representation below.
-    if (real_axis == 1) {
+    // A bound pool leaves that subspace: saturation is real, but the pool is
+    // reached by an operator the real kernel does not carry.
+    if (real_axis == 1 && buffers.lineshape == nullptr) {
         kernel = &simulate_real_range;
     }
     const unsigned int thread_count = worker_count(requested_threads, work_count);
@@ -4920,6 +5156,9 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<const float*>(raw[tangents + 9]),
         static_cast<const float*>(raw[tangents + 10]),
         static_cast<const float*>(raw[tangents + 11]),
+        static_cast<const float*>(raw[tangents + 12]),
+        static_cast<const float*>(raw[tangents + 13]),
+        static_cast<const float*>(raw[tangents + 14]),
     };
 
     Py_BEGIN_ALLOW_THREADS
@@ -5008,9 +5247,11 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         &buffers.grad_t1, &buffers.grad_t2, &buffers.grad_m0, &buffers.grad_b1,
         &buffers.grad_b1_phase, &buffers.grad_b0,
         &buffers.grad_inversion_efficiency, &buffers.grad_diffusion,
-        &buffers.grad_velocity,
+        &buffers.grad_velocity, &buffers.grad_bound_fraction,
+        &buffers.grad_exchange_rate, &buffers.grad_t1_bound,
         &buffers.grad_flip, &buffers.grad_phase, &buffers.grad_duration,
     };
+    static_assert(std::size(grad_slots) == FLOAT_COUNT, "gradient slots");
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *grad_slots[index] = static_cast<float*>(raw[grads + index]);
     }
@@ -5067,7 +5308,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             buffers.grad_t1, buffers.grad_t2, buffers.grad_m0, buffers.grad_b1,
             buffers.grad_b1_phase, buffers.grad_b0,
             buffers.grad_inversion_efficiency, buffers.grad_diffusion,
-            buffers.grad_velocity,
+            buffers.grad_velocity, buffers.grad_bound_fraction,
+            buffers.grad_exchange_rate, buffers.grad_t1_bound,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             const std::size_t rows = tissue_rows(parameter, buffers.primal.shim_count);
@@ -5182,13 +5424,15 @@ void dispatch_second_order(
             buffers.grad_dot_t1, buffers.grad_dot_t2, buffers.grad_dot_m0,
             buffers.grad_dot_b1, buffers.grad_dot_b1_phase, buffers.grad_dot_b0,
             buffers.grad_dot_inversion_efficiency, buffers.grad_dot_diffusion,
-            buffers.grad_dot_velocity,
+            buffers.grad_dot_velocity, buffers.grad_dot_bound_fraction,
+            buffers.grad_dot_exchange_rate, buffers.grad_dot_t1_bound,
         };
         float* const tangent_destinations[TISSUE_COUNT] = {
             buffers.grad_t1, buffers.grad_t2, buffers.grad_m0, buffers.grad_b1,
             buffers.grad_b1_phase, buffers.grad_b0,
             buffers.grad_inversion_efficiency, buffers.grad_diffusion,
-            buffers.grad_velocity,
+            buffers.grad_velocity, buffers.grad_bound_fraction,
+            buffers.grad_exchange_rate, buffers.grad_t1_bound,
         };
         for (std::size_t parameter = 0; parameter < TISSUE_COUNT; ++parameter) {
             const std::size_t rows = tissue_rows(parameter, buffers.primal.shim_count);
@@ -5299,9 +5543,11 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         &buffers.dot_t1, &buffers.dot_t2, &buffers.dot_m0, &buffers.dot_b1,
         &buffers.dot_b1_phase, &buffers.dot_b0,
         &buffers.dot_inversion_efficiency, &buffers.dot_diffusion,
-        &buffers.dot_velocity,
+        &buffers.dot_velocity, &buffers.dot_bound_fraction,
+        &buffers.dot_exchange_rate, &buffers.dot_t1_bound,
         &buffers.dot_duration, &buffers.dot_flip, &buffers.dot_phase,
     };
+    static_assert(std::size(tangent_slots) == FLOAT_COUNT, "tangent slots");
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *tangent_slots[index] = static_cast<const float*>(raw[tangents + index]);
     }
@@ -5311,7 +5557,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         &buffers.grad_dot_t1, &buffers.grad_dot_t2, &buffers.grad_dot_m0,
         &buffers.grad_dot_b1, &buffers.grad_dot_b1_phase, &buffers.grad_dot_b0,
         &buffers.grad_dot_inversion_efficiency, &buffers.grad_dot_diffusion,
-        &buffers.grad_dot_velocity,
+        &buffers.grad_dot_velocity, &buffers.grad_dot_bound_fraction,
+        &buffers.grad_dot_exchange_rate, &buffers.grad_dot_t1_bound,
         &buffers.grad_dot_duration, &buffers.grad_dot_flip,
         &buffers.grad_dot_phase,
     };
@@ -5319,9 +5566,14 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         &buffers.grad_t1, &buffers.grad_t2, &buffers.grad_m0, &buffers.grad_b1,
         &buffers.grad_b1_phase, &buffers.grad_b0,
         &buffers.grad_inversion_efficiency, &buffers.grad_diffusion,
-        &buffers.grad_velocity,
+        &buffers.grad_velocity, &buffers.grad_bound_fraction,
+        &buffers.grad_exchange_rate, &buffers.grad_t1_bound,
         &buffers.grad_duration, &buffers.grad_flip, &buffers.grad_phase,
     };
+    static_assert(std::size(value_slots) == FLOAT_COUNT, "value slots");
+    static_assert(
+        std::size(tangent_grad_slots) == FLOAT_COUNT, "tangent gradient slots"
+    );
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *value_slots[index] = static_cast<float*>(raw[values + index]);
         *tangent_grad_slots[index] =
@@ -5445,6 +5697,9 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         static_cast<const float*>(raw[tangents + 9]),
         static_cast<const float*>(raw[tangents + 10]),
         static_cast<const float*>(raw[tangents + 11]),
+        static_cast<const float*>(raw[tangents + 12]),
+        static_cast<const float*>(raw[tangents + 13]),
+        static_cast<const float*>(raw[tangents + 14]),
     };
     VjpJvpBuffers second{};
     second.primal = primal;
@@ -5452,9 +5707,11 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         &second.dot_t1, &second.dot_t2, &second.dot_m0, &second.dot_b1,
         &second.dot_b1_phase, &second.dot_b0,
         &second.dot_inversion_efficiency, &second.dot_diffusion,
-        &second.dot_velocity,
+        &second.dot_velocity, &second.dot_bound_fraction,
+        &second.dot_exchange_rate, &second.dot_t1_bound,
         &second.dot_duration, &second.dot_flip, &second.dot_phase,
     };
+    static_assert(std::size(dot_slots) == FLOAT_COUNT, "second-order tangents");
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *dot_slots[index] = static_cast<const float*>(raw[tangents + index]);
     }
@@ -5464,7 +5721,8 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         &second.grad_dot_t1, &second.grad_dot_t2, &second.grad_dot_m0,
         &second.grad_dot_b1, &second.grad_dot_b1_phase, &second.grad_dot_b0,
         &second.grad_dot_inversion_efficiency, &second.grad_dot_diffusion,
-        &second.grad_dot_velocity,
+        &second.grad_dot_velocity, &second.grad_dot_bound_fraction,
+        &second.grad_dot_exchange_rate, &second.grad_dot_t1_bound,
         &second.grad_dot_duration, &second.grad_dot_flip,
         &second.grad_dot_phase,
     };
@@ -5472,9 +5730,13 @@ PyObject* optimize_fse_t2(PyObject*, PyObject* arguments) {
         &second.grad_t1, &second.grad_t2, &second.grad_m0, &second.grad_b1,
         &second.grad_b1_phase, &second.grad_b0, &second.grad_inversion_efficiency,
         &second.grad_diffusion, &second.grad_velocity,
+        &second.grad_bound_fraction, &second.grad_exchange_rate,
+        &second.grad_t1_bound,
         &second.grad_duration, &second.grad_flip,
         &second.grad_phase,
     };
+    static_assert(std::size(value_slots) == FLOAT_COUNT, "second-order values");
+    static_assert(std::size(tangent_slots) == FLOAT_COUNT, "second-order grads");
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *value_slots[index] = static_cast<float*>(raw[value_grads + index]);
         *tangent_slots[index] = static_cast<float*>(raw[tangent_grads + index]);

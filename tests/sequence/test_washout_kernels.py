@@ -240,6 +240,8 @@ def test_the_adjoint_matches_the_reference(geometry) -> None:
         events[4],
         events[5],
         events[6],
+        events[7],
+        events[8],
     )
     reference = simulate_packed(
         leaves,
@@ -396,6 +398,8 @@ def test_the_second_order_pass_matches_the_reference() -> None:
         events[4],
         events[5],
         events[6],
+        events[7],
+        events[8],
     )
     inputs = leaves + (differentiable[0], differentiable[2], differentiable[3])
     signal = simulate_packed(

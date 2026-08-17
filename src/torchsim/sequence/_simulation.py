@@ -25,7 +25,8 @@ from .. import epg
 from ._accelerators import geometry_of, simulate_native
 from ._transition import ExactSliceProfile
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
-from ._parameters import TISSUE_NAMES
+from ._lineshape import lineshape_table
+from ._parameters import TISSUE_NAMES, wants_bound_pool
 from ._transmit import shim_rows, transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
@@ -46,10 +47,15 @@ _TRANSMIT = frozenset(
     (TISSUE_NAMES.index("b1"), TISSUE_NAMES.index("b1_phase_rad"))
 )
 
+# The tissue buffers the kernels invert into a rate.
+_RELAXATION_TIMES = tuple(
+    TISSUE_NAMES.index(name) for name in ("t1_ms", "t2_ms", "t1_bound_ms")
+)
+
 
 @dataclass(frozen=True)
 class TissueProperties:
-    """Single-pool tissue and transmit-field properties.
+    """Tissue and transmit-field properties.
 
     Values may be scalars or broadcastable tensors. Relaxation times use
     milliseconds; off-resonance uses Hz. The apparent diffusion coefficient
@@ -67,6 +73,14 @@ class TissueProperties:
     sequence declares a shim they carry one transmit channel each along a
     leading axis and are combined into that field; see :mod:`._transmit` for
     what the array model assumes.
+
+    ``bound_fraction`` is the share of the magnetization held by the
+    macromolecule-bound proton pool, which RF saturates and which exchanges
+    with the free water at ``exchange_rate_hz``. It is the gate on the whole
+    second pool: at its default of zero the exchange conserves nothing across
+    pools and the bound pool starts empty, so the simulation is single-pool.
+    ``t1_bound_ms`` is that pool's own longitudinal relaxation time; it has no
+    transverse magnetization to relax, so no T2 goes with it.
     """
 
     t1_ms: Any
@@ -78,6 +92,9 @@ class TissueProperties:
     inversion_efficiency: Any = 1.0
     diffusion_um2_per_ms: Any = 0.0
     velocity_m_per_s: Any = 0.0
+    bound_fraction: Any = 0.0
+    exchange_rate_hz: Any = 0.0
+    t1_bound_ms: Any = 1000.0
 
 
 @dataclass(frozen=True)
@@ -174,8 +191,9 @@ class EpgSimulator:
         )
         (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
-            velocity,
+            velocity, _bound_fraction, _exchange_rate, _t1_bound,
         ) = prepared
+        bound_pool = wants_bound_pool(tissue.bound_fraction)
 
         minimum_states = 1 + repetitions * self.shifts_per_repetition(description)
         if nstates is None:
@@ -204,6 +222,9 @@ class EpgSimulator:
                 nstates=nstates,
                 slice_profile=profile,
                 rf_raster_time_s=rf_raster_time_s,
+                lineshape=lineshape_table(device=target_device)
+                if bound_pool
+                else None,
             )
             if accelerated is not None:
                 return SimulationResult(*accelerated)
@@ -211,6 +232,12 @@ class EpgSimulator:
                 raise RuntimeError(
                     "native EPG backend is unavailable for this device or AD context"
                 )
+        if bound_pool:
+            raise NotImplementedError(
+                "a bound pool is a two-pool longitudinal step the fused "
+                "kernels carry; this sequence fell back to the operator loop, "
+                "which has one pool"
+            )
         if exact:
             raise NotImplementedError(
                 "an exact slice profile is a tabulated rotation the fused "
@@ -509,9 +536,9 @@ def _prepare_tissue(
         else value.reshape(-1).contiguous()
         for index, value in enumerate(tensors)
     ]
-    # t1_ms and t2_ms are the two entries used as denominators downstream.
-    flat[0] = flat[0].clamp_min(MINIMUM_RELAXATION_TIME_MS)
-    flat[1] = flat[1].clamp_min(MINIMUM_RELAXATION_TIME_MS)
+    # The relaxation times are the entries used as denominators downstream.
+    for index in _RELAXATION_TIMES:
+        flat[index] = flat[index].clamp_min(MINIMUM_RELAXATION_TIME_MS)
     return tuple(flat), shape, device
 
 

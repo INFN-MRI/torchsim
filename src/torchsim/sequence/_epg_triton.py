@@ -19,11 +19,18 @@ from ._parameters import (
     tissue_gradient_height,
     tissue_gradient_rows,
 )
+from ._parameters import BOUND_POOL_INPUTS as _BOUND_POOL_INPUTS
+from ._parameters import FLOAT_NAMES as _FLOAT_NAMES
 from ._parameters import TISSUE_COUNT as _TISSUE_PARAMETERS
 from ._parameters import TRANSMIT_INPUTS as _TRANSMIT_INPUTS
 
 # Triton reads globals only through its own constexpr wrapper.
 _TISSUE_COUNT = tl.constexpr(_TISSUE_PARAMETERS)
+
+# How many tissue parameters the free pool alone accounts for. The bound pool's
+# sit past them, and the derivative kernels carry one pool, so their gradient
+# planes are left at the zero they were cleared to.
+_FREE_POOL_COUNT = tl.constexpr(_TISSUE_PARAMETERS - len(_BOUND_POOL_INPUTS))
 
 # The gradient plane holds a row of voxels per tissue parameter, except that
 # the transmit pair holds one per shim. Both sit ahead of everything that
@@ -31,6 +38,12 @@ _TISSUE_COUNT = tl.constexpr(_TISSUE_PARAMETERS)
 # added ahead of it.
 _B1_ROW = tl.constexpr(_TRANSMIT_INPUTS[0])
 _B1_PHASE_ROW = tl.constexpr(_TRANSMIT_INPUTS[1])
+
+# Where the two event directions the real-subspace adjoint follows sit among
+# the differentiable inputs. Named rather than counted, so a tissue parameter
+# added ahead of them moves them instead of silently renaming a neighbour.
+_DURATION_SEED = _FLOAT_NAMES.index("duration")
+_FLIP_SEED = _FLOAT_NAMES.index("flip")
 
 
 @triton.jit
@@ -158,6 +171,88 @@ def _washout(rate, dt):
     one, past which the interval has replaced the voxel outright.
     """
     return 1.0 - tl.minimum(rate * dt, 1.0)
+
+
+@triton.jit
+def _two_pool_step(r1_free, r1_bound, exchange, bound, dt, attenuation):
+    """The two-pool longitudinal operator over one interval, and its recovery.
+
+    ``expm((K - diag(R1)) t)`` in the exact 2x2 closed form. Its discriminant
+    is a square plus a product of two non-negative rates, so the root is real
+    and the branch a general exponential would need does not exist here.
+    ``sinh(d)/d`` is taken by series near the origin, where the root has no
+    derivative of its own.
+
+    The equilibrium each pool relaxes toward is its own fraction, so the
+    recovery is ``(I - E1) (1 - f, f)`` and needs no solve. Returned as
+    ``(e11, e12, e21, e22, recovery_free, recovery_bound)``.
+    """
+    free = 1.0 - bound
+    kab = exchange * bound
+    kba = exchange * free
+    l11 = (-kab - r1_free) * dt
+    l12 = kba * dt
+    l21 = kab * dt
+    l22 = (-kba - r1_bound) * dt
+
+    half_trace = 0.5 * (l11 + l22)
+    half_gap = 0.5 * (l11 - l22)
+    square = half_gap * half_gap + l12 * l21
+    # tau +/- d are the eigenvalues, both non-positive for a decaying system,
+    # so their exponentials are bounded by one. Formed that way rather than as
+    # e^tau cosh(d), which over a long interval is an underflow times an
+    # overflow.
+    root = tl.sqrt(tl.maximum(square, 0.0))
+    upper = tl.exp(half_trace + root)
+    lower = tl.exp(half_trace - root)
+    cosine = 0.5 * (upper + lower)
+    turning = square > 1e-12
+    guarded = tl.where(turning, root, 1.0)
+    scale = tl.where(
+        turning,
+        0.5 * (upper - lower) / guarded,
+        tl.exp(half_trace) * (1.0 + square / 6.0 + square * square / 120.0),
+    )
+    e11 = attenuation * (cosine + scale * half_gap)
+    e12 = attenuation * scale * l12
+    e21 = attenuation * scale * l21
+    e22 = attenuation * (cosine - scale * half_gap)
+    return (
+        e11,
+        e12,
+        e21,
+        e22,
+        free - (e11 * free + e12 * bound),
+        bound - (e21 * free + e22 * bound),
+    )
+
+
+@triton.jit
+def _lineshape_at(lineshape, offset_hz, bins: tl.constexpr, step):
+    """How well the bound pool absorbs a pulse this far off its resonance.
+
+    Cubic Hermite between the two knots bracketing the offset, taken in
+    magnitude because the lineshape is even, and clamped at the far end. Each
+    knot is two floats -- the value then its slope -- so the two a read needs
+    are four contiguous ones.
+    """
+    last = bins - 1
+    scaled = tl.minimum(tl.abs(offset_hz) / step, last + 0.0)
+    lower = tl.minimum(tl.floor(scaled), last - 1.0)
+    u = scaled - lower
+    u2 = u * u
+    u3 = u2 * u
+    base = lower.to(tl.int64) * 2
+    near = tl.load(lineshape + base)
+    near_slope = tl.load(lineshape + base + 1)
+    far = tl.load(lineshape + base + 2)
+    far_slope = tl.load(lineshape + base + 3)
+    return (
+        (2.0 * u3 - 3.0 * u2 + 1.0) * near
+        + (u3 - 2.0 * u2 + u) * step * near_slope
+        + (-2.0 * u3 + 3.0 * u2) * far
+        + (u3 - u2) * step * far_slope
+    )
 
 
 @triton.jit
@@ -779,6 +874,12 @@ def _epg_vjp_jvp_kernel(
     inversion_efficiency,
     diffusion,
     velocity,
+    # The bound pool's three. These kernels carry one pool; the pointers hold
+    # the ABI's shape and the dispatch refuses a bound pool rather than
+    # answering with the single-pool derivative.
+    bound_fraction,
+    exchange_rate,
+    t1_bound,
     duration,
     kind,
     flip,
@@ -786,6 +887,8 @@ def _epg_vjp_jvp_kernel(
     action,
     output_index,
     shim_index,
+    saturation,
+    rf_frequency,
     profile,
     profile_index,
     dot_t1,
@@ -797,6 +900,9 @@ def _epg_vjp_jvp_kernel(
     dot_inversion_efficiency,
     dot_diffusion,
     dot_velocity,
+    dot_bound_fraction,
+    dot_exchange_rate,
+    dot_t1_bound,
     dot_duration,
     dot_flip,
     dot_phase,
@@ -1746,7 +1852,7 @@ def _epg_vjp_jvp_kernel(
     tangents = (
         g_t1t, g_t2t, g_m0t, g_b1t, g_b1pt, g_b0t, g_invt, g_difft, velocity_t,
     )
-    for parameter in tl.static_range(_TISSUE_COUNT):
+    for parameter in tl.static_range(_FREE_POOL_COUNT):
         # The transmit pair went to its shim's row above when there is more
         # than one; the rest sit past whatever rows that pair took.
         if shims == 1 or (parameter != _B1_ROW and parameter != _B1_PHASE_ROW):
@@ -2701,6 +2807,9 @@ def _epg_kernel(
     inversion_efficiency,
     diffusion,
     velocity,
+    bound_fraction,
+    exchange_rate,
+    t1_bound,
     duration,
     kind,
     flip,
@@ -2708,8 +2817,11 @@ def _epg_kernel(
     action,
     output_index,
     shim_index,
+    saturation,
+    rf_frequency,
     profile,
     profile_index,
+    lineshape,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -2723,10 +2835,12 @@ def _epg_kernel(
     flow_scale,
     washout_scale,
     profile_step,
+    lineshape_step,
     state_count: tl.constexpr,
     shims: tl.constexpr,
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
+    lineshape_bins: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -2753,8 +2867,22 @@ def _epg_kernel(
     fplus_imag = empty
     fminus_real = empty
     fminus_imag = empty
-    longitudinal_real = empty + tl.where(state == 0, 1.0, 0.0)
+    # The bound pool holds its own share of the equilibrium, and carries
+    # longitudinal states alone: nothing dephases it, so it reaches the higher
+    # orders only through exchange with the free pool's.
+    atom_bound = 0.0
+    atom_exchange = 0.0
+    atom_r1_bound = 0.0
+    if lineshape_bins > 0:
+        atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
+        atom_exchange = tl.load(exchange_rate + atom, mask=active_atom, other=0.0)
+        atom_r1_bound = 1000.0 / tl.load(
+            t1_bound + atom, mask=active_atom, other=1.0
+        )
+    longitudinal_real = empty + tl.where(state == 0, 1.0 - atom_bound, 0.0)
     longitudinal_imag = empty
+    bound_real = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
+    bound_imag = empty
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
@@ -2797,10 +2925,38 @@ def _epg_kernel(
         # else in the state machine gives them.
         turn_cos = tl.cos(turn_z)
         turn_sin = tl.sin(turn_z)
-        old_real = longitudinal_real
-        longitudinal_real = e1 * (old_real * turn_cos - longitudinal_imag * turn_sin)
-        longitudinal_imag = e1 * (old_real * turn_sin + longitudinal_imag * turn_cos)
-        longitudinal_real += tl.where(state == 0, recovery, 0.0)
+        if lineshape_bins > 0:
+            # The exchange operator is a property of the interval, not of a
+            # dephasing order, so it is formed once and the per-order damping
+            # multiplies it. Both pools take that damping and the flow phase:
+            # their order-n states describe one dephasing configuration, and the
+            # bound pool has no diffusion coefficient of its own to damp by.
+            e11, e12, e21, e22, grow_free, grow_bound = _two_pool_step(
+                1000.0 / atom_t1, atom_r1_bound, atom_exchange, atom_bound, dt, wout
+            )
+            free_real = e11 * longitudinal_real + e12 * bound_real
+            free_imag = e11 * longitudinal_imag + e12 * bound_imag
+            held_real = e21 * longitudinal_real + e22 * bound_real
+            held_imag = e21 * longitudinal_imag + e22 * bound_imag
+            longitudinal_real = damp_z * (
+                free_real * turn_cos - free_imag * turn_sin
+            )
+            longitudinal_imag = damp_z * (
+                free_real * turn_sin + free_imag * turn_cos
+            )
+            bound_real = damp_z * (held_real * turn_cos - held_imag * turn_sin)
+            bound_imag = damp_z * (held_real * turn_sin + held_imag * turn_cos)
+            longitudinal_real += tl.where(state == 0, grow_free, 0.0)
+            bound_real += tl.where(state == 0, grow_bound, 0.0)
+        else:
+            old_real = longitudinal_real
+            longitudinal_real = e1 * (
+                old_real * turn_cos - longitudinal_imag * turn_sin
+            )
+            longitudinal_imag = e1 * (
+                old_real * turn_sin + longitudinal_imag * turn_cos
+            )
+            longitudinal_real += tl.where(state == 0, recovery, 0.0)
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
@@ -2907,6 +3063,19 @@ def _epg_kernel(
             rotated_zi = shaped_zi
 
         rotate = is_rf & ~is_inversion
+        if lineshape_bins > 0:
+            # The bound pool absorbs the power the pulse deposits, so it reads
+            # the bare flip the transmit field gives the voxel -- not the
+            # slice-shaped rotation the free pool takes from the table.
+            offset = tl.load(rf_frequency + event) - atom_b0
+            absorbed = tl.exp(
+                tl.load(saturation + event)
+                * alpha
+                * alpha
+                * _lineshape_at(lineshape, offset, lineshape_bins, lineshape_step)
+            )
+            bound_real = tl.where(rotate, absorbed * bound_real, bound_real)
+            bound_imag = tl.where(rotate, absorbed * bound_imag, bound_imag)
         fplus_real = tl.where(rotate, rotated_pr, fplus_real)
         fplus_imag = tl.where(rotate, rotated_pi, fplus_imag)
         fminus_real = tl.where(rotate, rotated_mr, fminus_real)
@@ -2962,6 +3131,12 @@ def _epg_jvp_kernel(
     inversion_efficiency,
     diffusion,
     velocity,
+    # The bound pool's three. These kernels carry one pool; the pointers hold
+    # the ABI's shape and the dispatch refuses a bound pool rather than
+    # answering with the single-pool derivative.
+    bound_fraction,
+    exchange_rate,
+    t1_bound,
     duration,
     kind,
     flip,
@@ -2978,6 +3153,9 @@ def _epg_jvp_kernel(
     tangent_inversion_efficiency,
     tangent_diffusion,
     tangent_velocity,
+    tangent_bound_fraction,
+    tangent_exchange_rate,
+    tangent_t1_bound,
     tangent_duration,
     tangent_flip,
     tangent_phase,
@@ -3480,6 +3658,7 @@ def simulate(
     real_axis: int | None = None,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> torch.Tensor:
     """Run a packed state machine on CUDA and return complex signals.
 
@@ -3506,6 +3685,7 @@ def simulate(
         atom_count=atom_count,
         geometry=geometry,
         profile=profile,
+        lineshape=lineshape,
     )
     return torch.complex(output_real, output_imag)
 
@@ -3523,6 +3703,7 @@ def simulate_into(
     atom_count: int,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> None:
     """Run the forward machine into buffers the caller owns.
 
@@ -3536,8 +3717,12 @@ def simulate_into(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+        bound_fraction, exchange_rate, t1_bound,
     ) = tissue
-    duration, kind, flip, phase, action, output_index, shim_index = events
+    (
+        duration, kind, flip, phase, action, output_index, shim_index,
+        saturation, rf_frequency,
+    ) = events
     train_count = _train_count(events)
     shims = _shim_count(tissue)
     block_states = triton.next_power_of_2(state_count)
@@ -3551,6 +3736,7 @@ def simulate_into(
     # compiled out, so an unprofiled launch passes one it already has.
     table = None if profile is None else profile.packed(t1.device)
     table_rows = None if profile is None else profile.rows(kind.device)
+    absorption = None if lineshape is None else lineshape.packed(t1.device)
 
     if real_axis == 1:
         _epg_real_kernel[grid](
@@ -3589,6 +3775,9 @@ def simulate_into(
         inversion_efficiency,
         diffusion,
         velocity,
+        bound_fraction,
+        exchange_rate,
+        t1_bound,
         duration,
         kind,
         flip,
@@ -3596,8 +3785,11 @@ def simulate_into(
         action,
         output_index,
         shim_index,
+        saturation,
+        rf_frequency,
         t1 if table is None else table,
         kind if table_rows is None else table_rows,
+        t1 if absorption is None else absorption,
         output_real,
         output_imag,
         *scratch,
@@ -3608,10 +3800,12 @@ def simulate_into(
         geometry.flow_scale,
         geometry.washout_scale,
         1.0 if profile is None else profile.step,
+        1.0 if lineshape is None else lineshape.step,
         state_count=state_count,
         shims=shims,
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
+        lineshape_bins=0 if lineshape is None else lineshape.bins,
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -3684,8 +3878,12 @@ def simulate_jvp_into(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+        _bound_fraction, _exchange_rate, _t1_bound,
     ) = tissue
-    duration, kind, flip, phase, action, output_index, shim_index = events
+    (
+        duration, kind, flip, phase, action, output_index, shim_index,
+        _saturation, _rf_frequency,
+    ) = events
     tangent_duration, tangent_flip, tangent_phase = event_tangents
     train_count = _train_count(events)
     shims = _shim_count(tissue)
@@ -3805,7 +4003,10 @@ class AdjointBuffers:
         real_axis: int | None = None,
         shims: int = 1,
     ) -> None:
-        duration, kind, flip, phase, _action, _output_index, _shim = events
+        (
+            duration, kind, flip, phase, _action, _output_index, _shim,
+            _saturation, _rf_frequency,
+        ) = events
         device = kind.device
         train_count = _train_count(events)
         event_count = kind.numel()
@@ -3905,8 +4106,12 @@ def simulate_vjp_jvp_into(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+        _bound_fraction, _exchange_rate, _t1_bound,
     ) = tissue
-    duration, kind, flip, phase, action, output_index, shim_index = events
+    (
+        duration, kind, flip, phase, action, output_index, shim_index,
+        _saturation, _rf_frequency,
+    ) = events
     train_count = _train_count(events)
     event_count = kind.numel()
     total = train_count * atom_count
@@ -3958,8 +4163,8 @@ def simulate_vjp_jvp_into(
                 tangents[3],
                 tangents[6],
                 tangents[7],
-                tangents[9],
-                tangents[10],
+                tangents[_DURATION_SEED],
+                tangents[_FLIP_SEED],
                 grad_imag,
                 *grad_tissue,
                 *grad_flip,
