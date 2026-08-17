@@ -690,7 +690,6 @@ class _NativeEpg(torch.autograd.Function):
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
-        _differentiable_pools(ctx.lineshape)
         saved = ctx.saved_tensors
         float_tangents = tuple(
             torch.zeros_like(saved[index])
@@ -706,6 +705,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.threads,
             ctx.geometry,
             ctx.profile,
+            ctx.lineshape,
         )
 
     @staticmethod
@@ -832,6 +832,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             inputs[_TANGENT_END + 2],
             geometry=inputs[_TANGENT_END + 3],
             profile=inputs[_TANGENT_END + 4],
+            lineshape=inputs[_TANGENT_END + 5],
         )
 
     @staticmethod
@@ -841,6 +842,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.output_count = inputs[_TANGENT_END + 1]
         ctx.geometry = inputs[_TANGENT_END + 3]
         ctx.profile = inputs[_TANGENT_END + 4]
+        ctx.lineshape = inputs[_TANGENT_END + 5]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
@@ -854,6 +856,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             or bool(ctx.needs_input_grad[_PACKED_COUNT + position])
             for position, index in enumerate(_FLOAT_INPUTS)
         )
+        _differentiable_pools(ctx.lineshape)
         primal_grads, tangent_grads = _run_packed_vjp_jvp(
             primal[:_TISSUE_COUNT],
             primal[_TISSUE_COUNT:_PACKED_COUNT],
@@ -873,7 +876,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         guarded = _last(
             (*_spread(primal_grads, ctx.needs_input_grad), *directions), saved
         )
-        return (*guarded, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None)
 
     @staticmethod
     def vmap(
@@ -1905,6 +1908,7 @@ def _run_offloaded_jvp(
     real_axis: int | None,
     geometry: Geometry,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> torch.Tensor:
     """Stream a forward-mode pass; the seeds ride along with the tissue.
 
@@ -1951,6 +1955,7 @@ def _run_offloaded_jvp(
             geometry=geometry,
             atom_count=width,
             profile=profile,
+            lineshape=lineshape,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -2490,6 +2495,7 @@ def _run_packed_jvp(
     *,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    lineshape: Any = None,
 ) -> torch.Tensor:
     profile = _tables(profile, events)
     if profile is not None:
@@ -2505,6 +2511,10 @@ def _run_packed_jvp(
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
             profile=profile,
         )
+    # A bound pool is outside every real subspace the reduced kernels stand
+    # for; see the forward path for why.
+    if lineshape is not None:
+        real_axis = None
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded_jvp(
             tissue,
@@ -2517,6 +2527,7 @@ def _run_packed_jvp(
             real_axis,
             geometry,
             profile,
+            lineshape,
         )
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
@@ -2532,6 +2543,7 @@ def _run_packed_jvp(
             real_axis,
             geometry,
             profile,
+            lineshape,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2546,6 +2558,7 @@ def _run_packed_jvp(
                 threads,
                 real_axis,
                 geometry=geometry,
+                lineshape=lineshape,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
@@ -2566,6 +2579,7 @@ def _run_packed_jvp(
                         real_axis=real_axis,
                         geometry=geometry,
                         profile=profile,
+                        lineshape=lineshape,
                     ),
                 )
                 for begin, end, device in shards
@@ -2581,6 +2595,7 @@ def _run_packed_jvp(
             real_axis=real_axis,
             geometry=geometry,
             profile=profile,
+            lineshape=lineshape,
         )
     from torchsim import _epg_cpu
 
@@ -2602,8 +2617,9 @@ def _run_packed_jvp(
     )
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
+    absorption = None if lineshape is None else lineshape.packed()
     _epg_cpu.simulate_jvp(
-        _profiled_pointers(pointers, table, table_rows),
+        _bound_pointers(pointers, table, table_rows, absorption),
         tissue[0].numel(),
         trains,
         events[1].numel(),
@@ -2617,5 +2633,7 @@ def _run_packed_jvp(
         1 if profile is None else profile.points,
         0 if profile is None else profile.bins,
         1.0 if profile is None else profile.step,
+        0 if lineshape is None else lineshape.bins,
+        1.0 if lineshape is None else lineshape.step,
     )
     return torch.complex(output_real, output_imag)

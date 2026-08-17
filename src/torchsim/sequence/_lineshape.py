@@ -44,6 +44,8 @@ from __future__ import annotations
 
 __all__ = ["LineshapeTable", "lineshape_table"]
 
+import functools
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -120,9 +122,9 @@ class LineshapeTable:
 
 
 def _absorption(
-    offset_hz: torch.Tensor, bound_t2_s: float, quadrature: int
-) -> torch.Tensor:
-    """The super-Lorentzian integral, and its derivative through the same grid.
+    offset_hz: np.ndarray, bound_t2_s: float, quadrature: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """The super-Lorentzian integral and its derivative in the offset.
 
     Evaluated by the trapezoid the model is conventionally written with. At
     the orientation where ``3u^2 - 1`` vanishes the integrand is a pole times
@@ -130,33 +132,28 @@ def _absorption(
     away from resonance -- but computed as written it is ``inf * 0``, which is
     why the vanishing denominator is masked out rather than left to the
     arithmetic.
+
+    The derivative is taken under the integral rather than by differencing it,
+    so it is the derivative of this quadrature and not of a nearby one.
     """
-    grid = torch.linspace(
-        0.0, 1.0, quadrature, dtype=torch.float64, device=offset_hz.device
-    )
+    grid = np.linspace(0.0, 1.0, quadrature, dtype=np.float64)
     spacing = 1.0 / (quadrature - 1)
     denominator = 3.0 * grid * grid - 1.0
-    open_pole = denominator.abs() > 1e-12
-    guarded = torch.where(open_pole, denominator, torch.ones_like(denominator))
+    open_pole = np.abs(denominator) > 1e-12
+    guarded = np.where(open_pole, denominator, 1.0)
 
-    amplitude = (2.0 / torch.pi) ** 0.5 * bound_t2_s / guarded.abs()
-    exponent = (
-        -2.0
-        * (
-            2.0
-            * torch.pi
-            * offset_hz[:, None]
-            * bound_t2_s
-            / guarded[None, :]
-        )
-        ** 2
+    amplitude = np.sqrt(2.0 / np.pi) * bound_t2_s / np.abs(guarded)
+    rate = 2.0 * np.pi * bound_t2_s / guarded
+    scaled = offset_hz[:, None] * rate[None, :]
+    weighted = np.where(
+        open_pole[None, :], amplitude[None, :] * np.exp(-2.0 * scaled**2), 0.0
     )
-    integrand = torch.where(
-        open_pole[None, :], amplitude[None, :] * torch.exp(exponent), 0.0
-    )
-    return spacing * integrand.sum(dim=-1)
+    value = spacing * weighted.sum(axis=-1)
+    slope = spacing * (weighted * (-4.0 * scaled * rate[None, :])).sum(axis=-1)
+    return value, slope
 
 
+@functools.lru_cache(maxsize=8)
 def lineshape_table(
     *,
     bound_t2_s: float = BOUND_T2_S,
@@ -188,6 +185,12 @@ def lineshape_table(
         Points in the orientation integral. The integrand has a pole, so this
         converges slowly; it is paid once, on the host.
 
+    Notes
+    -----
+    Memoized on its arguments. The integral costs far more than a simulation
+    does and depends on nothing a caller varies between runs, and the table it
+    returns is read-only, so every simulation of a given bound pool shares one.
+
     Returns:
         The table, with slopes taken by differentiating the same integration
         rather than by differencing it.
@@ -205,16 +208,8 @@ def lineshape_table(
             f"table reaching {offset_max_hz} Hz"
         )
 
-    knots = torch.linspace(
-        0.0, offset_max_hz, bins, dtype=torch.float64, device=device
-    )
-
-    def integrate(offset: torch.Tensor) -> torch.Tensor:
-        return _absorption(offset, bound_t2_s, quadrature)
-
-    values, slopes = torch.func.jvp(
-        integrate, (knots,), (torch.ones_like(knots),)
-    )
+    knots = np.linspace(0.0, offset_max_hz, bins, dtype=np.float64)
+    values, slopes = _absorption(knots, bound_t2_s, quadrature)
 
     # The cutoff is snapped to a knot so that the fill and the integral meet
     # at one, and no single segment interpolates between a filled knot and an
@@ -224,32 +219,28 @@ def lineshape_table(
     edge = float(knots[edge_index])
 
     support = knots[(knots >= edge) & (knots < 2.0 * edge)]
-    if support.numel() < 2:
+    if support.size < 2:
         raise ValueError(
             f"the fill is interpolated from the knots between {edge:.0f} and "
-            f"{2 * edge:.0f} Hz, and this table has {support.numel()} of them; "
+            f"{2 * edge:.0f} Hz, and this table has {support.size} of them; "
             f"use more bins or a smaller cutoff"
         )
-    mirrored = torch.cat((-support.flip(0), support)).cpu().numpy()
-    sampled = _absorption(support, bound_t2_s, quadrature).cpu().numpy()
+    mirrored = np.concatenate((-support[::-1], support))
+    sampled, _ = _absorption(support, bound_t2_s, quadrature)
     curve = InterpolatedUnivariateSpline(
         mirrored,
         np.concatenate((sampled[::-1], sampled)),
         k=min(3, mirrored.size - 1),
     )
 
-    inside = (knots < edge).cpu().numpy()
-    filled = knots.cpu().numpy()[inside]
-    values[torch.as_tensor(inside, device=values.device)] = torch.as_tensor(
-        curve(filled), dtype=values.dtype, device=values.device
-    )
-    slopes[torch.as_tensor(inside, device=slopes.device)] = torch.as_tensor(
-        curve.derivative()(filled), dtype=slopes.dtype, device=slopes.device
-    )
+    inside = knots < edge
+    filled = knots[inside]
+    values[inside] = curve(filled)
+    slopes[inside] = curve.derivative()(filled)
 
     return LineshapeTable(
-        values=values.to(torch.float32).contiguous(),
-        slopes=slopes.to(torch.float32).contiguous(),
+        values=torch.tensor(values, dtype=torch.float32, device=device),
+        slopes=torch.tensor(slopes, dtype=torch.float32, device=device),
         offset_max_hz=float(offset_max_hz),
         cutoff_hz=float(edge),
     )

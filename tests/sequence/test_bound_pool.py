@@ -326,7 +326,7 @@ def test_an_off_resonance_pulse_saturates_less():
     assert near > 10.0 * far
 
 
-def _saturate_then_read(saturation, offset_hz, delay_s=0.3, **properties):
+def _saturation_events(saturation, offset_hz, delay_s=0.3):
     """Saturate the bound pool, wait, then read the free pool's ``Z``.
 
     A hard pulse tips the free water and saturates the bound pool; the spoiler
@@ -342,10 +342,7 @@ def _saturate_then_read(saturation, offset_hz, delay_s=0.3, **properties):
         _SPOIL_AFTER,
     )
 
-    tissue = TissueProperties(t1_ms=1000.0, t2_ms=80.0, **properties)
-    prepared, _, _ = _prepare_tissue(tissue, "cpu")
-    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
-    events = (
+    return (
         torch.tensor([[0.0, delay_s, 0.0, 0.0]], dtype=torch.float32),
         torch.tensor([1, 0, 1, 2], dtype=torch.int32),
         torch.tensor(
@@ -361,9 +358,25 @@ def _saturate_then_read(saturation, offset_hz, delay_s=0.3, **properties):
         torch.tensor([saturation, 0.0, 0.0, 0.0], dtype=torch.float32),
         torch.tensor([offset_hz, 0.0, 0.0, 0.0], dtype=torch.float32),
     )
+
+
+def _prepared(device="cpu", **properties):
+    prepared, _, _ = _prepare_tissue(
+        TissueProperties(**properties), device
+    )
+    return tuple(value.to(torch.float32).contiguous() for value in prepared)
+
+
+def _saturate_then_read(saturation, offset_hz, delay_s=0.3, **properties):
+    """The reading that :func:`_saturation_events` records."""
     return float(
         _run_packed(
-            prepared, events, STATES, 1, 1, lineshape=lineshape_table()
+            _prepared(t1_ms=1000.0, t2_ms=80.0, **properties),
+            _saturation_events(saturation, offset_hz, delay_s),
+            STATES,
+            1,
+            1,
+            lineshape=lineshape_table(),
         ).abs().flatten()[0]
     )
 
@@ -446,13 +459,184 @@ def test_the_builders_idealized_pulse_declares_almost_no_power():
     assert 0.99 < absorbed < 0.999
 
 
+# --- forward mode ---
+
+
+# One tissue whose every bound-pool term is live at once: enough exchange to
+# move magnetization over the delay, a bound T1 short enough that the pool it
+# exchanges with matters, and a voxel far enough off resonance that the pulse's
+# offset lands on a sloped part of the lineshape.
+LIVE = dict(
+    t1_ms=1000.0,
+    t2_ms=80.0,
+    bound_fraction=0.15,
+    exchange_rate_hz=200.0,
+    t1_bound_ms=60.0,
+    b0_hz=1500.0,
+)
+PULSE_OFFSET_HZ = 4.0e3
+
+
+def _live_readout(prepared, seed=None):
+    """The saturate-then-read signal, or its directional derivative."""
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    events = _saturation_events(MILLISECOND_PULSE, PULSE_OFFSET_HZ, delay_s=0.4)
+    table = lineshape_table()
+    if seed is None:
+        return complex(
+            _run_packed(prepared, events, STATES, 1, 1, lineshape=table)
+            .flatten()[0]
+        )
+    return complex(
+        _run_packed_jvp(
+            prepared,
+            events,
+            seed,
+            tuple(torch.zeros_like(events[0]) for _ in range(3)),
+            STATES,
+            1,
+            1,
+            lineshape=table,
+        ).flatten()[0]
+    )
+
+
+# The probe spoils its transverse magnetization before the interval that
+# matters, so T2 has nothing to act on and is not swept here; every other
+# property it declares reaches the reading.
+DIRECTIONS = sorted(set(LIVE) - {"t2_ms"})
+
+
+@pytest.mark.parametrize("name", DIRECTIONS)
+def test_forward_mode_matches_finite_differences(name: str) -> None:
+    """Every direction the bound pool adds, and every one it changes.
+
+    The step is a hundredth of the value: differencing a float32 kernel at a
+    thousandth leaves the answer under the rounding of the two runs, and at a
+    tenth the difference has curved away from the tangent. In between the two
+    agree to a part in a thousand, which is what a float32 central difference
+    can resolve.
+    """
+    index = TISSUE_NAMES.index(name)
+    prepared = _prepared(**LIVE)
+    seed = tuple(
+        torch.ones_like(value) if position == index else torch.zeros_like(value)
+        for position, value in enumerate(prepared)
+    )
+    tangent = _live_readout(prepared, seed)
+
+    step = abs(LIVE[name]) * 1e-2
+    forward = _live_readout(_prepared(**{**LIVE, name: LIVE[name] + step}))
+    backward = _live_readout(_prepared(**{**LIVE, name: LIVE[name] - step}))
+    difference = (forward - backward) / (2.0 * step)
+
+    assert abs(difference) > 0.0, "the probe leaves this direction dead"
+    assert abs(tangent - difference) / abs(difference) < 5e-3
+
+
+def test_a_direction_along_the_bound_fraction_splits_the_equilibrium():
+    """The fraction reaches the answer before a single event has run.
+
+    Raising it takes magnetization out of the free water at once, so the
+    tangent is large and negative where every other one is small. A kernel that
+    seeded both pools at the primal equilibrium would still pass a
+    finite-difference check on the operator and fail here.
+    """
+    prepared = _prepared(**LIVE)
+    index = TISSUE_NAMES.index("bound_fraction")
+    seed = tuple(
+        torch.ones_like(value) if position == index else torch.zeros_like(value)
+        for position, value in enumerate(prepared)
+    )
+    tangent = _live_readout(prepared, seed)
+    reading = _live_readout(prepared)
+
+    # Most of it is the split: the free pool starts at ``1 - f``, so the
+    # reading is nearly proportional to it.
+    assert tangent.imag < 0.0
+    assert abs(tangent.imag) > 0.5 * abs(reading.imag) / (1.0 - LIVE["bound_fraction"])
+
+
+def test_the_offset_is_the_pulse_less_the_voxel():
+    """``b0`` reaches the bound pool only through the lineshape's slope.
+
+    The pulse's frequency and the voxel's off-resonance enter the saturation
+    only through their difference, so a direction along the voxel's
+    off-resonance must be exactly minus a step in the pulse's frequency. That
+    pins the convention and the slope at once: a kernel reading ``G`` flat
+    would leave the left side at zero, and one taking the offset the other way
+    round would flip its sign.
+    """
+    prepared = _prepared(**LIVE)
+    index = TISSUE_NAMES.index("b0_hz")
+    seed = tuple(
+        torch.ones_like(value) if position == index else torch.zeros_like(value)
+        for position, value in enumerate(prepared)
+    )
+    tangent = _live_readout(prepared, seed)
+
+    table = lineshape_table()
+    step = 40.0
+
+    def moved(offset_hz):
+        return complex(
+            _run_packed(
+                prepared,
+                _saturation_events(MILLISECOND_PULSE, offset_hz, delay_s=0.4),
+                STATES,
+                1,
+                1,
+                lineshape=table,
+            ).flatten()[0]
+        )
+
+    through_the_pulse = (
+        moved(PULSE_OFFSET_HZ + step) - moved(PULSE_OFFSET_HZ - step)
+    ) / (2.0 * step)
+
+    assert abs(tangent) > 0.0
+    assert abs(tangent + through_the_pulse) / abs(through_the_pulse) < 5e-3
+
+
+def test_forward_mode_leaves_the_single_pool_answer_untouched():
+    """A tissue at the default bound fraction takes the single-pool kernel in
+    forward mode too, so its directions are bit for bit what they were.
+    """
+    t2 = torch.tensor([80.0])
+
+    def signal(value):
+        return FSE().simulate(
+            _description(),
+            TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=value),
+            nstates=STATES,
+        ).signal
+
+    def gated(value):
+        return FSE().simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0]),
+                t2_ms=value,
+                bound_fraction=0.0,
+                exchange_rate_hz=RATE_HZ,
+            ),
+            nstates=STATES,
+        ).signal
+
+    _, plain = torch.func.jvp(signal, (t2,), (torch.ones_like(t2),))
+    _, still = torch.func.jvp(gated, (t2,), (torch.ones_like(t2),))
+
+    assert torch.equal(plain, still)
+
+
 # --- what the derivative kernels will not do yet ---
 
 
-def test_a_derivative_of_a_bound_pool_run_is_refused():
-    """The derivative kernels carry one pool.
+def test_an_adjoint_of_a_bound_pool_run_is_refused():
+    """Forward mode carries the second pool; the adjoint does not.
 
-    Answering a two-pool forward with the single-pool Jacobian would be a wrong
+    Answering a two-pool forward with the single-pool adjoint would be a wrong
     number rather than a missing one, so it is refused instead.
     """
     t2 = torch.tensor([80.0], requires_grad=True)
@@ -469,6 +653,33 @@ def test_a_derivative_of_a_bound_pool_run_is_refused():
 
     with pytest.raises(NotImplementedError, match="carry one pool"):
         signal.abs().square().sum().backward()
+
+
+def test_forward_mode_reaches_a_bound_pool_through_the_public_api():
+    """The path an optimizer takes, rather than the packed buffers directly."""
+    fraction = torch.tensor([FRACTION])
+
+    def signal(value):
+        return FSE().simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0]),
+                t2_ms=torch.tensor([80.0]),
+                bound_fraction=value,
+                exchange_rate_hz=RATE_HZ,
+            ),
+            nstates=STATES,
+        ).signal
+
+    reading, tangent = torch.func.jvp(
+        signal, (fraction,), (torch.ones_like(fraction),)
+    )
+    step = 1e-3
+    difference = (signal(fraction + step) - signal(fraction - step)) / (2.0 * step)
+
+    assert float(reading.abs().max()) > 0.0
+    scale = float(difference.abs().max())
+    assert float((tangent - difference).abs().max()) / scale < 5e-3
 
 
 def test_the_single_pool_gradient_still_reaches_every_property():
@@ -540,6 +751,42 @@ def test_the_cuda_kernel_matches_the_cpu_kernel():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_cuda_forward_mode_matches_the_cpu_kernel():
+    """The tangent of the two-pool step, and of the saturation, on the card."""
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    voxels = 6
+    spread = dict(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-2000.0, 2000.0, voxels),
+        bound_fraction=torch.linspace(0.02, 0.25, voxels),
+        exchange_rate_hz=torch.linspace(5.0, 200.0, voxels),
+        t1_bound_ms=torch.linspace(50.0, 900.0, voxels),
+    )
+    events = _saturation_events(MILLISECOND_PULSE, PULSE_OFFSET_HZ, delay_s=0.4)
+
+    def run(device):
+        prepared = _prepared(device, **spread)
+        seed = tuple(torch.ones_like(value) for value in prepared)
+        return _run_packed_jvp(
+            prepared,
+            tuple(value.to(device) for value in events),
+            seed,
+            tuple(torch.zeros_like(events[0]).to(device) for _ in range(3)),
+            STATES,
+            1,
+            1,
+            lineshape=lineshape_table(device=device),
+        )
+
+    host = run("cpu")
+    card = run("cuda").cpu()
+
+    assert float((host - card).abs().max() / host.abs().max()) < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 def test_a_streamed_volume_matches_the_whole_one():
     """Streaming cuts the voxel axis, which the bound pool's buffers follow."""
     from torchsim.sequence._accelerators import offload
@@ -567,5 +814,39 @@ def test_a_streamed_volume_matches_the_whole_one():
     whole = _run_packed(*arguments, lineshape=table)
     with offload(["cuda"], budget_bytes=1 << 20):
         streamed = _run_packed(*arguments, lineshape=table)
+
+    assert float((whole - streamed).abs().max() / whole.abs().max()) < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_streamed_forward_mode_matches_the_whole_one():
+    """Streaming cuts the voxel axis, which the bound pool's seeds follow."""
+    from torchsim.sequence._accelerators import _run_packed_jvp, offload
+
+    voxels = 3000
+    prepared = _prepared(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-2000.0, 2000.0, voxels),
+        bound_fraction=torch.linspace(0.02, 0.25, voxels),
+        exchange_rate_hz=torch.linspace(5.0, 200.0, voxels),
+        t1_bound_ms=torch.linspace(50.0, 900.0, voxels),
+    )
+    events = _saturation_events(MILLISECOND_PULSE, PULSE_OFFSET_HZ, delay_s=0.4)
+    seed = tuple(torch.ones_like(value) for value in prepared)
+    arguments = (
+        prepared,
+        events,
+        seed,
+        tuple(torch.zeros_like(events[0]) for _ in range(3)),
+        STATES,
+        1,
+        1,
+    )
+    table = lineshape_table()
+
+    whole = _run_packed_jvp(*arguments, lineshape=table)
+    with offload(["cuda"], budget_bytes=1 << 20):
+        streamed = _run_packed_jvp(*arguments, lineshape=table)
 
     assert float((whole - streamed).abs().max() / whole.abs().max()) < 1e-5

@@ -407,6 +407,29 @@ inline DualComplex dual_polar(const DualFloat angle) {
     return {value, Complex(0.0F, angle.tangent) * value};
 }
 
+// The value a scalar carries, whether or not it carries a tangent beside it.
+// Lets a shared implementation branch on the primal without knowing its mode.
+inline float primal(const float a) {
+    return a;
+}
+
+inline float primal(const DualFloat a) {
+    return a.value;
+}
+
+// Clamped at zero, because the only square root the state machine takes is of
+// a discriminant that is non-negative by construction and can still land a
+// rounding below it. The tangent divides by the root, so a caller must keep
+// the origin -- where the root has no derivative -- on its series branch.
+inline float root(const float a) {
+    return std::sqrt(std::max(a, 0.0F));
+}
+
+inline DualFloat root(const DualFloat a) {
+    const float value = std::sqrt(std::max(a.value, 0.0F));
+    return {value, value > 0.0F ? 0.5F * a.tangent / value : 0.0F};
+}
+
 inline DualFloat dual_reciprocal(const DualFloat a) {
     const float inverse = 1.0F / a.value;
     return {inverse, -a.tangent * inverse * inverse};
@@ -440,6 +463,14 @@ inline float exponential(const float a) {
 
 inline DualFloat exponential(const DualFloat a) {
     return dual_exp(a);
+}
+
+inline float reciprocal(const float a) {
+    return 1.0F / a;
+}
+
+inline DualFloat reciprocal(const DualFloat a) {
+    return dual_reciprocal(a);
 }
 
 inline bool is_zero(const float a) {
@@ -585,48 +616,54 @@ inline float speed_direction(const float velocity) {
 // The equilibrium each pool relaxes toward is its own fraction -- ``L (1-f, f)
 // = -C`` holds identically -- so the recovery is ``(I - E1) (1-f, f)`` and
 // needs no 2x2 solve.
+template <typename Scalar>
 struct TwoPoolStep {
-    float e11;
-    float e12;
-    float e21;
-    float e22;
-    float recovery_free;
-    float recovery_bound;
+    Scalar e11;
+    Scalar e12;
+    Scalar e21;
+    Scalar e22;
+    Scalar recovery_free;
+    Scalar recovery_bound;
 };
 
-inline TwoPoolStep two_pool_step(
-    const float r1_free,
-    const float r1_bound,
-    const float exchange,
-    const float bound,
-    const float dt,
-    const float attenuation
+template <typename Scalar>
+inline TwoPoolStep<Scalar> two_pool_step(
+    const Scalar r1_free,
+    const Scalar r1_bound,
+    const Scalar exchange,
+    const Scalar bound,
+    const Scalar dt,
+    const Scalar attenuation
 ) {
-    const float free = 1.0F - bound;
-    const float kab = exchange * bound;
-    const float kba = exchange * free;
-    const float l11 = (-kab - r1_free) * dt;
-    const float l12 = kba * dt;
-    const float l21 = kab * dt;
-    const float l22 = (-kba - r1_bound) * dt;
+    const Scalar free = Scalar{1.0F} - bound;
+    const Scalar kab = exchange * bound;
+    const Scalar kba = exchange * free;
+    const Scalar l11 = (Scalar{} - kab - r1_free) * dt;
+    const Scalar l12 = kba * dt;
+    const Scalar l21 = kab * dt;
+    const Scalar l22 = (Scalar{} - kba - r1_bound) * dt;
 
-    const float half_trace = 0.5F * (l11 + l22);
-    const float half_gap = 0.5F * (l11 - l22);
-    const float square = half_gap * half_gap + l12 * l21;
+    const Scalar half_trace = 0.5F * (l11 + l22);
+    const Scalar half_gap = 0.5F * (l11 - l22);
+    const Scalar square = half_gap * half_gap + l12 * l21;
     // tau +/- d are the eigenvalues, both non-positive for a decaying system,
     // so their exponentials are bounded by one. Formed that way rather than as
     // e^tau cosh(d), which over a long interval is an underflow times an
     // overflow.
-    const float root = std::sqrt(std::max(square, 0.0F));
-    const float upper = std::exp(half_trace + root);
-    const float lower = std::exp(half_trace - root);
-    const float cosine = 0.5F * (upper + lower);
-    const float scale = square > 1e-12F
-        ? 0.5F * (upper - lower) / root
-        : std::exp(half_trace)
-            * (1.0F + square / 6.0F + square * square / 120.0F);
+    const Scalar delta = root(square);
+    const Scalar upper = exponential(half_trace + delta);
+    const Scalar lower = exponential(half_trace - delta);
+    const Scalar cosine = 0.5F * (upper + lower);
+    // sinh(d)/d by series where the root has no derivative of its own. The
+    // threshold is on the discriminant, so both the value and the tangent
+    // leave the branch before the division does any damage.
+    const Scalar scale = primal(square) > 1e-12F
+        ? 0.5F * (upper - lower) * reciprocal(delta)
+        : exponential(half_trace)
+            * (Scalar{1.0F} + (1.0F / 6.0F) * square
+               + (1.0F / 120.0F) * (square * square));
 
-    TwoPoolStep step{};
+    TwoPoolStep<Scalar> step{};
     step.e11 = attenuation * (cosine + scale * half_gap);
     step.e12 = attenuation * scale * l12;
     step.e21 = attenuation * scale * l21;
@@ -656,6 +693,39 @@ inline float lineshape_at(const Buffers& buffers, const float offset_hz) {
         + (u3 - 2.0F * u2 + u) * step * near[1]
         + (-2.0F * u3 + 3.0F * u2) * near[2]
         + (u3 - u2) * step * near[3];
+}
+
+// The lineshape and its derivative in the *signed* offset, from the same
+// cubic. The table covers the magnitude, so the slope changes sign with the
+// offset; past the last knot the read is constant and the slope is zero.
+inline void lineshape_at_slope(
+    const Buffers& buffers, const float offset_hz, float& value, float& slope
+) {
+    const float last = static_cast<float>(buffers.lineshape_bins - 1);
+    const float magnitude = std::fabs(offset_hz) / buffers.lineshape_step;
+    const float scaled = std::min(magnitude, last);
+    const float lower = std::min(std::floor(scaled), last - 1.0F);
+    const float u = scaled - lower;
+    const float* const near = buffers.lineshape
+        + static_cast<std::int64_t>(lower) * LINESHAPE_STRIDE;
+    const float u2 = u * u;
+    const float u3 = u2 * u;
+    const float step = buffers.lineshape_step;
+    value = (2.0F * u3 - 3.0F * u2 + 1.0F) * near[0]
+        + (u3 - 2.0F * u2 + u) * step * near[1]
+        + (-2.0F * u3 + 3.0F * u2) * near[2]
+        + (u3 - u2) * step * near[3];
+    if (magnitude > last) {
+        slope = 0.0F;
+        return;
+    }
+    const float direction = offset_hz < 0.0F ? -1.0F : 1.0F;
+    slope = direction * (
+        (6.0F * u2 - 6.0F * u) * near[0] / step
+        + (3.0F * u2 - 4.0F * u + 1.0F) * near[1]
+        + (-6.0F * u2 + 6.0F * u) * near[2] / step
+        + (3.0F * u2 - 2.0F * u) * near[3]
+    );
 }
 
 // Where an event's pulse reads the transmit field. Templated rather than
@@ -1064,7 +1134,7 @@ inline void rotate(
     }
 }
 
-template <bool SHIMMED, bool PROFILED>
+template <bool SHIMMED, bool PROFILED, bool MT>
 #if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
@@ -1081,6 +1151,7 @@ void simulate_jvp_range(
     std::vector<DualComplex> fplus(states);
     std::vector<DualComplex> fminus(states);
     std::vector<DualComplex> longitudinal(states);
+    std::vector<DualComplex> bound(MT ? states : 0U);
     Damping<DualFloat> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -1093,12 +1164,43 @@ void simulate_jvp_range(
         std::fill(fplus.begin(), fplus.end(), DualComplex{});
         std::fill(fminus.begin(), fminus.end(), DualComplex{});
         std::fill(longitudinal.begin(), longitudinal.end(), DualComplex{});
-        longitudinal[0].value = Complex(1.0F, 0.0F);
+        // Equilibrium is split between the pools, so a direction along the
+        // bound fraction moves magnetization from one to the other before a
+        // single event has run.
+        const DualFloat bound_fraction = MT
+            ? DualFloat{primal.bound_fraction[atom], buffers.bound_fraction[atom]}
+            : DualFloat{};
+        longitudinal[0] = DualComplex{
+            Complex(1.0F - bound_fraction.value, 0.0F),
+            Complex(-bound_fraction.tangent, 0.0F),
+        };
+        if constexpr (MT) {
+            std::fill(bound.begin(), bound.end(), DualComplex{});
+            bound[0] = DualComplex{
+                Complex(bound_fraction.value, 0.0F),
+                Complex(bound_fraction.tangent, 0.0F),
+            };
+        }
 
         const float t1 = primal.t1[atom];
         const float t2 = primal.t2[atom];
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
+        // A rate is the reciprocal of a time, so a direction along the time
+        // arrives at the rate with the sign turned over and the square beneath.
+        const DualFloat rate_free{
+            r1, -1000.0F * buffers.t1[atom] / (t1 * t1)
+        };
+        const DualFloat rate_bound = MT
+            ? DualFloat{
+                1000.0F / primal.t1_bound[atom],
+                -1000.0F * buffers.t1_bound[atom]
+                    / (primal.t1_bound[atom] * primal.t1_bound[atom]),
+            }
+            : DualFloat{};
+        const DualFloat exchange = MT
+            ? DualFloat{primal.exchange_rate[atom], buffers.exchange_rate[atom]}
+            : DualFloat{};
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.diffusion[atom]
         };
@@ -1141,6 +1243,14 @@ void simulate_jvp_range(
             const Complex conjugate_off_resonance = std::conj(off_resonance);
             const Complex conjugate_off_tangent =
                 std::conj(off_resonance_tangent);
+            // The exchange operator belongs to the interval, not to a dephasing
+            // order, so it is formed once and carries its own tangent; the
+            // per-order damping multiplies both.
+            const TwoPoolStep<DualFloat> pools = MT
+                ? two_pool_step(
+                    rate_free, rate_bound, exchange, bound_fraction, interval, wout
+                )
+                : TwoPoolStep<DualFloat>{};
             for (std::int64_t state = 0; state < state_count; ++state) {
                 const std::size_t index = static_cast<std::size_t>(state);
                 const DualFloat damp_transverse = damping.transverse[index];
@@ -1170,24 +1280,50 @@ void simulate_jvp_range(
                     damped_tangent * spin_transverse + damped * spin_transverse_tangent;
                 const Complex conjugate_off = std::conj(off);
                 const Complex conjugate_tangent = std::conj(off_tangent);
-                const float recovered = e1 * damp_longitudinal.value;
-                const float recovered_tangent =
-                    e1_tangent * damp_longitudinal.value
-                    + e1 * damp_longitudinal.tangent;
-                const Complex relaxation = recovered * spin_longitudinal;
-                const Complex relaxation_tangent =
-                    recovered_tangent * spin_longitudinal
-                    + recovered * spin_longitudinal_tangent;
                 fp.tangent = fp.tangent * off + fp.value * off_tangent;
                 fp.value *= off;
                 fm.tangent =
                     fm.tangent * conjugate_off + fm.value * conjugate_tangent;
                 fm.value *= conjugate_off;
-                z.tangent = z.tangent * relaxation + z.value * relaxation_tangent;
-                z.value *= relaxation;
+                // Both pools take the same per-order damping and phase: their
+                // order-n states describe one dephasing configuration, and the
+                // bound pool has no diffusion coefficient of its own.
+                const DualComplex spin{
+                    damp_longitudinal.value * spin_longitudinal,
+                    damp_longitudinal.tangent * spin_longitudinal
+                        + damp_longitudinal.value * spin_longitudinal_tangent,
+                };
+                if constexpr (MT) {
+                    DualComplex& held = bound[index];
+                    const DualComplex free_state = z;
+                    const DualComplex bound_state = held;
+                    z = (pools.e11 * free_state + pools.e12 * bound_state) * spin;
+                    held =
+                        (pools.e21 * free_state + pools.e22 * bound_state) * spin;
+                } else {
+                    const float recovered = e1 * damp_longitudinal.value;
+                    const float recovered_tangent =
+                        e1_tangent * damp_longitudinal.value
+                        + e1 * damp_longitudinal.tangent;
+                    const Complex relaxation = recovered * spin_longitudinal;
+                    const Complex relaxation_tangent =
+                        recovered_tangent * spin_longitudinal
+                        + recovered * spin_longitudinal_tangent;
+                    z.tangent =
+                        z.tangent * relaxation + z.value * relaxation_tangent;
+                    z.value *= relaxation;
+                }
             }
-            longitudinal[0].value += Complex(1.0F - e1, 0.0F);
-            longitudinal[0].tangent -= Complex(e1_tangent, 0.0F);
+            if constexpr (MT) {
+                longitudinal[0].value += Complex(pools.recovery_free.value, 0.0F);
+                longitudinal[0].tangent +=
+                    Complex(pools.recovery_free.tangent, 0.0F);
+                bound[0].value += Complex(pools.recovery_bound.value, 0.0F);
+                bound[0].tangent += Complex(pools.recovery_bound.tangent, 0.0F);
+            } else {
+                longitudinal[0].value += Complex(1.0F - e1, 0.0F);
+                longitudinal[0].tangent -= Complex(e1_tangent, 0.0F);
+            }
 
             const std::uint8_t action = primal.action[event];
             if ((action & PRE_SHIFT) != 0) {
@@ -1195,6 +1331,7 @@ void simulate_jvp_range(
             }
             if (primal.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
+                    // Only the free pool; see the forward kernel for why.
                     const float efficiency = -primal.inversion_efficiency[atom];
                     const float efficiency_tangent =
                         -buffers.inversion_efficiency[atom];
@@ -1213,6 +1350,32 @@ void simulate_jvp_range(
                     const float phi = view.phase[event] + primal.b1_phase[transmit];
                     const float phi_tangent =
                         dot_phase[event] + buffers.b1_phase[transmit];
+                    if constexpr (MT) {
+                        // The bound pool absorbs the power the pulse deposits,
+                        // so it reads the bare flip the transmit field gives
+                        // the voxel. The offset reaches it through the voxel's
+                        // own off-resonance, which is where the lineshape's
+                        // slope enters a forward direction.
+                        const float offset =
+                            primal.rf_frequency[event] - primal.b0[atom];
+                        float shape = 0.0F;
+                        float shape_slope = 0.0F;
+                        lineshape_at_slope(primal, offset, shape, shape_slope);
+                        const float deposited = primal.saturation[event];
+                        const DualFloat exponent{
+                            deposited * alpha * alpha * shape,
+                            deposited * (
+                                2.0F * alpha * alpha_tangent * shape
+                                - alpha * alpha * shape_slope * buffers.b0[atom]
+                            ),
+                        };
+                        const DualFloat absorbed = dual_exp(exponent);
+                        for (DualComplex& value : bound) {
+                            value.tangent = absorbed.tangent * value.value
+                                + absorbed.value * value.tangent;
+                            value.value *= absorbed.value;
+                        }
+                    }
                     if constexpr (PROFILED) {
                         Complex pair_a{};
                         Complex pair_b{};
@@ -2245,9 +2408,9 @@ void simulate_range(
             // The exchange operator is a property of the interval, not of a
             // dephasing order, so it is formed once here; the per-order
             // diffusion and flow damping multiply it below.
-            const TwoPoolStep pools = MT
+            const TwoPoolStep<float> pools = MT
                 ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
-                : TwoPoolStep{};
+                : TwoPoolStep<float>{};
             const float off_angle = -2.0F * PI * buffers.b0[atom] * dt;
             for (std::int64_t state = 0; state < state_count; ++state) {
                 const std::size_t index = static_cast<std::size_t>(state);
@@ -5035,25 +5198,34 @@ void dispatch_jvp(
     const int requested_threads,
     const int real_axis
 ) {
-    const bool lanes = real_axis == 1 && lane_kernels_enabled()
+    const bool bound = buffers.primal.lineshape != nullptr;
+    const bool lanes = real_axis == 1 && !bound && lane_kernels_enabled()
         && !any_diffusion(buffers.primal.diffusion, atom_count)
         && !any_diffusion(buffers.diffusion, atom_count);
     void (*kernel)(
         const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = &simulate_jvp_range<false, false>;
+    ) = &simulate_jvp_range<false, false, false>;
     if (lanes) {
         kernel = &simulate_real_jvp_lane_range;
-    } else if (real_axis == 1) {
+    } else if (real_axis == 1 && !bound) {
         kernel = &simulate_real_jvp_range;
     } else {
         const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
-        if (shimmed) {
-            kernel = profiled ? &simulate_jvp_range<true, true>
-                              : &simulate_jvp_range<true, false>;
+        if (bound) {
+            if (shimmed) {
+                kernel = profiled ? &simulate_jvp_range<true, true, true>
+                                  : &simulate_jvp_range<true, false, true>;
+            } else {
+                kernel = profiled ? &simulate_jvp_range<false, true, true>
+                                  : &simulate_jvp_range<false, false, true>;
+            }
+        } else if (shimmed) {
+            kernel = profiled ? &simulate_jvp_range<true, true, false>
+                              : &simulate_jvp_range<true, false, false>;
         } else if (profiled) {
-            kernel = &simulate_jvp_range<false, true>;
+            kernel = &simulate_jvp_range<false, true, false>;
         }
     }
     // A lane kernel's work item covers a block of trains rather than one train.
@@ -5085,9 +5257,11 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     long long locations = 1;
     long long profile_bins = 0;
     double profile_step = 1.0;
+    long long lineshape_bins = 0;
+    double lineshape_step = 1.0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLd",
+            "OLLLLLiiddLLLdLd",
             &pointers,
             &atom_count,
             &train_count,
@@ -5101,14 +5275,17 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
             &shim_count,
             &locations,
             &profile_bins,
-            &profile_step
+            &profile_step,
+            &lineshape_bins,
+            &lineshape_step
         )) {
         return nullptr;
     }
     // The packed buffers, one tangent per differentiable input, the two output
     // planes, then the transition tables and the per-event index that says
-    // which an event reads -- both null when there is no table.
-    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 4;
+    // which an event reads, then the bound pool's lineshape -- all null when
+    // the sequence has none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 5;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -5136,11 +5313,14 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 3],
         raw[expected - 2],
-        raw[expected - 1],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
-        static_cast<float>(profile_step)
+        static_cast<float>(profile_step),
+        raw[expected - 1],
+        static_cast<std::int64_t>(lineshape_bins),
+        static_cast<float>(lineshape_step)
     );
     const JvpBuffers buffers{
         primal,
