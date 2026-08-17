@@ -102,19 +102,21 @@ def test_the_extension_hardcodes_where_the_transmit_pair_sits():
     fails here rather than silently in a shimmed adjoint.
     """
     assert TRANSMIT_INPUTS == (3, 4)
-    assert TISSUE_COUNT == 12
+    assert TISSUE_COUNT == 17
 
 
 def test_a_shim_only_widens_the_transmit_pair():
     """Every other property belongs to the voxel, whatever the array does."""
     assert tissue_gradient_rows(1) == (1,) * TISSUE_COUNT
-    assert tissue_gradient_rows(4) == (1, 1, 1, 4, 4, 1, 1, 1, 1, 1, 1, 1)
+    assert tissue_gradient_rows(4) == (
+        1, 1, 1, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    )
     assert tissue_gradient_bases(1) == tuple(range(TISSUE_COUNT))
     assert tissue_gradient_bases(4) == (
-        0, 1, 2, 3, 7, 11, 12, 13, 14, 15, 16, 17,
+        0, 1, 2, 3, 7, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
     )
     assert tissue_gradient_height(1) == TISSUE_COUNT
-    assert tissue_gradient_height(4) == 18
+    assert tissue_gradient_height(4) == TISSUE_COUNT + 6
 
 
 def test_the_gradient_order_matches_what_the_adjoint_returns():
@@ -154,7 +156,8 @@ def test_autograd_asks_for_exactly_the_differentiable_inputs():
     finally:
         _accelerators._wanted = original
 
-    # The six trailing arguments -- state count, output count, thread count,
-    # the sequence geometry, the transition table and the bound pool's
-    # lineshape -- follow the packed buffers.
-    assert widths and all(width == PACKED_COUNT + 6 for width in widths)
+    # The seven trailing arguments -- state count, output count, thread count,
+    # the sequence geometry, the transition table, the semisolid pool's
+    # lineshape and whether a chemically exchanging pool is carried -- follow
+    # the packed buffers.
+    assert widths and all(width == PACKED_COUNT + 7 for width in widths)

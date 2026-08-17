@@ -22,11 +22,16 @@ from typing import Any, Literal
 import torch
 
 from .. import epg
-from ._accelerators import geometry_of, largest_pulse_offset, simulate_native
+from ._accelerators import (
+    _one_second_pool,
+    geometry_of,
+    largest_pulse_offset,
+    simulate_native,
+)
 from ._transition import ExactSliceProfile
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
 from ._lineshape import lineshape_reaching
-from ._parameters import TISSUE_NAMES, wants_bound_pool
+from ._parameters import TISSUE_NAMES, wants_bound_pool, wants_exchange_pool
 from ._transmit import shim_rows, transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
@@ -49,7 +54,8 @@ _TRANSMIT = frozenset(
 
 # The tissue buffers the kernels invert into a rate.
 _RELAXATION_TIMES = tuple(
-    TISSUE_NAMES.index(name) for name in ("t1_ms", "t2_ms", "t1_bound_ms")
+    TISSUE_NAMES.index(name)
+    for name in ("t1_ms", "t2_ms", "t1_bound_ms", "t1_pool_b_ms", "t2_pool_b_ms")
 )
 
 
@@ -95,11 +101,22 @@ class TissueProperties:
 
     ``bound_fraction`` is the share of the magnetization held by the
     macromolecule-bound proton pool, which RF saturates and which exchanges
-    with the free water at ``exchange_rate_hz``. It is the gate on the whole
+    with the free water at ``bound_exchange_hz``. It is the gate on the whole
     second pool: at its default of zero the exchange conserves nothing across
     pools and the bound pool starts empty, so the simulation is single-pool.
     ``t1_bound_ms`` is that pool's own longitudinal relaxation time; it has no
     transverse magnetization to relax, so no T2 goes with it.
+
+    ``pool_b_fraction`` gates a second pool of a different kind: one that
+    exchanges chemically rather than by saturation, and that carries
+    transverse magnetization of its own. It therefore has both a
+    ``t1_pool_b_ms`` and a ``t2_pool_b_ms``, and it sits ``pool_b_shift_hz``
+    off the free water -- which itself sits at ``b0_hz``. Fat beside water,
+    myelin water beside free water, a metabolite beside its solvent.
+
+    The two second pools are alternatives, not layers: a tissue declaring both
+    is a three-pool system, which the kernels do not carry, and asking for one
+    is refused rather than answered with either half.
     """
 
     t1_ms: Any
@@ -112,8 +129,13 @@ class TissueProperties:
     diffusion_um2_per_ms: Any = 0.0
     velocity_m_per_s: Any = 0.0
     bound_fraction: Any = 0.0
-    exchange_rate_hz: Any = 0.0
+    bound_exchange_hz: Any = 0.0
     t1_bound_ms: Any = 1000.0
+    pool_b_fraction: Any = 0.0
+    pool_b_exchange_hz: Any = 0.0
+    t1_pool_b_ms: Any = 1000.0
+    t2_pool_b_ms: Any = 100.0
+    pool_b_shift_hz: Any = 0.0
 
 
 @dataclass(frozen=True)
@@ -210,9 +232,13 @@ class EpgSimulator:
         )
         (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
-            velocity, _bound_fraction, _exchange_rate, _t1_bound,
+            velocity, _bound_fraction, _bound_exchange, _t1_bound,
+            _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
+            _pool_b_shift,
         ) = prepared
         bound_pool = wants_bound_pool(tissue.bound_fraction)
+        exchange_pool = wants_exchange_pool(tissue.pool_b_fraction)
+        _one_second_pool(bound_pool, exchange_pool)
 
         minimum_states = 1 + repetitions * self.shifts_per_repetition(description)
         if nstates is None:
@@ -244,6 +270,7 @@ class EpgSimulator:
                 lineshape=_absorption_table(description, b0, target_device)
                 if bound_pool
                 else None,
+                exchanging=exchange_pool,
             )
             if accelerated is not None:
                 return SimulationResult(*accelerated)
@@ -251,11 +278,11 @@ class EpgSimulator:
                 raise RuntimeError(
                     "native EPG backend is unavailable for this device or AD context"
                 )
-        if bound_pool:
+        if bound_pool or exchange_pool:
             raise NotImplementedError(
-                "a bound pool is a two-pool longitudinal step the fused "
-                "kernels carry; this sequence fell back to the operator loop, "
-                "which has one pool"
+                "a second pool is a two-pool step the fused kernels carry; "
+                "this sequence fell back to the operator loop, which has one "
+                "pool"
             )
         if exact:
             raise NotImplementedError(

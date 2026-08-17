@@ -263,12 +263,16 @@ def test_a_chunk_holds_whole_voxels_when_a_table_is_read() -> None:
         devices=(torch.device("cuda"),), budget_bytes=1 << 12, lanes=1
     )
     bare, _, _ = _offload_plan(plan, "forward", events, 96, outputs, STATES, None)
+    # A slice width the unaligned chunk is not already a multiple of, so the
+    # alignment has something to do however the budget happens to divide. Taken
+    # from the measured width rather than fixed, which would go vacuous the
+    # next time a tissue property changes what a voxel costs.
+    locations = next(width for width in range(2, bare) if bare % width)
     aligned, _, _ = _offload_plan(
-        plan, "forward", events, 96, outputs, STATES, None, locations=3
+        plan, "forward", events, 96, outputs, STATES, None, locations=locations
     )
 
-    assert bare % 3 != 0
-    assert aligned % 3 == 0
+    assert aligned % locations == 0
     assert aligned <= bare
 
 

@@ -82,6 +82,8 @@ def simulate_packed(
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, velocity,
         bound_fraction, exchange_rate, t1_bound,
+        _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
+        _pool_b_shift,
     ) = tissue
     # ``b1`` and ``b1_phase`` hold one row per shim the sequence drives, so a
     # pulse reads the field of the shim its event names.

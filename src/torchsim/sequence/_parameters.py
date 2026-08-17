@@ -21,6 +21,7 @@ __all__ = [
     "TISSUE_PARAMETERS",
     "at_identity",
     "wants_bound_pool",
+    "wants_exchange_pool",
     "tissue_gradient_bases",
     "tissue_gradient_rows",
     "tissue_gradient_height",
@@ -94,12 +95,22 @@ TISSUE_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("inversion_efficiency", identity=1.0, feature="INVERSION"),
     Parameter("diffusion_um2_per_ms", identity=0.0, feature="DIFFUSION"),
     Parameter("velocity_m_per_s", identity=0.0, feature="FLOW"),
-    # The bound pool. Its fraction is the gate: at zero the exchange matrix is
-    # diagonal and the pool starts empty, so nothing it drives can reach the
-    # free water, and the kernels leave the whole second pool out.
+    # The semisolid pool, which magnetization transfer drives. Its fraction is
+    # the gate: at zero the exchange matrix is diagonal and the pool starts
+    # empty, so nothing it drives can reach the free water, and the kernels
+    # leave the whole second pool out.
     Parameter("bound_fraction", identity=0.0, feature="MT"),
-    Parameter("exchange_rate_hz", identity=0.0, feature="MT"),
+    Parameter("bound_exchange_hz", identity=0.0, feature="MT"),
     Parameter("t1_bound_ms", feature="MT"),
+    # A second pool that exchanges chemically rather than by saturation. It
+    # carries transverse magnetization, so it has a T2 the semisolid pool does
+    # not, and it sits at its own offset from the free water. Its fraction is
+    # the gate on the same terms.
+    Parameter("pool_b_fraction", identity=0.0, feature="BM"),
+    Parameter("pool_b_exchange_hz", identity=0.0, feature="BM"),
+    Parameter("t1_pool_b_ms", feature="BM"),
+    Parameter("t2_pool_b_ms", feature="BM"),
+    Parameter("pool_b_shift_hz", identity=0.0, feature="BM"),
 )
 
 EVENT_PARAMETERS: tuple[Parameter, ...] = (
@@ -152,18 +163,24 @@ TRANSMIT_INPUTS: tuple[int, ...] = tuple(
     index for index, parameter in enumerate(TISSUE_PARAMETERS) if parameter.transmit
 )
 
-# Which tissue buffer gates the bound pool. Read before broadcasting, so a
-# sequence that never mentions a bound pool decides on a Python float rather
-# than by reducing over a buffer.
+# Which tissue buffer gates each second pool. Read before broadcasting, so a
+# sequence that never mentions one decides on a Python float rather than by
+# reducing over a buffer.
 BOUND_FRACTION_INPUT: int = TISSUE_NAMES.index("bound_fraction")
+POOL_B_FRACTION_INPUT: int = TISSUE_NAMES.index("pool_b_fraction")
 
-# The bound pool's properties, as positions among the packed buffers. They sit
-# past everything the free pool alone accounts for, which is what lets a
+# The second pools' properties, as positions among the packed buffers. They
+# sit past everything the free pool alone accounts for, which is what lets a
 # single-pool kernel index the ones it takes without knowing they are there.
 BOUND_POOL_INPUTS: tuple[int, ...] = tuple(
     index
     for index, parameter in enumerate(TISSUE_PARAMETERS)
     if parameter.feature == "MT"
+)
+EXCHANGE_POOL_INPUTS: tuple[int, ...] = tuple(
+    index
+    for index, parameter in enumerate(TISSUE_PARAMETERS)
+    if parameter.feature == "BM"
 )
 
 
@@ -202,13 +219,20 @@ def at_identity(parameter: Parameter, value: Any) -> bool:
 
 
 def wants_bound_pool(bound_fraction: Any) -> bool:
-    """Whether this bound fraction gives the second pool anything to do.
+    """Whether this bound fraction gives the semisolid pool anything to do.
 
     Read from what the caller passed, before broadcasting, on the same terms
     as :func:`at_identity`: a fraction given as a full tensor is taken to
     matter rather than reduced over.
     """
     return not at_identity(TISSUE_PARAMETERS[BOUND_FRACTION_INPUT], bound_fraction)
+
+
+def wants_exchange_pool(pool_b_fraction: Any) -> bool:
+    """Whether this fraction gives the chemically exchanging pool anything to do."""
+    return not at_identity(
+        TISSUE_PARAMETERS[POOL_B_FRACTION_INPUT], pool_b_fraction
+    )
 
 
 def tissue_gradient_rows(shims: int) -> tuple[int, ...]:

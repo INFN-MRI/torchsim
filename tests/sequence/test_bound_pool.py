@@ -66,7 +66,7 @@ def test_the_default_tissue_runs_the_single_pool_kernel_bit_for_bit():
     answer is not merely close to the one-pool answer, it is that answer.
     """
     plain = _signal()
-    gated = _signal(bound_fraction=0.0, exchange_rate_hz=RATE_HZ, t1_bound_ms=400.0)
+    gated = _signal(bound_fraction=0.0, bound_exchange_hz=RATE_HZ, t1_bound_ms=400.0)
 
     assert torch.equal(plain, gated)
 
@@ -81,7 +81,7 @@ def test_a_bound_pool_takes_its_share_of_the_first_echo():
     plain = _signal().abs().flatten()[0]
     for fraction in (0.05, 0.1, 0.2):
         bound = _signal(
-            bound_fraction=fraction, exchange_rate_hz=RATE_HZ
+            bound_fraction=fraction, bound_exchange_hz=RATE_HZ
         ).abs().flatten()[0]
         assert abs(float(bound / plain) - (1.0 - fraction)) < 1e-6
 
@@ -100,7 +100,7 @@ def test_the_signal_falls_as_the_bound_pool_grows():
     previous = plain
     for fraction in (0.05, 0.1, 0.2):
         bound = _signal(
-            bound_fraction=fraction, exchange_rate_hz=RATE_HZ
+            bound_fraction=fraction, bound_exchange_hz=RATE_HZ
         ).abs().flatten()
         assert bool((bound[live] < previous[live] + 1e-6).all())
         previous = bound
@@ -214,7 +214,7 @@ def test_the_longitudinal_step_reproduces_the_package_operator():
     bound = _inversion_recovery(
         DELAYS_S,
         bound_fraction=FRACTION,
-        exchange_rate_hz=RATE_HZ,
+        bound_exchange_hz=RATE_HZ,
         t1_bound_ms=t1_bound_ms,
     ).abs()
     expected = scales * _oracle(
@@ -232,10 +232,10 @@ def test_exchange_pulls_the_free_pool_back_faster_than_its_own_t1():
     independent pools side by side.
     """
     alone = _inversion_recovery(
-        DELAYS_S, bound_fraction=FRACTION, exchange_rate_hz=0.0, t1_bound_ms=50.0
+        DELAYS_S, bound_fraction=FRACTION, bound_exchange_hz=0.0, t1_bound_ms=50.0
     )
     exchanging = _inversion_recovery(
-        DELAYS_S, bound_fraction=FRACTION, exchange_rate_hz=200.0, t1_bound_ms=50.0
+        DELAYS_S, bound_fraction=FRACTION, bound_exchange_hz=200.0, t1_bound_ms=50.0
     )
     # Early in the recovery the free pool is still inverted, so faster recovery
     # means a smaller magnitude.
@@ -254,7 +254,7 @@ def test_the_inversion_leaves_the_bound_pool_alone():
     free_only = _inversion_recovery(
         DELAYS_S,
         bound_fraction=FRACTION,
-        exchange_rate_hz=RATE_HZ,
+        bound_exchange_hz=RATE_HZ,
         t1_bound_ms=400.0,
     ).abs()
 
@@ -396,7 +396,7 @@ def test_saturating_the_bound_pool_drains_the_free_water():
     buffer off with everything else held fixed isolates it from the initial
     split and from the exchange.
     """
-    pools = dict(bound_fraction=FRACTION, exchange_rate_hz=200.0)
+    pools = dict(bound_fraction=FRACTION, bound_exchange_hz=200.0)
     quiet = _saturate_then_read(0.0, 0.0, **pools)
     driven = _saturate_then_read(MILLISECOND_PULSE, 0.0, **pools)
     harder = _saturate_then_read(4.0 * MILLISECOND_PULSE, 0.0, **pools)
@@ -411,7 +411,7 @@ def test_saturation_falls_away_from_resonance():
     constant: the same pulse played further off resonance deposits less, so it
     leaves more free water behind.
     """
-    pools = dict(bound_fraction=FRACTION, exchange_rate_hz=200.0)
+    pools = dict(bound_fraction=FRACTION, bound_exchange_hz=200.0)
     quiet = _saturate_then_read(0.0, 0.0, **pools)
     readings = [
         _saturate_then_read(MILLISECOND_PULSE, offset, **pools)
@@ -426,7 +426,7 @@ def test_the_voxel_reads_the_lineshape_at_its_own_offset():
     voxels under one pulse absorb differently. Without that the lineshape could
     be folded into the event buffer on the host.
     """
-    pools = dict(bound_fraction=FRACTION, exchange_rate_hz=200.0)
+    pools = dict(bound_fraction=FRACTION, bound_exchange_hz=200.0)
     # The pulse sits at 4 kHz; the voxel that is 4 kHz off-resonance sees it on
     # resonance and absorbs the most.
     on_resonance = _saturate_then_read(
@@ -471,7 +471,7 @@ LIVE = dict(
     t1_ms=1000.0,
     t2_ms=80.0,
     bound_fraction=0.15,
-    exchange_rate_hz=200.0,
+    bound_exchange_hz=200.0,
     t1_bound_ms=60.0,
     b0_hz=1500.0,
 )
@@ -620,7 +620,7 @@ def test_forward_mode_leaves_the_single_pool_answer_untouched():
                 t1_ms=torch.tensor([1000.0]),
                 t2_ms=value,
                 bound_fraction=0.0,
-                exchange_rate_hz=RATE_HZ,
+                bound_exchange_hz=RATE_HZ,
             ),
             nstates=STATES,
         ).signal
@@ -748,7 +748,7 @@ def test_an_adjoint_of_a_bound_pool_run_reaches_the_public_api():
         name: torch.tensor([value], requires_grad=True)
         for name, value in (
             ("t1_ms", 1000.0), ("t2_ms", 80.0), ("bound_fraction", FRACTION),
-            ("exchange_rate_hz", RATE_HZ), ("t1_bound_ms", 200.0),
+            ("bound_exchange_hz", RATE_HZ), ("t1_bound_ms", 200.0),
         )
     }
     signal = FSE().simulate(
@@ -797,7 +797,8 @@ def test_the_second_order_pass_carries_the_bound_pool():
         value.detach().clone().requires_grad_(True) for value in prepared
     )
     signal = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, lineshape_table()
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None,
+        lineshape_table(), False
     )
     gradients = torch.autograd.grad(signal, leaves, seed, create_graph=True)
     generator = torch.Generator().manual_seed(23)
@@ -833,7 +834,7 @@ def test_forward_mode_reaches_a_bound_pool_through_the_public_api():
                 t1_ms=torch.tensor([1000.0]),
                 t2_ms=torch.tensor([80.0]),
                 bound_fraction=value,
-                exchange_rate_hz=RATE_HZ,
+                bound_exchange_hz=RATE_HZ,
             ),
             nstates=STATES,
         ).signal
@@ -858,7 +859,7 @@ def test_the_single_pool_gradient_still_reaches_every_property():
         name: torch.tensor([value], requires_grad=True)
         for name, value in (
             ("t1_ms", 1000.0), ("t2_ms", 80.0), ("bound_fraction", 0.0),
-            ("exchange_rate_hz", 0.0), ("t1_bound_ms", 1000.0),
+            ("bound_exchange_hz", 0.0), ("t1_bound_ms", 1000.0),
         )
     }
     signal = FSE().simulate(
@@ -868,7 +869,7 @@ def test_the_single_pool_gradient_still_reaches_every_property():
 
     assert float(leaves["t1_ms"].grad.abs().max()) > 0.0
     assert float(leaves["t2_ms"].grad.abs().max()) > 0.0
-    for name in ("bound_fraction", "exchange_rate_hz", "t1_bound_ms"):
+    for name in ("bound_fraction", "bound_exchange_hz", "t1_bound_ms"):
         assert float(leaves[name].grad.abs().max()) == 0.0
 
 
@@ -973,7 +974,7 @@ def test_a_far_off_resonance_prep_reaches_the_public_api():
                 t1_ms=torch.tensor([1000.0]),
                 t2_ms=torch.tensor([80.0]),
                 bound_fraction=FRACTION,
-                exchange_rate_hz=RATE_HZ,
+                bound_exchange_hz=RATE_HZ,
             ),
             nstates=STATES,
         ).signal
@@ -1097,7 +1098,7 @@ def _routes(leaves, events, profile=None):
 
     table = lineshape_table()
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, table
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, table, False
     )
     reference = simulate_packed(
         leaves,
@@ -1222,7 +1223,7 @@ def test_the_cuda_kernel_matches_the_cpu_kernel():
         t2_ms=torch.linspace(40.0, 120.0, 6),
         b0_hz=torch.linspace(-200.0, 200.0, 6),
         bound_fraction=torch.linspace(0.02, 0.25, 6),
-        exchange_rate_hz=torch.linspace(5.0, 80.0, 6),
+        bound_exchange_hz=torch.linspace(5.0, 80.0, 6),
         t1_bound_ms=torch.linspace(200.0, 900.0, 6),
     )
 
@@ -1256,7 +1257,7 @@ def test_the_cuda_forward_mode_matches_the_cpu_kernel():
         t2_ms=torch.linspace(40.0, 120.0, voxels),
         b0_hz=torch.linspace(-2000.0, 2000.0, voxels),
         bound_fraction=torch.linspace(0.02, 0.25, voxels),
-        exchange_rate_hz=torch.linspace(5.0, 200.0, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 200.0, voxels),
         t1_bound_ms=torch.linspace(50.0, 900.0, voxels),
     )
     events = _saturation_events(MILLISECOND_PULSE, PULSE_OFFSET_HZ, delay_s=0.4)
@@ -1299,7 +1300,7 @@ def test_a_streamed_volume_matches_the_whole_one():
         t1_ms=torch.linspace(600.0, 1400.0, voxels),
         t2_ms=torch.linspace(40.0, 120.0, voxels),
         bound_fraction=torch.linspace(0.0, 0.25, voxels),
-        exchange_rate_hz=torch.linspace(5.0, 80.0, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 80.0, voxels),
     )
     prepared, _, _ = _prepare_tissue(tissue, "cpu")
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
@@ -1324,7 +1325,7 @@ def test_a_streamed_forward_mode_matches_the_whole_one():
         t2_ms=torch.linspace(40.0, 120.0, voxels),
         b0_hz=torch.linspace(-2000.0, 2000.0, voxels),
         bound_fraction=torch.linspace(0.02, 0.25, voxels),
-        exchange_rate_hz=torch.linspace(5.0, 200.0, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 200.0, voxels),
         t1_bound_ms=torch.linspace(50.0, 900.0, voxels),
     )
     events = _saturation_events(MILLISECOND_PULSE, PULSE_OFFSET_HZ, delay_s=0.4)
@@ -1354,7 +1355,7 @@ def _spread(voxels: int) -> dict:
         t2_ms=torch.linspace(40.0, 120.0, voxels),
         b0_hz=torch.linspace(-2000.0, 2000.0, voxels),
         bound_fraction=torch.linspace(0.02, 0.25, voxels),
-        exchange_rate_hz=torch.linspace(5.0, 200.0, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 200.0, voxels),
         t1_bound_ms=torch.linspace(50.0, 900.0, voxels),
     )
 
@@ -1502,7 +1503,7 @@ def test_a_streamed_public_simulation_matches_the_whole_one():
     tissue = _volume(
         voxels,
         bound_fraction=torch.linspace(0.02, 0.25, voxels),
-        exchange_rate_hz=torch.linspace(5.0, 80.0, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 80.0, voxels),
         t1_bound_ms=torch.linspace(50.0, 900.0, voxels),
     )
 
@@ -1534,7 +1535,7 @@ def test_a_gradient_taken_after_a_streamed_forward_matches_the_whole_one():
             name: value.clone().requires_grad_(True)
             for name, value in (
                 ("bound_fraction", torch.linspace(0.02, 0.25, voxels)),
-                ("exchange_rate_hz", torch.linspace(5.0, 80.0, voxels)),
+                ("bound_exchange_hz", torch.linspace(5.0, 80.0, voxels)),
                 ("t1_bound_ms", torch.linspace(50.0, 900.0, voxels)),
             )
         }

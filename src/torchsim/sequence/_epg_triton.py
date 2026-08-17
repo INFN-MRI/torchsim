@@ -20,6 +20,7 @@ from ._parameters import (
     tissue_gradient_rows,
 )
 from ._parameters import BOUND_POOL_INPUTS as _BOUND_POOL_INPUTS
+from ._parameters import EXCHANGE_POOL_INPUTS as _EXCHANGE_POOL_INPUTS
 from ._parameters import FLOAT_NAMES as _FLOAT_NAMES
 from ._parameters import TISSUE_COUNT as _TISSUE_PARAMETERS
 from ._parameters import TRANSMIT_INPUTS as _TRANSMIT_INPUTS
@@ -27,10 +28,12 @@ from ._parameters import TRANSMIT_INPUTS as _TRANSMIT_INPUTS
 # Triton reads globals only through its own constexpr wrapper.
 _TISSUE_COUNT = tl.constexpr(_TISSUE_PARAMETERS)
 
-# How many tissue parameters the free pool alone accounts for. The bound
-# pool's sit past them, and are written by the bound-pool kernels alone; a
+# How many tissue parameters the free pool alone accounts for. Both second
+# pools' sit past them, and are written by the kernels that carry them; a
 # single-pool run leaves their planes at the zero they were cleared to.
-_FREE_POOL_COUNT = tl.constexpr(_TISSUE_PARAMETERS - len(_BOUND_POOL_INPUTS))
+_FREE_POOL_COUNT = tl.constexpr(
+    _TISSUE_PARAMETERS - len(_BOUND_POOL_INPUTS) - len(_EXCHANGE_POOL_INPUTS)
+)
 _BOUND_ROW = tl.constexpr(_BOUND_POOL_INPUTS[0])
 
 # The gradient plane holds a row of voxels per tissue parameter, except that
@@ -225,6 +228,98 @@ def _two_pool_step(r1_free, r1_bound, exchange, bound, dt, attenuation):
         e22,
         free - (e11 * free + e12 * bound),
         bound - (e21 * free + e22 * bound),
+    )
+
+
+@triton.jit
+def _complex_sqrt(real, imag):
+    """A square root of a complex number carried as a pair of floats.
+
+    Which of the two it is does not matter here: the only thing that reads it
+    is even in it, so the branch cut the principal root carries is unreachable.
+    """
+    magnitude = tl.sqrt(real * real + imag * imag)
+    root_real = tl.sqrt(tl.maximum(0.5 * (magnitude + real), 0.0))
+    root_imag = tl.sqrt(tl.maximum(0.5 * (magnitude - real), 0.0))
+    return root_real, tl.where(imag < 0.0, -root_imag, root_imag)
+
+
+@triton.jit
+def _complex_exp(real, imag):
+    """``e^z`` for ``z`` carried as a pair of floats."""
+    scale = tl.exp(real)
+    return scale * tl.cos(imag), scale * tl.sin(imag)
+
+
+@triton.jit
+def _two_pool_transverse_step(
+    r2_free, r2_bound, exchange, bound, shift_hz, dt, attenuation
+):
+    """The transverse operator of two chemically exchanging pools.
+
+    ``expm((K - diag(R2) - 2 pi i diag(df)) t)``, in the closed form the
+    longitudinal pair uses -- the numbers have become complex, the algebra has
+    not. Returned as the four entries, each a pair of floats.
+
+    There is no recovery term: transverse magnetization relaxes toward zero.
+    """
+    free = 1.0 - bound
+    kab = exchange * bound
+    kba = exchange * free
+    l11 = (-kab - r2_free) * dt
+    l12 = kba * dt
+    l21 = kab * dt
+    l22 = (-kba - r2_bound) * dt
+    # Only pool b's offset appears: pool a sits at whatever off-resonance the
+    # free precession already carries the whole voxel through.
+    l22_imag = -2.0 * 3.141592653589793 * shift_hz * dt
+
+    trace_real = 0.5 * (l11 + l22)
+    trace_imag = 0.5 * l22_imag
+    gap_real = 0.5 * (l11 - l22)
+    gap_imag = -0.5 * l22_imag
+    square_real = gap_real * gap_real - gap_imag * gap_imag + l12 * l21
+    square_imag = 2.0 * gap_real * gap_imag
+
+    root_real, root_imag = _complex_sqrt(square_real, square_imag)
+    upper_real, upper_imag = _complex_exp(
+        trace_real + root_real, trace_imag + root_imag
+    )
+    lower_real, lower_imag = _complex_exp(
+        trace_real - root_real, trace_imag - root_imag
+    )
+    cos_real = 0.5 * (upper_real + lower_real)
+    cos_imag = 0.5 * (upper_imag + lower_imag)
+
+    # ``sinh(d)/d`` by series near the origin, where the root has no
+    # derivative of its own.
+    turning = square_real * square_real + square_imag * square_imag > 1e-24
+    half_real = 0.5 * (upper_real - lower_real)
+    half_imag = 0.5 * (upper_imag - lower_imag)
+    guard = tl.where(turning, root_real * root_real + root_imag * root_imag, 1.0)
+    divided_real = (half_real * root_real + half_imag * root_imag) / guard
+    divided_imag = (half_imag * root_real - half_real * root_imag) / guard
+    plain_real, plain_imag = _complex_exp(trace_real, trace_imag)
+    square2_real = square_real * square_real - square_imag * square_imag
+    square2_imag = 2.0 * square_real * square_imag
+    poly_real = 1.0 + square_real / 6.0 + square2_real / 120.0
+    poly_imag = square_imag / 6.0 + square2_imag / 120.0
+    series_real = plain_real * poly_real - plain_imag * poly_imag
+    series_imag = plain_real * poly_imag + plain_imag * poly_real
+    scale_real = tl.where(turning, divided_real, series_real)
+    scale_imag = tl.where(turning, divided_imag, series_imag)
+
+    off_real = scale_real * gap_real - scale_imag * gap_imag
+    off_imag = scale_real * gap_imag + scale_imag * gap_real
+    return (
+        attenuation * (cos_real + off_real),
+        attenuation * (cos_imag + off_imag),
+        attenuation * scale_real * l12,
+        attenuation * scale_imag * l12,
+        attenuation * scale_real * l21,
+        attenuation * scale_imag * l21,
+        attenuation * (cos_real - off_real),
+        attenuation * (cos_imag - off_imag),
     )
 
 
@@ -1323,6 +1418,14 @@ def _epg_vjp_jvp_kernel(
     bound_fraction,
     exchange_rate,
     t1_bound,
+    # The chemically exchanging pool's five. These kernels carry one transverse
+    # pool; the pointers hold the ABI's shape and the dispatch refuses a
+    # derivative of an exchanging run.
+    pool_b_fraction,
+    pool_b_exchange,
+    t1_pool_b,
+    t2_pool_b,
+    pool_b_shift,
     duration,
     kind,
     flip,
@@ -1347,6 +1450,14 @@ def _epg_vjp_jvp_kernel(
     dot_bound_fraction,
     dot_exchange_rate,
     dot_t1_bound,
+    # The chemically exchanging pool's five. These kernels carry one transverse
+    # pool; the pointers hold the ABI's shape and the dispatch refuses a
+    # derivative of an exchanging run.
+    dot_pool_b_fraction,
+    dot_pool_b_exchange,
+    dot_t1_pool_b,
+    dot_t2_pool_b,
+    dot_pool_b_shift,
     dot_duration,
     dot_flip,
     dot_phase,
@@ -3628,6 +3739,44 @@ def _epg_real_jvp_kernel(
 
 
 @triton.jit
+def _rotate_flip_phase(
+    cosine, sine, cos_phi, sin_phi, cos_2phi, sin_2phi,
+    fp_r, fp_i, fm_r, fm_i, z_r, z_i,
+):
+    """One pool through a hard pulse named by its flip angle and phase.
+
+    Pulled out of the kernel body so a second pool can take the same rotation:
+    a chemical shift moves where a pool precesses, not what a pulse does to it.
+    """
+    cosine_half_sq = 0.5 * (1.0 + cosine)
+    sine_half_sq = 0.5 * (1.0 - cosine)
+
+    rotated_pr = cosine_half_sq * fp_r
+    rotated_pr += sine_half_sq * (cos_2phi * fm_r - sin_2phi * fm_i)
+    rotated_pr += sine * (sin_phi * z_r + cos_phi * z_i)
+    rotated_pi = cosine_half_sq * fp_i
+    rotated_pi += sine_half_sq * (sin_2phi * fm_r + cos_2phi * fm_i)
+    rotated_pi += sine * (sin_phi * z_i - cos_phi * z_r)
+
+    rotated_mr = sine_half_sq * (cos_2phi * fp_r + sin_2phi * fp_i)
+    rotated_mr += cosine_half_sq * fm_r
+    rotated_mr += sine * (sin_phi * z_r - cos_phi * z_i)
+    rotated_mi = sine_half_sq * (-sin_2phi * fp_r + cos_2phi * fp_i)
+    rotated_mi += cosine_half_sq * fm_i
+    rotated_mi += sine * (cos_phi * z_r + sin_phi * z_i)
+
+    rotated_zr = -0.5 * sine * (sin_phi * fp_r - cos_phi * fp_i)
+    rotated_zr += -0.5 * sine * (sin_phi * fm_r + cos_phi * fm_i)
+    rotated_zr += cosine * z_r
+    rotated_zi = -0.5 * sine * (cos_phi * fp_r + sin_phi * fp_i)
+    rotated_zi += 0.5 * sine * (cos_phi * fm_r - sin_phi * fm_i)
+    rotated_zi += cosine * z_i
+    return (
+        rotated_pr, rotated_pi, rotated_mr, rotated_mi, rotated_zr, rotated_zi,
+    )
+
+
+@triton.jit
 def _epg_kernel(
     t1,
     t2,
@@ -3639,8 +3788,13 @@ def _epg_kernel(
     diffusion,
     velocity,
     bound_fraction,
-    exchange_rate,
+    bound_exchange,
     t1_bound,
+    pool_b_fraction,
+    pool_b_exchange,
+    t1_pool_b,
+    t2_pool_b,
+    pool_b_shift,
     duration,
     kind,
     flip,
@@ -3672,6 +3826,7 @@ def _epg_kernel(
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
     lineshape_bins: tl.constexpr,
+    pools: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -3698,22 +3853,41 @@ def _epg_kernel(
     fplus_imag = empty
     fminus_real = empty
     fminus_imag = empty
-    # The bound pool holds its own share of the equilibrium, and carries
-    # longitudinal states alone: nothing dephases it, so it reaches the higher
-    # orders only through exchange with the free pool's.
+    # A second pool holds its own share of the equilibrium. The semisolid one
+    # carries longitudinal states alone -- nothing dephases it, so it reaches
+    # the higher orders only through exchange with the free pool's -- while the
+    # chemically exchanging one carries a transverse pair of its own.
     atom_bound = 0.0
     atom_exchange = 0.0
     atom_r1_bound = 0.0
-    if lineshape_bins > 0:
+    atom_r2_bound = 0.0
+    atom_shift = 0.0
+    if pools == 1:
         atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(exchange_rate + atom, mask=active_atom, other=0.0)
+        atom_exchange = tl.load(bound_exchange + atom, mask=active_atom, other=0.0)
         atom_r1_bound = 1000.0 / tl.load(
             t1_bound + atom, mask=active_atom, other=1.0
         )
+    if pools == 2:
+        atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
+        atom_exchange = tl.load(
+            pool_b_exchange + atom, mask=active_atom, other=0.0
+        )
+        atom_r1_bound = 1000.0 / tl.load(
+            t1_pool_b + atom, mask=active_atom, other=1.0
+        )
+        atom_r2_bound = 1000.0 / tl.load(
+            t2_pool_b + atom, mask=active_atom, other=1.0
+        )
+        atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
     longitudinal_real = empty + tl.where(state == 0, 1.0 - atom_bound, 0.0)
     longitudinal_imag = empty
     bound_real = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
     bound_imag = empty
+    bplus_real = empty
+    bplus_imag = empty
+    bminus_real = empty
+    bminus_imag = empty
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
@@ -3746,22 +3920,76 @@ def _epg_kernel(
         off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt + turn_t
         off_cos = tl.cos(off_phase)
         off_sin = tl.sin(off_phase)
-        old_real = fplus_real
-        fplus_real = e2 * (old_real * off_cos - fplus_imag * off_sin)
-        fplus_imag = e2 * (old_real * off_sin + fplus_imag * off_cos)
-        old_real = fminus_real
-        fminus_real = e2 * (old_real * off_cos + fminus_imag * off_sin)
-        fminus_imag = e2 * (-old_real * off_sin + fminus_imag * off_cos)
+        if pools == 2:
+            # Both pools take the same off-resonance and the same per-order
+            # damping; what separates them is the chemical shift, which the
+            # exchange operator already carries.
+            (
+                x11r, x11i, x12r, x12i, x21r, x21i, x22r, x22i,
+            ) = _two_pool_transverse_step(
+                1000.0 / atom_t2, atom_r2_bound, atom_exchange, atom_bound,
+                atom_shift, dt, wout,
+            )
+            mixed_pr = (
+                x11r * fplus_real - x11i * fplus_imag
+                + x12r * bplus_real - x12i * bplus_imag
+            )
+            mixed_pi = (
+                x11r * fplus_imag + x11i * fplus_real
+                + x12r * bplus_imag + x12i * bplus_real
+            )
+            mixed_br = (
+                x21r * fplus_real - x21i * fplus_imag
+                + x22r * bplus_real - x22i * bplus_imag
+            )
+            mixed_bi = (
+                x21r * fplus_imag + x21i * fplus_real
+                + x22r * bplus_imag + x22i * bplus_real
+            )
+            # ``F-`` follows the conjugate of the operator entry by entry, not
+            # its transpose: it is the conjugate state, and the map it takes is
+            # the conjugate map.
+            mixed_mr = (
+                x11r * fminus_real + x11i * fminus_imag
+                + x12r * bminus_real + x12i * bminus_imag
+            )
+            mixed_mi = (
+                x11r * fminus_imag - x11i * fminus_real
+                + x12r * bminus_imag - x12i * bminus_real
+            )
+            mixed_nr = (
+                x21r * fminus_real + x21i * fminus_imag
+                + x22r * bminus_real + x22i * bminus_imag
+            )
+            mixed_ni = (
+                x21r * fminus_imag - x21i * fminus_real
+                + x22r * bminus_imag - x22i * bminus_real
+            )
+            fplus_real = damp_t * (mixed_pr * off_cos - mixed_pi * off_sin)
+            fplus_imag = damp_t * (mixed_pr * off_sin + mixed_pi * off_cos)
+            bplus_real = damp_t * (mixed_br * off_cos - mixed_bi * off_sin)
+            bplus_imag = damp_t * (mixed_br * off_sin + mixed_bi * off_cos)
+            fminus_real = damp_t * (mixed_mr * off_cos + mixed_mi * off_sin)
+            fminus_imag = damp_t * (-mixed_mr * off_sin + mixed_mi * off_cos)
+            bminus_real = damp_t * (mixed_nr * off_cos + mixed_ni * off_sin)
+            bminus_imag = damp_t * (-mixed_nr * off_sin + mixed_ni * off_cos)
+        else:
+            old_real = fplus_real
+            fplus_real = e2 * (old_real * off_cos - fplus_imag * off_sin)
+            fplus_imag = e2 * (old_real * off_sin + fplus_imag * off_cos)
+            old_real = fminus_real
+            fminus_real = e2 * (old_real * off_cos + fminus_imag * off_sin)
+            fminus_imag = e2 * (-old_real * off_sin + fminus_imag * off_cos)
         # The longitudinal states carry a phase of their own, which nothing
         # else in the state machine gives them.
         turn_cos = tl.cos(turn_z)
         turn_sin = tl.sin(turn_z)
-        if lineshape_bins > 0:
+        if pools > 0:
             # The exchange operator is a property of the interval, not of a
             # dephasing order, so it is formed once and the per-order damping
             # multiplies it. Both pools take that damping and the flow phase:
-            # their order-n states describe one dephasing configuration, and the
-            # bound pool has no diffusion coefficient of its own to damp by.
+            # their order-n states describe one dephasing configuration, and a
+            # second pool has no diffusion coefficient of its own to damp by.
             e11, e12, e21, e22, grow_free, grow_bound = _two_pool_step(
                 1000.0 / atom_t1, atom_r1_bound, atom_exchange, atom_bound, dt, wout
             )
@@ -3808,6 +4036,16 @@ def _epg_kernel(
         fplus_imag = tl.where(pre_shift, shifted_pi, fplus_imag)
         fminus_real = tl.where(pre_shift, shifted_mr, fminus_real)
         fminus_imag = tl.where(pre_shift, shifted_mi, fminus_imag)
+        if pools == 2:
+            b_pr, b_pi, b_mr, b_mi = _shift(
+                bplus_real, bplus_imag, bminus_real, bminus_imag,
+                scratch_pr, scratch_pi, scratch_mr, scratch_mi,
+                state, state_mask, state_count,
+            )
+            bplus_real = tl.where(pre_shift, b_pr, bplus_real)
+            bplus_imag = tl.where(pre_shift, b_pi, bplus_imag)
+            bminus_real = tl.where(pre_shift, b_mr, bminus_real)
+            bminus_imag = tl.where(pre_shift, b_mi, bminus_imag)
 
         event_kind = tl.load(kind + event)
         is_rf = event_kind == 1
@@ -3819,6 +4057,16 @@ def _epg_kernel(
         longitudinal_imag = tl.where(
             invert, -atom_inversion * longitudinal_imag, longitudinal_imag
         )
+        if pools == 2:
+            # A chemically exchanging pool is free water and turns over like
+            # any other; a semisolid one is saturated instead, which its own
+            # saturation term already carries.
+            bound_real = tl.where(
+                invert, -atom_inversion * bound_real, bound_real
+            )
+            bound_imag = tl.where(
+                invert, -atom_inversion * bound_imag, bound_imag
+            )
 
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse a row of its own.
@@ -3850,41 +4098,38 @@ def _epg_kernel(
             )
         cosine = tl.cos(alpha)
         sine = tl.sin(alpha)
-        cosine_half_sq = 0.5 * (1.0 + cosine)
-        sine_half_sq = 0.5 * (1.0 - cosine)
         cos_phi = tl.cos(phi)
         sin_phi = tl.sin(phi)
         cos_2phi = tl.cos(2.0 * phi)
         sin_2phi = tl.sin(2.0 * phi)
 
-        fp_r = fplus_real
-        fp_i = fplus_imag
-        fm_r = fminus_real
-        fm_i = fminus_imag
-        z_r = longitudinal_real
-        z_i = longitudinal_imag
+        (
+            rotated_pr, rotated_pi, rotated_mr, rotated_mi, rotated_zr,
+            rotated_zi,
+        ) = _rotate_flip_phase(
+            cosine, sine, cos_phi, sin_phi, cos_2phi, sin_2phi,
+            fplus_real, fplus_imag, fminus_real, fminus_imag,
+            longitudinal_real, longitudinal_imag,
+        )
 
-        rotated_pr = cosine_half_sq * fp_r
-        rotated_pr += sine_half_sq * (cos_2phi * fm_r - sin_2phi * fm_i)
-        rotated_pr += sine * (sin_phi * z_r + cos_phi * z_i)
-        rotated_pi = cosine_half_sq * fp_i
-        rotated_pi += sine_half_sq * (sin_2phi * fm_r + cos_2phi * fm_i)
-        rotated_pi += sine * (sin_phi * z_i - cos_phi * z_r)
-
-        rotated_mr = sine_half_sq * (cos_2phi * fp_r + sin_2phi * fp_i)
-        rotated_mr += cosine_half_sq * fm_r
-        rotated_mr += sine * (sin_phi * z_r - cos_phi * z_i)
-        rotated_mi = sine_half_sq * (-sin_2phi * fp_r + cos_2phi * fp_i)
-        rotated_mi += cosine_half_sq * fm_i
-        rotated_mi += sine * (cos_phi * z_r + sin_phi * z_i)
-
-        rotated_zr = -0.5 * sine * (sin_phi * fp_r - cos_phi * fp_i)
-        rotated_zr += -0.5 * sine * (sin_phi * fm_r + cos_phi * fm_i)
-        rotated_zr += cosine * z_r
-        rotated_zi = -0.5 * sine * (cos_phi * fp_r + sin_phi * fp_i)
-        rotated_zi += 0.5 * sine * (cos_phi * fm_r - sin_phi * fm_i)
-        rotated_zi += cosine * z_i
-
+        if pools == 2:
+            (
+                b_rot_pr, b_rot_pi, b_rot_mr, b_rot_mi, b_rot_zr, b_rot_zi,
+            ) = _rotate_flip_phase(
+                cosine, sine, cos_phi, sin_phi, cos_2phi, sin_2phi,
+                bplus_real, bplus_imag, bminus_real, bminus_imag,
+                bound_real, bound_imag,
+            )
+            if profile_bins > 0:
+                # The same pulse, the same rotation: a chemical shift moves
+                # where a pool precesses, not what a pulse does to it.
+                (
+                    b_rot_pr, b_rot_pi, b_rot_mr, b_rot_mi, b_rot_zr, b_rot_zi,
+                ) = _rotate_spinor(
+                    pair[0], pair[1], spun_br, spun_bi,
+                    bplus_real, bplus_imag, bminus_real, bminus_imag,
+                    bound_real, bound_imag,
+                )
         if profile_bins > 0:
             rotated_pr = shaped_pr
             rotated_pi = shaped_pi
@@ -3894,7 +4139,14 @@ def _epg_kernel(
             rotated_zi = shaped_zi
 
         rotate = is_rf & ~is_inversion
-        if lineshape_bins > 0:
+        if pools == 2:
+            bplus_real = tl.where(rotate, b_rot_pr, bplus_real)
+            bplus_imag = tl.where(rotate, b_rot_pi, bplus_imag)
+            bminus_real = tl.where(rotate, b_rot_mr, bminus_real)
+            bminus_imag = tl.where(rotate, b_rot_mi, bminus_imag)
+            bound_real = tl.where(rotate, b_rot_zr, bound_real)
+            bound_imag = tl.where(rotate, b_rot_zi, bound_imag)
+        if pools == 1:
             # The bound pool absorbs the power the pulse deposits, so it reads
             # the bare flip the transmit field gives the voxel -- not the
             # slice-shaped rotation the free pool takes from the table.
@@ -3918,8 +4170,15 @@ def _epg_kernel(
         adc_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
         adc_cos = tl.cos(adc_phase)
         adc_sin = tl.sin(adc_phase)
-        signal_real = atom_m0 * (fplus_real * adc_cos + fplus_imag * adc_sin)
-        signal_imag = atom_m0 * (fplus_imag * adc_cos - fplus_real * adc_sin)
+        # A coil sees the whole voxel, so what it records is the sum over
+        # pools; each pool's share is already in its own state.
+        read_real = fplus_real
+        read_imag = fplus_imag
+        if pools == 2:
+            read_real = fplus_real + bplus_real
+            read_imag = fplus_imag + bplus_imag
+        signal_real = atom_m0 * (read_real * adc_cos + read_imag * adc_sin)
+        signal_imag = atom_m0 * (read_imag * adc_cos - read_real * adc_sin)
         out = tl.load(output_index + event)
         output_offset = problem * output_count + out
         output_mask = active_atom & (state == 0) & record & (out >= 0)
@@ -3949,6 +4208,20 @@ def _epg_kernel(
         fplus_imag = tl.where(spoil, 0.0, fplus_imag)
         fminus_real = tl.where(spoil, 0.0, fminus_real)
         fminus_imag = tl.where(spoil, 0.0, fminus_imag)
+        if pools == 2:
+            b_pr, b_pi, b_mr, b_mi = _shift(
+                bplus_real, bplus_imag, bminus_real, bminus_imag,
+                scratch_pr, scratch_pi, scratch_mr, scratch_mi,
+                state, state_mask, state_count,
+            )
+            bplus_real = tl.where(spoil, 0.0, tl.where(do_shift, b_pr, bplus_real))
+            bplus_imag = tl.where(spoil, 0.0, tl.where(do_shift, b_pi, bplus_imag))
+            bminus_real = tl.where(
+                spoil, 0.0, tl.where(do_shift, b_mr, bminus_real)
+            )
+            bminus_imag = tl.where(
+                spoil, 0.0, tl.where(do_shift, b_mi, bminus_imag)
+            )
 
 
 @triton.jit
@@ -3968,6 +4241,12 @@ def _epg_jvp_kernel(
     bound_fraction,
     exchange_rate,
     t1_bound,
+    # The chemically exchanging pool's five, on the same terms.
+    pool_b_fraction,
+    pool_b_exchange,
+    t1_pool_b,
+    t2_pool_b,
+    pool_b_shift,
     duration,
     kind,
     flip,
@@ -3987,6 +4266,14 @@ def _epg_jvp_kernel(
     tangent_bound_fraction,
     tangent_exchange_rate,
     tangent_t1_bound,
+    # The chemically exchanging pool's five. These kernels carry one transverse
+    # pool; the pointers hold the ABI's shape and the dispatch refuses a
+    # derivative of an exchanging run.
+    tangent_pool_b_fraction,
+    tangent_pool_b_exchange,
+    tangent_t1_pool_b,
+    tangent_t2_pool_b,
+    tangent_pool_b_shift,
     tangent_duration,
     tangent_flip,
     tangent_phase,
@@ -4619,6 +4906,7 @@ def simulate(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> torch.Tensor:
     """Run a packed state machine on CUDA and return complex signals.
 
@@ -4646,6 +4934,7 @@ def simulate(
         geometry=geometry,
         profile=profile,
         lineshape=lineshape,
+        exchanging=exchanging,
     )
     return torch.complex(output_real, output_imag)
 
@@ -4664,6 +4953,7 @@ def simulate_into(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> None:
     """Run the forward machine into buffers the caller owns.
 
@@ -4677,7 +4967,8 @@ def simulate_into(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
-        bound_fraction, exchange_rate, t1_bound,
+        bound_fraction, bound_exchange, t1_bound,
+        pool_b_fraction, pool_b_exchange, t1_pool_b, t2_pool_b, pool_b_shift,
     ) = tissue
     (
         duration, kind, flip, phase, action, output_index, shim_index,
@@ -4736,8 +5027,13 @@ def simulate_into(
         diffusion,
         velocity,
         bound_fraction,
-        exchange_rate,
+        bound_exchange,
         t1_bound,
+        pool_b_fraction,
+        pool_b_exchange,
+        t1_pool_b,
+        t2_pool_b,
+        pool_b_shift,
         duration,
         kind,
         flip,
@@ -4766,6 +5062,7 @@ def simulate_into(
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
+        pools=2 if exchanging else (1 if lineshape is not None else 0),
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -4841,7 +5138,9 @@ def simulate_jvp_into(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
-        _bound_fraction, _exchange_rate, _t1_bound,
+        _bound_fraction, _bound_exchange, _t1_bound,
+        _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
+        _pool_b_shift,
     ) = tissue
     (
         duration, kind, flip, phase, action, output_index, shim_index,
@@ -5082,7 +5381,9 @@ def simulate_vjp_jvp_into(
     """
     (
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
-        _bound_fraction, _exchange_rate, _t1_bound,
+        _bound_fraction, _bound_exchange, _t1_bound,
+        _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
+        _pool_b_shift,
     ) = tissue
     (
         duration, kind, flip, phase, action, output_index, shim_index,

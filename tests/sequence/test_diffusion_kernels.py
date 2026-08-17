@@ -373,7 +373,7 @@ def test_autograd_reaches_the_diffusion_coefficient() -> None:
         for index, value in enumerate(tissue)
     )
     signal = _NativeEpg.apply(
-        *inputs, *events, STATE_COUNT, output_count, 1, NO_GEOMETRY, None, None
+        *inputs, *events, STATE_COUNT, output_count, 1, NO_GEOMETRY, None, None, False
     )
     signal.abs().square().sum().backward()
     assert coefficient.grad is not None

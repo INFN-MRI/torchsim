@@ -272,6 +272,7 @@ def simulate_native(
     slice_profile: torch.Tensor,
     rf_raster_time_s: float,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules."""
     device = prepared_tissue[0].device
@@ -337,6 +338,7 @@ def simulate_native(
         geometry_of(description),
         table,
         lineshape,
+        exchanging,
     )
     leading = (packed.train_count,) if packed.is_batched else ()
     if locations > 1:
@@ -662,8 +664,13 @@ class _NativeEpg(torch.autograd.Function):
         diffusion: torch.Tensor,
         velocity: torch.Tensor,
         bound_fraction: torch.Tensor,
-        exchange_rate: torch.Tensor,
+        bound_exchange: torch.Tensor,
         t1_bound: torch.Tensor,
+        pool_b_fraction: torch.Tensor,
+        pool_b_exchange: torch.Tensor,
+        t1_pool_b: torch.Tensor,
+        t2_pool_b: torch.Tensor,
+        pool_b_shift: torch.Tensor,
         duration: torch.Tensor,
         kind: torch.Tensor,
         flip: torch.Tensor,
@@ -679,10 +686,13 @@ class _NativeEpg(torch.autograd.Function):
         geometry: Geometry,
         profile: Any,
         lineshape: Any,
+        exchanging: bool,
     ) -> torch.Tensor:
         tissue = (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
-            velocity, bound_fraction, exchange_rate, t1_bound,
+            velocity, bound_fraction, bound_exchange, t1_bound,
+            pool_b_fraction, pool_b_exchange, t1_pool_b, t2_pool_b,
+            pool_b_shift,
         )
         events = (
             duration, kind, flip, phase, action, output_index, shim_index,
@@ -690,7 +700,7 @@ class _NativeEpg(torch.autograd.Function):
         )
         return _run_packed(
             tissue, events, state_count, output_count, threads, geometry=geometry,
-            profile=profile, lineshape=lineshape,
+            profile=profile, lineshape=lineshape, exchanging=exchanging,
         )
 
     @staticmethod
@@ -704,9 +714,11 @@ class _NativeEpg(torch.autograd.Function):
         ctx.geometry = inputs[_PACKED_COUNT + 3]
         ctx.profile = inputs[_PACKED_COUNT + 4]
         ctx.lineshape = inputs[_PACKED_COUNT + 5]
+        ctx.exchanging = inputs[_PACKED_COUNT + 6]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
+        _one_transverse_pool(ctx.exchanging)
         saved = ctx.saved_tensors
         float_tangents = tuple(
             torch.zeros_like(saved[index])
@@ -727,6 +739,7 @@ class _NativeEpg(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
+        _one_transverse_pool(ctx.exchanging)
         saved = ctx.saved_tensors
         wanted = _wanted(ctx.needs_input_grad)
         fused = _NativeEpgVjp.apply(
@@ -742,7 +755,7 @@ class _NativeEpg(torch.autograd.Function):
         )
         return (
             *_spread(fused, ctx.needs_input_grad),
-            None, None, None, None, None, None,
+            None, None, None, None, None, None, None,
         )
 
     @staticmethod
@@ -1150,6 +1163,55 @@ def _bound_pointers(
     if absorption is None:
         return (*profiled, 0)
     return (*profiled, *_pointers((absorption,)))
+
+
+# Which second pool a kernel is to carry, as the extension's own enum reads it.
+_POOL_ONE, _POOL_SEMISOLID, _POOL_EXCHANGING = 0, 1, 2
+
+
+def _pool_kind(lineshape: Any, exchanging: bool) -> int:
+    """Which second pool the kernels are to carry, if either.
+
+    The two are alternatives, and a caller asking for both has already been
+    refused by the time this is read.
+    """
+    if exchanging:
+        return _POOL_EXCHANGING
+    return _POOL_SEMISOLID if lineshape is not None else _POOL_ONE
+
+
+def _one_transverse_pool(exchanging: bool) -> None:
+    """Refuse a derivative of a chemically exchanging run.
+
+    The derivative kernels carry one transverse pool, so asked for the
+    Jacobian of a two-pool one they would answer with the single-pool
+    machine's -- a wrong number rather than a missing one.
+
+    Raises:
+        NotImplementedError: if the forward carried an exchanging pool.
+    """
+    if exchanging:
+        raise NotImplementedError(
+            "the derivative kernels carry one transverse pool; a chemically "
+            "exchanging pool reaches the forward machine only"
+        )
+
+
+def _one_second_pool(bound: bool, exchanging: bool) -> None:
+    """Refuse a tissue that declares both second pools.
+
+    Two of them at once is a three-pool system, whose exchange matrix has no
+    closed-form exponential of the shape the kernels evaluate. Refusing says
+    so; carrying one of the two would answer a question nobody asked.
+
+    Raises:
+        NotImplementedError: if both pools are declared.
+    """
+    if bound and exchanging:
+        raise NotImplementedError(
+            "a semisolid pool and a chemically exchanging one are three pools "
+            "together; the kernels carry two"
+        )
 
 
 def _tables(profile: Any, events: tuple[torch.Tensor, ...]) -> Any:
@@ -1857,6 +1919,7 @@ def _run_offloaded(
     geometry: Geometry,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> torch.Tensor:
     """Stream a host-resident volume through the devices, chunk by chunk."""
     from ._epg_triton import simulate_into
@@ -1887,6 +1950,7 @@ def _run_offloaded(
             atom_count=width,
             profile=profile,
             lineshape=lineshape,
+            exchanging=exchanging,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -2124,6 +2188,7 @@ def _run_packed(
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
     lineshape: Any = None,
+    exchanging: bool = False,
 ) -> torch.Tensor:
     """Run the forward state machine.
 
@@ -2140,18 +2205,19 @@ def _run_packed(
         real_axis = _auto_real_axis(
             "forward", events, tissue, state_count, profile=profile
         )
-    # A bound pool is outside every real subspace the reduced kernels stand
-    # for: they carry one longitudinal component, and there are two here. The
-    # verdict is overruled rather than refused, the full kernel giving the same
-    # answer more slowly.
-    if lineshape is not None:
+    # Neither second pool is inside a real subspace the reduced kernels stand
+    # for: the semisolid one adds a longitudinal component, and the exchanging
+    # one adds a transverse pair whose operator is complex. The verdict is
+    # overruled rather than refused, the full kernel giving the same answer
+    # more slowly.
+    if lineshape is not None or exchanging:
         real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
-            geometry, profile, lineshape,
+            geometry, profile, lineshape, exchanging,
         )
     choice = _choose(
         "forward", tissue, events, output_count, state_count, real_axis
@@ -2160,7 +2226,7 @@ def _run_packed(
     if streaming and tissue[0].device.type == "cpu":
         return _run_offloaded(
             tissue, events, choice.offload, state_count, output_count, real_axis,
-            geometry, profile, lineshape,
+            geometry, profile, lineshape, exchanging,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2174,6 +2240,7 @@ def _run_packed(
                 real_axis,
                 geometry=geometry,
                 lineshape=lineshape,
+                exchanging=exchanging,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
@@ -2195,6 +2262,7 @@ def _run_packed(
                         geometry=geometry,
                         profile=profile,
                         lineshape=lineshape,
+                        exchanging=exchanging,
                     ),
                 )
                 for begin, end, device in shards
@@ -2209,6 +2277,7 @@ def _run_packed(
             geometry=geometry,
             profile=profile,
             lineshape=lineshape,
+            exchanging=exchanging,
         )
     from torchsim import _epg_cpu
 
@@ -2241,6 +2310,7 @@ def _run_packed(
         1.0 if profile is None else profile.step,
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
+        _pool_kind(lineshape, exchanging),
     )
     return torch.complex(output_real, output_imag)
 
