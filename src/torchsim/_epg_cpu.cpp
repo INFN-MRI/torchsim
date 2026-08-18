@@ -8080,6 +8080,30 @@ inline Buffers packed_buffers(
     return buffers;
 }
 
+// Every entry point's pointer sequence ends with the same eight slots, so
+// they are named and counted back from the end rather than written out at each
+// site. An entry point reads only the ones its kernel can use; the rest are
+// null. Naming them is what makes a slot left unassigned a visible omission
+// instead of a null the kernel writes through.
+enum class Tail : Py_ssize_t {
+    TABLE = 8,
+    TABLE_INDEX = 7,
+    PAIRS = 6,
+    PAIR_INDEX = 5,
+    DIRECTION = 4,
+    GRADIENT = 3,
+    CURVATURE = 2,
+    ABSORPTION = 1,
+};
+
+constexpr Py_ssize_t TAIL_COUNT = static_cast<Py_ssize_t>(Tail::TABLE);
+
+inline void* tail_slot(
+    void* const* const raw, const Py_ssize_t expected, const Tail slot
+) {
+    return raw[expected - static_cast<Py_ssize_t>(slot)];
+}
+
 bool parse_pointer(PyObject* sequence, const Py_ssize_t index, void** pointer) {
     PyObject* value = PySequence_GetItem(sequence, index);
     if (value == nullptr) {
@@ -8324,7 +8348,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     // and the per-event index that says which an event reads, then the
     // per-voxel rotations, their own index and a direction along them, then
     // the bound pool's lineshape -- all null when the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 10;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + TAIL_COUNT;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8350,14 +8374,14 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
-        raw[PACKED_COUNT + 2],
-        raw[PACKED_COUNT + 3],
+        tail_slot(raw, expected, Tail::TABLE),
+        tail_slot(raw, expected, Tail::TABLE_INDEX),
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
-        raw[PACKED_COUNT + 4],
-        raw[PACKED_COUNT + 5],
-        raw[PACKED_COUNT + 9],
+        tail_slot(raw, expected, Tail::PAIRS),
+        tail_slot(raw, expected, Tail::PAIR_INDEX),
+        tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
     );
@@ -8561,7 +8585,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     // planes, then the transition tables and the per-event index that says
     // which an event reads, then the bound pool's lineshape -- all null when
     // the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 10;
+    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 2 + TAIL_COUNT;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8588,14 +8612,14 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
-        raw[expected - 8],
-        raw[expected - 7],
+        tail_slot(raw, expected, Tail::TABLE),
+        tail_slot(raw, expected, Tail::TABLE_INDEX),
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
-        raw[expected - 6],
-        raw[expected - 5],
-        raw[expected - 1],
+        tail_slot(raw, expected, Tail::PAIRS),
+        tail_slot(raw, expected, Tail::PAIR_INDEX),
+        tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
     );
@@ -8617,7 +8641,9 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *tangent_slots[index] = static_cast<const float*>(raw[tangents + index]);
     }
-    buffers.dynamic = static_cast<const float*>(raw[expected - 4]);
+    buffers.dynamic = static_cast<const float*>(
+        tail_slot(raw, expected, Tail::DIRECTION)
+    );
 
     Py_BEGIN_ALLOW_THREADS
     dispatch_jvp(
@@ -8673,7 +8699,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     // which an event reads -- both null when there is no table -- then the
     // per-voxel rotations, their index, a direction along them and the
     // cotangent that comes back on them, then the bound pool's lineshape.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 8;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + TAIL_COUNT;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8699,14 +8725,14 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
-        raw[expected - 8],
-        raw[expected - 7],
+        tail_slot(raw, expected, Tail::TABLE),
+        tail_slot(raw, expected, Tail::TABLE_INDEX),
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
-        raw[expected - 6],
-        raw[expected - 5],
-        raw[expected - 1],
+        tail_slot(raw, expected, Tail::PAIRS),
+        tail_slot(raw, expected, Tail::PAIR_INDEX),
+        tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
     );
@@ -8729,7 +8755,9 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *grad_slots[index] = static_cast<float*>(raw[grads + index]);
     }
-    buffers.grad_dynamic = static_cast<float*>(raw[expected - 3]);
+    buffers.grad_dynamic = static_cast<float*>(
+        tail_slot(raw, expected, Tail::GRADIENT)
+    );
 
     const std::int64_t work_count =
         static_cast<std::int64_t>(atom_count) * static_cast<std::int64_t>(train_count);
@@ -9034,7 +9062,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     // blocks, then the transition tables and the per-event index that says
     // which an event reads -- both null when there is no table -- and the
     // bound pool's lineshape, null when there is no bound pool.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 8;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + TAIL_COUNT;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -9063,14 +9091,14 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
-        raw[expected - 8],
-        raw[expected - 7],
+        tail_slot(raw, expected, Tail::TABLE),
+        tail_slot(raw, expected, Tail::TABLE_INDEX),
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
-        raw[expected - 6],
-        raw[expected - 5],
-        raw[expected - 1],
+        tail_slot(raw, expected, Tail::PAIRS),
+        tail_slot(raw, expected, Tail::PAIR_INDEX),
+        tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
     );
@@ -9129,9 +9157,15 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         *tangent_grad_slots[index] =
             static_cast<float*>(raw[tangent_grads + index]);
     }
-    buffers.dynamic = static_cast<const float*>(raw[expected - 4]);
-    buffers.grad_dot_dynamic = static_cast<float*>(raw[expected - 3]);
-    buffers.grad_dynamic = static_cast<float*>(raw[expected - 2]);
+    buffers.dynamic = static_cast<const float*>(
+        tail_slot(raw, expected, Tail::DIRECTION)
+    );
+    buffers.grad_dot_dynamic = static_cast<float*>(
+        tail_slot(raw, expected, Tail::GRADIENT)
+    );
+    buffers.grad_dynamic = static_cast<float*>(
+        tail_slot(raw, expected, Tail::CURVATURE)
+    );
 
     Py_BEGIN_ALLOW_THREADS
     dispatch_second_order(
