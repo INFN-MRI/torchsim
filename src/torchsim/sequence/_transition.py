@@ -33,6 +33,8 @@ __all__ = [
     "ExactSliceProfile",
     "SliceTables",
     "TransitionTable",
+    "compose_spinor",
+    "dynamic_pair",
     "exact_slice_profile",
     "transition_table",
 ]
@@ -141,6 +143,160 @@ class TransitionTable:
         return blend(self.a, self.slope_a), blend(self.b, self.slope_b)
 
 
+def compose_spinor(
+    drive: torch.Tensor, turn_z: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """The Cayley-Klein pair a shaped pulse leaves, sample by sample.
+
+    One SU(2) element per raster sample, composed in the order the scanner
+    plays them. Each is the rotation about the effective field a spin sees
+    while that sample lasts: the RF in the transverse plane, the gradient
+    along z.
+
+    Parameters
+    ----------
+    drive
+        The transverse field per sample, radians turned per sample. A tensor
+        with the sample axis first, or any iterable of per-sample tensors --
+        which is how a per-voxel field is composed without ever holding one
+        for every sample at once.
+    turn_z
+        The longitudinal turn per sample, radians, one per spin.
+
+    Returns:
+        ``(a, b)`` shaped like ``turn_z``.
+    """
+    a = torch.ones_like(turn_z, dtype=torch.complex128)
+    b = torch.zeros_like(a)
+    for sample in drive:
+        turn_x = sample.real.expand_as(turn_z)
+        turn_y = sample.imag.expand_as(turn_z)
+        # Both coefficients are smooth functions of the squared angle, and are
+        # taken that way near the origin: a spin at the slice centre under no
+        # flip sits at exactly zero, where the square root is continuous but
+        # its derivative is not, and what reads this carries derivatives.
+        square = turn_x**2 + turn_y**2 + turn_z**2
+        turning = square > 1e-18
+        angle = torch.sqrt(torch.where(turning, square, torch.ones_like(square)))
+        half = 0.5 * angle
+        cosine = torch.where(
+            turning, torch.cos(half), 1.0 - square / 8.0 + square**2 / 384.0
+        )
+        # sin(angle / 2) / angle, which is 1/2 at the origin.
+        scale = torch.where(
+            turning,
+            torch.sin(half) / angle,
+            0.5 - square / 48.0 + square**2 / 3840.0,
+        )
+        step_a = cosine - 1j * turn_z * scale
+        step_b = -1j * (turn_x - 1j * turn_y) * scale
+        a, b = step_a * a - step_b * b.conj(), step_b * a.conj() + step_a * b
+    return a, b
+
+
+def dynamic_pair(
+    definition: RfDefinition,
+    weights: torch.Tensor,
+    sensitivities: torch.Tensor,
+    *,
+    flip: torch.Tensor | float = 1.0,
+    off_resonance_hz: torch.Tensor | None = None,
+    rf_raster_time_s: float = 1e-6,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """The rotation a dynamically shimmed pulse performs, voxel by voxel.
+
+    A static array reduces to one flip angle and one phase because its channel
+    weights are constant while the pulse plays, so the spatial factor comes
+    outside the pulse integral. Weights that vary during the pulse -- kT-points,
+    spokes -- do not factor that way: the field a voxel sees changes direction
+    as well as size, and what the pulse leaves is a rotation about an axis the
+    voxel has to itself. That rotation is this pair.
+
+    There is no table to build. A static pulse's rotation depends on the array
+    only through one complex scalar, which is why one grid covers every voxel;
+    here it depends on the whole per-channel vector, so the integral is taken
+    per voxel and the field is formed one sample at a time rather than held for
+    every sample at once.
+
+    Parameters
+    ----------
+    definition
+        The pulse. Its complex envelope is played sample by sample at
+        ``rf_raster_time_s`` and normalized by its own integral, so a voxel
+        the array puts unit field on turns through exactly ``flip``.
+    weights
+        Complex channel weights, ``(channels, samples)`` while the pulse plays,
+        or ``(channels,)`` for a weight it holds -- which is the static array
+        this generalizes.
+    sensitivities
+        Complex per-channel transmit sensitivities, ``(voxels, channels)``.
+    flip
+        The nominal flip the event drives, in radians. Scales every channel
+        alike and so still factors out of the array.
+    off_resonance_hz
+        What each voxel is off resonance by while the pulse plays. Zero when
+        not given.
+
+    Returns:
+        ``(a, b)`` per voxel, in ``complex64``.
+
+    Raises:
+        ValueError: if the pulse has no samples, if it integrates to nothing,
+            or if the weights and the sensitivities disagree on the channel
+            count.
+    """
+    device = sensitivities.device
+    envelope = torch.as_tensor(
+        definition.complex_envelope(), dtype=torch.complex128, device=device
+    )
+    if envelope.numel() == 0:
+        raise ValueError(f"RF definition {definition.id} has an empty envelope")
+    area = envelope.sum()
+    if area.abs() <= 1e-6 * envelope.abs().sum():
+        raise ValueError(
+            f"RF definition {definition.id} integrates to nothing, so it has no "
+            f"flip angle to drive"
+        )
+    shape = envelope / area
+
+    weights = torch.as_tensor(weights).to(torch.complex128)
+    if weights.ndim == 1:
+        weights = weights[:, None]
+    sensitivities = torch.as_tensor(sensitivities).to(torch.complex128)
+    if weights.shape[0] != sensitivities.shape[-1]:
+        raise ValueError(
+            f"the weights drive {weights.shape[0]} channels and the "
+            f"sensitivities map {sensitivities.shape[-1]}"
+        )
+    samples = int(shape.numel())
+    if weights.shape[1] not in (1, samples):
+        raise ValueError(
+            f"the weights carry {weights.shape[1]} samples and the pulse "
+            f"{samples}"
+        )
+
+    voxels = sensitivities.shape[0]
+    if off_resonance_hz is None:
+        turn_z = torch.zeros(voxels, dtype=torch.float64, device=device)
+    else:
+        turn_z = (
+            2.0
+            * torch.pi
+            * torch.as_tensor(off_resonance_hz).to(torch.float64)
+            * rf_raster_time_s
+        ).expand(voxels)
+    driven = torch.as_tensor(flip, dtype=torch.float64, device=device)
+
+    def field() -> Any:
+        held = weights.shape[1] == 1
+        for sample in range(samples):
+            column = weights[:, 0 if held else sample]
+            yield driven * shape[sample] * (sensitivities @ column)
+
+    a, b = compose_spinor(field(), turn_z)
+    return a.to(torch.complex64), b.to(torch.complex64)
+
+
 def transition_table(
     definition: RfDefinition,
     positions: torch.Tensor,
@@ -213,42 +369,9 @@ def transition_table(
     )
 
     def integrate(flip: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """The pair the whole pulse leaves, at every (position, flip).
-
-        One SU(2) element per raster sample, composed in the order the
-        scanner plays them. Each is the rotation about the effective field a
-        spin sees while that sample lasts: the RF in the transverse plane, the
-        gradient along z.
-        """
+        """The pair the whole pulse leaves, at every (position, flip)."""
         turn_z = offset[:, None].expand(positions.numel(), flip.numel())
-        a = torch.ones_like(turn_z, dtype=torch.complex128)
-        b = torch.zeros_like(a)
-        for sample in weight:
-            drive = flip[None, :] * sample
-            turn_x = drive.real.expand_as(turn_z)
-            turn_y = drive.imag.expand_as(turn_z)
-            # Both coefficients are smooth functions of the squared angle, and
-            # are taken that way near the origin: a spin at the slice centre
-            # under no flip sits at exactly zero, where the square root is
-            # continuous but its derivative is not, and the table carries
-            # derivatives.
-            square = turn_x**2 + turn_y**2 + turn_z**2
-            turning = square > 1e-18
-            angle = torch.sqrt(torch.where(turning, square, torch.ones_like(square)))
-            half = 0.5 * angle
-            cosine = torch.where(
-                turning, torch.cos(half), 1.0 - square / 8.0 + square**2 / 384.0
-            )
-            # sin(angle / 2) / angle, which is 1/2 at the origin.
-            scale = torch.where(
-                turning,
-                torch.sin(half) / angle,
-                0.5 - square / 48.0 + square**2 / 3840.0,
-            )
-            step_a = cosine - 1j * turn_z * scale
-            step_b = -1j * (turn_x - 1j * turn_y) * scale
-            a, b = step_a * a - step_b * b.conj(), step_b * a.conj() + step_a * b
-        return a, b
+        return compose_spinor(weight[:, None, None] * flip, turn_z)
 
     values, slopes = torch.func.jvp(
         integrate, (theta,), (torch.ones_like(theta),)
