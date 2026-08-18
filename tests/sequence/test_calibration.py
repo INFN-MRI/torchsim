@@ -52,6 +52,20 @@ def test_a_threshold_is_a_finite_amount_of_work(kind):
 
 
 @pytest.mark.parametrize("kind", KINDS)
+def test_the_probe_a_measurement_times_actually_runs(kind):
+    """A probe that raises is caught, on purpose -- a measurement must never
+    break a simulation. That also means a probe built short of a buffer the
+    kernels expect measures nothing at all and the fallback quietly stands in,
+    which is indistinguishable from a real answer everywhere else.
+
+    So the probe is called here directly, where a refusal is an error.
+    """
+    from torchsim.sequence._calibration import _call
+
+    _call(kind, 64, torch.device("cpu"), -1, STATES)()
+
+
+@pytest.mark.parametrize("kind", KINDS)
 def test_detection_stays_reachable(kind):
     """An unmeasurable saving must not lock the real kernels away entirely."""
     value = detection(kind, torch.device("cpu"), STATES)

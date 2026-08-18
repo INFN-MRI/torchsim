@@ -183,17 +183,10 @@ def _problem(
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
-    events = tuple(
-        value.to(device)
-        for value in (
-            packed.duration,
-            packed.kind,
-            packed.flip,
-            packed.phase,
-            packed.action,
-            packed.output_index,
-        )
-    )
+    # Every buffer the packing produces, in its order. A probe short of one is
+    # refused by the extension, and the refusal is caught -- so a probe that
+    # does not carry them all measures nothing and the fallback stands in.
+    events = tuple(value.to(device) for value in packed.buffers)
     tissue = TissueProperties(
         t1_ms=torch.linspace(300.0, 2000.0, voxels),
         t2_ms=torch.linspace(20.0, 200.0, voxels),
