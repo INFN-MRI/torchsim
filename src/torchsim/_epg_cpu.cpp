@@ -4474,7 +4474,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             std::copy(fplus.begin(), fplus.end(), slot);
             std::copy(fminus.begin(), fminus.end(), slot + states);
             std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
-            if constexpr (TWO_POOL) {
+            if constexpr (TWO_POOL || THREE) {
                 std::copy(bound.begin(), bound.end(), slot + 3U * states);
             }
             if constexpr (PAIRED) {
@@ -4700,7 +4700,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             std::copy(slot, slot + states, fplus.begin());
             std::copy(slot + states, slot + 2U * states, fminus.begin());
             std::copy(slot + 2U * states, slot + 3U * states, longitudinal.begin());
-            if constexpr (TWO_POOL) {
+            if constexpr (TWO_POOL || THREE) {
                 std::copy(slot + 3U * states, slot + 4U * states, bound.begin());
             }
             if constexpr (PAIRED) {
