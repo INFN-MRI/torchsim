@@ -18,6 +18,7 @@ import torch
 from torchsim.sequence import offload
 from torchsim.sequence._parameters import NO_GEOMETRY, OUTSIDE_THE_SUBSPACE, Geometry
 from torchsim.sequence._accelerators import (
+    _FLOAT_INPUTS,
     _Lane,
     _Offload,
     _bytes_per_voxel,
@@ -570,3 +571,155 @@ def test_a_shim_widens_what_a_voxel_costs_the_budget(kind):
     # that also carries tangents or gradients, again for each of those.
     copies = 1 if kind == "forward" else 2 if kind == "jvp" else 4
     assert four - one == copies * 2 * 3 * 4
+
+
+# --- the first-order adjoint, which autograd reaches instead ---
+
+
+def _inside_the_subspace():
+    """``wanted`` with the four gradients a real adjoint cannot produce left
+    out, which is what lets it be chosen at all.
+    """
+    return tuple(
+        position not in OUTSIDE_THE_SUBSPACE
+        for position in range(len(_FLOAT_INPUTS))
+    )
+
+
+def _only_wanted(gradients, wanted):
+    """The gradients the caller declared it would read.
+
+    A real-subspace adjoint returns zero for the rest, which is what asking
+    for fewer of them buys; a host run computes them all regardless.
+    """
+    if wanted is None:
+        return gradients
+    return tuple(
+        gradient for gradient, asked in zip(gradients, wanted, strict=True)
+        if asked
+    )
+
+
+def _first_order_adjoint(
+    events, prepared, outputs, voxels, trains, wanted, budget,
+    geometry=NO_GEOMETRY,
+):
+    """The route ``torch.autograd`` takes for a plain ``.backward()``."""
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    generator = torch.Generator().manual_seed(7)
+    shape = (trains, voxels, outputs) if trains > 1 else (voxels, outputs)
+    cotangent = torch.randn(shape, generator=generator, dtype=torch.complex64)
+    arguments = (prepared, events, cotangent, STATES, outputs, 0, wanted)
+    if budget is None:
+        return _run_packed_vjp(*arguments, geometry=geometry)
+    with offload(["cuda"], budget_bytes=budget, lanes=2):
+        return _run_packed_vjp(*arguments, geometry=geometry)
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 512 << 20])
+@pytest.mark.parametrize("trains", [1, 3])
+def test_a_streamed_first_order_adjoint_matches_the_cpu_run(budget, trains):
+    """Tissue gradients are per voxel; event gradients sum over all of them."""
+    voxels = 2000
+    events, prepared, outputs = _volume(voxels, trains=trains)
+    wanted = _inside_the_subspace()
+    expected = _first_order_adjoint(
+        events, prepared, outputs, voxels, trains, wanted, None
+    )
+    actual = _first_order_adjoint(
+        events, prepared, outputs, voxels, trains, wanted, budget
+    )
+
+    # Leaving four gradients out is what lets the streamed pass take the
+    # real-subspace kernel, which returns zero for exactly those.
+    for index in OUTSIDE_THE_SUBSPACE:
+        assert actual[index].abs().max() == 0
+    worst = _compare_gradients(
+        (_only_wanted(expected, wanted),), (_only_wanted(actual, wanted),)
+    )
+    assert worst < 1e-4
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 512 << 20])
+@pytest.mark.parametrize("trains", [1, 3])
+def test_a_streamed_first_order_complex_adjoint_matches_the_cpu_run(
+    budget, trains
+):
+    """On SPGR, so b0 and the RF phase are live rather than refocused away."""
+    voxels = 2000
+    events, prepared, outputs = _spgr_volume(voxels, trains=trains)
+    expected = _first_order_adjoint(
+        events, prepared, outputs, voxels, trains, None, None, SPGR_GEOMETRY
+    )
+    actual = _first_order_adjoint(
+        events, prepared, outputs, voxels, trains, None, budget, SPGR_GEOMETRY
+    )
+
+    # The gradients the real-subspace kernel cannot produce, checked here.
+    for index in OUTSIDE_THE_SUBSPACE:
+        assert expected[index].abs().max() > 0
+    assert _compare_gradients((expected,), (actual,)) < 1e-4
+
+
+def test_the_first_order_adjoint_footprint_stays_inside_the_budget():
+    """Only a chunked pass fits; a host run or a resident card would not."""
+    voxels = 20_000
+    events, prepared, outputs = _volume(voxels)
+    budget = 32 << 20
+    resident = _peak_over_baseline(
+        lambda: _first_order_adjoint(
+            events, prepared, outputs, voxels, 1, _inside_the_subspace(), budget
+        )
+    )
+
+    assert resident <= budget * 1.1
+
+
+def test_a_host_resident_first_order_adjoint_follows_the_execution_target():
+    """The forward moves to the card under this policy, so the backward has to
+    move with it rather than stay behind.
+    """
+    from torchsim.sequence import execution
+
+    voxels = 20_000
+    events, prepared, outputs = _volume(voxels)
+    wanted = _inside_the_subspace()
+    expected = _first_order_adjoint(
+        events, prepared, outputs, voxels, 1, wanted, None
+    )
+    with execution("cuda"):
+        actual = _first_order_adjoint(
+            events, prepared, outputs, voxels, 1, wanted, None
+        )
+
+    assert all(value.device.type == "cpu" for value in actual)
+    worst = _compare_gradients(
+        (_only_wanted(expected, wanted),), (_only_wanted(actual, wanted),)
+    )
+    assert worst < 1e-4
+
+
+def test_a_host_adjoint_with_no_policy_stays_on_the_host_kernel():
+    """The forward-over-reverse kernel carries a direction the first-order
+    pass has no use for, so reaching the devices through it must not become
+    what an unqualified call does.
+    """
+    voxels = 64
+    events, prepared, outputs = _volume(voxels)
+    taken = []
+    forwarded = accelerators._run_packed_vjp_jvp
+
+    def spy(*arguments, **options):
+        taken.append(True)
+        return forwarded(*arguments, **options)
+
+    accelerators._run_packed_vjp_jvp = spy
+    try:
+        _first_order_adjoint(
+            events, prepared, outputs, voxels, 1, _inside_the_subspace(), None
+        )
+    finally:
+        accelerators._run_packed_vjp_jvp = forwarded
+
+    assert not taken

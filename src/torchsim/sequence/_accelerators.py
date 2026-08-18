@@ -1104,6 +1104,9 @@ def _auto_real_axis_adjoint(
     subspace, and those are not zero in truth, so it is only available to a
     caller that has said which gradients it wants and left those out. ``None``
     for ``wanted`` means all of them, which rules the fast path out.
+
+    ``tangents`` may be empty, which is a pass that follows no direction at
+    all and so seeds nothing outside the subspace.
     """
     if wanted is None or any(wanted[index] for index in _OUTSIDE_THE_SUBSPACE):
         return None
@@ -1112,7 +1115,9 @@ def _auto_real_axis_adjoint(
         events,
         tissue,
         state_count,
-        tuple(tangents[index] for index in _OUTSIDE_THE_SUBSPACE),
+        tuple(tangents[index] for index in _OUTSIDE_THE_SUBSPACE)
+        if tangents
+        else (),
         profile=profile,
     )
 
@@ -2140,6 +2145,29 @@ def _home(choice: _Choice) -> torch.device:
     return torch.device("cpu") if choice.where == "cpu" else choice.devices[0]
 
 
+def _leaves_the_host(
+    kind: str,
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    output_count: int,
+    state_count: int,
+    real_axis: int | None,
+) -> bool:
+    """Whether a policy sends a host-resident call to a device.
+
+    Asked by a pass that reaches the devices through another one rather than
+    through routes of its own, so that both read the same verdict.
+    """
+    if tissue[0].device.type != "cpu":
+        return False
+    if _OFFLOAD is not None:
+        return True
+    choice = _choose(kind, tissue, events, output_count, state_count, real_axis)
+    if choice is None:
+        return False
+    return choice.where == "stream" or _elsewhere(choice, tissue)
+
+
 @contextmanager
 def _using(devices: tuple[torch.device, ...]) -> Iterator[None]:
     """Shard over these devices for one call, without a nested policy."""
@@ -2315,12 +2343,27 @@ def _run_packed_vjp(
     if it is not given.
     """
     profile = _tables(profile, events)
+    # Only a call that might leave the host settles a real axis: the host
+    # kernel does not read one, and deciding costs a scan of the phase buffer
+    # and a calibration of its own.
+    real_axis = None
+    if tissue[0].device.type != "cpu" or _EXECUTION is not None or _OFFLOAD:
+        real_axis = _auto_real_axis_adjoint(
+            events, tissue, state_count, (), wanted, profile
+        )
+        # Neither second pool is inside a real subspace the reduced kernels
+        # stand for; see the forward path for why.
+        if lineshape is not None or exchanging:
+            real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
-    if tissue[0].device.type != "cpu":
+    if tissue[0].device.type != "cpu" or _leaves_the_host(
+        "adjoint", tissue, events, output_count, state_count, real_axis
+    ):
         # An adjoint does not depend on any forward direction, so the
         # forward-over-reverse kernel given no direction to follow returns it
-        # on its own.
+        # on its own -- and with it come the routes to the devices, which
+        # otherwise this pass alone would not take.
         still = tuple(
             torch.zeros_like(value)
             for value in (*tissue, events[0], events[2], events[3])
@@ -2333,6 +2376,7 @@ def _run_packed_vjp(
             state_count=state_count,
             output_count=output_count,
             threads=threads,
+            real_axis=real_axis,
             wanted=wanted,
             geometry=geometry,
             profile=profile,
