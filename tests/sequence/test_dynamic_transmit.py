@@ -422,3 +422,71 @@ def test_the_host_kernel_still_reads_a_table_where_one_is_given():
     assert float(expected.abs().max()) > 0.0
     worst = float((expected - measured).abs().max() / expected.abs().max())
     assert worst < 1e-6, worst
+
+
+def test_the_host_forward_mode_follows_a_direction_along_the_pair():
+    """Under the dynamic mode the array is resolved outside the kernel, so a
+    direction along a channel weight or a sensitivity arrives already carried
+    through the pulse integral -- and the kernel's job is to carry it on.
+
+    The reference is a central difference on the pair itself. The pair is
+    stored in ``complex64``, so the difference stops improving below a step of
+    about 1e-2; this one sits at that floor rather than under it.
+    """
+    from torchsim.sequence._accelerators import _run_packed, _run_packed_jvp
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    generator = torch.Generator().manual_seed(13)
+    direction = (
+        torch.randn(pairs.a.shape + (4,), generator=generator) * 0.05
+    ).contiguous()
+    still = tuple(torch.zeros_like(value) for value in prepared)
+    still_events = tuple(
+        torch.zeros_like(value) for value in (events[0], events[2], events[3])
+    )
+
+    measured = _run_packed_jvp(
+        prepared, events, still, still_events, 16, ECHOES, 1, -1,
+        dynamic=pairs, dynamic_direction=direction,
+    )
+
+    step = 1e-2
+
+    def moved(sign):
+        packed = pairs.packed() + sign * step * direction
+        return DynamicPairs(
+            a=torch.complex(packed[..., 0], packed[..., 1]).to(torch.complex64),
+            b=torch.complex(packed[..., 2], packed[..., 3]).to(torch.complex64),
+            index=pairs.index,
+        )
+
+    difference = (
+        _run_packed(prepared, events, 16, ECHOES, 1, dynamic=moved(+1))
+        - _run_packed(prepared, events, 16, ECHOES, 1, dynamic=moved(-1))
+    ) / (2.0 * step)
+
+    assert float(difference.abs().max()) > 0.0
+    worst = float((difference - measured).abs().max() / difference.abs().max())
+    assert worst < 1e-3, worst
+
+
+def test_a_direction_along_nothing_moves_nothing():
+    """Seeding no direction at all has to leave the forward-mode result at
+    zero, which is what catches a buffer read where none was given.
+    """
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    _, prepared, events, pairs = _train()
+    still = tuple(torch.zeros_like(value) for value in prepared)
+    still_events = tuple(
+        torch.zeros_like(value) for value in (events[0], events[2], events[3])
+    )
+    quiet = torch.zeros(pairs.a.shape + (4,), dtype=torch.float32)
+
+    measured = _run_packed_jvp(
+        prepared, events, still, still_events, 16, ECHOES, 1, -1,
+        dynamic=pairs, dynamic_direction=quiet,
+    )
+
+    assert float(measured.abs().max()) == 0.0

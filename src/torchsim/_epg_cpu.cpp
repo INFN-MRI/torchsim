@@ -341,6 +341,12 @@ struct JvpBuffers {
     const float* duration;
     const float* flip;
     const float* phase;
+    // A direction along the per-voxel rotations, laid out as they are. Under
+    // any other mode the transmit reaches the kernel as a flip and a phase and
+    // this is null; under the dynamic one the array is resolved outside, so a
+    // direction along a channel weight or a sensitivity arrives here already
+    // carried through the integral.
+    const float* dynamic;
 };
 
 using Complex = std::complex<float>;
@@ -2034,6 +2040,27 @@ inline void dynamic_pair_at(
     b = Complex(entry[2], entry[3]);
 }
 
+// The rotation and the direction along it, for a pulse at one voxel.
+inline void dynamic_pair_dual_at(
+    const JvpBuffers& buffers,
+    const std::int64_t event,
+    const std::int64_t atom,
+    DualComplex& a,
+    DualComplex& b
+) {
+    const std::int64_t row =
+        static_cast<std::int64_t>(buffers.primal.dynamic_index[event]);
+    const std::int64_t offset = (row * buffers.primal.atom_count + atom) * 4;
+    const float* const value = buffers.primal.dynamic + offset;
+    const float* const tangent = buffers.dynamic + offset;
+    a = DualComplex{
+        Complex(value[0], value[1]), Complex(tangent[0], tangent[1])
+    };
+    b = DualComplex{
+        Complex(value[2], value[3]), Complex(tangent[2], tangent[3])
+    };
+}
+
 // Which row of the stacked tables this pulse reads: its own shape's block,
 // then the voxel's place along the slice.
 template <RfMode MODE>
@@ -2803,27 +2830,49 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                             value.value *= absorbed.value;
                         }
                     }
-                    if constexpr (PROFILED) {
-                        Complex pair_a{};
-                        Complex pair_b{};
-                        Complex slope_a{};
-                        Complex slope_b{};
-                        profile_pair_slope(
-                            primal, table_row<MODE>(primal, event, location),
-                            alpha, pair_a, pair_b, slope_a, slope_b
-                        );
-                        // The flip angle carries the tangent into the table;
-                        // the RF phase turns the axis after it comes out.
+                    if constexpr (MODE != RfMode::INSTANT) {
                         const Complex turn = std::polar(1.0F, -phi);
-                        const Complex spun = pair_b * turn;
-                        const DualComplex shaped_a{
-                            pair_a, slope_a * alpha_tangent
-                        };
-                        const DualComplex shaped_b{
-                            spun,
-                            slope_b * turn * alpha_tangent
-                                - Complex(0.0F, phi_tangent) * spun,
-                        };
+                        DualComplex shaped_a{};
+                        DualComplex shaped_b{};
+                        if constexpr (MODE == RfMode::DYNAMIC) {
+                            // The array was resolved outside the kernel, so a
+                            // direction along it arrives already carried
+                            // through the pulse integral. Only the phase is
+                            // left to turn the axis by.
+                            DualComplex pair_a{};
+                            DualComplex pair_b{};
+                            dynamic_pair_dual_at(
+                                buffers, event, atom, pair_a, pair_b
+                            );
+                            const Complex spun = pair_b.value * turn;
+                            shaped_a = pair_a;
+                            shaped_b = DualComplex{
+                                spun,
+                                pair_b.tangent * turn
+                                    - Complex(0.0F, phi_tangent) * spun,
+                            };
+                        } else {
+                            Complex pair_a{};
+                            Complex pair_b{};
+                            Complex slope_a{};
+                            Complex slope_b{};
+                            profile_pair_slope(
+                                primal, table_row<MODE>(primal, event, location),
+                                alpha, pair_a, pair_b, slope_a, slope_b
+                            );
+                            // The flip angle carries the tangent into the
+                            // table; the RF phase turns the axis after it
+                            // comes out.
+                            const Complex spun = pair_b * turn;
+                            shaped_a = DualComplex{
+                                pair_a, slope_a * alpha_tangent
+                            };
+                            shaped_b = DualComplex{
+                                spun,
+                                slope_b * turn * alpha_tangent
+                                    - Complex(0.0F, phi_tangent) * spun,
+                            };
+                        }
                         rotate_spinor(
                             fplus, fminus, longitudinal, shaped_a, shaped_b
                         );
@@ -8153,9 +8202,9 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE));
     // The packed buffers, the two output planes, then the transition tables
     // and the per-event index that says which an event reads, then the
-    // per-voxel rotations and their own index, then the bound pool's
-    // lineshape -- all null when the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 7;
+    // per-voxel rotations, their own index and a direction along them, then
+    // the bound pool's lineshape -- all null when the sequence has none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 8;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8188,7 +8237,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<float>(profile_step),
         raw[PACKED_COUNT + 4],
         raw[PACKED_COUNT + 5],
-        raw[PACKED_COUNT + 6],
+        raw[PACKED_COUNT + 7],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
     );
@@ -8392,7 +8441,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     // planes, then the transition tables and the per-event index that says
     // which an event reads, then the bound pool's lineshape -- all null when
     // the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 7;
+    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 8;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8419,13 +8468,13 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 6],
         raw[expected - 5],
-        raw[expected - 4],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 4],
         raw[expected - 3],
-        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
@@ -8448,6 +8497,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *tangent_slots[index] = static_cast<const float*>(raw[tangents + index]);
     }
+    buffers.dynamic = static_cast<const float*>(raw[expected - 2]);
 
     Py_BEGIN_ALLOW_THREADS
     dispatch_jvp(
@@ -8502,7 +8552,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     // input, then the transition tables and the per-event index that says
     // which an event reads -- both null when there is no table -- and the
     // bound pool's lineshape, null when there is no bound pool.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 5;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 6;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8528,13 +8578,13 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 6],
         raw[expected - 5],
-        raw[expected - 4],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 4],
         raw[expected - 3],
-        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
@@ -8862,7 +8912,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     // blocks, then the transition tables and the per-event index that says
     // which an event reads -- both null when there is no table -- and the
     // bound pool's lineshape, null when there is no bound pool.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 5;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 6;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8891,13 +8941,13 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 6],
         raw[expected - 5],
-        raw[expected - 4],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 4],
         raw[expected - 3],
-        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)

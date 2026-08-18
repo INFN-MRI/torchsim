@@ -1161,17 +1161,21 @@ def _profiled_pointers(
 
 
 def _dynamic_pointers(
-    pairs: torch.Tensor | None, rows: torch.Tensor | None
+    pairs: torch.Tensor | None,
+    rows: torch.Tensor | None,
+    direction: torch.Tensor | None,
 ) -> tuple[int, ...]:
-    """The per-voxel rotations' address and its per-event index.
+    """The per-voxel rotations, their per-event index and a direction along them.
 
     A sequence that drives no pulse of varying channel weights passes nulls,
     which is what leaves the kernels on the flip-and-phase operator or on the
-    tabulated one.
+    tabulated one. The direction is null for a pass that follows none.
     """
     if pairs is None:
-        return (0, 0)
-    return _pointers((pairs, rows))
+        return (0, 0, 0)
+    if direction is None:
+        return (*_pointers((pairs, rows)), 0)
+    return _pointers((pairs, rows, direction))
 
 
 def _bound_pointers(
@@ -1181,6 +1185,7 @@ def _bound_pointers(
     absorption: torch.Tensor | None,
     pairs: torch.Tensor | None = None,
     pair_rows: torch.Tensor | None = None,
+    pair_direction: torch.Tensor | None = None,
 ) -> tuple[int, ...]:
     """The profiled addresses, the per-voxel rotations, then the lineshape.
 
@@ -1188,7 +1193,7 @@ def _bound_pointers(
     selects the single-pool kernel.
     """
     profiled = _profiled_pointers(values, table, rows)
-    dynamic = _dynamic_pointers(pairs, pair_rows)
+    dynamic = _dynamic_pointers(pairs, pair_rows, pair_direction)
     if absorption is None:
         return (*profiled, *dynamic, 0)
     return (*profiled, *dynamic, *_pointers((absorption,)))
@@ -2636,6 +2641,8 @@ def _run_packed_jvp(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    dynamic: Any = None,
+    dynamic_direction: Any = None,
 ) -> torch.Tensor:
     profile = _tables(profile, events)
     if profile is not None:
@@ -2763,8 +2770,15 @@ def _run_packed_jvp(
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
     absorption = None if lineshape is None else lineshape.packed()
+    # Bound to names rather than built in the call: the pointers are addresses,
+    # so a buffer only the argument list holds is freed before the kernel runs.
+    pairs = None if dynamic is None else dynamic.packed()
+    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
     _epg_cpu.simulate_jvp(
-        _bound_pointers(pointers, table, table_rows, absorption),
+        _bound_pointers(
+            pointers, table, table_rows, absorption, pairs, pair_rows,
+            dynamic_direction,
+        ),
         tissue[0].numel(),
         trains,
         events[1].numel(),
