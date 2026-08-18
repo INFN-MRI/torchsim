@@ -1164,6 +1164,7 @@ def _dynamic_pointers(
     pairs: torch.Tensor | None,
     rows: torch.Tensor | None,
     direction: torch.Tensor | None,
+    gradient: torch.Tensor | None = None,
 ) -> tuple[int, ...]:
     """The per-voxel rotations, their per-event index and a direction along them.
 
@@ -1172,10 +1173,13 @@ def _dynamic_pointers(
     tabulated one. The direction is null for a pass that follows none.
     """
     if pairs is None:
-        return (0, 0, 0)
-    if direction is None:
-        return (*_pointers((pairs, rows)), 0)
-    return _pointers((pairs, rows, direction))
+        return (0, 0, 0, 0)
+    held = _pointers((pairs, rows))
+    tail = tuple(
+        0 if value is None else _pointers((value,))[0]
+        for value in (direction, gradient)
+    )
+    return (*held, *tail)
 
 
 def _bound_pointers(
@@ -1186,6 +1190,7 @@ def _bound_pointers(
     pairs: torch.Tensor | None = None,
     pair_rows: torch.Tensor | None = None,
     pair_direction: torch.Tensor | None = None,
+    pair_gradient: torch.Tensor | None = None,
 ) -> tuple[int, ...]:
     """The profiled addresses, the per-voxel rotations, then the lineshape.
 
@@ -1193,7 +1198,9 @@ def _bound_pointers(
     selects the single-pool kernel.
     """
     profiled = _profiled_pointers(values, table, rows)
-    dynamic = _dynamic_pointers(pairs, pair_rows, pair_direction)
+    dynamic = _dynamic_pointers(
+        pairs, pair_rows, pair_direction, pair_gradient
+    )
     if absorption is None:
         return (*profiled, *dynamic, 0)
     return (*profiled, *dynamic, *_pointers((absorption,)))
@@ -2358,6 +2365,7 @@ def _run_packed_vjp(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    dynamic: Any = None,
 ) -> tuple[torch.Tensor, ...]:
     """Return gradients w.r.t. the tissue and three float event buffers.
 
@@ -2433,8 +2441,16 @@ def _run_packed_vjp(
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
     absorption = None if lineshape is None else lineshape.packed()
+    # Bound to names rather than built in the call: the pointers are addresses,
+    # so a buffer only the argument list holds is freed before the kernel runs.
+    pairs = None if dynamic is None else dynamic.packed()
+    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
+    pair_grad = None if dynamic is None else torch.zeros_like(pairs)
     _epg_cpu.simulate_vjp(
-        _bound_pointers(pointers, table, table_rows, absorption),
+        _bound_pointers(
+            pointers, table, table_rows, absorption, pairs, pair_rows,
+            None, pair_grad,
+        ),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2451,6 +2467,8 @@ def _run_packed_vjp(
         1.0 if lineshape is None else lineshape.step,
         _pool_kind(lineshape, exchanging),
     )
+    if dynamic is not None:
+        return (*atom_grads, duration_grad, flip_grad, phase_grad, pair_grad)
     return (*atom_grads, duration_grad, flip_grad, phase_grad)
 
 

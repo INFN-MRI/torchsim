@@ -265,6 +265,11 @@ struct Buffers {
     // row an event reads. Null unless the sequence drives a pulse whose
     // channel weights vary while it plays.
     const float* dynamic;
+    // ``dynamic_index`` runs per train and per event, as the flip and the
+    // phase do, because a pulse's rotation belongs to the train that drives
+    // it -- flips vary from train to train. That is also what makes a work
+    // item's rows its own: work runs (train, atom), so no two of them reach
+    // the same entry and the reverse pass needs no accumulation.
     const std::int32_t* dynamic_index;
     std::int64_t locations;
     float profile_step;
@@ -2025,17 +2030,29 @@ inline std::int64_t slice_row(const Buffers& buffers, const std::int64_t atom) {
 // A tabulated pair covers a shape's every pulse because a static array reaches
 // the rotation through one complex scalar; this one is integrated per pulse
 // per voxel, so there is nothing to interpolate and the read is four floats.
+inline std::int64_t dynamic_row(
+    const Buffers& buffers, const TrainView& view, const std::int64_t event
+) {
+    return static_cast<std::int64_t>(
+        buffers.dynamic_index[view.event_base + event]
+    );
+}
+
+inline std::int64_t dynamic_offset(
+    const Buffers& buffers, const std::int64_t row, const std::int64_t atom
+) {
+    return (row * buffers.atom_count + atom) * 4;
+}
+
 inline void dynamic_pair_at(
     const Buffers& buffers,
-    const std::int64_t event,
+    const std::int64_t row,
     const std::int64_t atom,
     Complex& a,
     Complex& b
 ) {
-    const std::int64_t row =
-        static_cast<std::int64_t>(buffers.dynamic_index[event]);
     const float* const entry =
-        buffers.dynamic + (row * buffers.atom_count + atom) * 4;
+        buffers.dynamic + dynamic_offset(buffers, row, atom);
     a = Complex(entry[0], entry[1]);
     b = Complex(entry[2], entry[3]);
 }
@@ -2043,14 +2060,13 @@ inline void dynamic_pair_at(
 // The rotation and the direction along it, for a pulse at one voxel.
 inline void dynamic_pair_dual_at(
     const JvpBuffers& buffers,
-    const std::int64_t event,
+    const std::int64_t row,
     const std::int64_t atom,
     DualComplex& a,
     DualComplex& b
 ) {
-    const std::int64_t row =
-        static_cast<std::int64_t>(buffers.primal.dynamic_index[event]);
-    const std::int64_t offset = (row * buffers.primal.atom_count + atom) * 4;
+    const std::int64_t offset =
+        dynamic_offset(buffers.primal, row, atom);
     const float* const value = buffers.primal.dynamic + offset;
     const float* const tangent = buffers.dynamic + offset;
     a = DualComplex{
@@ -2842,7 +2858,9 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                             DualComplex pair_a{};
                             DualComplex pair_b{};
                             dynamic_pair_dual_at(
-                                buffers, event, atom, pair_a, pair_b
+                                buffers,
+                                dynamic_row(primal, view, event),
+                                atom, pair_a, pair_b
                             );
                             const Complex spun = pair_b.value * turn;
                             shaped_a = pair_a;
@@ -4137,7 +4155,11 @@ void simulate_range(
                             // Already integrated at this pulse's own flip, so
                             // the flip is inside the pair rather than read
                             // against it.
-                            dynamic_pair_at(buffers, event, atom, a, b);
+                            dynamic_pair_at(
+                                buffers,
+                                dynamic_row(buffers, view, event),
+                                atom, a, b
+                            );
                         } else {
                             profile_pair(
                                 buffers,
@@ -4248,6 +4270,10 @@ struct VjpBuffers {
     float* grad_flip;
     float* grad_phase;
     float* grad_duration;
+    // The cotangent on the per-voxel rotations, laid out as they are. A work
+    // item is one (train, atom), and a row belongs to one train, so each of
+    // these entries has exactly one writer.
+    float* grad_dynamic;
 };
 
 using State = std::vector<Complex>;
@@ -4731,14 +4757,22 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             value *= absorbed;
                         }
                     }
-                    if constexpr (PROFILED) {
+                    if constexpr (MODE != RfMode::INSTANT) {
                         Complex pair_a{};
                         Complex pair_b{};
-                        profile_pair(
-                            primal,
-                            table_row<MODE>(primal, event, location),
-                            alpha, pair_a, pair_b
-                        );
+                        if constexpr (MODE == RfMode::DYNAMIC) {
+                            dynamic_pair_at(
+                                primal,
+                                dynamic_row(primal, view, event),
+                                atom, pair_a, pair_b
+                            );
+                        } else {
+                            profile_pair(
+                                primal,
+                                table_row<MODE>(primal, event, location),
+                                alpha, pair_a, pair_b
+                            );
+                        }
                         const Complex spun = pair_b * std::polar(1.0F, -phi);
                         rotate_spinor(
                             fplus, fminus, longitudinal, pair_a, spun
@@ -5041,15 +5075,23 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     }
                     float grad_alpha = 0.0F;
                     float grad_phi = 0.0F;
-                    if constexpr (PROFILED) {
+                    if constexpr (MODE != RfMode::INSTANT) {
                         Complex pair_a{};
                         Complex pair_b{};
                         Complex slope_a{};
                         Complex slope_b{};
-                        profile_pair_slope(
-                            primal, table_row<MODE>(primal, event, location),
-                            alpha, pair_a, pair_b, slope_a, slope_b
-                        );
+                        if constexpr (MODE == RfMode::DYNAMIC) {
+                            dynamic_pair_at(
+                                primal,
+                                dynamic_row(primal, view, event),
+                                atom, pair_a, pair_b
+                            );
+                        } else {
+                            profile_pair_slope(
+                                primal, table_row<MODE>(primal, event, location),
+                                alpha, pair_a, pair_b, slope_a, slope_b
+                            );
+                        }
                         const Complex turn = std::polar(1.0F, -phi);
                         const Complex spun = pair_b * turn;
                         Complex grad_a{};
@@ -5080,14 +5122,36 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                                 grad_b
                             );
                         }
-                        // The flip angle reaches the pair through the slope the
-                        // table stores beside it; the RF phase turns the axis
-                        // once the pair is out, so it reaches ``b`` alone.
-                        grad_alpha = std::real(std::conj(grad_a) * slope_a)
-                            + std::real(std::conj(grad_b) * slope_b * turn);
+                        // The RF phase turns the axis once the pair is out,
+                        // so it reaches ``b`` alone -- under either mode.
                         grad_phi = std::real(
                             std::conj(grad_b) * Complex(0.0F, -1.0F) * spun
                         );
+                        if constexpr (MODE == RfMode::DYNAMIC) {
+                            // The flip is inside the pair rather than read
+                            // against it, so it has no gradient here: the
+                            // cotangent goes out on the pair, and whatever
+                            // integrated it carries the rest.
+                            float* const entry = buffers.grad_dynamic
+                                + dynamic_offset(
+                                    primal,
+                                    dynamic_row(primal, view, event),
+                                    atom
+                                );
+                            // ``b`` was turned by the phase after the pair came
+                            // out, so the cotangent turns back the other way.
+                            const Complex held = grad_b * std::conj(turn);
+                            entry[0] += grad_a.real();
+                            entry[1] += grad_a.imag();
+                            entry[2] += held.real();
+                            entry[3] += held.imag();
+                        } else {
+                            // The flip angle reaches the pair through the slope
+                            // the table stores beside it.
+                            grad_alpha =
+                                std::real(std::conj(grad_a) * slope_a)
+                                + std::real(std::conj(grad_b) * slope_b * turn);
+                        }
                     } else {
                         rotate_adjoint(
                             fplus_shifted,
@@ -8204,7 +8268,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     // and the per-event index that says which an event reads, then the
     // per-voxel rotations, their own index and a direction along them, then
     // the bound pool's lineshape -- all null when the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 8;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 9;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8237,7 +8301,7 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<float>(profile_step),
         raw[PACKED_COUNT + 4],
         raw[PACKED_COUNT + 5],
-        raw[PACKED_COUNT + 7],
+        raw[PACKED_COUNT + 8],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
     );
@@ -8441,7 +8505,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     // planes, then the transition tables and the per-event index that says
     // which an event reads, then the bound pool's lineshape -- all null when
     // the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 8;
+    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 9;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8468,13 +8532,13 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 7],
         raw[expected - 6],
-        raw[expected - 5],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 5],
         raw[expected - 4],
-        raw[expected - 3],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
@@ -8497,7 +8561,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *tangent_slots[index] = static_cast<const float*>(raw[tangents + index]);
     }
-    buffers.dynamic = static_cast<const float*>(raw[expected - 2]);
+    buffers.dynamic = static_cast<const float*>(raw[expected - 3]);
 
     Py_BEGIN_ALLOW_THREADS
     dispatch_jvp(
@@ -8550,9 +8614,10 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     }
     // The packed buffers, the two seed planes, one gradient per differentiable
     // input, then the transition tables and the per-event index that says
-    // which an event reads -- both null when there is no table -- and the
-    // bound pool's lineshape, null when there is no bound pool.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 6;
+    // which an event reads -- both null when there is no table -- then the
+    // per-voxel rotations, their index, a direction along them and the
+    // cotangent that comes back on them, then the bound pool's lineshape.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 7;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8578,13 +8643,13 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 7],
         raw[expected - 6],
-        raw[expected - 5],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 5],
         raw[expected - 4],
-        raw[expected - 3],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
@@ -8608,6 +8673,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     for (std::size_t index = 0; index < FLOAT_COUNT; ++index) {
         *grad_slots[index] = static_cast<float*>(raw[grads + index]);
     }
+    buffers.grad_dynamic = static_cast<float*>(raw[expected - 2]);
 
     const std::int64_t work_count =
         static_cast<std::int64_t>(atom_count) * static_cast<std::int64_t>(train_count);
@@ -8912,7 +8978,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     // blocks, then the transition tables and the per-event index that says
     // which an event reads -- both null when there is no table -- and the
     // bound pool's lineshape, null when there is no bound pool.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 6;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 7;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8941,13 +9007,13 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
+        raw[expected - 7],
         raw[expected - 6],
-        raw[expected - 5],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 5],
         raw[expected - 4],
-        raw[expected - 3],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)

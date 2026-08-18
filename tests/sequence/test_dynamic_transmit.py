@@ -490,3 +490,75 @@ def test_a_direction_along_nothing_moves_nothing():
     )
 
     assert float(measured.abs().max()) == 0.0
+
+
+def test_the_host_adjoint_returns_the_cotangent_on_the_pair():
+    """Under the dynamic mode the flip is inside the pair rather than read
+    against it, so it has no gradient in the kernel: the cotangent comes out on
+    the rotation itself and whatever integrated it carries the rest.
+
+    A row belongs to one train and a work item is one (train, atom), so every
+    entry has exactly one writer and the reverse pass accumulates nothing
+    across threads.
+    """
+    from torchsim.sequence._accelerators import _run_packed, _run_packed_vjp
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    generator = torch.Generator().manual_seed(21)
+    seed = torch.complex(
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+    )
+
+    gradient = _run_packed_vjp(
+        prepared, events, seed, state_count=16, output_count=ECHOES,
+        threads=1, dynamic=pairs,
+    )[-1]
+
+    assert gradient.shape == pairs.a.shape + (4,)
+    assert float(gradient.abs().max()) > 0.0
+
+    direction = (
+        torch.randn(pairs.a.shape + (4,), generator=generator) * 0.05
+    ).contiguous()
+    step = 3e-2
+
+    def reading(pair):
+        recorded = _run_packed(prepared, events, 16, ECHOES, 1, dynamic=pair)
+        return float((seed.conj() * recorded).real.sum())
+
+    def moved(sign):
+        packed = pairs.packed() + sign * step * direction
+        return DynamicPairs(
+            a=torch.complex(packed[..., 0], packed[..., 1]).to(torch.complex64),
+            b=torch.complex(packed[..., 2], packed[..., 3]).to(torch.complex64),
+            index=pairs.index,
+        )
+
+    difference = (reading(moved(+1)) - reading(moved(-1))) / (2.0 * step)
+    along = float((gradient * direction).sum())
+
+    assert abs(difference) > 0.0
+    assert abs(along - difference) / abs(difference) < 1e-3
+
+
+def test_a_sequence_with_no_pair_still_gets_the_gradients_it_did():
+    """The pair's arrival adds a buffer to every entry point's tail, so a run
+    that fills none of it has to come back exactly as it was.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    _, prepared, events, _ = _train()
+    generator = torch.Generator().manual_seed(23)
+    seed = torch.complex(
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+    )
+
+    gradients = _run_packed_vjp(
+        prepared, events, seed, state_count=16, output_count=ECHOES, threads=1
+    )
+
+    assert len(gradients) == len(prepared) + 3
+    assert any(float(value.abs().max()) > 0.0 for value in gradients)
