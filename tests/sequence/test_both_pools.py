@@ -756,6 +756,53 @@ def test_the_fused_adjoint_matches_the_oracle():
     assert compared > 8
 
 
+def test_the_fused_second_order_matches_the_oracle():
+    """Autograd differentiates the oracle to whatever order is asked of it, so
+    the analytic kernels are read against it rather than against a difference.
+
+    Held an order looser than the first-order comparison beside it. A second
+    derivative in float32 keeps about half the digits its value does, and the
+    contraction against a direction cancels: taken one direction at a time the
+    cross derivatives here agree to 6e-3, and the terms that look worse than
+    that sit at 1e-11 against a row whose largest entry is 1e-3.
+    """
+    events = _train_events()
+    generator = torch.Generator().manual_seed(31)
+    seed = torch.randn(
+        (1, ECHOES), generator=generator, dtype=torch.float32
+    ) + 1j * torch.randn((1, ECHOES), generator=generator, dtype=torch.float32)
+    # Drawn once, so the two routes are contracted against the same direction.
+    direction = tuple(
+        torch.randn(value.shape, generator=generator, dtype=torch.float32)
+        for value in _oracle_leaves()
+    )
+
+    def curvature(route: int):
+        leaves = _oracle_leaves()
+        first = torch.autograd.grad(
+            _routes(leaves, events)[route],
+            leaves,
+            seed,
+            create_graph=True,
+            allow_unused=True,
+            materialize_grads=True,
+        )
+        return torch.autograd.grad(
+            first, leaves, direction, allow_unused=True, materialize_grads=True
+        )
+
+    want, got = curvature(1), curvature(0)
+    floor = 1e-6 * max(float(value.abs().max()) for value in want)
+    compared = 0
+    for index, (expected, measured) in enumerate(zip(want, got, strict=True)):
+        scale = float(expected.abs().max())
+        if scale <= floor:
+            continue
+        assert float((expected - measured).abs().max()) / scale < 1e-2, index
+        compared += 1
+    assert compared > 8
+
+
 # --- the other backend ---
 
 
