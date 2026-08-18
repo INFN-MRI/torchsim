@@ -1186,19 +1186,20 @@ def _pool_kind(lineshape: Any, exchanging: bool) -> int:
 
 
 def _one_or_two_pools(lineshape: Any, exchanging: bool) -> None:
-    """Refuse a derivative of a three-pool run.
+    """Refuse an adjoint of a three-pool run.
 
-    The forward carries all three pools; the derivative kernels carry two, so
-    asked for the Jacobian of a three-pool run they would answer with a
-    two-pool machine's -- a wrong number rather than a missing one.
+    The forward and its forward mode carry all three pools; the reverse
+    kernels carry two, so asked for the transpose of a three-pool Jacobian
+    they would answer with a two-pool machine's -- a wrong number rather than
+    a missing one.
 
     Raises:
         NotImplementedError: if the forward carried three pools.
     """
     if lineshape is not None and exchanging:
         raise NotImplementedError(
-            "the derivative kernels carry two pools; a semisolid pool beside a "
-            "chemically exchanging one reaches the forward machine only"
+            "the reverse kernels carry two pools; a semisolid pool beside a "
+            "chemically exchanging one reaches the forward passes only"
         )
 
 
@@ -2590,7 +2591,6 @@ def _run_packed_jvp(
     lineshape: Any = None,
     exchanging: bool = False,
 ) -> torch.Tensor:
-    _one_or_two_pools(lineshape, exchanging)
     profile = _tables(profile, events)
     if profile is not None:
         _within_the_table(profile, events[2])

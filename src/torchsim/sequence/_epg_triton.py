@@ -423,6 +423,404 @@ def _three_pool_step(
 
 
 @triton.jit
+def _exp_difference_jvp(lower, d_lower, upper, d_upper, low_exp, high_exp):
+    """``[a, b] exp`` and its directional derivative.
+
+    The derivative of a divided difference is the next one along,
+    ``d/da [a,b] = [a,a,b]``, which near the coalescence is again a series in
+    the gap's square rather than a quotient that vanishes over a vanishing
+    denominator.
+    """
+    half = 0.5 * (upper - lower)
+    d_half = 0.5 * (d_upper - d_lower)
+    mid = 0.5 * (lower + upper)
+    d_mid = 0.5 * (d_lower + d_upper)
+    near = tl.abs(half) < _SINCH_CUT
+    square = half * half
+    d_square = 2.0 * half * d_half
+    # exp(mid) * sinh(half)/half, both factors expanded about zero.
+    lift = low_exp * (1.0 + half + 0.5 * square)
+    d_lift = low_exp * (d_lower * (1.0 + half + 0.5 * square) + d_half + half * d_half)
+    sinch = 1.0 + square / 6.0 + square * square / 120.0
+    d_sinch = d_square / 6.0 + 2.0 * square * d_square / 120.0
+    series = lift * sinch
+    d_series = d_lift * sinch + lift * d_sinch
+    gap = tl.where(near, 1.0, upper - lower)
+    d_gap = tl.where(near, 0.0, d_upper - d_lower)
+    quotient = (high_exp - low_exp) / gap
+    d_quotient = (
+        high_exp * d_upper - low_exp * d_lower - quotient * d_gap
+    ) / gap
+    return tl.where(near, series, quotient), tl.where(near, d_series, d_quotient)
+
+
+@triton.jit
+def _three_pool_step_jvp(
+    r1_free, d_r1_free, r1_pool_b, d_r1_pool_b, r1_bound, d_r1_bound,
+    exchange_b, d_exchange_b, exchange_c, d_exchange_c,
+    fraction_b, d_fraction_b, fraction_c, d_fraction_c,
+    dt, d_dt, attenuation, d_attenuation,
+):
+    """The three-pool longitudinal step and its directional derivative.
+
+    The same closed form :func:`_three_pool_step` evaluates, carried alongside
+    a tangent and in the same double precision -- a direction through an
+    operator this ill-conditioned needs the width as much as the value does.
+    Returns the nine entries and three recoveries, then their twelve tangents.
+    """
+    step = dt.to(tl.float64)
+    d_step = d_dt.to(tl.float64)
+    free = (1.0 - fraction_b - fraction_c).to(tl.float64)
+    d_free = (-d_fraction_b - d_fraction_c).to(tl.float64)
+    pool_b = fraction_b.to(tl.float64)
+    d_pool_b = d_fraction_b.to(tl.float64)
+    pool_c = fraction_c.to(tl.float64)
+    d_pool_c = d_fraction_c.to(tl.float64)
+    rate_b = exchange_b.to(tl.float64)
+    d_rate_b = d_exchange_b.to(tl.float64)
+    rate_c = exchange_c.to(tl.float64)
+    d_rate_c = d_exchange_c.to(tl.float64)
+    kab = rate_b * pool_b
+    d_kab = d_rate_b * pool_b + rate_b * d_pool_b
+    kba = rate_b * free
+    d_kba = d_rate_b * free + rate_b * d_free
+    kac = rate_c * pool_c
+    d_kac = d_rate_c * pool_c + rate_c * d_pool_c
+    kca = rate_c * free
+    d_kca = d_rate_c * free + rate_c * d_free
+    row_a = -kab - kac - r1_free.to(tl.float64)
+    d_row_a = -d_kab - d_kac - d_r1_free.to(tl.float64)
+    row_b = -kba - r1_pool_b.to(tl.float64)
+    d_row_b = -d_kba - d_r1_pool_b.to(tl.float64)
+    row_c = -kca - r1_bound.to(tl.float64)
+    d_row_c = -d_kca - d_r1_bound.to(tl.float64)
+    a00 = row_a * step
+    d_a00 = d_row_a * step + row_a * d_step
+    a01 = kba * step
+    d_a01 = d_kba * step + kba * d_step
+    a02 = kca * step
+    d_a02 = d_kca * step + kca * d_step
+    a10 = kab * step
+    d_a10 = d_kab * step + kab * d_step
+    a11 = row_b * step
+    d_a11 = d_row_b * step + row_b * d_step
+    a20 = kac * step
+    d_a20 = d_kac * step + kac * d_step
+    a22 = row_c * step
+    d_a22 = d_row_c * step + row_c * d_step
+
+    third = (a00 + a11 + a22) / 3.0
+    d_third = (d_a00 + d_a11 + d_a22) / 3.0
+    s00 = a00 - third
+    d_s00 = d_a00 - d_third
+    s11 = a11 - third
+    d_s11 = d_a11 - d_third
+    s22 = a22 - third
+    d_s22 = d_a22 - d_third
+    minors = s00 * s11 - a01 * a10 + s00 * s22 - a02 * a20 + s11 * s22
+    d_minors = (
+        d_s00 * s11 + s00 * d_s11 - d_a01 * a10 - a01 * d_a10
+        + d_s00 * s22 + s00 * d_s22 - d_a02 * a20 - a02 * d_a20
+        + d_s11 * s22 + s11 * d_s22
+    )
+    determinant = s00 * s11 * s22 - a01 * (a10 * s22) + a02 * (-s11 * a20)
+    d_determinant = (
+        d_s00 * s11 * s22 + s00 * d_s11 * s22 + s00 * s11 * d_s22
+        - d_a01 * a10 * s22 - a01 * d_a10 * s22 - a01 * a10 * d_s22
+        - d_a02 * s11 * a20 - a02 * d_s11 * a20 - a02 * s11 * d_a20
+    )
+
+    # --- close together: the series reduced modulo x^3 + minors x - det ---
+    flat = 1.0 + 0.0 * third
+    linear = 0.0 * third
+    square = 0.0 * third
+    d_flat = 0.0 * third
+    d_linear = 0.0 * third
+    d_square = 0.0 * third
+    sum_flat = flat
+    sum_linear = linear
+    sum_square = square
+    d_sum_flat = d_flat
+    d_sum_linear = d_linear
+    d_sum_square = d_square
+    factorial = 1.0
+    for order in tl.static_range(1, 16):
+        next_flat = square * determinant
+        d_next_flat = d_square * determinant + square * d_determinant
+        next_linear = flat - square * minors
+        d_next_linear = d_flat - d_square * minors - square * d_minors
+        next_square = linear
+        d_next_square = d_linear
+        flat = next_flat
+        linear = next_linear
+        square = next_square
+        d_flat = d_next_flat
+        d_linear = d_next_linear
+        d_square = d_next_square
+        factorial = factorial * order
+        weight = 1.0 / factorial
+        sum_flat = sum_flat + weight * flat
+        sum_linear = sum_linear + weight * linear
+        sum_square = sum_square + weight * square
+        d_sum_flat = d_sum_flat + weight * d_flat
+        d_sum_linear = d_sum_linear + weight * d_linear
+        d_sum_square = d_sum_square + weight * d_square
+    lift = tl.exp(third)
+    d_lift = lift * d_third
+
+    # --- far apart: the Newton form at the three roots ---
+    inside = -minors * (1.0 / 3.0)
+    d_inside = -d_minors * (1.0 / 3.0)
+    radius = tl.sqrt(tl.maximum(inside, 1e-300))
+    d_radius = tl.where(inside > 0.0, 0.5 * d_inside / radius, 0.0)
+    cube = radius * radius * radius
+    raw = 0.5 * determinant / cube
+    d_raw = (0.5 * d_determinant - raw * 3.0 * radius * radius * d_radius) / cube
+    inside_limit = (raw > -_ARG_LIMIT) & (raw < _ARG_LIMIT)
+    argument = tl.minimum(tl.maximum(raw, -_ARG_LIMIT), _ARG_LIMIT)
+    d_argument = tl.where(inside_limit, d_raw, 0.0)
+    angle = libdevice.acos(argument) / 3.0
+    d_angle = -d_argument / (
+        3.0 * tl.sqrt(tl.maximum(1.0 - argument * argument, 1e-300))
+    )
+    root_a = 2.0 * radius * tl.cos(angle) + third
+    d_root_a = (
+        2.0 * d_radius * tl.cos(angle)
+        - 2.0 * radius * tl.sin(angle) * d_angle
+        + d_third
+    )
+    root_b = 2.0 * radius * tl.cos(angle - _TURN_THIRD) + third
+    d_root_b = (
+        2.0 * d_radius * tl.cos(angle - _TURN_THIRD)
+        - 2.0 * radius * tl.sin(angle - _TURN_THIRD) * d_angle
+        + d_third
+    )
+    root_c = 2.0 * radius * tl.cos(angle - 2.0 * _TURN_THIRD) + third
+    d_root_c = (
+        2.0 * d_radius * tl.cos(angle - 2.0 * _TURN_THIRD)
+        - 2.0 * radius * tl.sin(angle - 2.0 * _TURN_THIRD) * d_angle
+        + d_third
+    )
+    # Sorting is a permutation, so the tangents follow their own values.
+    low = tl.minimum(tl.minimum(root_a, root_b), root_c)
+    high = tl.maximum(tl.maximum(root_a, root_b), root_c)
+    middle = tl.maximum(
+        tl.minimum(root_a, root_b), tl.minimum(tl.maximum(root_a, root_b), root_c)
+    )
+    d_low = tl.where(root_a == low, d_root_a, tl.where(root_b == low, d_root_b, d_root_c))
+    d_high = tl.where(
+        root_a == high, d_root_a, tl.where(root_b == high, d_root_b, d_root_c)
+    )
+    d_middle = tl.where(
+        root_a == middle, d_root_a, tl.where(root_b == middle, d_root_b, d_root_c)
+    )
+    leading = tl.exp(low)
+    d_leading = leading * d_low
+    centre = tl.exp(middle)
+    d_centre = centre * d_middle
+    trailing = tl.exp(high)
+    d_trailing = trailing * d_high
+    first, d_first = _exp_difference_jvp(low, d_low, middle, d_middle, leading, centre)
+    upper, d_upper = _exp_difference_jvp(
+        middle, d_middle, high, d_high, centre, trailing
+    )
+    span = high - low
+    d_span = d_high - d_low
+    guarded = tl.where(span > 0.0, span, 1.0)
+    d_guarded = tl.where(span > 0.0, d_span, 0.0)
+    second = (upper - first) / guarded
+    d_second = (d_upper - d_first - second * d_guarded) / guarded
+
+    # --- the shifted generator squared, for the series branch ---
+    q00 = s00 * s00 + a01 * a10 + a02 * a20
+    d_q00 = 2.0 * s00 * d_s00 + d_a01 * a10 + a01 * d_a10 + d_a02 * a20 + a02 * d_a20
+    q01 = a01 * (s00 + s11)
+    d_q01 = d_a01 * (s00 + s11) + a01 * (d_s00 + d_s11)
+    q02 = a02 * (s00 + s22)
+    d_q02 = d_a02 * (s00 + s22) + a02 * (d_s00 + d_s22)
+    q10 = a10 * (s00 + s11)
+    d_q10 = d_a10 * (s00 + s11) + a10 * (d_s00 + d_s11)
+    q11 = a10 * a01 + s11 * s11
+    d_q11 = d_a10 * a01 + a10 * d_a01 + 2.0 * s11 * d_s11
+    q12 = a10 * a02
+    d_q12 = d_a10 * a02 + a10 * d_a02
+    q20 = a20 * (s00 + s22)
+    d_q20 = d_a20 * (s00 + s22) + a20 * (d_s00 + d_s22)
+    q21 = a20 * a01
+    d_q21 = d_a20 * a01 + a20 * d_a01
+    q22 = a20 * a02 + s22 * s22
+    d_q22 = d_a20 * a02 + a20 * d_a02 + 2.0 * s22 * d_s22
+
+    c00 = lift * (sum_flat + sum_linear * s00 + sum_square * q00)
+    d_c00 = d_lift * (sum_flat + sum_linear * s00 + sum_square * q00) + lift * (
+        d_sum_flat + d_sum_linear * s00 + sum_linear * d_s00
+        + d_sum_square * q00 + sum_square * d_q00
+    )
+    c01 = lift * (sum_linear * a01 + sum_square * q01)
+    d_c01 = d_lift * (sum_linear * a01 + sum_square * q01) + lift * (
+        d_sum_linear * a01 + sum_linear * d_a01
+        + d_sum_square * q01 + sum_square * d_q01
+    )
+    c02 = lift * (sum_linear * a02 + sum_square * q02)
+    d_c02 = d_lift * (sum_linear * a02 + sum_square * q02) + lift * (
+        d_sum_linear * a02 + sum_linear * d_a02
+        + d_sum_square * q02 + sum_square * d_q02
+    )
+    c10 = lift * (sum_linear * a10 + sum_square * q10)
+    d_c10 = d_lift * (sum_linear * a10 + sum_square * q10) + lift * (
+        d_sum_linear * a10 + sum_linear * d_a10
+        + d_sum_square * q10 + sum_square * d_q10
+    )
+    c11 = lift * (sum_flat + sum_linear * s11 + sum_square * q11)
+    d_c11 = d_lift * (sum_flat + sum_linear * s11 + sum_square * q11) + lift * (
+        d_sum_flat + d_sum_linear * s11 + sum_linear * d_s11
+        + d_sum_square * q11 + sum_square * d_q11
+    )
+    c12 = lift * (sum_square * q12)
+    d_c12 = d_lift * (sum_square * q12) + lift * (
+        d_sum_square * q12 + sum_square * d_q12
+    )
+    c20 = lift * (sum_linear * a20 + sum_square * q20)
+    d_c20 = d_lift * (sum_linear * a20 + sum_square * q20) + lift * (
+        d_sum_linear * a20 + sum_linear * d_a20
+        + d_sum_square * q20 + sum_square * d_q20
+    )
+    c21 = lift * (sum_square * q21)
+    d_c21 = d_lift * (sum_square * q21) + lift * (
+        d_sum_square * q21 + sum_square * d_q21
+    )
+    c22 = lift * (sum_flat + sum_linear * s22 + sum_square * q22)
+    d_c22 = d_lift * (sum_flat + sum_linear * s22 + sum_square * q22) + lift * (
+        d_sum_flat + d_sum_linear * s22 + sum_linear * d_s22
+        + d_sum_square * q22 + sum_square * d_q22
+    )
+
+    # --- the Newton form's two factors, for the eigenvalue branch ---
+    m00 = a00 - low
+    d_m00 = d_a00 - d_low
+    m11 = a11 - low
+    d_m11 = d_a11 - d_low
+    m22 = a22 - low
+    d_m22 = d_a22 - d_low
+    n00 = a00 - middle
+    d_n00 = d_a00 - d_middle
+    n11 = a11 - middle
+    d_n11 = d_a11 - d_middle
+    n22 = a22 - middle
+    d_n22 = d_a22 - d_middle
+    p00 = m00 * n00 + a01 * a10 + a02 * a20
+    d_p00 = (
+        d_m00 * n00 + m00 * d_n00 + d_a01 * a10 + a01 * d_a10
+        + d_a02 * a20 + a02 * d_a20
+    )
+    p01 = a01 * (m00 + n11)
+    d_p01 = d_a01 * (m00 + n11) + a01 * (d_m00 + d_n11)
+    p02 = a02 * (m00 + n22)
+    d_p02 = d_a02 * (m00 + n22) + a02 * (d_m00 + d_n22)
+    p10 = a10 * (n00 + m11)
+    d_p10 = d_a10 * (n00 + m11) + a10 * (d_n00 + d_m11)
+    p11 = a10 * a01 + m11 * n11
+    d_p11 = d_a10 * a01 + a10 * d_a01 + d_m11 * n11 + m11 * d_n11
+    p12 = a10 * a02
+    d_p12 = d_a10 * a02 + a10 * d_a02
+    p20 = a20 * (n00 + m22)
+    d_p20 = d_a20 * (n00 + m22) + a20 * (d_n00 + d_m22)
+    p21 = a20 * a01
+    d_p21 = d_a20 * a01 + a20 * d_a01
+    p22 = a20 * a02 + m22 * n22
+    d_p22 = d_a20 * a02 + a20 * d_a02 + d_m22 * n22 + m22 * d_n22
+
+    e00 = leading + first * m00 + second * p00
+    d_e00 = d_leading + d_first * m00 + first * d_m00 + d_second * p00 + second * d_p00
+    e01 = first * a01 + second * p01
+    d_e01 = d_first * a01 + first * d_a01 + d_second * p01 + second * d_p01
+    e02 = first * a02 + second * p02
+    d_e02 = d_first * a02 + first * d_a02 + d_second * p02 + second * d_p02
+    e10 = first * a10 + second * p10
+    d_e10 = d_first * a10 + first * d_a10 + d_second * p10 + second * d_p10
+    e11 = leading + first * m11 + second * p11
+    d_e11 = d_leading + d_first * m11 + first * d_m11 + d_second * p11 + second * d_p11
+    e12 = second * p12
+    d_e12 = d_second * p12 + second * d_p12
+    e20 = first * a20 + second * p20
+    d_e20 = d_first * a20 + first * d_a20 + d_second * p20 + second * d_p20
+    e21 = second * p21
+    d_e21 = d_second * p21 + second * d_p21
+    e22 = leading + first * m22 + second * p22
+    d_e22 = d_leading + d_first * m22 + first * d_m22 + d_second * p22 + second * d_p22
+
+    close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
+    damp = attenuation.to(tl.float64)
+    d_damp = d_attenuation.to(tl.float64)
+
+    def_00 = tl.where(close, c00, e00)
+    dif_00 = tl.where(close, d_c00, d_e00)
+    def_01 = tl.where(close, c01, e01)
+    dif_01 = tl.where(close, d_c01, d_e01)
+    def_02 = tl.where(close, c02, e02)
+    dif_02 = tl.where(close, d_c02, d_e02)
+    def_10 = tl.where(close, c10, e10)
+    dif_10 = tl.where(close, d_c10, d_e10)
+    def_11 = tl.where(close, c11, e11)
+    dif_11 = tl.where(close, d_c11, d_e11)
+    def_12 = tl.where(close, c12, e12)
+    dif_12 = tl.where(close, d_c12, d_e12)
+    def_20 = tl.where(close, c20, e20)
+    dif_20 = tl.where(close, d_c20, d_e20)
+    def_21 = tl.where(close, c21, e21)
+    dif_21 = tl.where(close, d_c21, d_e21)
+    def_22 = tl.where(close, c22, e22)
+    dif_22 = tl.where(close, d_c22, d_e22)
+
+    w00 = damp * def_00
+    dw00 = d_damp * def_00 + damp * dif_00
+    w01 = damp * def_01
+    dw01 = d_damp * def_01 + damp * dif_01
+    w02 = damp * def_02
+    dw02 = d_damp * def_02 + damp * dif_02
+    w10 = damp * def_10
+    dw10 = d_damp * def_10 + damp * dif_10
+    w11 = damp * def_11
+    dw11 = d_damp * def_11 + damp * dif_11
+    w12 = damp * def_12
+    dw12 = d_damp * def_12 + damp * dif_12
+    w20 = damp * def_20
+    dw20 = d_damp * def_20 + damp * dif_20
+    w21 = damp * def_21
+    dw21 = d_damp * def_21 + damp * dif_21
+    w22 = damp * def_22
+    dw22 = d_damp * def_22 + damp * dif_22
+
+    grow_free = free - (w00 * free + w01 * pool_b + w02 * pool_c)
+    d_grow_free = d_free - (
+        dw00 * free + w00 * d_free + dw01 * pool_b + w01 * d_pool_b
+        + dw02 * pool_c + w02 * d_pool_c
+    )
+    grow_pool_b = pool_b - (w10 * free + w11 * pool_b + w12 * pool_c)
+    d_grow_pool_b = d_pool_b - (
+        dw10 * free + w10 * d_free + dw11 * pool_b + w11 * d_pool_b
+        + dw12 * pool_c + w12 * d_pool_c
+    )
+    grow_bound = pool_c - (w20 * free + w21 * pool_b + w22 * pool_c)
+    d_grow_bound = d_pool_c - (
+        dw20 * free + w20 * d_free + dw21 * pool_b + w21 * d_pool_b
+        + dw22 * pool_c + w22 * d_pool_c
+    )
+    return (
+        w00.to(tl.float32), w01.to(tl.float32), w02.to(tl.float32),
+        w10.to(tl.float32), w11.to(tl.float32), w12.to(tl.float32),
+        w20.to(tl.float32), w21.to(tl.float32), w22.to(tl.float32),
+        grow_free.to(tl.float32), grow_pool_b.to(tl.float32),
+        grow_bound.to(tl.float32),
+        dw00.to(tl.float32), dw01.to(tl.float32), dw02.to(tl.float32),
+        dw10.to(tl.float32), dw11.to(tl.float32), dw12.to(tl.float32),
+        dw20.to(tl.float32), dw21.to(tl.float32), dw22.to(tl.float32),
+        d_grow_free.to(tl.float32), d_grow_pool_b.to(tl.float32),
+        d_grow_bound.to(tl.float32),
+    )
+
+
+@triton.jit
 def _complex_sqrt(real, imag):
     """A square root of a complex number carried as a pair of floats.
 
@@ -5792,6 +6190,12 @@ def _epg_jvp_kernel(
     d_r2_bound = 0.0
     atom_shift = 0.0
     d_shift = 0.0
+    atom_semisolid = 0.0
+    d_semisolid = 0.0
+    atom_semisolid_exchange = 0.0
+    d_semisolid_exchange = 0.0
+    atom_r1_semisolid = 0.0
+    d_r1_semisolid = 0.0
     if pools == 1:
         atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
         d_bound = tl.load(
@@ -5806,7 +6210,7 @@ def _epg_jvp_kernel(
         d_r1_bound = -1000.0 * tl.load(
             tangent_t1_bound + atom, mask=active_atom, other=0.0
         ) / (held_t1 * held_t1)
-    if pools == 2:
+    if pools == 2 or pools == 3:
         atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
         d_bound = tl.load(
             tangent_pool_b_fraction + atom, mask=active_atom, other=0.0
@@ -5831,15 +6235,37 @@ def _epg_jvp_kernel(
         d_shift = tl.load(
             tangent_pool_b_shift + atom, mask=active_atom, other=0.0
         )
-    zr = empty + tl.where(state == 0, 1.0 - atom_bound, 0.0)
+    if pools == 3:
+        atom_semisolid = tl.load(
+            bound_fraction + atom, mask=active_atom, other=0.0
+        )
+        d_semisolid = tl.load(
+            tangent_bound_fraction + atom, mask=active_atom, other=0.0
+        )
+        atom_semisolid_exchange = tl.load(
+            exchange_rate + atom, mask=active_atom, other=0.0
+        )
+        d_semisolid_exchange = tl.load(
+            tangent_exchange_rate + atom, mask=active_atom, other=0.0
+        )
+        held_semisolid = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        atom_r1_semisolid = 1000.0 / held_semisolid
+        d_r1_semisolid = -1000.0 * tl.load(
+            tangent_t1_bound + atom, mask=active_atom, other=0.0
+        ) / (held_semisolid * held_semisolid)
+    zr = empty + tl.where(state == 0, 1.0 - atom_bound - atom_semisolid, 0.0)
     zi = empty
     br = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
     bi = empty
+    cr = empty + tl.where(state == 0, atom_semisolid + 0.0, 0.0)
+    ci = empty
+    dcr = empty + tl.where(state == 0, d_semisolid + 0.0, 0.0)
+    dci = empty
     dfpr = empty
     dfpi = empty
     dfmr = empty
     dfmi = empty
-    dzr = empty + tl.where(state == 0, -d_bound, 0.0)
+    dzr = empty + tl.where(state == 0, -d_bound - d_semisolid, 0.0)
     dzi = empty
     dbr = empty + tl.where(state == 0, d_bound + 0.0, 0.0)
     dbi = empty
@@ -5925,7 +6351,7 @@ def _epg_jvp_kernel(
         doff_cos = -off_sin * doff_phase
         doff_sin = off_cos * doff_phase
 
-        if pools == 2:
+        if pools == 2 or pools == 3:
             # Both pools take the same off-resonance and per-order damping;
             # what separates them is the chemical shift, which the exchange
             # operator already carries.
@@ -6094,7 +6520,93 @@ def _epg_jvp_kernel(
             + old_dzi * turn_cos
             + old_zi * dturn_cos
         )
-        if pools > 0:
+        if pools == 3:
+            # Three pools mix through a 3x3 formed in double, tangent and all:
+            # a direction through an operator this ill-conditioned needs the
+            # width as much as the value does.
+            (
+                t11, t12, t13, t21, t22, t23, t31, t32, t33,
+                grow_free, grow_pool_b, grow_semisolid,
+                d_t11, d_t12, d_t13, d_t21, d_t22, d_t23, d_t31, d_t32, d_t33,
+                d_grow_free, d_grow_pool_b, d_grow_semisolid,
+            ) = _three_pool_step_jvp(
+                r1, -1000.0 * dt1 / (atom_t1 * atom_t1),
+                atom_r1_bound, d_r1_bound,
+                atom_r1_semisolid, d_r1_semisolid,
+                atom_exchange, d_exchange,
+                atom_semisolid_exchange, d_semisolid_exchange,
+                atom_bound, d_bound,
+                atom_semisolid, d_semisolid,
+                event_dt, ddt, wout, dwout,
+            )
+            spun_hr = br * turn_cos - bi * turn_sin
+            spun_hi = br * turn_sin + bi * turn_cos
+            dspun_hr = (
+                dbr * turn_cos + br * dturn_cos - dbi * turn_sin - bi * dturn_sin
+            )
+            dspun_hi = (
+                dbr * turn_sin + br * dturn_sin + dbi * turn_cos + bi * dturn_cos
+            )
+            spun_cr = cr * turn_cos - ci * turn_sin
+            spun_ci = cr * turn_sin + ci * turn_cos
+            dspun_cr = (
+                dcr * turn_cos + cr * dturn_cos - dci * turn_sin - ci * dturn_sin
+            )
+            dspun_ci = (
+                dcr * turn_sin + cr * dturn_sin + dci * turn_cos + ci * dturn_cos
+            )
+            free_r = t11 * spun_zr + t12 * spun_hr + t13 * spun_cr
+            free_i = t11 * spun_zi + t12 * spun_hi + t13 * spun_ci
+            held_r = t21 * spun_zr + t22 * spun_hr + t23 * spun_cr
+            held_i = t21 * spun_zi + t22 * spun_hi + t23 * spun_ci
+            stuck_r = t31 * spun_zr + t32 * spun_hr + t33 * spun_cr
+            stuck_i = t31 * spun_zi + t32 * spun_hi + t33 * spun_ci
+            d_free_r = (
+                d_t11 * spun_zr + t11 * dspun_zr + d_t12 * spun_hr + t12 * dspun_hr
+                + d_t13 * spun_cr + t13 * dspun_cr
+            )
+            d_free_i = (
+                d_t11 * spun_zi + t11 * dspun_zi + d_t12 * spun_hi + t12 * dspun_hi
+                + d_t13 * spun_ci + t13 * dspun_ci
+            )
+            d_held_r = (
+                d_t21 * spun_zr + t21 * dspun_zr + d_t22 * spun_hr + t22 * dspun_hr
+                + d_t23 * spun_cr + t23 * dspun_cr
+            )
+            d_held_i = (
+                d_t21 * spun_zi + t21 * dspun_zi + d_t22 * spun_hi + t22 * dspun_hi
+                + d_t23 * spun_ci + t23 * dspun_ci
+            )
+            d_stuck_r = (
+                d_t31 * spun_zr + t31 * dspun_zr + d_t32 * spun_hr + t32 * dspun_hr
+                + d_t33 * spun_cr + t33 * dspun_cr
+            )
+            d_stuck_i = (
+                d_t31 * spun_zi + t31 * dspun_zi + d_t32 * spun_hi + t32 * dspun_hi
+                + d_t33 * spun_ci + t33 * dspun_ci
+            )
+            zr = damp_z * free_r + tl.where(state == 0, grow_free, 0.0)
+            zi = damp_z * free_i
+            dzr = (
+                ddamp_z * free_r + damp_z * d_free_r
+                + tl.where(state == 0, d_grow_free, 0.0)
+            )
+            dzi = ddamp_z * free_i + damp_z * d_free_i
+            br = damp_z * held_r + tl.where(state == 0, grow_pool_b, 0.0)
+            bi = damp_z * held_i
+            dbr = (
+                ddamp_z * held_r + damp_z * d_held_r
+                + tl.where(state == 0, d_grow_pool_b, 0.0)
+            )
+            dbi = ddamp_z * held_i + damp_z * d_held_i
+            cr = damp_z * stuck_r + tl.where(state == 0, grow_semisolid, 0.0)
+            ci = damp_z * stuck_i
+            dcr = (
+                ddamp_z * stuck_r + damp_z * d_stuck_r
+                + tl.where(state == 0, d_grow_semisolid, 0.0)
+            )
+            dci = ddamp_z * stuck_i + damp_z * d_stuck_i
+        elif pools > 0:
             # The exchange operator belongs to the interval, not to a dephasing
             # order, so it is formed once and carries its own tangent; the
             # per-order damping multiplies both pools, whose order-n states
@@ -6212,7 +6724,7 @@ def _epg_jvp_kernel(
         dfpi = tl.where(pre_shift, shifted_dpi, dfpi)
         dfmr = tl.where(pre_shift, shifted_dmr, dfmr)
         dfmi = tl.where(pre_shift, shifted_dmi, dfmi)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             s_bpr, s_bpi, s_bmr, s_bmi = _shift(
                 bpr, bpi, bmr, bmi,
                 scratch_pr, scratch_pi, scratch_mr, scratch_mi,
@@ -6240,7 +6752,7 @@ def _epg_jvp_kernel(
         dzi = tl.where(invert, -dinversion * zi - atom_inversion * dzi, dzi)
         zr = tl.where(invert, -atom_inversion * zr, zr)
         zi = tl.where(invert, -atom_inversion * zi, zi)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             # A chemically exchanging pool is free water and turns over like
             # any other; a semisolid one is saturated instead.
             dbr = tl.where(invert, -dinversion * br - atom_inversion * dbr, dbr)
@@ -6266,8 +6778,8 @@ def _epg_jvp_kernel(
         dalpha = tl.load(tangent_flip + event_base + event, mask=active_atom, other=0.0) * atom_b1 + event_flip * db1
         phi = event_phase + atom_b1_phase
         dphi = tl.load(tangent_phase + event_base + event, mask=active_atom, other=0.0) + db1_phase
-        if lineshape_bins > 0:
-            # The bound pool absorbs the power the pulse deposits, so it reads
+        if pools == 1 or pools == 3:
+            # The semisolid pool absorbs the power the pulse deposits, so it reads
             # the bare flip the transmit field gives the voxel. The offset
             # reaches it through the voxel's own off-resonance, which is where
             # the lineshape's slope enters a forward direction.
@@ -6282,10 +6794,16 @@ def _epg_jvp_kernel(
                 - alpha * alpha * shape_slope * db0
             )
             saturating = is_rf & ~is_inversion
-            dbr = tl.where(saturating, absorbed * (dbr + br * d_exponent), dbr)
-            dbi = tl.where(saturating, absorbed * (dbi + bi * d_exponent), dbi)
-            br = tl.where(saturating, absorbed * br, br)
-            bi = tl.where(saturating, absorbed * bi, bi)
+            if pools == 1:
+                dbr = tl.where(saturating, absorbed * (dbr + br * d_exponent), dbr)
+                dbi = tl.where(saturating, absorbed * (dbi + bi * d_exponent), dbi)
+                br = tl.where(saturating, absorbed * br, br)
+                bi = tl.where(saturating, absorbed * bi, bi)
+            else:
+                dcr = tl.where(saturating, absorbed * (dcr + cr * d_exponent), dcr)
+                dci = tl.where(saturating, absorbed * (dci + ci * d_exponent), dci)
+                cr = tl.where(saturating, absorbed * cr, cr)
+                ci = tl.where(saturating, absorbed * ci, ci)
         if profile_bins > 0:
             read = _profile_pair_slope(
                 profile, _table_row(profile_index, event, location, locations),
@@ -6311,7 +6829,7 @@ def _epg_jvp_kernel(
                 fpr, fpi, fmr, fmi, zr, zi,
                 dfpr, dfpi, dfmr, dfmi, dzr, dzi,
             )
-            if pools == 2:
+            if pools == 2 or pools == 3:
                 # The same pulse, the same rotation.
                 (
                     held_pr, held_pi, held_mr, held_mi, held_zr, held_zi,
@@ -6349,7 +6867,7 @@ def _epg_jvp_kernel(
             fpr, fpi, fmr, fmi, zr, zi,
             dfpr, dfpi, dfmr, dfmi, dzr, dzi,
         )
-        if pools == 2:
+        if pools == 2 or pools == 3:
             (
                 b_pr, b_pi, b_mr, b_mi, b_zr, b_zi,
                 b_dpr, b_dpi, b_dmr, b_dmi, b_dzr, b_dzi,
@@ -6373,7 +6891,7 @@ def _epg_jvp_kernel(
             rotated_dmi = shaped_dmi
             rotated_dzr = shaped_dzr
             rotated_dzi = shaped_dzi
-            if pools == 2:
+            if pools == 2 or pools == 3:
                 b_pr = held_pr
                 b_pi = held_pi
                 b_mr = held_mr
@@ -6400,7 +6918,7 @@ def _epg_jvp_kernel(
         dfmi = tl.where(rotate, rotated_dmi, dfmi)
         dzr = tl.where(rotate, rotated_dzr, dzr)
         dzi = tl.where(rotate, rotated_dzi, dzi)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             bpr = tl.where(rotate, b_pr, bpr)
             bpi = tl.where(rotate, b_pi, bpi)
             bmr = tl.where(rotate, b_mr, bmr)
@@ -6424,7 +6942,7 @@ def _epg_jvp_kernel(
         read_i = fpi
         dread_r = dfpr
         dread_i = dfpi
-        if pools == 2:
+        if pools == 2 or pools == 3:
             read_r = fpr + bpr
             read_i = fpi + bpi
             dread_r = dfpr + dbpr
@@ -6489,7 +7007,7 @@ def _epg_jvp_kernel(
         dfpi = tl.where(spoil, 0.0, dfpi)
         dfmr = tl.where(spoil, 0.0, dfmr)
         dfmi = tl.where(spoil, 0.0, dfmi)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             s_bpr, s_bpi, s_bmr, s_bmi = _shift(
                 bpr, bpi, bmr, bmi,
                 scratch_pr, scratch_pi, scratch_mr, scratch_mi,

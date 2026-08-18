@@ -251,10 +251,9 @@ def test_the_longitudinal_step_reproduces_the_package_operator():
 
 
 def test_a_derivative_of_a_three_pool_run_is_refused():
-    """The forward carries all three pools; the derivative kernels carry two.
-
-    Answering with a two-pool Jacobian would be a wrong number rather than a
-    missing one, so it is refused instead.
+    """The forward and its forward mode carry all three pools; the reverse
+    kernels carry two. Answering with a two-pool Jacobian would be a wrong
+    number rather than a missing one, so it is refused instead.
     """
     t2 = torch.tensor([80.0], requires_grad=True)
     signal = FSE().simulate(
@@ -269,8 +268,123 @@ def test_a_derivative_of_a_three_pool_run_is_refused():
         signal.abs().square().sum().backward()
 
 
-def test_forward_mode_through_three_pools_is_refused():
-    """Forward mode is refused on the same terms as the adjoint."""
+# --- forward mode ---
+
+
+def _live_events():
+    """Invert, wait, excite, read, wait again and read again.
+
+    Every property the three-pool system carries reaches this reading. A
+    refocused train leaves both T1s and the off-resonance under the rounding
+    of a difference, which is a property of the probe rather than of the
+    kernel; here the recovery interval makes them live.
+    """
+    from torchsim.sequence._accelerators import _EXCITATION, _INVERSION, _RECORD
+
+    return (
+        torch.tensor([0.0, 0.35, 0.0, 0.0, 3e-3, 0.0], dtype=torch.float32),
+        torch.tensor([1, 0, 1, 2, 0, 2], dtype=torch.int32),
+        torch.tensor(
+            [0.0, 0.0, 0.5 * torch.pi, 0.0, 0.0, 0.0], dtype=torch.float32
+        ),
+        torch.tensor(
+            [0.0, 0.0, 0.5 * torch.pi, 0.0, 0.0, 0.0], dtype=torch.float32
+        ),
+        torch.tensor(
+            [_INVERSION, 0, _EXCITATION, _RECORD, 0, _RECORD], dtype=torch.uint8
+        ),
+        torch.tensor([-1, -1, -1, 0, -1, 1], dtype=torch.int32),
+        torch.zeros(6, dtype=torch.int32),
+        torch.zeros(6, dtype=torch.float32),
+        torch.zeros(6, dtype=torch.float32),
+    )
+
+
+def _prepared(device="cpu", **properties):
+    prepared, _, _ = _prepare_tissue(
+        TissueProperties(**{**LIVE, **properties}), device
+    )
+    return tuple(value.to(torch.float32).contiguous() for value in prepared)
+
+
+def _live_readout(prepared, seed=None, device="cpu"):
+    """The reading, or its directional derivative."""
+    from torchsim.sequence._accelerators import _run_packed_jvp
+
+    events = tuple(value.to(device) for value in _live_events())
+    table = lineshape_table(device=torch.device(device))
+    if seed is None:
+        return _run_packed(
+            prepared, events, STATES, 2, 1, lineshape=table, exchanging=True
+        )
+    return _run_packed_jvp(
+        prepared,
+        events,
+        seed,
+        tuple(torch.zeros_like(events[0]) for _ in range(3)),
+        STATES,
+        2,
+        1,
+        lineshape=table,
+        exchanging=True,
+    )
+
+
+@pytest.mark.parametrize("name", sorted(LIVE))
+def test_forward_mode_matches_finite_differences(name: str) -> None:
+    """Every direction the three-pool system carries, including the two that
+    only the semisolid pool has and the five only the exchanging one does.
+    """
+    from torchsim.sequence._parameters import TISSUE_NAMES
+
+    index = TISSUE_NAMES.index(name)
+    prepared = _prepared()
+    seed = tuple(
+        torch.ones_like(value) if position == index else torch.zeros_like(value)
+        for position, value in enumerate(prepared)
+    )
+    tangent = _live_readout(prepared, seed)
+
+    step = abs(LIVE[name]) * 1e-2
+    forward = _live_readout(_prepared(**{name: LIVE[name] + step}))
+    backward = _live_readout(_prepared(**{name: LIVE[name] - step}))
+    difference = (forward - backward) / (2.0 * step)
+
+    scale = float(difference.abs().max())
+    assert scale > 0.0, "the probe leaves this direction dead"
+    assert float((tangent - difference).abs().max()) / scale < 5e-3
+
+
+def test_forward_mode_leaves_the_two_pool_answers_untouched():
+    """A tissue at either default fraction takes the two-pool kernel in forward
+    mode too, so its directions are bit for bit what they were.
+    """
+    t2 = torch.tensor([80.0])
+
+    def along(**extra):
+        def run(value):
+            return FSE().simulate(
+                _description(),
+                TissueProperties(
+                    t1_ms=torch.tensor([1000.0]), t2_ms=value, **extra
+                ),
+                nstates=STATES,
+            ).signal
+
+        return torch.func.jvp(run, (t2,), (torch.ones_like(t2),))[1]
+
+    assert torch.equal(
+        along(**SEMISOLID),
+        along(**SEMISOLID, **{**EXCHANGING, "pool_b_fraction": 0.0}),
+    )
+    assert torch.equal(
+        along(**EXCHANGING),
+        along(**EXCHANGING, **{**SEMISOLID, "bound_fraction": 0.0}),
+    )
+
+
+def test_forward_mode_reaches_three_pools_through_the_public_api():
+    """The path an optimizer takes, rather than the packed buffers directly."""
     fraction = torch.tensor([0.2])
 
     def run(value):
@@ -285,8 +399,15 @@ def test_forward_mode_through_three_pools_is_refused():
             nstates=STATES,
         ).signal
 
-    with pytest.raises(NotImplementedError, match="carry two pools"):
-        torch.func.jvp(run, (fraction,), (torch.ones_like(fraction),))
+    reading, tangent = torch.func.jvp(
+        run, (fraction,), (torch.ones_like(fraction),)
+    )
+    step = 1e-3
+    difference = (run(fraction + step) - run(fraction - step)) / (2.0 * step)
+
+    assert float(reading.abs().max()) > 0.0
+    scale = float(difference.abs().max())
+    assert float((tangent - difference).abs().max()) / scale < 5e-3
 
 
 # --- the other backend ---
@@ -368,5 +489,69 @@ def test_a_streamed_volume_matches_the_whole_one():
     whole = _run_packed(*arguments, **options)
     with offload(["cuda"], budget_bytes=1 << 20):
         streamed = _run_packed(*arguments, **options)
+
+    assert float((whole - streamed).abs().max() / whole.abs().max()) < 5e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_cuda_forward_mode_matches_the_cpu_kernel():
+    """The tangent of the 3x3 on the card.
+
+    The two backends share no code, so agreement is what keeps the direction
+    honest there: a pool dropped from the tangent alone still produces a
+    plausible one.
+    """
+    voxels = 6
+    spread = dict(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        bound_fraction=torch.linspace(0.02, 0.2, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+        t1_bound_ms=torch.linspace(400.0, 1500.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+        pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+
+    def run(device):
+        prepared = _prepared(device, **{name: value.to(device) for name, value in spread.items()})
+        return _live_readout(
+            prepared,
+            tuple(torch.ones_like(value) for value in prepared),
+            device=device,
+        )
+
+    host = run("cpu")
+    card = run("cuda").cpu()
+
+    assert float(host.abs().max()) > 0.0
+    assert float((host - card).abs().max() / host.abs().max()) < 1e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_streamed_forward_mode_matches_the_whole_one():
+    """Streaming cuts the voxel axis, which all three pools' seeds follow."""
+    from torchsim.sequence._accelerators import offload
+
+    voxels = 3000
+    prepared = _prepared(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        bound_fraction=torch.linspace(0.02, 0.2, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+        pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    seed = tuple(torch.ones_like(value) for value in prepared)
+
+    whole = _live_readout(prepared, seed)
+    with offload(["cuda"], budget_bytes=1 << 20):
+        streamed = _live_readout(prepared, seed)
 
     assert float((whole - streamed).abs().max() / whole.abs().max()) < 5e-5

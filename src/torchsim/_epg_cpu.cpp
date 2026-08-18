@@ -520,6 +520,64 @@ inline double cosine(const double a) {
     return std::cos(a);
 }
 
+// A direction carried alongside a double, for the three-pool step's forward
+// mode. The two-pool steps run in single and carry ``DualFloat``; only this
+// one operator needs the wider pair.
+struct DualDouble {
+    double value;
+    double tangent;
+};
+
+inline DualDouble operator+(const DualDouble a, const DualDouble b) {
+    return {a.value + b.value, a.tangent + b.tangent};
+}
+
+inline DualDouble operator-(const DualDouble a, const DualDouble b) {
+    return {a.value - b.value, a.tangent - b.tangent};
+}
+
+inline DualDouble operator*(const DualDouble a, const DualDouble b) {
+    return {a.value * b.value, a.tangent * b.value + a.value * b.tangent};
+}
+
+inline double primal(const DualDouble a) {
+    return a.value;
+}
+
+inline DualDouble root(const DualDouble a) {
+    const double value = std::sqrt(std::max(a.value, 0.0));
+    return {value, value > 0.0 ? 0.5 * a.tangent / value : 0.0};
+}
+
+inline DualDouble exponential(const DualDouble a) {
+    const double value = std::exp(a.value);
+    return {value, value * a.tangent};
+}
+
+inline DualDouble reciprocal(const DualDouble a) {
+    const double inverse = 1.0 / a.value;
+    return {inverse, -a.tangent * inverse * inverse};
+}
+
+inline DualDouble arc_cosine(const DualDouble a) {
+    const double slope = -1.0 / std::sqrt(std::max(1.0 - a.value * a.value, 1e-300));
+    return {std::acos(a.value), slope * a.tangent};
+}
+
+inline DualDouble cosine(const DualDouble a) {
+    return {std::cos(a.value), -std::sin(a.value) * a.tangent};
+}
+
+// The three-pool step is the only place the state machine changes width, so
+// the narrowing sits beside the widening rather than at either call site.
+inline DualDouble widen_dual(const DualFloat a) {
+    return {static_cast<double>(a.value), static_cast<double>(a.tangent)};
+}
+
+inline DualFloat narrow_dual(const DualDouble a) {
+    return {static_cast<float>(a.value), static_cast<float>(a.tangent)};
+}
+
 inline bool is_zero(const float a) {
     return a == 0.0F;
 }
@@ -1881,15 +1939,21 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
 ) {
     constexpr bool MT = POOLS == Pools::SEMISOLID;
     constexpr bool BM = POOLS == Pools::EXCHANGING;
+    constexpr bool THREE = POOLS == Pools::THREE;
     constexpr bool TWO_POOL = MT || BM;
+    // Which pool carries a transverse pair of its own, and which run absorbs
+    // the power a pulse deposits; see ``simulate_range``.
+    constexpr bool PAIRED = BM || THREE;
+    constexpr bool SATURATED = MT || THREE;
     const Buffers& primal = buffers.primal;
     const std::size_t states = static_cast<std::size_t>(state_count);
     std::vector<DualComplex> fplus(states);
     std::vector<DualComplex> fminus(states);
     std::vector<DualComplex> longitudinal(states);
-    std::vector<DualComplex> bound(TWO_POOL ? states : 0U);
-    std::vector<DualComplex> bound_plus(BM ? states : 0U);
-    std::vector<DualComplex> bound_minus(BM ? states : 0U);
+    std::vector<DualComplex> bound((TWO_POOL || THREE) ? states : 0U);
+    std::vector<DualComplex> semisolid(THREE ? states : 0U);
+    std::vector<DualComplex> bound_plus(PAIRED ? states : 0U);
+    std::vector<DualComplex> bound_minus(PAIRED ? states : 0U);
     Damping<DualFloat> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -1905,25 +1969,39 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         // Equilibrium is split between the pools, so a direction along the
         // bound fraction moves magnetization from one to the other before a
         // single event has run.
-        const DualFloat bound_fraction = MT
-            ? DualFloat{primal.bound_fraction[atom], buffers.bound_fraction[atom]}
-            : (BM
+        const DualFloat bound_fraction = (BM || THREE)
+            ? DualFloat{
+                primal.pool_b_fraction[atom], buffers.pool_b_fraction[atom]
+            }
+            : (MT
                 ? DualFloat{
-                    primal.pool_b_fraction[atom], buffers.pool_b_fraction[atom]
+                    primal.bound_fraction[atom], buffers.bound_fraction[atom]
                 }
                 : DualFloat{});
+        const DualFloat semisolid_fraction = SATURATED
+            ? DualFloat{primal.bound_fraction[atom], buffers.bound_fraction[atom]}
+            : DualFloat{};
+        const DualFloat held_free = THREE
+            ? DualFloat{1.0F, 0.0F} - bound_fraction - semisolid_fraction
+            : DualFloat{1.0F, 0.0F} - bound_fraction;
         longitudinal[0] = DualComplex{
-            Complex(1.0F - bound_fraction.value, 0.0F),
-            Complex(-bound_fraction.tangent, 0.0F),
+            Complex(held_free.value, 0.0F), Complex(held_free.tangent, 0.0F)
         };
-        if constexpr (TWO_POOL) {
+        if constexpr (TWO_POOL || THREE) {
             std::fill(bound.begin(), bound.end(), DualComplex{});
             bound[0] = DualComplex{
                 Complex(bound_fraction.value, 0.0F),
                 Complex(bound_fraction.tangent, 0.0F),
             };
         }
-        if constexpr (BM) {
+        if constexpr (THREE) {
+            std::fill(semisolid.begin(), semisolid.end(), DualComplex{});
+            semisolid[0] = DualComplex{
+                Complex(semisolid_fraction.value, 0.0F),
+                Complex(semisolid_fraction.tangent, 0.0F),
+            };
+        }
+        if constexpr (PAIRED) {
             std::fill(bound_plus.begin(), bound_plus.end(), DualComplex{});
             std::fill(bound_minus.begin(), bound_minus.end(), DualComplex{});
         }
@@ -1937,20 +2015,27 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         const DualFloat rate_free{
             r1, -1000.0F * buffers.t1[atom] / (t1 * t1)
         };
-        const DualFloat rate_bound = MT
+        const DualFloat rate_bound = (BM || THREE)
+            ? DualFloat{
+                1000.0F / primal.t1_pool_b[atom],
+                -1000.0F * buffers.t1_pool_b[atom]
+                    / (primal.t1_pool_b[atom] * primal.t1_pool_b[atom]),
+            }
+            : (MT
+                ? DualFloat{
+                    1000.0F / primal.t1_bound[atom],
+                    -1000.0F * buffers.t1_bound[atom]
+                        / (primal.t1_bound[atom] * primal.t1_bound[atom]),
+                }
+                : DualFloat{});
+        const DualFloat rate_semisolid = SATURATED
             ? DualFloat{
                 1000.0F / primal.t1_bound[atom],
                 -1000.0F * buffers.t1_bound[atom]
                     / (primal.t1_bound[atom] * primal.t1_bound[atom]),
             }
-            : (BM
-                ? DualFloat{
-                    1000.0F / primal.t1_pool_b[atom],
-                    -1000.0F * buffers.t1_pool_b[atom]
-                        / (primal.t1_pool_b[atom] * primal.t1_pool_b[atom]),
-                }
-                : DualFloat{});
-        const DualFloat rate2_bound = BM
+            : DualFloat{};
+        const DualFloat rate2_bound = PAIRED
             ? DualFloat{
                 1000.0F / primal.t2_pool_b[atom],
                 -1000.0F * buffers.t2_pool_b[atom]
@@ -1960,16 +2045,21 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         const DualFloat rate2_free{
             r2, -1000.0F * buffers.t2[atom] / (t2 * t2)
         };
-        const DualFloat pool_shift = BM
+        const DualFloat pool_shift = PAIRED
             ? DualFloat{primal.pool_b_shift[atom], buffers.pool_b_shift[atom]}
             : DualFloat{};
-        const DualFloat exchange = MT
-            ? DualFloat{primal.bound_exchange[atom], buffers.exchange_rate[atom]}
-            : (BM
+        const DualFloat exchange = (BM || THREE)
+            ? DualFloat{
+                primal.pool_b_exchange[atom], buffers.pool_b_exchange[atom]
+            }
+            : (MT
                 ? DualFloat{
-                    primal.pool_b_exchange[atom], buffers.pool_b_exchange[atom]
+                    primal.bound_exchange[atom], buffers.exchange_rate[atom]
                 }
                 : DualFloat{});
+        const DualFloat semisolid_exchange = SATURATED
+            ? DualFloat{primal.bound_exchange[atom], buffers.exchange_rate[atom]}
+            : DualFloat{};
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.diffusion[atom]
         };
@@ -2015,12 +2105,23 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
             // The exchange operator belongs to the interval, not to a dephasing
             // order, so it is formed once and carries its own tangent; the
             // per-order damping multiplies both.
+            // Three pools mix through a 3x3 formed in double and handed back
+            // narrowed; see ``three_pool_step``.
+            const ThreePoolStep<DualDouble> triple = THREE
+                ? three_pool_step<DualDouble>(
+                    widen_dual(rate_free), widen_dual(rate_bound),
+                    widen_dual(rate_semisolid), widen_dual(exchange),
+                    widen_dual(semisolid_exchange), widen_dual(bound_fraction),
+                    widen_dual(semisolid_fraction), widen_dual(interval),
+                    widen_dual(wout)
+                )
+                : ThreePoolStep<DualDouble>{};
             const TwoPoolStep<DualFloat> pools = TWO_POOL
                 ? two_pool_step(
                     rate_free, rate_bound, exchange, bound_fraction, interval, wout
                 )
                 : TwoPoolStep<DualFloat>{};
-            const TwoPoolTransverse<DualComplex> across = BM
+            const TwoPoolTransverse<DualComplex> across = PAIRED
                 ? two_pool_transverse_step<DualFloat, DualComplex>(
                     rate2_free, rate2_bound, exchange, bound_fraction,
                     pool_shift, interval, wout
@@ -2055,7 +2156,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                     damped_tangent * spin_transverse + damped * spin_transverse_tangent;
                 const Complex conjugate_off = std::conj(off);
                 const Complex conjugate_tangent = std::conj(off_tangent);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     // The exchange operator carries the chemical shift; what
                     // is left is the off-resonance and damping both pools take
                     // alike, which is ``off`` without its own relaxation.
@@ -2095,7 +2196,24 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                     damp_longitudinal.tangent * spin_longitudinal
                         + damp_longitudinal.value * spin_longitudinal_tangent,
                 };
-                if constexpr (TWO_POOL) {
+                if constexpr (THREE) {
+                    DualComplex& held = bound[index];
+                    DualComplex& stuck = semisolid[index];
+                    const DualComplex pools_in[3] = {z, held, stuck};
+                    DualComplex mixed[3];
+                    for (int row = 0; row < 3; ++row) {
+                        DualComplex carried{};
+                        for (int column = 0; column < 3; ++column) {
+                            carried = carried
+                                + narrow_dual(triple.entry[row][column])
+                                    * pools_in[column];
+                        }
+                        mixed[row] = carried * spin;
+                    }
+                    z = mixed[0];
+                    held = mixed[1];
+                    stuck = mixed[2];
+                } else if constexpr (TWO_POOL) {
                     DualComplex& held = bound[index];
                     const DualComplex free_state = z;
                     const DualComplex bound_state = held;
@@ -2116,7 +2234,16 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                     z.value *= relaxation;
                 }
             }
-            if constexpr (TWO_POOL) {
+            if constexpr (THREE) {
+                DualComplex* const seats[3] = {
+                    &longitudinal[0], &bound[0], &semisolid[0]
+                };
+                for (int row = 0; row < 3; ++row) {
+                    const DualFloat grown = narrow_dual(triple.recovery[row]);
+                    seats[row]->value += Complex(grown.value, 0.0F);
+                    seats[row]->tangent += Complex(grown.tangent, 0.0F);
+                }
+            } else if constexpr (TWO_POOL) {
                 longitudinal[0].value += Complex(pools.recovery_free.value, 0.0F);
                 longitudinal[0].tangent +=
                     Complex(pools.recovery_free.tangent, 0.0F);
@@ -2130,7 +2257,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
             const std::uint8_t action = primal.action[event];
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
@@ -2145,7 +2272,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                             + efficiency * value.tangent;
                         value.value *= efficiency;
                     }
-                    if constexpr (BM) {
+                    if constexpr (PAIRED) {
                         for (DualComplex& value : bound) {
                             value.tangent = efficiency_tangent * value.value
                                 + efficiency * value.tangent;
@@ -2162,8 +2289,8 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                     const float phi = view.phase[event] + primal.b1_phase[transmit];
                     const float phi_tangent =
                         dot_phase[event] + buffers.b1_phase[transmit];
-                    if constexpr (MT) {
-                        // The bound pool absorbs the power the pulse deposits,
+                    if constexpr (SATURATED) {
+                        // The semisolid pool absorbs the power the pulse deposits,
                         // so it reads the bare flip the transmit field gives
                         // the voxel. The offset reaches it through the voxel's
                         // own off-resonance, which is where the lineshape's
@@ -2182,7 +2309,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                             ),
                         };
                         const DualFloat absorbed = dual_exp(exponent);
-                        for (DualComplex& value : bound) {
+                        for (DualComplex& value : (THREE ? semisolid : bound)) {
                             value.tangent = absorbed.tangent * value.value
                                 + absorbed.value * value.tangent;
                             value.value *= absorbed.value;
@@ -2212,7 +2339,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                         rotate_spinor(
                             fplus, fminus, longitudinal, shaped_a, shaped_b
                         );
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             rotate_spinor(
                                 bound_plus, bound_minus, bound, shaped_a,
                                 shaped_b
@@ -2228,7 +2355,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                             phi,
                             phi_tangent
                         );
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             rotate(
                                 bound_plus,
                                 bound_minus,
@@ -2246,7 +2373,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                 const Complex demodulation = std::polar(1.0F, -view.phase[event]);
                 const Complex demodulation_tangent =
                     Complex(0.0F, -dot_phase[event]) * demodulation;
-                const DualComplex fp = BM
+                const DualComplex fp = PAIRED
                     ? DualComplex{
                         fplus[0].value + bound_plus[0].value,
                         fplus[0].tangent + bound_plus[0].tangent,
@@ -2262,14 +2389,14 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
             }
             if ((action & POST_SHIFT) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus.begin(), fplus.end(), DualComplex{});
                 std::fill(fminus.begin(), fminus.end(), DualComplex{});
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     std::fill(
                         bound_plus.begin(), bound_plus.end(), DualComplex{}
                     );
@@ -2279,7 +2406,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                 }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
@@ -7256,7 +7383,17 @@ void dispatch_jvp(
     } else {
         const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
-        if (pools == Pools::EXCHANGING) {
+        if (pools == Pools::THREE) {
+            if (shimmed) {
+                kernel = profiled
+                    ? &simulate_jvp_range<true, true, Pools::THREE>
+                    : &simulate_jvp_range<true, false, Pools::THREE>;
+            } else {
+                kernel = profiled
+                    ? &simulate_jvp_range<false, true, Pools::THREE>
+                    : &simulate_jvp_range<false, false, Pools::THREE>;
+            }
+        } else if (pools == Pools::EXCHANGING) {
             if (shimmed) {
                 kernel = profiled
                     ? &simulate_jvp_range<true, true, Pools::EXCHANGING>
