@@ -4341,7 +4341,10 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
 ) {
     constexpr bool MT = POOLS == Pools::SEMISOLID;
     constexpr bool BM = POOLS == Pools::EXCHANGING;
+    constexpr bool THREE = POOLS == Pools::THREE;
     constexpr bool TWO_POOL = MT || BM;
+    constexpr bool PAIRED = BM || THREE;
+    constexpr bool SATURATED = MT || THREE;
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
@@ -4351,7 +4354,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     // reverse sweep cannot replay it from the free pool's. The semisolid pool
     // adds one block, the chemically exchanging one three.
     const std::size_t trajectory_stride =
-        (BM ? 6U : (MT ? 4U : 3U)) * states;
+        (THREE ? 7U : (BM ? 6U : (MT ? 4U : 3U))) * states;
 
     // State at the start of every event; intra-event intermediates are cheap
     // enough to replay from it during the reverse sweep.
@@ -4370,17 +4373,20 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     State fplus_shifted(states);
     State fminus_shifted(states);
     State longitudinal_pre(states);
-    State bound(TWO_POOL ? states : 0U);
-    State bound_bar(TWO_POOL ? states : 0U);
-    State bound_relaxed(TWO_POOL ? states : 0U);
-    State bound_plus(BM ? states : 0U);
-    State bound_minus(BM ? states : 0U);
-    State bound_plus_bar(BM ? states : 0U);
-    State bound_minus_bar(BM ? states : 0U);
-    State bound_plus_relaxed(BM ? states : 0U);
-    State bound_minus_relaxed(BM ? states : 0U);
-    State bound_plus_shifted(BM ? states : 0U);
-    State bound_minus_shifted(BM ? states : 0U);
+    State bound((TWO_POOL || THREE) ? states : 0U);
+    State bound_bar((TWO_POOL || THREE) ? states : 0U);
+    State bound_relaxed((TWO_POOL || THREE) ? states : 0U);
+    State semisolid(THREE ? states : 0U);
+    State semisolid_bar(THREE ? states : 0U);
+    State semisolid_relaxed(THREE ? states : 0U);
+    State bound_plus(PAIRED ? states : 0U);
+    State bound_minus(PAIRED ? states : 0U);
+    State bound_plus_bar(PAIRED ? states : 0U);
+    State bound_minus_bar(PAIRED ? states : 0U);
+    State bound_plus_relaxed(PAIRED ? states : 0U);
+    State bound_minus_relaxed(PAIRED ? states : 0U);
+    State bound_plus_shifted(PAIRED ? states : 0U);
+    State bound_minus_shifted(PAIRED ? states : 0U);
     Damping<float> damping(states);
 
     for (std::int64_t work = work_begin; work < work_end; ++work) {
@@ -4393,15 +4399,23 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
-        const float bound_fraction = MT
-            ? primal.bound_fraction[atom]
-            : (BM ? primal.pool_b_fraction[atom] : 0.0F);
-        longitudinal[0] = Complex(1.0F - bound_fraction, 0.0F);
-        if constexpr (TWO_POOL) {
+        const float bound_fraction = (BM || THREE)
+            ? primal.pool_b_fraction[atom]
+            : (MT ? primal.bound_fraction[atom] : 0.0F);
+        const float semisolid_fraction =
+            SATURATED ? primal.bound_fraction[atom] : 0.0F;
+        longitudinal[0] = Complex(
+            1.0F - bound_fraction - (THREE ? semisolid_fraction : 0.0F), 0.0F
+        );
+        if constexpr (THREE) {
+            std::fill(semisolid.begin(), semisolid.end(), Complex{});
+            semisolid[0] = Complex(semisolid_fraction, 0.0F);
+        }
+        if constexpr (TWO_POOL || THREE) {
             std::fill(bound.begin(), bound.end(), Complex{});
             bound[0] = Complex(bound_fraction, 0.0F);
         }
-        if constexpr (BM) {
+        if constexpr (PAIRED) {
             std::fill(bound_plus.begin(), bound_plus.end(), Complex{});
             std::fill(bound_minus.begin(), bound_minus.end(), Complex{});
         }
@@ -4410,16 +4424,20 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
         const float t2 = primal.t2[atom];
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
-        const float t1_bound = MT
-            ? primal.t1_bound[atom]
-            : (BM ? primal.t1_pool_b[atom] : 0.0F);
-        const float r1_bound = TWO_POOL ? 1000.0F / t1_bound : 0.0F;
-        const float t2_bound = BM ? primal.t2_pool_b[atom] : 0.0F;
-        const float r2_bound = BM ? 1000.0F / t2_bound : 0.0F;
-        const float pool_shift = BM ? primal.pool_b_shift[atom] : 0.0F;
-        const float exchange = MT
-            ? primal.bound_exchange[atom]
-            : (BM ? primal.pool_b_exchange[atom] : 0.0F);
+        const float t1_bound = (BM || THREE)
+            ? primal.t1_pool_b[atom]
+            : (MT ? primal.t1_bound[atom] : 0.0F);
+        const float r1_bound = (TWO_POOL || THREE) ? 1000.0F / t1_bound : 0.0F;
+        const float t1_semisolid = SATURATED ? primal.t1_bound[atom] : 0.0F;
+        const float r1_semisolid = SATURATED ? 1000.0F / t1_semisolid : 0.0F;
+        const float t2_bound = PAIRED ? primal.t2_pool_b[atom] : 0.0F;
+        const float r2_bound = PAIRED ? 1000.0F / t2_bound : 0.0F;
+        const float pool_shift = PAIRED ? primal.pool_b_shift[atom] : 0.0F;
+        const float exchange = (BM || THREE)
+            ? primal.pool_b_exchange[atom]
+            : (MT ? primal.bound_exchange[atom] : 0.0F);
+        const float semisolid_exchange =
+            SATURATED ? primal.bound_exchange[atom] : 0.0F;
         const float b0 = primal.b0[atom];
         const float m0 = primal.m0[atom];
         // With one shim the transmit field is a property of the voxel and
@@ -4443,11 +4461,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             if constexpr (TWO_POOL) {
                 std::copy(bound.begin(), bound.end(), slot + 3U * states);
             }
-            if constexpr (BM) {
+            if constexpr (PAIRED) {
                 std::copy(bound_plus.begin(), bound_plus.end(), slot + 4U * states);
                 std::copy(
                     bound_minus.begin(), bound_minus.end(), slot + 5U * states
                 );
+            }
+            if constexpr (THREE) {
+                std::copy(semisolid.begin(), semisolid.end(), slot + 6U * states);
             }
 
             const float dt = view.duration[event];
@@ -4458,7 +4479,13 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             const TwoPoolStep<float> pools = TWO_POOL
                 ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
                 : TwoPoolStep<float>{};
-            const TwoPoolTransverse<Complex> across = BM
+            const ThreePoolStep<double> triple = THREE
+                ? three_pool_step<double>(
+                    r1, r1_bound, r1_semisolid, exchange, semisolid_exchange,
+                    bound_fraction, semisolid_fraction, dt, wout
+                )
+                : ThreePoolStep<double>{};
+            const TwoPoolTransverse<Complex> across = PAIRED
                 ? two_pool_transverse_step<float, Complex>(
                     r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
                 )
@@ -4468,7 +4495,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
                 flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     const Complex carried = std::polar(
                         damping.transverse[state], off_angle + turn_transverse
                     );
@@ -4495,7 +4522,23 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 const Complex spin = std::polar(
                     damping.longitudinal[state], turn_longitudinal
                 );
-                if constexpr (TWO_POOL) {
+                if constexpr (THREE) {
+                    const Complex pools_in[3] = {
+                        longitudinal[state], bound[state], semisolid[state]
+                    };
+                    Complex mixed[3];
+                    for (int row = 0; row < 3; ++row) {
+                        Complex carried{};
+                        for (int column = 0; column < 3; ++column) {
+                            carried += static_cast<float>(triple.entry[row][column])
+                                * pools_in[column];
+                        }
+                        mixed[row] = carried * spin;
+                    }
+                    longitudinal[state] = mixed[0];
+                    bound[state] = mixed[1];
+                    semisolid[state] = mixed[2];
+                } else if constexpr (TWO_POOL) {
                     const Complex free_state = longitudinal[state];
                     const Complex bound_state = bound[state];
                     longitudinal[state] =
@@ -4506,7 +4549,11 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     longitudinal[state] *= e1 * spin;
                 }
             }
-            if constexpr (TWO_POOL) {
+            if constexpr (THREE) {
+                longitudinal[0] += Complex(static_cast<float>(triple.recovery[0]), 0.0F);
+                bound[0] += Complex(static_cast<float>(triple.recovery[1]), 0.0F);
+                semisolid[0] += Complex(static_cast<float>(triple.recovery[2]), 0.0F);
+            } else if constexpr (TWO_POOL) {
                 longitudinal[0] += Complex(pools.recovery_free, 0.0F);
                 bound[0] += Complex(pools.recovery_bound, 0.0F);
             } else {
@@ -4516,7 +4563,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             const std::uint8_t action = primal.action[event];
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
@@ -4525,7 +4572,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     for (Complex& value : longitudinal) {
                         value *= -efficiency;
                     }
-                    if constexpr (BM) {
+                    if constexpr (PAIRED) {
                         for (Complex& value : bound) {
                             value *= -efficiency;
                         }
@@ -4537,14 +4584,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                         view.flip[event] * (SHIMMED ? primal.b1[transmit] : b1);
                     const float phi = view.phase[event]
                         + (SHIMMED ? primal.b1_phase[transmit] : b1_phase);
-                    if constexpr (MT) {
+                    if constexpr (SATURATED) {
                         const float absorbed = std::exp(
                             primal.saturation[event] * alpha * alpha
                             * lineshape_at(
                                 primal, primal.rf_frequency[event] - b0
                             )
                         );
-                        for (Complex& value : bound) {
+                        for (Complex& value : (THREE ? semisolid : bound)) {
                             value *= absorbed;
                         }
                     }
@@ -4560,14 +4607,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                         rotate_spinor(
                             fplus, fminus, longitudinal, pair_a, spun
                         );
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             rotate_spinor(
                                 bound_plus, bound_minus, bound, pair_a, spun
                             );
                         }
                     } else {
                         rotate(fplus, fminus, longitudinal, alpha, phi);
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             rotate(bound_plus, bound_minus, bound, alpha, phi);
                         }
                     }
@@ -4575,20 +4622,20 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             }
             if ((action & POST_SHIFT) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus.begin(), fplus.end(), Complex{});
                 std::fill(fminus.begin(), fminus.end(), Complex{});
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     std::fill(bound_plus.begin(), bound_plus.end(), Complex{});
                     std::fill(bound_minus.begin(), bound_minus.end(), Complex{});
                 }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift(fplus, fminus);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus, bound_minus);
                 }
             }
@@ -4598,10 +4645,16 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
         std::fill(fplus_bar.begin(), fplus_bar.end(), Complex{});
         std::fill(fminus_bar.begin(), fminus_bar.end(), Complex{});
         std::fill(longitudinal_bar.begin(), longitudinal_bar.end(), Complex{});
-        if constexpr (TWO_POOL) {
+        if constexpr (TWO_POOL || THREE) {
             std::fill(bound_bar.begin(), bound_bar.end(), Complex{});
         }
-        if constexpr (BM) {
+        if constexpr (THREE) {
+            std::fill(semisolid_bar.begin(), semisolid_bar.end(), Complex{});
+        }
+        float grad_semisolid_fraction = 0.0F;
+        float grad_semisolid_exchange = 0.0F;
+        float grad_t1_semisolid = 0.0F;
+        if constexpr (PAIRED) {
             std::fill(bound_plus_bar.begin(), bound_plus_bar.end(), Complex{});
             std::fill(bound_minus_bar.begin(), bound_minus_bar.end(), Complex{});
         }
@@ -4634,12 +4687,17 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             if constexpr (TWO_POOL) {
                 std::copy(slot + 3U * states, slot + 4U * states, bound.begin());
             }
-            if constexpr (BM) {
+            if constexpr (PAIRED) {
                 std::copy(
                     slot + 4U * states, slot + 5U * states, bound_plus.begin()
                 );
                 std::copy(
                     slot + 5U * states, slot + 6U * states, bound_minus.begin()
+                );
+            }
+            if constexpr (THREE) {
+                std::copy(
+                    slot + 6U * states, slot + 7U * states, semisolid.begin()
                 );
             }
 
@@ -4653,7 +4711,13 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             const TwoPoolStep<float> pools = TWO_POOL
                 ? two_pool_step(r1, r1_bound, exchange, bound_fraction, dt, wout)
                 : TwoPoolStep<float>{};
-            const TwoPoolTransverse<Complex> across = BM
+            const ThreePoolStep<double> triple = THREE
+                ? three_pool_step<double>(
+                    r1, r1_bound, r1_semisolid, exchange, semisolid_exchange,
+                    bound_fraction, semisolid_fraction, dt, wout
+                )
+                : ThreePoolStep<double>{};
+            const TwoPoolTransverse<Complex> across = PAIRED
                 ? two_pool_transverse_step<float, Complex>(
                     r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
                 )
@@ -4669,7 +4733,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
                 flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     const Complex carried = std::polar(
                         damping.transverse[state], angle + turn_transverse
                     );
@@ -4696,7 +4760,23 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 const Complex spin = std::polar(
                     damping.longitudinal[state], turn_longitudinal
                 );
-                if constexpr (TWO_POOL) {
+                if constexpr (THREE) {
+                    const Complex pools_in[3] = {
+                        longitudinal[state], bound[state], semisolid[state]
+                    };
+                    Complex mixed[3];
+                    for (int row = 0; row < 3; ++row) {
+                        Complex carried{};
+                        for (int column = 0; column < 3; ++column) {
+                            carried += static_cast<float>(triple.entry[row][column])
+                                * pools_in[column];
+                        }
+                        mixed[row] = carried * spin;
+                    }
+                    longitudinal_relaxed[state] = mixed[0];
+                    bound_relaxed[state] = mixed[1];
+                    semisolid_relaxed[state] = mixed[2];
+                } else if constexpr (TWO_POOL) {
                     const Complex free_state = longitudinal[state];
                     const Complex bound_state = bound[state];
                     longitudinal_relaxed[state] =
@@ -4707,7 +4787,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     longitudinal_relaxed[state] = longitudinal[state] * e1 * spin;
                 }
             }
-            if constexpr (TWO_POOL) {
+            if constexpr (THREE) {
+                longitudinal_relaxed[0] +=
+                    Complex(static_cast<float>(triple.recovery[0]), 0.0F);
+                bound_relaxed[0] +=
+                    Complex(static_cast<float>(triple.recovery[1]), 0.0F);
+                semisolid_relaxed[0] +=
+                    Complex(static_cast<float>(triple.recovery[2]), 0.0F);
+            } else if constexpr (TWO_POOL) {
                 longitudinal_relaxed[0] += Complex(pools.recovery_free, 0.0F);
                 bound_relaxed[0] += Complex(pools.recovery_bound, 0.0F);
             } else {
@@ -4717,13 +4804,13 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             fplus_shifted = fplus_relaxed;
             fminus_shifted = fminus_relaxed;
             longitudinal_pre = longitudinal_relaxed;
-            if constexpr (BM) {
+            if constexpr (PAIRED) {
                 bound_plus_shifted = bound_plus_relaxed;
                 bound_minus_shifted = bound_minus_relaxed;
             }
             if ((action & PRE_SHIFT) != 0) {
                 shift(fplus_shifted, fminus_shifted);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift(bound_plus_shifted, bound_minus_shifted);
                 }
             }
@@ -4732,7 +4819,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             if ((action & SPOIL_AFTER) != 0) {
                 std::fill(fplus_bar.begin(), fplus_bar.end(), Complex{});
                 std::fill(fminus_bar.begin(), fminus_bar.end(), Complex{});
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     std::fill(
                         bound_plus_bar.begin(), bound_plus_bar.end(), Complex{}
                     );
@@ -4742,13 +4829,13 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 }
             } else if ((action & SHIFT_AFTER) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift_adjoint(bound_plus_bar, bound_minus_bar);
                 }
             }
             if ((action & POST_SHIFT) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift_adjoint(bound_plus_bar, bound_minus_bar);
                 }
             }
@@ -4764,7 +4851,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 const Complex demodulation = std::polar(1.0F, -view.phase[event]);
                 // an ADC event carries no RF, so the recorded state is the one
                 // left by the pre-shift
-                const Complex recorded = BM
+                const Complex recorded = PAIRED
                     ? fplus_shifted[0] + bound_plus_shifted[0]
                     : fplus_shifted[0];
                 grad_m0 += std::real(std::conj(seed) * recorded * demodulation);
@@ -4774,7 +4861,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 );
                 const Complex weighted = std::conj(m0 * demodulation) * seed;
                 fplus_bar[0] += weighted;
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     bound_plus_bar[0] += weighted;
                 }
             }
@@ -4788,7 +4875,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             * (-longitudinal_pre[state])
                         );
                         longitudinal_bar[state] *= -efficiency;
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             grad_efficiency += std::real(
                                 std::conj(bound_bar[state]) * (-bound_relaxed[state])
                             );
@@ -4843,7 +4930,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             grad_a,
                             grad_b
                         );
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             rotate_adjoint_spinor(
                                 bound_plus_shifted,
                                 bound_minus_shifted,
@@ -4878,7 +4965,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             grad_alpha,
                             grad_phi
                         );
-                        if constexpr (BM) {
+                        if constexpr (PAIRED) {
                             rotate_adjoint(
                                 bound_plus_shifted,
                                 bound_minus_shifted,
@@ -4893,10 +4980,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                             );
                         }
                     }
-                    if constexpr (MT) {
-                        // The pulse scales every order of the bound pool by one
-                        // real number, so its cotangent is a single sum over the
-                        // states it multiplied.
+                    if constexpr (SATURATED) {
+                        // The pulse scales every order of the semisolid pool by
+                        // one real number, so its cotangent is a single sum over
+                        // the states it multiplied.
+                        State& absorbing = THREE ? semisolid : bound;
+                        State& absorbing_bar = THREE ? semisolid_bar : bound_bar;
+                        State& absorbing_relaxed =
+                            THREE ? semisolid_relaxed : bound_relaxed;
                         const float offset = primal.rf_frequency[event] - b0;
                         float shape = 0.0F;
                         float shape_slope = 0.0F;
@@ -4907,10 +4998,12 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                         float grad_absorbed = 0.0F;
                         for (std::size_t state = 0; state < states; ++state) {
                             grad_absorbed += std::real(
-                                std::conj(bound_bar[state]) * bound_relaxed[state]
+                                std::conj(absorbing_bar[state])
+                                * absorbing_relaxed[state]
                             );
-                            bound_bar[state] *= absorbed;
+                            absorbing_bar[state] *= absorbed;
                         }
+                        (void)absorbing;
                         const float grad_exponent = grad_absorbed * absorbed;
                         grad_alpha += grad_exponent * primal.saturation[event]
                             * 2.0F * alpha * shape;
@@ -4929,7 +5022,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
 
             if ((action & PRE_SHIFT) != 0) {
                 shift_adjoint(fplus_bar, fminus_bar);
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     shift_adjoint(bound_plus_bar, bound_minus_bar);
                 }
             }
@@ -4965,10 +5058,16 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             // derivative contributes -Re(adjoint) exactly once. Order zero is
             // undamped, so that term takes the bare factor.
             const float grad_recovery_free =
-                TWO_POOL ? std::real(longitudinal_bar[0]) : 0.0F;
+                (TWO_POOL || THREE) ? std::real(longitudinal_bar[0]) : 0.0F;
             const float grad_recovery_bound =
-                TWO_POOL ? std::real(bound_bar[0]) : 0.0F;
-            if constexpr (!TWO_POOL) {
+                (TWO_POOL || THREE) ? std::real(bound_bar[0]) : 0.0F;
+            const float grad_recovery_semisolid =
+                THREE ? std::real(semisolid_bar[0]) : 0.0F;
+            // The nine entries of the three-pool operator, summed over the
+            // orders that share them and pushed back through the closed form
+            // once for the whole interval.
+            double grad_triple[3][3]{};
+            if constexpr (!TWO_POOL && !THREE) {
                 grad_e1 -= std::real(longitudinal_bar[0]);
             }
             for (std::size_t state = 0; state < states; ++state) {
@@ -4990,7 +5089,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 // the cotangent taken against the states the interval leaves.
                 float transverse_scaled = 0.0F;
                 float angle_term = 0.0F;
-                if constexpr (BM) {
+                if constexpr (PAIRED) {
                     const Complex abp = bound_plus_bar[state];
                     const Complex abm = bound_minus_bar[state];
                     const Complex fp = fplus[state];
@@ -5056,7 +5155,45 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 const Complex spin = damp_longitudinal * spin_longitudinal;
                 float longitudinal_damp_term = 0.0F;
                 float longitudinal_angle_term = 0.0F;
-                if constexpr (TWO_POOL) {
+                if constexpr (THREE) {
+                    const Complex bars[3] = {az, bound_bar[state], semisolid_bar[state]};
+                    const Complex pools_in[3] = {
+                        longitudinal[state], bound[state], semisolid[state]
+                    };
+                    Complex mixed[3];
+                    for (int row = 0; row < 3; ++row) {
+                        Complex carried{};
+                        for (int column = 0; column < 3; ++column) {
+                            carried += static_cast<float>(triple.entry[row][column])
+                                * pools_in[column];
+                            grad_triple[row][column] += static_cast<double>(
+                                std::real(std::conj(bars[row]) * spin * pools_in[column])
+                            );
+                        }
+                        mixed[row] = carried;
+                    }
+                    for (int row = 0; row < 3; ++row) {
+                        longitudinal_damp_term += std::real(
+                            std::conj(bars[row]) * spin * mixed[row]
+                        );
+                        longitudinal_angle_term += std::real(
+                            std::conj(bars[row]) * imaginary * spin * mixed[row]
+                        );
+                    }
+                    Complex back[3];
+                    for (int column = 0; column < 3; ++column) {
+                        Complex carried{};
+                        for (int row = 0; row < 3; ++row) {
+                            carried += std::conj(
+                                static_cast<float>(triple.entry[row][column]) * spin
+                            ) * bars[row];
+                        }
+                        back[column] = carried;
+                    }
+                    longitudinal_bar[state] = back[0];
+                    bound_bar[state] = back[1];
+                    semisolid_bar[state] = back[2];
+                } else if constexpr (TWO_POOL) {
                     const Complex ab = bound_bar[state];
                     const Complex free_state = longitudinal[state];
                     const Complex bound_state = bound[state];
@@ -5113,7 +5250,36 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 grad_exchange_attenuation = back.attenuation;
                 grad_two_pool_duration = back.dt;
             }
-            if constexpr (BM) {
+            if constexpr (THREE) {
+                double bar_entry[3][3];
+                for (int row = 0; row < 3; ++row) {
+                    for (int column = 0; column < 3; ++column) {
+                        bar_entry[row][column] = grad_triple[row][column];
+                    }
+                }
+                const double bar_recovery[3] = {
+                    static_cast<double>(grad_recovery_free),
+                    static_cast<double>(grad_recovery_bound),
+                    static_cast<double>(grad_recovery_semisolid),
+                };
+                const ThreePoolGradient<double> back = three_pool_step_adjoint<double>(
+                    r1, r1_bound, r1_semisolid, exchange, semisolid_exchange,
+                    bound_fraction, semisolid_fraction, dt, wout,
+                    bar_entry, bar_recovery
+                );
+                grad_t1 += static_cast<float>(back.r1_free) * (-1000.0F / (t1 * t1));
+                grad_t1_bound += static_cast<float>(back.r1_pool_b)
+                    * (-1000.0F / (t1_bound * t1_bound));
+                grad_t1_semisolid += static_cast<float>(back.r1_bound)
+                    * (-1000.0F / (t1_semisolid * t1_semisolid));
+                grad_exchange += static_cast<float>(back.exchange_b);
+                grad_semisolid_exchange += static_cast<float>(back.exchange_c);
+                grad_bound_fraction += static_cast<float>(back.fraction_b);
+                grad_semisolid_fraction += static_cast<float>(back.fraction_c);
+                grad_exchange_attenuation += static_cast<float>(back.attenuation);
+                grad_two_pool_duration += static_cast<float>(back.dt);
+            }
+            if constexpr (PAIRED) {
                 const TwoPoolTransverseGradient<float> across_back =
                     two_pool_transverse_adjoint<float, Complex>(
                         r2, r2_bound, exchange, bound_fraction, pool_shift, dt,
@@ -5153,18 +5319,29 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 + grad_wout * washout_rate;
         }
 
-        if constexpr (TWO_POOL) {
+        if constexpr (TWO_POOL || THREE) {
             // The fraction also sets where each pool starts, which the walk
             // back reaches last.
             grad_bound_fraction +=
                 std::real(bound_bar[0]) - std::real(longitudinal_bar[0]);
+        }
+        if constexpr (THREE) {
+            grad_semisolid_fraction +=
+                std::real(semisolid_bar[0]) - std::real(longitudinal_bar[0]);
         }
         if constexpr (MT) {
             grad_tissue_local[layout.base[9] * atoms + atom] += grad_bound_fraction;
             grad_tissue_local[layout.base[10] * atoms + atom] += grad_exchange;
             grad_tissue_local[layout.base[11] * atoms + atom] += grad_t1_bound;
         }
-        if constexpr (BM) {
+        if constexpr (THREE) {
+            grad_tissue_local[layout.base[9] * atoms + atom] +=
+                grad_semisolid_fraction;
+            grad_tissue_local[layout.base[10] * atoms + atom] +=
+                grad_semisolid_exchange;
+            grad_tissue_local[layout.base[11] * atoms + atom] += grad_t1_semisolid;
+        }
+        if constexpr (PAIRED) {
             grad_tissue_local[layout.base[12] * atoms + atom] += grad_bound_fraction;
             grad_tissue_local[layout.base[13] * atoms + atom] += grad_exchange;
             grad_tissue_local[layout.base[14] * atoms + atom] += grad_t1_bound;
@@ -8102,7 +8279,17 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         ) = &simulate_vjp_single_pool<false, false>;
         const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
-        if (pool_kind == 2) {
+        if (pool_kind == 3) {
+            if (shimmed) {
+                kernel = profiled
+                    ? &simulate_vjp_range<true, true, Pools::THREE>
+                    : &simulate_vjp_range<true, false, Pools::THREE>;
+            } else {
+                kernel = profiled
+                    ? &simulate_vjp_range<false, true, Pools::THREE>
+                    : &simulate_vjp_range<false, false, Pools::THREE>;
+            }
+        } else if (pool_kind == 2) {
             if (shimmed) {
                 kernel = profiled
                     ? &simulate_vjp_range<true, true, Pools::EXCHANGING>
