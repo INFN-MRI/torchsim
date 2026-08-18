@@ -18,6 +18,7 @@ from torchsim.sequence._transition import (
     dynamic_pair,
     transition_table,
 )
+from utils.packed_reference import simulate_packed
 
 RASTER = 1e-6
 
@@ -269,3 +270,91 @@ def test_the_pair_differentiates_back_to_the_array(name: str) -> None:
 
     assert abs(difference) > 1e-9
     assert abs(float(gradient[index].real) - difference) / abs(difference) < 1e-4
+
+
+# --- through the state machine ---
+
+
+def test_the_reference_reads_a_dynamic_pair_where_it_reads_a_table():
+    """A pulse whose weights hold still is a pulse the exact slice profile
+    already describes, so the two routes through the state machine have to
+    record the same train.
+
+    The pair is integrated at each pulse's own flip, so a row per pulse is what
+    the table's flip axis stands in for.
+    """
+    from torchsim.sequence._accelerators import _pack_events, _shim_count
+    from torchsim.sequence._builders import fse_description
+    from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
+    from torchsim.sequence._transition import DynamicPairs, transition_table
+
+    echoes = 6
+    voxels = 5
+    definition = _pulse(samples=96)
+    flips = torch.deg2rad(torch.linspace(100.0, 170.0, echoes, dtype=torch.float64))
+    description = fse_description(
+        flips.to(torch.float32),
+        echo_spacing_s=5e-3,
+        phases_rad=torch.pi / 2,
+        excitation_phase_rad=torch.pi / 2,
+    )
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=RASTER,
+    )
+    events = (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+    scaling = torch.linspace(0.7, 1.3, voxels, dtype=torch.float64)
+    prepared, _, _ = _prepare_tissue(
+        TissueProperties(
+            t1_ms=torch.linspace(700.0, 1300.0, voxels),
+            t2_ms=torch.linspace(50.0, 110.0, voxels),
+            b1=scaling.to(torch.float32),
+        ),
+        "cpu",
+    )
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+    assert _shim_count(prepared) == 1
+
+    table = transition_table(
+        definition,
+        torch.zeros(1, dtype=torch.float64),
+        bins=1024,
+        theta_max=4.0,
+        rf_raster_time_s=RASTER,
+    )
+
+    # One row per event, holding whatever rotation that event's own flip drives.
+    rows_a = []
+    rows_b = []
+    for event in range(int(packed.kind.numel())):
+        flip = float(packed.flip.reshape(-1, int(packed.kind.numel()))[0, event])
+        pair = dynamic_pair(
+            definition,
+            torch.ones(1, dtype=torch.complex128),
+            scaling.to(torch.complex128)[:, None],
+            flip=flip,
+            rf_raster_time_s=RASTER,
+        )
+        rows_a.append(pair[0])
+        rows_b.append(pair[1])
+    pairs = DynamicPairs(
+        a=torch.stack(rows_a),
+        b=torch.stack(rows_b),
+        index=torch.arange(int(packed.kind.numel()), dtype=torch.int32),
+    )
+
+    options = dict(state_count=16, output_count=echoes)
+    tabulated = simulate_packed(prepared, events, profile=table, **options)
+    integrated = simulate_packed(prepared, events, dynamic=pairs, **options)
+
+    assert float(tabulated.abs().max()) > 0.0
+    worst = float((tabulated - integrated).abs().max() / tabulated.abs().max())
+    assert worst < 1e-4, worst

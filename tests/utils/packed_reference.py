@@ -41,6 +41,7 @@ def simulate_packed(
     output_count: int,
     geometry: Geometry = NO_GEOMETRY,
     profile: Any = None,
+    dynamic: Any = None,
     locations: int = 1,
     lineshape: Any = None,
     exchanging: bool = False,
@@ -66,6 +67,12 @@ def simulate_packed(
         for the instantaneous pulse. Given one, a pulse turns through the
         rotation the table holds at its effective flip rather than through a
         flip and a phase.
+    dynamic
+        A :class:`~torchsim.sequence._transition.DynamicPairs`, for a pulse
+        whose channel weights vary while it plays. The rotation is already
+        integrated at that pulse's own flip, so only the event's phase is left
+        to apply. Mutually exclusive with ``profile``: a pair integrated at the
+        voxel's own position is a slice profile, and an exact one.
     locations
         Slice positions each voxel was spread over. The prepared tissue runs
         voxel-major, so a voxel's position along the slice is its index modulo
@@ -300,7 +307,7 @@ def simulate_packed(
                         semisolid = semisolid * absorbed[:, None]
                     else:
                         bound = bound * absorbed[:, None]
-                if profile is None:
+                if profile is None and dynamic is None:
                     fplus, fminus, longitudinal = _rotate(
                         fplus, fminus, longitudinal, alpha, phi
                     )
@@ -309,9 +316,14 @@ def simulate_packed(
                             bound_plus, bound_minus, bound, alpha, phi
                         )
                 else:
-                    # The table is built at zero RF phase, which turns the
+                    # Either pair is built at zero RF phase, which turns the
                     # rotation axis and so multiplies ``b`` alone.
-                    spinor_a, spinor_b = profile.at(slice_index, alpha)
+                    if dynamic is None:
+                        spinor_a, spinor_b = profile.at(slice_index, alpha)
+                    else:
+                        # Integrated at this pulse's own flip, so the flip is
+                        # already inside the pair rather than applied to it.
+                        spinor_a, spinor_b = dynamic.at(int(dynamic.index[event]))
                     spun = spinor_b * torch.exp(-1j * phi)
                     fplus, fminus, longitudinal = _rotate_spinor(
                         fplus, fminus, longitudinal, spinor_a, spun

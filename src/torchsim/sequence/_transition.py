@@ -194,6 +194,71 @@ def compose_spinor(
     return a, b
 
 
+@dataclass(frozen=True)
+class DynamicPairs:
+    """The rotation each pulse performs, voxel by voxel.
+
+    ``a`` and ``b`` hold the Cayley-Klein pair shaped ``(rows, voxels)``, and
+    ``index`` says which row an event reads -- packed alongside the events, in
+    their order, exactly as the shim row and the profile row are. Events that
+    drive no pulse carry any row; nothing reads it.
+
+    A row is one pulse rather than one shape. A static array's rotation depends
+    on the array through a single complex scalar, which is what lets one table
+    over effective flip cover every pulse sharing a shape; this one depends on
+    the whole per-channel vector as it varies, so pulses differing in anything
+    at all share nothing.
+
+    The pair is built at zero RF phase, so the event's own phase turns the axis
+    afterwards -- ``b -> b exp(-i phi)`` -- which is what lets phase cycling
+    reuse a row rather than re-integrate it.
+    """
+
+    a: torch.Tensor
+    b: torch.Tensor
+    index: torch.Tensor
+
+    def __post_init__(self) -> None:
+        if self.a.shape != self.b.shape:
+            raise ValueError(
+                f"the pair's halves are shaped {tuple(self.a.shape)} and "
+                f"{tuple(self.b.shape)}"
+            )
+        if self.a.ndim != 2:
+            raise ValueError(
+                f"a dynamic pair is one row per pulse of one entry per voxel, "
+                f"so it is two-dimensional, not {self.a.ndim}"
+            )
+
+    @property
+    def rows(self) -> int:
+        """How many pulses the set carries a rotation for."""
+        return int(self.a.shape[0])
+
+    @property
+    def voxels(self) -> int:
+        """How many voxels each row covers."""
+        return int(self.a.shape[1])
+
+    def at(self, row: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """The pair one pulse performs, one entry per voxel."""
+        return self.a[row], self.b[row]
+
+    def packed(self, device: torch.device | str | None = None) -> torch.Tensor:
+        """The pair laid out as the kernels index it.
+
+        ``(rows, voxels, 4)``: the pair, real before imaginary, so what a
+        single read needs is four contiguous floats.
+        """
+        return (
+            torch.stack(
+                (self.a.real, self.a.imag, self.b.real, self.b.imag), dim=-1
+            )
+            .to(device=device, dtype=torch.float32)
+            .contiguous()
+        )
+
+
 def dynamic_pair(
     definition: RfDefinition,
     weights: torch.Tensor,
