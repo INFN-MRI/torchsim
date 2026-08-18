@@ -260,6 +260,12 @@ struct Buffers {
     const float* profile;
     const std::int32_t* profile_index;
     std::int64_t profile_bins;
+    // A rotation per pulse per voxel, ``(rows, atom_count, 4)``: the
+    // Cayley-Klein pair, real before imaginary. ``dynamic_index`` says which
+    // row an event reads. Null unless the sequence drives a pulse whose
+    // channel weights vary while it plays.
+    const float* dynamic;
+    const std::int32_t* dynamic_index;
     std::int64_t locations;
     float profile_step;
     // How well the bound pool absorbs an off-resonance pulse, tabulated over
@@ -815,6 +821,21 @@ enum class Pools {
     SEMISOLID,
     EXCHANGING,
     THREE,
+};
+
+// How a pulse's rotation is reached, for the same reason the pools are one
+// enum rather than a product of flags: the three are alternatives, not
+// features that combine.
+//
+// ``INSTANT`` turns through a flip angle and a phase. ``PROFILED`` reads the
+// rotation a shaped pulse performs from a table over slice position and
+// effective flip. ``DYNAMIC`` reads it per voxel, which is what a pulse whose
+// channel weights vary while it plays needs -- and which subsumes a profile,
+// since a rotation integrated at the voxel's own position is one.
+enum class RfMode {
+    INSTANT,
+    PROFILED,
+    DYNAMIC,
 };
 
 template <typename Scalar>
@@ -1982,9 +2003,9 @@ inline Complex multiply(const Complex left, const Complex right) {
 
 // Where a voxel sits along the slice. Voxels are spread over the profile
 // voxel-major, so consecutive atoms walk the slice and wrap.
-template <bool PROFILED>
+template <RfMode MODE>
 inline std::int64_t slice_row(const Buffers& buffers, const std::int64_t atom) {
-    if constexpr (PROFILED) {
+    if constexpr (MODE == RfMode::PROFILED) {
         return atom % buffers.locations;
     } else {
         (void)buffers;
@@ -1993,13 +2014,33 @@ inline std::int64_t slice_row(const Buffers& buffers, const std::int64_t atom) {
     }
 }
 
+// The rotation a pulse performs at one voxel, read rather than interpolated.
+//
+// A tabulated pair covers a shape's every pulse because a static array reaches
+// the rotation through one complex scalar; this one is integrated per pulse
+// per voxel, so there is nothing to interpolate and the read is four floats.
+inline void dynamic_pair_at(
+    const Buffers& buffers,
+    const std::int64_t event,
+    const std::int64_t atom,
+    Complex& a,
+    Complex& b
+) {
+    const std::int64_t row =
+        static_cast<std::int64_t>(buffers.dynamic_index[event]);
+    const float* const entry =
+        buffers.dynamic + (row * buffers.atom_count + atom) * 4;
+    a = Complex(entry[0], entry[1]);
+    b = Complex(entry[2], entry[3]);
+}
+
 // Which row of the stacked tables this pulse reads: its own shape's block,
 // then the voxel's place along the slice.
-template <bool PROFILED>
+template <RfMode MODE>
 inline std::int64_t table_row(
     const Buffers& buffers, const std::int64_t event, const std::int64_t location
 ) {
-    if constexpr (PROFILED) {
+    if constexpr (MODE == RfMode::PROFILED) {
         return static_cast<std::int64_t>(buffers.profile_index[event])
             * buffers.locations + location;
     } else {
@@ -2356,7 +2397,7 @@ inline void rotate(
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool PROFILED, Pools POOLS>
+template <RfMode MODE, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_jvp_range(
     const JvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -2373,6 +2414,9 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
     // the power a pulse deposits; see ``simulate_range``.
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
+    // The tabulated case keeps the name it had; the per-voxel one is
+    // reached where this is false and the mode says so.
+    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const Buffers& primal = buffers.primal;
     const std::size_t states = static_cast<std::size_t>(state_count);
     std::vector<DualComplex> fplus(states);
@@ -2387,7 +2431,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(primal, work, event_count, output_count);
         const std::int64_t atom = view.atom;
-        const std::int64_t location = slice_row<PROFILED>(primal, atom);
+        const std::int64_t location = slice_row<MODE>(primal, atom);
         const float* const dot_duration = buffers.duration + view.event_base;
         const float* const dot_flip = buffers.flip + view.event_base;
         const float* const dot_phase = buffers.phase + view.event_base;
@@ -2765,7 +2809,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                         Complex slope_a{};
                         Complex slope_b{};
                         profile_pair_slope(
-                            primal, table_row<PROFILED>(primal, event, location),
+                            primal, table_row<MODE>(primal, event, location),
                             alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         // The flip angle carries the tangent into the table;
@@ -3777,7 +3821,7 @@ void simulate_lane_range(
     }
 }
 
-template <bool PROFILED, Pools POOLS>
+template <RfMode MODE, Pools POOLS>
 void simulate_range(
     const Buffers& buffers,
     const std::int64_t work_begin,
@@ -3799,6 +3843,9 @@ void simulate_range(
     // the power a pulse deposits.
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
+    // The tabulated case keeps the name it had; the per-voxel one is
+    // reached where this is false and the mode says so.
+    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const std::size_t states = static_cast<std::size_t>(state_count);
     std::vector<Complex> fplus(states);
     std::vector<Complex> fminus(states);
@@ -3817,7 +3864,7 @@ void simulate_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(buffers, work, event_count, output_count);
         const std::int64_t atom = view.atom;
-        const std::int64_t location = slice_row<PROFILED>(buffers, atom);
+        const std::int64_t location = slice_row<MODE>(buffers, atom);
         std::fill(fplus.begin(), fplus.end(), Complex{});
         std::fill(fminus.begin(), fminus.end(), Complex{});
         std::fill(longitudinal.begin(), longitudinal.end(), Complex{});
@@ -4034,16 +4081,23 @@ void simulate_range(
                             value *= absorbed;
                         }
                     }
-                    if constexpr (PROFILED) {
+                    if constexpr (MODE != RfMode::INSTANT) {
                         Complex a{};
                         Complex b{};
-                        profile_pair(
-                            buffers,
-                            table_row<PROFILED>(buffers, event, location),
-                            theta, a, b
-                        );
-                        // The table is built at zero RF phase, which turns the
-                        // rotation axis and so reaches ``b`` alone.
+                        if constexpr (MODE == RfMode::DYNAMIC) {
+                            // Already integrated at this pulse's own flip, so
+                            // the flip is inside the pair rather than read
+                            // against it.
+                            dynamic_pair_at(buffers, event, atom, a, b);
+                        } else {
+                            profile_pair(
+                                buffers,
+                                table_row<MODE>(buffers, event, location),
+                                theta, a, b
+                            );
+                        }
+                        // Either pair is built at zero RF phase, which turns
+                        // the rotation axis and so reaches ``b`` alone.
                         const Complex spun = b * std::polar(1.0F, -phi);
                         rotate_spinor(fplus, fminus, longitudinal, a, spun);
                         if constexpr (PAIRED) {
@@ -4350,7 +4404,7 @@ inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool PROFILED, Pools POOLS>
+template <RfMode MODE, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_vjp_range(
     const VjpBuffers& buffers,
     const std::int64_t work_begin,
@@ -4372,6 +4426,9 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     constexpr bool TWO_POOL = MT || BM;
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
+    // The tabulated case keeps the name it had; the per-voxel one is
+    // reached where this is false and the mode says so.
+    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
@@ -4419,7 +4476,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(primal, work, event_count, output_count);
         const std::int64_t atom = view.atom;
-        const std::int64_t location = slice_row<PROFILED>(primal, atom);
+        const std::int64_t location = slice_row<MODE>(primal, atom);
         float* const grad_flip_train = grad_flip_local + view.event_base;
         float* const grad_phase_train = grad_phase_local + view.event_base;
         float* const grad_duration_train = grad_duration_local + view.event_base;
@@ -4630,7 +4687,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                         Complex pair_b{};
                         profile_pair(
                             primal,
-                            table_row<PROFILED>(primal, event, location),
+                            table_row<MODE>(primal, event, location),
                             alpha, pair_a, pair_b
                         );
                         const Complex spun = pair_b * std::polar(1.0F, -phi);
@@ -4941,7 +4998,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                         Complex slope_a{};
                         Complex slope_b{};
                         profile_pair_slope(
-                            primal, table_row<PROFILED>(primal, event, location),
+                            primal, table_row<MODE>(primal, event, location),
                             alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         const Complex turn = std::polar(1.0F, -phi);
@@ -6518,7 +6575,7 @@ inline DualFloat shim_dual(
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool PROFILED, Pools POOLS>
+template <RfMode MODE, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -6539,6 +6596,9 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     constexpr bool TWO_POOL = MT || BM;
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
+    // The tabulated case keeps the name it had; the per-voxel one is
+    // reached where this is false and the mode says so.
+    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
@@ -6578,7 +6638,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     for (std::int64_t work = work_begin; work < work_end; ++work) {
         const TrainView view = train_view(primal, work, event_count, output_count);
         const std::int64_t atom = view.atom;
-        const std::int64_t location = slice_row<PROFILED>(primal, atom);
+        const std::int64_t location = slice_row<MODE>(primal, atom);
         const float* const dot_duration = buffers.dot_duration + view.event_base;
         const float* const dot_flip = buffers.dot_flip + view.event_base;
         const float* const dot_phase = buffers.dot_phase + view.event_base;
@@ -6879,7 +6939,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                         DualComplex slope_a{};
                         DualComplex slope_b{};
                         profile_pair_slope_dual(
-                            primal, table_row<PROFILED>(primal, event, location),
+                            primal, table_row<MODE>(primal, event, location),
                             alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         const DualComplex spun =
@@ -7236,7 +7296,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                         DualComplex slope_a{};
                         DualComplex slope_b{};
                         profile_pair_slope_dual(
-                            primal, table_row<PROFILED>(primal, event, location),
+                            primal, table_row<MODE>(primal, event, location),
                             alpha, pair_a, pair_b, slope_a, slope_b
                         );
                         const DualComplex turn =
@@ -7724,7 +7784,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
 #define CLONED_KERNEL
 #endif
 
-template <bool PROFILED>
+template <RfMode MODE>
 CLONED_KERNEL
 void simulate_jvp_single_pool(
     const JvpBuffers& buffers,
@@ -7734,12 +7794,12 @@ void simulate_jvp_single_pool(
     const std::int64_t state_count,
     const std::int64_t output_count
 ) {
-    simulate_jvp_range<PROFILED, Pools::ONE>(
+    simulate_jvp_range<MODE, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count
     );
 }
 
-template <bool PROFILED>
+template <RfMode MODE>
 CLONED_KERNEL
 void simulate_vjp_single_pool(
     const VjpBuffers& buffers,
@@ -7753,7 +7813,7 @@ void simulate_vjp_single_pool(
     float* grad_duration_local,
     float* grad_tissue_local
 ) {
-    simulate_vjp_range<PROFILED, Pools::ONE>(
+    simulate_vjp_range<MODE, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count,
         grad_flip_local, grad_phase_local, grad_duration_local,
         grad_tissue_local
@@ -7764,7 +7824,7 @@ void simulate_vjp_single_pool(
 // path, so it is the one whose clones are given up once a fourth pool count
 // takes the object past the size a build should carry. The three others keep
 // theirs.
-template <bool PROFILED>
+template <RfMode MODE>
 void simulate_vjp_jvp_single_pool(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -7777,7 +7837,7 @@ void simulate_vjp_jvp_single_pool(
     DualFloat* grad_duration_local,
     DualFloat* grad_tissue_local
 ) {
-    simulate_vjp_jvp_range<PROFILED, Pools::ONE>(
+    simulate_vjp_jvp_range<MODE, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count,
         grad_flip_local, grad_phase_local, grad_duration_local,
         grad_tissue_local
@@ -7802,6 +7862,8 @@ inline Buffers packed_buffers(
     const std::int64_t profile_bins = 0,
     const std::int64_t locations = 1,
     const float profile_step = 1.0F,
+    const void* const dynamic = nullptr,
+    const void* const dynamic_index = nullptr,
     const void* const lineshape = nullptr,
     const std::int64_t lineshape_bins = 0,
     const float lineshape_step = 1.0F
@@ -7841,6 +7903,8 @@ inline Buffers packed_buffers(
     buffers.profile_bins = profile_bins;
     buffers.locations = locations;
     buffers.profile_step = profile_step;
+    buffers.dynamic = static_cast<const float*>(dynamic);
+    buffers.dynamic_index = static_cast<const std::int32_t*>(dynamic_index);
     buffers.lineshape = static_cast<const float*>(lineshape);
     buffers.lineshape_bins = lineshape_bins;
     buffers.lineshape_step = lineshape_step;
@@ -8088,9 +8152,10 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             ? Pools::EXCHANGING
             : (pool_kind == 1 ? Pools::SEMISOLID : Pools::ONE));
     // The packed buffers, the two output planes, then the transition tables
-    // and the per-event index that says which an event reads, then the bound
-    // pool's lineshape -- all null when the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 5;
+    // and the per-event index that says which an event reads, then the
+    // per-voxel rotations and their own index, then the bound pool's
+    // lineshape -- all null when the sequence has none.
+    constexpr Py_ssize_t expected = PACKED_COUNT + 7;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8122,6 +8187,8 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
         raw[PACKED_COUNT + 4],
+        raw[PACKED_COUNT + 5],
+        raw[PACKED_COUNT + 6],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
     );
@@ -8149,20 +8216,34 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         std::int64_t
     ) = vectorize
         ? &simulate_lane_range
-        : &simulate_range<false, Pools::ONE>;
+        : &simulate_range<RfMode::INSTANT, Pools::ONE>;
     if (!vectorize) {
-        const bool profiled = buffers.profile != nullptr;
+        const RfMode mode = buffers.dynamic != nullptr
+            ? RfMode::DYNAMIC
+            : (buffers.profile != nullptr ? RfMode::PROFILED
+                                              : RfMode::INSTANT);
         if (pools == Pools::THREE) {
-            kernel = profiled ? &simulate_range<true, Pools::THREE>
-                              : &simulate_range<false, Pools::THREE>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_range<RfMode::DYNAMIC, Pools::THREE>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_range<RfMode::PROFILED, Pools::THREE>
+                    : &simulate_range<RfMode::INSTANT, Pools::THREE>);
         } else if (pools == Pools::EXCHANGING) {
-            kernel = profiled ? &simulate_range<true, Pools::EXCHANGING>
-                              : &simulate_range<false, Pools::EXCHANGING>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_range<RfMode::DYNAMIC, Pools::EXCHANGING>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_range<RfMode::PROFILED, Pools::EXCHANGING>
+                    : &simulate_range<RfMode::INSTANT, Pools::EXCHANGING>);
         } else if (pools == Pools::SEMISOLID) {
-            kernel = profiled ? &simulate_range<true, Pools::SEMISOLID>
-                              : &simulate_range<false, Pools::SEMISOLID>;
-        } else if (profiled) {
-            kernel = &simulate_range<true, Pools::ONE>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_range<RfMode::DYNAMIC, Pools::SEMISOLID>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_range<RfMode::PROFILED, Pools::SEMISOLID>
+                    : &simulate_range<RfMode::INSTANT, Pools::SEMISOLID>);
+        } else if (mode == RfMode::DYNAMIC) {
+            kernel = &simulate_range<RfMode::DYNAMIC, Pools::ONE>;
+        } else if (mode == RfMode::PROFILED) {
+            kernel = &simulate_range<RfMode::PROFILED, Pools::ONE>;
         }
     }
     // The caller establishes the real-subspace conditions; axis 1 puts the
@@ -8213,24 +8294,38 @@ void dispatch_jvp(
     void (*kernel)(
         const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = &simulate_jvp_single_pool<false>;
+    ) = &simulate_jvp_single_pool<RfMode::INSTANT>;
     if (lanes) {
         kernel = &simulate_real_jvp_lane_range;
     } else if (real_axis == 1 && single) {
         kernel = &simulate_real_jvp_range;
     } else {
-        const bool profiled = buffers.primal.profile != nullptr;
+        const RfMode mode = buffers.primal.dynamic != nullptr
+            ? RfMode::DYNAMIC
+            : (buffers.primal.profile != nullptr ? RfMode::PROFILED
+                                                     : RfMode::INSTANT);
         if (pools == Pools::THREE) {
-            kernel = profiled ? &simulate_jvp_range<true, Pools::THREE>
-                              : &simulate_jvp_range<false, Pools::THREE>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_jvp_range<RfMode::DYNAMIC, Pools::THREE>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_jvp_range<RfMode::PROFILED, Pools::THREE>
+                    : &simulate_jvp_range<RfMode::INSTANT, Pools::THREE>);
         } else if (pools == Pools::EXCHANGING) {
-            kernel = profiled ? &simulate_jvp_range<true, Pools::EXCHANGING>
-                              : &simulate_jvp_range<false, Pools::EXCHANGING>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_jvp_range<RfMode::DYNAMIC, Pools::EXCHANGING>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_jvp_range<RfMode::PROFILED, Pools::EXCHANGING>
+                    : &simulate_jvp_range<RfMode::INSTANT, Pools::EXCHANGING>);
         } else if (pools == Pools::SEMISOLID) {
-            kernel = profiled ? &simulate_jvp_range<true, Pools::SEMISOLID>
-                              : &simulate_jvp_range<false, Pools::SEMISOLID>;
-        } else if (profiled) {
-            kernel = &simulate_jvp_single_pool<true>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_jvp_range<RfMode::DYNAMIC, Pools::SEMISOLID>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_jvp_range<RfMode::PROFILED, Pools::SEMISOLID>
+                    : &simulate_jvp_range<RfMode::INSTANT, Pools::SEMISOLID>);
+        } else if (mode == RfMode::DYNAMIC) {
+            kernel = &simulate_jvp_single_pool<RfMode::DYNAMIC>;
+        } else if (mode == RfMode::PROFILED) {
+            kernel = &simulate_jvp_single_pool<RfMode::PROFILED>;
         }
     }
     // A lane kernel's work item covers a block of trains rather than one train.
@@ -8297,7 +8392,7 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     // planes, then the transition tables and the per-event index that says
     // which an event reads, then the bound pool's lineshape -- all null when
     // the sequence has none.
-    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 5;
+    constexpr Py_ssize_t expected = PACKED_COUNT + FLOAT_COUNT + 7;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8324,11 +8419,13 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
-        raw[expected - 3],
-        raw[expected - 2],
+        raw[expected - 5],
+        raw[expected - 4],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 3],
+        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
@@ -8405,7 +8502,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     // input, then the transition tables and the per-event index that says
     // which an event reads -- both null when there is no table -- and the
     // bound pool's lineshape, null when there is no bound pool.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 3;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 2 + FLOAT_COUNT + 5;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8431,11 +8528,13 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
-        raw[expected - 3],
-        raw[expected - 2],
+        raw[expected - 5],
+        raw[expected - 4],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 3],
+        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)
@@ -8483,19 +8582,33 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         void (*kernel)(
             const VjpBuffers&, std::int64_t, std::int64_t, std::int64_t,
             std::int64_t, std::int64_t, float*, float*, float*, float*
-        ) = &simulate_vjp_single_pool<false>;
-        const bool profiled = buffers.primal.profile != nullptr;
+        ) = &simulate_vjp_single_pool<RfMode::INSTANT>;
+        const RfMode mode = buffers.primal.dynamic != nullptr
+            ? RfMode::DYNAMIC
+            : (buffers.primal.profile != nullptr ? RfMode::PROFILED
+                                                     : RfMode::INSTANT);
         if (pool_kind == 3) {
-            kernel = profiled ? &simulate_vjp_range<true, Pools::THREE>
-                              : &simulate_vjp_range<false, Pools::THREE>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_vjp_range<RfMode::DYNAMIC, Pools::THREE>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_vjp_range<RfMode::PROFILED, Pools::THREE>
+                    : &simulate_vjp_range<RfMode::INSTANT, Pools::THREE>);
         } else if (pool_kind == 2) {
-            kernel = profiled ? &simulate_vjp_range<true, Pools::EXCHANGING>
-                              : &simulate_vjp_range<false, Pools::EXCHANGING>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_vjp_range<RfMode::DYNAMIC, Pools::EXCHANGING>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_vjp_range<RfMode::PROFILED, Pools::EXCHANGING>
+                    : &simulate_vjp_range<RfMode::INSTANT, Pools::EXCHANGING>);
         } else if (pool_kind == 1) {
-            kernel = profiled ? &simulate_vjp_range<true, Pools::SEMISOLID>
-                              : &simulate_vjp_range<false, Pools::SEMISOLID>;
-        } else if (profiled) {
-            kernel = &simulate_vjp_single_pool<true>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_vjp_range<RfMode::DYNAMIC, Pools::SEMISOLID>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_vjp_range<RfMode::PROFILED, Pools::SEMISOLID>
+                    : &simulate_vjp_range<RfMode::INSTANT, Pools::SEMISOLID>);
+        } else if (mode == RfMode::DYNAMIC) {
+            kernel = &simulate_vjp_single_pool<RfMode::DYNAMIC>;
+        } else if (mode == RfMode::PROFILED) {
+            kernel = &simulate_vjp_single_pool<RfMode::PROFILED>;
         }
         const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         WorkerPool::instance().run(thread_count, [&](const unsigned int slot) {
@@ -8580,24 +8693,38 @@ void dispatch_second_order(
     void (*kernel)(
         const VjpJvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, DualFloat*, DualFloat*, DualFloat*, DualFloat*
-    ) = &simulate_vjp_jvp_single_pool<false>;
+    ) = &simulate_vjp_jvp_single_pool<RfMode::INSTANT>;
     if (lanes) {
         kernel = &simulate_real_vjp_jvp_lane_range;
     } else if (real_axis == 1 && !bound) {
         kernel = &simulate_real_vjp_jvp_range;
     } else {
-        const bool profiled = buffers.primal.profile != nullptr;
+        const RfMode mode = buffers.primal.dynamic != nullptr
+            ? RfMode::DYNAMIC
+            : (buffers.primal.profile != nullptr ? RfMode::PROFILED
+                                                     : RfMode::INSTANT);
         if (pools == Pools::THREE) {
-            kernel = profiled ? &simulate_vjp_jvp_range<true, Pools::THREE>
-                              : &simulate_vjp_jvp_range<false, Pools::THREE>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_vjp_jvp_range<RfMode::DYNAMIC, Pools::THREE>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_vjp_jvp_range<RfMode::PROFILED, Pools::THREE>
+                    : &simulate_vjp_jvp_range<RfMode::INSTANT, Pools::THREE>);
         } else if (pools == Pools::EXCHANGING) {
-            kernel = profiled ? &simulate_vjp_jvp_range<true, Pools::EXCHANGING>
-                              : &simulate_vjp_jvp_range<false, Pools::EXCHANGING>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_vjp_jvp_range<RfMode::DYNAMIC, Pools::EXCHANGING>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_vjp_jvp_range<RfMode::PROFILED, Pools::EXCHANGING>
+                    : &simulate_vjp_jvp_range<RfMode::INSTANT, Pools::EXCHANGING>);
         } else if (pools == Pools::SEMISOLID) {
-            kernel = profiled ? &simulate_vjp_jvp_range<true, Pools::SEMISOLID>
-                              : &simulate_vjp_jvp_range<false, Pools::SEMISOLID>;
-        } else if (profiled) {
-            kernel = &simulate_vjp_jvp_single_pool<true>;
+            kernel = mode == RfMode::DYNAMIC
+                ? &simulate_vjp_jvp_range<RfMode::DYNAMIC, Pools::SEMISOLID>
+                : (mode == RfMode::PROFILED
+                    ? &simulate_vjp_jvp_range<RfMode::PROFILED, Pools::SEMISOLID>
+                    : &simulate_vjp_jvp_range<RfMode::INSTANT, Pools::SEMISOLID>);
+        } else if (mode == RfMode::DYNAMIC) {
+            kernel = &simulate_vjp_jvp_single_pool<RfMode::DYNAMIC>;
+        } else if (mode == RfMode::PROFILED) {
+            kernel = &simulate_vjp_jvp_single_pool<RfMode::PROFILED>;
         }
     }
     const std::int64_t work_count =
@@ -8735,7 +8862,7 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     // blocks, then the transition tables and the per-event index that says
     // which an event reads -- both null when there is no table -- and the
     // bound pool's lineshape, null when there is no bound pool.
-    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 3;
+    constexpr Py_ssize_t expected = PACKED_COUNT + 3 * FLOAT_COUNT + 2 + 5;
     if (!PySequence_Check(pointers) || PySequence_Size(pointers) != expected) {
         PyErr_SetString(PyExc_ValueError, "wrong number of buffer pointers");
         return nullptr;
@@ -8764,11 +8891,13 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         static_cast<float>(flow_scale),
         static_cast<float>(washout_scale),
         static_cast<std::int64_t>(shim_count),
-        raw[expected - 3],
-        raw[expected - 2],
+        raw[expected - 5],
+        raw[expected - 4],
         static_cast<std::int64_t>(profile_bins),
         static_cast<std::int64_t>(locations),
         static_cast<float>(profile_step),
+        raw[expected - 3],
+        raw[expected - 2],
         raw[expected - 1],
         static_cast<std::int64_t>(lineshape_bins),
         static_cast<float>(lineshape_step)

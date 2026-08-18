@@ -275,32 +275,33 @@ def test_the_pair_differentiates_back_to_the_array(name: str) -> None:
 # --- through the state machine ---
 
 
-def test_the_reference_reads_a_dynamic_pair_where_it_reads_a_table():
-    """A pulse whose weights hold still is a pulse the exact slice profile
-    already describes, so the two routes through the state machine have to
-    record the same train.
+ECHOES = 6
+VOXELS = 5
 
-    The pair is integrated at each pulse's own flip, so a row per pulse is what
-    the table's flip axis stands in for.
+
+def _train():
+    """A refocused train on a voxel-varying transmit field, and the rotation
+    each of its pulses performs there.
+
+    The array holds still while every pulse plays, which is the one case both
+    the tabulated route and the per-voxel one describe -- so it is the case
+    that can hold them against each other.
     """
     from torchsim.sequence._accelerators import _pack_events, _shim_count
     from torchsim.sequence._builders import fse_description
     from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
-    from torchsim.sequence._transition import DynamicPairs, transition_table
+    from torchsim.sequence._transition import DynamicPairs
 
-    echoes = 6
-    voxels = 5
     definition = _pulse(samples=96)
-    flips = torch.deg2rad(torch.linspace(100.0, 170.0, echoes, dtype=torch.float64))
-    description = fse_description(
-        flips.to(torch.float32),
-        echo_spacing_s=5e-3,
-        phases_rad=torch.pi / 2,
-        excitation_phase_rad=torch.pi / 2,
-    )
+    flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     packed = _pack_events(
         "fse",
-        description,
+        fse_description(
+            flips,
+            echo_spacing_s=5e-3,
+            phases_rad=torch.pi / 2,
+            excitation_phase_rad=torch.pi / 2,
+        ),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -311,11 +312,11 @@ def test_the_reference_reads_a_dynamic_pair_where_it_reads_a_table():
         packed.output_index, packed.shim_index, packed.saturation,
         packed.rf_frequency_hz,
     )
-    scaling = torch.linspace(0.7, 1.3, voxels, dtype=torch.float64)
+    scaling = torch.linspace(0.7, 1.3, VOXELS, dtype=torch.float64)
     prepared, _, _ = _prepare_tissue(
         TissueProperties(
-            t1_ms=torch.linspace(700.0, 1300.0, voxels),
-            t2_ms=torch.linspace(50.0, 110.0, voxels),
+            t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+            t2_ms=torch.linspace(50.0, 110.0, VOXELS),
             b1=scaling.to(torch.float32),
         ),
         "cpu",
@@ -323,6 +324,37 @@ def test_the_reference_reads_a_dynamic_pair_where_it_reads_a_table():
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
     assert _shim_count(prepared) == 1
 
+    count = int(packed.kind.numel())
+    halves = [
+        dynamic_pair(
+            definition,
+            torch.ones(1, dtype=torch.complex128),
+            scaling.to(torch.complex128)[:, None],
+            flip=float(packed.flip.reshape(-1, count)[0, event]),
+            rf_raster_time_s=RASTER,
+        )
+        for event in range(count)
+    ]
+    pairs = DynamicPairs(
+        a=torch.stack([half[0] for half in halves]),
+        b=torch.stack([half[1] for half in halves]),
+        index=torch.arange(count, dtype=torch.int32),
+    )
+    return definition, prepared, events, pairs
+
+
+
+def test_the_reference_reads_a_dynamic_pair_where_it_reads_a_table():
+    """A pulse whose weights hold still is a pulse the exact slice profile
+    already describes, so the two routes through the state machine have to
+    record the same train.
+
+    The pair is integrated at each pulse's own flip, so a row per pulse is what
+    the table's flip axis stands in for.
+    """
+    from torchsim.sequence._transition import transition_table
+
+    definition, prepared, events, pairs = _train()
     table = transition_table(
         definition,
         torch.zeros(1, dtype=torch.float64),
@@ -331,30 +363,62 @@ def test_the_reference_reads_a_dynamic_pair_where_it_reads_a_table():
         rf_raster_time_s=RASTER,
     )
 
-    # One row per event, holding whatever rotation that event's own flip drives.
-    rows_a = []
-    rows_b = []
-    for event in range(int(packed.kind.numel())):
-        flip = float(packed.flip.reshape(-1, int(packed.kind.numel()))[0, event])
-        pair = dynamic_pair(
-            definition,
-            torch.ones(1, dtype=torch.complex128),
-            scaling.to(torch.complex128)[:, None],
-            flip=flip,
-            rf_raster_time_s=RASTER,
-        )
-        rows_a.append(pair[0])
-        rows_b.append(pair[1])
-    pairs = DynamicPairs(
-        a=torch.stack(rows_a),
-        b=torch.stack(rows_b),
-        index=torch.arange(int(packed.kind.numel()), dtype=torch.int32),
-    )
-
-    options = dict(state_count=16, output_count=echoes)
+    options = dict(state_count=16, output_count=ECHOES)
     tabulated = simulate_packed(prepared, events, profile=table, **options)
     integrated = simulate_packed(prepared, events, dynamic=pairs, **options)
 
     assert float(tabulated.abs().max()) > 0.0
     worst = float((tabulated - integrated).abs().max() / tabulated.abs().max())
     assert worst < 1e-4, worst
+
+
+def test_the_host_kernel_reads_the_pair_the_reference_does():
+    """The C++ forward through the dynamic mode, against the oracle.
+
+    The two share no code: the reference turns a pulse in torch and the kernel
+    reads four floats per voxel out of a packed buffer.
+    """
+    from torchsim.sequence._accelerators import _run_packed
+
+    _, prepared, events, pairs = _train()
+
+    expected = simulate_packed(
+        prepared, events, state_count=16, output_count=ECHOES, dynamic=pairs
+    )
+    measured = _run_packed(
+        prepared, events, 16, ECHOES, 1, dynamic=pairs
+    )
+
+    assert float(expected.abs().max()) > 0.0
+    worst = float((expected - measured).abs().max() / expected.abs().max())
+    assert worst < 1e-6, worst
+
+
+def test_the_host_kernel_still_reads_a_table_where_one_is_given():
+    """The mode is picked from which buffer the caller filled, so a sequence
+    with a table has to be untouched by the pair's arrival.
+    """
+    from torchsim.sequence._accelerators import _run_packed
+    from torchsim.sequence._transition import SliceTables, transition_table
+
+    definition, prepared, events, _ = _train()
+    table = SliceTables.alone(
+        transition_table(
+            definition,
+            torch.zeros(1, dtype=torch.float64),
+            bins=256,
+            theta_max=4.0,
+            rf_raster_time_s=RASTER,
+        ),
+        int(events[1].numel()),
+    )
+
+    expected = simulate_packed(
+        prepared, events, state_count=16, output_count=ECHOES,
+        profile=table.tables[0],
+    )
+    measured = _run_packed(prepared, events, 16, ECHOES, 1, profile=table)
+
+    assert float(expected.abs().max()) > 0.0
+    worst = float((expected - measured).abs().max() / expected.abs().max())
+    assert worst < 1e-6, worst

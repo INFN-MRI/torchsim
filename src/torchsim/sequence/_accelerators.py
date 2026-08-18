@@ -1160,21 +1160,38 @@ def _profiled_pointers(
     return _pointers((*values, table, rows))
 
 
+def _dynamic_pointers(
+    pairs: torch.Tensor | None, rows: torch.Tensor | None
+) -> tuple[int, ...]:
+    """The per-voxel rotations' address and its per-event index.
+
+    A sequence that drives no pulse of varying channel weights passes nulls,
+    which is what leaves the kernels on the flip-and-phase operator or on the
+    tabulated one.
+    """
+    if pairs is None:
+        return (0, 0)
+    return _pointers((pairs, rows))
+
+
 def _bound_pointers(
     values: tuple[torch.Tensor, ...],
     table: torch.Tensor | None,
     rows: torch.Tensor | None,
     absorption: torch.Tensor | None,
+    pairs: torch.Tensor | None = None,
+    pair_rows: torch.Tensor | None = None,
 ) -> tuple[int, ...]:
-    """The profiled addresses with the bound pool's lineshape on the end.
+    """The profiled addresses, the per-voxel rotations, then the lineshape.
 
-    A sequence with no bound pool passes a null there, which is what selects
-    the single-pool kernel.
+    A sequence with no bound pool passes a null on the end, which is what
+    selects the single-pool kernel.
     """
     profiled = _profiled_pointers(values, table, rows)
+    dynamic = _dynamic_pointers(pairs, pair_rows)
     if absorption is None:
-        return (*profiled, 0)
-    return (*profiled, *_pointers((absorption,)))
+        return (*profiled, *dynamic, 0)
+    return (*profiled, *dynamic, *_pointers((absorption,)))
 
 
 # Which pools a kernel is to carry, as the extension's own enum reads it.
@@ -2192,6 +2209,7 @@ def _run_packed(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    dynamic: Any = None,
 ) -> torch.Tensor:
     """Run the forward state machine.
 
@@ -2296,8 +2314,12 @@ def _run_packed(
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
     absorption = None if lineshape is None else lineshape.packed()
+    pairs = None if dynamic is None else dynamic.packed()
+    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
     _epg_cpu.simulate(
-        _bound_pointers(pointers, table, table_rows, absorption),
+        _bound_pointers(
+            pointers, table, table_rows, absorption, pairs, pair_rows
+        ),
         tissue[0].numel(),
         trains,
         events[1].numel(),
