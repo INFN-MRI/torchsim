@@ -520,6 +520,10 @@ inline double cosine(const double a) {
     return std::cos(a);
 }
 
+inline double sine(const double a) {
+    return std::sin(a);
+}
+
 // A direction carried alongside a double, for the three-pool step's forward
 // mode. The two-pool steps run in single and carry ``DualFloat``; only this
 // one operator needs the wider pair.
@@ -566,6 +570,10 @@ inline DualDouble arc_cosine(const DualDouble a) {
 
 inline DualDouble cosine(const DualDouble a) {
     return {std::cos(a.value), -std::sin(a.value) * a.tangent};
+}
+
+inline DualDouble sine(const DualDouble a) {
+    return {std::sin(a.value), std::cos(a.value) * a.tangent};
 }
 
 // The three-pool step is the only place the state machine changes width, so
@@ -1201,6 +1209,427 @@ inline ThreePoolStep<Scalar> three_pool_step(
         step.recovery[row] = equilibrium[row] - carried;
     }
     return step;
+}
+
+// What a cotangent on the three-pool step leaves on the nine numbers it was
+// formed from.
+template <typename Scalar>
+struct ThreePoolGradient {
+    Scalar r1_free;
+    Scalar r1_pool_b;
+    Scalar r1_bound;
+    Scalar exchange_b;
+    Scalar exchange_c;
+    Scalar fraction_b;
+    Scalar fraction_c;
+    Scalar dt;
+    Scalar attenuation;
+};
+
+// The reverse sweep of ``three_pool_step``, in the same double the forward
+// takes. It recomputes the forward rather than carrying it across the event:
+// the whole thing is a handful of transcendentals once per interval, against a
+// state loop that runs per dephasing order.
+//
+// Both branches are swept, each by the algebra its own forward used. The
+// series one is a linear recurrence in the two invariants, so its reverse is
+// that recurrence run backwards over the sixteen triples the forward left; the
+// eigenvalue one walks back through the roots, whose sorting is a permutation
+// and so sends each cotangent to the root it came from.
+// The reverse of ``three_pool_difference``, accumulating onto both points.
+template <typename Scalar>
+inline void three_pool_difference_adjoint(
+    const Scalar lower,
+    const Scalar upper,
+    const Scalar seed,
+    Scalar& bar_lower,
+    Scalar& bar_upper
+) {
+    const Scalar half = Scalar{0.5} * (upper - lower);
+    if (std::fabs(primal(half)) < SINCH_CUT) {
+        const Scalar square = half * half;
+        const Scalar series = Scalar{1.0}
+            + square * (Scalar{1.0 / 6.0}
+                + square * (Scalar{1.0 / 120.0} + square * Scalar{1.0 / 5040.0}));
+        const Scalar slope = Scalar{1.0 / 6.0}
+            + square * (Scalar{1.0 / 60.0} + square * Scalar{1.0 / 1680.0});
+        const Scalar lift = exponential(Scalar{0.5} * (lower + upper));
+        const Scalar along_mid = Scalar{0.5} * seed * lift * series;
+        const Scalar along_gap = seed * lift * slope * half;
+        bar_lower = bar_lower + along_mid - along_gap;
+        bar_upper = bar_upper + along_mid + along_gap;
+        return;
+    }
+    const Scalar gap = upper - lower;
+    const Scalar inverse = reciprocal(gap);
+    const Scalar low = exponential(lower);
+    const Scalar high = exponential(upper);
+    const Scalar value = (high - low) * inverse;
+    bar_lower = bar_lower + seed * (value - low) * inverse;
+    bar_upper = bar_upper + seed * (high - value) * inverse;
+}
+
+template <typename Scalar>
+inline ThreePoolGradient<Scalar> three_pool_step_adjoint(
+    const Scalar r1_free,
+    const Scalar r1_pool_b,
+    const Scalar r1_bound,
+    const Scalar exchange_b,
+    const Scalar exchange_c,
+    const Scalar fraction_b,
+    const Scalar fraction_c,
+    const Scalar dt,
+    const Scalar attenuation,
+    const Scalar (&bar_entry)[3][3],
+    const Scalar (&bar_recovery)[3]
+) {
+    const Scalar free = Scalar{1.0} - fraction_b - fraction_c;
+    const Scalar kab = exchange_b * fraction_b;
+    const Scalar kba = exchange_b * free;
+    const Scalar kac = exchange_c * fraction_c;
+    const Scalar kca = exchange_c * free;
+    Scalar a[3][3]{};
+    a[0][0] = (Scalar{} - kab - kac - r1_free) * dt;
+    a[0][1] = kba * dt;
+    a[0][2] = kca * dt;
+    a[1][0] = kab * dt;
+    a[1][1] = (Scalar{} - kba - r1_pool_b) * dt;
+    a[2][0] = kac * dt;
+    a[2][2] = (Scalar{} - kca - r1_bound) * dt;
+
+    const Scalar third = Scalar{1.0 / 3.0} * (a[0][0] + a[1][1] + a[2][2]);
+    Scalar shifted[3][3];
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            shifted[row][column] =
+                row == column ? a[row][column] - third : a[row][column];
+        }
+    }
+    const Scalar minors = three_pool_minors(shifted);
+    const Scalar determinant = three_pool_determinant(shifted);
+    const bool close = -2.0 * primal(minors) < SPREAD_CUT * SPREAD_CUT;
+
+    // ---- the recovery and the attenuation, which both branches share ----
+    const Scalar equilibrium[3] = {free, fraction_b, fraction_c};
+    Scalar carried[3][3];
+    Scalar bar_operator[3][3];
+    Scalar bar_attenuation{};
+    Scalar bar_equilibrium[3] = {Scalar{}, Scalar{}, Scalar{}};
+    const ThreePoolStep<Scalar> replay = three_pool_step(
+        r1_free, r1_pool_b, r1_bound, exchange_b, exchange_c,
+        fraction_b, fraction_c, dt, Scalar{1.0}
+    );
+    for (int row = 0; row < 3; ++row) {
+        bar_equilibrium[row] = bar_equilibrium[row] + bar_recovery[row];
+        for (int column = 0; column < 3; ++column) {
+            // The replay is taken at unit attenuation, so the bare operator
+            // the recovery and the attenuation were formed from is read rather
+            // than divided back out -- a washed-out interval leaves nothing to
+            // divide by.
+            const Scalar bare = replay.entry[row][column];
+            carried[row][column] =
+                bar_entry[row][column] - bar_recovery[row] * equilibrium[column];
+            bar_equilibrium[column] = bar_equilibrium[column]
+                - bar_recovery[row] * attenuation * bare;
+            bar_attenuation = bar_attenuation + carried[row][column] * bare;
+            bar_operator[row][column] = attenuation * carried[row][column];
+        }
+    }
+
+    Scalar bar_a[3][3]{};
+    Scalar bar_third{};
+    Scalar bar_minors{};
+    Scalar bar_determinant{};
+    if (close) {
+        Scalar history[SERIES_TERMS][3];
+        history[0][0] = Scalar{1.0};
+        history[0][1] = Scalar{};
+        history[0][2] = Scalar{};
+        double factorial = 1.0;
+        Scalar weight[SERIES_TERMS];
+        weight[0] = Scalar{1.0};
+        for (int order = 1; order < SERIES_TERMS; ++order) {
+            history[order][0] = history[order - 1][2] * determinant;
+            history[order][1] =
+                history[order - 1][0] - history[order - 1][2] * minors;
+            history[order][2] = history[order - 1][1];
+            factorial *= static_cast<double>(order);
+            weight[order] = Scalar{1.0 / factorial};
+        }
+        Scalar sums[3] = {Scalar{}, Scalar{}, Scalar{}};
+        for (int order = 0; order < SERIES_TERMS; ++order) {
+            for (int slot = 0; slot < 3; ++slot) {
+                sums[slot] = sums[slot] + weight[order] * history[order][slot];
+            }
+        }
+        Scalar square[3][3];
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                Scalar total{};
+                for (int inner = 0; inner < 3; ++inner) {
+                    total = total + shifted[row][inner] * shifted[inner][column];
+                }
+                square[row][column] = total;
+            }
+        }
+        const Scalar lift = exponential(third);
+        Scalar bar_sums[3] = {Scalar{}, Scalar{}, Scalar{}};
+        Scalar bar_square[3][3]{};
+        Scalar bar_shifted[3][3]{};
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                const Scalar inner = (row == column ? sums[0] : Scalar{})
+                    + sums[1] * shifted[row][column]
+                    + sums[2] * square[row][column];
+                bar_third = bar_third
+                    + bar_operator[row][column] * lift * inner;
+                const Scalar scaled = bar_operator[row][column] * lift;
+                if (row == column) {
+                    bar_sums[0] = bar_sums[0] + scaled;
+                }
+                bar_sums[1] = bar_sums[1] + scaled * shifted[row][column];
+                bar_sums[2] = bar_sums[2] + scaled * square[row][column];
+                bar_shifted[row][column] =
+                    bar_shifted[row][column] + sums[1] * scaled;
+                bar_square[row][column] = sums[2] * scaled;
+            }
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                for (int inner = 0; inner < 3; ++inner) {
+                    bar_shifted[row][inner] = bar_shifted[row][inner]
+                        + bar_square[row][column] * shifted[inner][column];
+                    bar_shifted[inner][column] = bar_shifted[inner][column]
+                        + shifted[row][inner] * bar_square[row][column];
+                }
+            }
+        }
+        // The recurrence run backwards, each triple picking up the weight its
+        // own term carried into the sums.
+        Scalar bar_history[3];
+        for (int slot = 0; slot < 3; ++slot) {
+            bar_history[slot] = weight[SERIES_TERMS - 1] * bar_sums[slot];
+        }
+        for (int order = SERIES_TERMS - 1; order > 0; --order) {
+            const Scalar held[3] = {
+                bar_history[0], bar_history[1], bar_history[2]
+            };
+            bar_determinant =
+                bar_determinant + held[0] * history[order - 1][2];
+            bar_minors = bar_minors - held[1] * history[order - 1][2];
+            bar_history[0] = weight[order - 1] * bar_sums[0] + held[1];
+            bar_history[1] = weight[order - 1] * bar_sums[1] + held[2];
+            bar_history[2] = weight[order - 1] * bar_sums[2]
+                + held[0] * determinant - held[1] * minors;
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                bar_a[row][column] =
+                    bar_a[row][column] + bar_shifted[row][column];
+            }
+            bar_third = bar_third - bar_shifted[row][row];
+        }
+    } else {
+        const Scalar radius = root(Scalar{-1.0 / 3.0} * minors);
+        const Scalar cube = radius * radius * radius;
+        const Scalar raw = Scalar{0.5} * determinant * reciprocal(cube);
+        constexpr double limit = 1.0 - ARG_GUARD;
+        const bool clamped = primal(raw) > limit || primal(raw) < -limit;
+        Scalar argument = raw;
+        if (primal(raw) > limit) {
+            argument = Scalar{limit};
+        } else if (primal(raw) < -limit) {
+            argument = Scalar{-limit};
+        }
+        const Scalar angle = Scalar{1.0 / 3.0} * arc_cosine(argument);
+        Scalar roots[3];
+        int origin[3] = {0, 1, 2};
+        for (int turn = 0; turn < 3; ++turn) {
+            roots[turn] = Scalar{2.0} * radius
+                * cosine(angle - Scalar{TURN_THIRD * turn}) + third;
+        }
+        for (int pass = 0; pass < 2; ++pass) {
+            for (int index = 0; index + 1 < 3; ++index) {
+                if (primal(roots[index]) > primal(roots[index + 1])) {
+                    const Scalar held = roots[index];
+                    roots[index] = roots[index + 1];
+                    roots[index + 1] = held;
+                    const int seat = origin[index];
+                    origin[index] = origin[index + 1];
+                    origin[index + 1] = seat;
+                }
+            }
+        }
+        const Scalar first = three_pool_difference(roots[0], roots[1]);
+        const Scalar upper = three_pool_difference(roots[1], roots[2]);
+        const Scalar span = roots[2] - roots[0];
+        const Scalar inverse_span = reciprocal(span);
+        const Scalar second = (upper - first) * inverse_span;
+        const Scalar leading = exponential(roots[0]);
+
+        Scalar bar_leading{};
+        Scalar bar_first{};
+        Scalar bar_second{};
+        Scalar bar_roots[3] = {Scalar{}, Scalar{}, Scalar{}};
+        Scalar bar_product[3][3]{};
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                const Scalar from_low = row == column
+                    ? a[row][column] - roots[0] : a[row][column];
+                Scalar product{};
+                for (int inner = 0; inner < 3; ++inner) {
+                    const Scalar left = row == inner
+                        ? a[row][inner] - roots[0] : a[row][inner];
+                    const Scalar right = inner == column
+                        ? a[inner][column] - roots[1] : a[inner][column];
+                    product = product + left * right;
+                }
+                const Scalar seed = bar_operator[row][column];
+                if (row == column) {
+                    bar_leading = bar_leading + seed;
+                }
+                bar_first = bar_first + seed * from_low;
+                bar_second = bar_second + seed * product;
+                bar_a[row][column] = bar_a[row][column] + first * seed;
+                if (row == column) {
+                    bar_roots[0] = bar_roots[0] - first * seed;
+                }
+                bar_product[row][column] = second * seed;
+            }
+        }
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                for (int inner = 0; inner < 3; ++inner) {
+                    const Scalar left = row == inner
+                        ? a[row][inner] - roots[0] : a[row][inner];
+                    const Scalar right = inner == column
+                        ? a[inner][column] - roots[1] : a[inner][column];
+                    const Scalar seed = bar_product[row][column];
+                    bar_a[row][inner] = bar_a[row][inner] + seed * right;
+                    if (row == inner) {
+                        bar_roots[0] = bar_roots[0] - seed * right;
+                    }
+                    bar_a[inner][column] = bar_a[inner][column] + left * seed;
+                    if (inner == column) {
+                        bar_roots[1] = bar_roots[1] - left * seed;
+                    }
+                }
+            }
+        }
+        bar_roots[0] = bar_roots[0] + bar_leading * leading;
+        // second = (upper - first) / span
+        const Scalar bar_upper = bar_second * inverse_span;
+        bar_first = bar_first - bar_second * inverse_span;
+        const Scalar bar_span =
+            Scalar{} - bar_second * second * inverse_span;
+        bar_roots[2] = bar_roots[2] + bar_span;
+        bar_roots[0] = bar_roots[0] - bar_span;
+        three_pool_difference_adjoint(
+            roots[0], roots[1], bar_first, bar_roots[0], bar_roots[1]
+        );
+        three_pool_difference_adjoint(
+            roots[1], roots[2], bar_upper, bar_roots[1], bar_roots[2]
+        );
+
+        Scalar bar_radius{};
+        Scalar bar_angle{};
+        for (int seat = 0; seat < 3; ++seat) {
+            const int turn = origin[seat];
+            const Scalar swing = angle - Scalar{TURN_THIRD * turn};
+            bar_radius = bar_radius + Scalar{2.0} * cosine(swing) * bar_roots[seat];
+            bar_angle = bar_angle
+                - Scalar{2.0} * radius * sine(swing) * bar_roots[seat];
+            bar_third = bar_third + bar_roots[seat];
+        }
+        if (!clamped) {
+            const Scalar slope = Scalar{} - reciprocal(
+                Scalar{3.0} * root(Scalar{1.0} - argument * argument)
+            );
+            const Scalar bar_raw = bar_angle * slope;
+            bar_determinant =
+                bar_determinant + Scalar{0.5} * bar_raw * reciprocal(cube);
+            bar_radius = bar_radius
+                - Scalar{3.0} * raw * bar_raw * reciprocal(radius);
+        }
+        bar_minors = bar_minors
+            - bar_radius * reciprocal(Scalar{6.0} * radius);
+    }
+
+    // ---- the invariants back onto the shifted generator ----
+    Scalar bar_shifted[3][3]{};
+    bar_shifted[0][0] = bar_minors * (shifted[1][1] + shifted[2][2]);
+    bar_shifted[1][1] = bar_minors * (shifted[0][0] + shifted[2][2]);
+    bar_shifted[2][2] = bar_minors * (shifted[0][0] + shifted[1][1]);
+    bar_shifted[0][1] = Scalar{} - bar_minors * shifted[1][0];
+    bar_shifted[1][0] = Scalar{} - bar_minors * shifted[0][1];
+    bar_shifted[0][2] = Scalar{} - bar_minors * shifted[2][0];
+    bar_shifted[2][0] = Scalar{} - bar_minors * shifted[0][2];
+    bar_shifted[1][2] = Scalar{} - bar_minors * shifted[2][1];
+    bar_shifted[2][1] = Scalar{} - bar_minors * shifted[1][2];
+    // det = s00(s11 s22 - s12 s21) - s01(s10 s22 - s12 s20)
+    //     + s02(s10 s21 - s11 s20)
+    bar_shifted[0][0] = bar_shifted[0][0]
+        + bar_determinant * (shifted[1][1] * shifted[2][2]
+                             - shifted[1][2] * shifted[2][1]);
+    bar_shifted[0][1] = bar_shifted[0][1]
+        - bar_determinant * (shifted[1][0] * shifted[2][2]
+                             - shifted[1][2] * shifted[2][0]);
+    bar_shifted[0][2] = bar_shifted[0][2]
+        + bar_determinant * (shifted[1][0] * shifted[2][1]
+                             - shifted[1][1] * shifted[2][0]);
+    bar_shifted[1][0] = bar_shifted[1][0]
+        - bar_determinant * (shifted[0][1] * shifted[2][2]
+                             - shifted[0][2] * shifted[2][1]);
+    bar_shifted[1][1] = bar_shifted[1][1]
+        + bar_determinant * (shifted[0][0] * shifted[2][2]
+                             - shifted[0][2] * shifted[2][0]);
+    bar_shifted[1][2] = bar_shifted[1][2]
+        - bar_determinant * (shifted[0][0] * shifted[2][1]
+                             - shifted[0][1] * shifted[2][0]);
+    bar_shifted[2][0] = bar_shifted[2][0]
+        + bar_determinant * (shifted[0][1] * shifted[1][2]
+                             - shifted[0][2] * shifted[1][1]);
+    bar_shifted[2][1] = bar_shifted[2][1]
+        - bar_determinant * (shifted[0][0] * shifted[1][2]
+                             - shifted[0][2] * shifted[1][0]);
+    bar_shifted[2][2] = bar_shifted[2][2]
+        + bar_determinant * (shifted[0][0] * shifted[1][1]
+                             - shifted[0][1] * shifted[1][0]);
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            bar_a[row][column] = bar_a[row][column] + bar_shifted[row][column];
+        }
+        bar_third = bar_third - bar_shifted[row][row];
+    }
+    for (int row = 0; row < 3; ++row) {
+        bar_a[row][row] = bar_a[row][row] + Scalar{1.0 / 3.0} * bar_third;
+    }
+
+    // ---- the generator back onto the rates, fractions and interval ----
+    const Scalar bar_dt = (Scalar{} - kab - kac - r1_free) * bar_a[0][0]
+        + kba * bar_a[0][1] + kca * bar_a[0][2] + kab * bar_a[1][0]
+        + (Scalar{} - kba - r1_pool_b) * bar_a[1][1] + kac * bar_a[2][0]
+        + (Scalar{} - kca - r1_bound) * bar_a[2][2];
+    const Scalar bar_kab = dt * (bar_a[1][0] - bar_a[0][0]);
+    const Scalar bar_kba = dt * (bar_a[0][1] - bar_a[1][1]);
+    const Scalar bar_kac = dt * (bar_a[2][0] - bar_a[0][0]);
+    const Scalar bar_kca = dt * (bar_a[0][2] - bar_a[2][2]);
+    Scalar bar_free = bar_equilibrium[0] + exchange_b * bar_kba
+        + exchange_c * bar_kca;
+    Scalar bar_fraction_b = bar_equilibrium[1] + exchange_b * bar_kab;
+    Scalar bar_fraction_c = bar_equilibrium[2] + exchange_c * bar_kac;
+
+    ThreePoolGradient<Scalar> gradient{};
+    gradient.r1_free = Scalar{} - dt * bar_a[0][0];
+    gradient.r1_pool_b = Scalar{} - dt * bar_a[1][1];
+    gradient.r1_bound = Scalar{} - dt * bar_a[2][2];
+    gradient.exchange_b = fraction_b * bar_kab + free * bar_kba;
+    gradient.exchange_c = fraction_c * bar_kac + free * bar_kca;
+    gradient.fraction_b = bar_fraction_b - bar_free;
+    gradient.fraction_c = bar_fraction_c - bar_free;
+    gradient.dt = bar_dt;
+    gradient.attenuation = bar_attenuation;
+    return gradient;
 }
 
 // The transverse step of two chemically exchanging pools: ``F+ <- E2 F+``
