@@ -139,6 +139,85 @@ def test_the_chemical_shift_still_reaches_the_coil():
     assert float((shifted - on_resonance).abs().max()) / scale > 0.01
 
 
+def _free_induction(times_s, **properties):
+    """Excite, then read the transverse magnetization at each time after it.
+
+    ``times_s`` are measured from the excitation; the events carry the
+    intervals between them, which is what the state machine steps through.
+    """
+    from torchsim.sequence._accelerators import _EXCITATION, _RECORD
+
+    intervals = [
+        after - before for before, after in zip((0.0, *times_s), times_s)
+    ]
+    count = len(times_s)
+    events = (
+        torch.tensor([0.0, *intervals], dtype=torch.float32),
+        torch.tensor([1, *([2] * count)], dtype=torch.int32),
+        torch.tensor([0.5 * torch.pi, *([0.0] * count)], dtype=torch.float32),
+        torch.zeros(1 + count, dtype=torch.float32),
+        torch.tensor([_EXCITATION, *([_RECORD] * count)], dtype=torch.uint8),
+        torch.tensor([-1, *range(count)], dtype=torch.int32),
+        torch.zeros(1 + count, dtype=torch.int32),
+        torch.zeros(1 + count, dtype=torch.float32),
+        torch.zeros(1 + count, dtype=torch.float32),
+    )
+    prepared, _, _ = _prepare_tissue(
+        TissueProperties(**{"t1_ms": 1000.0, "t2_ms": 80.0, **properties}), "cpu"
+    )
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+    return _run_packed(
+        prepared, events, STATES, count, 1, geometry=NO_GEOMETRY,
+        lineshape=lineshape_table(), exchanging=True,
+    ).flatten()
+
+
+def test_the_semisolid_pool_slows_the_transverse_exchange():
+    """The free water is what *both* second pools leave.
+
+    The semisolid pool carries no transverse magnetization, so it is absent
+    from the transverse 2x2 -- but not from how much free water that 2x2's
+    exchange sees. A kernel deriving the free fraction as ``1 - pool_b`` there
+    reproduces both two-pool limits exactly and is still wrong in between,
+    which is what this reads.
+
+    Taken against the package's own operator, given the free fraction the
+    three-pool system actually leaves.
+    """
+    from torchsim.base.config.relax_model import build_two_pool_exchange_matrix
+    from torchsim.epg import transverse_relaxation_exchange_op
+
+    delay = 6e-3
+    fraction_b, fraction_c, rate = 0.2, 0.3, 60.0
+    t2_a, t2_b = 80.0, 25.0
+    tissue = dict(
+        t2_ms=t2_a, bound_fraction=fraction_c, bound_exchange_hz=0.0,
+        t1_bound_ms=1000.0, pool_b_fraction=fraction_b,
+        pool_b_exchange_hz=rate, t1_pool_b_ms=300.0, t2_pool_b_ms=t2_b,
+        pool_b_shift_hz=0.0,
+    )
+    measured = complex(_free_induction((delay,), **tissue)[0])
+    scale = complex(_free_induction((0.0,), t2_ms=t2_a)[0])
+
+    free = 1.0 - fraction_b - fraction_c
+    # The package's builder takes the two transverse pools' weights, and the
+    # free water's is what the semisolid pool has already been taken out of.
+    weight = torch.tensor([free, fraction_b], dtype=torch.float64)
+    matrix = build_two_pool_exchange_matrix(
+        weight, torch.tensor(rate, dtype=torch.float64)
+    )
+    operator = transverse_relaxation_exchange_op(
+        matrix,
+        torch.tensor([1000.0 / t2_a, 1000.0 / t2_b], dtype=torch.float64),
+        torch.tensor(delay, dtype=torch.float64),
+        torch.zeros(2, dtype=torch.float64),
+    )
+    start = torch.tensor([free, fraction_b], dtype=torch.complex128)
+    expected = complex((operator @ start).sum()) * scale
+
+    assert abs(measured - expected) / abs(scale) < 5e-5
+
+
 # --- against the package's own N-pool operator ---
 
 
@@ -550,8 +629,16 @@ def test_a_streamed_forward_mode_matches_the_whole_one():
     )
     seed = tuple(torch.ones_like(value) for value in prepared)
 
-    whole = _live_readout(prepared, seed)
+    # Both sides run the same kernel on the same card, so what is left between
+    # them is the chunking and nothing else. Read against a host run instead
+    # and the comparison is really one of backends, whose float32 tail is two
+    # orders wider than anything streaming does.
+    whole = _live_readout(
+        tuple(value.cuda() for value in prepared),
+        tuple(value.cuda() for value in seed),
+        device="cuda",
+    ).cpu()
     with offload(["cuda"], budget_bytes=1 << 20):
         streamed = _live_readout(prepared, seed)
 
-    assert float((whole - streamed).abs().max() / whole.abs().max()) < 5e-5
+    assert float((whole - streamed).abs().max() / whole.abs().max()) < 1e-6

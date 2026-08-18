@@ -1662,11 +1662,15 @@ inline TwoPoolTransverse<Cplx> two_pool_transverse_step(
     const Real r2_bound,
     const Real exchange,
     const Real bound,
+    // What the free water is left with, which is not ``1 - bound`` once a
+    // semisolid pool holds a share of the voxel too. It carries no transverse
+    // magnetization of its own, so it is absent from this 2x2 -- but it is not
+    // absent from how much free water the exchange sees.
+    const Real free,
     const Real shift_hz,
     const Real dt,
     const Real attenuation
 ) {
-    const Real free = Real{1.0F} - bound;
     const Real kab = exchange * bound;
     const Real kba = exchange * free;
     const Cplx l11 = widen((Real{} - kab - r2_free) * dt);
@@ -1710,6 +1714,7 @@ struct TwoPoolTransverseGradient {
     Real r2_bound;
     Real exchange;
     Real bound;
+    Real free;
     Real shift_hz;
     Real dt;
     Real attenuation;
@@ -1731,6 +1736,7 @@ inline TwoPoolTransverseGradient<Real> two_pool_transverse_adjoint(
     const Real r2_bound,
     const Real exchange,
     const Real bound,
+    const Real free,
     const Real shift_hz,
     const Real dt,
     const Real attenuation,
@@ -1739,7 +1745,6 @@ inline TwoPoolTransverseGradient<Real> two_pool_transverse_adjoint(
     const Cplx bar_e21,
     const Cplx bar_e22
 ) {
-    const Real free = Real{1.0F} - bound;
     const Real kab = exchange * bound;
     const Real kba = exchange * free;
     const Cplx l11 = widen((Real{} - kab - r2_free) * dt);
@@ -1817,7 +1822,8 @@ inline TwoPoolTransverseGradient<Real> two_pool_transverse_adjoint(
     gradient.r2_free = Real{} - real_part(dt * bar_l11);
     gradient.r2_bound = Real{} - real_part(dt * bar_l22);
     gradient.exchange = real_part(bound * bar_kab + free * bar_kba);
-    gradient.bound = real_part(exchange * bar_kab - exchange * bar_kba);
+    gradient.bound = real_part(exchange * bar_kab);
+    gradient.free = real_part(exchange * bar_kba);
     gradient.shift_hz = real_part(
         (Real{} - dt) * ((2.0F * PI) * as_imaginary(Real{1.0F}) * bar_l22)
     );
@@ -2489,6 +2495,9 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         const DualFloat semisolid_exchange = SATURATED
             ? DualFloat{primal.bound_exchange[atom], buffers.exchange_rate[atom]}
             : DualFloat{};
+        const DualFloat transverse_free = THREE
+            ? DualFloat{1.0F, 0.0F} - bound_fraction - semisolid_fraction
+            : DualFloat{1.0F, 0.0F} - bound_fraction;
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.diffusion[atom]
         };
@@ -2553,7 +2562,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
             const TwoPoolTransverse<DualComplex> across = PAIRED
                 ? two_pool_transverse_step<DualFloat, DualComplex>(
                     rate2_free, rate2_bound, exchange, bound_fraction,
-                    pool_shift, interval, wout
+                    transverse_free, pool_shift, interval, wout
                 )
                 : TwoPoolTransverse<DualComplex>{};
             for (std::int64_t state = 0; state < state_count; ++state) {
@@ -3841,6 +3850,11 @@ void simulate_range(
             : (MT ? buffers.bound_exchange[atom] : 0.0F);
         const float semisolid_exchange =
             SATURATED ? buffers.bound_exchange[atom] : 0.0F;
+        // A semisolid pool holds a share of the voxel without carrying any
+        // transverse magnetization, so it is absent from the 2x2 below and
+        // present in how much free water that 2x2's exchange sees.
+        const float transverse_free =
+            1.0F - bound_fraction - (THREE ? semisolid_fraction : 0.0F);
         const float damping_rate = buffers.diffusion[atom];
         const float flow_rate = buffers.velocity[atom] * buffers.flow_scale;
         const float washout_rate =
@@ -3871,7 +3885,7 @@ void simulate_range(
                 : ThreePoolStep<double>{};
             const TwoPoolTransverse<Complex> across = PAIRED
                 ? two_pool_transverse_step<float, Complex>(
-                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt,
+                    r2, r2_bound, exchange, bound_fraction, transverse_free, pool_shift, dt,
                     wout
                 )
                 : TwoPoolTransverse<Complex>{};
@@ -4438,6 +4452,8 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             : (MT ? primal.bound_exchange[atom] : 0.0F);
         const float semisolid_exchange =
             SATURATED ? primal.bound_exchange[atom] : 0.0F;
+        const float transverse_free =
+            1.0F - bound_fraction - (THREE ? semisolid_fraction : 0.0F);
         const float b0 = primal.b0[atom];
         const float m0 = primal.m0[atom];
         // With one shim the transmit field is a property of the voxel and
@@ -4487,7 +4503,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 : ThreePoolStep<double>{};
             const TwoPoolTransverse<Complex> across = PAIRED
                 ? two_pool_transverse_step<float, Complex>(
-                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                    r2, r2_bound, exchange, bound_fraction, transverse_free, pool_shift, dt, wout
                 )
                 : TwoPoolTransverse<Complex>{};
             const float off_angle = -2.0F * PI * b0 * dt;
@@ -4719,7 +4735,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 : ThreePoolStep<double>{};
             const TwoPoolTransverse<Complex> across = PAIRED
                 ? two_pool_transverse_step<float, Complex>(
-                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                    r2, r2_bound, exchange, bound_fraction, transverse_free, pool_shift, dt, wout
                 )
                 : TwoPoolTransverse<Complex>{};
             const float angle = -2.0F * PI * b0 * dt;
@@ -5282,15 +5298,18 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             if constexpr (PAIRED) {
                 const TwoPoolTransverseGradient<float> across_back =
                     two_pool_transverse_adjoint<float, Complex>(
-                        r2, r2_bound, exchange, bound_fraction, pool_shift, dt,
-                        wout, grad_across_11, grad_across_12, grad_across_21,
-                        grad_across_22
+                        r2, r2_bound, exchange, bound_fraction, transverse_free,
+                        pool_shift, dt, wout, grad_across_11, grad_across_12,
+                        grad_across_21, grad_across_22
                     );
                 grad_t2 += across_back.r2_free * (-1000.0F / (t2 * t2));
                 grad_t2_bound +=
                     across_back.r2_bound * (-1000.0F / (t2_bound * t2_bound));
                 grad_exchange += across_back.exchange;
-                grad_bound_fraction += across_back.bound;
+                // The free water is what both second pools leave, so a
+                // cotangent on it reaches each of their fractions turned over.
+                grad_bound_fraction += across_back.bound - across_back.free;
+                grad_semisolid_fraction -= THREE ? across_back.free : 0.0F;
                 grad_pool_shift += across_back.shift_hz;
                 grad_exchange_attenuation += across_back.attenuation;
                 grad_two_pool_duration += across_back.dt;
@@ -6600,6 +6619,8 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             : DualFloat{1.0F, 0.0F};
         const DualFloat r2_bound =
             BM ? 1000.0F * dual_reciprocal(t2_bound) : DualFloat{};
+        const DualFloat transverse_free =
+            DualFloat{1.0F, 0.0F} - bound_fraction;
         const DualFloat pool_shift = BM
             ? DualFloat{
                 primal.pool_b_shift[atom], buffers.dot_pool_b_shift[atom]
@@ -6668,7 +6689,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 : TwoPoolStep<DualFloat>{};
             const TwoPoolTransverse<DualComplex> across = BM
                 ? two_pool_transverse_step<DualFloat, DualComplex>(
-                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                    r2, r2_bound, exchange, bound_fraction, transverse_free, pool_shift, dt, wout
                 )
                 : TwoPoolTransverse<DualComplex>{};
             const DualFloat angle = -2.0F * PI * (b0 * dt);
@@ -6891,7 +6912,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 : TwoPoolStep<DualFloat>{};
             const TwoPoolTransverse<DualComplex> across = BM
                 ? two_pool_transverse_step<DualFloat, DualComplex>(
-                    r2, r2_bound, exchange, bound_fraction, pool_shift, dt, wout
+                    r2, r2_bound, exchange, bound_fraction, transverse_free, pool_shift, dt, wout
                 )
                 : TwoPoolTransverse<DualComplex>{};
             const DualFloat angle = -2.0F * PI * (b0 * dt);
@@ -7372,9 +7393,9 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             if constexpr (BM) {
                 const TwoPoolTransverseGradient<DualFloat> across_back =
                     two_pool_transverse_adjoint<DualFloat, DualComplex>(
-                        r2, r2_bound, exchange, bound_fraction, pool_shift, dt,
-                        wout, grad_across_11, grad_across_12, grad_across_21,
-                        grad_across_22
+                        r2, r2_bound, exchange, bound_fraction, transverse_free,
+                        pool_shift, dt, wout, grad_across_11, grad_across_12,
+                        grad_across_21, grad_across_22
                     );
                 grad_t2 = grad_t2
                     - across_back.r2_free * (1000.0F * dual_reciprocal(t2 * t2));
@@ -7382,7 +7403,8 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     - across_back.r2_bound
                         * (1000.0F * dual_reciprocal(t2_bound * t2_bound));
                 grad_exchange = grad_exchange + across_back.exchange;
-                grad_bound_fraction = grad_bound_fraction + across_back.bound;
+                grad_bound_fraction =
+                    grad_bound_fraction + across_back.bound - across_back.free;
                 grad_pool_shift = grad_pool_shift + across_back.shift_hz;
                 grad_exchange_attenuation =
                     grad_exchange_attenuation + across_back.attenuation;

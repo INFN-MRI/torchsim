@@ -842,7 +842,7 @@ def _complex_exp(real, imag):
 
 @triton.jit
 def _two_pool_transverse_step(
-    r2_free, r2_bound, exchange, bound, shift_hz, dt, attenuation
+    r2_free, r2_bound, exchange, bound, free, shift_hz, dt, attenuation
 ):
     """The transverse operator of two chemically exchanging pools.
 
@@ -850,9 +850,12 @@ def _two_pool_transverse_step(
     longitudinal pair uses -- the numbers have become complex, the algebra has
     not. Returned as the four entries, each a pair of floats.
 
+    A semisolid pool holds a share of the voxel without carrying any transverse
+    magnetization, so it is absent from this 2x2 and present in ``free`` -- how
+    much free water the exchange sees.
+
     There is no recovery term: transverse magnetization relaxes toward zero.
     """
-    free = 1.0 - bound
     kab = exchange * bound
     kba = exchange * free
     l11 = (-kab - r2_free) * dt
@@ -951,6 +954,7 @@ def _two_pool_transverse_step_jvp(
     r2_bound, d_r2_bound,
     exchange, d_exchange,
     bound, d_bound,
+    free, d_free,
     shift_hz, d_shift_hz,
     dt, d_dt,
     attenuation, d_attenuation,
@@ -961,8 +965,6 @@ def _two_pool_transverse_step_jvp(
     alongside a tangent. Returned as the four entries then their four tangents,
     each a pair of floats.
     """
-    free = 1.0 - bound
-    d_free = -d_bound
     kab = exchange * bound
     d_kab = d_exchange * bound + exchange * d_bound
     kba = exchange * free
@@ -1914,6 +1916,7 @@ def _two_pool_transverse_adjoint_jvp(
     r2_bound, d_r2_bound,
     exchange, d_exchange,
     bound, d_bound,
+    free, d_free,
     shift_hz, d_shift_hz,
     dt, d_dt,
     attenuation, d_attenuation,
@@ -1932,8 +1935,6 @@ def _two_pool_transverse_adjoint_jvp(
     real gradients, each as a value and a tangent.
     """
     zero = 0.0 * dt
-    free = 1.0 - bound
-    d_free = -d_bound
     kab = exchange * bound
     d_kab = d_exchange * bound + exchange * d_bound
     kba = exchange * free
@@ -2085,9 +2086,8 @@ def _two_pool_transverse_adjoint_jvp(
         _dual_scale(bound, d_bound, *bar_kab),
         _dual_scale(free, d_free, *bar_kba),
     )
-    bound_bar = _dual_scale(
-        exchange, d_exchange, *_dual_subtract(bar_kab, bar_kba)
-    )
+    bound_bar = _dual_scale(exchange, d_exchange, *bar_kab)
+    free_bar = _dual_scale(exchange, d_exchange, *bar_kba)
     shift_bar = _dual_scale(
         turn * dt, turn * d_dt, *_dual_times_i(*bar_l22)
     )
@@ -2096,6 +2096,7 @@ def _two_pool_transverse_adjoint_jvp(
         r2_bound_bar[0], r2_bound_bar[2],
         exchange_bar[0], exchange_bar[2],
         bound_bar[0], bound_bar[2],
+        free_bar[0], free_bar[2],
         shift_bar[0], shift_bar[2],
         bar_dt[0], bar_dt[2],
         bar_attenuation[0], bar_attenuation[2],
@@ -2600,11 +2601,15 @@ def _epg_vjp_jvp_kernel(
         atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
         d_shift = tl.load(dot_pool_b_shift + atom, mask=active_atom, other=0.0)
     if pools > 0:
-        zvr = empty + tl.where(state == 0, 1.0 - atom_bound, 0.0)
-        ztr = empty + tl.where(state == 0, -d_boundf, 0.0)
+        atom_free = 1.0 - atom_bound
+        d_free = -d_boundf
+        zvr = empty + tl.where(state == 0, atom_free, 0.0)
+        ztr = empty + tl.where(state == 0, d_free, 0.0)
         bvr = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
         btr = empty + tl.where(state == 0, d_boundf + 0.0, 0.0)
     else:
+        atom_free = 1.0 + 0.0 * atom_bound
+        d_free = 0.0 * atom_bound
         zvr = empty + tl.where(state == 0, 1.0, 0.0)
         ztr = empty
     zvi = empty
@@ -2729,7 +2734,7 @@ def _epg_vjp_jvp_kernel(
             across = _two_pool_transverse_step_jvp(
                 r2_value, r2_tangent, r2b_value, r2b_tangent,
                 atom_exchange, d_exchange, atom_bound, d_boundf,
-                atom_shift, d_shift, dt_value, dt_tangent,
+                atom_free, d_free, atom_shift, d_shift, dt_value, dt_tangent,
                 wout_value, wout_tangent,
             )
             a11 = (across[0], across[1], across[8], across[9])
@@ -3262,7 +3267,7 @@ def _epg_vjp_jvp_kernel(
             across = _two_pool_transverse_step_jvp(
                 r2_value, r2_tangent, r2b_value, r2b_tangent,
                 atom_exchange, d_exchange, atom_bound, d_boundf,
-                atom_shift, d_shift, dt_value, dt_tangent,
+                atom_free, d_free, atom_shift, d_shift, dt_value, dt_tangent,
                 wout_value, wout_tangent,
             )
             a11 = (across[0], across[1], across[8], across[9])
@@ -4281,12 +4286,13 @@ def _epg_vjp_jvp_kernel(
             (
                 back_r2_v, back_r2_t, back_r2b_v, back_r2b_t,
                 back_xexch_v, back_xexch_t, back_xbound_v, back_xbound_t,
+                back_xfree_v, back_xfree_t,
                 back_shift_v, back_shift_t, back_xdt_v, back_xdt_t,
                 back_xatt_v, back_xatt_t,
             ) = _two_pool_transverse_adjoint_jvp(
                 r2_value, r2_tangent, r2b_value, r2b_tangent,
                 atom_exchange, d_exchange, atom_bound, d_boundf,
-                atom_shift, d_shift, dt_value, dt_tangent,
+                atom_free, d_free, atom_shift, d_shift, dt_value, dt_tangent,
                 wout_value, wout_tangent,
                 bar11, bar12, bar21, bar22,
             )
@@ -4300,8 +4306,10 @@ def _epg_vjp_jvp_kernel(
             g_t2bt += back_r2b_t * slope2b_v + back_r2b_v * slope2b_t
             g_exchv += back_xexch_v
             g_excht += back_xexch_t
-            g_boundv += back_xbound_v
-            g_boundt += back_xbound_t
+            # The free water is what the second pool leaves, so a cotangent on
+            # it reaches that pool's fraction turned over.
+            g_boundv += back_xbound_v - back_xfree_v
+            g_boundt += back_xbound_t - back_xfree_t
             g_shiftv += back_shift_v
             g_shiftt += back_shift_t
             attenuation_v += back_xatt_v
@@ -5594,9 +5602,11 @@ def _epg_kernel(
         atom_r1_semisolid = 1000.0 / tl.load(
             t1_bound + atom, mask=active_atom, other=1.0
         )
-    longitudinal_real = empty + tl.where(
-        state == 0, 1.0 - atom_bound - atom_semisolid, 0.0
-    )
+    # A semisolid pool holds a share of the voxel without carrying any
+    # transverse magnetization, so the 2x2 below is blind to it and the
+    # exchange inside that 2x2 is not.
+    atom_free = 1.0 - atom_bound - atom_semisolid
+    longitudinal_real = empty + tl.where(state == 0, atom_free, 0.0)
     longitudinal_imag = empty
     bound_real = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
     bound_imag = empty
@@ -5646,7 +5656,7 @@ def _epg_kernel(
                 x11r, x11i, x12r, x12i, x21r, x21i, x22r, x22i,
             ) = _two_pool_transverse_step(
                 1000.0 / atom_t2, atom_r2_bound, atom_exchange, atom_bound,
-                atom_shift, dt, wout,
+                atom_free, atom_shift, dt, wout,
             )
             mixed_pr = (
                 x11r * fplus_real - x11i * fplus_imag
@@ -6253,7 +6263,9 @@ def _epg_jvp_kernel(
         d_r1_semisolid = -1000.0 * tl.load(
             tangent_t1_bound + atom, mask=active_atom, other=0.0
         ) / (held_semisolid * held_semisolid)
-    zr = empty + tl.where(state == 0, 1.0 - atom_bound - atom_semisolid, 0.0)
+    atom_free = 1.0 - atom_bound - atom_semisolid
+    d_free = -d_bound - d_semisolid
+    zr = empty + tl.where(state == 0, atom_free, 0.0)
     zi = empty
     br = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
     bi = empty
@@ -6363,6 +6375,7 @@ def _epg_jvp_kernel(
                 atom_r2_bound, d_r2_bound,
                 atom_exchange, d_exchange,
                 atom_bound, d_bound,
+                atom_free, d_free,
                 atom_shift, d_shift,
                 event_dt, ddt,
                 wout, dwout,
