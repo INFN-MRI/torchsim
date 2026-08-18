@@ -3224,6 +3224,25 @@ def _dual_real_conj_mul(a_vr, a_vi, a_tr, a_ti, b_vr, b_vi, b_tr, b_ti):
 
 
 @triton.jit
+def _dual_back(entry, d_entry, spin_vr, spin_vi, spin_tr, spin_ti, br, bi, tr, ti):
+    """``conj(entry * spin)`` against a cotangent, entry and spin both dual.
+
+    One row of a real mixing operator carried through the per-order turn, which
+    is what a longitudinal cotangent walks back through.
+    """
+    return _dual_mul(
+        entry * spin_vr,
+        -(entry * spin_vi),
+        d_entry * spin_vr + entry * spin_tr,
+        -(d_entry * spin_vi + entry * spin_ti),
+        br,
+        bi,
+        tr,
+        ti,
+    )
+
+
+@triton.jit
 def _dual_polar(angle_value, angle_tangent):
     """``exp(i * angle)`` for a real dual angle."""
     cosine = tl.cos(angle_value)
@@ -4091,15 +4110,18 @@ def _epg_vjp_jvp_kernel(
     sm_i = scratch_mi + scratch_offset
     # A second pool rides along as planes of its own: it enters an event as its
     # own vector and the RF operator acts on it, so the reverse sweep cannot
-    # replay it from the free pool's. The semisolid pool adds one plane, the
-    # chemically exchanging one three.
-    record_stride = (6 if pools == 2 else (4 if pools == 1 else 3)) * state_count
+    # replay it from the free pool's. A semisolid pool adds one plane, a
+    # chemically exchanging one three, and the two together add four.
+    record_stride = (
+        7 if pools == 3 else (6 if pools == 2 else (4 if pools == 1 else 3))
+    ) * state_count
     trajectory = local * event_count * record_stride + state
     minus_plane = state_count
     long_plane = 2 * state_count
     bound_plane = 3 * state_count
     bplus_plane = 4 * state_count
     bminus_plane = 5 * state_count
+    semisolid_plane = 6 * state_count
 
     empty = tl.zeros((problems, block_states), tl.float32)
     pvr = empty
@@ -4122,6 +4144,10 @@ def _epg_vjp_jvp_kernel(
     bmvi = empty
     bmtr = empty
     bmti = empty
+    cvr = empty
+    cvi = empty
+    ctr = empty
+    cti = empty
     atom_bound = 0.0
     d_boundf = 0.0
     atom_exchange = 0.0
@@ -4136,6 +4162,12 @@ def _epg_vjp_jvp_kernel(
     r2b_tangent = 0.0
     atom_shift = 0.0
     d_shift = 0.0
+    atom_semisolid = 0.0
+    d_semisolidf = 0.0
+    atom_semisolid_exchange = 0.0
+    d_semisolid_exchange = 0.0
+    r1c_value = 0.0
+    r1c_tangent = 0.0
     if pools == 1:
         atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
         d_boundf = tl.load(
@@ -4149,7 +4181,7 @@ def _epg_vjp_jvp_kernel(
         d_t1b = tl.load(dot_t1_bound + atom, mask=active_atom, other=0.0)
         r1b_value = 1000.0 / atom_t1b
         r1b_tangent = -1000.0 * d_t1b / (atom_t1b * atom_t1b)
-    if pools == 2:
+    if pools == 2 or pools == 3:
         atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
         d_boundf = tl.load(
             dot_pool_b_fraction + atom, mask=active_atom, other=0.0
@@ -4170,9 +4202,26 @@ def _epg_vjp_jvp_kernel(
         r2b_tangent = -1000.0 * d_t2b / (atom_t2b * atom_t2b)
         atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
         d_shift = tl.load(dot_pool_b_shift + atom, mask=active_atom, other=0.0)
+    if pools == 3:
+        atom_semisolid = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
+        d_semisolidf = tl.load(
+            dot_bound_fraction + atom, mask=active_atom, other=0.0
+        )
+        atom_semisolid_exchange = tl.load(
+            exchange_rate + atom, mask=active_atom, other=0.0
+        )
+        d_semisolid_exchange = tl.load(
+            dot_exchange_rate + atom, mask=active_atom, other=0.0
+        )
+        held_semisolid = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        d_semisolid_t1 = tl.load(dot_t1_bound + atom, mask=active_atom, other=0.0)
+        r1c_value = 1000.0 / held_semisolid
+        r1c_tangent = -1000.0 * d_semisolid_t1 / (held_semisolid * held_semisolid)
+        cvr = empty + tl.where(state == 0, atom_semisolid + 0.0, 0.0)
+        ctr = empty + tl.where(state == 0, d_semisolidf + 0.0, 0.0)
     if pools > 0:
-        atom_free = 1.0 - atom_bound
-        d_free = -d_boundf
+        atom_free = 1.0 - atom_bound - atom_semisolid
+        d_free = -d_boundf - d_semisolidf
         zvr = empty + tl.where(state == 0, atom_free, 0.0)
         ztr = empty + tl.where(state == 0, d_free, 0.0)
         bvr = empty + tl.where(state == 0, atom_bound + 0.0, 0.0)
@@ -4241,7 +4290,7 @@ def _epg_vjp_jvp_kernel(
             tl.store(trajectory_vi + slot + bound_plane, bvi, mask=state_mask)
             tl.store(trajectory_tr + slot + bound_plane, btr, mask=state_mask)
             tl.store(trajectory_ti + slot + bound_plane, bti, mask=state_mask)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             tl.store(trajectory_vr + slot + bplus_plane, bpvr, mask=state_mask)
             tl.store(trajectory_vi + slot + bplus_plane, bpvi, mask=state_mask)
             tl.store(trajectory_tr + slot + bplus_plane, bptr, mask=state_mask)
@@ -4250,6 +4299,11 @@ def _epg_vjp_jvp_kernel(
             tl.store(trajectory_vi + slot + bminus_plane, bmvi, mask=state_mask)
             tl.store(trajectory_tr + slot + bminus_plane, bmtr, mask=state_mask)
             tl.store(trajectory_ti + slot + bminus_plane, bmti, mask=state_mask)
+        if pools == 3:
+            tl.store(trajectory_vr + slot + semisolid_plane, cvr, mask=state_mask)
+            tl.store(trajectory_vi + slot + semisolid_plane, cvi, mask=state_mask)
+            tl.store(trajectory_tr + slot + semisolid_plane, ctr, mask=state_mask)
+            tl.store(trajectory_ti + slot + semisolid_plane, cti, mask=state_mask)
 
         dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
         dt_tangent = tl.load(
@@ -4300,7 +4354,7 @@ def _epg_vjp_jvp_kernel(
         # exchanging one the relaxation itself sits inside the operator instead
         # of in the scalar the free pool alone multiplies by.
         carried = _dual_scale(damp_t, damp_t_tangent, qr, qi, qtr, qti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             across = _two_pool_transverse_step_jvp(
                 r2_value, r2_tangent, r2b_value, r2b_tangent,
                 atom_exchange, d_exchange, atom_bound, d_boundf,
@@ -4350,7 +4404,68 @@ def _epg_vjp_jvp_kernel(
             mvr, mvi, mtr, mti = _dual_mul(
                 ovr, -ovi, otr, -oti, mvr, mvi, mtr, mti
             )
-        if pools > 0:
+        if pools == 3:
+            # Three pools mix through a 3x3 formed in double, tangent and all:
+            # a direction through an operator this ill-conditioned needs the
+            # width as much as the value does.
+            (
+                t11, t12, t13, t21, t22, t23, t31, t32, t33,
+                grow_free, grow_pool_b, grow_semisolid,
+                d_t11, d_t12, d_t13, d_t21, d_t22, d_t23, d_t31, d_t32, d_t33,
+                d_grow_free, d_grow_pool_b, d_grow_semisolid,
+            ) = _three_pool_step_jvp(
+                r1_value, r1_tangent, r1b_value, r1b_tangent,
+                r1c_value, r1c_tangent,
+                atom_exchange, d_exchange,
+                atom_semisolid_exchange, d_semisolid_exchange,
+                atom_bound, d_boundf, atom_semisolid, d_semisolidf,
+                dt_value, dt_tangent, wout_value, wout_tangent,
+            )
+            spin = _dual_scale(damp_z, damp_z_tangent, szr, szi, sztr, szti)
+            was_free = (zvr, zvi, ztr, zti)
+            was_pool_b = (bvr, bvi, btr, bti)
+            was_semisolid = (cvr, cvi, ctr, cti)
+            mixed_free = _dual_add(
+                _dual_add(
+                    _dual_scale(t11, d_t11, was_free[0], was_free[1], was_free[2], was_free[3]),
+                    _dual_scale(t12, d_t12, was_pool_b[0], was_pool_b[1], was_pool_b[2], was_pool_b[3]),
+                ),
+                _dual_scale(t13, d_t13, was_semisolid[0], was_semisolid[1], was_semisolid[2], was_semisolid[3]),
+            )
+            mixed_pool_b = _dual_add(
+                _dual_add(
+                    _dual_scale(t21, d_t21, was_free[0], was_free[1], was_free[2], was_free[3]),
+                    _dual_scale(t22, d_t22, was_pool_b[0], was_pool_b[1], was_pool_b[2], was_pool_b[3]),
+                ),
+                _dual_scale(t23, d_t23, was_semisolid[0], was_semisolid[1], was_semisolid[2], was_semisolid[3]),
+            )
+            mixed_semisolid = _dual_add(
+                _dual_add(
+                    _dual_scale(t31, d_t31, was_free[0], was_free[1], was_free[2], was_free[3]),
+                    _dual_scale(t32, d_t32, was_pool_b[0], was_pool_b[1], was_pool_b[2], was_pool_b[3]),
+                ),
+                _dual_scale(t33, d_t33, was_semisolid[0], was_semisolid[1], was_semisolid[2], was_semisolid[3]),
+            )
+            zvr, zvi, ztr, zti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3],
+                mixed_free[0], mixed_free[1], mixed_free[2], mixed_free[3],
+            )
+            bvr, bvi, btr, bti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3],
+                mixed_pool_b[0], mixed_pool_b[1], mixed_pool_b[2], mixed_pool_b[3],
+            )
+            cvr, cvi, ctr, cti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3],
+                mixed_semisolid[0], mixed_semisolid[1],
+                mixed_semisolid[2], mixed_semisolid[3],
+            )
+            zvr += tl.where(state == 0, grow_free, 0.0)
+            ztr += tl.where(state == 0, d_grow_free, 0.0)
+            bvr += tl.where(state == 0, grow_pool_b, 0.0)
+            btr += tl.where(state == 0, d_grow_pool_b, 0.0)
+            cvr += tl.where(state == 0, grow_semisolid, 0.0)
+            ctr += tl.where(state == 0, d_grow_semisolid, 0.0)
+        elif pools > 0:
             # The exchange operator is a property of the interval, not of a
             # dephasing order, so it is formed once and the per-order damping
             # and turn multiply it.
@@ -4402,7 +4517,7 @@ def _epg_vjp_jvp_kernel(
         mvi = tl.where(pre_shift, wvi, mvi)
         mtr = tl.where(pre_shift, wtr, mtr)
         mti = tl.where(pre_shift, wti, mti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
                 bpvr, bpvi, bmvr, bmvi, sp_r, sp_i, sm_r, sm_i, state,
                 state_mask, state_count,
@@ -4429,7 +4544,7 @@ def _epg_vjp_jvp_kernel(
         zvi = tl.where(invert, ivi, zvi)
         ztr = tl.where(invert, itr, ztr)
         zti = tl.where(invert, iti, zti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             # A semisolid pool is saturated by an adiabatic sweep rather than
             # turned over; a chemically exchanging one is free water and
             # inverts like any other.
@@ -4465,9 +4580,9 @@ def _epg_vjp_jvp_kernel(
         alpha_tangent = event_dot_flip * atom_b1 + event_flip * d_b1
         phi_value = event_phase + atom_b1_phase
         phi_tangent = event_dot_phase + d_b1_phase
-        if pools == 1:
-            # The bound pool absorbs the power the pulse deposits, so it reads
-            # the bare flip the transmit field gives the voxel -- not the
+        if pools == 1 or pools == 3:
+            # The semisolid pool absorbs the power the pulse deposits, so it
+            # reads the bare flip the transmit field gives the voxel -- not the
             # slice-shaped rotation the free pool takes from the table.
             offset_value = tl.load(rf_frequency + event) - atom_b0
             shape_value, shape_slope = _lineshape_at_slope(
@@ -4483,14 +4598,23 @@ def _epg_vjp_jvp_kernel(
             absorbed_tangent = absorbed_value * (
                 power_tangent * shape_value + power_value * shape_tangent
             )
-            sat_b = _dual_scale(
-                absorbed_value, absorbed_tangent, bvr, bvi, btr, bti
-            )
             saturating = is_rf & ~is_inversion
-            bvr = tl.where(saturating, sat_b[0], bvr)
-            bvi = tl.where(saturating, sat_b[1], bvi)
-            btr = tl.where(saturating, sat_b[2], btr)
-            bti = tl.where(saturating, sat_b[3], bti)
+            if pools == 1:
+                sat_b = _dual_scale(
+                    absorbed_value, absorbed_tangent, bvr, bvi, btr, bti
+                )
+                bvr = tl.where(saturating, sat_b[0], bvr)
+                bvi = tl.where(saturating, sat_b[1], bvi)
+                btr = tl.where(saturating, sat_b[2], btr)
+                bti = tl.where(saturating, sat_b[3], bti)
+            else:
+                sat_c = _dual_scale(
+                    absorbed_value, absorbed_tangent, cvr, cvi, ctr, cti
+                )
+                cvr = tl.where(saturating, sat_c[0], cvr)
+                cvi = tl.where(saturating, sat_c[1], cvi)
+                ctr = tl.where(saturating, sat_c[2], ctr)
+                cti = tl.where(saturating, sat_c[3], cti)
         cos_value = tl.cos(alpha_value)
         sin_value = tl.sin(alpha_value)
         cos_tangent = -sin_value * alpha_tangent
@@ -4547,7 +4671,7 @@ def _epg_vjp_jvp_kernel(
             )
 
         rotate = is_rf & ~is_inversion
-        if pools == 2:
+        if pools == 2 or pools == 3:
             # The same pulse, the same rotation. A chemical shift moves where a
             # pool precesses, not what a pulse does to it.
             e0 = _dual_mul(t00[0], t00[1], t00[2], t00[3], bpvr, bpvi, bptr, bpti)
@@ -4631,7 +4755,7 @@ def _epg_vjp_jvp_kernel(
         mvi = tl.where(spoil, 0.0, mvi)
         mtr = tl.where(spoil, 0.0, mtr)
         mti = tl.where(spoil, 0.0, mti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
                 bpvr, bpvi, bmvr, bmvi, sp_r, sp_i, sm_r, sm_i, state,
                 state_mask, state_count,
@@ -4674,6 +4798,10 @@ def _epg_vjp_jvp_kernel(
     wbvi = empty
     wbtr = empty
     wbti = empty
+    cbvr = empty
+    cbvi = empty
+    cbtr = empty
+    cbti = empty
     zero = tl.zeros((problems, 1), tl.float32)
     g_boundv = zero
     g_boundt = zero
@@ -4685,6 +4813,12 @@ def _epg_vjp_jvp_kernel(
     g_t2bt = zero
     g_shiftv = zero
     g_shiftt = zero
+    g_semiv = zero
+    g_semit = zero
+    g_sexchv = zero
+    g_sexcht = zero
+    g_t1cv = zero
+    g_t1ct = zero
     g_diffv = zero
     g_difft = zero
     g_flowv = zero
@@ -4733,6 +4867,10 @@ def _epg_vjp_jvp_kernel(
         xbmvi = empty
         xbmtr = empty
         xbmti = empty
+        xcvr = empty
+        xcvi = empty
+        xctr = empty
+        xcti = empty
         if pools > 0:
             xbvr = tl.load(
                 trajectory_vr + slot + bound_plane, mask=state_mask, other=0.0
@@ -4746,7 +4884,7 @@ def _epg_vjp_jvp_kernel(
             xbti = tl.load(
                 trajectory_ti + slot + bound_plane, mask=state_mask, other=0.0
             )
-        if pools == 2:
+        if pools == 2 or pools == 3:
             xbpvr = tl.load(
                 trajectory_vr + slot + bplus_plane, mask=state_mask, other=0.0
             )
@@ -4770,6 +4908,19 @@ def _epg_vjp_jvp_kernel(
             )
             xbmti = tl.load(
                 trajectory_ti + slot + bminus_plane, mask=state_mask, other=0.0
+            )
+        if pools == 3:
+            xcvr = tl.load(
+                trajectory_vr + slot + semisolid_plane, mask=state_mask, other=0.0
+            )
+            xcvi = tl.load(
+                trajectory_vi + slot + semisolid_plane, mask=state_mask, other=0.0
+            )
+            xctr = tl.load(
+                trajectory_tr + slot + semisolid_plane, mask=state_mask, other=0.0
+            )
+            xcti = tl.load(
+                trajectory_ti + slot + semisolid_plane, mask=state_mask, other=0.0
             )
 
         event_action = tl.load(action + event).to(tl.int32)
@@ -4833,7 +4984,7 @@ def _epg_vjp_jvp_kernel(
         a12 = (empty, empty, empty, empty)
         a21 = (empty, empty, empty, empty)
         a22 = (empty, empty, empty, empty)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             across = _two_pool_transverse_step_jvp(
                 r2_value, r2_tangent, r2b_value, r2b_tangent,
                 atom_exchange, d_exchange, atom_bound, d_boundf,
@@ -4886,7 +5037,62 @@ def _epg_vjp_jvp_kernel(
         rbvi = empty
         rbtr = empty
         rbti = empty
-        if pools > 0:
+        rcvr = empty
+        rcvi = empty
+        rctr = empty
+        rcti = empty
+        if pools == 3:
+            (
+                w11, w12, w13, w21, w22, w23, w31, w32, w33,
+                grow_free, grow_pool_b, grow_semisolid,
+                d_w11, d_w12, d_w13, d_w21, d_w22, d_w23, d_w31, d_w32, d_w33,
+                d_grow_free, d_grow_pool_b, d_grow_semisolid,
+            ) = _three_pool_step_jvp(
+                r1_value, r1_tangent, r1b_value, r1b_tangent,
+                r1c_value, r1c_tangent,
+                atom_exchange, d_exchange,
+                atom_semisolid_exchange, d_semisolid_exchange,
+                atom_bound, d_boundf, atom_semisolid, d_semisolidf,
+                dt_value, dt_tangent, wout_value, wout_tangent,
+            )
+            spin = _dual_scale(damp_z, damp_z_tangent, szr, szi, sztr, szti)
+            mixed_free = _dual_add(
+                _dual_add(
+                    _dual_scale(w11, d_w11, xzvr, xzvi, xztr, xzti),
+                    _dual_scale(w12, d_w12, xbvr, xbvi, xbtr, xbti),
+                ),
+                _dual_scale(w13, d_w13, xcvr, xcvi, xctr, xcti),
+            )
+            mixed_bound = _dual_add(
+                _dual_add(
+                    _dual_scale(w21, d_w21, xzvr, xzvi, xztr, xzti),
+                    _dual_scale(w22, d_w22, xbvr, xbvi, xbtr, xbti),
+                ),
+                _dual_scale(w23, d_w23, xcvr, xcvi, xctr, xcti),
+            )
+            mixed_semisolid = _dual_add(
+                _dual_add(
+                    _dual_scale(w31, d_w31, xzvr, xzvi, xztr, xzti),
+                    _dual_scale(w32, d_w32, xbvr, xbvi, xbtr, xbti),
+                ),
+                _dual_scale(w33, d_w33, xcvr, xcvi, xctr, xcti),
+            )
+            rzvr, rzvi, rztr, rzti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_free
+            )
+            rbvr, rbvi, rbtr, rbti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_bound
+            )
+            rcvr, rcvi, rctr, rcti = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_semisolid
+            )
+            rzvr += tl.where(state == 0, grow_free, 0.0)
+            rztr += tl.where(state == 0, d_grow_free, 0.0)
+            rbvr += tl.where(state == 0, grow_pool_b, 0.0)
+            rbtr += tl.where(state == 0, d_grow_pool_b, 0.0)
+            rcvr += tl.where(state == 0, grow_semisolid, 0.0)
+            rctr += tl.where(state == 0, d_grow_semisolid, 0.0)
+        elif pools > 0:
             (
                 pe11, pe12, pe21, pe22, prec_f, prec_b,
                 de11, de12, de21, de22, drec_f, drec_b,
@@ -4950,7 +5156,7 @@ def _epg_vjp_jvp_kernel(
         sbmvi = rbmvi
         sbmtr = rbmtr
         sbmti = rbmti
-        if pools == 2:
+        if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
                 rbpvr, rbpvi, rbmvr, rbmvi, sp_r, sp_i, sm_r, sm_i, state,
                 state_mask, state_count,
@@ -4988,7 +5194,7 @@ def _epg_vjp_jvp_kernel(
         mbvi = tl.where(spoil, 0.0, tl.where(trailing, bvi, mbvi))
         mbtr = tl.where(spoil, 0.0, tl.where(trailing, btr, mbtr))
         mbti = tl.where(spoil, 0.0, tl.where(trailing, bti, mbti))
-        if pools == 2:
+        if pools == 2 or pools == 3:
             avr, avi, bvr, bvi = _shift_adjoint(
                 ubvr, ubvi, wbvr, wbvi, sp_r, sp_i, sm_r, sm_i, state,
                 state_mask, state_count,
@@ -5028,7 +5234,7 @@ def _epg_vjp_jvp_kernel(
         dvr, dvi, dtr, dti = _dual_polar(-event_phase, -event_dot_phase)
         # A coil sees the whole voxel, so what it records is the sum over pools.
         recorded = (spvr, spvi, sptr, spti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             recorded = _dual_add(recorded, (sbpvr, sbpvi, sbptr, sbpti))
         # grad_m0 = Re(conj(seed) * recorded * demodulation)
         wr, wi, wtr_, wti_ = _dual_mul(*recorded, dvr, dvi, dtr, dti)
@@ -5066,7 +5272,7 @@ def _epg_vjp_jvp_kernel(
         pbvi += tl.where(state == 0, si, 0.0)
         pbtr += tl.where(state == 0, stg_r, 0.0)
         pbti += tl.where(state == 0, stg_i, 0.0)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             ubvr += tl.where(state == 0, sr, 0.0)
             ubvi += tl.where(state == 0, si, 0.0)
             ubtr += tl.where(state == 0, stg_r, 0.0)
@@ -5086,7 +5292,7 @@ def _epg_vjp_jvp_kernel(
         zbvi = tl.where(invert, ivi, zbvi)
         zbtr = tl.where(invert, itr, zbtr)
         zbti = tl.where(invert, iti, zbti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             pool_v, pool_t = _dual_real_conj_mul(
                 bbvr, bbvi, bbtr, bbti, -rbvr, -rbvi, -rbtr, -rbti
             )
@@ -5140,8 +5346,14 @@ def _epg_vjp_jvp_kernel(
             absorbed_tangent = absorbed_value * (
                 power_tangent * shape_value + power_value * shape_tangent
             )
+            if pools == 1:
+                held_bar = (bbvr, bbvi, bbtr, bbti)
+                held_state = (rbvr, rbvi, rbtr, rbti)
+            else:
+                held_bar = (cbvr, cbvi, cbtr, cbti)
+                held_state = (rcvr, rcvi, rctr, rcti)
             per_state_v, per_state_t = _dual_real_conj_mul(
-                bbvr, bbvi, bbtr, bbti, rbvr, rbvi, rbtr, rbti
+                *held_bar, *held_state
             )
             grad_absorbed_v = tl.sum(per_state_v, axis=1)[:, None]
             grad_absorbed_t = tl.sum(per_state_t, axis=1)[:, None]
@@ -5168,13 +5380,19 @@ def _epg_vjp_jvp_kernel(
                 )
             )
             damped = _dual_scale(
-                absorbed_value, absorbed_tangent, bbvr, bbvi, bbtr, bbti
+                absorbed_value, absorbed_tangent, *held_bar
             )
             saturating = is_rf & ~is_inversion
-            bbvr = tl.where(saturating, damped[0], bbvr)
-            bbvi = tl.where(saturating, damped[1], bbvi)
-            bbtr = tl.where(saturating, damped[2], bbtr)
-            bbti = tl.where(saturating, damped[3], bbti)
+            if pools == 1:
+                bbvr = tl.where(saturating, damped[0], bbvr)
+                bbvi = tl.where(saturating, damped[1], bbvi)
+                bbtr = tl.where(saturating, damped[2], bbtr)
+                bbti = tl.where(saturating, damped[3], bbti)
+            else:
+                cbvr = tl.where(saturating, damped[0], cbvr)
+                cbvi = tl.where(saturating, damped[1], cbvi)
+                cbtr = tl.where(saturating, damped[2], cbtr)
+                cbti = tl.where(saturating, damped[3], cbti)
         cos_value = tl.cos(alpha_value)
         sin_value = tl.sin(alpha_value)
         cos_tangent = -sin_value * alpha_tangent
@@ -5266,7 +5484,7 @@ def _epg_vjp_jvp_kernel(
         alpha_b_t = 0.0 * alpha_v
         phi_b_v = 0.0 * alpha_v
         phi_b_t = 0.0 * alpha_v
-        if pools == 2:
+        if pools == 2 or pools == 3:
             row0 = _dual_mul(d00[0], d00[1], d00[2], d00[3], sbpvr, sbpvi, sbptr, sbpti)
             add1 = _dual_mul(d01[0], d01[1], d01[2], d01[3], sbmvr, sbmvi, sbmtr, sbmti)
             add2 = _dual_mul(d02[0], d02[1], d02[2], d02[3], rbvr, rbvi, rbtr, rbti)
@@ -5367,7 +5585,7 @@ def _epg_vjp_jvp_kernel(
                 grad_b[0], grad_b[1], grad_b[2], grad_b[3],
                 -turn_r, -turn_i, -turn_tr, -turn_ti,
             )
-            if pools == 2:
+            if pools == 2 or pools == 3:
                 pool_a, pool_b_pair, shaped_ub, shaped_wb, shaped_bb = (
                     _spinor_adjoint_dual(
                         shaped_a, shaped_b,
@@ -5405,7 +5623,7 @@ def _epg_vjp_jvp_kernel(
         grad_alpha_t = tl.sum(tl.where(rotate, alpha_t, 0.0), axis=1)[:, None]
         grad_phi_v = tl.sum(tl.where(rotate, phi_v, 0.0), axis=1)[:, None]
         grad_phi_t = tl.sum(tl.where(rotate, phi_t, 0.0), axis=1)[:, None]
-        if pools == 1:
+        if pools == 1 or pools == 3:
             turning = tl.where(rotate, 1.0, 0.0)
             grad_alpha_v += sat_alpha_v * turning
             grad_alpha_t += sat_alpha_t * turning
@@ -5429,7 +5647,7 @@ def _epg_vjp_jvp_kernel(
                    q0[2] + q1[2] + q2[2], q0[3] + q1[3] + q2[3])
         back_zb = (w0[0] + w1[0] + w2[0], w0[1] + w1[1] + w2[1],
                    w0[2] + w1[2] + w2[2], w0[3] + w1[3] + w2[3])
-        if pools == 2:
+        if pools == 2 or pools == 3:
             n0 = _dual_mul(t00[0], -t00[1], t00[2], -t00[3], ubvr, ubvi, ubtr, ubti)
             n1 = _dual_mul(t01[0], t01[1], t01[2], t01[3], wbvr, wbvi, wbtr, wbti)
             n2 = _dual_mul(t20[0], -t20[1], t20[2], -t20[3], bbvr, bbvi, bbtr, bbti)
@@ -5545,7 +5763,7 @@ def _epg_vjp_jvp_kernel(
         mbvi = tl.where(pre_shift, bvi, mbvi)
         mbtr = tl.where(pre_shift, btr, mbtr)
         mbti = tl.where(pre_shift, bti, mbti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             avr, avi, bvr, bvi = _shift_adjoint(
                 ubvr, ubvi, wbvr, wbvi, sp_r, sp_i, sm_r, sm_i, state,
                 state_mask, state_count,
@@ -5574,7 +5792,7 @@ def _epg_vjp_jvp_kernel(
         # acts on, so its gradient times the damping itself is the cotangent
         # taken against the states the interval leaves. With one pool that is
         # the same thing as the relaxation factor's own gradient, scaled.
-        if pools == 2:
+        if pools == 2 or pools == 3:
             plus_side = _dual_add(
                 _dual_product(
                     _dual_conj((pbvr, pbvi, pbtr, pbti)),
@@ -5642,7 +5860,137 @@ def _epg_vjp_jvp_kernel(
 
         grad_e1_v = zero
         grad_e1_t = zero
-        if pools > 0:
+        if pools == 3:
+            # The nine entries of the mixing operator and the three recoveries,
+            # summed over the orders that share them, then pushed back through
+            # the closed form once for the whole interval and in double.
+            free_bar = (zbvr, zbvi, zbtr, zbti)
+            bound_bar = (bbvr, bbvi, bbtr, bbti)
+            semi_bar = (cbvr, cbvi, cbtr, cbti)
+            spun_free = _dual_mul(spin[0], spin[1], spin[2], spin[3],
+                                  xzvr, xzvi, xztr, xzti)
+            spun_bound = _dual_mul(spin[0], spin[1], spin[2], spin[3],
+                                   xbvr, xbvi, xbtr, xbti)
+            spun_semi = _dual_mul(spin[0], spin[1], spin[2], spin[3],
+                                  xcvr, xcvi, xctr, xcti)
+            e11_v, e11_t = _dual_real_conj_mul(*free_bar, *spun_free)
+            e12_v, e12_t = _dual_real_conj_mul(*free_bar, *spun_bound)
+            e13_v, e13_t = _dual_real_conj_mul(*free_bar, *spun_semi)
+            e21_v, e21_t = _dual_real_conj_mul(*bound_bar, *spun_free)
+            e22_v, e22_t = _dual_real_conj_mul(*bound_bar, *spun_bound)
+            e23_v, e23_t = _dual_real_conj_mul(*bound_bar, *spun_semi)
+            e31_v, e31_t = _dual_real_conj_mul(*semi_bar, *spun_free)
+            e32_v, e32_t = _dual_real_conj_mul(*semi_bar, *spun_bound)
+            e33_v, e33_t = _dual_real_conj_mul(*semi_bar, *spun_semi)
+            (
+                back_r1_v, back_r1b_v, back_r1c_v,
+                back_exch_v, back_sexch_v, back_bound_v, back_semi_v,
+                back_dt_v, back_att_v,
+                back_r1_t, back_r1b_t, back_r1c_t,
+                back_exch_t, back_sexch_t, back_bound_t, back_semi_t,
+                back_dt_t, back_att_t,
+            ) = _three_pool_step_adjoint_jvp(
+                r1_value, r1_tangent, r1b_value, r1b_tangent,
+                r1c_value, r1c_tangent,
+                atom_exchange, d_exchange,
+                atom_semisolid_exchange, d_semisolid_exchange,
+                atom_bound, d_boundf, atom_semisolid, d_semisolidf,
+                dt_value, dt_tangent, wout_value, wout_tangent,
+                tl.sum(e11_v, axis=1)[:, None], tl.sum(e11_t, axis=1)[:, None],
+                tl.sum(e12_v, axis=1)[:, None], tl.sum(e12_t, axis=1)[:, None],
+                tl.sum(e13_v, axis=1)[:, None], tl.sum(e13_t, axis=1)[:, None],
+                tl.sum(e21_v, axis=1)[:, None], tl.sum(e21_t, axis=1)[:, None],
+                tl.sum(e22_v, axis=1)[:, None], tl.sum(e22_t, axis=1)[:, None],
+                tl.sum(e23_v, axis=1)[:, None], tl.sum(e23_t, axis=1)[:, None],
+                tl.sum(e31_v, axis=1)[:, None], tl.sum(e31_t, axis=1)[:, None],
+                tl.sum(e32_v, axis=1)[:, None], tl.sum(e32_t, axis=1)[:, None],
+                tl.sum(e33_v, axis=1)[:, None], tl.sum(e33_t, axis=1)[:, None],
+                tl.sum(tl.where(state == 0, zbvr, 0.0), axis=1)[:, None],
+                tl.sum(tl.where(state == 0, zbtr, 0.0), axis=1)[:, None],
+                tl.sum(tl.where(state == 0, bbvr, 0.0), axis=1)[:, None],
+                tl.sum(tl.where(state == 0, bbtr, 0.0), axis=1)[:, None],
+                tl.sum(tl.where(state == 0, cbvr, 0.0), axis=1)[:, None],
+                tl.sum(tl.where(state == 0, cbtr, 0.0), axis=1)[:, None],
+            )
+            slope1_v = -1000.0 / (atom_t1 * atom_t1)
+            slope1_t = 2000.0 * d_t1 / (atom_t1 * atom_t1 * atom_t1)
+            slope1b_v = -1000.0 / (atom_t1b * atom_t1b)
+            slope1b_t = 2000.0 * d_t1b / (atom_t1b * atom_t1b * atom_t1b)
+            slope1c_v = -1000.0 / (held_semisolid * held_semisolid)
+            slope1c_t = (
+                2000.0 * d_semisolid_t1
+                / (held_semisolid * held_semisolid * held_semisolid)
+            )
+            g_t1v += back_r1_v * slope1_v
+            g_t1t += back_r1_t * slope1_v + back_r1_v * slope1_t
+            g_t1bv += back_r1b_v * slope1b_v
+            g_t1bt += back_r1b_t * slope1b_v + back_r1b_v * slope1b_t
+            g_t1cv += back_r1c_v * slope1c_v
+            g_t1ct += back_r1c_t * slope1c_v + back_r1c_v * slope1c_t
+            g_exchv += back_exch_v
+            g_excht += back_exch_t
+            g_sexchv += back_sexch_v
+            g_sexcht += back_sexch_t
+            g_boundv += back_bound_v
+            g_boundt += back_bound_t
+            g_semiv += back_semi_v
+            g_semit += back_semi_t
+            attenuation_v = back_att_v
+            attenuation_t = back_att_t
+            two_pool_dt_v = back_dt_v
+            two_pool_dt_t = back_dt_t
+            turned_free = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_free
+            )
+            turned_bound = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_bound
+            )
+            turned_semi = _dual_mul(
+                spin[0], spin[1], spin[2], spin[3], *mixed_semisolid
+            )
+            damp_pair_v, damp_pair_t = _dual_real_conj_mul(*free_bar, *turned_free)
+            other_v, other_t = _dual_real_conj_mul(*bound_bar, *turned_bound)
+            stuck_v, stuck_t = _dual_real_conj_mul(*semi_bar, *turned_semi)
+            long_damp_v = damp_pair_v + other_v + stuck_v
+            long_damp_t = damp_pair_t + other_t + stuck_t
+            zangle_v, zangle_t = _dual_real_conj_mul(
+                *free_bar, *_dual_times_i(*turned_free)
+            )
+            part_v, part_t = _dual_real_conj_mul(
+                *bound_bar, *_dual_times_i(*turned_bound)
+            )
+            zangle_v += part_v
+            zangle_t += part_t
+            part_v, part_t = _dual_real_conj_mul(
+                *semi_bar, *_dual_times_i(*turned_semi)
+            )
+            zangle_v += part_v
+            zangle_t += part_t
+            col_free = _dual_add(
+                _dual_add(
+                    _dual_back(w11, d_w11, *spin, *free_bar),
+                    _dual_back(w21, d_w21, *spin, *bound_bar),
+                ),
+                _dual_back(w31, d_w31, *spin, *semi_bar),
+            )
+            col_bound = _dual_add(
+                _dual_add(
+                    _dual_back(w12, d_w12, *spin, *free_bar),
+                    _dual_back(w22, d_w22, *spin, *bound_bar),
+                ),
+                _dual_back(w32, d_w32, *spin, *semi_bar),
+            )
+            col_semi = _dual_add(
+                _dual_add(
+                    _dual_back(w13, d_w13, *spin, *free_bar),
+                    _dual_back(w23, d_w23, *spin, *bound_bar),
+                ),
+                _dual_back(w33, d_w33, *spin, *semi_bar),
+            )
+            zbvr, zbvi, zbtr, zbti = col_free
+            bbvr, bbvi, bbtr, bbti = col_bound
+            cbvr, cbvi, cbtr, cbti = col_semi
+        elif pools > 0:
             # The four entries of the exchange operator and the two recoveries,
             # summed over the orders that share them, then pushed back through
             # the closed form once for the whole interval.
@@ -5787,7 +6135,7 @@ def _epg_vjp_jvp_kernel(
         next_mb = (mbvr, mbvi, mbtr, mbti)
         next_ub = (ubvr, ubvi, ubtr, ubti)
         next_wb = (wbvr, wbvi, wbtr, wbti)
-        if pools == 2:
+        if pools == 2 or pools == 3:
             # The four entries of the transverse operator, summed over the
             # orders that share them, then pushed back through the closed form
             # once for the whole interval. ``F-`` follows the conjugate of the
@@ -5880,6 +6228,9 @@ def _epg_vjp_jvp_kernel(
             # it reaches that pool's fraction turned over.
             g_boundv += back_xbound_v - back_xfree_v
             g_boundt += back_xbound_t - back_xfree_t
+            if pools == 3:
+                g_semiv -= back_xfree_v
+                g_semit -= back_xfree_t
             g_shiftv += back_shift_v
             g_shiftt += back_shift_t
             attenuation_v += back_xatt_v
@@ -5944,7 +6295,7 @@ def _epg_vjp_jvp_kernel(
         g_washv += wash_v * dt_value
         g_washt += wash_v * dt_tangent + wash_t * dt_value
 
-        if pools == 2:
+        if pools == 2 or pools == 3:
             pbvr, pbvi, pbtr, pbti = next_pb
             mbvr, mbvi, mbtr, mbti = next_mb
             ubvr, ubvi, ubtr, ubti = next_ub
@@ -6015,6 +6366,13 @@ def _epg_vjp_jvp_kernel(
         g_boundt += tl.sum(
             tl.where(state == 0, bbtr - zbtr, 0.0), axis=1
         )[:, None]
+    if pools == 3:
+        g_semiv += tl.sum(
+            tl.where(state == 0, cbvr - zbvr, 0.0), axis=1
+        )[:, None]
+        g_semit += tl.sum(
+            tl.where(state == 0, cbtr - zbtr, 0.0), axis=1
+        )[:, None]
     if pools == 1:
         base_row = _BOUND_ROW + 2 * (shims - 1)
         tl.atomic_add(
@@ -6047,7 +6405,22 @@ def _epg_vjp_jvp_kernel(
             g_t1bt,
             mask=active_atom,
         )
-    if pools == 2:
+    if pools == 3:
+        semisolid_row = _BOUND_ROW + 2 * (shims - 1)
+        stuck = (g_semiv, g_sexchv, g_t1cv)
+        stuck_tangents = (g_semit, g_sexcht, g_t1ct)
+        for offset in tl.static_range(3):
+            tl.atomic_add(
+                grad_tissue_value + (semisolid_row + offset) * atom_count + atom,
+                stuck[offset],
+                mask=active_atom,
+            )
+            tl.atomic_add(
+                grad_tissue_tangent + (semisolid_row + offset) * atom_count + atom,
+                stuck_tangents[offset],
+                mask=active_atom,
+            )
+    if pools == 2 or pools == 3:
         base_row = _POOL_B_ROW + 2 * (shims - 1)
         rows = (g_boundv, g_exchv, g_t1bv, g_t2bv, g_shiftv)
         tangent_rows = (g_boundt, g_excht, g_t1bt, g_t2bt, g_shiftt)
@@ -9052,7 +9425,7 @@ class AdjointBuffers:
         # A bound pool records a fourth block of states per event: the RF
         # operator scales it, so the reverse sweep cannot replay it from the
         # free pool's.
-        self.blocks = 3 + (3 if pools == 2 else pools)
+        self.blocks = 3 + (4 if pools == 3 else (3 if pools == 2 else pools))
         self.chunk = chunk
         self.shims = shims
         self.rows = tissue_gradient_height(shims)

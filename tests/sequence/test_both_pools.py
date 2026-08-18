@@ -642,25 +642,97 @@ def test_a_three_pool_gradient_reaches_the_public_api():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
-def test_a_three_pool_gradient_on_the_card_is_refused():
-    """The host kernels carry all three pools; the Triton ones carry two.
+def test_the_cuda_gradient_matches_the_cpu_gradient():
+    """The two reverse sweeps share no code, so agreement is what keeps the
+    3x3's transpose honest on the card.
 
-    Answering with a two-pool Jacobian would be a wrong number rather than a
-    missing one, so it is refused instead.
+    A gradient sums one term per echo through ``tl.atomic_add``, whose order is
+    not fixed, so the bound is the accumulated one the parity suite uses.
     """
-    t2 = torch.tensor([80.0], device="cuda", requires_grad=True)
-    signal = FSE().simulate(
-        _description(),
-        TissueProperties(
-            t1_ms=torch.tensor([1000.0], device="cuda"), t2_ms=t2,
-            **{name: torch.tensor([value], device="cuda")
-               for name, value in {**SEMISOLID, **EXCHANGING}.items()},
-        ),
-        nstates=STATES,
-    ).signal
+    voxels = 4
+    spread = dict(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        bound_fraction=torch.linspace(0.02, 0.2, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+        t1_bound_ms=torch.linspace(400.0, 1500.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+        pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
 
-    with pytest.raises(NotImplementedError, match="runs on the host"):
+    def run(device):
+        leaves = {
+            name: value.to(device).clone().requires_grad_(True)
+            for name, value in spread.items()
+        }
+        signal = FSE().simulate(
+            _description(), TissueProperties(**leaves), nstates=STATES
+        ).signal
         signal.abs().square().sum().backward()
+        return {name: leaf.grad.cpu() for name, leaf in leaves.items()}
+
+    host, card = run("cpu"), run("cuda")
+
+    for name in spread:
+        scale = float(host[name].abs().max())
+        assert scale > 0.0, name
+        assert float((host[name] - card[name]).abs().max()) / scale < 1e-3, name
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_cuda_second_order_pass_matches_the_cpu_one():
+    """Forward over reverse, both pools live, on both backends."""
+    voxels = 3
+    spread = dict(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        bound_fraction=torch.linspace(0.05, 0.2, voxels),
+        bound_exchange_hz=torch.linspace(10.0, 60.0, voxels),
+        t1_bound_ms=torch.linspace(400.0, 1200.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.3, voxels),
+        pool_b_exchange_hz=torch.linspace(5.0, 80.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+        pool_b_shift_hz=torch.linspace(-300.0, 300.0, voxels),
+    )
+    generator = torch.Generator().manual_seed(3)
+    direction = {
+        name: torch.rand(voxels, generator=generator) * 0.01 * value.abs().mean()
+        for name, value in spread.items()
+    }
+
+    def run(device):
+        leaves = {
+            name: value.to(device).clone().requires_grad_(True)
+            for name, value in spread.items()
+        }
+        signal = FSE().simulate(
+            _description(), TissueProperties(**leaves), nstates=STATES
+        ).signal
+        loss = signal.abs().square().sum()
+        gradients = torch.autograd.grad(loss, list(leaves.values()), create_graph=True)
+        along = sum(
+            (gradient * direction[name].to(device)).sum()
+            for gradient, name in zip(gradients, leaves, strict=True)
+        )
+        return [
+            curvature.cpu()
+            for curvature in torch.autograd.grad(along, list(leaves.values()))
+        ]
+
+    host, card = run("cpu"), run("cuda")
+
+    compared = 0
+    for name, expected, measured in zip(spread, host, card, strict=True):
+        scale = float(expected.abs().max())
+        if scale == 0.0:
+            continue
+        assert float((expected - measured).abs().max()) / scale < 1e-2, name
+        compared += 1
+    assert compared > 6
 
 
 # --- against the state machine written out in torch ---
