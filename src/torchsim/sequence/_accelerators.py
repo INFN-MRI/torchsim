@@ -1165,6 +1165,7 @@ def _dynamic_pointers(
     rows: torch.Tensor | None,
     direction: torch.Tensor | None,
     gradient: torch.Tensor | None = None,
+    curvature: torch.Tensor | None = None,
 ) -> tuple[int, ...]:
     """The per-voxel rotations, their per-event index and a direction along them.
 
@@ -1173,11 +1174,11 @@ def _dynamic_pointers(
     tabulated one. The direction is null for a pass that follows none.
     """
     if pairs is None:
-        return (0, 0, 0, 0)
+        return (0, 0, 0, 0, 0)
     held = _pointers((pairs, rows))
     tail = tuple(
         0 if value is None else _pointers((value,))[0]
-        for value in (direction, gradient)
+        for value in (direction, gradient, curvature)
     )
     return (*held, *tail)
 
@@ -1191,6 +1192,7 @@ def _bound_pointers(
     pair_rows: torch.Tensor | None = None,
     pair_direction: torch.Tensor | None = None,
     pair_gradient: torch.Tensor | None = None,
+    pair_curvature: torch.Tensor | None = None,
 ) -> tuple[int, ...]:
     """The profiled addresses, the per-voxel rotations, then the lineshape.
 
@@ -1199,7 +1201,7 @@ def _bound_pointers(
     """
     profiled = _profiled_pointers(values, table, rows)
     dynamic = _dynamic_pointers(
-        pairs, pair_rows, pair_direction, pair_gradient
+        pairs, pair_rows, pair_direction, pair_gradient, pair_curvature
     )
     if absorption is None:
         return (*profiled, *dynamic, 0)
@@ -2487,6 +2489,8 @@ def _run_packed_vjp_jvp(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    dynamic: Any = None,
+    dynamic_direction: Any = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
@@ -2622,8 +2626,19 @@ def _run_packed_vjp_jvp(
     table = None if profile is None else profile.packed()
     table_rows = None if profile is None else profile.rows()
     absorption = None if lineshape is None else lineshape.packed()
+    # Bound to names rather than built in the call: the pointers are addresses,
+    # so a buffer only the argument list holds is freed before the kernel runs.
+    pairs = None if dynamic is None else dynamic.packed()
+    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
+    # The value plane of the dual cotangent is the adjoint and the tangent
+    # plane its derivative, which is the same split the tissue gradients take.
+    pair_grad = None if dynamic is None else torch.zeros_like(pairs)
+    pair_curve = None if dynamic is None else torch.zeros_like(pairs)
     _epg_cpu.simulate_vjp_jvp(
-        _bound_pointers(pointers, table, table_rows, absorption),
+        _bound_pointers(
+            pointers, table, table_rows, absorption, pairs, pair_rows,
+            dynamic_direction, pair_grad, pair_curve,
+        ),
         tissue[0].numel(),
         _train_count(events),
         events[1].numel(),
@@ -2642,6 +2657,8 @@ def _run_packed_vjp_jvp(
         _pool_kind(lineshape, exchanging),
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
+    if dynamic is not None:
+        return (*tangent_grads, pair_curve), (*value_grads, pair_grad)
     return tangent_grads, value_grads
 
 

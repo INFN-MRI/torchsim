@@ -562,3 +562,97 @@ def test_a_sequence_with_no_pair_still_gets_the_gradients_it_did():
 
     assert len(gradients) == len(prepared) + 3
     assert any(float(value.abs().max()) > 0.0 for value in gradients)
+
+
+def test_the_second_order_pass_returns_the_adjoint_given_no_direction():
+    """The forward-over-reverse kernel with nothing to follow has to return
+    what the first-order one does -- including on the pair, which the two reach
+    by different code.
+    """
+    from torchsim.sequence._accelerators import (
+        _run_packed_vjp, _run_packed_vjp_jvp,
+    )
+
+    _, prepared, events, pairs = _train()
+    generator = torch.Generator().manual_seed(21)
+    seed = torch.complex(
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+    )
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+    quiet = torch.zeros(pairs.a.shape + (4,), dtype=torch.float32)
+
+    first = _run_packed_vjp(
+        prepared, events, seed, state_count=16, output_count=ECHOES,
+        threads=1, dynamic=pairs,
+    )
+    _, second = _run_packed_vjp_jvp(
+        prepared, events, still, seed, state_count=16, output_count=ECHOES,
+        threads=1, dynamic=pairs, dynamic_direction=quiet,
+    )
+
+    compared = 0
+    for expected, measured in zip(first, second, strict=True):
+        scale = float(expected.abs().max())
+        if scale < 1e-6:
+            continue
+        assert float((expected - measured).abs().max()) / scale < 1e-5
+        compared += 1
+    assert compared > 3
+    assert float(first[-1].abs().max()) > 0.0
+
+
+def test_the_second_order_pass_differentiates_the_pair_gradient():
+    """Given a direction along the pair, the curvature is what the first-order
+    gradient's own derivative is.
+    """
+    from torchsim.sequence._accelerators import (
+        _run_packed_vjp, _run_packed_vjp_jvp,
+    )
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    generator = torch.Generator().manual_seed(21)
+    seed = torch.complex(
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+    )
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+    direction = (
+        torch.randn(pairs.a.shape + (4,), generator=generator) * 0.05
+    ).contiguous()
+
+    curvature, _ = _run_packed_vjp_jvp(
+        prepared, events, still, seed, state_count=16, output_count=ECHOES,
+        threads=1, dynamic=pairs, dynamic_direction=direction,
+    )
+
+    def adjoint(pair):
+        return _run_packed_vjp(
+            prepared, events, seed, state_count=16, output_count=ECHOES,
+            threads=1, dynamic=pair,
+        )[-1]
+
+    step = 3e-2
+
+    def moved(sign):
+        packed = pairs.packed() + sign * step * direction
+        return DynamicPairs(
+            a=torch.complex(packed[..., 0], packed[..., 1]).to(torch.complex64),
+            b=torch.complex(packed[..., 2], packed[..., 3]).to(torch.complex64),
+            index=pairs.index,
+        )
+
+    difference = (adjoint(moved(+1)) - adjoint(moved(-1))) / (2.0 * step)
+
+    assert float(difference.abs().max()) > 0.0
+    worst = float(
+        (curvature[-1] - difference).abs().max() / difference.abs().max()
+    )
+    assert worst < 1e-3, worst
