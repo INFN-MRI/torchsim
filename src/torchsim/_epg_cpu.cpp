@@ -6640,8 +6640,9 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             : DualFloat{1.0F, 0.0F};
         const DualFloat r2_bound =
             PAIRED ? 1000.0F * dual_reciprocal(t2_bound) : DualFloat{};
-        const DualFloat transverse_free =
-            DualFloat{1.0F, 0.0F} - bound_fraction;
+        const DualFloat transverse_free = THREE
+            ? DualFloat{1.0F, 0.0F} - bound_fraction - semisolid_fraction
+            : DualFloat{1.0F, 0.0F} - bound_fraction;
         const DualFloat pool_shift = PAIRED
             ? DualFloat{
                 primal.pool_b_shift[atom], buffers.dot_pool_b_shift[atom]
@@ -7609,8 +7610,14 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     - across_back.r2_bound
                         * (1000.0F * dual_reciprocal(t2_bound * t2_bound));
                 grad_exchange = grad_exchange + across_back.exchange;
+                // The free water is what both second pools leave, so a
+                // cotangent on it reaches each of their fractions turned over.
                 grad_bound_fraction =
                     grad_bound_fraction + across_back.bound - across_back.free;
+                if constexpr (THREE) {
+                    grad_semisolid_fraction =
+                        grad_semisolid_fraction - across_back.free;
+                }
                 grad_pool_shift = grad_pool_shift + across_back.shift_hz;
                 grad_exchange_attenuation =
                     grad_exchange_attenuation + across_back.attenuation;
@@ -7740,8 +7747,11 @@ void simulate_vjp_single_pool(
     );
 }
 
+// The forward-over-reverse body is the largest of the four and the rarest
+// path, so it is the one whose clones are given up once a fourth pool count
+// takes the object past the size a build should carry. The three others keep
+// theirs.
 template <bool SHIMMED, bool PROFILED>
-CLONED_KERNEL
 void simulate_vjp_jvp_single_pool(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,

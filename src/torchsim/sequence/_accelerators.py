@@ -1185,21 +1185,22 @@ def _pool_kind(lineshape: Any, exchanging: bool) -> int:
     return _POOL_SEMISOLID if lineshape is not None else _POOL_ONE
 
 
-def _one_or_two_pools(lineshape: Any, exchanging: bool) -> None:
-    """Refuse an adjoint of a three-pool run.
+def _one_or_two_pools(
+    lineshape: Any, exchanging: bool, device: torch.device
+) -> None:
+    """Refuse a reverse pass through three pools on the card.
 
-    The forward and its forward mode carry all three pools; the reverse
-    kernels carry two, so asked for the transpose of a three-pool Jacobian
-    they would answer with a two-pool machine's -- a wrong number rather than
-    a missing one.
+    The host kernels carry all three; the Triton ones carry two, so asked for
+    the transpose of a three-pool Jacobian they would answer with a two-pool
+    machine's -- a wrong number rather than a missing one.
 
     Raises:
-        NotImplementedError: if the forward carried three pools.
+        NotImplementedError: if a three-pool run asks for a device gradient.
     """
-    if lineshape is not None and exchanging:
+    if lineshape is not None and exchanging and device.type != "cpu":
         raise NotImplementedError(
-            "the reverse kernels carry two pools; a semisolid pool beside a "
-            "chemically exchanging one reaches the forward passes only"
+            "a reverse pass through three pools runs on the host; the CUDA "
+            "kernels carry two"
         )
 
 
@@ -2332,7 +2333,7 @@ def _run_packed_vjp(
     the real-subspace kernels -- four of them short -- be chosen. All of them,
     if it is not given.
     """
-    _one_or_two_pools(lineshape, exchanging)
+    _one_or_two_pools(lineshape, exchanging, tissue[0].device)
     profile = _tables(profile, events)
     if profile is not None:
         _within_the_table(profile, events[2])
@@ -2428,7 +2429,7 @@ def _run_packed_vjp_jvp(
     decides whether the real-subspace adjoint -- four of them short -- may be
     chosen when ``real_axis`` is left open. All of them, if it is not given.
     """
-    _one_or_two_pools(lineshape, exchanging)
+    _one_or_two_pools(lineshape, exchanging, tissue[0].device)
     profile = _tables(profile, events)
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(

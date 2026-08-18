@@ -326,27 +326,6 @@ def test_the_longitudinal_step_reproduces_the_package_operator():
         assert abs(complex(measured[index]) - expected) / abs(readout) < 2e-5
 
 
-# --- what the derivative kernels will not do yet ---
-
-
-def test_a_derivative_of_a_three_pool_run_is_refused():
-    """The forward and its forward mode carry all three pools; the reverse
-    kernels carry two. Answering with a two-pool Jacobian would be a wrong
-    number rather than a missing one, so it is refused instead.
-    """
-    t2 = torch.tensor([80.0], requires_grad=True)
-    signal = FSE().simulate(
-        _description(),
-        TissueProperties(
-            t1_ms=torch.tensor([1000.0]), t2_ms=t2, **SEMISOLID, **EXCHANGING
-        ),
-        nstates=STATES,
-    ).signal
-
-    with pytest.raises(NotImplementedError, match="carry two pools"):
-        signal.abs().square().sum().backward()
-
-
 # --- forward mode ---
 
 
@@ -487,6 +466,200 @@ def test_forward_mode_reaches_three_pools_through_the_public_api():
     assert float(reading.abs().max()) > 0.0
     scale = float(difference.abs().max())
     assert float((tangent - difference).abs().max()) / scale < 5e-3
+
+
+# --- the reverse passes ---
+
+
+def _live_adjoint(prepared, seed):
+    """The gradients a cotangent on the reading leaves."""
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    return _run_packed_vjp(
+        prepared,
+        _live_events(),
+        seed,
+        state_count=STATES,
+        output_count=2,
+        threads=1,
+        lineshape=lineshape_table(),
+        exchanging=True,
+    )
+
+
+def _cotangent(seed=4):
+    generator = torch.Generator().manual_seed(seed)
+    return torch.complex(
+        torch.rand((1, 2), generator=generator) * 2.0 - 1.0,
+        torch.rand((1, 2), generator=generator) * 2.0 - 1.0,
+    )
+
+
+@pytest.mark.parametrize("name", sorted(LIVE))
+def test_the_adjoint_matches_finite_differences(name: str) -> None:
+    """Every direction three pools carry, including the semisolid pool's own
+    three and the exchanging pool's five.
+    """
+    from torchsim.sequence._parameters import TISSUE_NAMES
+
+    index = TISSUE_NAMES.index(name)
+    seed = _cotangent()
+
+    def reading(**properties):
+        return float(
+            (seed.conj() * _live_readout(_prepared(**properties))).real.sum()
+        )
+
+    gradient = float(_live_adjoint(_prepared(), seed)[index].sum())
+    step = abs(LIVE[name]) * 1e-3
+    difference = (
+        reading(**{name: LIVE[name] + step}) - reading(**{name: LIVE[name] - step})
+    ) / (2.0 * step)
+
+    assert abs(difference) > 0.0, "the probe leaves this direction dead"
+    assert abs(gradient - difference) / abs(difference) < 5e-3
+
+
+def test_the_adjoint_transposes_the_forward_direction():
+    """``<w, J v> == <J^T w, v>``, taken against the sum of the terms'
+    magnitudes rather than their total, so one small gradient going wrong is
+    not hidden by two large ones that did not.
+    """
+    prepared = _prepared()
+    generator = torch.Generator().manual_seed(19)
+    directions = tuple(
+        torch.rand(value.shape, generator=generator) * 2.0 - 1.0
+        for value in prepared
+    )
+    seed = _cotangent(23)
+
+    forward = _live_readout(prepared, directions)
+    left = float((seed.conj() * forward).real.sum())
+    terms = [
+        float((gradient * direction).sum())
+        for gradient, direction in zip(_live_adjoint(prepared, seed), directions)
+    ]
+    scale = sum(abs(term) for term in terms)
+
+    assert scale > 0.0
+    assert abs(left - sum(terms)) / scale < 1e-6
+
+
+def test_the_second_order_pass_differentiates_the_adjoint():
+    """Given no direction to follow, the forward-over-reverse kernel returns
+    the adjoint on its own -- and given one, the adjoint's own derivative.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+
+    prepared = _prepared()
+    events = _live_events()
+    seed = _cotangent()
+    options = dict(
+        state_count=STATES, output_count=2, threads=1,
+        lineshape=lineshape_table(), exchanging=True,
+    )
+    still = tuple(torch.zeros_like(value) for value in prepared) + tuple(
+        torch.zeros_like(events[0]) for _ in range(3)
+    )
+    first = _live_adjoint(prepared, seed)
+    _, adjoint = _run_packed_vjp_jvp(prepared, events, still, seed, **options)
+    for expected, measured in zip(first, adjoint, strict=True):
+        scale = float(expected.abs().max())
+        if scale > 1e-9:
+            assert float((expected - measured).abs().max()) / scale < 1e-4
+
+    from torchsim.sequence._parameters import TISSUE_NAMES
+
+    # The direction is confined to the properties the difference below moves,
+    # so the two are contracted against the same one.
+    generator = torch.Generator().manual_seed(31)
+    directions = tuple(
+        torch.rand(value.shape, generator=generator) * 2.0 - 1.0
+        if TISSUE_NAMES[position] in LIVE
+        else torch.zeros_like(value)
+        for position, value in enumerate(prepared)
+    ) + tuple(torch.zeros_like(events[0]) for _ in range(3))
+    curvature, _ = _run_packed_vjp_jvp(prepared, events, directions, seed, **options)
+
+    step = 1e-3
+    def moved(sign):
+        return _prepared(**{
+            name: LIVE[name] + sign * step * float(
+                directions[TISSUE_NAMES.index(name)][0]
+            )
+            for name in LIVE
+        })
+
+    ahead = _live_adjoint(moved(+1), seed)
+    behind = _live_adjoint(moved(-1), seed)
+    compared = 0
+    for name in LIVE:
+        index = TISSUE_NAMES.index(name)
+        difference = float((ahead[index] - behind[index]).sum()) / (2.0 * step)
+        if abs(difference) > 1e-6:
+            got = float(curvature[index].sum())
+            assert abs(got - difference) / abs(difference) < 5e-3, name
+            compared += 1
+    assert compared > 3
+
+
+def test_the_adjoint_leaves_the_two_pool_answers_untouched():
+    """A tissue at either default fraction takes the two-pool kernel in reverse
+    mode too, so its gradients are bit for bit what they were.
+    """
+    def gradient(**extra):
+        t2 = torch.tensor([80.0], requires_grad=True)
+        FSE().simulate(
+            _description(),
+            TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=t2, **extra),
+            nstates=STATES,
+        ).signal.abs().square().sum().backward()
+        return t2.grad
+
+    assert torch.equal(
+        gradient(**SEMISOLID),
+        gradient(**SEMISOLID, **{**EXCHANGING, "pool_b_fraction": 0.0}),
+    )
+    assert torch.equal(
+        gradient(**EXCHANGING),
+        gradient(**EXCHANGING, **{**SEMISOLID, "bound_fraction": 0.0}),
+    )
+
+
+def test_a_three_pool_gradient_reaches_the_public_api():
+    """The path an optimizer takes, rather than the packed buffers directly."""
+    leaves = {
+        name: torch.tensor([value], requires_grad=True)
+        for name, value in dict(LIVE, t1_ms=1000.0, t2_ms=80.0).items()
+    }
+    FSE().simulate(
+        _description(), TissueProperties(**leaves), nstates=STATES
+    ).signal.abs().square().sum().backward()
+
+    for name in ("t2_ms", "bound_fraction", "pool_b_fraction", "t2_pool_b_ms"):
+        assert float(leaves[name].grad.abs().max()) > 0.0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_three_pool_gradient_on_the_card_is_refused():
+    """The host kernels carry all three pools; the Triton ones carry two.
+
+    Answering with a two-pool Jacobian would be a wrong number rather than a
+    missing one, so it is refused instead.
+    """
+    t2 = torch.tensor([80.0], device="cuda", requires_grad=True)
+    signal = FSE().simulate(
+        _description(),
+        TissueProperties(
+            t1_ms=torch.tensor([1000.0], device="cuda"), t2_ms=t2,
+            **{name: torch.tensor([value], device="cuda")
+               for name, value in {**SEMISOLID, **EXCHANGING}.items()},
+        ),
+        nstates=STATES,
+    ).signal
+
+    with pytest.raises(NotImplementedError, match="runs on the host"):
+        signal.abs().square().sum().backward()
 
 
 # --- the other backend ---
