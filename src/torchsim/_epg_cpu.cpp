@@ -6833,7 +6833,10 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                         value = negated * value;
                     }
                     if constexpr (PAIRED) {
-                        for (DualComplex& value : (THREE ? semisolid : bound)) {
+                        // The exchanging pool is free water and turns over; the
+                        // semisolid pool is saturated instead, which is a
+                        // different block on a different vector.
+                        for (DualComplex& value : bound) {
                             value = negated * value;
                         }
                     }
@@ -6928,6 +6931,9 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
             std::fill(
                 bound_minus_bar.begin(), bound_minus_bar.end(), DualComplex{}
             );
+        }
+        if constexpr (THREE) {
+            std::fill(semisolid_bar.begin(), semisolid_bar.end(), DualComplex{});
         }
         DualFloat grad_t2_bound{0.0F, 0.0F};
         DualFloat grad_pool_shift{0.0F, 0.0F};
