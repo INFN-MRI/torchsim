@@ -4069,7 +4069,8 @@ def _epg_vjp_jvp_kernel(
     profile_step,
     lineshape_step,
     state_count: tl.constexpr,
-    shims: tl.constexpr,
+    shim_rows,
+    shimmed: tl.constexpr,
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
     lineshape_bins: tl.constexpr,
@@ -4552,7 +4553,7 @@ def _epg_vjp_jvp_kernel(
         )
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse a row of its own.
-        if shims > 1:
+        if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
             atom_b1_phase = tl.load(
@@ -5549,7 +5550,7 @@ def _epg_vjp_jvp_kernel(
 
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse a row of its own.
-        if shims > 1:
+        if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
             atom_b1_phase = tl.load(
@@ -5959,7 +5960,7 @@ def _epg_vjp_jvp_kernel(
         # several it lands in that shim's row here rather than in a register
         # summed over the whole train. ``row`` is the offset of the row the
         # replay above read.
-        if shims > 1:
+        if shimmed:
             tl.atomic_add(
                 grad_tissue_value + _B1_ROW * atom_count + row + atom,
                 grad_alpha_v * event_flip,
@@ -5972,13 +5973,13 @@ def _epg_vjp_jvp_kernel(
             )
             tl.atomic_add(
                 grad_tissue_value
-                + (_B1_PHASE_ROW + shims - 1) * atom_count + row + atom,
+                + (_B1_PHASE_ROW + shim_rows - 1) * atom_count + row + atom,
                 grad_phi_v,
                 mask=writes_flip,
             )
             tl.atomic_add(
                 grad_tissue_tangent
-                + (_B1_PHASE_ROW + shims - 1) * atom_count + row + atom,
+                + (_B1_PHASE_ROW + shim_rows - 1) * atom_count + row + atom,
                 grad_phi_t,
                 mask=writes_flip,
             )
@@ -6716,7 +6717,7 @@ def _epg_vjp_jvp_kernel(
             tl.where(state == 0, cbtr - zbtr, 0.0), axis=1
         )[:, None]
     if pools == 1:
-        base_row = _BOUND_ROW + 2 * (shims - 1)
+        base_row = _BOUND_ROW + 2 * (shim_rows - 1)
         tl.atomic_add(
             grad_tissue_value + base_row * atom_count + atom,
             g_boundv,
@@ -6748,7 +6749,7 @@ def _epg_vjp_jvp_kernel(
             mask=active_atom,
         )
     if pools == 3:
-        semisolid_row = _BOUND_ROW + 2 * (shims - 1)
+        semisolid_row = _BOUND_ROW + 2 * (shim_rows - 1)
         stuck = (g_semiv, g_sexchv, g_t1cv)
         stuck_tangents = (g_semit, g_sexcht, g_t1ct)
         for offset in tl.static_range(3):
@@ -6763,7 +6764,7 @@ def _epg_vjp_jvp_kernel(
                 mask=active_atom,
             )
     if pools == 2 or pools == 3:
-        base_row = _POOL_B_ROW + 2 * (shims - 1)
+        base_row = _POOL_B_ROW + 2 * (shim_rows - 1)
         rows = (g_boundv, g_exchv, g_t1bv, g_t2bv, g_shiftv)
         tangent_rows = (g_boundt, g_excht, g_t1bt, g_t2bt, g_shiftt)
         for offset in tl.static_range(5):
@@ -6786,10 +6787,10 @@ def _epg_vjp_jvp_kernel(
     for parameter in tl.static_range(_FREE_POOL_COUNT):
         # The transmit pair went to its shim's row above when there is more
         # than one; the rest sit past whatever rows that pair took.
-        if shims == 1 or (parameter != _B1_ROW and parameter != _B1_PHASE_ROW):
+        if not shimmed or (parameter != _B1_ROW and parameter != _B1_PHASE_ROW):
             plane = (
                 parameter if parameter < _B1_ROW
-                else parameter + 2 * (shims - 1)
+                else parameter + 2 * (shim_rows - 1)
             )
             tl.atomic_add(
                 grad_tissue_value + plane * atom_count + atom,
@@ -7811,7 +7812,8 @@ def _epg_kernel(
     profile_step,
     lineshape_step,
     state_count: tl.constexpr,
-    shims: tl.constexpr,
+    shim_rows,
+    shimmed: tl.constexpr,
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
     lineshape_bins: tl.constexpr,
@@ -8130,7 +8132,7 @@ def _epg_kernel(
 
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse a row of its own.
-        if shims > 1:
+        if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
             atom_b1_phase = tl.load(
@@ -8441,7 +8443,8 @@ def _epg_jvp_kernel(
     profile_step,
     lineshape_step,
     state_count: tl.constexpr,
-    shims: tl.constexpr,
+    shim_rows,
+    shimmed: tl.constexpr,
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
     lineshape_bins: tl.constexpr,
@@ -9062,7 +9065,7 @@ def _epg_jvp_kernel(
         event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse a row of its own.
-        if shims > 1:
+        if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
             atom_b1_phase = tl.load(
@@ -9539,7 +9542,8 @@ def simulate_into(
         1.0 if profile is None else profile.step,
         1.0 if lineshape is None else lineshape.step,
         state_count=state_count,
-        shims=shims,
+        shim_rows=shims,
+        shimmed=shims > 1,
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
@@ -9709,7 +9713,8 @@ def simulate_jvp_into(
         1.0 if profile is None else profile.step,
         1.0 if lineshape is None else lineshape.step,
         state_count=state_count,
-        shims=shims,
+        shim_rows=shims,
+        shimmed=shims > 1,
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
@@ -9968,7 +9973,8 @@ def simulate_vjp_jvp_into(
                 geometry.washout_scale,
                 1.0 if profile is None else profile.step,
                 1.0 if lineshape is None else lineshape.step,
-                shims=_shim_count(tissue),
+                shim_rows=_shim_count(tissue),
+                shimmed=_shim_count(tissue) > 1,
                 locations=1 if profile is None else profile.points,
                 profile_bins=0 if profile is None else profile.bins,
                 lineshape_bins=0 if lineshape is None else lineshape.bins,
