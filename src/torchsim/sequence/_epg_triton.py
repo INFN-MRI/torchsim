@@ -6224,8 +6224,8 @@ def _epg_vjp_jvp_kernel(
             g_t2bt += back_r2b_t * slope2b_v + back_r2b_v * slope2b_t
             g_exchv += back_xexch_v
             g_excht += back_xexch_t
-            # The free water is what the second pool leaves, so a cotangent on
-            # it reaches that pool's fraction turned over.
+            # The free water is what both second pools leave, so a cotangent
+            # on it reaches each of their fractions turned over.
             g_boundv += back_xbound_v - back_xfree_v
             g_boundt += back_xbound_t - back_xfree_t
             if pools == 3:
