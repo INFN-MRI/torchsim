@@ -77,7 +77,9 @@ def simulate_packed(
     exchanging
         Whether to carry a chemically exchanging pool: a second pool with a
         transverse pair of its own, its own T2 and chemical shift, which a
-        pulse rotates rather than saturates.
+        pulse rotates rather than saturates. Given beside a ``lineshape`` this
+        is the three-pool system, whose longitudinal step is a 3x3 while its
+        transverse one stays the 2x2 the exchanging pool alone needs.
 
     Returns
     -------
@@ -89,10 +91,20 @@ def simulate_packed(
         bound_fraction, exchange_rate, t1_bound,
         pool_b_fraction, pool_b_exchange, t1_pool_b, t2_pool_b, pool_b_shift,
     ) = tissue
+    # Free water is pool a, the chemically exchanging pool b and the semisolid
+    # pool c. ``bound`` names whichever second pool the longitudinal step pairs
+    # the free water with when there is only one of them.
+    three = lineshape is not None and exchanging
+    semisolid_fraction = bound_fraction if three else None
+    semisolid_exchange = exchange_rate if three else None
+    t1_semisolid = t1_bound if three else None
     if exchanging:
         bound_fraction = pool_b_fraction
         exchange_rate = pool_b_exchange
         t1_bound = t1_pool_b
+    free_fraction = (
+        1.0 - bound_fraction - semisolid_fraction if three else 1.0 - bound_fraction
+    )
     # ``b1`` and ``b1_phase`` hold one row per shim the sequence drives, so a
     # pulse reads the field of the shim its event names.
     transmit = b1.reshape(-1, t1.numel())
@@ -121,11 +133,21 @@ def simulate_packed(
     bound = torch.zeros_like(fplus)
     bound_plus = torch.zeros_like(fplus)
     bound_minus = torch.zeros_like(fplus)
+    semisolid = torch.zeros_like(fplus)
     across_generator = (
         _transverse_generator(
-            t2, t2_pool_b, exchange_rate, bound_fraction, pool_b_shift
+            t2, t2_pool_b, exchange_rate, bound_fraction, free_fraction,
+            pool_b_shift,
         )
         if exchanging
+        else None
+    )
+    triple = (
+        _three_pool_generator(
+            t1, t1_pool_b, t1_semisolid, exchange_rate, semisolid_exchange,
+            bound_fraction, semisolid_fraction,
+        )
+        if three
         else None
     )
     if lineshape is None and not exchanging:
@@ -134,10 +156,10 @@ def simulate_packed(
     else:
         # Equilibrium is split between the pools, so the free water starts at
         # what the bound pool leaves it.
-        longitudinal = longitudinal + _at_order_zero(
-            longitudinal, 1.0 - bound_fraction
-        )
+        longitudinal = longitudinal + _at_order_zero(longitudinal, free_fraction)
         bound = bound + _at_order_zero(bound, bound_fraction)
+        if three:
+            semisolid = semisolid + _at_order_zero(semisolid, semisolid_fraction)
         generator = _exchange_generator(
             t1, t1_bound, exchange_rate, bound_fraction
         )
@@ -204,6 +226,31 @@ def simulate_packed(
             longitudinal = longitudinal * e1[:, None] * carried
             # Order zero is undamped, so recovery is unaffected by diffusion.
             longitudinal = longitudinal + _at_order_zero(longitudinal, 1.0 - e1)
+        elif three:
+            # All three pools mix over the interval, which is one 3x3
+            # exponential for the whole event; the per-order damping and turn
+            # multiply what it leaves.
+            operator, restored = _three_pool_step(
+                triple,
+                torch.stack(
+                    (free_fraction, bound_fraction, semisolid_fraction), dim=-1
+                ),
+                torch.stack(
+                    (1000.0 / t1, 1000.0 / t1_pool_b, 1000.0 / t1_semisolid),
+                    dim=-1,
+                ),
+                dt,
+                wout,
+            )
+            pools = torch.stack((longitudinal, bound, semisolid), dim=-2)
+            mixed = torch.einsum("vij,vjs->vis", operator.to(pools.dtype), pools)
+            longitudinal = mixed[:, 0] * carried + _at_order_zero(
+                longitudinal, restored[:, 0]
+            )
+            bound = mixed[:, 1] * carried + _at_order_zero(bound, restored[:, 1])
+            semisolid = mixed[:, 2] * carried + _at_order_zero(
+                semisolid, restored[:, 2]
+            )
         else:
             # Exchange mixes the two pools over the interval, which is one 2x2
             # exponential for the whole event; the per-order damping and turn
@@ -249,7 +296,10 @@ def simulate_packed(
                         saturation[event] * alpha.square()
                         * lineshape.at(rf_frequency[event] - b0)
                     )
-                    bound = bound * absorbed[:, None]
+                    if three:
+                        semisolid = semisolid * absorbed[:, None]
+                    else:
+                        bound = bound * absorbed[:, None]
                 if profile is None:
                     fplus, fminus, longitudinal = _rotate(
                         fplus, fminus, longitudinal, alpha, phi
@@ -333,6 +383,7 @@ def _transverse_generator(
     t2_pool_b: torch.Tensor,
     exchange_rate: torch.Tensor,
     fraction: torch.Tensor,
+    free: torch.Tensor,
     shift_hz: torch.Tensor,
 ) -> torch.Tensor:
     """``K - diag(R2) - 2 pi i diag(df)``, the transverse step's generator.
@@ -340,7 +391,6 @@ def _transverse_generator(
     Only pool b's offset appears: pool a sits at whatever off-resonance the
     free precession already carries the whole voxel through.
     """
-    free = 1.0 - fraction
     kab = exchange_rate * fraction
     kba = exchange_rate * free
     rates = torch.stack(
@@ -352,6 +402,61 @@ def _transverse_generator(
     ).to(torch.complex64)
     offsets = torch.stack((torch.zeros_like(shift_hz), shift_hz), dim=-1)
     return rates + torch.diag_embed(-2j * torch.pi * offsets)
+
+
+def _three_pool_generator(
+    t1_ms,
+    t1_pool_b_ms,
+    t1_semisolid_ms,
+    exchange_b,
+    exchange_c,
+    fraction_b,
+    fraction_c,
+) -> torch.Tensor:
+    """``K - diag(R1)`` for free water beside both second pools.
+
+    Each second pool exchanges with the free water and not with the other, so
+    a pool leaves at the rate scaled by the *other* pool's fraction and the
+    exchange part conserves the total on its own.
+    """
+    free = 1.0 - fraction_b - fraction_c
+    kab, kba = exchange_b * fraction_b, exchange_b * free
+    kac, kca = exchange_c * fraction_c, exchange_c * free
+    zero = torch.zeros_like(free)
+    return torch.stack(
+        (
+            torch.stack((-kab - kac - 1000.0 / t1_ms, kba, kca), dim=-1),
+            torch.stack((kab, -kba - 1000.0 / t1_pool_b_ms, zero), dim=-1),
+            torch.stack((kac, zero, -kca - 1000.0 / t1_semisolid_ms), dim=-1),
+        ),
+        dim=-2,
+    )
+
+
+def _three_pool_step(
+    generator: torch.Tensor,
+    equilibrium: torch.Tensor,
+    rates: torch.Tensor,
+    dt: Any,
+    wout: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """The interval's three-pool operator and the recovery beside it.
+
+    Reached through ``torch.matrix_exp`` and a linear solve, so neither the
+    closed form the kernels evaluate nor the identity that saves them the
+    solve is assumed here.
+    """
+    exponential = torch.matrix_exp(generator.double() * dt)
+    settled = torch.linalg.solve(generator.double(), (equilibrium * rates).double())
+    identity = torch.eye(3, dtype=torch.float64, device=generator.device)
+    restored = ((exponential - identity) @ settled[..., None])[..., 0]
+    attenuation = wout[:, None].double()
+    return (
+        (exponential * attenuation[..., None]).to(torch.complex64),
+        (attenuation * restored + (1.0 - attenuation) * equilibrium.double()).to(
+            torch.complex64
+        ),
+    )
 
 
 def _two_pool_step(

@@ -25,6 +25,7 @@ from torchsim.sequence._accelerators import (
 )
 from torchsim.sequence._lineshape import lineshape_table
 from torchsim.sequence._simulation import _prepare_tissue
+from utils.packed_reference import simulate_packed
 
 ECHOES = 8
 STATES = 8
@@ -660,6 +661,99 @@ def test_a_three_pool_gradient_on_the_card_is_refused():
 
     with pytest.raises(NotImplementedError, match="runs on the host"):
         signal.abs().square().sum().backward()
+
+
+# --- against the state machine written out in torch ---
+
+
+def _train_events():
+    """A refocused train, which exercises the rotation, the shifts and the
+    spoil that a free-induction probe leaves alone.
+    """
+    packed = _pack_events(
+        "fse",
+        _description(),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    return (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+
+
+def _routes(leaves, events):
+    """The kernels and the oracle, fed from one place."""
+    from torchsim.sequence._accelerators import _NativeEpg
+
+    fused = _NativeEpg.apply(
+        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, None,
+        lineshape_table(), True,
+    )
+    reference = simulate_packed(
+        leaves,
+        events,
+        state_count=STATES,
+        output_count=ECHOES,
+        lineshape=lineshape_table(),
+        exchanging=True,
+    )
+    return fused, reference
+
+
+def _oracle_leaves():
+    return tuple(
+        value.detach().clone().requires_grad_(True) for value in _prepared()
+    )
+
+
+def test_the_fused_forward_matches_the_oracle():
+    """The oracle reaches both exponentials through Pade rather than through
+    the closed forms, so this is the three-pool step checked against a
+    different algorithm and not against a second copy of itself.
+    """
+    fused, reference = _routes(_oracle_leaves(), _train_events())
+
+    reference = reference.detach()
+    assert float(reference.abs().max()) > 0.0
+    assert float(
+        (fused.detach() - reference).abs().max() / reference.abs().max()
+    ) < 1e-4
+
+
+def test_the_fused_adjoint_matches_the_oracle():
+    """Per parameter, not against one contracted scalar: a transposed adjoint
+    still transposes when a small gradient is wrong.
+    """
+    events = _train_events()
+    generator = torch.Generator().manual_seed(31)
+    seed = torch.randn(
+        (1, ECHOES), generator=generator, dtype=torch.float32
+    ) + 1j * torch.randn((1, ECHOES), generator=generator, dtype=torch.float32)
+
+    def gradients(route: int):
+        leaves = _oracle_leaves()
+        return torch.autograd.grad(
+            _routes(leaves, events)[route],
+            leaves,
+            seed,
+            allow_unused=True,
+            materialize_grads=True,
+        )
+
+    want, got = gradients(1), gradients(0)
+    floor = 1e-6 * max(float(value.abs().max()) for value in want)
+    compared = 0
+    for index, (expected, measured) in enumerate(zip(want, got, strict=True)):
+        scale = float(expected.abs().max())
+        if scale <= floor:
+            continue
+        assert float((expected - measured).abs().max()) / scale < 1e-3, index
+        compared += 1
+    assert compared > 8
 
 
 # --- the other backend ---
