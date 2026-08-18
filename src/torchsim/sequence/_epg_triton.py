@@ -3319,6 +3319,25 @@ def _table_row(profile_index, event, location, locations: tl.constexpr):
 
 
 @triton.jit
+def _dynamic_pair_at(pairs, pair_index, event_base, event, atom, atom_count, mask):
+    """The rotation a pulse performs at this voxel, read rather than read off.
+
+    A tabulated pair covers a shape's every pulse because a static array
+    reaches the rotation through one complex scalar; this one is integrated per
+    pulse per voxel, so there is nothing to interpolate and the read is four
+    floats. The row runs per train and per event, as the flip does.
+    """
+    row = tl.load(pair_index + event_base + event).to(tl.int64)
+    entry = pairs + (row * atom_count + atom) * 4
+    return (
+        tl.load(entry + 0, mask=mask, other=1.0),
+        tl.load(entry + 1, mask=mask, other=0.0),
+        tl.load(entry + 2, mask=mask, other=0.0),
+        tl.load(entry + 3, mask=mask, other=0.0),
+    )
+
+
+@triton.jit
 def _profile_pair(profile, row, theta, bins: tl.constexpr, step):
     """The Cayley-Klein pair the transition table holds at this flip angle.
 
@@ -7797,6 +7816,8 @@ def _epg_kernel(
     profile,
     profile_index,
     lineshape,
+    pairs,
+    pair_index,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -7816,6 +7837,7 @@ def _epg_kernel(
     shimmed: tl.constexpr,
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
+    dynamic: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
     block_states: tl.constexpr,
@@ -8140,13 +8162,22 @@ def _epg_kernel(
             )
         alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0) * atom_b1
         phi = tl.load(phase + event_base + event, mask=active_atom, other=0.0) + atom_b1_phase
-        if profile_bins > 0:
-            # The table is built at zero RF phase, which turns the rotation
+        if profile_bins > 0 or dynamic:
+            # Either pair is built at zero RF phase, which turns the rotation
             # axis and so reaches ``b`` alone.
-            pair = _profile_pair(
-                profile, _table_row(profile_index, event, location, locations),
-                alpha, profile_bins, profile_step,
-            )
+            if dynamic:
+                # Already integrated at this pulse's own flip, so the flip is
+                # inside the pair rather than read against it.
+                pair = _dynamic_pair_at(
+                    pairs, pair_index, event_base, event, atom, atom_count,
+                    active_atom,
+                )
+            else:
+                pair = _profile_pair(
+                    profile,
+                    _table_row(profile_index, event, location, locations),
+                    alpha, profile_bins, profile_step,
+                )
             turn_r = tl.cos(phi)
             turn_i = -tl.sin(phi)
             spun_br = pair[2] * turn_r - pair[3] * turn_i
@@ -8182,7 +8213,7 @@ def _epg_kernel(
                 bplus_real, bplus_imag, bminus_real, bminus_imag,
                 bound_real, bound_imag,
             )
-            if profile_bins > 0:
+            if profile_bins > 0 or dynamic:
                 # The same pulse, the same rotation: a chemical shift moves
                 # where a pool precesses, not what a pulse does to it.
                 (
@@ -8192,7 +8223,7 @@ def _epg_kernel(
                     bplus_real, bplus_imag, bminus_real, bminus_imag,
                     bound_real, bound_imag,
                 )
-        if profile_bins > 0:
+        if profile_bins > 0 or dynamic:
             rotated_pr = shaped_pr
             rotated_pi = shaped_pi
             rotated_mr = shaped_mr
@@ -9391,6 +9422,7 @@ def simulate(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    dynamic: Any = None,
 ) -> torch.Tensor:
     """Run a packed state machine on CUDA and return complex signals.
 
@@ -9419,6 +9451,7 @@ def simulate(
         profile=profile,
         lineshape=lineshape,
         exchanging=exchanging,
+        dynamic=dynamic,
     )
     return torch.complex(output_real, output_imag)
 
@@ -9438,6 +9471,7 @@ def simulate_into(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    dynamic: Any = None,
 ) -> None:
     """Run the forward machine into buffers the caller owns.
 
@@ -9470,6 +9504,14 @@ def simulate_into(
     # A kernel argument has to be a tensor even where the branch reading it is
     # compiled out, so an unprofiled launch passes one it already has.
     table = None if profile is None else profile.packed(t1.device)
+    pairs = None if dynamic is None else dynamic.packed(t1.device)
+    pair_rows = None if dynamic is None else dynamic.index.to(
+        device=t1.device, dtype=torch.int32
+    )
+    pairs = None if dynamic is None else dynamic.packed(t1.device)
+    pair_rows = None if dynamic is None else dynamic.index.to(
+        device=t1.device, dtype=torch.int32
+    )
     table_rows = None if profile is None else profile.rows(kind.device)
     absorption = None if lineshape is None else lineshape.packed(t1.device)
 
@@ -9530,6 +9572,8 @@ def simulate_into(
         t1 if table is None else table,
         kind if table_rows is None else table_rows,
         t1 if absorption is None else absorption,
+        t1 if pairs is None else pairs,
+        kind if pair_rows is None else pair_rows,
         output_real,
         output_imag,
         *scratch,
@@ -9546,6 +9590,7 @@ def simulate_into(
         shimmed=shims > 1,
         locations=1 if profile is None else profile.points,
         profile_bins=0 if profile is None else profile.bins,
+        dynamic=dynamic is not None,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
         pools=_pool_flag(lineshape, exchanging),
         block_states=block_states,

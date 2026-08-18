@@ -656,3 +656,29 @@ def test_the_second_order_pass_differentiates_the_pair_gradient():
         (curvature[-1] - difference).abs().max() / difference.abs().max()
     )
     assert worst < 1e-3, worst
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_cuda_forward_reads_the_pair_the_host_does():
+    """The two backends share no code, so agreement is what keeps the per-voxel
+    read honest on the card: a row taken from the wrong train would still
+    produce a plausible train.
+    """
+    from torchsim.sequence._accelerators import _run_packed
+    from torchsim.sequence._epg_triton import simulate
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    host = _run_packed(prepared, events, 16, ECHOES, 1, dynamic=pairs)
+    card = simulate(
+        tuple(value.cuda() for value in prepared),
+        tuple(value.cuda() for value in events),
+        state_count=16,
+        output_count=ECHOES,
+        dynamic=DynamicPairs(
+            a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
+        ),
+    ).cpu()
+
+    assert float(host.abs().max()) > 0.0
+    assert float((host - card).abs().max() / host.abs().max()) < 1e-5
