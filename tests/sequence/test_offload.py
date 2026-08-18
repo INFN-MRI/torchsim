@@ -723,3 +723,47 @@ def test_a_host_adjoint_with_no_policy_stays_on_the_host_kernel():
         accelerators._run_packed_vjp_jvp = forwarded
 
     assert not taken
+
+
+def test_a_backward_through_the_public_api_streams():
+    """The level the gap was reported at.
+
+    ``torch.autograd`` reaches the adjoint by a route of its own, and it is
+    the one an ordinary user's ``.backward()`` takes.
+    """
+    from torchsim.sequence import FSE, TissueProperties
+
+    voxels = 20_000
+    reached = []
+    forwarded = accelerators._run_offloaded_vjp_jvp
+
+    def spy(*arguments, **options):
+        reached.append(True)
+        return forwarded(*arguments, **options)
+
+    def gradients():
+        t1 = torch.linspace(600.0, 1400.0, voxels, requires_grad=True)
+        t2 = torch.linspace(40.0, 120.0, voxels, requires_grad=True)
+        signal = FSE().simulate(
+            fse_description(
+                torch.deg2rad(torch.full((ECHOES,), 120.0)),
+                echo_spacing_s=5e-3,
+                phases_rad=torch.pi / 2,
+                excitation_phase_rad=torch.pi / 2,
+            ),
+            TissueProperties(t1_ms=t1, t2_ms=t2),
+            nstates=STATES,
+        ).signal
+        signal.abs().square().sum().backward()
+        return t1.grad, t2.grad
+
+    expected = gradients()
+    accelerators._run_offloaded_vjp_jvp = spy
+    try:
+        with offload(["cuda"], budget_bytes=1 << 24):
+            actual = gradients()
+    finally:
+        accelerators._run_offloaded_vjp_jvp = forwarded
+
+    assert reached, "the backward never reached the streamed route"
+    assert _compare_gradients((expected,), (actual,)) < 1e-4

@@ -14,11 +14,14 @@ import torch
 
 from torchsim.sequence import execution
 from torchsim.sequence._calibration import crossover
+from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._accelerators import (
+    _FLOAT_INPUTS,
     _bytes_per_voxel,
     _choose,
     _run_packed,
     _run_packed_jvp,
+    _run_packed_vjp,
     _run_packed_vjp_jvp,
 )
 import torchsim.sequence._accelerators as accelerators
@@ -160,7 +163,12 @@ def test_the_size_of_a_voxel_grows_with_the_pass():
 # --- every route has to agree ---
 
 
-def _all_three(prepared, events, outputs, seeds, cotangent):
+_INSIDE_THE_SUBSPACE = tuple(
+    position not in OUTSIDE_THE_SUBSPACE for position in range(len(_FLOAT_INPUTS))
+)
+
+
+def _all_four(prepared, events, outputs, seeds, cotangent):
     tissue_seed, event_seed = seeds
     return (
         _run_packed(prepared, events, STATES, outputs, 0, real_axis=1),
@@ -176,6 +184,13 @@ def _all_three(prepared, events, outputs, seeds, cotangent):
             outputs,
             0,
             real_axis=1,
+        ),
+        # The route autograd takes for a plain backward. It settles its own
+        # real axis rather than being handed one, from what the caller says it
+        # will read -- so leaving the four out is how it reaches the same
+        # subspace the pass above was told to take.
+        _run_packed_vjp(
+            prepared, events, cotangent, STATES, outputs, 0, _INSIDE_THE_SUBSPACE
         ),
     )
 
@@ -200,14 +215,28 @@ def test_every_route_gives_the_same_answer(arguments):
     cotangent = torch.randn(
         (voxels, outputs), generator=generator, dtype=torch.complex64
     )
-    expected = _all_three(prepared, events, outputs, seeds, cotangent)
+    expected = _all_four(prepared, events, outputs, seeds, cotangent)
     with execution(**arguments):
-        actual = _all_three(prepared, events, outputs, seeds, cotangent)
+        actual = _all_four(prepared, events, outputs, seeds, cotangent)
 
     for reference, result in zip(expected[:2], actual[:2], strict=True):
         assert result.device == reference.device
         assert ((reference - result).abs().max() / reference.abs().max()) < 1e-5
-    for side, other in zip(expected[2], actual[2], strict=True):
+    # The fourth route is compared on the gradients it was told the caller
+    # would read: leaving four out is what lets a device run take the reduced
+    # kernel, and a host run computes them anyway.
+    wanted_expected = tuple(
+        gradient for gradient, asked in zip(
+            expected[3], _INSIDE_THE_SUBSPACE, strict=True
+        ) if asked
+    )
+    wanted_actual = tuple(
+        gradient for gradient, asked in zip(
+            actual[3], _INSIDE_THE_SUBSPACE, strict=True
+        ) if asked
+    )
+    for side, other in zip((*expected[2], wanted_expected),
+                           (*actual[2], wanted_actual), strict=True):
         for reference, result in zip(side, other, strict=True):
             scale = reference.abs().max()
             if scale == 0:
