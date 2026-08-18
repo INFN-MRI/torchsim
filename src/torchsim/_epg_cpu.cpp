@@ -1954,21 +1954,14 @@ inline void lineshape_at_slope(
     slope = DualFloat{first, second * offset_hz.tangent};
 }
 
-// Where an event's pulse reads the transmit field. Templated rather than
-// branched so a sequence with one shim compiles to the bare atom index it
-// would have had, with neither the row load nor the multiply.
-template <bool SHIMMED>
+// Where an event's pulse reads the transmit field. A sequence with one shim
+// carries a row index of zero on every event, so this is the bare atom index
+// for it without the kernel needing to know that in its type.
 inline std::int64_t transmit_row(
     const Buffers& buffers, const std::int64_t event, const std::int64_t atom
 ) {
-    if constexpr (SHIMMED) {
-        return static_cast<std::int64_t>(buffers.shim_index[event])
-            * buffers.atom_count + atom;
-    } else {
-        (void)buffers;
-        (void)event;
-        return atom;
-    }
+    return static_cast<std::int64_t>(buffers.shim_index[event])
+        * buffers.atom_count + atom;
 }
 
 // Whether any atom carries diffusion. The lane kernels keep transcendentals
@@ -2363,7 +2356,7 @@ inline void rotate(
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool SHIMMED, bool PROFILED, Pools POOLS>
+template <bool PROFILED, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_jvp_range(
     const JvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -2501,6 +2494,14 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.diffusion[atom]
         };
+        // With one shim the transmit field is a property of the voxel and
+        // lifts out of the event loop; with several it belongs to the shim a
+        // pulse drives, and is read where the pulse is.
+        const bool shimmed = primal.shim_count > 1;
+        const float voxel_b1 = primal.b1[atom];
+        const float voxel_dot_b1 = buffers.b1[atom];
+        const float voxel_b1_phase = primal.b1_phase[atom];
+        const float voxel_dot_b1_phase = buffers.b1_phase[atom];
         const float velocity = primal.velocity[atom];
         const float dot_velocity = buffers.velocity[atom];
         const DualFloat flow_rate{
@@ -2719,14 +2720,19 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                     }
                 } else {
                     const std::int64_t transmit =
-                        transmit_row<SHIMMED>(primal, event, atom);
-                    const float alpha = view.flip[event] * primal.b1[transmit];
-                    const float alpha_tangent =
-                        dot_flip[event] * primal.b1[transmit]
-                        + view.flip[event] * buffers.b1[transmit];
-                    const float phi = view.phase[event] + primal.b1_phase[transmit];
-                    const float phi_tangent =
-                        dot_phase[event] + buffers.b1_phase[transmit];
+                        shimmed ? transmit_row(primal, event, atom) : atom;
+                    const float pulse_b1 =
+                        shimmed ? primal.b1[transmit] : voxel_b1;
+                    const float pulse_dot_b1 =
+                        shimmed ? buffers.b1[transmit] : voxel_dot_b1;
+                    const float alpha = view.flip[event] * pulse_b1;
+                    const float alpha_tangent = dot_flip[event] * pulse_b1
+                        + view.flip[event] * pulse_dot_b1;
+                    const float phi = view.phase[event]
+                        + (shimmed ? primal.b1_phase[transmit] : voxel_b1_phase);
+                    const float phi_tangent = dot_phase[event]
+                        + (shimmed ? buffers.b1_phase[transmit]
+                                   : voxel_dot_b1_phase);
                     if constexpr (SATURATED) {
                         // The semisolid pool absorbs the power the pulse deposits,
                         // so it reads the bare flip the transmit field gives
@@ -3771,7 +3777,7 @@ void simulate_lane_range(
     }
 }
 
-template <bool SHIMMED, bool PROFILED, Pools POOLS>
+template <bool PROFILED, Pools POOLS>
 void simulate_range(
     const Buffers& buffers,
     const std::int64_t work_begin,
@@ -3859,6 +3865,11 @@ void simulate_range(
         const float flow_rate = buffers.velocity[atom] * buffers.flow_scale;
         const float washout_rate =
             std::fabs(buffers.velocity[atom]) * buffers.washout_scale;
+        // With one shim the transmit field is a property of the voxel and
+        // lifts out of the event loop; with several it belongs to the shim a
+        // pulse drives, and is read where the pulse is.
+        const float b1 = buffers.b1[atom];
+        const float b1_phase = buffers.b1_phase[atom];
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
@@ -4001,11 +4012,13 @@ void simulate_range(
                         }
                     }
                 } else {
+                    const bool shimmed = buffers.shim_count > 1;
                     const std::int64_t transmit =
-                        transmit_row<SHIMMED>(buffers, event, atom);
-                    const float theta = view.flip[event] * buffers.b1[transmit];
-                    const float phi =
-                        view.phase[event] + buffers.b1_phase[transmit];
+                        shimmed ? transmit_row(buffers, event, atom) : atom;
+                    const float theta = view.flip[event]
+                        * (shimmed ? buffers.b1[transmit] : b1);
+                    const float phi = view.phase[event]
+                        + (shimmed ? buffers.b1_phase[transmit] : b1_phase);
                     if constexpr (SATURATED) {
                         // The semisolid pool absorbs the power the pulse
                         // deposits, so it reads the bare flip the transmit
@@ -4337,7 +4350,7 @@ inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool SHIMMED, bool PROFILED, Pools POOLS>
+template <bool PROFILED, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_vjp_range(
     const VjpBuffers& buffers,
     const std::int64_t work_begin,
@@ -4461,6 +4474,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
         // pulse drives, and is read where the pulse is.
         const float b1 = primal.b1[atom];
         const float b1_phase = primal.b1_phase[atom];
+        const bool shimmed = primal.shim_count > 1;
         const float efficiency = primal.inversion_efficiency[atom];
         const float damping_rate = primal.diffusion[atom];
         const float velocity = primal.velocity[atom];
@@ -4595,11 +4609,11 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     }
                 } else {
                     const std::int64_t transmit =
-                        transmit_row<SHIMMED>(primal, event, atom);
-                    const float alpha =
-                        view.flip[event] * (SHIMMED ? primal.b1[transmit] : b1);
+                        shimmed ? transmit_row(primal, event, atom) : atom;
+                    const float alpha = view.flip[event]
+                        * (shimmed ? primal.b1[transmit] : b1);
                     const float phi = view.phase[event]
-                        + (SHIMMED ? primal.b1_phase[transmit] : b1_phase);
+                        + (shimmed ? primal.b1_phase[transmit] : b1_phase);
                     if constexpr (SATURATED) {
                         const float absorbed = std::exp(
                             primal.saturation[event] * alpha * alpha
@@ -4900,24 +4914,24 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     }
                 } else {
                     const std::int64_t transmit =
-                        transmit_row<SHIMMED>(primal, event, atom);
-                    const float pulse_b1 = SHIMMED ? primal.b1[transmit] : b1;
+                        shimmed ? transmit_row(primal, event, atom) : atom;
+                    const float pulse_b1 =
+                        shimmed ? primal.b1[transmit] : b1;
                     const float alpha = view.flip[event] * pulse_b1;
                     const float phi = view.phase[event]
-                        + (SHIMMED ? primal.b1_phase[transmit] : b1_phase);
-                    if constexpr (SHIMMED) {
-                        const std::int64_t row = primal.shim_index[event];
-                        if (row != held) {
-                            grad_tissue_local[
-                                (layout.base[B1_INDEX] + held) * atoms + atom
-                            ] += grad_b1;
-                            grad_tissue_local[
-                                (layout.base[B1_PHASE_INDEX] + held) * atoms + atom
-                            ] += grad_b1_phase;
-                            grad_b1 = 0.0F;
-                            grad_b1_phase = 0.0F;
-                            held = row;
-                        }
+                        + (shimmed ? primal.b1_phase[transmit] : b1_phase);
+                    const std::int64_t row =
+                        shimmed ? primal.shim_index[event] : 0;
+                    if (row != held) {
+                        grad_tissue_local[
+                            (layout.base[B1_INDEX] + held) * atoms + atom
+                        ] += grad_b1;
+                        grad_tissue_local[
+                            (layout.base[B1_PHASE_INDEX] + held) * atoms + atom
+                        ] += grad_b1_phase;
+                        grad_b1 = 0.0F;
+                        grad_b1_phase = 0.0F;
+                        held = row;
                     }
                     float grad_alpha = 0.0F;
                     float grad_phi = 0.0F;
@@ -6488,31 +6502,23 @@ void simulate_real_vjp_jvp_lane_range(
     }
 }
 
-// One half of the transmit pair a pulse sees, with its tangent. ``voxel``
-// carries the single-shim field, which is a property of the voxel and lifts
-// out of the event loop; a shimmed sequence reads the row of the shim the
-// pulse drives.
-template <bool SHIMMED>
+// One half of the transmit pair a pulse sees, with its tangent, read at the
+// row the pulse's shim drives. A single-shim sequence names row zero on every
+// event, which is that voxel's own field.
 inline DualFloat shim_dual(
+    const bool shimmed,
     const float* const value,
     const float* const tangent,
     const std::int64_t row,
     const DualFloat voxel
 ) {
-    if constexpr (SHIMMED) {
-        return DualFloat{value[row], tangent[row]};
-    } else {
-        (void)value;
-        (void)tangent;
-        (void)row;
-        return voxel;
-    }
+    return shimmed ? DualFloat{value[row], tangent[row]} : voxel;
 }
 
 // Inlined into the vector clones below rather than called from them: a
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
-template <bool SHIMMED, bool PROFILED, Pools POOLS>
+template <bool PROFILED, Pools POOLS>
 __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -6586,6 +6592,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
         const DualFloat b1_phase{
             primal.b1_phase[atom], buffers.dot_b1_phase[atom]
         };
+        const bool shimmed = primal.shim_count > 1;
         const DualFloat b0{primal.b0[atom], buffers.dot_b0[atom]};
         const DualFloat efficiency{
             primal.inversion_efficiency[atom],
@@ -6843,17 +6850,17 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                     }
                 } else {
                     const std::int64_t transmit =
-                        transmit_row<SHIMMED>(primal, event, atom);
+                        shimmed ? transmit_row(primal, event, atom) : atom;
                     const DualFloat alpha =
                         DualFloat{view.flip[event], dot_flip[event]}
-                        * shim_dual<SHIMMED>(
-                            primal.b1, buffers.dot_b1, transmit, b1
+                        * shim_dual(
+                            shimmed, primal.b1, buffers.dot_b1, transmit, b1
                         );
                     const DualFloat phi =
                         DualFloat{view.phase[event], dot_phase[event]}
-                        + shim_dual<SHIMMED>(
-                            primal.b1_phase, buffers.dot_b1_phase, transmit,
-                            b1_phase
+                        + shim_dual(
+                            shimmed, primal.b1_phase, buffers.dot_b1_phase,
+                            transmit, b1_phase
                         );
                     if constexpr (SATURATED) {
                         const DualFloat offset =
@@ -7195,32 +7202,31 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                         view.flip[event], dot_flip[event]
                     };
                     const std::int64_t transmit =
-                        transmit_row<SHIMMED>(primal, event, atom);
-                    const DualFloat pulse_b1 = shim_dual<SHIMMED>(
-                        primal.b1, buffers.dot_b1, transmit, b1
+                        shimmed ? transmit_row(primal, event, atom) : atom;
+                    const DualFloat pulse_b1 = shim_dual(
+                        shimmed, primal.b1, buffers.dot_b1, transmit, b1
                     );
                     const DualFloat alpha = flip_value * pulse_b1;
                     const DualFloat phi =
                         DualFloat{view.phase[event], dot_phase[event]}
-                        + shim_dual<SHIMMED>(
-                            primal.b1_phase, buffers.dot_b1_phase, transmit,
-                            b1_phase
+                        + shim_dual(
+                            shimmed, primal.b1_phase, buffers.dot_b1_phase,
+                            transmit, b1_phase
                         );
-                    if constexpr (SHIMMED) {
-                        const std::int64_t row = primal.shim_index[event];
-                        if (row != held) {
-                            DualFloat& magnitude = grad_tissue_local[
-                                (layout.base[B1_INDEX] + held) * atoms + atom
-                            ];
-                            DualFloat& angle = grad_tissue_local[
-                                (layout.base[B1_PHASE_INDEX] + held) * atoms + atom
-                            ];
-                            magnitude = magnitude + grad_b1;
-                            angle = angle + grad_b1_phase;
-                            grad_b1 = DualFloat{0.0F, 0.0F};
-                            grad_b1_phase = DualFloat{0.0F, 0.0F};
-                            held = row;
-                        }
+                    const std::int64_t row =
+                        shimmed ? primal.shim_index[event] : 0;
+                    if (row != held) {
+                        DualFloat& magnitude = grad_tissue_local[
+                            (layout.base[B1_INDEX] + held) * atoms + atom
+                        ];
+                        DualFloat& angle = grad_tissue_local[
+                            (layout.base[B1_PHASE_INDEX] + held) * atoms + atom
+                        ];
+                        magnitude = magnitude + grad_b1;
+                        angle = angle + grad_b1_phase;
+                        grad_b1 = DualFloat{0.0F, 0.0F};
+                        grad_b1_phase = DualFloat{0.0F, 0.0F};
+                        held = row;
                     }
                     DualFloat grad_alpha{0.0F, 0.0F};
                     DualFloat grad_phi{0.0F, 0.0F};
@@ -7718,7 +7724,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
 #define CLONED_KERNEL
 #endif
 
-template <bool SHIMMED, bool PROFILED>
+template <bool PROFILED>
 CLONED_KERNEL
 void simulate_jvp_single_pool(
     const JvpBuffers& buffers,
@@ -7728,12 +7734,12 @@ void simulate_jvp_single_pool(
     const std::int64_t state_count,
     const std::int64_t output_count
 ) {
-    simulate_jvp_range<SHIMMED, PROFILED, Pools::ONE>(
+    simulate_jvp_range<PROFILED, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count
     );
 }
 
-template <bool SHIMMED, bool PROFILED>
+template <bool PROFILED>
 CLONED_KERNEL
 void simulate_vjp_single_pool(
     const VjpBuffers& buffers,
@@ -7747,7 +7753,7 @@ void simulate_vjp_single_pool(
     float* grad_duration_local,
     float* grad_tissue_local
 ) {
-    simulate_vjp_range<SHIMMED, PROFILED, Pools::ONE>(
+    simulate_vjp_range<PROFILED, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count,
         grad_flip_local, grad_phase_local, grad_duration_local,
         grad_tissue_local
@@ -7758,7 +7764,7 @@ void simulate_vjp_single_pool(
 // path, so it is the one whose clones are given up once a fourth pool count
 // takes the object past the size a build should carry. The three others keep
 // theirs.
-template <bool SHIMMED, bool PROFILED>
+template <bool PROFILED>
 void simulate_vjp_jvp_single_pool(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -7771,7 +7777,7 @@ void simulate_vjp_jvp_single_pool(
     DualFloat* grad_duration_local,
     DualFloat* grad_tissue_local
 ) {
-    simulate_vjp_jvp_range<SHIMMED, PROFILED, Pools::ONE>(
+    simulate_vjp_jvp_range<PROFILED, Pools::ONE>(
         buffers, work_begin, work_end, event_count, state_count, output_count,
         grad_flip_local, grad_phase_local, grad_duration_local,
         grad_tissue_local
@@ -8143,45 +8149,20 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         std::int64_t
     ) = vectorize
         ? &simulate_lane_range
-        : &simulate_range<false, false, Pools::ONE>;
+        : &simulate_range<false, Pools::ONE>;
     if (!vectorize) {
-        const bool shimmed = buffers.shim_count > 1;
         const bool profiled = buffers.profile != nullptr;
         if (pools == Pools::THREE) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_range<true, true, Pools::THREE>
-                    : &simulate_range<true, false, Pools::THREE>;
-            } else {
-                kernel = profiled
-                    ? &simulate_range<false, true, Pools::THREE>
-                    : &simulate_range<false, false, Pools::THREE>;
-            }
+            kernel = profiled ? &simulate_range<true, Pools::THREE>
+                              : &simulate_range<false, Pools::THREE>;
         } else if (pools == Pools::EXCHANGING) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_range<true, true, Pools::EXCHANGING>
-                    : &simulate_range<true, false, Pools::EXCHANGING>;
-            } else {
-                kernel = profiled
-                    ? &simulate_range<false, true, Pools::EXCHANGING>
-                    : &simulate_range<false, false, Pools::EXCHANGING>;
-            }
+            kernel = profiled ? &simulate_range<true, Pools::EXCHANGING>
+                              : &simulate_range<false, Pools::EXCHANGING>;
         } else if (pools == Pools::SEMISOLID) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_range<true, true, Pools::SEMISOLID>
-                    : &simulate_range<true, false, Pools::SEMISOLID>;
-            } else {
-                kernel = profiled
-                    ? &simulate_range<false, true, Pools::SEMISOLID>
-                    : &simulate_range<false, false, Pools::SEMISOLID>;
-            }
-        } else if (shimmed) {
-            kernel = profiled ? &simulate_range<true, true, Pools::ONE>
-                              : &simulate_range<true, false, Pools::ONE>;
+            kernel = profiled ? &simulate_range<true, Pools::SEMISOLID>
+                              : &simulate_range<false, Pools::SEMISOLID>;
         } else if (profiled) {
-            kernel = &simulate_range<false, true, Pools::ONE>;
+            kernel = &simulate_range<true, Pools::ONE>;
         }
     }
     // The caller establishes the real-subspace conditions; axis 1 puts the
@@ -8232,49 +8213,24 @@ void dispatch_jvp(
     void (*kernel)(
         const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
-    ) = &simulate_jvp_single_pool<false, false>;
+    ) = &simulate_jvp_single_pool<false>;
     if (lanes) {
         kernel = &simulate_real_jvp_lane_range;
     } else if (real_axis == 1 && single) {
         kernel = &simulate_real_jvp_range;
     } else {
-        const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
         if (pools == Pools::THREE) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_jvp_range<true, true, Pools::THREE>
-                    : &simulate_jvp_range<true, false, Pools::THREE>;
-            } else {
-                kernel = profiled
-                    ? &simulate_jvp_range<false, true, Pools::THREE>
-                    : &simulate_jvp_range<false, false, Pools::THREE>;
-            }
+            kernel = profiled ? &simulate_jvp_range<true, Pools::THREE>
+                              : &simulate_jvp_range<false, Pools::THREE>;
         } else if (pools == Pools::EXCHANGING) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_jvp_range<true, true, Pools::EXCHANGING>
-                    : &simulate_jvp_range<true, false, Pools::EXCHANGING>;
-            } else {
-                kernel = profiled
-                    ? &simulate_jvp_range<false, true, Pools::EXCHANGING>
-                    : &simulate_jvp_range<false, false, Pools::EXCHANGING>;
-            }
+            kernel = profiled ? &simulate_jvp_range<true, Pools::EXCHANGING>
+                              : &simulate_jvp_range<false, Pools::EXCHANGING>;
         } else if (pools == Pools::SEMISOLID) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_jvp_range<true, true, Pools::SEMISOLID>
-                    : &simulate_jvp_range<true, false, Pools::SEMISOLID>;
-            } else {
-                kernel = profiled
-                    ? &simulate_jvp_range<false, true, Pools::SEMISOLID>
-                    : &simulate_jvp_range<false, false, Pools::SEMISOLID>;
-            }
-        } else if (shimmed) {
-            kernel = profiled ? &simulate_jvp_single_pool<true, true>
-                              : &simulate_jvp_single_pool<true, false>;
+            kernel = profiled ? &simulate_jvp_range<true, Pools::SEMISOLID>
+                              : &simulate_jvp_range<false, Pools::SEMISOLID>;
         } else if (profiled) {
-            kernel = &simulate_jvp_single_pool<false, true>;
+            kernel = &simulate_jvp_single_pool<true>;
         }
     }
     // A lane kernel's work item covers a block of trains rather than one train.
@@ -8527,44 +8483,19 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         void (*kernel)(
             const VjpBuffers&, std::int64_t, std::int64_t, std::int64_t,
             std::int64_t, std::int64_t, float*, float*, float*, float*
-        ) = &simulate_vjp_single_pool<false, false>;
-        const bool shimmed = buffers.primal.shim_count > 1;
+        ) = &simulate_vjp_single_pool<false>;
         const bool profiled = buffers.primal.profile != nullptr;
         if (pool_kind == 3) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_vjp_range<true, true, Pools::THREE>
-                    : &simulate_vjp_range<true, false, Pools::THREE>;
-            } else {
-                kernel = profiled
-                    ? &simulate_vjp_range<false, true, Pools::THREE>
-                    : &simulate_vjp_range<false, false, Pools::THREE>;
-            }
+            kernel = profiled ? &simulate_vjp_range<true, Pools::THREE>
+                              : &simulate_vjp_range<false, Pools::THREE>;
         } else if (pool_kind == 2) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_vjp_range<true, true, Pools::EXCHANGING>
-                    : &simulate_vjp_range<true, false, Pools::EXCHANGING>;
-            } else {
-                kernel = profiled
-                    ? &simulate_vjp_range<false, true, Pools::EXCHANGING>
-                    : &simulate_vjp_range<false, false, Pools::EXCHANGING>;
-            }
+            kernel = profiled ? &simulate_vjp_range<true, Pools::EXCHANGING>
+                              : &simulate_vjp_range<false, Pools::EXCHANGING>;
         } else if (pool_kind == 1) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_vjp_range<true, true, Pools::SEMISOLID>
-                    : &simulate_vjp_range<true, false, Pools::SEMISOLID>;
-            } else {
-                kernel = profiled
-                    ? &simulate_vjp_range<false, true, Pools::SEMISOLID>
-                    : &simulate_vjp_range<false, false, Pools::SEMISOLID>;
-            }
-        } else if (shimmed) {
-            kernel = profiled ? &simulate_vjp_single_pool<true, true>
-                              : &simulate_vjp_single_pool<true, false>;
+            kernel = profiled ? &simulate_vjp_range<true, Pools::SEMISOLID>
+                              : &simulate_vjp_range<false, Pools::SEMISOLID>;
         } else if (profiled) {
-            kernel = &simulate_vjp_single_pool<false, true>;
+            kernel = &simulate_vjp_single_pool<true>;
         }
         const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         WorkerPool::instance().run(thread_count, [&](const unsigned int slot) {
@@ -8649,49 +8580,24 @@ void dispatch_second_order(
     void (*kernel)(
         const VjpJvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, DualFloat*, DualFloat*, DualFloat*, DualFloat*
-    ) = &simulate_vjp_jvp_single_pool<false, false>;
+    ) = &simulate_vjp_jvp_single_pool<false>;
     if (lanes) {
         kernel = &simulate_real_vjp_jvp_lane_range;
     } else if (real_axis == 1 && !bound) {
         kernel = &simulate_real_vjp_jvp_range;
     } else {
-        const bool shimmed = buffers.primal.shim_count > 1;
         const bool profiled = buffers.primal.profile != nullptr;
         if (pools == Pools::THREE) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_vjp_jvp_range<true, true, Pools::THREE>
-                    : &simulate_vjp_jvp_range<true, false, Pools::THREE>;
-            } else {
-                kernel = profiled
-                    ? &simulate_vjp_jvp_range<false, true, Pools::THREE>
-                    : &simulate_vjp_jvp_range<false, false, Pools::THREE>;
-            }
+            kernel = profiled ? &simulate_vjp_jvp_range<true, Pools::THREE>
+                              : &simulate_vjp_jvp_range<false, Pools::THREE>;
         } else if (pools == Pools::EXCHANGING) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_vjp_jvp_range<true, true, Pools::EXCHANGING>
-                    : &simulate_vjp_jvp_range<true, false, Pools::EXCHANGING>;
-            } else {
-                kernel = profiled
-                    ? &simulate_vjp_jvp_range<false, true, Pools::EXCHANGING>
-                    : &simulate_vjp_jvp_range<false, false, Pools::EXCHANGING>;
-            }
+            kernel = profiled ? &simulate_vjp_jvp_range<true, Pools::EXCHANGING>
+                              : &simulate_vjp_jvp_range<false, Pools::EXCHANGING>;
         } else if (pools == Pools::SEMISOLID) {
-            if (shimmed) {
-                kernel = profiled
-                    ? &simulate_vjp_jvp_range<true, true, Pools::SEMISOLID>
-                    : &simulate_vjp_jvp_range<true, false, Pools::SEMISOLID>;
-            } else {
-                kernel = profiled
-                    ? &simulate_vjp_jvp_range<false, true, Pools::SEMISOLID>
-                    : &simulate_vjp_jvp_range<false, false, Pools::SEMISOLID>;
-            }
-        } else if (shimmed) {
-            kernel = profiled ? &simulate_vjp_jvp_single_pool<true, true>
-                              : &simulate_vjp_jvp_single_pool<true, false>;
+            kernel = profiled ? &simulate_vjp_jvp_range<true, Pools::SEMISOLID>
+                              : &simulate_vjp_jvp_range<false, Pools::SEMISOLID>;
         } else if (profiled) {
-            kernel = &simulate_vjp_jvp_single_pool<false, true>;
+            kernel = &simulate_vjp_jvp_single_pool<true>;
         }
     }
     const std::int64_t work_count =
