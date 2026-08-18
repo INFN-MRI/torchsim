@@ -455,18 +455,18 @@ def _exp_difference_jvp(lower, d_lower, upper, d_upper, low_exp, high_exp):
 
 
 @triton.jit
-def _three_pool_step_jvp(
+def _three_pool_pieces_jvp(
     r1_free, d_r1_free, r1_pool_b, d_r1_pool_b, r1_bound, d_r1_bound,
     exchange_b, d_exchange_b, exchange_c, d_exchange_c,
     fraction_b, d_fraction_b, fraction_c, d_fraction_c,
-    dt, d_dt, attenuation, d_attenuation,
+    dt, d_dt,
 ):
-    """The three-pool longitudinal step and its directional derivative.
+    """The three-pool operator's shared front half, as duals.
 
-    The same closed form :func:`_three_pool_step` evaluates, carried alongside
-    a tangent and in the same double precision -- a direction through an
-    operator this ill-conditioned needs the width as much as the value does.
-    Returns the nine entries and three recoveries, then their twelve tangents.
+    The generator, its two invariants, the series coefficients and the three
+    roots with the divided differences between them -- everything both the
+    operator and its reverse sweep are assembled from, computed once in double
+    so the two cannot drift apart.
     """
     step = dt.to(tl.float64)
     d_step = d_dt.to(tl.float64)
@@ -651,6 +651,187 @@ def _three_pool_step_jvp(
     q22 = a20 * a02 + s22 * s22
     d_q22 = d_a20 * a02 + a20 * d_a02 + 2.0 * s22 * d_s22
 
+    return (
+        free,
+        d_free,
+        pool_b,
+        d_pool_b,
+        pool_c,
+        d_pool_c,
+        a00,
+        d_a00,
+        a01,
+        d_a01,
+        a02,
+        d_a02,
+        a10,
+        d_a10,
+        a11,
+        d_a11,
+        a20,
+        d_a20,
+        a22,
+        d_a22,
+        s00,
+        d_s00,
+        s11,
+        d_s11,
+        s22,
+        d_s22,
+        minors,
+        d_minors,
+        sum_flat,
+        sum_linear,
+        sum_square,
+        d_sum_flat,
+        d_sum_linear,
+        d_sum_square,
+        lift,
+        d_lift,
+        low,
+        middle,
+        d_low,
+        d_middle,
+        leading,
+        d_leading,
+        first,
+        d_first,
+        second,
+        d_second,
+        determinant,
+        d_determinant,
+        high,
+        d_high,
+        radius,
+        d_radius,
+        cube,
+        raw,
+        d_raw,
+        argument,
+        inside_limit,
+        angle,
+        d_angle,
+        centre,
+        d_centre,
+        trailing,
+        d_trailing,
+        guarded,
+        d_guarded,
+        q00,
+        d_q00,
+        q01,
+        d_q01,
+        q02,
+        d_q02,
+        q10,
+        d_q10,
+        q11,
+        d_q11,
+        q12,
+        d_q12,
+        q20,
+        d_q20,
+        q21,
+        d_q21,
+        q22,
+        d_q22,
+    )
+
+
+@triton.jit
+def _three_pool_assemble_jvp(
+    free,
+    d_free,
+    pool_b,
+    d_pool_b,
+    pool_c,
+    d_pool_c,
+    a00,
+    d_a00,
+    a01,
+    d_a01,
+    a02,
+    d_a02,
+    a10,
+    d_a10,
+    a11,
+    d_a11,
+    a20,
+    d_a20,
+    a22,
+    d_a22,
+    s00,
+    d_s00,
+    s11,
+    d_s11,
+    s22,
+    d_s22,
+    minors,
+    d_minors,
+    sum_flat,
+    sum_linear,
+    sum_square,
+    d_sum_flat,
+    d_sum_linear,
+    d_sum_square,
+    lift,
+    d_lift,
+    low,
+    middle,
+    d_low,
+    d_middle,
+    leading,
+    d_leading,
+    first,
+    d_first,
+    second,
+    d_second,
+    determinant,
+    d_determinant,
+    high,
+    d_high,
+    radius,
+    d_radius,
+    cube,
+    raw,
+    d_raw,
+    argument,
+    inside_limit,
+    angle,
+    d_angle,
+    centre,
+    d_centre,
+    trailing,
+    d_trailing,
+    guarded,
+    d_guarded,
+    q00,
+    d_q00,
+    q01,
+    d_q01,
+    q02,
+    d_q02,
+    q10,
+    d_q10,
+    q11,
+    d_q11,
+    q12,
+    d_q12,
+    q20,
+    d_q20,
+    q21,
+    d_q21,
+    q22,
+    d_q22,
+    attenuation,
+    d_attenuation,
+):
+    """The three-pool operator assembled from its shared pieces, in double.
+
+    Both branches are formed and one is chosen: a ``where`` evaluates each
+    side, so the divisor each of them carries is guarded whether or not it
+    is the side taken.
+    """
     c00 = lift * (sum_flat + sum_linear * s00 + sum_square * q00)
     d_c00 = d_lift * (sum_flat + sum_linear * s00 + sum_square * q00) + lift * (
         d_sum_flat + d_sum_linear * s00 + sum_linear * d_s00
@@ -807,18 +988,1407 @@ def _three_pool_step_jvp(
         + dw22 * pool_c + w22 * d_pool_c
     )
     return (
-        w00.to(tl.float32), w01.to(tl.float32), w02.to(tl.float32),
-        w10.to(tl.float32), w11.to(tl.float32), w12.to(tl.float32),
-        w20.to(tl.float32), w21.to(tl.float32), w22.to(tl.float32),
-        grow_free.to(tl.float32), grow_pool_b.to(tl.float32),
+        w00, w01, w02,
+        w10, w11, w12,
+        w20, w21, w22,
+        grow_free, grow_pool_b,
+        grow_bound,
+        dw00, dw01, dw02,
+        dw10, dw11, dw12,
+        dw20, dw21, dw22,
+        d_grow_free, d_grow_pool_b,
+        d_grow_bound,
+    )
+
+
+@triton.jit
+def _three_pool_step_jvp(
+    r1_free, d_r1_free, r1_pool_b, d_r1_pool_b, r1_bound, d_r1_bound,
+    exchange_b, d_exchange_b, exchange_c, d_exchange_c,
+    fraction_b, d_fraction_b, fraction_c, d_fraction_c,
+    dt, d_dt, attenuation, d_attenuation,
+):
+    """The three-pool longitudinal step and its directional derivative.
+
+    The same closed form :func:`_three_pool_step` evaluates, carried
+    alongside a tangent and in the same double precision. Returns the
+    nine entries and three recoveries, then their twelve tangents.
+    """
+    (
+        free,
+        d_free,
+        pool_b,
+        d_pool_b,
+        pool_c,
+        d_pool_c,
+        a00,
+        d_a00,
+        a01,
+        d_a01,
+        a02,
+        d_a02,
+        a10,
+        d_a10,
+        a11,
+        d_a11,
+        a20,
+        d_a20,
+        a22,
+        d_a22,
+        s00,
+        d_s00,
+        s11,
+        d_s11,
+        s22,
+        d_s22,
+        minors,
+        d_minors,
+        sum_flat,
+        sum_linear,
+        sum_square,
+        d_sum_flat,
+        d_sum_linear,
+        d_sum_square,
+        lift,
+        d_lift,
+        low,
+        middle,
+        d_low,
+        d_middle,
+        leading,
+        d_leading,
+        first,
+        d_first,
+        second,
+        d_second,
+        determinant,
+        d_determinant,
+        high,
+        d_high,
+        radius,
+        d_radius,
+        cube,
+        raw,
+        d_raw,
+        argument,
+        inside_limit,
+        angle,
+        d_angle,
+        centre,
+        d_centre,
+        trailing,
+        d_trailing,
+        guarded,
+        d_guarded,
+        q00,
+        d_q00,
+        q01,
+        d_q01,
+        q02,
+        d_q02,
+        q10,
+        d_q10,
+        q11,
+        d_q11,
+        q12,
+        d_q12,
+        q20,
+        d_q20,
+        q21,
+        d_q21,
+        q22,
+        d_q22,
+    ) = _three_pool_pieces_jvp(
+        r1_free,
+        d_r1_free,
+        r1_pool_b,
+        d_r1_pool_b,
+        r1_bound,
+        d_r1_bound,
+        exchange_b,
+        d_exchange_b,
+        exchange_c,
+        d_exchange_c,
+        fraction_b,
+        d_fraction_b,
+        fraction_c,
+        d_fraction_c,
+        dt,
+        d_dt,
+    )
+    (
+        w00,
+        w01,
+        w02,
+        w10,
+        w11,
+        w12,
+        w20,
+        w21,
+        w22,
+        grow_free,
+        grow_pool_b,
+        grow_bound,
+        dw00,
+        dw01,
+        dw02,
+        dw10,
+        dw11,
+        dw12,
+        dw20,
+        dw21,
+        dw22,
+        d_grow_free,
+        d_grow_pool_b,
+        d_grow_bound,
+    ) = _three_pool_assemble_jvp(
+        free,
+        d_free,
+        pool_b,
+        d_pool_b,
+        pool_c,
+        d_pool_c,
+        a00,
+        d_a00,
+        a01,
+        d_a01,
+        a02,
+        d_a02,
+        a10,
+        d_a10,
+        a11,
+        d_a11,
+        a20,
+        d_a20,
+        a22,
+        d_a22,
+        s00,
+        d_s00,
+        s11,
+        d_s11,
+        s22,
+        d_s22,
+        minors,
+        d_minors,
+        sum_flat,
+        sum_linear,
+        sum_square,
+        d_sum_flat,
+        d_sum_linear,
+        d_sum_square,
+        lift,
+        d_lift,
+        low,
+        middle,
+        d_low,
+        d_middle,
+        leading,
+        d_leading,
+        first,
+        d_first,
+        second,
+        d_second,
+        determinant,
+        d_determinant,
+        high,
+        d_high,
+        radius,
+        d_radius,
+        cube,
+        raw,
+        d_raw,
+        argument,
+        inside_limit,
+        angle,
+        d_angle,
+        centre,
+        d_centre,
+        trailing,
+        d_trailing,
+        guarded,
+        d_guarded,
+        q00,
+        d_q00,
+        q01,
+        d_q01,
+        q02,
+        d_q02,
+        q10,
+        d_q10,
+        q11,
+        d_q11,
+        q12,
+        d_q12,
+        q20,
+        d_q20,
+        q21,
+        d_q21,
+        q22,
+        d_q22,
+        attenuation,
+        d_attenuation,
+    )
+    return (
+        w00.to(tl.float32),
+        w01.to(tl.float32),
+        w02.to(tl.float32),
+        w10.to(tl.float32),
+        w11.to(tl.float32),
+        w12.to(tl.float32),
+        w20.to(tl.float32),
+        w21.to(tl.float32),
+        w22.to(tl.float32),
+        grow_free.to(tl.float32),
+        grow_pool_b.to(tl.float32),
         grow_bound.to(tl.float32),
-        dw00.to(tl.float32), dw01.to(tl.float32), dw02.to(tl.float32),
-        dw10.to(tl.float32), dw11.to(tl.float32), dw12.to(tl.float32),
-        dw20.to(tl.float32), dw21.to(tl.float32), dw22.to(tl.float32),
-        d_grow_free.to(tl.float32), d_grow_pool_b.to(tl.float32),
+        dw00.to(tl.float32),
+        dw01.to(tl.float32),
+        dw02.to(tl.float32),
+        dw10.to(tl.float32),
+        dw11.to(tl.float32),
+        dw12.to(tl.float32),
+        dw20.to(tl.float32),
+        dw21.to(tl.float32),
+        dw22.to(tl.float32),
+        d_grow_free.to(tl.float32),
+        d_grow_pool_b.to(tl.float32),
         d_grow_bound.to(tl.float32),
     )
 
+
+
+@triton.jit
+def _exp_difference_adjoint_jvp(
+    lower,
+    d_lower,
+    upper,
+    d_upper,
+    exp_lower,
+    d_exp_lower,
+    exp_upper,
+    d_exp_upper,
+    seed,
+    d_seed,
+):
+    """The reverse of :func:`_exp_difference`, onto both points, on a direction.
+
+    Near the coalescence the slope comes from the same series the value does,
+    because the difference quotient's own derivative is a cancellation divided
+    by a small number twice over.
+    """
+    half = 0.5 * (upper - lower)
+    d_half = 0.5 * (d_upper - d_lower)
+    near = tl.abs(half) < _SINCH_CUT
+    poly = 1.0 + half + 0.5 * half * half
+    d_poly = d_half + half * d_half
+    even = 1.0 + half * half / 6.0
+    d_even = half * d_half / 3.0
+    slope = (1.0 + half) * even + poly * half * (1.0 / 3.0)
+    d_slope = (
+        d_half * even
+        + (1.0 + half) * d_even
+        + (d_poly * half + poly * d_half) * (1.0 / 3.0)
+    )
+    series = exp_lower * poly * even
+    d_series = (
+        d_exp_lower * poly * even + exp_lower * (d_poly * even + poly * d_even)
+    )
+    swing = 0.5 * exp_lower * slope
+    d_swing = 0.5 * (d_exp_lower * slope + exp_lower * d_slope)
+
+    gap = tl.where(near, 1.0, upper - lower)
+    d_gap = tl.where(near, 0.0, d_upper - d_lower)
+    value = (exp_upper - exp_lower) / gap
+    d_value = (d_exp_upper - d_exp_lower - value * d_gap) / gap
+    far_lower = (value - exp_lower) / gap
+    d_far_lower = (d_value - d_exp_lower - far_lower * d_gap) / gap
+    far_upper = (exp_upper - value) / gap
+    d_far_upper = (d_exp_upper - d_value - far_upper * d_gap) / gap
+
+    to_lower = tl.where(near, series - swing, far_lower)
+    d_to_lower = tl.where(near, d_series - d_swing, d_far_lower)
+    to_upper = tl.where(near, swing, far_upper)
+    d_to_upper = tl.where(near, d_swing, d_far_upper)
+    return (
+        seed * to_lower,
+        d_seed * to_lower + seed * d_to_lower,
+        seed * to_upper,
+        d_seed * to_upper + seed * d_to_upper,
+    )
+
+
+@triton.jit
+def _three_pool_step_adjoint_jvp(
+    r1_free,
+    d_r1_free,
+    r1_pool_b,
+    d_r1_pool_b,
+    r1_bound,
+    d_r1_bound,
+    exchange_b,
+    d_exchange_b,
+    exchange_c,
+    d_exchange_c,
+    fraction_b,
+    d_fraction_b,
+    fraction_c,
+    d_fraction_c,
+    dt,
+    d_dt,
+    attenuation,
+    d_attenuation,
+    bar_e00,
+    d_bar_e00,
+    bar_e01,
+    d_bar_e01,
+    bar_e02,
+    d_bar_e02,
+    bar_e10,
+    d_bar_e10,
+    bar_e11,
+    d_bar_e11,
+    bar_e12,
+    d_bar_e12,
+    bar_e20,
+    d_bar_e20,
+    bar_e21,
+    d_bar_e21,
+    bar_e22,
+    d_bar_e22,
+    bar_grow_free,
+    d_bar_grow_free,
+    bar_grow_pool_b,
+    d_bar_grow_pool_b,
+    bar_grow_bound,
+    d_bar_grow_bound,
+):
+    """The reverse sweep of :func:`_three_pool_step`, carried on a direction.
+
+    Recomputes the forward rather than carrying it across the event: a handful
+    of transcendentals once per interval, against a state loop that runs per
+    dephasing order, and in the same double the forward takes.
+
+    Both branches are swept, each by the algebra its own forward used, and the
+    choice between them is made on the cotangents rather than on the way in --
+    a ``where`` evaluates both sides, so each side's divisors are guarded.
+
+    The series branch is a polynomial in the two invariants alone, so its
+    reverse is reached by carrying the recurrence's sensitivity to those two
+    forward beside it, which needs no history of the sixteen terms.
+
+    Returned as the gradients w.r.t. ``(r1_free, r1_pool_b, r1_bound,
+    exchange_b, exchange_c, fraction_b, fraction_c, dt, attenuation)`` and
+    then their nine tangents.
+    """
+    (
+        free,
+        d_free,
+        pool_b,
+        d_pool_b,
+        pool_c,
+        d_pool_c,
+        a00,
+        d_a00,
+        a01,
+        d_a01,
+        a02,
+        d_a02,
+        a10,
+        d_a10,
+        a11,
+        d_a11,
+        a20,
+        d_a20,
+        a22,
+        d_a22,
+        s00,
+        d_s00,
+        s11,
+        d_s11,
+        s22,
+        d_s22,
+        minors,
+        d_minors,
+        sum_flat,
+        sum_linear,
+        sum_square,
+        d_sum_flat,
+        d_sum_linear,
+        d_sum_square,
+        lift,
+        d_lift,
+        low,
+        middle,
+        d_low,
+        d_middle,
+        leading,
+        d_leading,
+        first,
+        d_first,
+        second,
+        d_second,
+        determinant,
+        d_determinant,
+        high,
+        d_high,
+        radius,
+        d_radius,
+        cube,
+        raw,
+        d_raw,
+        argument,
+        inside_limit,
+        angle,
+        d_angle,
+        centre,
+        d_centre,
+        trailing,
+        d_trailing,
+        guarded,
+        d_guarded,
+        q00,
+        d_q00,
+        q01,
+        d_q01,
+        q02,
+        d_q02,
+        q10,
+        d_q10,
+        q11,
+        d_q11,
+        q12,
+        d_q12,
+        q20,
+        d_q20,
+        q21,
+        d_q21,
+        q22,
+        d_q22,
+    ) = _three_pool_pieces_jvp(
+        r1_free,
+        d_r1_free,
+        r1_pool_b,
+        d_r1_pool_b,
+        r1_bound,
+        d_r1_bound,
+        exchange_b,
+        d_exchange_b,
+        exchange_c,
+        d_exchange_c,
+        fraction_b,
+        d_fraction_b,
+        fraction_c,
+        d_fraction_c,
+        dt,
+        d_dt,
+    )
+    unit = 1.0 + 0.0 * a00
+    blank = 0.0 * a00
+    (
+        b00,
+        b01,
+        b02,
+        b10,
+        b11,
+        b12,
+        b20,
+        b21,
+        b22,
+        skip_free,
+        skip_pool_b,
+        skip_bound,
+        db00,
+        db01,
+        db02,
+        db10,
+        db11,
+        db12,
+        db20,
+        db21,
+        db22,
+        d_skip_free,
+        d_skip_pool_b,
+        d_skip_bound,
+    ) = _three_pool_assemble_jvp(
+        free,
+        d_free,
+        pool_b,
+        d_pool_b,
+        pool_c,
+        d_pool_c,
+        a00,
+        d_a00,
+        a01,
+        d_a01,
+        a02,
+        d_a02,
+        a10,
+        d_a10,
+        a11,
+        d_a11,
+        a20,
+        d_a20,
+        a22,
+        d_a22,
+        s00,
+        d_s00,
+        s11,
+        d_s11,
+        s22,
+        d_s22,
+        minors,
+        d_minors,
+        sum_flat,
+        sum_linear,
+        sum_square,
+        d_sum_flat,
+        d_sum_linear,
+        d_sum_square,
+        lift,
+        d_lift,
+        low,
+        middle,
+        d_low,
+        d_middle,
+        leading,
+        d_leading,
+        first,
+        d_first,
+        second,
+        d_second,
+        determinant,
+        d_determinant,
+        high,
+        d_high,
+        radius,
+        d_radius,
+        cube,
+        raw,
+        d_raw,
+        argument,
+        inside_limit,
+        angle,
+        d_angle,
+        centre,
+        d_centre,
+        trailing,
+        d_trailing,
+        guarded,
+        d_guarded,
+        q00,
+        d_q00,
+        q01,
+        d_q01,
+        q02,
+        d_q02,
+        q10,
+        d_q10,
+        q11,
+        d_q11,
+        q12,
+        d_q12,
+        q20,
+        d_q20,
+        q21,
+        d_q21,
+        q22,
+        d_q22,
+        unit,
+        blank,
+    )
+
+    # --- the recovery and the attenuation, which both branches share ---
+    damp = attenuation.to(tl.float64)
+    d_damp = d_attenuation.to(tl.float64)
+    r0 = bar_grow_free.to(tl.float64)
+    d_r0 = d_bar_grow_free.to(tl.float64)
+    r1 = bar_grow_pool_b.to(tl.float64)
+    d_r1 = d_bar_grow_pool_b.to(tl.float64)
+    r2 = bar_grow_bound.to(tl.float64)
+    d_r2 = d_bar_grow_bound.to(tl.float64)
+
+    y00 = bar_e00.to(tl.float64) - r0 * free
+    d_y00 = d_bar_e00.to(tl.float64) - d_r0 * free - r0 * d_free
+    y01 = bar_e01.to(tl.float64) - r0 * pool_b
+    d_y01 = d_bar_e01.to(tl.float64) - d_r0 * pool_b - r0 * d_pool_b
+    y02 = bar_e02.to(tl.float64) - r0 * pool_c
+    d_y02 = d_bar_e02.to(tl.float64) - d_r0 * pool_c - r0 * d_pool_c
+    y10 = bar_e10.to(tl.float64) - r1 * free
+    d_y10 = d_bar_e10.to(tl.float64) - d_r1 * free - r1 * d_free
+    y11 = bar_e11.to(tl.float64) - r1 * pool_b
+    d_y11 = d_bar_e11.to(tl.float64) - d_r1 * pool_b - r1 * d_pool_b
+    y12 = bar_e12.to(tl.float64) - r1 * pool_c
+    d_y12 = d_bar_e12.to(tl.float64) - d_r1 * pool_c - r1 * d_pool_c
+    y20 = bar_e20.to(tl.float64) - r2 * free
+    d_y20 = d_bar_e20.to(tl.float64) - d_r2 * free - r2 * d_free
+    y21 = bar_e21.to(tl.float64) - r2 * pool_b
+    d_y21 = d_bar_e21.to(tl.float64) - d_r2 * pool_b - r2 * d_pool_b
+    y22 = bar_e22.to(tl.float64) - r2 * pool_c
+    d_y22 = d_bar_e22.to(tl.float64) - d_r2 * pool_c - r2 * d_pool_c
+
+    # The replay is taken at unit attenuation, so the bare operator the
+    # recovery and the attenuation were formed from is read rather than
+    # divided back out -- a washed-out interval leaves nothing to divide by.
+    bar_damp = (
+        y00 * b00 + y01 * b01 + y02 * b02
+        + y10 * b10 + y11 * b11 + y12 * b12
+        + y20 * b20 + y21 * b21 + y22 * b22
+    )
+    d_bar_damp = (
+        d_y00 * b00 + y00 * db00 + d_y01 * b01 + y01 * db01
+        + d_y02 * b02 + y02 * db02 + d_y10 * b10 + y10 * db10
+        + d_y11 * b11 + y11 * db11 + d_y12 * b12 + y12 * db12
+        + d_y20 * b20 + y20 * db20 + d_y21 * b21 + y21 * db21
+        + d_y22 * b22 + y22 * db22
+    )
+    column_free = r0 * b00 + r1 * b10 + r2 * b20
+    d_column_free = (
+        d_r0 * b00 + r0 * db00 + d_r1 * b10 + r1 * db10 + d_r2 * b20 + r2 * db20
+    )
+    column_pool_b = r0 * b01 + r1 * b11 + r2 * b21
+    d_column_pool_b = (
+        d_r0 * b01 + r0 * db01 + d_r1 * b11 + r1 * db11 + d_r2 * b21 + r2 * db21
+    )
+    column_bound = r0 * b02 + r1 * b12 + r2 * b22
+    d_column_bound = (
+        d_r0 * b02 + r0 * db02 + d_r1 * b12 + r1 * db12 + d_r2 * b22 + r2 * db22
+    )
+    bar_free = r0 - damp * column_free
+    d_bar_free = d_r0 - d_damp * column_free - damp * d_column_free
+    bar_pool_b = r1 - damp * column_pool_b
+    d_bar_pool_b = d_r1 - d_damp * column_pool_b - damp * d_column_pool_b
+    bar_pool_c = r2 - damp * column_bound
+    d_bar_pool_c = d_r2 - d_damp * column_bound - damp * d_column_bound
+
+    o00 = damp * y00
+    d_o00 = d_damp * y00 + damp * d_y00
+    o01 = damp * y01
+    d_o01 = d_damp * y01 + damp * d_y01
+    o02 = damp * y02
+    d_o02 = d_damp * y02 + damp * d_y02
+    o10 = damp * y10
+    d_o10 = d_damp * y10 + damp * d_y10
+    o11 = damp * y11
+    d_o11 = d_damp * y11 + damp * d_y11
+    o12 = damp * y12
+    d_o12 = d_damp * y12 + damp * d_y12
+    o20 = damp * y20
+    d_o20 = d_damp * y20 + damp * d_y20
+    o21 = damp * y21
+    d_o21 = d_damp * y21 + damp * d_y21
+    o22 = damp * y22
+    d_o22 = d_damp * y22 + damp * d_y22
+
+    # --- close together: the series in the two invariants, run backwards ---
+    scale00 = o00 * lift
+    d_scale00 = d_o00 * lift + o00 * d_lift
+    scale01 = o01 * lift
+    d_scale01 = d_o01 * lift + o01 * d_lift
+    scale02 = o02 * lift
+    d_scale02 = d_o02 * lift + o02 * d_lift
+    scale10 = o10 * lift
+    d_scale10 = d_o10 * lift + o10 * d_lift
+    scale11 = o11 * lift
+    d_scale11 = d_o11 * lift + o11 * d_lift
+    scale12 = o12 * lift
+    d_scale12 = d_o12 * lift + o12 * d_lift
+    scale20 = o20 * lift
+    d_scale20 = d_o20 * lift + o20 * d_lift
+    scale21 = o21 * lift
+    d_scale21 = d_o21 * lift + o21 * d_lift
+    scale22 = o22 * lift
+    d_scale22 = d_o22 * lift + o22 * d_lift
+
+    bar_flat = scale00 + scale11 + scale22
+    d_bar_flat = d_scale00 + d_scale11 + d_scale22
+    bar_linear = (
+        scale00 * s00 + scale01 * a01 + scale02 * a02
+        + scale10 * a10 + scale11 * s11
+        + scale20 * a20 + scale22 * s22
+    )
+    d_bar_linear = (
+        d_scale00 * s00 + scale00 * d_s00 + d_scale01 * a01 + scale01 * d_a01
+        + d_scale02 * a02 + scale02 * d_a02 + d_scale10 * a10 + scale10 * d_a10
+        + d_scale11 * s11 + scale11 * d_s11 + d_scale20 * a20 + scale20 * d_a20
+        + d_scale22 * s22 + scale22 * d_s22
+    )
+    bar_square = (
+        scale00 * q00 + scale01 * q01 + scale02 * q02
+        + scale10 * q10 + scale11 * q11 + scale12 * q12
+        + scale20 * q20 + scale21 * q21 + scale22 * q22
+    )
+    d_bar_square = (
+        d_scale00 * q00 + scale00 * d_q00 + d_scale01 * q01 + scale01 * d_q01
+        + d_scale02 * q02 + scale02 * d_q02 + d_scale10 * q10 + scale10 * d_q10
+        + d_scale11 * q11 + scale11 * d_q11 + d_scale12 * q12 + scale12 * d_q12
+        + d_scale20 * q20 + scale20 * d_q20 + d_scale21 * q21 + scale21 * d_q21
+        + d_scale22 * q22 + scale22 * d_q22
+    )
+    # ``lift`` multiplies the whole bracket, so the shift it carries picks up
+    # the bracket back again -- which is what the three sums contract to.
+    turn_series = (
+        sum_flat * bar_flat + sum_linear * bar_linear + sum_square * bar_square
+    )
+    d_turn_series = (
+        d_sum_flat * bar_flat + sum_flat * d_bar_flat
+        + d_sum_linear * bar_linear + sum_linear * d_bar_linear
+        + d_sum_square * bar_square + sum_square * d_bar_square
+    )
+
+    g00 = sum_square * scale00
+    d_g00 = d_sum_square * scale00 + sum_square * d_scale00
+    g01 = sum_square * scale01
+    d_g01 = d_sum_square * scale01 + sum_square * d_scale01
+    g02 = sum_square * scale02
+    d_g02 = d_sum_square * scale02 + sum_square * d_scale02
+    g10 = sum_square * scale10
+    d_g10 = d_sum_square * scale10 + sum_square * d_scale10
+    g11 = sum_square * scale11
+    d_g11 = d_sum_square * scale11 + sum_square * d_scale11
+    g12 = sum_square * scale12
+    d_g12 = d_sum_square * scale12 + sum_square * d_scale12
+    g20 = sum_square * scale20
+    d_g20 = d_sum_square * scale20 + sum_square * d_scale20
+    g21 = sum_square * scale21
+    d_g21 = d_sum_square * scale21 + sum_square * d_scale21
+    g22 = sum_square * scale22
+    d_g22 = d_sum_square * scale22 + sum_square * d_scale22
+
+    # The square's reverse, ``g @ shifted^T + shifted^T @ g``.
+    v00 = (
+        g00 * s00 + g01 * a01 + g02 * a02
+        + s00 * g00 + a10 * g10 + a20 * g20
+        + sum_linear * scale00
+    )
+    d_v00 = (
+        d_g00 * s00 + g00 * d_s00 + d_g01 * a01 + g01 * d_a01
+        + d_g02 * a02 + g02 * d_a02
+        + d_s00 * g00 + s00 * d_g00 + d_a10 * g10 + a10 * d_g10
+        + d_a20 * g20 + a20 * d_g20
+        + d_sum_linear * scale00 + sum_linear * d_scale00
+    )
+    v01 = (
+        g00 * a10 + g01 * s11
+        + s00 * g01 + a10 * g11 + a20 * g21
+        + sum_linear * scale01
+    )
+    d_v01 = (
+        d_g00 * a10 + g00 * d_a10 + d_g01 * s11 + g01 * d_s11
+        + d_s00 * g01 + s00 * d_g01 + d_a10 * g11 + a10 * d_g11
+        + d_a20 * g21 + a20 * d_g21
+        + d_sum_linear * scale01 + sum_linear * d_scale01
+    )
+    v02 = (
+        g00 * a20 + g02 * s22
+        + s00 * g02 + a10 * g12 + a20 * g22
+        + sum_linear * scale02
+    )
+    d_v02 = (
+        d_g00 * a20 + g00 * d_a20 + d_g02 * s22 + g02 * d_s22
+        + d_s00 * g02 + s00 * d_g02 + d_a10 * g12 + a10 * d_g12
+        + d_a20 * g22 + a20 * d_g22
+        + d_sum_linear * scale02 + sum_linear * d_scale02
+    )
+    v10 = (
+        g10 * s00 + g11 * a01 + g12 * a02
+        + a01 * g00 + s11 * g10
+        + sum_linear * scale10
+    )
+    d_v10 = (
+        d_g10 * s00 + g10 * d_s00 + d_g11 * a01 + g11 * d_a01
+        + d_g12 * a02 + g12 * d_a02
+        + d_a01 * g00 + a01 * d_g00 + d_s11 * g10 + s11 * d_g10
+        + d_sum_linear * scale10 + sum_linear * d_scale10
+    )
+    v11 = (
+        g10 * a10 + g11 * s11
+        + a01 * g01 + s11 * g11
+        + sum_linear * scale11
+    )
+    d_v11 = (
+        d_g10 * a10 + g10 * d_a10 + d_g11 * s11 + g11 * d_s11
+        + d_a01 * g01 + a01 * d_g01 + d_s11 * g11 + s11 * d_g11
+        + d_sum_linear * scale11 + sum_linear * d_scale11
+    )
+    v20 = (
+        g20 * s00 + g21 * a01 + g22 * a02
+        + a02 * g00 + s22 * g20
+        + sum_linear * scale20
+    )
+    d_v20 = (
+        d_g20 * s00 + g20 * d_s00 + d_g21 * a01 + g21 * d_a01
+        + d_g22 * a02 + g22 * d_a02
+        + d_a02 * g00 + a02 * d_g00 + d_s22 * g20 + s22 * d_g20
+        + d_sum_linear * scale20 + sum_linear * d_scale20
+    )
+    v22 = (
+        g20 * a20 + g22 * s22
+        + a02 * g02 + s22 * g22
+        + sum_linear * scale22
+    )
+    d_v22 = (
+        d_g20 * a20 + g20 * d_a20 + d_g22 * s22 + g22 * d_s22
+        + d_a02 * g02 + a02 * d_g02 + d_s22 * g22 + s22 * d_g22
+        + d_sum_linear * scale22 + sum_linear * d_scale22
+    )
+    turn_series = turn_series - (v00 + v11 + v22)
+    d_turn_series = d_turn_series - (d_v00 + d_v11 + d_v22)
+
+    # The recurrence's own sensitivity to the two invariants, carried forward
+    # beside it: two numbers reach the whole series, so their derivatives are
+    # cheaper to push forward than the sixteen terms are to keep.
+    flat = 1.0 + 0.0 * a00
+    linear = 0.0 * a00
+    square = 0.0 * a00
+    d_flat = 0.0 * a00
+    d_linear = 0.0 * a00
+    d_square = 0.0 * a00
+    fu = 0.0 * a00
+    lu = 0.0 * a00
+    su = 0.0 * a00
+    d_fu = 0.0 * a00
+    d_lu = 0.0 * a00
+    d_su = 0.0 * a00
+    fv = 0.0 * a00
+    lv = 0.0 * a00
+    sv = 0.0 * a00
+    d_fv = 0.0 * a00
+    d_lv = 0.0 * a00
+    d_sv = 0.0 * a00
+    slope_u_flat = 0.0 * a00
+    slope_u_linear = 0.0 * a00
+    slope_u_square = 0.0 * a00
+    d_slope_u_flat = 0.0 * a00
+    d_slope_u_linear = 0.0 * a00
+    d_slope_u_square = 0.0 * a00
+    slope_v_flat = 0.0 * a00
+    slope_v_linear = 0.0 * a00
+    slope_v_square = 0.0 * a00
+    d_slope_v_flat = 0.0 * a00
+    d_slope_v_linear = 0.0 * a00
+    d_slope_v_square = 0.0 * a00
+    factorial = 1.0
+    for order in tl.static_range(1, 16):
+        next_flat = square * determinant
+        d_next_flat = d_square * determinant + square * d_determinant
+        next_linear = flat - square * minors
+        d_next_linear = d_flat - d_square * minors - square * d_minors
+        next_square = linear
+        d_next_square = d_linear
+        next_fu = su * determinant
+        d_next_fu = d_su * determinant + su * d_determinant
+        next_lu = fu - su * minors - square
+        d_next_lu = d_fu - d_su * minors - su * d_minors - d_square
+        next_su = lu
+        d_next_su = d_lu
+        next_fv = sv * determinant + square
+        d_next_fv = d_sv * determinant + sv * d_determinant + d_square
+        next_lv = fv - sv * minors
+        d_next_lv = d_fv - d_sv * minors - sv * d_minors
+        next_sv = lv
+        d_next_sv = d_lv
+        flat = next_flat
+        linear = next_linear
+        square = next_square
+        d_flat = d_next_flat
+        d_linear = d_next_linear
+        d_square = d_next_square
+        fu = next_fu
+        lu = next_lu
+        su = next_su
+        d_fu = d_next_fu
+        d_lu = d_next_lu
+        d_su = d_next_su
+        fv = next_fv
+        lv = next_lv
+        sv = next_sv
+        d_fv = d_next_fv
+        d_lv = d_next_lv
+        d_sv = d_next_sv
+        factorial = factorial * order
+        weight = 1.0 / factorial
+        slope_u_flat = slope_u_flat + weight * fu
+        slope_u_linear = slope_u_linear + weight * lu
+        slope_u_square = slope_u_square + weight * su
+        d_slope_u_flat = d_slope_u_flat + weight * d_fu
+        d_slope_u_linear = d_slope_u_linear + weight * d_lu
+        d_slope_u_square = d_slope_u_square + weight * d_su
+        slope_v_flat = slope_v_flat + weight * fv
+        slope_v_linear = slope_v_linear + weight * lv
+        slope_v_square = slope_v_square + weight * sv
+        d_slope_v_flat = d_slope_v_flat + weight * d_fv
+        d_slope_v_linear = d_slope_v_linear + weight * d_lv
+        d_slope_v_square = d_slope_v_square + weight * d_sv
+
+    minors_series = (
+        bar_flat * slope_u_flat
+        + bar_linear * slope_u_linear
+        + bar_square * slope_u_square
+    )
+    d_minors_series = (
+        d_bar_flat * slope_u_flat + bar_flat * d_slope_u_flat
+        + d_bar_linear * slope_u_linear + bar_linear * d_slope_u_linear
+        + d_bar_square * slope_u_square + bar_square * d_slope_u_square
+    )
+    determinant_series = (
+        bar_flat * slope_v_flat
+        + bar_linear * slope_v_linear
+        + bar_square * slope_v_square
+    )
+    d_determinant_series = (
+        d_bar_flat * slope_v_flat + bar_flat * d_slope_v_flat
+        + d_bar_linear * slope_v_linear + bar_linear * d_slope_v_linear
+        + d_bar_square * slope_v_square + bar_square * d_slope_v_square
+    )
+
+    # --- far apart: back through the Newton form and the three roots ---
+    m00 = a00 - low
+    d_m00 = d_a00 - d_low
+    m11 = a11 - low
+    d_m11 = d_a11 - d_low
+    m22 = a22 - low
+    d_m22 = d_a22 - d_low
+    n00 = a00 - middle
+    d_n00 = d_a00 - d_middle
+    n11 = a11 - middle
+    d_n11 = d_a11 - d_middle
+    n22 = a22 - middle
+    d_n22 = d_a22 - d_middle
+    p00 = m00 * n00 + a01 * a10 + a02 * a20
+    d_p00 = (
+        d_m00 * n00 + m00 * d_n00 + d_a01 * a10 + a01 * d_a10
+        + d_a02 * a20 + a02 * d_a20
+    )
+    p01 = a01 * (m00 + n11)
+    d_p01 = d_a01 * (m00 + n11) + a01 * (d_m00 + d_n11)
+    p02 = a02 * (m00 + n22)
+    d_p02 = d_a02 * (m00 + n22) + a02 * (d_m00 + d_n22)
+    p10 = a10 * (m11 + n00)
+    d_p10 = d_a10 * (m11 + n00) + a10 * (d_m11 + d_n00)
+    p11 = m11 * n11 + a01 * a10
+    d_p11 = d_m11 * n11 + m11 * d_n11 + d_a01 * a10 + a01 * d_a10
+    p12 = a10 * a02
+    d_p12 = d_a10 * a02 + a10 * d_a02
+    p20 = a20 * (m22 + n00)
+    d_p20 = d_a20 * (m22 + n00) + a20 * (d_m22 + d_n00)
+    p21 = a20 * a01
+    d_p21 = d_a20 * a01 + a20 * d_a01
+    p22 = m22 * n22 + a02 * a20
+    d_p22 = d_m22 * n22 + m22 * d_n22 + d_a02 * a20 + a02 * d_a20
+
+    bar_leading = o00 + o11 + o22
+    d_bar_leading = d_o00 + d_o11 + d_o22
+    bar_first = (
+        o00 * m00 + o01 * a01 + o02 * a02
+        + o10 * a10 + o11 * m11
+        + o20 * a20 + o22 * m22
+    )
+    d_bar_first = (
+        d_o00 * m00 + o00 * d_m00 + d_o01 * a01 + o01 * d_a01
+        + d_o02 * a02 + o02 * d_a02 + d_o10 * a10 + o10 * d_a10
+        + d_o11 * m11 + o11 * d_m11 + d_o20 * a20 + o20 * d_a20
+        + d_o22 * m22 + o22 * d_m22
+    )
+    bar_second = (
+        o00 * p00 + o01 * p01 + o02 * p02
+        + o10 * p10 + o11 * p11 + o12 * p12
+        + o20 * p20 + o21 * p21 + o22 * p22
+    )
+    d_bar_second = (
+        d_o00 * p00 + o00 * d_p00 + d_o01 * p01 + o01 * d_p01
+        + d_o02 * p02 + o02 * d_p02 + d_o10 * p10 + o10 * d_p10
+        + d_o11 * p11 + o11 * d_p11 + d_o12 * p12 + o12 * d_p12
+        + d_o20 * p20 + o20 * d_p20 + d_o21 * p21 + o21 * d_p21
+        + d_o22 * p22 + o22 * d_p22
+    )
+
+    z00 = second * o00
+    d_z00 = d_second * o00 + second * d_o00
+    z01 = second * o01
+    d_z01 = d_second * o01 + second * d_o01
+    z02 = second * o02
+    d_z02 = d_second * o02 + second * d_o02
+    z10 = second * o10
+    d_z10 = d_second * o10 + second * d_o10
+    z11 = second * o11
+    d_z11 = d_second * o11 + second * d_o11
+    z12 = second * o12
+    d_z12 = d_second * o12 + second * d_o12
+    z20 = second * o20
+    d_z20 = d_second * o20 + second * d_o20
+    z21 = second * o21
+    d_z21 = d_second * o21 + second * d_o21
+    z22 = second * o22
+    d_z22 = d_second * o22 + second * d_o22
+
+    # ``z @ n^T``, the product's reverse onto the first factor.
+    u00 = z00 * n00 + z01 * a01 + z02 * a02
+    d_u00 = (
+        d_z00 * n00 + z00 * d_n00 + d_z01 * a01 + z01 * d_a01
+        + d_z02 * a02 + z02 * d_a02
+    )
+    u01 = z00 * a10 + z01 * n11
+    d_u01 = d_z00 * a10 + z00 * d_a10 + d_z01 * n11 + z01 * d_n11
+    u02 = z00 * a20 + z02 * n22
+    d_u02 = d_z00 * a20 + z00 * d_a20 + d_z02 * n22 + z02 * d_n22
+    u10 = z10 * n00 + z11 * a01 + z12 * a02
+    d_u10 = (
+        d_z10 * n00 + z10 * d_n00 + d_z11 * a01 + z11 * d_a01
+        + d_z12 * a02 + z12 * d_a02
+    )
+    u11 = z10 * a10 + z11 * n11
+    d_u11 = d_z10 * a10 + z10 * d_a10 + d_z11 * n11 + z11 * d_n11
+    u20 = z20 * n00 + z21 * a01 + z22 * a02
+    d_u20 = (
+        d_z20 * n00 + z20 * d_n00 + d_z21 * a01 + z21 * d_a01
+        + d_z22 * a02 + z22 * d_a02
+    )
+    u22 = z20 * a20 + z22 * n22
+    d_u22 = d_z20 * a20 + z20 * d_a20 + d_z22 * n22 + z22 * d_n22
+
+    # ``m^T @ z``, onto the second.
+    w00 = m00 * z00 + a10 * z10 + a20 * z20
+    d_w00 = (
+        d_m00 * z00 + m00 * d_z00 + d_a10 * z10 + a10 * d_z10
+        + d_a20 * z20 + a20 * d_z20
+    )
+    w01 = m00 * z01 + a10 * z11 + a20 * z21
+    d_w01 = (
+        d_m00 * z01 + m00 * d_z01 + d_a10 * z11 + a10 * d_z11
+        + d_a20 * z21 + a20 * d_z21
+    )
+    w02 = m00 * z02 + a10 * z12 + a20 * z22
+    d_w02 = (
+        d_m00 * z02 + m00 * d_z02 + d_a10 * z12 + a10 * d_z12
+        + d_a20 * z22 + a20 * d_z22
+    )
+    w10 = a01 * z00 + m11 * z10
+    d_w10 = d_a01 * z00 + a01 * d_z00 + d_m11 * z10 + m11 * d_z10
+    w11 = a01 * z01 + m11 * z11
+    d_w11 = d_a01 * z01 + a01 * d_z01 + d_m11 * z11 + m11 * d_z11
+    w20 = a02 * z00 + m22 * z20
+    d_w20 = d_a02 * z00 + a02 * d_z00 + d_m22 * z20 + m22 * d_z20
+    w22 = a02 * z02 + m22 * z22
+    d_w22 = d_a02 * z02 + a02 * d_z02 + d_m22 * z22 + m22 * d_z22
+
+    bar_low = (
+        bar_leading * leading
+        - first * (o00 + o11 + o22)
+        - (u00 + u11 + u22)
+    )
+    d_bar_low = (
+        d_bar_leading * leading + bar_leading * d_leading
+        - d_first * (o00 + o11 + o22) - first * (d_o00 + d_o11 + d_o22)
+        - (d_u00 + d_u11 + d_u22)
+    )
+    bar_middle = -(w00 + w11 + w22)
+    d_bar_middle = -(d_w00 + d_w11 + d_w22)
+    bar_high = 0.0 * a00
+    d_bar_high = 0.0 * a00
+
+    span = high - low
+    d_span = d_high - d_low
+    positive = span > 0.0
+    bar_upper = bar_second / guarded
+    d_bar_upper = (d_bar_second - bar_upper * d_guarded) / guarded
+    bar_first = bar_first - bar_upper
+    d_bar_first = d_bar_first - d_bar_upper
+    bar_span = tl.where(positive, -bar_upper * second, 0.0)
+    d_bar_span = tl.where(
+        positive, -d_bar_upper * second - bar_upper * d_second, 0.0
+    )
+    bar_high = bar_high + bar_span
+    d_bar_high = d_bar_high + d_bar_span
+    bar_low = bar_low - bar_span
+    d_bar_low = d_bar_low - d_bar_span
+
+    (
+        from_first_low,
+        d_from_first_low,
+        from_first_middle,
+        d_from_first_middle,
+    ) = _exp_difference_adjoint_jvp(
+        low,
+        d_low,
+        middle,
+        d_middle,
+        leading,
+        d_leading,
+        centre,
+        d_centre,
+        bar_first,
+        d_bar_first,
+    )
+    (
+        from_upper_middle,
+        d_from_upper_middle,
+        from_upper_high,
+        d_from_upper_high,
+    ) = _exp_difference_adjoint_jvp(
+        middle,
+        d_middle,
+        high,
+        d_high,
+        centre,
+        d_centre,
+        trailing,
+        d_trailing,
+        bar_upper,
+        d_bar_upper,
+    )
+    bar_low = bar_low + from_first_low
+    d_bar_low = d_bar_low + d_from_first_low
+    bar_middle = bar_middle + from_first_middle + from_upper_middle
+    d_bar_middle = d_bar_middle + d_from_first_middle + d_from_upper_middle
+    bar_high = bar_high + from_upper_high
+    d_bar_high = d_bar_high + d_from_upper_high
+
+    # The three roots come off one angle a third of a turn apart, and the
+    # cosine puts them in a fixed order: the last turn is the lowest, the
+    # first the highest, whatever the angle is.
+    swing_low = angle - 2.0 * _TURN_THIRD
+    swing_middle = angle - _TURN_THIRD
+    cos_low = tl.cos(swing_low)
+    cos_middle = tl.cos(swing_middle)
+    cos_high = tl.cos(angle)
+    sin_low = tl.sin(swing_low)
+    sin_middle = tl.sin(swing_middle)
+    sin_high = tl.sin(angle)
+    bar_radius = 2.0 * (
+        cos_low * bar_low + cos_middle * bar_middle + cos_high * bar_high
+    )
+    d_bar_radius = 2.0 * (
+        cos_low * d_bar_low + cos_middle * d_bar_middle + cos_high * d_bar_high
+        - d_angle * (
+            sin_low * bar_low + sin_middle * bar_middle + sin_high * bar_high
+        )
+    )
+    swept = sin_low * bar_low + sin_middle * bar_middle + sin_high * bar_high
+    d_swept = (
+        sin_low * d_bar_low + sin_middle * d_bar_middle + sin_high * d_bar_high
+        + d_angle * (
+            cos_low * bar_low + cos_middle * bar_middle + cos_high * bar_high
+        )
+    )
+    bar_angle = -2.0 * radius * swept
+    d_bar_angle = -2.0 * (d_radius * swept + radius * d_swept)
+    turn_roots = bar_low + bar_middle + bar_high
+    d_turn_roots = d_bar_low + d_bar_middle + d_bar_high
+
+    # ``acos`` is clamped, and where it is the angle no longer moves with the
+    # cubic's argument -- which is what keeps a double root differentiable.
+    d_argument = tl.where(inside_limit, d_raw, 0.0)
+    inner = 1.0 - argument * argument
+    d_inner = -2.0 * argument * d_argument
+    stem = tl.sqrt(tl.maximum(inner, 1e-300))
+    tilt = -1.0 / (3.0 * stem)
+    d_tilt = d_inner / (6.0 * stem * stem * stem)
+    bar_raw = tl.where(inside_limit, bar_angle * tilt, 0.0)
+    d_bar_raw = tl.where(inside_limit, d_bar_angle * tilt + bar_angle * d_tilt, 0.0)
+    safe_radius = tl.where(radius > 1e-30, radius, 1.0)
+    d_safe_radius = tl.where(radius > 1e-30, d_radius, 0.0)
+    safe_cube = safe_radius * safe_radius * safe_radius
+    d_safe_cube = 3.0 * safe_radius * safe_radius * d_safe_radius
+    determinant_roots = 0.5 * bar_raw / safe_cube
+    d_determinant_roots = (
+        0.5 * d_bar_raw - determinant_roots * d_safe_cube
+    ) / safe_cube
+    pull = tl.where(inside_limit, -3.0 * raw * bar_raw / safe_radius, 0.0)
+    d_pull = tl.where(
+        inside_limit,
+        (
+            -3.0 * (d_raw * bar_raw + raw * d_bar_raw)
+            - pull * d_safe_radius
+        ) / safe_radius,
+        0.0,
+    )
+    bar_radius = bar_radius + pull
+    d_bar_radius = d_bar_radius + d_pull
+    minors_roots = -bar_radius / (6.0 * safe_radius)
+    d_minors_roots = (
+        -d_bar_radius - minors_roots * 6.0 * d_safe_radius
+    ) / (6.0 * safe_radius)
+
+    # --- the branch chosen on the cotangents, not on the way in ---
+    close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
+    bar_a00 = tl.where(close, v00, first * o00 + u00 + w00)
+    d_bar_a00 = tl.where(
+        close, d_v00, d_first * o00 + first * d_o00 + d_u00 + d_w00
+    )
+    bar_a01 = tl.where(close, v01, first * o01 + u01 + w01)
+    d_bar_a01 = tl.where(
+        close, d_v01, d_first * o01 + first * d_o01 + d_u01 + d_w01
+    )
+    bar_a02 = tl.where(close, v02, first * o02 + u02 + w02)
+    d_bar_a02 = tl.where(
+        close, d_v02, d_first * o02 + first * d_o02 + d_u02 + d_w02
+    )
+    bar_a10 = tl.where(close, v10, first * o10 + u10 + w10)
+    d_bar_a10 = tl.where(
+        close, d_v10, d_first * o10 + first * d_o10 + d_u10 + d_w10
+    )
+    bar_a11 = tl.where(close, v11, first * o11 + u11 + w11)
+    d_bar_a11 = tl.where(
+        close, d_v11, d_first * o11 + first * d_o11 + d_u11 + d_w11
+    )
+    bar_a20 = tl.where(close, v20, first * o20 + u20 + w20)
+    d_bar_a20 = tl.where(
+        close, d_v20, d_first * o20 + first * d_o20 + d_u20 + d_w20
+    )
+    bar_a22 = tl.where(close, v22, first * o22 + u22 + w22)
+    d_bar_a22 = tl.where(
+        close, d_v22, d_first * o22 + first * d_o22 + d_u22 + d_w22
+    )
+    bar_third = tl.where(close, turn_series, turn_roots)
+    d_bar_third = tl.where(close, d_turn_series, d_turn_roots)
+    bar_minors = tl.where(close, minors_series, minors_roots)
+    d_bar_minors = tl.where(close, d_minors_series, d_minors_roots)
+    bar_determinant = tl.where(close, determinant_series, determinant_roots)
+    d_bar_determinant = tl.where(
+        close, d_determinant_series, d_determinant_roots
+    )
+
+    # --- the two invariants back onto the shifted generator ---
+    cofactor00 = s11 * s22
+    d_cofactor00 = d_s11 * s22 + s11 * d_s22
+    cofactor11 = s00 * s22 - a02 * a20
+    d_cofactor11 = d_s00 * s22 + s00 * d_s22 - d_a02 * a20 - a02 * d_a20
+    cofactor22 = s00 * s11 - a01 * a10
+    d_cofactor22 = d_s00 * s11 + s00 * d_s11 - d_a01 * a10 - a01 * d_a10
+    shift00 = bar_minors * (s11 + s22) + bar_determinant * cofactor00
+    d_shift00 = (
+        d_bar_minors * (s11 + s22) + bar_minors * (d_s11 + d_s22)
+        + d_bar_determinant * cofactor00 + bar_determinant * d_cofactor00
+    )
+    shift11 = bar_minors * (s00 + s22) + bar_determinant * cofactor11
+    d_shift11 = (
+        d_bar_minors * (s00 + s22) + bar_minors * (d_s00 + d_s22)
+        + d_bar_determinant * cofactor11 + bar_determinant * d_cofactor11
+    )
+    shift22 = bar_minors * (s00 + s11) + bar_determinant * cofactor22
+    d_shift22 = (
+        d_bar_minors * (s00 + s11) + bar_minors * (d_s00 + d_s11)
+        + d_bar_determinant * cofactor22 + bar_determinant * d_cofactor22
+    )
+    shift01 = -a10 * (bar_minors + bar_determinant * s22)
+    d_shift01 = -d_a10 * (bar_minors + bar_determinant * s22) - a10 * (
+        d_bar_minors + d_bar_determinant * s22 + bar_determinant * d_s22
+    )
+    shift10 = -a01 * (bar_minors + bar_determinant * s22)
+    d_shift10 = -d_a01 * (bar_minors + bar_determinant * s22) - a01 * (
+        d_bar_minors + d_bar_determinant * s22 + bar_determinant * d_s22
+    )
+    shift02 = -a20 * (bar_minors + bar_determinant * s11)
+    d_shift02 = -d_a20 * (bar_minors + bar_determinant * s11) - a20 * (
+        d_bar_minors + d_bar_determinant * s11 + bar_determinant * d_s11
+    )
+    shift20 = -a02 * (bar_minors + bar_determinant * s11)
+    d_shift20 = -d_a02 * (bar_minors + bar_determinant * s11) - a02 * (
+        d_bar_minors + d_bar_determinant * s11 + bar_determinant * d_s11
+    )
+    bar_a00 = bar_a00 + shift00
+    d_bar_a00 = d_bar_a00 + d_shift00
+    bar_a01 = bar_a01 + shift01
+    d_bar_a01 = d_bar_a01 + d_shift01
+    bar_a02 = bar_a02 + shift02
+    d_bar_a02 = d_bar_a02 + d_shift02
+    bar_a10 = bar_a10 + shift10
+    d_bar_a10 = d_bar_a10 + d_shift10
+    bar_a11 = bar_a11 + shift11
+    d_bar_a11 = d_bar_a11 + d_shift11
+    bar_a20 = bar_a20 + shift20
+    d_bar_a20 = d_bar_a20 + d_shift20
+    bar_a22 = bar_a22 + shift22
+    d_bar_a22 = d_bar_a22 + d_shift22
+    bar_third = bar_third - (shift00 + shift11 + shift22)
+    d_bar_third = d_bar_third - (d_shift00 + d_shift11 + d_shift22)
+    bar_a00 = bar_a00 + bar_third / 3.0
+    d_bar_a00 = d_bar_a00 + d_bar_third / 3.0
+    bar_a11 = bar_a11 + bar_third / 3.0
+    d_bar_a11 = d_bar_a11 + d_bar_third / 3.0
+    bar_a22 = bar_a22 + bar_third / 3.0
+    d_bar_a22 = d_bar_a22 + d_bar_third / 3.0
+
+    # --- the generator back onto the rates, the fractions and the interval ---
+    step = dt.to(tl.float64)
+    d_step = d_dt.to(tl.float64)
+    rate_b = exchange_b.to(tl.float64)
+    d_rate_b = d_exchange_b.to(tl.float64)
+    rate_c = exchange_c.to(tl.float64)
+    d_rate_c = d_exchange_c.to(tl.float64)
+    kab = rate_b * pool_b
+    d_kab = d_rate_b * pool_b + rate_b * d_pool_b
+    kba = rate_b * free
+    d_kba = d_rate_b * free + rate_b * d_free
+    kac = rate_c * pool_c
+    d_kac = d_rate_c * pool_c + rate_c * d_pool_c
+    kca = rate_c * free
+    d_kca = d_rate_c * free + rate_c * d_free
+    row_a = -kab - kac - r1_free.to(tl.float64)
+    d_row_a = -d_kab - d_kac - d_r1_free.to(tl.float64)
+    row_b = -kba - r1_pool_b.to(tl.float64)
+    d_row_b = -d_kba - d_r1_pool_b.to(tl.float64)
+    row_c = -kca - r1_bound.to(tl.float64)
+    d_row_c = -d_kca - d_r1_bound.to(tl.float64)
+
+    bar_step = (
+        row_a * bar_a00 + kba * bar_a01 + kca * bar_a02 + kab * bar_a10
+        + row_b * bar_a11 + kac * bar_a20 + row_c * bar_a22
+    )
+    d_bar_step = (
+        d_row_a * bar_a00 + row_a * d_bar_a00
+        + d_kba * bar_a01 + kba * d_bar_a01
+        + d_kca * bar_a02 + kca * d_bar_a02
+        + d_kab * bar_a10 + kab * d_bar_a10
+        + d_row_b * bar_a11 + row_b * d_bar_a11
+        + d_kac * bar_a20 + kac * d_bar_a20
+        + d_row_c * bar_a22 + row_c * d_bar_a22
+    )
+    bar_kab = step * (bar_a10 - bar_a00)
+    d_bar_kab = d_step * (bar_a10 - bar_a00) + step * (d_bar_a10 - d_bar_a00)
+    bar_kba = step * (bar_a01 - bar_a11)
+    d_bar_kba = d_step * (bar_a01 - bar_a11) + step * (d_bar_a01 - d_bar_a11)
+    bar_kac = step * (bar_a20 - bar_a00)
+    d_bar_kac = d_step * (bar_a20 - bar_a00) + step * (d_bar_a20 - d_bar_a00)
+    bar_kca = step * (bar_a02 - bar_a22)
+    d_bar_kca = d_step * (bar_a02 - bar_a22) + step * (d_bar_a02 - d_bar_a22)
+
+    whole_free = bar_free + rate_b * bar_kba + rate_c * bar_kca
+    d_whole_free = (
+        d_bar_free + d_rate_b * bar_kba + rate_b * d_bar_kba
+        + d_rate_c * bar_kca + rate_c * d_bar_kca
+    )
+    whole_pool_b = bar_pool_b + rate_b * bar_kab
+    d_whole_pool_b = d_bar_pool_b + d_rate_b * bar_kab + rate_b * d_bar_kab
+    whole_pool_c = bar_pool_c + rate_c * bar_kac
+    d_whole_pool_c = d_bar_pool_c + d_rate_c * bar_kac + rate_c * d_bar_kac
+
+    return (
+        (-step * bar_a00).to(tl.float32),
+        (-step * bar_a11).to(tl.float32),
+        (-step * bar_a22).to(tl.float32),
+        (pool_b * bar_kab + free * bar_kba).to(tl.float32),
+        (pool_c * bar_kac + free * bar_kca).to(tl.float32),
+        (whole_pool_b - whole_free).to(tl.float32),
+        (whole_pool_c - whole_free).to(tl.float32),
+        bar_step.to(tl.float32),
+        bar_damp.to(tl.float32),
+        (-d_step * bar_a00 - step * d_bar_a00).to(tl.float32),
+        (-d_step * bar_a11 - step * d_bar_a11).to(tl.float32),
+        (-d_step * bar_a22 - step * d_bar_a22).to(tl.float32),
+        (
+            d_pool_b * bar_kab + pool_b * d_bar_kab
+            + d_free * bar_kba + free * d_bar_kba
+        ).to(tl.float32),
+        (
+            d_pool_c * bar_kac + pool_c * d_bar_kac
+            + d_free * bar_kca + free * d_bar_kca
+        ).to(tl.float32),
+        (d_whole_pool_b - d_whole_free).to(tl.float32),
+        (d_whole_pool_c - d_whole_free).to(tl.float32),
+        d_bar_step.to(tl.float32),
+        d_bar_damp.to(tl.float32),
+    )
 
 @triton.jit
 def _complex_sqrt(real, imag):
