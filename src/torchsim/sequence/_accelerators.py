@@ -2080,7 +2080,7 @@ def _run_offloaded_vjp_jvp(
             output_count=output_count,
             real_axis=real_axis,
             shims=shims,
-            pools=2 if exchanging else (1 if lineshape is not None else 0),
+            pools=_pool_kind(lineshape, exchanging),
         )
     staged_inputs = (*tissue, *tangents[:_TISSUE_COUNT])
 

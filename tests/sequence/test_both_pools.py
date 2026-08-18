@@ -604,6 +604,47 @@ def test_the_second_order_pass_differentiates_the_adjoint():
     assert compared > 3
 
 
+
+def test_the_second_order_pass_saturates_the_pool_the_pulse_deposits_into():
+    """A refocused train, where every pulse both turns the free pools and
+    deposits power in the semisolid one.
+
+    Given no direction to follow the forward-over-reverse kernel has to return
+    what the first-order adjoint does, and the two reach the saturation by
+    different code.
+    """
+    from torchsim.sequence._accelerators import (
+        _run_packed_vjp, _run_packed_vjp_jvp,
+    )
+
+    prepared = _prepared()
+    events = _train_events()
+    generator = torch.Generator().manual_seed(37)
+    seed = torch.complex(
+        torch.rand((1, ECHOES), generator=generator) * 2.0 - 1.0,
+        torch.rand((1, ECHOES), generator=generator) * 2.0 - 1.0,
+    )
+    options = dict(
+        state_count=STATES, output_count=ECHOES, threads=1,
+        lineshape=lineshape_table(), exchanging=True,
+    )
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+
+    first = _run_packed_vjp(prepared, events, seed, **options)
+    _, second = _run_packed_vjp_jvp(prepared, events, still, seed, **options)
+
+    compared = 0
+    for expected, measured in zip(first, second, strict=True):
+        scale = float(expected.abs().max())
+        if scale < 1e-9:
+            continue
+        assert float((expected - measured).abs().max()) / scale < 1e-4
+        compared += 1
+    assert compared > 8
+
 def test_the_adjoint_leaves_the_two_pool_answers_untouched():
     """A tissue at either default fraction takes the two-pool kernel in reverse
     mode too, so its gradients are bit for bit what they were.
@@ -956,6 +997,81 @@ def test_a_streamed_volume_matches_the_whole_one():
         streamed = _run_packed(*arguments, **options)
 
     assert float((whole - streamed).abs().max() / whole.abs().max()) < 5e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_streamed_adjoint_matches_the_whole_one():
+    """Streaming has broken by a flag dropped on one of the two routes to the
+    same kernel, which backend parity cannot see -- so the reverse pass takes
+    the streamed-versus-whole check too.
+
+    Given no direction to follow the forward-over-reverse kernel returns the
+    adjoint on its own, and that is the reverse route the offload plan reaches.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp, offload
+
+    voxels = 3000
+    packed = _pack_events(
+        "fse",
+        _description(),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    events = (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+    prepared, _, _ = _prepare_tissue(
+        TissueProperties(
+            t1_ms=torch.linspace(600.0, 1400.0, voxels),
+            t2_ms=torch.linspace(40.0, 120.0, voxels),
+            bound_fraction=torch.linspace(0.02, 0.2, voxels),
+            bound_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+            pool_b_fraction=torch.linspace(0.05, 0.4, voxels),
+            pool_b_exchange_hz=torch.linspace(1.0, 80.0, voxels),
+            t2_pool_b_ms=torch.linspace(10.0, 90.0, voxels),
+            pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+        ),
+        "cpu",
+    )
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+    generator = torch.Generator().manual_seed(29)
+    seed = (
+        torch.rand(voxels, ECHOES, generator=generator) * 2.0 - 1.0
+    ).to(torch.complex64)
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+    options = dict(
+        state_count=STATES, output_count=ECHOES, threads=1,
+        lineshape=lineshape_table(), exchanging=True,
+    )
+
+    # The whole volume runs on the card as well, so the only thing between the
+    # two is where the voxel axis was cut.
+    _, whole = _run_packed_vjp_jvp(
+        tuple(value.cuda() for value in prepared),
+        tuple(value.cuda() for value in events),
+        tuple(value.cuda() for value in still),
+        seed.cuda(),
+        **options,
+    )
+    with offload(["cuda"], budget_bytes=1 << 22):
+        _, streamed = _run_packed_vjp_jvp(prepared, events, still, seed, **options)
+
+    compared = 0
+    for expected, measured in zip(whole, streamed, strict=True):
+        expected = expected.cpu()
+        scale = float(expected.abs().max())
+        if scale < 1e-6:
+            continue
+        assert float((expected - measured.cpu()).abs().max()) / scale < 1e-4
+        compared += 1
+    assert compared > 6
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")

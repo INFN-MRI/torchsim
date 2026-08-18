@@ -7298,6 +7298,13 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                         }
                     }
                     if constexpr (SATURATED) {
+                        // The pulse scales every order of the semisolid pool by
+                        // one real number, so its cotangent is a single sum over
+                        // the states it multiplied.
+                        DualState& absorbing_bar =
+                            THREE ? semisolid_bar : bound_bar;
+                        DualState& absorbing_relaxed =
+                            THREE ? semisolid_relaxed : bound_relaxed;
                         const DualFloat offset =
                             DualFloat{primal.rf_frequency[event], 0.0F} - b0;
                         DualFloat shape{};
@@ -7310,10 +7317,10 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                         for (std::size_t state = 0; state < states; ++state) {
                             grad_absorbed = grad_absorbed
                                 + real_part(
-                                    conjugate(bound_bar[state])
-                                    * bound_relaxed[state]
+                                    conjugate(absorbing_bar[state])
+                                    * absorbing_relaxed[state]
                                 );
-                            bound_bar[state] = absorbed * bound_bar[state];
+                            absorbing_bar[state] = absorbed * absorbing_bar[state];
                         }
                         const DualFloat grad_exponent = grad_absorbed * absorbed;
                         grad_alpha = grad_alpha
