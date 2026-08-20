@@ -617,28 +617,74 @@ def test_the_adjoint_leaves_the_single_pool_answer_untouched():
 
 
 def test_the_single_pool_gradient_still_reaches_every_property():
-    """The exchanging pool's properties are arguments the single-pool machine
-    does not take, so their gradients come back at zero -- and no other
-    gradient is disturbed by their being in the list.
+    """A tissue that never mentions the exchanging pool runs the single-pool
+    machine, and no gradient is disturbed by the pool's properties being in the
+    list.
     """
     leaves = {
         name: torch.tensor([value], requires_grad=True)
-        for name, value in (
-            ("t1_ms", 1000.0), ("t2_ms", 80.0), ("pool_b_fraction", 0.0),
-            ("pool_b_exchange_hz", 0.0), ("t1_pool_b_ms", 1000.0),
-            ("t2_pool_b_ms", 100.0), ("pool_b_shift_hz", 0.0),
-        )
+        for name, value in (("t1_ms", 1000.0), ("t2_ms", 80.0))
     }
     signal = FSE().simulate(
-        _description(), TissueProperties(**leaves), nstates=STATES
+        _description(),
+        TissueProperties(**leaves, pool_b_fraction=0.0, pool_b_exchange_hz=0.0),
+        nstates=STATES,
     ).signal
     signal.abs().square().sum().backward()
 
     assert float(leaves["t1_ms"].grad.abs().max()) > 0.0
     assert float(leaves["t2_ms"].grad.abs().max()) > 0.0
-    for name in TISSUE_NAMES:
-        if name.startswith("pool_b") or name.endswith("pool_b_ms"):
-            assert float(leaves[name].grad.abs().max()) == 0.0
+
+
+def test_an_empty_pool_asked_for_its_gradient_gives_the_true_one():
+    """A fraction of zero is where a two-pool fit starts, and the signal moves
+    as it leaves: dropping the pool because its fraction sits at the identity
+    would answer that fit with a zero that is not the derivative. So a value
+    carrying a gradient keeps its term, checked here against a difference the
+    state machine did not produce.
+
+    The rate, the relaxation times and the shift describe the pool rather than
+    gate it, and an empty pool genuinely does not depend on any of them.
+    """
+
+    def loss(fraction):
+        signal = FSE().simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=1000.0, t2_ms=80.0, pool_b_fraction=fraction,
+                pool_b_exchange_hz=20.0, t1_pool_b_ms=600.0,
+                t2_pool_b_ms=40.0, pool_b_shift_hz=90.0,
+            ),
+            nstates=STATES,
+        ).signal
+        return float(signal.abs().square().sum())
+
+    described = {
+        "pool_b_exchange_hz": 20.0, "t1_pool_b_ms": 600.0,
+        "t2_pool_b_ms": 40.0, "pool_b_shift_hz": 90.0,
+    }
+    leaves = {
+        name: torch.tensor([value], requires_grad=True)
+        for name, value in (("pool_b_fraction", 0.0), *described.items())
+    }
+    signal = FSE().simulate(
+        _description(),
+        TissueProperties(t1_ms=1000.0, t2_ms=80.0, **leaves),
+        nstates=STATES,
+    ).signal
+    signal.abs().square().sum().backward()
+
+    # One-sided: a fraction is not defined below zero. The step is kept well
+    # clear of where float32 cancellation swamps the difference -- below about
+    # 1e-4 the quotient walks away from the derivative rather than toward it.
+    step = 1e-3
+    expected = (loss(step) - loss(0.0)) / step
+    assert abs(expected) > 0.1
+    measured = float(leaves["pool_b_fraction"].grad)
+    assert abs(measured - expected) / abs(expected) < 2e-2, (measured, expected)
+
+    for name in described:
+        assert float(leaves[name].grad.abs().max()) < 1e-6 * abs(measured)
 
 
 # --- against the state machine written out in torch ---
@@ -687,7 +733,8 @@ def _routes(leaves, events, profile=None):
     from torchsim.sequence._accelerators import _NativeEpg
 
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, profile, None, True
+        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, profile, None, True,
+        None,
     )
     reference = simulate_packed(
         leaves,
@@ -759,7 +806,7 @@ def test_an_inversion_turns_both_pools_over():
     from torchsim.sequence._accelerators import _NativeEpg
 
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True, None
     )
     reference = simulate_packed(
         leaves, events, state_count=STATES, output_count=1, exchanging=True
@@ -784,7 +831,7 @@ def test_the_inversion_efficiency_carries_a_gradient_from_both_pools():
     seed = torch.full((1, 1), 1.0 + 1.0j, dtype=torch.complex64)
     fused = torch.autograd.grad(
         _NativeEpg.apply(
-            *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True
+            *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True, None
         ),
         leaves,
         seed,

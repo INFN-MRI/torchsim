@@ -30,7 +30,12 @@ from ._accelerators import (
 from ._transition import ExactSliceProfile
 from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
 from ._lineshape import lineshape_reaching
-from ._parameters import TISSUE_NAMES, wants_bound_pool, wants_exchange_pool
+from ._parameters import (
+    TISSUE_NAMES,
+    features_of,
+    wants_bound_pool,
+    wants_exchange_pool,
+)
 from ._transmit import shim_rows, transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
@@ -235,6 +240,7 @@ class EpgSimulator:
             _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
             _pool_b_shift,
         ) = prepared
+        features = features_of(tissue)
         bound_pool = wants_bound_pool(tissue.bound_fraction)
         exchange_pool = wants_exchange_pool(tissue.pool_b_fraction)
         _within_one_voxel(tissue.bound_fraction, tissue.pool_b_fraction)
@@ -270,6 +276,7 @@ class EpgSimulator:
                 if bound_pool
                 else None,
                 exchanging=exchange_pool,
+                features=features,
             )
             if accelerated is not None:
                 return SimulationResult(*accelerated)

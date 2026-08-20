@@ -798,7 +798,7 @@ def test_the_second_order_pass_carries_the_bound_pool():
     )
     signal = _NativeEpg.apply(
         *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None,
-        lineshape_table(), False
+        lineshape_table(), False, None
     )
     gradients = torch.autograd.grad(signal, leaves, seed, create_graph=True)
     generator = torch.Generator().manual_seed(23)
@@ -851,26 +851,76 @@ def test_forward_mode_reaches_a_bound_pool_through_the_public_api():
 
 
 def test_the_single_pool_gradient_still_reaches_every_property():
-    """The bound pool's properties are arguments the single-pool machine does
-    not take, so their gradients come back at zero -- and no other gradient is
-    disturbed by their being in the list.
+    """A tissue that never mentions the bound pool runs the single-pool machine,
+    and no gradient is disturbed by the pool's properties being in the list.
     """
     leaves = {
         name: torch.tensor([value], requires_grad=True)
-        for name, value in (
-            ("t1_ms", 1000.0), ("t2_ms", 80.0), ("bound_fraction", 0.0),
-            ("bound_exchange_hz", 0.0), ("t1_bound_ms", 1000.0),
-        )
+        for name, value in (("t1_ms", 1000.0), ("t2_ms", 80.0))
     }
     signal = FSE().simulate(
-        _description(), TissueProperties(**leaves), nstates=STATES
+        _description(),
+        TissueProperties(**leaves, bound_fraction=0.0, bound_exchange_hz=0.0),
+        nstates=STATES,
     ).signal
     signal.abs().square().sum().backward()
 
     assert float(leaves["t1_ms"].grad.abs().max()) > 0.0
     assert float(leaves["t2_ms"].grad.abs().max()) > 0.0
-    for name in ("bound_fraction", "bound_exchange_hz", "t1_bound_ms"):
-        assert float(leaves[name].grad.abs().max()) == 0.0
+
+
+def test_an_empty_pool_asked_for_its_gradient_gives_the_true_one():
+    """Sitting at the identity is not the same as having no derivative there.
+
+    A fraction of zero is where a bound-pool fit starts, and the signal moves
+    as it leaves: dropping the pool because its fraction is at the identity
+    would answer that fit with a zero that is not the derivative. So a value
+    carrying a gradient keeps its term, and what comes back is checked against
+    a difference the state machine did not produce.
+
+    The rate and the relaxation time describe the pool rather than gate it, and
+    an empty pool genuinely does not depend on either. Their zeros are checked
+    against the gate's own gradient rather than against nothing: the pool is
+    carried here, so those are zeros the kernel worked out in float32 rather
+    than rows it never touched.
+    """
+
+    def loss(fraction):
+        signal = FSE().simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=1000.0, t2_ms=80.0, bound_fraction=fraction,
+                bound_exchange_hz=25.0, t1_bound_ms=400.0,
+            ),
+            nstates=STATES,
+        ).signal
+        return float(signal.abs().square().sum())
+
+    leaves = {
+        name: torch.tensor([value], requires_grad=True)
+        for name, value in (
+            ("bound_fraction", 0.0), ("bound_exchange_hz", 25.0),
+            ("t1_bound_ms", 400.0),
+        )
+    }
+    signal = FSE().simulate(
+        _description(),
+        TissueProperties(t1_ms=1000.0, t2_ms=80.0, **leaves),
+        nstates=STATES,
+    ).signal
+    signal.abs().square().sum().backward()
+
+    # One-sided: a fraction is not defined below zero. The step is kept well
+    # clear of where float32 cancellation swamps the difference -- below about
+    # 1e-4 the quotient walks away from the derivative rather than toward it.
+    step = 1e-3
+    expected = (loss(step) - loss(0.0)) / step
+    assert abs(expected) > 1.0
+    measured = float(leaves["bound_fraction"].grad)
+    assert abs(measured - expected) / abs(expected) < 2e-2, (measured, expected)
+
+    for name in ("bound_exchange_hz", "t1_bound_ms"):
+        assert float(leaves[name].grad.abs().max()) < 1e-6 * abs(measured)
 
 
 # --- sizing the table to what the sequence asks of it ---
@@ -1098,7 +1148,7 @@ def _routes(leaves, events, profile=None):
 
     table = lineshape_table()
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, table, False
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, table, False, None
     )
     reference = simulate_packed(
         leaves,

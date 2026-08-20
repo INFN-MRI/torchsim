@@ -20,6 +20,7 @@ __all__ = [
     "EVENT_PARAMETERS",
     "TISSUE_PARAMETERS",
     "at_identity",
+    "features_of",
     "wants_bound_pool",
     "wants_exchange_pool",
     "tissue_gradient_bases",
@@ -29,6 +30,9 @@ __all__ = [
 
 from dataclasses import dataclass
 from typing import Any
+
+import torch
+from torch.autograd.forward_ad import unpack_dual
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,12 @@ class Parameter:
         always does.
     feature
         The term of the state machine it switches on.
+    gate
+        Whether this parameter is the one whose value decides that term. Every
+        feature has exactly one. A term with several parameters is switched by
+        one of them and described by the rest: a bound pool's exchange rate and
+        relaxation time say what the pool does, but its fraction says whether
+        there is a pool at all.
     transmit
         Whether the buffer carries one row of voxels per shim rather than a
         single row. Only the transmit field does: a pulse reads the shim it
@@ -57,6 +67,7 @@ class Parameter:
     differentiable: bool = True
     identity: float | None = None
     feature: str | None = None
+    gate: bool = False
     transmit: bool = False
 
 
@@ -86,27 +97,29 @@ NO_GEOMETRY = Geometry()
 # Order is the ABI. Anything appended here is appended to the pointer arrays
 # the kernels index, so the two move together.
 TISSUE_PARAMETERS: tuple[Parameter, ...] = (
-    Parameter("t1_ms", feature="T1"),
-    Parameter("t2_ms", feature="T2"),
-    Parameter("m0", identity=1.0, feature="M0"),
-    Parameter("b1", identity=1.0, feature="B1", transmit=True),
-    Parameter("b1_phase_rad", identity=0.0, feature="B1_PHASE", transmit=True),
-    Parameter("b0_hz", identity=0.0, feature="B0"),
-    Parameter("inversion_efficiency", identity=1.0, feature="INVERSION"),
-    Parameter("diffusion_um2_per_ms", identity=0.0, feature="DIFFUSION"),
-    Parameter("velocity_m_per_s", identity=0.0, feature="FLOW"),
+    Parameter("t1_ms", feature="T1", gate=True),
+    Parameter("t2_ms", feature="T2", gate=True),
+    Parameter("m0", identity=1.0, feature="M0", gate=True),
+    Parameter("b1", identity=1.0, feature="B1", gate=True, transmit=True),
+    Parameter(
+        "b1_phase_rad", identity=0.0, feature="B1_PHASE", gate=True, transmit=True
+    ),
+    Parameter("b0_hz", identity=0.0, feature="B0", gate=True),
+    Parameter("inversion_efficiency", identity=1.0, feature="INVERSION", gate=True),
+    Parameter("diffusion_um2_per_ms", identity=0.0, feature="DIFFUSION", gate=True),
+    Parameter("velocity_m_per_s", identity=0.0, feature="FLOW", gate=True),
     # The semisolid pool, which magnetization transfer drives. Its fraction is
     # the gate: at zero the exchange matrix is diagonal and the pool starts
     # empty, so nothing it drives can reach the free water, and the kernels
     # leave the whole second pool out.
-    Parameter("bound_fraction", identity=0.0, feature="MT"),
+    Parameter("bound_fraction", identity=0.0, feature="MT", gate=True),
     Parameter("bound_exchange_hz", identity=0.0, feature="MT"),
     Parameter("t1_bound_ms", feature="MT"),
     # A second pool that exchanges chemically rather than by saturation. It
     # carries transverse magnetization, so it has a T2 the semisolid pool does
     # not, and it sits at its own offset from the free water. Its fraction is
     # the gate on the same terms.
-    Parameter("pool_b_fraction", identity=0.0, feature="BM"),
+    Parameter("pool_b_fraction", identity=0.0, feature="BM", gate=True),
     Parameter("pool_b_exchange_hz", identity=0.0, feature="BM"),
     Parameter("t1_pool_b_ms", feature="BM"),
     Parameter("t2_pool_b_ms", feature="BM"),
@@ -207,8 +220,19 @@ def at_identity(parameter: Parameter, value: Any) -> bool:
     A property given as a full tensor is reported as mattering rather than
     reduced over: on a device that reduction costs a synchronization, and at
     the sizes where the answer would pay for itself it is the rarer case.
+
+    A value carrying a derivative matters whatever it holds, in either mode:
+    a gradient to be accumulated into, or a forward direction to be followed.
+    Leaving out a term leaves both at zero, which is the truth for a property
+    the run does not take and a lie for one it differentiates: the derivative
+    at an identity is a number like any other, and a B1 map fitted from unity
+    or a diffusion coefficient fitted from zero both start there.
     """
     if parameter.identity is None:
+        return False
+    if getattr(value, "requires_grad", False):
+        return False
+    if isinstance(value, torch.Tensor) and unpack_dual(value).tangent is not None:
         return False
     if isinstance(value, (int, float)):
         return float(value) == parameter.identity
@@ -216,6 +240,26 @@ def at_identity(parameter: Parameter, value: Any) -> bool:
     if numel is not None and numel() == 1:
         return float(value.item()) == parameter.identity
     return False
+
+
+def features_of(tissue: Any) -> frozenset[str]:
+    """Which terms of the state machine this tissue gives anything to do.
+
+    Each feature is decided by its gate alone, on the terms
+    :func:`at_identity` sets: from what the caller passed, before broadcasting,
+    without touching a buffer. The parameters that describe a term rather than
+    switch it are not consulted, so a bound pool's exchange rate left at some
+    non-zero value does not conjure a pool the fraction says is not there.
+
+    ``t1_ms`` and ``t2_ms`` have no identity and so are always present, which
+    is what makes relaxation the floor rather than a feature.
+    """
+    return frozenset(
+        parameter.feature
+        for parameter in TISSUE_PARAMETERS
+        if parameter.gate
+        and not at_identity(parameter, getattr(tissue, parameter.name))
+    )
 
 
 def wants_bound_pool(bound_fraction: Any) -> bool:

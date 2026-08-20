@@ -105,7 +105,8 @@ def _leaves(prepared, events):
 def _route(route: str, tissue, events, output_count: int, state_count: int):
     if route == "kernel":
         return _NativeEpg.apply(
-            *tissue, *events, state_count, output_count, 1, NO_GEOMETRY, None, None, False
+            *tissue, *events, state_count, output_count, 1, NO_GEOMETRY, None,
+            None, False, None
         )
     return simulate_packed(
         tissue, events, state_count=state_count, output_count=output_count

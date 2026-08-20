@@ -804,7 +804,7 @@ def _routes(leaves, events):
 
     fused = _NativeEpg.apply(
         *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, None,
-        lineshape_table(), True,
+        lineshape_table(), True, None,
     )
     reference = simulate_packed(
         leaves,

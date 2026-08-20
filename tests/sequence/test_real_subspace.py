@@ -175,6 +175,138 @@ def test_real_jvp_reproduces_the_complex_one():
     assert ((expected - actual).abs().max() / scale) < 1e-6
 
 
+@pytest.mark.parametrize("phase", [0.0, torch.pi / 4, torch.pi / 2])
+def test_real_adjoint_reproduces_the_complex_one(phase):
+    """The first-order adjoint through the real subspace, against the kernel it
+    specializes: every gradient the subspace contains, and zero for the four it
+    divides out.
+
+    The caller has to say what it will read -- the four are not produced at all
+    -- so the verdict is reached through ``wanted`` rather than handed over,
+    which is the route the public adjoint takes.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    description = fse_description(
+        _flip(),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=phase,
+        excitation_phase_rad=phase,
+    )
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    events = _buffers(packed)
+    prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
+    assert real_subspace_axis(events, prepared) == 1
+
+    torch.manual_seed(0)
+    seed = torch.randn(
+        (events[2].shape[0], prepared[0].numel(), packed.output_count),
+        dtype=torch.complex64,
+    )
+    arguments = dict(
+        state_count=10, output_count=packed.output_count, threads=1
+    )
+    expected = _run_packed_vjp(prepared, events, seed, **arguments)
+    wanted = tuple(index in INSIDE_THE_SUBSPACE for index in range(len(FLOAT_NAMES)))
+    actual = _run_packed_vjp(prepared, events, seed, wanted=wanted, **arguments)
+
+    compared = 0
+    for index in INSIDE_THE_SUBSPACE:
+        scale = expected[index].abs().max()
+        if scale == 0:
+            assert actual[index].abs().max() == 0
+            continue
+        assert ((expected[index] - actual[index]).abs().max() / scale) < 1e-5
+        compared += 1
+    assert compared > 3
+
+    for index in OUTSIDE_THE_SUBSPACE:
+        assert actual[index].abs().max() == 0
+
+
+def test_the_real_adjoint_reaches_the_inversion_gradient():
+    """An FSE never inverts, so the trains the other cases use leave the
+    inversion efficiency at zero in both kernels and prove nothing about it.
+
+    The train is a builder's, with an inversion and a delay spliced in front:
+    the representation describes a sequence the builders produce, and a train
+    assembled from scratch is not one.
+    """
+    from torchsim.sequence._accelerators import (
+        _INVERSION,
+        _run_packed_vjp,
+    )
+
+    description = fse_description(
+        _flip(),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=torch.pi / 2,
+        excitation_phase_rad=torch.pi / 2,
+    )
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    trains = packed.buffers[0].shape[0]
+
+    def ahead(values, first):
+        """The two prepended events, on whichever axis the buffer carries."""
+        head = torch.tensor(first, dtype=values.dtype)
+        if values.dim() == 2:
+            return torch.cat([head.expand(trains, 2), values], dim=1).contiguous()
+        return torch.cat([head, values]).contiguous()
+
+    duration, kind, flip, phase, action, output, shim, saturation, frequency = (
+        packed.buffers
+    )
+    events = (
+        ahead(duration, [0.0, 20e-3]),
+        ahead(kind, [1, 0]),
+        ahead(flip, [0.0, 0.0]),
+        ahead(phase, [0.0, 0.0]),
+        ahead(action, [_INVERSION, 0]),
+        ahead(output, [-1, -1]),
+        ahead(shim, [0, 0]),
+        ahead(saturation, [0.0, 0.0]),
+        ahead(frequency, [0.0, 0.0]),
+    )
+    tissue = TissueProperties(
+        t1_ms=torch.tensor([800.0, 1400.0]),
+        t2_ms=torch.tensor([45.0, 120.0]),
+        inversion_efficiency=torch.tensor([0.92, 0.97]),
+    )
+    prepared, _, _ = _prepare_tissue(tissue, "cpu")
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+    assert real_subspace_axis(events, prepared) == 1
+
+    torch.manual_seed(0)
+    seed = torch.randn(
+        (trains, prepared[0].numel(), packed.output_count), dtype=torch.complex64
+    )
+    arguments = dict(
+        state_count=10, output_count=packed.output_count, threads=1
+    )
+    expected = _run_packed_vjp(prepared, events, seed, **arguments)
+    wanted = tuple(index in INSIDE_THE_SUBSPACE for index in range(len(FLOAT_NAMES)))
+    actual = _run_packed_vjp(prepared, events, seed, wanted=wanted, **arguments)
+
+    position = FLOAT_NAMES.index("inversion_efficiency")
+    scale = float(expected[position].abs().max())
+    assert scale > 0.0
+    assert float((expected[position] - actual[position]).abs().max()) / scale < 1e-5
+
+
 def test_real_second_order_kernel_reproduces_the_complex_one():
     """Forward-over-reverse agrees on every gradient the subspace contains."""
     from torchsim.sequence._accelerators import _run_packed_vjp_jvp

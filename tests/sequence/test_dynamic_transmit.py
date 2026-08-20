@@ -589,19 +589,22 @@ def test_the_second_order_pass_returns_the_adjoint_given_no_direction():
         prepared, events, seed, state_count=16, output_count=ECHOES,
         threads=1, dynamic=pairs,
     )
-    _, second = _run_packed_vjp_jvp(
-        prepared, events, still, seed, state_count=16, output_count=ECHOES,
-        threads=1, dynamic=pairs, dynamic_direction=quiet,
-    )
+    # A direction of zero and no direction at all are different arguments:
+    # one is a buffer of zeros, the other a null the kernels must not read.
+    for direction in (quiet, None):
+        _, second = _run_packed_vjp_jvp(
+            prepared, events, still, seed, state_count=16, output_count=ECHOES,
+            threads=1, dynamic=pairs, dynamic_direction=direction,
+        )
 
-    compared = 0
-    for expected, measured in zip(first, second, strict=True):
-        scale = float(expected.abs().max())
-        if scale < 1e-6:
-            continue
-        assert float((expected - measured).abs().max()) / scale < 1e-5
-        compared += 1
-    assert compared > 3
+        compared = 0
+        for expected, measured in zip(first, second, strict=True):
+            scale = float(expected.abs().max())
+            if scale < 1e-6:
+                continue
+            assert float((expected - measured).abs().max()) / scale < 1e-5
+            compared += 1
+        assert compared > 3
     assert float(first[-1].abs().max()) > 0.0
 
 
@@ -678,6 +681,134 @@ def test_the_cuda_forward_reads_the_pair_the_host_does():
         dynamic=DynamicPairs(
             a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
         ),
+    ).cpu()
+
+    assert float(host.abs().max()) > 0.0
+    assert float((host - card).abs().max() / host.abs().max()) < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("state_count", [8, 15, 16, 17, 32])
+def test_the_cuda_reverse_agrees_at_every_width(state_count: int) -> None:
+    """The adjoint and the cotangent on the pair, against the host.
+
+    Swept over the state axis because the width is a compile-time constant on
+    the card: each one is a kernel of its own, and a rotation read per voxel
+    rather than built from a flip angle is the largest of them.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    generator = torch.Generator().manual_seed(21)
+    seed = torch.complex(
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+    )
+    options = dict(state_count=state_count, output_count=ECHOES, threads=1)
+
+    host = _run_packed_vjp(prepared, events, seed, dynamic=pairs, **options)
+    card = _run_packed_vjp(
+        tuple(value.cuda() for value in prepared),
+        tuple(value.cuda() for value in events),
+        seed.cuda(),
+        dynamic=DynamicPairs(
+            a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
+        ),
+        **options,
+    )
+
+    assert float(host[-1].abs().max()) > 0.0
+    for expected, measured in zip(host, card, strict=True):
+        scale = float(expected.abs().max())
+        if scale < 1e-6:
+            continue
+        assert float((expected - measured.cpu()).abs().max()) / scale < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("state_count", [15, 16, 17])
+def test_the_cuda_second_order_agrees_at_every_width(state_count: int) -> None:
+    """The curvature along a direction on the pair, against the host."""
+    from torchsim.sequence._accelerators import _run_packed_vjp_jvp
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    generator = torch.Generator().manual_seed(21)
+    seed = torch.complex(
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+        torch.rand(VOXELS, ECHOES, generator=generator) * 2.0 - 1.0,
+    )
+    tangents = tuple(
+        torch.randn(value.shape, generator=generator) * 0.01
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+    direction = (
+        torch.randn(pairs.a.shape + (4,), generator=generator) * 0.05
+    ).contiguous()
+
+    host = _run_packed_vjp_jvp(
+        prepared, events, tangents, seed, state_count, ECHOES, 1,
+        dynamic=pairs, dynamic_direction=direction,
+    )
+    card = _run_packed_vjp_jvp(
+        tuple(value.cuda() for value in prepared),
+        tuple(value.cuda() for value in events),
+        tuple(value.cuda() for value in tangents),
+        seed.cuda(),
+        state_count,
+        ECHOES,
+        1,
+        dynamic=DynamicPairs(
+            a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
+        ),
+        dynamic_direction=direction.cuda(),
+    )
+
+    for expected_side, measured_side in zip(host, card, strict=True):
+        assert float(expected_side[-1].abs().max()) > 0.0
+        for expected, measured in zip(expected_side, measured_side, strict=True):
+            scale = float(expected.abs().max())
+            if scale < 1e-6:
+                continue
+            assert float((expected - measured.cpu()).abs().max()) / scale < 1e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_cuda_forward_mode_follows_the_direction_the_host_does():
+    """Forward mode along a direction on the pair, against the host."""
+    from torchsim.sequence._accelerators import _run_packed_jvp
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    generator = torch.Generator().manual_seed(29)
+    tissue = tuple(
+        torch.randn(value.shape, generator=generator) * 0.01 for value in prepared
+    )
+    per_event = tuple(
+        torch.randn(value.shape, generator=generator) * 0.01
+        for value in (events[0], events[2], events[3])
+    )
+    direction = (
+        torch.randn(pairs.a.shape + (4,), generator=generator) * 0.05
+    ).contiguous()
+
+    host = _run_packed_jvp(
+        prepared, events, tissue, per_event, 16, ECHOES, 1,
+        dynamic=pairs, dynamic_direction=direction,
+    )
+    card = _run_packed_jvp(
+        tuple(value.cuda() for value in prepared),
+        tuple(value.cuda() for value in events),
+        tuple(value.cuda() for value in tissue),
+        tuple(value.cuda() for value in per_event),
+        16,
+        ECHOES,
+        1,
+        dynamic=DynamicPairs(
+            a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
+        ),
+        dynamic_direction=direction.cuda(),
     ).cpu()
 
     assert float(host.abs().max()) > 0.0

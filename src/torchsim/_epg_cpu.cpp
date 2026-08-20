@@ -2061,7 +2061,8 @@ inline void dynamic_pair_at(
     b = Complex(entry[2], entry[3]);
 }
 
-// The rotation and the direction along it, for a pulse at one voxel.
+// The rotation and the direction along it, for a pulse at one voxel. A pass
+// that follows no direction passes none, and the rotation is held still.
 inline void dynamic_pair_dual_at(
     const Buffers& primal,
     const float* const direction,
@@ -2072,13 +2073,15 @@ inline void dynamic_pair_dual_at(
 ) {
     const std::int64_t offset = dynamic_offset(primal, row, atom);
     const float* const value = primal.dynamic + offset;
-    const float* const tangent = direction + offset;
-    a = DualComplex{
-        Complex(value[0], value[1]), Complex(tangent[0], tangent[1])
-    };
-    b = DualComplex{
-        Complex(value[2], value[3]), Complex(tangent[2], tangent[3])
-    };
+    Complex moved_a(0.0f, 0.0f);
+    Complex moved_b(0.0f, 0.0f);
+    if (direction != nullptr) {
+        const float* const tangent = direction + offset;
+        moved_a = Complex(tangent[0], tangent[1]);
+        moved_b = Complex(tangent[2], tangent[3]);
+    }
+    a = DualComplex{Complex(value[0], value[1]), moved_a};
+    b = DualComplex{Complex(value[2], value[3]), moved_b};
 }
 
 // Which row of the stacked tables this pulse reads: its own shape's block,
@@ -5572,6 +5575,282 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     }
 }
 
+inline void shift_real_adjoint(
+    std::vector<float>& plus_bar, std::vector<float>& minus_bar,
+    const std::size_t states
+) {
+    // ``shift_real`` ends with plus[0] = -minus[0], reading the minus vector
+    // after its own shift -- so the entry it couples to is minus[1] as it
+    // stood before, and the cotangent lands there.
+    const float carry = -plus_bar[0];
+    for (std::size_t state = 0; state + 1 < states; ++state) {
+        plus_bar[state] = plus_bar[state + 1];
+    }
+    plus_bar[states - 1] = 0.0F;
+    for (std::size_t state = states - 1; state > 0; --state) {
+        minus_bar[state] = minus_bar[state - 1];
+    }
+    minus_bar[0] = 0.0F;
+    if (states > 1) {
+        minus_bar[1] += carry;
+    }
+}
+
+// The adjoint through the real subspace.
+//
+// The forward is a chain of real linear maps, so each adjoint is a transpose
+// rather than a conjugate transpose and the state carries three reals instead
+// of three complex numbers -- the same saving the real forward makes, in the
+// pass that costs the most.
+//
+// The RF phase, the transmit phase and off-resonance divide out of the
+// representation, so this kernel leaves their gradients untouched; the flow
+// winding does too. Callers must have established those conditions and must
+// not ask for those four gradients; see ``real_subspace_axis`` and the
+// ``wanted`` mask that guards it.
+void simulate_real_vjp_range(
+    const VjpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count,
+    float* grad_flip_local,
+    float* grad_phase_local,
+    float* grad_duration_local,
+    float* grad_tissue_local
+) {
+    (void)grad_phase_local;
+    const Buffers& primal = buffers.primal;
+    const std::int64_t atoms = primal.atom_count;
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    const std::size_t stride = 3U * states;
+
+    std::vector<float> trajectory(
+        static_cast<std::size_t>(event_count) * stride
+    );
+    std::vector<float> plus(states), minus(states), longitudinal(states);
+    std::vector<float> plus_bar(states), minus_bar(states), longitudinal_bar(states);
+    std::vector<float> plus_stage(states), minus_stage(states);
+    std::vector<float> longitudinal_stage(states);
+    Damping<float> damping(states);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const TrainView view = train_view(primal, work, event_count, output_count);
+        const std::int64_t atom = view.atom;
+        float* const grad_flip_train = grad_flip_local + view.event_base;
+        float* const grad_duration_train = grad_duration_local + view.event_base;
+
+        const float t1 = primal.t1[atom];
+        const float t2 = primal.t2[atom];
+        const float m0 = primal.m0[atom];
+        const float b1 = primal.b1[atom];
+        const float inversion = primal.inversion_efficiency[atom];
+        const float r1 = 1000.0F / t1;
+        const float r2 = 1000.0F / t2;
+        const float damping_rate = primal.diffusion[atom];
+
+        std::fill(plus.begin(), plus.end(), 0.0F);
+        std::fill(minus.begin(), minus.end(), 0.0F);
+        std::fill(longitudinal.begin(), longitudinal.end(), 0.0F);
+        longitudinal[0] = 1.0F;
+
+        // ---- forward, recording the state entering each event ----
+        for (std::int64_t event = 0; event < event_count; ++event) {
+            float* slot = trajectory.data()
+                + static_cast<std::size_t>(event) * stride;
+            std::copy(plus.begin(), plus.end(), slot);
+            std::copy(minus.begin(), minus.end(), slot + states);
+            std::copy(longitudinal.begin(), longitudinal.end(), slot + 2U * states);
+
+            const float dt = view.duration[event];
+            damping.set(damping_rate, dt);
+            const float e1 = std::exp(-r1 * dt);
+            const float e2 = std::exp(-r2 * dt);
+            for (std::size_t state = 0; state < states; ++state) {
+                const float damp_transverse = e2 * damping.transverse[state];
+                plus[state] *= damp_transverse;
+                minus[state] *= damp_transverse;
+                longitudinal[state] *= e1 * damping.longitudinal[state];
+            }
+            longitudinal[0] += 1.0F - e1;
+
+            const std::uint8_t action = primal.action[event];
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real(plus, minus, states);
+            }
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const float efficiency = -inversion;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        longitudinal[state] *= efficiency;
+                    }
+                } else {
+                    const float alpha = view.flip[event] * b1;
+                    const float cosine = std::cos(alpha);
+                    const float sine = std::sin(alpha);
+                    const float cosine_half_sq = 0.5F * (1.0F + cosine);
+                    const float sine_half_sq = 0.5F * (1.0F - cosine);
+                    const float half_sine = 0.5F * sine;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const float p = plus[state];
+                        const float m = minus[state];
+                        const float z = longitudinal[state];
+                        plus[state] = cosine_half_sq * p + sine_half_sq * m - sine * z;
+                        minus[state] = sine_half_sq * p + cosine_half_sq * m + sine * z;
+                        longitudinal[state] = half_sine * p - half_sine * m + cosine * z;
+                    }
+                }
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real(plus, minus, states);
+            }
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus.begin(), plus.end(), 0.0F);
+                std::fill(minus.begin(), minus.end(), 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real(plus, minus, states);
+            }
+        }
+
+        // ---- reverse ----
+        std::fill(plus_bar.begin(), plus_bar.end(), 0.0F);
+        std::fill(minus_bar.begin(), minus_bar.end(), 0.0F);
+        std::fill(longitudinal_bar.begin(), longitudinal_bar.end(), 0.0F);
+        float grad_t1 = 0.0F;
+        float grad_t2 = 0.0F;
+        float grad_m0 = 0.0F;
+        float grad_b1 = 0.0F;
+        float grad_inversion = 0.0F;
+        float grad_damping = 0.0F;
+
+        for (std::int64_t event = event_count - 1; event >= 0; --event) {
+            const float* slot = trajectory.data()
+                + static_cast<std::size_t>(event) * stride;
+            const std::uint8_t action = primal.action[event];
+            const float dt = view.duration[event];
+            damping.set(damping_rate, dt);
+            const float e1 = std::exp(-r1 * dt);
+            const float e2 = std::exp(-r2 * dt);
+
+            // Replay the intra-event stages from the recorded entry state.
+            for (std::size_t state = 0; state < states; ++state) {
+                const float damp_transverse = e2 * damping.transverse[state];
+                plus_stage[state] = slot[state] * damp_transverse;
+                minus_stage[state] = slot[states + state] * damp_transverse;
+                longitudinal_stage[state] =
+                    slot[2U * states + state] * e1 * damping.longitudinal[state];
+            }
+            longitudinal_stage[0] += 1.0F - e1;
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real(plus_stage, minus_stage, states);
+            }
+            // plus_stage now holds the state entering the RF operator.
+
+            // Undo the trailing spoil/shift.
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus_bar.begin(), plus_bar.end(), 0.0F);
+                std::fill(minus_bar.begin(), minus_bar.end(), 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real_adjoint(plus_bar, minus_bar, states);
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real_adjoint(plus_bar, minus_bar, states);
+            }
+
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const float efficiency = -inversion;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        grad_inversion -=
+                            longitudinal_bar[state] * longitudinal_stage[state];
+                        longitudinal_bar[state] *= efficiency;
+                    }
+                } else {
+                    const float flip = view.flip[event];
+                    const float alpha = flip * b1;
+                    const float cosine = std::cos(alpha);
+                    const float sine = std::sin(alpha);
+                    const float cosine_half_sq = 0.5F * (1.0F + cosine);
+                    const float sine_half_sq = 0.5F * (1.0F - cosine);
+                    const float half_sine = 0.5F * sine;
+                    float grad_alpha = 0.0F;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const float p = plus_stage[state];
+                        const float m = minus_stage[state];
+                        const float z = longitudinal_stage[state];
+                        const float pb = plus_bar[state];
+                        const float mb = minus_bar[state];
+                        const float zb = longitudinal_bar[state];
+                        // d/dalpha of each output row, contracted with the adjoint.
+                        grad_alpha += pb * (half_sine * m - half_sine * p - cosine * z)
+                            + mb * (half_sine * p - half_sine * m + cosine * z)
+                            + zb * (0.5F * cosine * p - 0.5F * cosine * m - sine * z);
+                        // Transpose of the rotation.
+                        plus_bar[state] =
+                            cosine_half_sq * pb + sine_half_sq * mb + half_sine * zb;
+                        minus_bar[state] =
+                            sine_half_sq * pb + cosine_half_sq * mb - half_sine * zb;
+                        longitudinal_bar[state] =
+                            -sine * pb + sine * mb + cosine * zb;
+                    }
+                    grad_flip_train[event] += grad_alpha * b1;
+                    grad_b1 += grad_alpha * flip;
+                }
+            } else if (primal.kind[event] == 2 && (action & RECORD) != 0) {
+                // The sample is i * m0 * plus[0]; only the imaginary seed acts.
+                const std::int64_t index =
+                    view.output_base + primal.output_index[event];
+                const float seed = buffers.grad_output_imag[index];
+                grad_m0 += seed * plus_stage[0];
+                plus_bar[0] += seed * m0;
+            }
+
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_adjoint(plus_bar, minus_bar, states);
+            }
+
+            float grad_e1 = -longitudinal_bar[0];
+            float grad_e2 = 0.0F;
+            float grad_b_factor = 0.0F;
+            for (std::size_t state = 0; state < states; ++state) {
+                const float damp_transverse = damping.transverse[state];
+                const float damp_longitudinal = damping.longitudinal[state];
+                const float plus_term =
+                    plus_bar[state] * slot[state] * damp_transverse;
+                const float minus_term =
+                    minus_bar[state] * slot[states + state] * damp_transverse;
+                const float longitudinal_term = longitudinal_bar[state]
+                    * slot[2U * states + state] * damp_longitudinal;
+                grad_e2 += plus_term + minus_term;
+                grad_e1 += longitudinal_term;
+                grad_b_factor -=
+                    transverse_weight(state) * (e2 * (plus_term + minus_term))
+                    + longitudinal_weight(state) * (e1 * longitudinal_term);
+                plus_bar[state] *= e2 * damp_transverse;
+                minus_bar[state] *= e2 * damp_transverse;
+                longitudinal_bar[state] *= e1 * damp_longitudinal;
+            }
+            grad_t1 += grad_e1 * (e1 * dt * (1000.0F / (t1 * t1)));
+            grad_t2 += grad_e2 * (e2 * dt * (1000.0F / (t2 * t2)));
+            grad_damping += grad_b_factor * dt;
+            grad_duration_train[event] += -grad_e1 * (r1 * e1) - grad_e2 * (r2 * e2)
+                + grad_b_factor * damping_rate;
+        }
+
+        // A real-subspace run is a single-shim one, so each parameter's row is
+        // its own index; the four the representation divides out are left
+        // alone, which is what the caller promised not to read.
+        grad_tissue_local[0 * atoms + atom] += grad_t1;
+        grad_tissue_local[1 * atoms + atom] += grad_t2;
+        grad_tissue_local[2 * atoms + atom] += grad_m0;
+        grad_tissue_local[3 * atoms + atom] += grad_b1;
+        grad_tissue_local[6 * atoms + atom] += grad_inversion;
+        grad_tissue_local[7 * atoms + atom] += grad_damping;
+    }
+}
+
+
 struct VjpJvpBuffers {
     Buffers primal;
     // tangent directions for the ten differentiable inputs
@@ -8663,6 +8942,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     long long state_count = 0;
     long long output_count = 0;
     int requested_threads = 0;
+    int real_axis = -1;
     double flow_scale = 0.0;
     double washout_scale = 0.0;
     long long shim_count = 1;
@@ -8674,7 +8954,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     int pool_kind = 0;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiddLLLdLdi",
+            "OLLLLLiiddLLLdLdi",
             &pointers,
             &atom_count,
             &train_count,
@@ -8682,6 +8962,7 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             &state_count,
             &output_count,
             &requested_threads,
+            &real_axis,
             &flow_scale,
             &washout_scale,
             &shim_count,
@@ -8809,6 +9090,12 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             kernel = &simulate_vjp_single_pool<RfMode::DYNAMIC>;
         } else if (mode == RfMode::PROFILED) {
             kernel = &simulate_vjp_single_pool<RfMode::PROFILED>;
+        }
+        // The caller establishes the real-subspace conditions and promises not
+        // to read the four gradients the representation divides out. A bound
+        // pool leaves that subspace, on the same terms as the forward.
+        if (real_axis == 1 && pool_kind == 0) {
+            kernel = &simulate_real_vjp_range;
         }
         const std::int64_t block = (work_count + thread_count - 1) / thread_count;
         WorkerPool::instance().run(thread_count, [&](const unsigned int slot) {

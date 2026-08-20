@@ -273,8 +273,13 @@ def simulate_native(
     rf_raster_time_s: float,
     lineshape: Any = None,
     exchanging: bool = False,
+    features: frozenset[str] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
-    """Run a fused CPU/CUDA state machine with explicit AD rules."""
+    """Run a fused CPU/CUDA state machine with explicit AD rules.
+
+    ``features`` names the terms the tissue gives anything to do, and the
+    kernels carry those and no others. ``None`` leaves every term in.
+    """
     device = prepared_tissue[0].device
     if device.type not in {"cpu", "cuda"} or not _backend_available(device):
         return None
@@ -339,6 +344,7 @@ def simulate_native(
         table,
         lineshape,
         exchanging,
+        features,
     )
     leading = (packed.train_count,) if packed.is_batched else ()
     if locations > 1:
@@ -687,6 +693,7 @@ class _NativeEpg(torch.autograd.Function):
         profile: Any,
         lineshape: Any,
         exchanging: bool,
+        features: frozenset[str] | None,
     ) -> torch.Tensor:
         tissue = (
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
@@ -701,6 +708,7 @@ class _NativeEpg(torch.autograd.Function):
         return _run_packed(
             tissue, events, state_count, output_count, threads, geometry=geometry,
             profile=profile, lineshape=lineshape, exchanging=exchanging,
+            features=features,
         )
 
     @staticmethod
@@ -715,6 +723,7 @@ class _NativeEpg(torch.autograd.Function):
         ctx.profile = inputs[_PACKED_COUNT + 4]
         ctx.lineshape = inputs[_PACKED_COUNT + 5]
         ctx.exchanging = inputs[_PACKED_COUNT + 6]
+        ctx.features = inputs[_PACKED_COUNT + 7]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
@@ -735,6 +744,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.profile,
             ctx.lineshape,
             ctx.exchanging,
+            ctx.features,
         )
 
     @staticmethod
@@ -752,10 +762,11 @@ class _NativeEpg(torch.autograd.Function):
             ctx.profile,
             ctx.lineshape,
             ctx.exchanging,
+            ctx.features,
         )
         return (
             *_spread(fused, ctx.needs_input_grad),
-            None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None,
         )
 
     @staticmethod
@@ -792,6 +803,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             profile=inputs[_SEED_INPUT + 6],
             lineshape=inputs[_SEED_INPUT + 7],
             exchanging=inputs[_SEED_INPUT + 8],
+            features=inputs[_SEED_INPUT + 9],
         )
 
     @staticmethod
@@ -806,6 +818,7 @@ class _NativeEpgVjp(torch.autograd.Function):
         ctx.profile = inputs[_SEED_INPUT + 6]
         ctx.lineshape = inputs[_SEED_INPUT + 7]
         ctx.exchanging = inputs[_SEED_INPUT + 8]
+        ctx.features = inputs[_SEED_INPUT + 9]
 
     @staticmethod
     def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
@@ -831,6 +844,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             profile=ctx.profile,
             lineshape=ctx.lineshape,
             exchanging=ctx.exchanging,
+            features=ctx.features,
         )
         seed_grad = None
         if ctx.needs_input_grad[_SEED_INPUT]:
@@ -846,11 +860,12 @@ class _NativeEpgVjp(torch.autograd.Function):
                 profile=ctx.profile,
                 lineshape=ctx.lineshape,
                 exchanging=ctx.exchanging,
+                features=ctx.features,
             )
         guarded = _last(
             (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
         )
-        return (*guarded, None, None, None, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None, None, None, None)
 
 
 class _NativeEpgJvp(torch.autograd.Function):
@@ -872,6 +887,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             profile=inputs[_TANGENT_END + 4],
             lineshape=inputs[_TANGENT_END + 5],
             exchanging=inputs[_TANGENT_END + 6],
+            features=inputs[_TANGENT_END + 7],
         )
 
     @staticmethod
@@ -883,6 +899,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.profile = inputs[_TANGENT_END + 4]
         ctx.lineshape = inputs[_TANGENT_END + 5]
         ctx.exchanging = inputs[_TANGENT_END + 6]
+        ctx.features = inputs[_TANGENT_END + 7]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
@@ -909,6 +926,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             profile=ctx.profile,
             lineshape=ctx.lineshape,
             exchanging=ctx.exchanging,
+            features=ctx.features,
         )
         directions = tuple(
             gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
@@ -917,7 +935,7 @@ class _NativeEpgJvp(torch.autograd.Function):
         guarded = _last(
             (*_spread(primal_grads, ctx.needs_input_grad), *directions), saved
         )
-        return (*guarded, None, None, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None, None, None)
 
     @staticmethod
     def vmap(
@@ -1181,6 +1199,42 @@ def _dynamic_pointers(
         for value in (direction, gradient, curvature)
     )
     return (*held, *tail)
+
+
+def _carries_the_pair(dynamic: Any, route: str) -> None:
+    """Refuse a route that cannot take the per-voxel rotations with it.
+
+    Every other table a pulse reads is the same for every voxel, so a route
+    that cuts the volume up or moves a piece of it at a time can broadcast
+    one. The pair is per voxel, so it has to be cut the same way.
+
+    Raises:
+        NotImplementedError: if a dynamic pulse reaches such a route.
+    """
+    if dynamic is not None:
+        raise NotImplementedError(
+            f"a pulse whose channel weights vary carries a rotation per "
+            f"voxel, which the {route} route does not cut yet"
+        )
+
+
+def _moved_dynamic(dynamic: Any, device: torch.device) -> Any:
+    """The per-voxel rotations on another device, whichever shape they came in.
+
+    A pair set travels as a :class:`DynamicPairs`; a direction along one
+    travels as the packed buffer alone.
+    """
+    if dynamic is None:
+        return None
+    if isinstance(dynamic, torch.Tensor):
+        return dynamic.to(device)
+    from ._transition import DynamicPairs
+
+    return DynamicPairs(
+        a=dynamic.a.to(device),
+        b=dynamic.b.to(device),
+        index=dynamic.index.to(device),
+    )
 
 
 def _bound_pointers(
@@ -2048,6 +2102,7 @@ def _run_offloaded_vjp_jvp(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    features: frozenset[str] | None = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Stream a forward-over-reverse pass through the devices, chunk by chunk.
 
@@ -2139,6 +2194,7 @@ def _run_offloaded_vjp_jvp(
             profile=profile,
             lineshape=lineshape,
             exchanging=exchanging,
+            features=features,
         )
         for plane, side in enumerate(voxel_grads):
             for index, count in enumerate(rows):
@@ -2224,6 +2280,7 @@ def _run_packed(
     lineshape: Any = None,
     exchanging: bool = False,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> torch.Tensor:
     """Run the forward state machine.
 
@@ -2234,6 +2291,9 @@ def _run_packed(
     sequence has one. Voxels are spread over its slice positions voxel-major,
     so the table's row count is also how many copies of each voxel the tissue
     holds.
+
+    ``features`` names the terms the tissue gives anything to do, and the
+    kernels carry those and no others. ``None`` leaves every term in.
     """
     profile = _tables(profile, events)
     if real_axis is None:
@@ -2250,6 +2310,7 @@ def _run_packed(
     if profile is not None:
         _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        _carries_the_pair(dynamic, "streamed")
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
             geometry, profile, lineshape, exchanging,
@@ -2259,6 +2320,7 @@ def _run_packed(
     )
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
+        _carries_the_pair(dynamic, "streamed")
         return _run_offloaded(
             tissue, events, choice.offload, state_count, output_count, real_axis,
             geometry, profile, lineshape, exchanging,
@@ -2274,8 +2336,11 @@ def _run_packed(
                 threads,
                 real_axis,
                 geometry=geometry,
+                profile=profile,
                 lineshape=lineshape,
                 exchanging=exchanging,
+                dynamic=_moved_dynamic(dynamic, home),
+                features=features,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
@@ -2283,6 +2348,7 @@ def _run_packed(
 
         shards = _shard_bounds(_train_count(events))
         if shards:
+            _carries_the_pair(dynamic, "sharded")
             # Every launch is asynchronous, so issuing them all before touching
             # a result lets the devices run at the same time.
             parts = [
@@ -2313,6 +2379,7 @@ def _run_packed(
             profile=profile,
             lineshape=lineshape,
             exchanging=exchanging,
+            dynamic=dynamic,
         )
     from torchsim import _epg_cpu
 
@@ -2368,6 +2435,7 @@ def _run_packed_vjp(
     lineshape: Any = None,
     exchanging: bool = False,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> tuple[torch.Tensor, ...]:
     """Return gradients w.r.t. the tissue and three float event buffers.
 
@@ -2378,20 +2446,18 @@ def _run_packed_vjp(
     ``wanted`` says which of those the caller will read, which is what lets
     the real-subspace kernels -- four of them short -- be chosen. All of them,
     if it is not given.
+
+    ``features`` names the terms the tissue gives anything to do, and the
+    kernels carry those and no others. ``None`` leaves every term in.
     """
     profile = _tables(profile, events)
-    # Only a call that might leave the host settles a real axis: the host
-    # kernel does not read one, and deciding costs a scan of the phase buffer
-    # and a calibration of its own.
-    real_axis = None
-    if tissue[0].device.type != "cpu" or _EXECUTION is not None or _OFFLOAD:
-        real_axis = _auto_real_axis_adjoint(
-            events, tissue, state_count, (), wanted, profile
-        )
-        # Neither second pool is inside a real subspace the reduced kernels
-        # stand for; see the forward path for why.
-        if lineshape is not None or exchanging:
-            real_axis = None
+    real_axis = _auto_real_axis_adjoint(
+        events, tissue, state_count, (), wanted, profile
+    )
+    # Neither second pool is inside a real subspace the reduced kernels stand
+    # for; see the forward path for why.
+    if lineshape is not None or exchanging:
+        real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
     if tissue[0].device.type != "cpu" or _leaves_the_host(
@@ -2419,6 +2485,8 @@ def _run_packed_vjp(
             profile=profile,
             lineshape=lineshape,
             exchanging=exchanging,
+            dynamic=dynamic,
+            features=features,
         )
         return adjoint
     from torchsim import _epg_cpu
@@ -2459,6 +2527,7 @@ def _run_packed_vjp(
         state_count,
         output_count,
         threads,
+        real_axis if real_axis is not None else -1,
         geometry.flow_scale,
         geometry.washout_scale,
         _shim_count(tissue),
@@ -2491,6 +2560,7 @@ def _run_packed_vjp_jvp(
     exchanging: bool = False,
     dynamic: Any = None,
     dynamic_direction: Any = None,
+    features: frozenset[str] | None = None,
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     """Forward-over-reverse pass through the JVP state machine.
 
@@ -2501,6 +2571,9 @@ def _run_packed_vjp_jvp(
     ``wanted`` says which of those the caller will read, which is what
     decides whether the real-subspace adjoint -- four of them short -- may be
     chosen when ``real_axis`` is left open. All of them, if it is not given.
+
+    ``features`` names the terms the tissue gives anything to do, and the
+    kernels carry those and no others. ``None`` leaves every term in.
     """
     profile = _tables(profile, events)
     if real_axis is None:
@@ -2514,6 +2587,7 @@ def _run_packed_vjp_jvp(
     if profile is not None:
         _within_the_table(profile, events[2])
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        _carries_the_pair(dynamic, "streamed")
         return _run_offloaded_vjp_jvp(
             tissue,
             events,
@@ -2527,12 +2601,14 @@ def _run_packed_vjp_jvp(
             profile,
             lineshape,
             exchanging,
+            features,
         )
     choice = _choose(
         "adjoint", tissue, events, output_count, state_count, real_axis
     )
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
+        _carries_the_pair(dynamic, "streamed")
         return _run_offloaded_vjp_jvp(
             tissue,
             events,
@@ -2546,6 +2622,7 @@ def _run_packed_vjp_jvp(
             profile,
             lineshape,
             exchanging,
+            features,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2560,8 +2637,12 @@ def _run_packed_vjp_jvp(
                 threads,
                 real_axis,
                 geometry=geometry,
+                profile=profile,
                 lineshape=lineshape,
                 exchanging=exchanging,
+                dynamic=_moved_dynamic(dynamic, home),
+                dynamic_direction=_moved_dynamic(dynamic_direction, home),
+                features=features,
             )
         origin = tissue[0].device
         return tuple(
@@ -2572,6 +2653,7 @@ def _run_packed_vjp_jvp(
 
         shards = _shard_bounds(_train_count(events))
         if shards:
+            _carries_the_pair(dynamic, "sharded")
             home = tissue[0].device
             parts = [
                 simulate_vjp_jvp(
@@ -2589,6 +2671,7 @@ def _run_packed_vjp_jvp(
                     profile=profile,
                     lineshape=lineshape,
                     exchanging=exchanging,
+                    features=features,
                 )
                 for begin, end, device in shards
             ]
@@ -2606,6 +2689,9 @@ def _run_packed_vjp_jvp(
             profile=profile,
             lineshape=lineshape,
             exchanging=exchanging,
+            dynamic=dynamic,
+            dynamic_direction=dynamic_direction,
+            features=features,
         )
     from torchsim import _epg_cpu
 
@@ -2678,6 +2764,7 @@ def _run_packed_jvp(
     exchanging: bool = False,
     dynamic: Any = None,
     dynamic_direction: Any = None,
+    features: frozenset[str] | None = None,
 ) -> torch.Tensor:
     profile = _tables(profile, events)
     if profile is not None:
@@ -2698,6 +2785,7 @@ def _run_packed_jvp(
     if lineshape is not None or exchanging:
         real_axis = None
     if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+        _carries_the_pair(dynamic, "streamed")
         return _run_offloaded_jvp(
             tissue,
             events,
@@ -2715,6 +2803,7 @@ def _run_packed_jvp(
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
     if streaming and tissue[0].device.type == "cpu":
+        _carries_the_pair(dynamic, "streamed")
         return _run_offloaded_jvp(
             tissue,
             events,
@@ -2742,8 +2831,12 @@ def _run_packed_jvp(
                 threads,
                 real_axis,
                 geometry=geometry,
+                profile=profile,
                 lineshape=lineshape,
                 exchanging=exchanging,
+                dynamic=_moved_dynamic(dynamic, home),
+                dynamic_direction=_moved_dynamic(dynamic_direction, home),
+                features=features,
             )
         return moved.to(tissue[0].device)
     if tissue[0].device.type == "cuda":
@@ -2751,6 +2844,7 @@ def _run_packed_jvp(
 
         shards = _shard_bounds(_train_count(events))
         if shards:
+            _carries_the_pair(dynamic, "sharded")
             parts = [
                 (
                     end - begin,
@@ -2783,6 +2877,8 @@ def _run_packed_jvp(
             profile=profile,
             lineshape=lineshape,
             exchanging=exchanging,
+            dynamic=dynamic,
+            dynamic_direction=dynamic_direction,
         )
     from torchsim import _epg_cpu
 
