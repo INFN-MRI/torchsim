@@ -184,6 +184,20 @@ inline unsigned int worker_count(
     return static_cast<unsigned int>(std::max<std::int64_t>(1, count));
 }
 
+// Which optional terms a launch carries. A property the caller never passed
+// is not an input, so its term is out and its gradient is zero -- the same
+// reasoning the pool count already runs on. The bit order is the ABI:
+// ``feature_mask`` in ``sequence/_parameters.py`` packs it.
+enum Feature : int {
+    FEATURE_OFF_AXIS = 1 << 0,
+    FEATURE_MOVING = 1 << 1,
+    FEATURE_DIFFUSING = 1 << 2,
+};
+
+// What a caller who declares nothing gets, which is every term.
+constexpr int FEATURE_ALL =
+    FEATURE_OFF_AXIS | FEATURE_MOVING | FEATURE_DIFFUSING;
+
 struct Buffers {
     const float* t1;
     const float* t2;
@@ -245,6 +259,11 @@ struct Buffers {
     // while flow dephasing depends on the winding it crosses.
     float flow_scale;
     float washout_scale;
+    // The terms this launch carries, hoisted out of the mask once so a kernel
+    // reads three loop-invariant bools rather than masking per state.
+    bool off_axis;
+    bool moving;
+    bool diffusing;
     std::int64_t shim_count;
     // The rotation a shaped pulse performs, tabulated over slice position and
     // effective flip angle: rows of ``profile_bins`` knots, eight floats each
@@ -768,6 +787,17 @@ inline void flow_turn_dual(
     const float order = static_cast<float>(state);
     longitudinal = (-order) * turn;
     transverse = (-(order + 0.5F)) * turn;
+}
+
+// A turn through an angle, or the plain scaling a zero angle amounts to.
+// Written out rather than left to ``std::polar``, which takes a sine and a
+// cosine whatever it is given: a sequence with nothing to turn the states
+// through would otherwise pay two transcendentals per state per event for a
+// factor of one.
+inline Complex turned(
+    const float magnitude, const float angle, const bool turning
+) {
+    return turning ? std::polar(magnitude, angle) : Complex{magnitude, 0.0F};
 }
 
 // The fraction of a voxel's spins replaced by inflowing ones over an interval,
@@ -2468,6 +2498,7 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
     // reached where this is false and the mode says so.
     constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const Buffers& primal = buffers.primal;
+    const bool flowing = primal.moving;
     const std::size_t states = static_cast<std::size_t>(state_count);
     std::vector<DualComplex> fplus(states);
     std::vector<DualComplex> fminus(states);
@@ -2596,8 +2627,8 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         const float voxel_dot_b1 = buffers.b1[atom];
         const float voxel_b1_phase = primal.b1_phase[atom];
         const float voxel_dot_b1_phase = buffers.b1_phase[atom];
-        const float velocity = primal.velocity[atom];
-        const float dot_velocity = buffers.velocity[atom];
+        const float velocity = flowing ? primal.velocity[atom] : 0.0F;
+        const float dot_velocity = flowing ? buffers.velocity[atom] : 0.0F;
         const DualFloat flow_rate{
             velocity * primal.flow_scale, dot_velocity * primal.flow_scale
         };
@@ -2623,11 +2654,14 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                 1000.0F * dt * buffers.t2[atom] / (t2 * t2)
                 - r2 * dt_tangent
             ) + dry2 * wout.tangent;
-            const float angle = -2.0F * PI * primal.b0[atom] * dt;
-            const float angle_tangent = -2.0F * PI * (
-                buffers.b0[atom] * dt + primal.b0[atom] * dt_tangent
-            );
-            const Complex phase = std::polar(1.0F, angle);
+            const float angle =
+                primal.off_axis ? -2.0F * PI * primal.b0[atom] * dt : 0.0F;
+            const float angle_tangent = primal.off_axis
+                ? -2.0F * PI * (
+                    buffers.b0[atom] * dt + primal.b0[atom] * dt_tangent
+                )
+                : 0.0F;
+            const Complex phase = turned(1.0F, angle, primal.off_axis);
             const Complex phase_tangent = Complex(0.0F, angle_tangent) * phase;
             const Complex off_resonance = e2 * phase;
             const Complex off_resonance_tangent =
@@ -2669,15 +2703,18 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                 DualComplex& z = longitudinal[index];
                 DualFloat turn_longitudinal{};
                 DualFloat turn_transverse{};
-                flow_turn_dual(
-                    flow_rate, interval, index, turn_longitudinal, turn_transverse
-                );
+                if (flowing) {
+                    flow_turn_dual(
+                        flow_rate, interval, index, turn_longitudinal,
+                        turn_transverse
+                    );
+                }
                 const Complex spin_transverse =
-                    std::polar(1.0F, turn_transverse.value);
+                    turned(1.0F, turn_transverse.value, flowing);
                 const Complex spin_transverse_tangent =
                     Complex(0.0F, turn_transverse.tangent) * spin_transverse;
                 const Complex spin_longitudinal =
-                    std::polar(1.0F, turn_longitudinal.value);
+                    turned(1.0F, turn_longitudinal.value, flowing);
                 const Complex spin_longitudinal_tangent =
                     Complex(0.0F, turn_longitudinal.tangent) * spin_longitudinal;
                 const Complex damped = off_resonance * damp_transverse.value;
@@ -3920,6 +3957,12 @@ void simulate_range(
     // The tabulated case keeps the name it had; the per-voxel one is
     // reached where this is false and the mode says so.
     constexpr bool PROFILED = MODE == RfMode::PROFILED;
+    // Hoisted out of every loop below. ``turning`` is whether anything puts a
+    // phase on the transverse states at all -- off-resonance and flow reach
+    // them through one rotation -- and ``flowing`` is the velocity terms
+    // alone, which is what the longitudinal states turn through.
+    const bool turning = buffers.off_axis || buffers.moving;
+    const bool flowing = buffers.moving;
     const std::size_t states = static_cast<std::size_t>(state_count);
     std::vector<Complex> fplus(states);
     std::vector<Complex> fminus(states);
@@ -3982,19 +4025,21 @@ void simulate_range(
         // present in how much free water that 2x2's exchange sees.
         const float transverse_free =
             1.0F - bound_fraction - (THREE ? semisolid_fraction : 0.0F);
-        const float damping_rate = buffers.diffusion[atom];
-        const float flow_rate = buffers.velocity[atom] * buffers.flow_scale;
+        const float damping_rate =
+            buffers.diffusing ? buffers.diffusion[atom] : 0.0F;
+        const float velocity = flowing ? buffers.velocity[atom] : 0.0F;
+        const float flow_rate = velocity * buffers.flow_scale;
         const float washout_rate =
-            std::fabs(buffers.velocity[atom]) * buffers.washout_scale;
+            std::fabs(velocity) * buffers.washout_scale;
         // With one shim the transmit field is a property of the voxel and
         // lifts out of the event loop; with several it belongs to the shim a
         // pulse drives, and is read where the pulse is.
         const float b1 = buffers.b1[atom];
-        const float b1_phase = buffers.b1_phase[atom];
+        const float b1_phase = buffers.off_axis ? buffers.b1_phase[atom] : 0.0F;
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
             damping.set(damping_rate, dt);
-            const float wout = washout_out(washout_rate, dt);
+            const float wout = flowing ? washout_out(washout_rate, dt) : 1.0F;
             const float e1 = std::exp(-r1 * dt) * wout;
             const float e2 = std::exp(-r2 * dt) * wout;
             // The exchange operator is a property of the interval, not of a
@@ -4021,13 +4066,18 @@ void simulate_range(
                     wout
                 )
                 : TwoPoolTransverse<Complex>{};
-            const float off_angle = -2.0F * PI * buffers.b0[atom] * dt;
+            const float off_angle =
+                buffers.off_axis ? -2.0F * PI * buffers.b0[atom] * dt : 0.0F;
             for (std::int64_t state = 0; state < state_count; ++state) {
                 const std::size_t index = static_cast<std::size_t>(state);
                 const float damp_transverse = damping.transverse[index];
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
-                flow_turn(flow_rate, dt, index, turn_longitudinal, turn_transverse);
+                if (flowing) {
+                    flow_turn(
+                        flow_rate, dt, index, turn_longitudinal, turn_transverse
+                    );
+                }
                 // Flow winds the transverse states through the same rotation
                 // off-resonance does, so the two phases add before either is
                 // taken; the longitudinal states carry a phase of their own.
@@ -4035,8 +4085,8 @@ void simulate_range(
                     // Both pools take the same off-resonance and the same
                     // per-order damping; what separates them is the chemical
                     // shift, which the exchange operator already carries.
-                    const Complex carried = std::polar(
-                        damp_transverse, off_angle + turn_transverse
+                    const Complex carried = turned(
+                        damp_transverse, off_angle + turn_transverse, turning
                     );
                     const Complex free_plus = fplus[index];
                     const Complex bound_plus_state = bound_plus[index];
@@ -4057,8 +4107,8 @@ void simulate_range(
                     bound_minus[index] = (std::conj(across.e21) * free_minus
                         + std::conj(across.e22) * bound_minus_state) * conjugated;
                 } else {
-                    const Complex transverse = std::polar(
-                        e2 * damp_transverse, off_angle + turn_transverse
+                    const Complex transverse = turned(
+                        e2 * damp_transverse, off_angle + turn_transverse, turning
                     );
                     fplus[index] *= transverse;
                     fminus[index] *= std::conj(transverse);
@@ -4067,7 +4117,7 @@ void simulate_range(
                 // order-n states describe one dephasing configuration, and a
                 // second pool has no diffusion coefficient of its own.
                 const Complex spin =
-                    std::polar(damping.longitudinal[index], turn_longitudinal);
+                    turned(damping.longitudinal[index], turn_longitudinal, flowing);
                 if constexpr (THREE) {
                     // The operator was formed in double and is read here as
                     // the float32 it has been narrowed to; the state loop is
@@ -4514,6 +4564,11 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
+    // Hoisted out of the three state loops below -- the recording forward,
+    // the replay and the adjoint -- each of which takes two turns per state
+    // per event.
+    const bool turning = primal.off_axis || primal.moving;
+    const bool flowing = primal.moving;
     const std::size_t states = static_cast<std::size_t>(state_count);
     // A second pool rides along the trajectory as blocks of its own: it enters
     // an event as its own vector and the RF operator acts on it, so the
@@ -4606,17 +4661,18 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             SATURATED ? primal.bound_exchange[atom] : 0.0F;
         const float transverse_free =
             1.0F - bound_fraction - (THREE ? semisolid_fraction : 0.0F);
-        const float b0 = primal.b0[atom];
+        const float b0 = primal.off_axis ? primal.b0[atom] : 0.0F;
         const float m0 = primal.m0[atom];
         // With one shim the transmit field is a property of the voxel and
         // lifts out of the event loop; with several it belongs to the shim a
         // pulse drives, and is read where the pulse is.
         const float b1 = primal.b1[atom];
-        const float b1_phase = primal.b1_phase[atom];
+        const float b1_phase = primal.off_axis ? primal.b1_phase[atom] : 0.0F;
         const bool shimmed = primal.shim_count > 1;
         const float efficiency = primal.inversion_efficiency[atom];
-        const float damping_rate = primal.diffusion[atom];
-        const float velocity = primal.velocity[atom];
+        const float damping_rate =
+            primal.diffusing ? primal.diffusion[atom] : 0.0F;
+        const float velocity = flowing ? primal.velocity[atom] : 0.0F;
         const float flow_rate = velocity * primal.flow_scale;
         const float washout_rate = std::fabs(velocity) * primal.washout_scale;
 
@@ -4663,10 +4719,15 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             for (std::size_t state = 0; state < states; ++state) {
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
-                flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
+                if (flowing) {
+                    flow_turn(
+                        flow_rate, dt, state, turn_longitudinal, turn_transverse
+                    );
+                }
                 if constexpr (PAIRED) {
-                    const Complex carried = std::polar(
-                        damping.transverse[state], off_angle + turn_transverse
+                    const Complex carried = turned(
+                        damping.transverse[state], off_angle + turn_transverse,
+                        turning
                     );
                     const Complex free_plus = fplus[state];
                     const Complex pool_plus = bound_plus[state];
@@ -4682,14 +4743,15 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     bound_minus[state] = (std::conj(across.e21) * free_minus
                         + std::conj(across.e22) * pool_minus) * conjugated;
                 } else {
-                    const Complex transverse = std::polar(
-                        e2 * damping.transverse[state], off_angle + turn_transverse
+                    const Complex transverse = turned(
+                        e2 * damping.transverse[state],
+                        off_angle + turn_transverse, turning
                     );
                     fplus[state] *= transverse;
                     fminus[state] *= std::conj(transverse);
                 }
-                const Complex spin = std::polar(
-                    damping.longitudinal[state], turn_longitudinal
+                const Complex spin = turned(
+                    damping.longitudinal[state], turn_longitudinal, flowing
                 );
                 if constexpr (THREE) {
                     const Complex pools_in[3] = {
@@ -4900,7 +4962,7 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 )
                 : TwoPoolTransverse<Complex>{};
             const float angle = -2.0F * PI * b0 * dt;
-            const Complex phase = std::polar(1.0F, angle);
+            const Complex phase = turned(1.0F, angle, primal.off_axis);
             const Complex off_resonance = e2 * phase;
             const Complex conjugate_off = std::conj(off_resonance);
             const std::uint8_t action = primal.action[event];
@@ -4909,10 +4971,14 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
             for (std::size_t state = 0; state < states; ++state) {
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
-                flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
+                if (flowing) {
+                    flow_turn(
+                        flow_rate, dt, state, turn_longitudinal, turn_transverse
+                    );
+                }
                 if constexpr (PAIRED) {
-                    const Complex carried = std::polar(
-                        damping.transverse[state], angle + turn_transverse
+                    const Complex carried = turned(
+                        damping.transverse[state], angle + turn_transverse, turning
                     );
                     const Complex free_plus = fplus[state];
                     const Complex pool_plus = bound_plus[state];
@@ -4928,14 +4994,15 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                     bound_minus_relaxed[state] = (std::conj(across.e21) * free_minus
                         + std::conj(across.e22) * pool_minus) * conjugated;
                 } else {
-                    const Complex transverse = std::polar(
-                        e2 * damping.transverse[state], angle + turn_transverse
+                    const Complex transverse = turned(
+                        e2 * damping.transverse[state], angle + turn_transverse,
+                        turning
                     );
                     fplus_relaxed[state] = fplus[state] * transverse;
                     fminus_relaxed[state] = fminus[state] * std::conj(transverse);
                 }
-                const Complex spin = std::polar(
-                    damping.longitudinal[state], turn_longitudinal
+                const Complex spin = turned(
+                    damping.longitudinal[state], turn_longitudinal, flowing
                 );
                 if constexpr (THREE) {
                     const Complex pools_in[3] = {
@@ -5285,10 +5352,15 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 const float damp_longitudinal = damping.longitudinal[state];
                 float turn_longitudinal = 0.0F;
                 float turn_transverse = 0.0F;
-                flow_turn(flow_rate, dt, state, turn_longitudinal, turn_transverse);
-                const Complex spin_transverse = std::polar(1.0F, turn_transverse);
+                if (flowing) {
+                    flow_turn(
+                        flow_rate, dt, state, turn_longitudinal, turn_transverse
+                    );
+                }
+                const Complex spin_transverse =
+                    turned(1.0F, turn_transverse, flowing);
                 const Complex spin_longitudinal =
-                    std::polar(1.0F, turn_longitudinal);
+                    turned(1.0F, turn_longitudinal, flowing);
                 const Complex carried = phase * damp_transverse * spin_transverse;
                 const Complex full_transverse = e2 * carried;
                 // The damping is homogeneous of degree one in every transverse
@@ -8314,9 +8386,13 @@ inline Buffers packed_buffers(
     const void* const dynamic_index = nullptr,
     const void* const lineshape = nullptr,
     const std::int64_t lineshape_bins = 0,
-    const float lineshape_step = 1.0F
+    const float lineshape_step = 1.0F,
+    const int features = FEATURE_ALL
 ) {
     Buffers buffers{};
+    buffers.off_axis = (features & FEATURE_OFF_AXIS) != 0;
+    buffers.moving = (features & FEATURE_MOVING) != 0;
+    buffers.diffusing = (features & FEATURE_DIFFUSING) != 0;
     const float** tissue[TISSUE_COUNT] = {
         &buffers.t1, &buffers.t2, &buffers.m0, &buffers.b1,
         &buffers.b1_phase, &buffers.b0, &buffers.inversion_efficiency,
@@ -8595,9 +8671,10 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     long long lineshape_bins = 0;
     double lineshape_step = 1.0;
     int pool_kind = 0;
+    int features = FEATURE_ALL;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLdLdi",
+            "OLLLLLiiddLLLdLdii",
             &pointers,
             &atom_count,
             &train_count,
@@ -8614,7 +8691,8 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
             &profile_step,
             &lineshape_bins,
             &lineshape_step,
-            &pool_kind
+            &pool_kind,
+            &features
         )) {
         return nullptr;
     }
@@ -8662,7 +8740,8 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
         tail_slot(raw, expected, Tail::PAIR_INDEX),
         tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
-        static_cast<float>(lineshape_step)
+        static_cast<float>(lineshape_step),
+        features
     );
 
     // TORCHSIM_LANES=1 selects a lane-vectorized forward that walks the
@@ -8832,9 +8911,10 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
     long long lineshape_bins = 0;
     double lineshape_step = 1.0;
     int pool_kind = 0;
+    int features = FEATURE_ALL;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLdLdi",
+            "OLLLLLiiddLLLdLdii",
             &pointers,
             &atom_count,
             &train_count,
@@ -8851,7 +8931,8 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
             &profile_step,
             &lineshape_bins,
             &lineshape_step,
-            &pool_kind
+            &pool_kind,
+            &features
         )) {
         return nullptr;
     }
@@ -8900,7 +8981,8 @@ PyObject* simulate_jvp(PyObject*, PyObject* arguments) {
         tail_slot(raw, expected, Tail::PAIR_INDEX),
         tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
-        static_cast<float>(lineshape_step)
+        static_cast<float>(lineshape_step),
+        features
     );
     JvpBuffers buffers{};
     buffers.primal = primal;
@@ -8952,9 +9034,10 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
     long long lineshape_bins = 0;
     double lineshape_step = 1.0;
     int pool_kind = 0;
+    int features = FEATURE_ALL;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLdLdi",
+            "OLLLLLiiddLLLdLdii",
             &pointers,
             &atom_count,
             &train_count,
@@ -8971,7 +9054,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
             &profile_step,
             &lineshape_bins,
             &lineshape_step,
-            &pool_kind
+            &pool_kind,
+            &features
         )) {
         return nullptr;
     }
@@ -9015,7 +9099,8 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         tail_slot(raw, expected, Tail::PAIR_INDEX),
         tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
-        static_cast<float>(lineshape_step)
+        static_cast<float>(lineshape_step),
+        features
     );
     VjpBuffers buffers{};
     buffers.primal = primal;
@@ -9322,9 +9407,10 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
     long long lineshape_bins = 0;
     double lineshape_step = 1.0;
     int pool_kind = 0;
+    int features = FEATURE_ALL;
     if (!PyArg_ParseTuple(
             arguments,
-            "OLLLLLiiddLLLdLdi",
+            "OLLLLLiiddLLLdLdii",
             &pointers,
             &atom_count,
             &train_count,
@@ -9341,7 +9427,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
             &profile_step,
             &lineshape_bins,
             &lineshape_step,
-            &pool_kind
+            &pool_kind,
+            &features
         )) {
         return nullptr;
     }
@@ -9387,7 +9474,8 @@ PyObject* simulate_vjp_jvp(PyObject*, PyObject* arguments) {
         tail_slot(raw, expected, Tail::PAIR_INDEX),
         tail_slot(raw, expected, Tail::ABSORPTION),
         static_cast<std::int64_t>(lineshape_bins),
-        static_cast<float>(lineshape_step)
+        static_cast<float>(lineshape_step),
+        features
     );
     VjpJvpBuffers buffers{};
     buffers.primal = primal;

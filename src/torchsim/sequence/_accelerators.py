@@ -39,6 +39,7 @@ from ._parameters import (
     NO_GEOMETRY,
     TISSUE_NAMES,
     Geometry,
+    feature_mask,
     tissue_gradient_height,
     tissue_gradient_rows,
 )
@@ -1981,6 +1982,7 @@ def _run_offloaded(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    features: frozenset[str] | None = None,
 ) -> torch.Tensor:
     """Stream a host-resident volume through the devices, chunk by chunk."""
     from ._epg_triton import simulate_into
@@ -2012,6 +2014,7 @@ def _run_offloaded(
             profile=profile,
             lineshape=lineshape,
             exchanging=exchanging,
+            features=features,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -2033,6 +2036,7 @@ def _run_offloaded_jvp(
     profile: Any = None,
     lineshape: Any = None,
     exchanging: bool = False,
+    features: frozenset[str] | None = None,
 ) -> torch.Tensor:
     """Stream a forward-mode pass; the seeds ride along with the tissue.
 
@@ -2081,6 +2085,7 @@ def _run_offloaded_jvp(
             profile=profile,
             lineshape=lineshape,
             exchanging=exchanging,
+            features=features,
         )
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
@@ -2313,7 +2318,7 @@ def _run_packed(
         _carries_the_pair(dynamic, "streamed")
         return _run_offloaded(
             tissue, events, _OFFLOAD, state_count, output_count, real_axis,
-            geometry, profile, lineshape, exchanging,
+            geometry, profile, lineshape, exchanging, features,
         )
     choice = _choose(
         "forward", tissue, events, output_count, state_count, real_axis
@@ -2323,7 +2328,7 @@ def _run_packed(
         _carries_the_pair(dynamic, "streamed")
         return _run_offloaded(
             tissue, events, choice.offload, state_count, output_count, real_axis,
-            geometry, profile, lineshape, exchanging,
+            geometry, profile, lineshape, exchanging, features,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2364,6 +2369,7 @@ def _run_packed(
                         profile=profile,
                         lineshape=lineshape,
                         exchanging=exchanging,
+                        features=features,
                     ),
                 )
                 for begin, end, device in shards
@@ -2380,6 +2386,7 @@ def _run_packed(
             lineshape=lineshape,
             exchanging=exchanging,
             dynamic=dynamic,
+            features=features,
         )
     from torchsim import _epg_cpu
 
@@ -2417,6 +2424,7 @@ def _run_packed(
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
         _pool_kind(lineshape, exchanging),
+        feature_mask(features, geometry),
     )
     return torch.complex(output_real, output_imag)
 
@@ -2460,6 +2468,45 @@ def _run_packed_vjp(
         real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
+    # A first-order adjoint needs no dual: on a device it is its own kernel,
+    # recording half the trajectory and holding half the state the
+    # forward-over-reverse pass does. Only for a run that kernel covers -- one
+    # pool, one transmit field, no tabulated rotation, no per-voxel pair -- and
+    # only where the whole volume fits one launch, since the streamed and
+    # sharded routes carry their own buffers.
+    if (
+        tissue[0].device.type == "cuda"
+        and profile is None
+        and lineshape is None
+        and not exchanging
+        and dynamic is None
+        and _shim_count(tissue) == 1
+        and not _shard_bounds(_train_count(events))
+        and _OFFLOAD is None
+        and not _leaves_the_host(
+            "adjoint", tissue, events, output_count, state_count, real_axis
+        )
+    ):
+        from ._epg_triton import simulate_real_vjp, simulate_vjp
+
+        if real_axis == 1:
+            return simulate_real_vjp(
+                tissue,
+                events,
+                grad_output,
+                state_count=state_count,
+                output_count=output_count,
+                features=features,
+            )
+        return simulate_vjp(
+            tissue,
+            events,
+            grad_output,
+            state_count=state_count,
+            output_count=output_count,
+            geometry=geometry,
+            features=features,
+        )
     if tissue[0].device.type != "cpu" or _leaves_the_host(
         "adjoint", tissue, events, output_count, state_count, real_axis
     ):
@@ -2537,6 +2584,7 @@ def _run_packed_vjp(
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
         _pool_kind(lineshape, exchanging),
+        feature_mask(features, geometry),
     )
     if dynamic is not None:
         return (*atom_grads, duration_grad, flip_grad, phase_grad, pair_grad)
@@ -2741,6 +2789,7 @@ def _run_packed_vjp_jvp(
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
         _pool_kind(lineshape, exchanging),
+        feature_mask(features, geometry),
     )
     # value part -> d/d(tangent inputs); tangent part -> d/d(primal inputs)
     if dynamic is not None:
@@ -2799,6 +2848,7 @@ def _run_packed_jvp(
             profile,
             lineshape,
             exchanging,
+            features,
         )
     choice = _choose("jvp", tissue, events, output_count, state_count, real_axis)
     streaming = choice is not None and choice.where == "stream"
@@ -2817,6 +2867,7 @@ def _run_packed_jvp(
             profile,
             lineshape,
             exchanging,
+            features,
         )
     if choice is not None and choice.where != "stream" and _elsewhere(choice, tissue):
         home = _home(choice)
@@ -2860,6 +2911,7 @@ def _run_packed_jvp(
                         profile=profile,
                         lineshape=lineshape,
                         exchanging=exchanging,
+                        features=features,
                     ),
                 )
                 for begin, end, device in shards
@@ -2879,6 +2931,7 @@ def _run_packed_jvp(
             exchanging=exchanging,
             dynamic=dynamic,
             dynamic_direction=dynamic_direction,
+            features=features,
         )
     from torchsim import _epg_cpu
 
@@ -2926,5 +2979,6 @@ def _run_packed_jvp(
         0 if lineshape is None else lineshape.bins,
         1.0 if lineshape is None else lineshape.step,
         _pool_kind(lineshape, exchanging),
+        feature_mask(features, geometry),
     )
     return torch.complex(output_real, output_imag)

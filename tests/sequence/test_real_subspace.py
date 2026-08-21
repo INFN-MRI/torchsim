@@ -683,3 +683,150 @@ def test_autograd_asks_for_what_the_graph_needs(monkeypatch):
     assert chosen and all(axis == 1 for axis in chosen)
     assert reference.abs().max() > 0.0
     assert ((automatic - reference).abs().max() / reference.abs().max()) < 1e-4
+
+
+# Enough voxels that the subspace verdict is worth reaching for on a device:
+# below the detection threshold the adjoint takes the complex kernel whatever
+# the states do, and the fast path would never be exercised.
+CUDA_VOXELS = 8192
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("state_count", [8, 10, 16, 17])
+def test_the_cuda_real_adjoint_agrees_with_the_second_order_kernel(state_count):
+    """The device first-order adjoint against the forward-over-reverse pass it
+    specializes, which is what produced this gradient before it existed.
+
+    Widths are swept because a reverse kernel has miscompiled silently at one
+    state count before, and a single width would not have caught it.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    description = fse_description(
+        _flip(),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=torch.pi / 2,
+        excitation_phase_rad=torch.pi / 2,
+    )
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cuda"),
+        rf_raster_time_s=1e-6,
+    )
+    events = _buffers(packed)
+    generator = torch.Generator().manual_seed(11)
+    wide = TissueProperties(
+        t1_ms=600.0 + 1200.0 * torch.rand(CUDA_VOXELS, generator=generator),
+        t2_ms=30.0 + 120.0 * torch.rand(CUDA_VOXELS, generator=generator),
+    )
+    prepared, _, _ = _prepare_tissue(wide, "cuda")
+    assert real_subspace_axis(events, prepared) == 1
+
+    seed = torch.randn(
+        (events[2].shape[0], CUDA_VOXELS, packed.output_count),
+        dtype=torch.complex64,
+        device="cuda",
+        generator=torch.Generator(device="cuda").manual_seed(3),
+    )
+    wanted = tuple(index in INSIDE_THE_SUBSPACE for index in range(len(FLOAT_NAMES)))
+    actual = _run_packed_vjp(
+        prepared,
+        events,
+        seed,
+        state_count=state_count,
+        output_count=packed.output_count,
+        threads=1,
+        wanted=wanted,
+    )
+
+    # The route this gradient took before the first-order kernel existed: the
+    # forward-over-reverse pass, handed a direction of zeros.
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+    _, expected = _accelerators._run_packed_vjp_jvp(
+        prepared,
+        events,
+        still,
+        seed,
+        state_count=state_count,
+        output_count=packed.output_count,
+        threads=1,
+        real_axis=1,
+        wanted=wanted,
+    )
+
+    compared = 0
+    for index in INSIDE_THE_SUBSPACE:
+        scale = expected[index].abs().max()
+        if scale == 0:
+            assert actual[index].abs().max() == 0
+            continue
+        assert ((expected[index] - actual[index]).abs().max() / scale) < 1e-4
+        compared += 1
+    assert compared > 3
+    for index in OUTSIDE_THE_SUBSPACE:
+        assert actual[index].abs().max() == 0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass():
+    """The first-order kernel is the point of this route, so the test above has
+    to be reaching it rather than agreeing with itself.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    description = fse_description(
+        _flip(),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=torch.pi / 2,
+        excitation_phase_rad=torch.pi / 2,
+    )
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cuda"),
+        rf_raster_time_s=1e-6,
+    )
+    events = _buffers(packed)
+    generator = torch.Generator().manual_seed(11)
+    wide = TissueProperties(
+        t1_ms=600.0 + 1200.0 * torch.rand(CUDA_VOXELS, generator=generator),
+        t2_ms=30.0 + 120.0 * torch.rand(CUDA_VOXELS, generator=generator),
+    )
+    prepared, _, _ = _prepare_tissue(wide, "cuda")
+    seed = torch.zeros(
+        (events[2].shape[0], CUDA_VOXELS, packed.output_count),
+        dtype=torch.complex64,
+        device="cuda",
+    )
+    wanted = tuple(index in INSIDE_THE_SUBSPACE for index in range(len(FLOAT_NAMES)))
+
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+    _accelerators._run_packed_vjp_jvp = (
+        lambda *arguments, **keywords: reached.append(True)
+        or original(*arguments, **keywords)
+    )
+    try:
+        _run_packed_vjp(
+            prepared,
+            events,
+            seed,
+            state_count=10,
+            output_count=packed.output_count,
+            threads=1,
+            wanted=wanted,
+        )
+    finally:
+        _accelerators._run_packed_vjp_jvp = original
+
+    assert not reached

@@ -15,6 +15,7 @@ from triton.language.extra import libdevice
 
 from ._parameters import (
     NO_GEOMETRY,
+    feature_flags as _feature_flags,
     Geometry,
     tissue_gradient_bases,
     tissue_gradient_height,
@@ -1057,8 +1058,6 @@ def _three_pool_weigh_jvp(
     )
 
 
-
-
 @triton.jit
 def _three_pool_step_jvp(
     r1_free, d_r1_free, r1_pool_b, d_r1_pool_b, r1_bound, d_r1_bound,
@@ -1357,7 +1356,6 @@ def _three_pool_step_jvp(
         d_grow_pool_b.to(tl.float32),
         d_grow_bound.to(tl.float32),
     )
-
 
 
 @triton.jit
@@ -4089,6 +4087,555 @@ def _rotation_block(
 
 
 @triton.jit
+def _rotation_coefficients(a, b, c, d, p1r, p1i, p2r, p2i, pcr, pci):
+    """Seven of the nine rotation coefficients; the rest follow by symmetry.
+
+    ``t11`` repeats ``t00`` and ``t10`` is the conjugate of ``t01``, so the
+    caller derives those. Feeding ``(cos, sin)`` gives the rotation itself and
+    ``(sin, cos)`` rearranged gives its derivative in the flip angle, which is
+    why this is one routine rather than two.
+    """
+    t00 = (a, 0.0 * a)
+    t01 = (b * p2r, b * p2i)
+    t02 = _complex_mul(0.0 * c, -c, p1r, p1i)
+    t12 = _complex_mul(0.0 * c, c, pcr, pci)
+    t20 = _complex_mul(0.0 * c, -0.5 * c, pcr, pci)
+    t21 = _complex_mul(0.0 * c, 0.5 * c, p1r, p1i)
+    t22 = (d, 0.0 * d)
+    return t00, t01, t02, t12, t20, t21, t22
+
+
+@triton.jit
+def _epg_vjp_kernel(
+    t1,
+    t2,
+    m0,
+    b1,
+    b1_phase,
+    b0,
+    inversion_efficiency,
+    diffusion,
+    velocity,
+    duration,
+    kind,
+    flip,
+    phase,
+    action,
+    output_index,
+    grad_output_real,
+    grad_output_imag,
+    grad_tissue,
+    grad_flip,
+    grad_phase,
+    grad_duration,
+    trajectory_r,
+    trajectory_i,
+    scratch_pr,
+    scratch_pi,
+    scratch_mr,
+    scratch_mi,
+    problem_base,
+    problem_end,
+    atom_count,
+    train_count,
+    event_count,
+    output_count,
+    flow_scale,
+    washout_scale,
+    state_count: tl.constexpr,
+    off_axis: tl.constexpr,
+    moving: tl.constexpr,
+    diffusing: tl.constexpr,
+    block_states: tl.constexpr,
+    problems: tl.constexpr,
+):
+    problem = problem_base + tl.program_id(0) * problems
+    problem = problem + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    active_atom = problem < problem_end
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    local = problem - problem_base
+    scratch_offset = local * state_count
+    sp_r = scratch_pr + scratch_offset
+    sp_i = scratch_pi + scratch_offset
+    sm_r = scratch_mr + scratch_offset
+    sm_i = scratch_mi + scratch_offset
+    record_stride = 3 * state_count
+    trajectory = local * event_count * record_stride + state
+    minus_plane = state_count
+    long_plane = 2 * state_count
+
+    empty = tl.zeros((problems, block_states), tl.float32)
+    pvr = empty
+    pvi = empty
+    mvr = empty
+    mvi = empty
+    zvr = empty + tl.where(state == 0, 1.0, 0.0)
+    zvi = empty
+
+    atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
+    atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
+    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_b1_phase = 0.0
+    atom_b0 = 0.0
+    if off_axis:
+        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
+        atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+    atom_inv = tl.load(inversion_efficiency + atom, mask=active_atom, other=1.0)
+    atom_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    atom_flow = 0.0
+    direction = 0.0
+    atom_washout = 0.0
+    if moving:
+        atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+        atom_flow = atom_velocity * flow_scale
+        # |v| has no derivative at the origin, so a still voxel contributes
+        # none.
+        direction = (atom_velocity > 0.0).to(tl.float32) - (
+            atom_velocity < 0.0
+        ).to(tl.float32)
+        atom_washout = tl.abs(atom_velocity) * washout_scale
+    order = state.to(tl.float32)
+    longitudinal_weight = order * order
+    transverse_weight = longitudinal_weight + order + 0.3333333333333333
+    r1_value = 1000.0 / atom_t1
+    r2_value = 1000.0 / atom_t2
+
+    event_base = train * event_count
+    for event in range(0, event_count):
+        slot = trajectory + event * record_stride
+        tl.store(trajectory_r + slot, pvr, mask=state_mask)
+        tl.store(trajectory_i + slot, pvi, mask=state_mask)
+        tl.store(trajectory_r + slot + minus_plane, mvr, mask=state_mask)
+        tl.store(trajectory_i + slot + minus_plane, mvi, mask=state_mask)
+        tl.store(trajectory_r + slot + long_plane, zvr, mask=state_mask)
+        tl.store(trajectory_i + slot + long_plane, zvi, mask=state_mask)
+
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        wout_value = 1.0
+        if moving:
+            wout_value = _washout(atom_washout, dt_value)
+        e1_value = tl.exp(-r1_value * dt_value) * wout_value
+        e2_value = tl.exp(-r2_value * dt_value) * wout_value
+        damp_z = 1.0
+        damp_t = 1.0
+        if diffusing:
+            damp_z, damp_t = _damping(atom_damping, dt_value, order)
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value = 1.0 - e1_value
+        bare1_value = e1_value
+        bare2_value = e2_value
+        e1_value = bare1_value * damp_z
+        e2_value = bare2_value * damp_t
+        turn_t = 0.0
+        szr, szi = 1.0, 0.0
+        if moving:
+            turn_z, turn_t = _flow(atom_flow, dt_value, order)
+            szr, szi = tl.cos(turn_z), tl.sin(turn_z)
+        qr, qi = 1.0, 0.0
+        if off_axis or moving:
+            angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value) + turn_t
+            qr, qi = tl.cos(angle_value), tl.sin(angle_value)
+        ovr, ovi = e2_value * qr, e2_value * qi
+        lvr, lvi = e1_value * szr, e1_value * szi
+
+        pvr, pvi = _complex_mul(ovr, ovi, pvr, pvi)
+        mvr, mvi = _complex_mul(ovr, -ovi, mvr, mvi)
+        zvr, zvi = _complex_mul(lvr, lvi, zvr, zvi)
+        zvr += tl.where(state == 0, recovery_value, 0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        pre_shift = (event_action & 1) != 0
+        svr, svi, wvr, wvi = _shift(
+            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
+        )
+        pvr = tl.where(pre_shift, svr, pvr)
+        pvi = tl.where(pre_shift, svi, pvi)
+        mvr = tl.where(pre_shift, wvr, mvr)
+        mvi = tl.where(pre_shift, wvi, mvi)
+
+        event_kind = tl.load(kind + event)
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        zvr = tl.where(invert, -atom_inv * zvr, zvr)
+        zvi = tl.where(invert, -atom_inv * zvi, zvi)
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        alpha_value = event_flip * atom_b1
+        phi_value = event_phase + atom_b1_phase
+        cos_value = tl.cos(alpha_value)
+        sin_value = tl.sin(alpha_value)
+        p1r, p1i = tl.cos(phi_value), tl.sin(phi_value)
+        p2r, p2i = _complex_mul(p1r, p1i, p1r, p1i)
+        t00, t01, t02, t12, t20, t21, t22 = _rotation_coefficients(
+            0.5 * (1.0 + cos_value),
+            0.5 * (1.0 - cos_value),
+            sin_value,
+            cos_value,
+            p1r, p1i, p2r, p2i, p1r, -p1i,
+        )
+        a0 = _complex_mul(t00[0], t00[1], pvr, pvi)
+        a1 = _complex_mul(t01[0], t01[1], mvr, mvi)
+        a2 = _complex_mul(t02[0], t02[1], zvr, zvi)
+        b0_ = _complex_mul(t01[0], -t01[1], pvr, pvi)
+        b1_ = _complex_mul(t00[0], t00[1], mvr, mvi)
+        b2 = _complex_mul(t12[0], t12[1], zvr, zvi)
+        c0 = _complex_mul(t20[0], t20[1], pvr, pvi)
+        c1 = _complex_mul(t21[0], t21[1], mvr, mvi)
+        c2 = _complex_mul(t22[0], t22[1], zvr, zvi)
+
+        rotate = is_rf & ~is_inversion
+        pvr = tl.where(rotate, a0[0] + a1[0] + a2[0], pvr)
+        pvi = tl.where(rotate, a0[1] + a1[1] + a2[1], pvi)
+        mvr = tl.where(rotate, b0_[0] + b1_[0] + b2[0], mvr)
+        mvi = tl.where(rotate, b0_[1] + b1_[1] + b2[1], mvi)
+        zvr = tl.where(rotate, c0[0] + c1[0] + c2[0], zvr)
+        zvi = tl.where(rotate, c0[1] + c1[1] + c2[1], zvi)
+
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        svr, svi, wvr, wvi = _shift(
+            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
+        )
+        pvr = tl.where(do_shift, svr, pvr)
+        pvi = tl.where(do_shift, svi, pvi)
+        mvr = tl.where(do_shift, wvr, mvr)
+        mvi = tl.where(do_shift, wvi, mvi)
+        spoil = (event_action & 8) != 0
+        pvr = tl.where(spoil, 0.0, pvr)
+        pvi = tl.where(spoil, 0.0, pvi)
+        mvr = tl.where(spoil, 0.0, mvr)
+        mvi = tl.where(spoil, 0.0, mvi)
+
+    # ---- reverse ----
+    pbvr = empty
+    pbvi = empty
+    mbvr = empty
+    mbvi = empty
+    zbvr = empty
+    zbvi = empty
+    zero = tl.zeros((problems, 1), tl.float32)
+    g_diffv = zero
+    g_flowv = zero
+    g_washv = zero
+    g_t1v = zero
+    g_t2v = zero
+    g_m0v = zero
+    g_b1v = zero
+    g_b1pv = zero
+    g_b0v = zero
+    g_invv = zero
+
+    for reverse in range(0, event_count):
+        event = event_count - 1 - reverse
+        slot = trajectory + event * record_stride
+        xpvr = tl.load(trajectory_r + slot, mask=state_mask, other=0.0)
+        xpvi = tl.load(trajectory_i + slot, mask=state_mask, other=0.0)
+        xmvr = tl.load(trajectory_r + slot + minus_plane, mask=state_mask, other=0.0)
+        xmvi = tl.load(trajectory_i + slot + minus_plane, mask=state_mask, other=0.0)
+        xzvr = tl.load(trajectory_r + slot + long_plane, mask=state_mask, other=0.0)
+        xzvi = tl.load(trajectory_i + slot + long_plane, mask=state_mask, other=0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        event_kind = tl.load(kind + event)
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        wout_value = 1.0
+        if moving:
+            wout_value = _washout(atom_washout, dt_value)
+        dry1_value = tl.exp(-r1_value * dt_value)
+        dry2_value = tl.exp(-r2_value * dt_value)
+        e1_value = dry1_value * wout_value
+        e2_value = dry2_value * wout_value
+        damp_z = 1.0
+        damp_t = 1.0
+        if diffusing:
+            damp_z, damp_t = _damping(atom_damping, dt_value, order)
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value = 1.0 - e1_value
+        bare1_value = e1_value
+        bare2_value = e2_value
+        e1_value = bare1_value * damp_z
+        e2_value = bare2_value * damp_t
+        turn_t = 0.0
+        szr, szi = 1.0, 0.0
+        if moving:
+            turn_z, turn_t = _flow(atom_flow, dt_value, order)
+            szr, szi = tl.cos(turn_z), tl.sin(turn_z)
+        qr, qi = 1.0, 0.0
+        if off_axis or moving:
+            angle_value = -2.0 * 3.141592653589793 * (atom_b0 * dt_value) + turn_t
+            qr, qi = tl.cos(angle_value), tl.sin(angle_value)
+        ovr, ovi = e2_value * qr, e2_value * qi
+        lvr, lvi = e1_value * szr, e1_value * szi
+
+        # Replay the intra-event stages from the recorded entry state.
+        rpvr, rpvi = _complex_mul(ovr, ovi, xpvr, xpvi)
+        rmvr, rmvi = _complex_mul(ovr, -ovi, xmvr, xmvi)
+        rzvr, rzvi = _complex_mul(lvr, lvi, xzvr, xzvi)
+        rzvr += tl.where(state == 0, recovery_value, 0.0)
+
+        pre_shift = (event_action & 1) != 0
+        svr, svi, wvr, wvi = _shift(
+            rpvr, rpvi, rmvr, rmvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        spvr = tl.where(pre_shift, svr, rpvr)
+        spvi = tl.where(pre_shift, svi, rpvi)
+        smvr = tl.where(pre_shift, wvr, rmvr)
+        smvi = tl.where(pre_shift, wvi, rmvi)
+
+        # Undo the trailing spoil or shift.
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        spoil = (event_action & 8) != 0
+        avr, avi, bvr, bvi = _shift_adjoint(
+            pbvr, pbvi, mbvr, mbvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        trailing = do_shift & ~spoil
+        pbvr = tl.where(spoil, 0.0, tl.where(trailing, avr, pbvr))
+        pbvi = tl.where(spoil, 0.0, tl.where(trailing, avi, pbvi))
+        mbvr = tl.where(spoil, 0.0, tl.where(trailing, bvr, mbvr))
+        mbvi = tl.where(spoil, 0.0, tl.where(trailing, bvi, mbvi))
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+
+        # ---- recorded sample ----
+        record = ((event_action & 32) != 0) & (event_kind == 2)
+        out = tl.load(output_index + event)
+        seed_mask = active_atom & record & (out >= 0)
+        seed_real = tl.load(
+            grad_output_real + problem * output_count + out, mask=seed_mask, other=0.0
+        )
+        seed_imag = tl.load(
+            grad_output_imag + problem * output_count + out, mask=seed_mask, other=0.0
+        )
+        dvr, dvi = tl.cos(-event_phase), tl.sin(-event_phase)
+        # grad_m0 = Re(conj(seed) * recorded * demodulation)
+        wr, wi = _complex_mul(spvr, spvi, dvr, dvi)
+        g_m0v += tl.sum(
+            tl.where(state == 0, seed_real * wr + seed_imag * wi, 0.0), axis=1
+        )[:, None]
+        # grad_phase = Re(conj(seed) * m0 * recorded * (-i) * demodulation)
+        yr, yi = atom_m0 * spvr, atom_m0 * spvi
+        yr, yi = yi, -yr
+        yr, yi = _complex_mul(yr, yi, dvr, dvi)
+        tl.atomic_add(
+            grad_phase + event_base + event,
+            tl.sum(
+                tl.where(state == 0, seed_real * yr + seed_imag * yi, 0.0), axis=1
+            )[:, None],
+            mask=seed_mask,
+        )
+        # fplus_bar[0] += conj(m0 * demodulation) * seed
+        kr, ki = atom_m0 * dvr, atom_m0 * dvi
+        sr, si = _complex_mul(kr, -ki, seed_real, seed_imag)
+        pbvr += tl.where(state == 0, sr, 0.0)
+        pbvi += tl.where(state == 0, si, 0.0)
+
+        # ---- RF adjoint ----
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        g_invv += tl.sum(
+            tl.where(invert, zbvr * -rzvr + zbvi * -rzvi, 0.0), axis=1
+        )[:, None]
+        zbvr = tl.where(invert, -atom_inv * zbvr, zbvr)
+        zbvi = tl.where(invert, -atom_inv * zbvi, zbvi)
+
+        alpha_value = event_flip * atom_b1
+        phi_value = event_phase + atom_b1_phase
+        cos_value = tl.cos(alpha_value)
+        sin_value = tl.sin(alpha_value)
+        p1r, p1i = tl.cos(phi_value), tl.sin(phi_value)
+        p2r, p2i = _complex_mul(p1r, p1i, p1r, p1i)
+        t00, t01, t02, t12, t20, t21, t22 = _rotation_coefficients(
+            0.5 * (1.0 + cos_value),
+            0.5 * (1.0 - cos_value),
+            sin_value,
+            cos_value,
+            p1r, p1i, p2r, p2i, p1r, -p1i,
+        )
+        d00, d01, d02, d12, d20, d21, d22 = _rotation_coefficients(
+            -0.5 * sin_value,
+            0.5 * sin_value,
+            cos_value,
+            -sin_value,
+            p1r, p1i, p2r, p2i, p1r, -p1i,
+        )
+
+        # d/dalpha, contracted with the adjoint.
+        row0 = _complex_mul(d00[0], d00[1], spvr, spvi)
+        add1 = _complex_mul(d01[0], d01[1], smvr, smvi)
+        add2 = _complex_mul(d02[0], d02[1], rzvr, rzvi)
+        alpha_v = pbvr * (row0[0] + add1[0] + add2[0])
+        alpha_v += pbvi * (row0[1] + add1[1] + add2[1])
+        row0 = _complex_mul(d01[0], -d01[1], spvr, spvi)
+        add1 = _complex_mul(d00[0], d00[1], smvr, smvi)
+        add2 = _complex_mul(d12[0], d12[1], rzvr, rzvi)
+        alpha_v += mbvr * (row0[0] + add1[0] + add2[0])
+        alpha_v += mbvi * (row0[1] + add1[1] + add2[1])
+        row0 = _complex_mul(d20[0], d20[1], spvr, spvi)
+        add1 = _complex_mul(d21[0], d21[1], smvr, smvi)
+        add2 = _complex_mul(d22[0], d22[1], rzvr, rzvi)
+        alpha_v += zbvr * (row0[0] + add1[0] + add2[0])
+        alpha_v += zbvi * (row0[1] + add1[1] + add2[1])
+
+        # d/dphi, where only the phase factors carry the dependence.
+        u1 = _complex_mul(t01[0], t01[1], smvr, smvi)
+        u2 = _complex_mul(t02[0], t02[1], rzvr, rzvi)
+        ur, ui = -(2.0 * u1[1] + u2[1]), 2.0 * u1[0] + u2[0]
+        phi_v = pbvr * ur + pbvi * ui
+        u1 = _complex_mul(t01[0], -t01[1], spvr, spvi)
+        u2 = _complex_mul(t12[0], t12[1], rzvr, rzvi)
+        ur, ui = 2.0 * u1[1] + u2[1], -2.0 * u1[0] - u2[0]
+        phi_v += mbvr * ur + mbvi * ui
+        u1 = _complex_mul(t20[0], t20[1], spvr, spvi)
+        u2 = _complex_mul(t21[0], t21[1], smvr, smvi)
+        ur, ui = -(u2[1] - u1[1]), u2[0] - u1[0]
+        phi_v += zbvr * ur + zbvi * ui
+
+        rotate = is_rf & ~is_inversion
+        grad_alpha_v = tl.sum(tl.where(rotate, alpha_v, 0.0), axis=1)[:, None]
+        grad_phi_v = tl.sum(tl.where(rotate, phi_v, 0.0), axis=1)[:, None]
+
+        # Conjugate transpose of the rotation.
+        n0 = _complex_mul(t00[0], -t00[1], pbvr, pbvi)
+        n1 = _complex_mul(t01[0], t01[1], mbvr, mbvi)
+        n2 = _complex_mul(t20[0], -t20[1], zbvr, zbvi)
+        q0 = _complex_mul(t01[0], -t01[1], pbvr, pbvi)
+        q1 = _complex_mul(t00[0], -t00[1], mbvr, mbvi)
+        q2 = _complex_mul(t21[0], -t21[1], zbvr, zbvi)
+        w0 = _complex_mul(t02[0], -t02[1], pbvr, pbvi)
+        w1 = _complex_mul(t12[0], -t12[1], mbvr, mbvi)
+        w2 = _complex_mul(t22[0], -t22[1], zbvr, zbvi)
+        pbvr = tl.where(rotate, n0[0] + n1[0] + n2[0], pbvr)
+        pbvi = tl.where(rotate, n0[1] + n1[1] + n2[1], pbvi)
+        mbvr = tl.where(rotate, q0[0] + q1[0] + q2[0], mbvr)
+        mbvi = tl.where(rotate, q0[1] + q1[1] + q2[1], mbvi)
+        zbvr = tl.where(rotate, w0[0] + w1[0] + w2[0], zbvr)
+        zbvi = tl.where(rotate, w0[1] + w1[1] + w2[1], zbvi)
+
+        writes_flip = active_atom & rotate
+        tl.atomic_add(
+            grad_flip + event_base + event,
+            grad_alpha_v * atom_b1,
+            mask=writes_flip,
+        )
+        tl.atomic_add(
+            grad_phase + event_base + event, grad_phi_v, mask=writes_flip
+        )
+        g_b1v += grad_alpha_v * event_flip
+        g_b1pv += grad_phi_v
+
+        avr, avi, bvr, bvi = _shift_adjoint(
+            pbvr, pbvi, mbvr, mbvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
+            state_count,
+        )
+        pbvr = tl.where(pre_shift, avr, pbvr)
+        pbvi = tl.where(pre_shift, avi, pbvi)
+        mbvr = tl.where(pre_shift, bvr, mbvr)
+        mbvi = tl.where(pre_shift, bvi, mbvi)
+
+        # ---- relaxation and off-resonance adjoint ----
+        # The damping is homogeneous of degree one in every transverse state it
+        # acts on, so its gradient times the damping itself is the cotangent
+        # taken against the states the interval leaves.
+        pq = _complex_mul(qr, qi, xpvr, xpvi)
+        mq = _complex_mul(qr, -qi, xmvr, xmvi)
+        bare_cot_v = pbvr * pq[0] + pbvi * pq[1]
+        bare_cot_v += mbvr * mq[0] + mbvi * mq[1]
+        grad_e2_v = tl.sum(bare_cot_v * damp_t, axis=1)[:, None]
+
+        per_angle_v = empty
+        if off_axis or moving:
+            po = _complex_mul(ovr, ovi, xpvr, xpvi)
+            mo = _complex_mul(ovr, -ovi, xmvr, xmvi)
+            # A turn of the transverse states and the off-resonance angle are
+            # the same derivative; only the weight each order carries differs.
+            per_angle_v = pbvr * -po[1] + pbvi * po[0]
+            per_angle_v -= mbvr * -mo[1] + mbvi * mo[0]
+        grad_angle_v = zero
+        if off_axis or moving:
+            grad_angle_v = tl.sum(per_angle_v, axis=1)[:, None]
+
+        spun = _complex_mul(szr, szi, xzvr, xzvi)
+        e1_v = zbvr * spun[0] + zbvi * spun[1]
+        grad_e1_v = tl.sum(e1_v * damp_z, axis=1)[:, None]
+        grad_e1_v -= tl.sum(tl.where(state == 0, zbvr, 0.0), axis=1)[:, None]
+        # The longitudinal states turn too, and by a whole order rather than
+        # the transverse half-order more.
+        zangle_v = empty
+        if moving:
+            zo = _complex_mul(lvr, lvi, xzvr, xzvi)
+            zangle_v = zbvr * -zo[1] + zbvi * zo[0]
+        zbvr, zbvi = _complex_mul(lvr, -lvi, zbvr, zbvi)
+
+        spread_v = zero
+        if diffusing:
+            # The rate and the interval multiply every order's b-weight, so
+            # both take a weighted sum rather than one scalar. Order zero
+            # carries no longitudinal weight, which keeps recovery out of this.
+            weighted_v = (
+                e1_v * bare1_value * damp_z * longitudinal_weight
+                + bare_cot_v * bare2_value * damp_t * transverse_weight
+            )
+            spread_v = tl.sum(weighted_v, axis=1)[:, None]
+            g_diffv += -spread_v * dt_value
+
+        wound_v = zero
+        wash_v = zero
+        if moving:
+            wound_v = tl.sum(
+                per_angle_v * (order + 0.5) + zangle_v * order, axis=1
+            )[:, None]
+            g_flowv += -wound_v * dt_value
+            # Washout scales both relaxation factors, so its gradient is the
+            # one they already carry, taken against the factors before that
+            # scaling. Past the clamp the interval has replaced the voxel
+            # outright and nothing further depends on the rate.
+            live = (atom_washout * dt_value < 1.0).to(tl.float32)
+            wash_v = -live * (grad_e1_v * dry1_value + grad_e2_v * dry2_value)
+            g_washv += wash_v * dt_value
+
+        pbvr, pbvi = _complex_mul(ovr, -ovi, pbvr, pbvi)
+        mbvr, mbvi = _complex_mul(ovr, ovi, mbvr, mbvi)
+
+        inverse1_value = 1000.0 / (atom_t1 * atom_t1)
+        inverse2_value = 1000.0 / (atom_t2 * atom_t2)
+        g_t1v += grad_e1_v * (bare1_value * dt_value * inverse1_value)
+        g_t2v += grad_e2_v * (bare2_value * dt_value * inverse2_value)
+
+        turn = -2.0 * 3.141592653589793
+        g_b0v += grad_angle_v * (turn * dt_value)
+
+        duration_v = -grad_e1_v * (r1_value * bare1_value)
+        duration_v -= grad_e2_v * (r2_value * bare2_value)
+        duration_v += grad_angle_v * (turn * atom_b0)
+        duration_v += -spread_v * atom_damping - wound_v * atom_flow
+        duration_v += wash_v * atom_washout
+        tl.atomic_add(
+            grad_duration + event_base + event, duration_v, mask=active_atom
+        )
+
+    velocity_v = g_flowv * flow_scale + g_washv * direction * washout_scale
+    values = (
+        g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv, velocity_v,
+    )
+    for parameter in tl.static_range(_FREE_POOL_COUNT):
+        tl.atomic_add(
+            grad_tissue + parameter * atom_count + atom,
+            values[parameter],
+            mask=active_atom,
+        )
+
+@triton.jit
 def _epg_vjp_jvp_kernel(
     t1,
     t2,
@@ -4179,10 +4726,9 @@ def _epg_vjp_jvp_kernel(
     profile_bins: tl.constexpr,
     dynamic: tl.constexpr,
     directed: tl.constexpr,
-    detuned: tl.constexpr,
-    phased: tl.constexpr,
-    flowing: tl.constexpr,
-    washing: tl.constexpr,
+    off_axis: tl.constexpr,
+    moving: tl.constexpr,
+    diffusing: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
     block_states: tl.constexpr,
@@ -4336,10 +4882,9 @@ def _epg_vjp_jvp_kernel(
     atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
     atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
-    if phased:
-        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
     atom_b0 = 0.0
-    if detuned:
+    if off_axis:
+        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
         atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
     atom_inv = tl.load(inversion_efficiency + atom, mask=active_atom, other=1.0)
     d_t1 = tl.load(dot_t1 + atom, mask=active_atom, other=0.0)
@@ -4347,22 +4892,28 @@ def _epg_vjp_jvp_kernel(
     d_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
     d_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
     d_b1_phase = 0.0
-    if phased:
-        d_b1_phase = tl.load(dot_b1_phase + atom, mask=active_atom, other=0.0)
     d_b0 = 0.0
-    if detuned:
+    if off_axis:
+        d_b1_phase = tl.load(dot_b1_phase + atom, mask=active_atom, other=0.0)
         d_b0 = tl.load(dot_b0 + atom, mask=active_atom, other=0.0)
     d_inv = tl.load(
         dot_inversion_efficiency + atom, mask=active_atom, other=0.0
     )
-    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-    d_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
+    atom_damping = 0.0
+    d_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(
+            diffusion + atom, mask=active_atom, other=0.0
+        )
+        d_damping = tl.load(
+            dot_diffusion + atom, mask=active_atom, other=0.0
+        )
     atom_flow = 0.0
     d_flow = 0.0
     direction = 0.0
     atom_washout = 0.0
     d_washout = 0.0
-    if flowing or washing:
+    if moving:
         atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
         d_velocity = tl.load(dot_velocity + atom, mask=active_atom, other=0.0)
         atom_flow = atom_velocity * flow_scale
@@ -4423,7 +4974,7 @@ def _epg_vjp_jvp_kernel(
         )
         wout_value = 1.0
         wout_tangent = 0.0
-        if washing:
+        if moving:
             wout_value, wout_tangent = _washout_jvp(
                 atom_washout, d_washout, dt_value, dt_tangent
             )
@@ -4439,9 +4990,14 @@ def _epg_vjp_jvp_kernel(
         e1_tangent = dry1_tangent * wout_value + dry1_value * wout_tangent
         e2_value = dry2_value * wout_value
         e2_tangent = dry2_tangent * wout_value + dry2_value * wout_tangent
-        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
-            atom_damping, d_damping, dt_value, dt_tangent, order
-        )
+        damp_z = 1.0
+        damp_z_tangent = 0.0
+        damp_t = 1.0
+        damp_t_tangent = 0.0
+        if diffusing:
+            damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+                atom_damping, d_damping, dt_value, dt_tangent, order
+            )
         # Order zero is undamped, so recovery keeps the bare longitudinal factor.
         recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
         bare1_value, bare1_tangent = e1_value, e1_tangent
@@ -4453,14 +5009,14 @@ def _epg_vjp_jvp_kernel(
         turn_t = 0.0
         dturn_t = 0.0
         szr, szi, sztr, szti = 1.0, 0.0, 0.0, 0.0
-        if flowing:
+        if moving:
             turn_z, turn_t = _flow(atom_flow, dt_value, order)
             d_turn = d_flow * dt_value + atom_flow * dt_tangent
             dturn_z = -order * d_turn
             dturn_t = -(order + 0.5) * d_turn
             szr, szi, sztr, szti = _dual_polar(turn_z, dturn_z)
         qr, qi, qtr, qti = 1.0, 0.0, 0.0, 0.0
-        if detuned or flowing:
+        if off_axis or moving:
             angle_value = (
                 -2.0 * 3.141592653589793 * (atom_b0 * dt_value) + turn_t
             )
@@ -4690,12 +5246,12 @@ def _epg_vjp_jvp_kernel(
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
-            if phased:
+            if off_axis:
                 atom_b1_phase = tl.load(
                     b1_phase + row + atom, mask=active_atom, other=0.0
                 )
             d_b1 = tl.load(dot_b1 + row + atom, mask=active_atom, other=0.0)
-            if phased:
+            if off_axis:
                 d_b1_phase = tl.load(
                     dot_b1_phase + row + atom, mask=active_atom, other=0.0
                 )
@@ -5060,7 +5616,7 @@ def _epg_vjp_jvp_kernel(
         )
         wout_value = 1.0
         wout_tangent = 0.0
-        if washing:
+        if moving:
             wout_value, wout_tangent = _washout_jvp(
                 atom_washout, d_washout, dt_value, dt_tangent
             )
@@ -5076,9 +5632,14 @@ def _epg_vjp_jvp_kernel(
         e1_tangent = dry1_tangent * wout_value + dry1_value * wout_tangent
         e2_value = dry2_value * wout_value
         e2_tangent = dry2_tangent * wout_value + dry2_value * wout_tangent
-        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
-            atom_damping, d_damping, dt_value, dt_tangent, order
-        )
+        damp_z = 1.0
+        damp_z_tangent = 0.0
+        damp_t = 1.0
+        damp_t_tangent = 0.0
+        if diffusing:
+            damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+                atom_damping, d_damping, dt_value, dt_tangent, order
+            )
         # Order zero is undamped, so recovery keeps the bare longitudinal factor.
         recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
         bare1_value, bare1_tangent = e1_value, e1_tangent
@@ -5090,14 +5651,14 @@ def _epg_vjp_jvp_kernel(
         turn_t = 0.0
         dturn_t = 0.0
         szr, szi, sztr, szti = 1.0, 0.0, 0.0, 0.0
-        if flowing:
+        if moving:
             turn_z, turn_t = _flow(atom_flow, dt_value, order)
             d_turn = d_flow * dt_value + atom_flow * dt_tangent
             dturn_z = -order * d_turn
             dturn_t = -(order + 0.5) * d_turn
             szr, szi, sztr, szti = _dual_polar(turn_z, dturn_z)
         qr, qi, qtr, qti = 1.0, 0.0, 0.0, 0.0
-        if detuned or flowing:
+        if off_axis or moving:
             angle_value = (
                 -2.0 * 3.141592653589793 * (atom_b0 * dt_value) + turn_t
             )
@@ -5704,12 +6265,12 @@ def _epg_vjp_jvp_kernel(
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
-            if phased:
+            if off_axis:
                 atom_b1_phase = tl.load(
                     b1_phase + row + atom, mask=active_atom, other=0.0
                 )
             d_b1 = tl.load(dot_b1 + row + atom, mask=active_atom, other=0.0)
-            if phased:
+            if off_axis:
                 d_b1_phase = tl.load(
                     dot_b1_phase + row + atom, mask=active_atom, other=0.0
                 )
@@ -6285,7 +6846,7 @@ def _epg_vjp_jvp_kernel(
 
             per_angle_v = empty
             per_angle_t = empty
-            if detuned or flowing:
+            if off_axis or moving:
                 po = _dual_mul(ovr, ovi, otr, oti, xpvr, xpvi, xptr, xpti)
                 po = _dual_times_i(po[0], po[1], po[2], po[3])
                 mo = _dual_mul(ovr, -ovi, otr, -oti, xmvr, xmvi, xmtr, xmti)
@@ -6308,7 +6869,7 @@ def _epg_vjp_jvp_kernel(
         # same derivative; only the weight each order carries differs.
         grad_angle_v = zero
         grad_angle_t = zero
-        if detuned or flowing:
+        if off_axis or moving:
             grad_angle_v = tl.sum(per_angle_v, axis=1)[:, None]
             grad_angle_t = tl.sum(per_angle_t, axis=1)[:, None]
 
@@ -6814,20 +7375,23 @@ def _epg_vjp_jvp_kernel(
         # The rate and the interval multiply every order's b-weight, so both
         # take a weighted sum rather than one scalar. Order zero carries no
         # longitudinal weight, which keeps recovery out of this.
-        weighted_v = (
-            long_damp_v * longitudinal_weight + cot2_v * transverse_weight
-        )
-        weighted_t = (
-            long_damp_t * longitudinal_weight + cot2_t * transverse_weight
-        )
-        spread_v = tl.sum(weighted_v, axis=1)[:, None]
-        spread_t = tl.sum(weighted_t, axis=1)[:, None]
-        g_diffv += -spread_v * dt_value
-        g_difft += -(spread_v * dt_tangent + spread_t * dt_value)
+        spread_v = zero
+        spread_t = zero
+        if diffusing:
+            weighted_v = (
+                long_damp_v * longitudinal_weight + cot2_v * transverse_weight
+            )
+            weighted_t = (
+                long_damp_t * longitudinal_weight + cot2_t * transverse_weight
+            )
+            spread_v = tl.sum(weighted_v, axis=1)[:, None]
+            spread_t = tl.sum(weighted_t, axis=1)[:, None]
+            g_diffv += -spread_v * dt_value
+            g_difft += -(spread_v * dt_tangent + spread_t * dt_value)
 
         wound_v = zero
         wound_t = zero
-        if flowing:
+        if moving:
             wound_v = tl.sum(
                 per_angle_v * (order + 0.5) + zangle_v * order, axis=1
             )[:, None]
@@ -6843,7 +7407,7 @@ def _epg_vjp_jvp_kernel(
         # nothing further depends on the rate.
         wash_v = zero
         wash_t = zero
-        if washing:
+        if moving:
             live = (atom_washout * dt_value < 1.0).to(tl.float32)
             wash_v = -live * (
                 grad_e1_v * dry1_value + grad_e2_v * dry2_value + attenuation_v
@@ -7061,6 +7625,7 @@ def _epg_real_vjp_jvp_kernel(
     event_count,
     output_count,
     state_count: tl.constexpr,
+    diffusing: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -7106,8 +7671,15 @@ def _epg_real_vjp_jvp_kernel(
     atom_dot_inversion = tl.load(
         dot_inversion_efficiency + atom, mask=active_atom, other=0.0
     )
-    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-    atom_dot_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
+    atom_damping = 0.0
+    atom_dot_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(
+            diffusion + atom, mask=active_atom, other=0.0
+        )
+        atom_dot_damping = tl.load(
+            dot_diffusion + atom, mask=active_atom, other=0.0
+        )
     order = state.to(tl.float32)
     longitudinal_weight = order * order
     transverse_weight = longitudinal_weight + order + 0.3333333333333333
@@ -7136,9 +7708,14 @@ def _epg_real_vjp_jvp_kernel(
         e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
         e2_value = tl.exp(-rate2_value * dt_value)
         e2_tangent = -e2_value * (rate2_value * dt_tangent + rate2_tangent * dt_value)
-        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
-            atom_damping, atom_dot_damping, dt_value, dt_tangent, order
-        )
+        damp_z = 1.0
+        damp_z_tangent = 0.0
+        damp_t = 1.0
+        damp_t_tangent = 0.0
+        if diffusing:
+            damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+                atom_damping, atom_dot_damping, dt_value, dt_tangent, order
+            )
         # Order zero is undamped, so recovery keeps the bare longitudinal factor.
         recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
         bare1_value, bare1_tangent = e1_value, e1_tangent
@@ -7290,9 +7867,14 @@ def _epg_real_vjp_jvp_kernel(
         e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
         e2_value = tl.exp(-rate2_value * dt_value)
         e2_tangent = -e2_value * (rate2_value * dt_tangent + rate2_tangent * dt_value)
-        damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
-            atom_damping, atom_dot_damping, dt_value, dt_tangent, order
-        )
+        damp_z = 1.0
+        damp_z_tangent = 0.0
+        damp_t = 1.0
+        damp_t_tangent = 0.0
+        if diffusing:
+            damp_z, damp_z_tangent, damp_t, damp_t_tangent = _damping_jvp(
+                atom_damping, atom_dot_damping, dt_value, dt_tangent, order
+            )
         # Order zero is undamped, so recovery keeps the bare longitudinal factor.
         recovery_value, recovery_tangent = 1.0 - e1_value, -e1_tangent
         bare1_value, bare1_tangent = e1_value, e1_tangent
@@ -7522,25 +8104,28 @@ def _epg_real_vjp_jvp_kernel(
         # The rate and the interval multiply every order's b-weight, so both
         # take a weighted sum. Order zero has no longitudinal weight, which
         # keeps recovery out of this.
-        weighted_value = (
-            cot1_value * bare1_value * damp_z * longitudinal_weight
-            + cot2_value * bare2_value * damp_t * transverse_weight
-        )
-        weighted_tangent = (
-            cot1_tangent * bare1_value * damp_z
-            + cot1_value * bare1_tangent * damp_z
-            + cot1_value * bare1_value * damp_z_tangent
-        ) * longitudinal_weight + (
-            cot2_tangent * bare2_value * damp_t
-            + cot2_value * bare2_tangent * damp_t
-            + cot2_value * bare2_value * damp_t_tangent
-        ) * transverse_weight
-        spread_value = tl.sum(weighted_value, axis=1)[:, None]
-        spread_tangent = tl.sum(weighted_tangent, axis=1)[:, None]
-        grad_damping_value += -spread_value * dt_value
-        grad_damping_tangent += -(
-            spread_value * dt_tangent + spread_tangent * dt_value
-        )
+        spread_value = zero
+        spread_tangent = zero
+        if diffusing:
+            weighted_value = (
+                cot1_value * bare1_value * damp_z * longitudinal_weight
+                + cot2_value * bare2_value * damp_t * transverse_weight
+            )
+            weighted_tangent = (
+                cot1_tangent * bare1_value * damp_z
+                + cot1_value * bare1_tangent * damp_z
+                + cot1_value * bare1_value * damp_z_tangent
+            ) * longitudinal_weight + (
+                cot2_tangent * bare2_value * damp_t
+                + cot2_value * bare2_tangent * damp_t
+                + cot2_value * bare2_value * damp_t_tangent
+            ) * transverse_weight
+            spread_value = tl.sum(weighted_value, axis=1)[:, None]
+            spread_tangent = tl.sum(weighted_tangent, axis=1)[:, None]
+            grad_damping_value += -spread_value * dt_value
+            grad_damping_tangent += -(
+                spread_value * dt_tangent + spread_tangent * dt_value
+            )
 
         plus_bar_tangent = plus_bar_value * e2_tangent + plus_bar_tangent * e2_value
         plus_bar_value = plus_bar_value * e2_value
@@ -7644,6 +8229,349 @@ def _epg_real_vjp_jvp_kernel(
 
 
 @triton.jit
+def _epg_real_vjp_kernel(
+    t1,
+    t2,
+    m0,
+    b1,
+    inversion_efficiency,
+    diffusion,
+    duration,
+    kind,
+    flip,
+    action,
+    output_index,
+    grad_output_imag,
+    grad_tissue,
+    grad_flip,
+    grad_duration,
+    trajectory_value,
+    scratch_plus,
+    scratch_minus,
+    problem_base,
+    problem_end,
+    atom_count,
+    train_count,
+    event_count,
+    output_count,
+    state_count: tl.constexpr,
+    diffusing: tl.constexpr,
+    block_states: tl.constexpr,
+    problems: tl.constexpr,
+):
+    problem = problem_base + tl.program_id(0) * problems
+    problem = problem + tl.arange(0, problems)[:, None]
+    state = tl.arange(0, block_states)[None, :]
+    # The grid rounds up to whole tiles, so the last program of a wave reaches
+    # past it. Those problems are real, but their trajectory rows belong to a
+    # later launch and do not exist yet.
+    active_atom = problem < problem_end
+    state_mask = (state < state_count) & active_atom
+    atom = problem % atom_count
+    train = problem // atom_count
+    scratch_offset = (problem - problem_base) * state_count
+    scratch_p = scratch_plus + scratch_offset
+    scratch_m = scratch_minus + scratch_offset
+    # The trajectory holds the state entering every event: three planes of
+    # configuration orders.
+    record_stride = 3 * state_count
+    trajectory = (problem - problem_base) * event_count * record_stride + state
+    minus_plane = state_count
+    long_plane = 2 * state_count
+
+    empty = tl.zeros((problems, block_states), tl.float32)
+    plus_value = empty
+    minus_value = empty
+    long_value = empty + tl.where(state == 0, 1.0, 0.0)
+
+    atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
+    atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
+    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = tl.load(
+        inversion_efficiency + atom, mask=active_atom, other=1.0
+    )
+    atom_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    order = state.to(tl.float32)
+    longitudinal_weight = order * order
+    transverse_weight = longitudinal_weight + order + 0.3333333333333333
+    rate1_value = 1000.0 / atom_t1
+    rate2_value = 1000.0 / atom_t2
+
+    event_base = train * event_count
+    for event in range(0, event_count):
+        slot = trajectory + event * record_stride
+        tl.store(trajectory_value + slot, plus_value, mask=state_mask)
+        tl.store(trajectory_value + slot + minus_plane, minus_value, mask=state_mask)
+        tl.store(trajectory_value + slot + long_plane, long_value, mask=state_mask)
+
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        e1_value = tl.exp(-rate1_value * dt_value)
+        e2_value = tl.exp(-rate2_value * dt_value)
+        damp_z = 1.0
+        damp_t = 1.0
+        if diffusing:
+            damp_z, damp_t = _damping(atom_damping, dt_value, order)
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value = 1.0 - e1_value
+        bare1_value = e1_value
+        bare2_value = e2_value
+        e1_value = bare1_value * damp_z
+        e2_value = bare2_value * damp_t
+
+        plus_value = plus_value * e2_value
+        minus_value = minus_value * e2_value
+        long_value = long_value * e1_value
+        long_value += tl.where(state == 0, recovery_value, 0.0)
+
+        event_action = tl.load(action + event).to(tl.int32)
+        pre_shift = (event_action & 1) != 0
+        shifted_pv, shifted_mv = _shift_real(
+            plus_value, minus_value, scratch_p, scratch_m, state, state_mask,
+            state_count,
+        )
+        plus_value = tl.where(pre_shift, shifted_pv, plus_value)
+        minus_value = tl.where(pre_shift, shifted_mv, minus_value)
+
+        event_kind = tl.load(kind + event)
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        long_value = tl.where(invert, -atom_inversion * long_value, long_value)
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        alpha_value = event_flip * atom_b1
+        cosine_value = tl.cos(alpha_value)
+        sine_value = tl.sin(alpha_value)
+        chs_value = 0.5 * (1.0 + cosine_value)
+        shs_value = 0.5 * (1.0 - cosine_value)
+        half_sine_value = 0.5 * sine_value
+
+        rotated_pv = chs_value * plus_value + shs_value * minus_value
+        rotated_pv -= sine_value * long_value
+        rotated_mv = shs_value * plus_value + chs_value * minus_value
+        rotated_mv += sine_value * long_value
+        rotated_zv = half_sine_value * plus_value - half_sine_value * minus_value
+        rotated_zv += cosine_value * long_value
+
+        rotate = is_rf & ~is_inversion
+        plus_value = tl.where(rotate, rotated_pv, plus_value)
+        minus_value = tl.where(rotate, rotated_mv, minus_value)
+        long_value = tl.where(rotate, rotated_zv, long_value)
+
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        shifted_pv, shifted_mv = _shift_real(
+            plus_value, minus_value, scratch_p, scratch_m, state, state_mask,
+            state_count,
+        )
+        plus_value = tl.where(do_shift, shifted_pv, plus_value)
+        minus_value = tl.where(do_shift, shifted_mv, minus_value)
+        spoil = (event_action & 8) != 0
+        plus_value = tl.where(spoil, 0.0, plus_value)
+        minus_value = tl.where(spoil, 0.0, minus_value)
+
+    plus_bar_value = empty
+    minus_bar_value = empty
+    long_bar_value = empty
+    zero = tl.zeros((problems, 1), tl.float32)
+    grad_t1_value = zero
+    grad_t2_value = zero
+    grad_m0_value = zero
+    grad_b1_value = zero
+    grad_inversion_value = zero
+    grad_damping_value = zero
+
+    for reverse in range(0, event_count):
+        event = event_count - 1 - reverse
+        slot = trajectory + event * record_stride
+        entry_pv = tl.load(trajectory_value + slot, mask=state_mask, other=0.0)
+        entry_mv = tl.load(
+            trajectory_value + slot + minus_plane, mask=state_mask, other=0.0
+        )
+        entry_zv = tl.load(
+            trajectory_value + slot + long_plane, mask=state_mask, other=0.0
+        )
+
+        event_action = tl.load(action + event).to(tl.int32)
+        event_kind = tl.load(kind + event)
+        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        e1_value = tl.exp(-rate1_value * dt_value)
+        e2_value = tl.exp(-rate2_value * dt_value)
+        damp_z = 1.0
+        damp_t = 1.0
+        if diffusing:
+            damp_z, damp_t = _damping(atom_damping, dt_value, order)
+        # Order zero is undamped, so recovery keeps the bare longitudinal factor.
+        recovery_value = 1.0 - e1_value
+        bare1_value = e1_value
+        bare2_value = e2_value
+        e1_value = bare1_value * damp_z
+        e2_value = bare2_value * damp_t
+
+        # Replay the intra-event stages from the recorded entry state.
+        stage_pv = entry_pv * e2_value
+        stage_mv = entry_mv * e2_value
+        stage_zv = entry_zv * e1_value + tl.where(state == 0, recovery_value, 0.0)
+
+        pre_shift = (event_action & 1) != 0
+        shifted_pv, shifted_mv = _shift_real(
+            stage_pv, stage_mv, scratch_p, scratch_m, state, state_mask, state_count
+        )
+        stage_pv = tl.where(pre_shift, shifted_pv, stage_pv)
+        stage_mv = tl.where(pre_shift, shifted_mv, stage_mv)
+
+        # Undo the trailing spoil or shift.
+        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
+        spoil = (event_action & 8) != 0
+        adjoint_pv, adjoint_mv = _shift_real_adjoint(
+            plus_bar_value, minus_bar_value, scratch_p, scratch_m, state,
+            state_mask, state_count,
+        )
+        trailing = do_shift & ~spoil
+        plus_bar_value = tl.where(
+            spoil, 0.0, tl.where(trailing, adjoint_pv, plus_bar_value)
+        )
+        minus_bar_value = tl.where(
+            spoil, 0.0, tl.where(trailing, adjoint_mv, minus_bar_value)
+        )
+
+        is_rf = event_kind == 1
+        is_inversion = (event_action & 4) != 0
+        invert = is_rf & is_inversion
+        grad_inversion_value += -tl.sum(
+            tl.where(invert, long_bar_value * stage_zv, 0.0), axis=1
+        )[:, None]
+        long_bar_value = tl.where(
+            invert, -atom_inversion * long_bar_value, long_bar_value
+        )
+
+        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        alpha_value = event_flip * atom_b1
+        cosine_value = tl.cos(alpha_value)
+        sine_value = tl.sin(alpha_value)
+        chs_value = 0.5 * (1.0 + cosine_value)
+        shs_value = 0.5 * (1.0 - cosine_value)
+        half_sine_value = 0.5 * sine_value
+
+        # d/dalpha of each output row, contracted with the adjoint.
+        row_p_value = half_sine_value * stage_mv - half_sine_value * stage_pv
+        row_p_value -= cosine_value * stage_zv
+        row_m_value = half_sine_value * stage_pv - half_sine_value * stage_mv
+        row_m_value += cosine_value * stage_zv
+        row_z_value = 0.5 * cosine_value * stage_pv - 0.5 * cosine_value * stage_mv
+        row_z_value -= sine_value * stage_zv
+
+        alpha_bar_terms_value = plus_bar_value * row_p_value
+        alpha_bar_terms_value += minus_bar_value * row_m_value
+        alpha_bar_terms_value += long_bar_value * row_z_value
+        rotate = is_rf & ~is_inversion
+        grad_alpha_value = tl.sum(
+            tl.where(rotate, alpha_bar_terms_value, 0.0), axis=1
+        )[:, None]
+
+        # Transpose of the rotation.
+        rotated_pbv = chs_value * plus_bar_value + shs_value * minus_bar_value
+        rotated_pbv += half_sine_value * long_bar_value
+        rotated_mbv = shs_value * plus_bar_value + chs_value * minus_bar_value
+        rotated_mbv -= half_sine_value * long_bar_value
+        rotated_zbv = -sine_value * plus_bar_value + sine_value * minus_bar_value
+        rotated_zbv += cosine_value * long_bar_value
+
+        plus_bar_value = tl.where(rotate, rotated_pbv, plus_bar_value)
+        minus_bar_value = tl.where(rotate, rotated_mbv, minus_bar_value)
+        long_bar_value = tl.where(rotate, rotated_zbv, long_bar_value)
+
+        writes_flip = active_atom & rotate
+        tl.atomic_add(
+            grad_flip + event_base + event,
+            grad_alpha_value * atom_b1,
+            mask=writes_flip,
+        )
+        grad_b1_value += tl.where(rotate, grad_alpha_value * event_flip, 0.0)
+
+        # The sample is i * m0 * plus[0]; only the imaginary seed acts.
+        record = ((event_action & 32) != 0) & (event_kind == 2)
+        out = tl.load(output_index + event)
+        seed = tl.load(
+            grad_output_imag + problem * output_count + out,
+            mask=active_atom & record & (out >= 0),
+            other=0.0,
+        )
+        grad_m0_value += tl.sum(
+            tl.where(state == 0, seed * stage_pv, 0.0), axis=1
+        )[:, None]
+        plus_bar_value += tl.where(state == 0, seed * atom_m0, 0.0)
+
+        adjoint_pv, adjoint_mv = _shift_real_adjoint(
+            plus_bar_value, minus_bar_value, scratch_p, scratch_m, state,
+            state_mask, state_count,
+        )
+        plus_bar_value = tl.where(pre_shift, adjoint_pv, plus_bar_value)
+        minus_bar_value = tl.where(pre_shift, adjoint_mv, minus_bar_value)
+
+        cot2_value = plus_bar_value * entry_pv + minus_bar_value * entry_mv
+        cot1_value = long_bar_value * entry_zv
+        grad_e2_value = tl.sum(cot2_value * damp_t, axis=1)[:, None]
+        grad_e1_value = tl.sum(cot1_value * damp_z, axis=1)[:, None]
+        grad_e1_value -= tl.sum(
+            tl.where(state == 0, long_bar_value, 0.0), axis=1
+        )[:, None]
+
+        # The rate and the interval multiply every order's b-weight, so both
+        # take a weighted sum. Order zero has no longitudinal weight, which
+        # keeps recovery out of this.
+        spread_value = zero
+        if diffusing:
+            weighted_value = (
+                cot1_value * bare1_value * damp_z * longitudinal_weight
+                + cot2_value * bare2_value * damp_t * transverse_weight
+            )
+            spread_value = tl.sum(weighted_value, axis=1)[:, None]
+            grad_damping_value += -spread_value * dt_value
+
+        plus_bar_value = plus_bar_value * e2_value
+        minus_bar_value = minus_bar_value * e2_value
+        long_bar_value = long_bar_value * e1_value
+
+        inverse1_value = 1000.0 / (atom_t1 * atom_t1)
+        inverse2_value = 1000.0 / (atom_t2 * atom_t2)
+        grad_t1_value += grad_e1_value * (bare1_value * dt_value * inverse1_value)
+        grad_t2_value += grad_e2_value * (bare2_value * dt_value * inverse2_value)
+
+        duration_gain_value = -grad_e1_value * (rate1_value * bare1_value)
+        duration_gain_value -= grad_e2_value * (rate2_value * bare2_value)
+        duration_gain_value += -spread_value * atom_damping
+        tl.atomic_add(
+            grad_duration + event_base + event,
+            duration_gain_value,
+            mask=active_atom,
+        )
+
+    tl.atomic_add(grad_tissue + atom, grad_t1_value, mask=active_atom)
+    tl.atomic_add(
+        grad_tissue + atom_count + atom, grad_t2_value, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue + 2 * atom_count + atom, grad_m0_value, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue + 3 * atom_count + atom, grad_b1_value, mask=active_atom
+    )
+    tl.atomic_add(
+        grad_tissue + 6 * atom_count + atom,
+        grad_inversion_value,
+        mask=active_atom,
+    )
+    tl.atomic_add(
+        grad_tissue + 7 * atom_count + atom,
+        grad_damping_value,
+        mask=active_atom,
+    )
+
+
+@triton.jit
 def _epg_real_kernel(
     t1,
     t2,
@@ -7665,6 +8593,7 @@ def _epg_real_kernel(
     event_count,
     output_count,
     state_count: tl.constexpr,
+    diffusing: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -7692,7 +8621,9 @@ def _epg_real_kernel(
     )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
-    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    atom_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
     order = state.to(tl.float32)
 
     event_base = train * event_count
@@ -7700,7 +8631,10 @@ def _epg_real_kernel(
         dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
         e1 = tl.exp(-rate1 * dt)
         e2 = tl.exp(-rate2 * dt)
-        damp_z, damp_t = _damping(atom_damping, dt, order)
+        damp_z = 1.0
+        damp_t = 1.0
+        if diffusing:
+            damp_z, damp_t = _damping(atom_damping, dt, order)
         recovery = 1.0 - e1
         plus *= e2 * damp_t
         minus *= e2 * damp_t
@@ -7788,6 +8722,7 @@ def _epg_real_jvp_kernel(
     event_count,
     output_count,
     state_count: tl.constexpr,
+    diffusing: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -7825,8 +8760,15 @@ def _epg_real_jvp_kernel(
     )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
-    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-    dot_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
+    atom_damping = 0.0
+    dot_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(
+            diffusion + atom, mask=active_atom, other=0.0
+        )
+        dot_damping = tl.load(
+            tangent_diffusion + atom, mask=active_atom, other=0.0
+        )
     order = state.to(tl.float32)
 
     event_base = train * event_count
@@ -7839,9 +8781,14 @@ def _epg_real_jvp_kernel(
         e2 = tl.exp(-rate2 * dt)
         dot_e1 = e1 * (1000.0 * dt * dot_t1 / (atom_t1 * atom_t1) - rate1 * dot_dt)
         dot_e2 = e2 * (1000.0 * dt * dot_t2 / (atom_t2 * atom_t2) - rate2 * dot_dt)
-        damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
-            atom_damping, dot_damping, dt, dot_dt, order
-        )
+        damp_z = 1.0
+        ddamp_z = 0.0
+        damp_t = 1.0
+        ddamp_t = 0.0
+        if diffusing:
+            damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
+                atom_damping, dot_damping, dt, dot_dt, order
+            )
         # Order zero is undamped, so the recovery term keeps the bare factor.
         recovery, dot_recovery = 1.0 - e1, -dot_e1
         dot_e1 = dot_e1 * damp_z + e1 * ddamp_z
@@ -8039,6 +8986,9 @@ def _epg_kernel(
     dynamic: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
+    off_axis: tl.constexpr,
+    moving: tl.constexpr,
+    diffusing: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -8129,33 +9079,52 @@ def _epg_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
     atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
-    atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
-    atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+    atom_b1_phase = 0.0
+    atom_b0 = 0.0
+    if off_axis:
+        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
+        atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
     atom_inversion = tl.load(
         inversion_efficiency + atom, mask=active_atom, other=1.0
     )
-    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-    atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
-    atom_flow = atom_velocity * flow_scale
-    atom_washout = tl.abs(atom_velocity) * washout_scale
+    atom_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+    atom_flow = 0.0
+    atom_washout = 0.0
+    if moving:
+        atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+        atom_flow = atom_velocity * flow_scale
+        atom_washout = tl.abs(atom_velocity) * washout_scale
     order = state.to(tl.float32)
 
     event_base = train * event_count
     for event in range(0, event_count):
         dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        wout = _washout(atom_washout, dt)
+        wout = 1.0
+        if moving:
+            wout = _washout(atom_washout, dt)
         e1 = tl.exp(-(1000.0 / atom_t1) * dt) * wout
         e2 = tl.exp(-(1000.0 / atom_t2) * dt) * wout
-        damp_z, damp_t = _damping(atom_damping, dt, order)
-        turn_z, turn_t = _flow(atom_flow, dt, order)
+        damp_z = 1.0
+        damp_t = 1.0
+        if diffusing:
+            damp_z, damp_t = _damping(atom_damping, dt, order)
+        turn_z = 0.0
+        turn_t = 0.0
+        if moving:
+            turn_z, turn_t = _flow(atom_flow, dt, order)
         recovery = 1.0 - e1
         e1 = e1 * damp_z
         e2 = e2 * damp_t
-        # Flow winds the transverse states through the same rotation
-        # off-resonance does, so the two phases add before either is taken.
-        off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt + turn_t
-        off_cos = tl.cos(off_phase)
-        off_sin = tl.sin(off_phase)
+        off_cos = 1.0
+        off_sin = 0.0
+        if off_axis or moving:
+            # Flow winds the transverse states through the same rotation
+            # off-resonance does, so the two phases add before either is taken.
+            off_phase = -2.0 * 3.141592653589793 * atom_b0 * dt + turn_t
+            off_cos = tl.cos(off_phase)
+            off_sin = tl.sin(off_phase)
         if pools == 2 or pools == 3:
             # Both pools take the same off-resonance and the same per-order
             # damping; what separates them is the chemical shift, which the
@@ -8218,8 +9187,11 @@ def _epg_kernel(
             fminus_imag = e2 * (-old_real * off_sin + fminus_imag * off_cos)
         # The longitudinal states carry a phase of their own, which nothing
         # else in the state machine gives them.
-        turn_cos = tl.cos(turn_z)
-        turn_sin = tl.sin(turn_z)
+        turn_cos = 1.0
+        turn_sin = 0.0
+        if moving:
+            turn_cos = tl.cos(turn_z)
+            turn_sin = tl.sin(turn_z)
         if pools == 3:
             # Three pools mix through a 3x3 formed in double; every pool takes
             # the same per-order damping and flow phase, their order-n states
@@ -8356,9 +9328,10 @@ def _epg_kernel(
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
-            atom_b1_phase = tl.load(
-                b1_phase + row + atom, mask=active_atom, other=0.0
-            )
+            if off_axis:
+                atom_b1_phase = tl.load(
+                    b1_phase + row + atom, mask=active_atom, other=0.0
+                )
         alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0) * atom_b1
         phi = tl.load(phase + event_base + event, mask=active_atom, other=0.0) + atom_b1_phase
         if profile_bins > 0 or dynamic:
@@ -8683,6 +9656,9 @@ def _epg_jvp_kernel(
     dynamic: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
+    off_axis: tl.constexpr,
+    moving: tl.constexpr,
+    diffusing: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -8816,30 +9792,53 @@ def _epg_jvp_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
     atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
-    atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
-    atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+    atom_b1_phase = 0.0
+    atom_b0 = 0.0
+    if off_axis:
+        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
+        atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
     atom_inversion = tl.load(
         inversion_efficiency + atom, mask=active_atom, other=1.0
     )
-    atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-    d_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
-    atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
-    d_velocity = tl.load(tangent_velocity + atom, mask=active_atom, other=0.0)
-    atom_flow = atom_velocity * flow_scale
-    d_flow = d_velocity * flow_scale
-    # |v| has no derivative at the origin, so a still voxel contributes none.
-    direction = (atom_velocity > 0.0).to(tl.float32) - (atom_velocity < 0.0).to(
-        tl.float32
-    )
-    atom_washout = tl.abs(atom_velocity) * washout_scale
-    d_washout = direction * d_velocity * washout_scale
+    atom_damping = 0.0
+    d_damping = 0.0
+    if diffusing:
+        atom_damping = tl.load(
+            diffusion + atom, mask=active_atom, other=0.0
+        )
+        d_damping = tl.load(
+            tangent_diffusion + atom, mask=active_atom, other=0.0
+        )
+    atom_flow = 0.0
+    d_flow = 0.0
+    atom_washout = 0.0
+    d_washout = 0.0
+    if moving:
+        atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+        d_velocity = tl.load(
+            tangent_velocity + atom, mask=active_atom, other=0.0
+        )
+        atom_flow = atom_velocity * flow_scale
+        d_flow = d_velocity * flow_scale
+        # |v| has no derivative at the origin, so a still voxel contributes
+        # none.
+        direction = (atom_velocity > 0.0).to(tl.float32) - (
+            atom_velocity < 0.0
+        ).to(tl.float32)
+        atom_washout = tl.abs(atom_velocity) * washout_scale
+        d_washout = direction * d_velocity * washout_scale
     order = state.to(tl.float32)
     dt1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
     dt2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
     dm0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
     db1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
-    db1_phase = tl.load(tangent_b1_phase + atom, mask=active_atom, other=0.0)
-    db0 = tl.load(tangent_b0 + atom, mask=active_atom, other=0.0)
+    db1_phase = 0.0
+    db0 = 0.0
+    if off_axis:
+        db1_phase = tl.load(
+            tangent_b1_phase + atom, mask=active_atom, other=0.0
+        )
+        db0 = tl.load(tangent_b0 + atom, mask=active_atom, other=0.0)
     dinversion = tl.load(
         tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
     )
@@ -8850,7 +9849,12 @@ def _epg_jvp_kernel(
         ddt = tl.load(tangent_duration + event_base + event, mask=active_atom, other=0.0)
         r1 = 1000.0 / atom_t1
         r2 = 1000.0 / atom_t2
-        wout, dwout = _washout_jvp(atom_washout, d_washout, event_dt, ddt)
+        wout = 1.0
+        dwout = 0.0
+        if moving:
+            wout, dwout = _washout_jvp(
+                atom_washout, d_washout, event_dt, ddt
+            )
         dry1 = tl.exp(-r1 * event_dt)
         dry2 = tl.exp(-r2 * event_dt)
         e1 = dry1 * wout
@@ -8861,29 +9865,44 @@ def _epg_jvp_kernel(
         de2 = e2 * (
             1000.0 * event_dt * dt2 / (atom_t2 * atom_t2) - r2 * ddt
         ) + dry2 * dwout
-        damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
-            atom_damping, d_damping, event_dt, ddt, order
-        )
+        damp_z = 1.0
+        ddamp_z = 0.0
+        damp_t = 1.0
+        ddamp_t = 0.0
+        if diffusing:
+            damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
+                atom_damping, d_damping, event_dt, ddt, order
+            )
         # Order zero is undamped, so the recovery term keeps the bare factor.
         recovery, drecovery = 1.0 - e1, -de1
         de1 = de1 * damp_z + e1 * ddamp_z
         e1 = e1 * damp_z
         de2 = de2 * damp_t + e2 * ddamp_t
         e2 = e2 * damp_t
-        turn_z, turn_t = _flow(atom_flow, event_dt, order)
-        d_turn = d_flow * event_dt + atom_flow * ddt
-        dturn_z = -order * d_turn
-        dturn_t = -(order + 0.5) * d_turn
-        # Flow winds the transverse states through the same rotation
-        # off-resonance does, so the two phases add before either is taken.
-        off_phase = -2.0 * 3.141592653589793 * atom_b0 * event_dt + turn_t
-        doff_phase = -2.0 * 3.141592653589793 * (
-            db0 * event_dt + atom_b0 * ddt
-        ) + dturn_t
-        off_cos = tl.cos(off_phase)
-        off_sin = tl.sin(off_phase)
-        doff_cos = -off_sin * doff_phase
-        doff_sin = off_cos * doff_phase
+        turn_z = 0.0
+        turn_t = 0.0
+        dturn_z = 0.0
+        dturn_t = 0.0
+        if moving:
+            turn_z, turn_t = _flow(atom_flow, event_dt, order)
+            d_turn = d_flow * event_dt + atom_flow * ddt
+            dturn_z = -order * d_turn
+            dturn_t = -(order + 0.5) * d_turn
+        off_cos = 1.0
+        off_sin = 0.0
+        doff_cos = 0.0
+        doff_sin = 0.0
+        if off_axis or moving:
+            # Flow winds the transverse states through the same rotation
+            # off-resonance does, so the two phases add before either is taken.
+            off_phase = -2.0 * 3.141592653589793 * atom_b0 * event_dt + turn_t
+            doff_phase = -2.0 * 3.141592653589793 * (
+                db0 * event_dt + atom_b0 * ddt
+            ) + dturn_t
+            off_cos = tl.cos(off_phase)
+            off_sin = tl.sin(off_phase)
+            doff_cos = -off_sin * doff_phase
+            doff_sin = off_cos * doff_phase
 
         if pools == 2 or pools == 3:
             # Both pools take the same off-resonance and per-order damping;
@@ -9033,10 +10052,15 @@ def _epg_jvp_kernel(
 
         # The longitudinal states carry a phase of their own, which nothing
         # else in the state machine gives them.
-        turn_cos = tl.cos(turn_z)
-        turn_sin = tl.sin(turn_z)
-        dturn_cos = -turn_sin * dturn_z
-        dturn_sin = turn_cos * dturn_z
+        turn_cos = 1.0
+        turn_sin = 0.0
+        dturn_cos = 0.0
+        dturn_sin = 0.0
+        if moving:
+            turn_cos = tl.cos(turn_z)
+            turn_sin = tl.sin(turn_z)
+            dturn_cos = -turn_sin * dturn_z
+            dturn_sin = turn_cos * dturn_z
         old_zr = zr
         old_zi = zi
         old_dzr = dzr
@@ -9302,13 +10326,14 @@ def _epg_jvp_kernel(
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
             atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
-            atom_b1_phase = tl.load(
-                b1_phase + row + atom, mask=active_atom, other=0.0
-            )
             db1 = tl.load(tangent_b1 + row + atom, mask=active_atom, other=0.0)
-            db1_phase = tl.load(
-                tangent_b1_phase + row + atom, mask=active_atom, other=0.0
-            )
+            if off_axis:
+                atom_b1_phase = tl.load(
+                    b1_phase + row + atom, mask=active_atom, other=0.0
+                )
+                db1_phase = tl.load(
+                    tangent_b1_phase + row + atom, mask=active_atom, other=0.0
+                )
         alpha = event_flip * atom_b1
         dalpha = tl.load(tangent_flip + event_base + event, mask=active_atom, other=0.0) * atom_b1 + event_flip * db1
         phi = event_phase + atom_b1_phase
@@ -9596,27 +10621,6 @@ def _pool_flag(lineshape: Any, exchanging: bool) -> int:
     return 1 if lineshape is not None else 0
 
 
-def _feature_flags(features: Any, geometry: Geometry) -> dict[str, bool]:
-    """Which optional terms a launch is to carry, per property.
-
-    ``features`` is the set :func:`torchsim.sequence._parameters.features_of`
-    reads off the tissue; ``None`` is a caller who did not declare, and every
-    term stays. Flow and washout are two readings of one velocity through two
-    geometry scales, so a sequence that winds no phase and draws in no fresh
-    spins drops both however fast the voxel moves.
-
-    Kept beside :func:`_pool_flag` so a launcher cannot describe the tissue one
-    way and the kernel read it another.
-    """
-    moving = features is None or "FLOW" in features
-    return {
-        "detuned": features is None or "B0" in features,
-        "phased": features is None or "B1_PHASE" in features,
-        "flowing": moving and geometry.flow_scale != 0.0,
-        "washing": moving and geometry.washout_scale != 0.0,
-    }
-
-
 def _problems_per_program(total: int, block_states: int) -> int:
     """How many independent problems to carry on one program's lane axis.
 
@@ -9667,6 +10671,7 @@ def simulate(
     lineshape: Any = None,
     exchanging: bool = False,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> torch.Tensor:
     """Run a packed state machine on CUDA and return complex signals.
 
@@ -9696,6 +10701,7 @@ def simulate(
         lineshape=lineshape,
         exchanging=exchanging,
         dynamic=dynamic,
+        features=features,
     )
     return torch.complex(output_real, output_imag)
 
@@ -9716,6 +10722,7 @@ def simulate_into(
     lineshape: Any = None,
     exchanging: bool = False,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> None:
     """Run the forward machine into buffers the caller owns.
 
@@ -9780,6 +10787,7 @@ def simulate_into(
             kind.numel(),
             output_count,
             state_count=state_count,
+            diffusing=_feature_flags(features, geometry)["diffusing"],
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -9837,6 +10845,7 @@ def simulate_into(
         dynamic=dynamic is not None,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
         pools=_pool_flag(lineshape, exchanging),
+        **_feature_flags(features, geometry),
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -9858,6 +10867,7 @@ def simulate_jvp(
     exchanging: bool = False,
     dynamic: Any = None,
     dynamic_direction: Any = None,
+    features: frozenset[str] | None = None,
 ) -> torch.Tensor:
     """Run one fused state-machine Jacobian-vector product on CUDA.
 
@@ -9891,6 +10901,7 @@ def simulate_jvp(
         exchanging=exchanging,
         dynamic=dynamic,
         dynamic_direction=dynamic_direction,
+        features=features,
     )
     return torch.complex(output_real, output_imag)
 
@@ -9914,6 +10925,7 @@ def simulate_jvp_into(
     exchanging: bool = False,
     dynamic: Any = None,
     dynamic_direction: Any = None,
+    features: frozenset[str] | None = None,
 ) -> None:
     """Run one Jacobian-vector product into buffers the caller owns.
 
@@ -9969,6 +10981,7 @@ def simulate_jvp_into(
             kind.numel(),
             output_count,
             state_count=state_count,
+            diffusing=_feature_flags(features, geometry)["diffusing"],
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -10025,6 +11038,7 @@ def simulate_jvp_into(
         dynamic=dynamic is not None,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
         pools=_pool_flag(lineshape, exchanging),
+        **_feature_flags(features, geometry),
         block_states=block_states,
         problems=problems,
         num_warps=1,
@@ -10043,6 +11057,196 @@ def _trajectory_wave(
     """How many problems can record their trajectory in one launch."""
     per_problem = event_count * blocks * state_count * planes * 4
     return max(1, min(total, _TRAJECTORY_BUDGET_BYTES // max(1, per_problem)))
+
+
+def simulate_vjp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    *,
+    state_count: int,
+    output_count: int,
+    geometry: Geometry = NO_GEOMETRY,
+    features: frozenset[str] | None = None,
+) -> tuple[torch.Tensor, ...]:
+    """The first-order adjoint on CUDA, for one pool and one transmit field.
+
+    Returns the gradients in the differentiable-input order -- every tissue
+    property, then event duration, flip and phase. A second pool, a tabulated
+    rotation, a per-voxel pair or a shim row apiece are carried by the
+    forward-over-reverse pass instead; :func:`torchsim.sequence._accelerators`
+    decides which of the two a run takes.
+
+    Carrying no forward direction, this records two trajectory planes where
+    that pass records four, and holds one state where it holds a dual.
+    """
+    (
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+        *_pools,
+    ) = tissue
+    duration, kind, flip, phase, action, output_index = events[:6]
+    atom_count = t1.numel()
+    train_count = _train_count(events)
+    event_count = kind.numel()
+    total = train_count * atom_count
+    block_states = triton.next_power_of_2(state_count)
+    device = t1.device
+
+    grad_tissue = torch.zeros(
+        tissue_gradient_height(1) * atom_count, dtype=torch.float32, device=device
+    )
+    grad_flip = torch.zeros_like(flip)
+    grad_phase = torch.zeros_like(phase)
+    grad_duration = torch.zeros_like(duration)
+    grad_output = grad_output.resolve_conj()
+    grad_real = grad_output.real.contiguous()
+    grad_imag = grad_output.imag.contiguous()
+
+    wave = _trajectory_wave(event_count, state_count, total, 2)
+    trajectory = [
+        torch.empty(
+            (wave, event_count * 3 * state_count), dtype=torch.float32, device=device
+        )
+        for _ in range(2)
+    ]
+    scratch = _scratch(4, wave, device, state_count)
+
+    problems = _problems_per_program(wave, block_states)
+    for base in range(0, total, wave):
+        span = min(wave, total - base)
+        _epg_vjp_kernel[(triton.cdiv(span, problems),)](
+            t1,
+            t2,
+            m0,
+            b1,
+            b1_phase,
+            b0,
+            inversion_efficiency,
+            diffusion,
+            velocity,
+            duration,
+            kind,
+            flip,
+            phase,
+            action,
+            output_index,
+            grad_real,
+            grad_imag,
+            grad_tissue,
+            grad_flip,
+            grad_phase,
+            grad_duration,
+            *trajectory,
+            *scratch,
+            base,
+            base + span,
+            atom_count,
+            train_count,
+            event_count,
+            output_count,
+            geometry.flow_scale,
+            geometry.washout_scale,
+            state_count=state_count,
+            block_states=block_states,
+            problems=problems,
+            num_warps=1,
+            **_feature_flags(features, geometry),
+        )
+    voxel = tuple(
+        grad_tissue[base * atom_count : (base + rows) * atom_count]
+        for base, rows in zip(
+            tissue_gradient_bases(1), tissue_gradient_rows(1), strict=True
+        )
+    )
+    return (*voxel, grad_duration, grad_flip, grad_phase)
+
+
+def simulate_real_vjp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    *,
+    state_count: int,
+    output_count: int,
+    features: frozenset[str] | None = None,
+) -> tuple[torch.Tensor, ...]:
+    """The first-order adjoint through the real subspace, on CUDA.
+
+    Returns the gradients in the differentiable-input order -- every tissue
+    property, then event duration, flip and phase. The representation divides
+    the RF phase out, so transmit phase, off-resonance, velocity and RF phase
+    come back at zero and callers must not ask for those.
+
+    Carrying no forward direction, this records one trajectory plane where the
+    forward-over-reverse pass records two, and holds one state where it holds a
+    dual.
+    """
+    (
+        t1, t2, m0, b1, _b1_phase, _b0, inversion_efficiency, diffusion, *_rest,
+    ) = tissue
+    duration, kind, flip, phase, action, output_index = events[:6]
+    atom_count = t1.numel()
+    train_count = _train_count(events)
+    event_count = kind.numel()
+    total = train_count * atom_count
+    block_states = triton.next_power_of_2(state_count)
+    device = t1.device
+
+    grad_tissue = torch.zeros(
+        tissue_gradient_height(1) * atom_count, dtype=torch.float32, device=device
+    )
+    grad_flip = torch.zeros_like(flip)
+    grad_duration = torch.zeros_like(duration)
+    grad_phase = torch.zeros_like(phase)
+    grad_imag = grad_output.resolve_conj().imag.contiguous()
+
+    wave = _trajectory_wave(event_count, state_count, total, 1)
+    trajectory = torch.empty(
+        (wave, event_count * 3 * state_count), dtype=torch.float32, device=device
+    )
+    scratch_p, scratch_m = _scratch(2, wave, device, state_count)
+
+    problems = _problems_per_program(wave, block_states)
+    for base in range(0, total, wave):
+        span = min(wave, total - base)
+        _epg_real_vjp_kernel[(triton.cdiv(span, problems),)](
+            t1,
+            t2,
+            m0,
+            b1,
+            inversion_efficiency,
+            diffusion,
+            duration,
+            kind,
+            flip,
+            action,
+            output_index,
+            grad_imag,
+            grad_tissue,
+            grad_flip,
+            grad_duration,
+            trajectory,
+            scratch_p,
+            scratch_m,
+            base,
+            base + span,
+            atom_count,
+            train_count,
+            event_count,
+            output_count,
+            state_count=state_count,
+            diffusing=_feature_flags(features, NO_GEOMETRY)["diffusing"],
+            block_states=block_states,
+            problems=problems,
+            num_warps=1,
+        )
+    voxel = tuple(
+        grad_tissue[base * atom_count : (base + rows) * atom_count]
+        for base, rows in zip(
+            tissue_gradient_bases(1), tissue_gradient_rows(1), strict=True
+        )
+    )
+    return (*voxel, grad_duration, grad_flip, grad_phase)
 
 
 class AdjointBuffers:
@@ -10266,6 +11470,7 @@ def simulate_vjp_jvp_into(
                 train_count,
                 event_count,
                 output_count,
+                diffusing=_feature_flags(features, geometry)["diffusing"],
                 **shape,
             )
         else:

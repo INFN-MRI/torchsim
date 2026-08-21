@@ -262,6 +262,56 @@ def features_of(tissue: Any) -> frozenset[str]:
     )
 
 
+def feature_flags(features: Any, geometry: Geometry) -> dict[str, bool]:
+    """Which optional terms a launch is to carry.
+
+    ``features`` is the set :func:`torchsim.sequence._parameters.features_of`
+    reads off the tissue; ``None`` is a caller who did not declare, and every
+    term stays.
+
+    Fewer switches than properties, because each Triton flag multiplies how
+    many kernels the cache holds and these groups are what the arithmetic
+    actually splits into. ``off_axis`` is the static phase a tissue puts on the
+    states -- off-resonance and transmit phase reach the interval and the pulse
+    through the same turn. ``moving`` is what a voxel's velocity drives, which
+    it does only through the sequence geometry: flow winding and washout are
+    two readings of one property through two scales, so a sequence that winds
+    no phase and draws in no fresh spins drops both however fast the voxel
+    moves. ``diffusing`` stands alone: an attenuation per dephasing order is a
+    factor where the other two are phases, and it reaches the second pools that
+    have no coefficient of their own.
+
+    Kept here rather than beside either backend's launcher, because both read
+    it and a launcher must not be able to describe the tissue one way while the
+    kernel reads it another.
+    """
+    undeclared = features is None
+    return {
+        "off_axis": undeclared or bool({"B0", "B1_PHASE"} & features),
+        "moving": (undeclared or "FLOW" in features)
+        and (geometry.flow_scale != 0.0 or geometry.washout_scale != 0.0),
+        "diffusing": undeclared or "DIFFUSION" in features,
+    }
+
+
+# The order is the C++ ABI: ``feature_mask`` packs these bits and
+# ``_epg_cpu.cpp`` unpacks them by the same names, so the two move together.
+FEATURE_BITS: tuple[str, ...] = ("off_axis", "moving", "diffusing")
+
+
+def feature_mask(features: Any, geometry: Geometry) -> int:
+    """The same answer as :func:`feature_flags`, as the host kernels read it.
+
+    Triton takes a flag per term because each one compiles a kernel of its own;
+    the host kernels take one integer and branch on it at run time, which is
+    the same choice the pool count already makes on each side.
+    """
+    flags = feature_flags(features, geometry)
+    return sum(
+        1 << bit for bit, name in enumerate(FEATURE_BITS) if flags[name]
+    )
+
+
 def wants_bound_pool(bound_fraction: Any) -> bool:
     """Whether this bound fraction gives the semisolid pool anything to do.
 

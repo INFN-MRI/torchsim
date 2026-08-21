@@ -156,8 +156,8 @@ def test_autograd_asks_for_exactly_the_differentiable_inputs():
     finally:
         _accelerators._wanted = original
 
-    # The seven trailing arguments -- state count, output count, thread count,
+    # The eight trailing arguments -- state count, output count, thread count,
     # the sequence geometry, the transition table, the semisolid pool's
-    # lineshape and whether a chemically exchanging pool is carried -- follow
-    # the packed buffers.
-    assert widths and all(width == PACKED_COUNT + 7 for width in widths)
+    # lineshape, whether a chemically exchanging pool is carried and which
+    # terms the tissue asks for -- follow the packed buffers.
+    assert widths and all(width == PACKED_COUNT + 8 for width in widths)
