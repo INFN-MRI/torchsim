@@ -23,12 +23,20 @@ import torch
 
 from .. import epg
 from ._accelerators import (
+    _wants_a_table,
     geometry_of,
     largest_pulse_offset,
     simulate_native,
 )
 from ._transition import ExactSliceProfile
-from ._description import AdcRole, EventType, RfUse, SequenceDescription, SequenceEvent
+from ._description import (
+    AdcRole,
+    EventType,
+    RfMode,
+    RfUse,
+    SequenceDescription,
+    SequenceEvent,
+)
 from ._lineshape import lineshape_reaching
 from ._parameters import (
     TISSUE_NAMES,
@@ -212,7 +220,7 @@ class EpgSimulator:
         repetitions: int = 1,
         record: RecordMode = "all",
         nstates: int | None = None,
-        slice_profile: Any = 1.0,
+        slice_profile: ExactSliceProfile | None = None,
         rf_raster_time_s: float = 1e-6,
         device: torch.device | str | None = None,
         backend: Literal["auto", "torch", "native"] = "auto",
@@ -230,6 +238,7 @@ class EpgSimulator:
         if record not in {"all", "acquired", "echo"}:
             raise ValueError("record must be 'all', 'acquired', or 'echo'")
 
+        tissue, sensitivities = _dynamic_transmit(tissue, description, device)
         tissue, shims = _resolve_transmit(tissue, description, device)
         prepared, output_shape, target_device = _prepare_tissue(
             tissue, device, shims
@@ -253,12 +262,16 @@ class EpgSimulator:
         if nstates < 1:
             raise ValueError("nstates must be positive")
 
-        exact = isinstance(slice_profile, ExactSliceProfile)
-        profile = (
-            slice_profile
-            if exact
-            else _as_float_tensor(slice_profile, target_device).reshape(-1)
-        )
+        if slice_profile is not None and not isinstance(
+            slice_profile, ExactSliceProfile
+        ):
+            raise TypeError(
+                "slice_profile says where across the slice to integrate the "
+                "sequence's own pulse -- ask for it with exact_slice_profile(). "
+                "A tensor of flip-angle scalings treats a Bloch response as "
+                "proportional to the pulse driving it, which it is not; give "
+                "the RF definition its waveform instead"
+            )
         if backend not in {"auto", "torch", "native"}:
             raise ValueError("backend must be 'auto', 'torch', or 'native'")
         if backend != "torch":
@@ -270,13 +283,14 @@ class EpgSimulator:
                 repetitions=repetitions,
                 record=record,
                 nstates=nstates,
-                slice_profile=profile,
+                slice_profile=slice_profile,
                 rf_raster_time_s=rf_raster_time_s,
                 lineshape=_absorption_table(description, b0, target_device)
                 if bound_pool
                 else None,
                 exchanging=exchange_pool,
                 features=features,
+                transmit=sensitivities,
             )
             if accelerated is not None:
                 return SimulationResult(*accelerated)
@@ -290,10 +304,17 @@ class EpgSimulator:
                 "this sequence fell back to the operator loop, which has one "
                 "pool"
             )
-        if exact:
+        if _wants_a_table(description, slice_profile):
             raise NotImplementedError(
-                "an exact slice profile is a tabulated rotation the fused "
-                "kernels read; the operator loop applies a flip angle and a "
+                "a pulse integrated across the slice is a tabulated rotation "
+                "the fused kernels read; the operator loop applies a flip "
+                "angle and a phase, which cannot name that rotation"
+            )
+        if sensitivities is not None:
+            raise NotImplementedError(
+                "a pulse whose channels carry their own waveforms turns about "
+                "an axis the voxel has to itself, which the fused kernels read "
+                "per voxel; the operator loop applies a flip angle and a "
                 "phase, which cannot name that rotation"
             )
         declared = geometry_of(description)
@@ -309,11 +330,12 @@ class EpgSimulator:
         states = epg.states_matrix(
             device=target_device,
             nstates=nstates,
-            nlocs=t1.numel() * profile.numel(),
+            nlocs=t1.numel(),
         )
         atom_count = t1.numel()
-        location_count = profile.numel()
+        location_count = 1
         states = _reshape_states(states, atom_count, location_count)
+        centre = torch.ones(1, dtype=torch.float32, device=target_device)
 
         signals: list[torch.Tensor] = []
         times: list[Any] = []
@@ -353,7 +375,7 @@ class EpgSimulator:
                         operator = epg.phased_rf_pulse_op(
                             flip,
                             phase,
-                            slice_prof=profile[None, :],
+                            slice_prof=centre[None, :],
                             B1=b1[:, None],
                             B1phase=b1_phase[:, None],
                         )
@@ -486,7 +508,7 @@ def simulate_subspace(
     repetitions: int = 1,
     record: RecordMode = "all",
     nstates: int | None = None,
-    slice_profile: Any = 1.0,
+    slice_profile: ExactSliceProfile | None = None,
     rf_raster_time_s: float = 1e-6,
     device: torch.device | str | None = None,
 ) -> SubspaceBasis:
@@ -522,6 +544,83 @@ def simulate_subspace(
 
 
 # %% private module subroutines
+
+
+def _dynamic_transmit(
+    tissue: TissueProperties,
+    description: SequenceDescription,
+    device: torch.device | str | None,
+) -> tuple[TissueProperties, torch.Tensor | None]:
+    """The per-channel sensitivities a dynamically shimmed pulse integrates.
+
+    A pulse whose channels each carry their own waveform does not reduce to a
+    flip and a phase, so its rotation is worked out per voxel from the complex
+    sensitivities themselves. What is left on the tissue is the magnitude of
+    the field a voxel sees when every channel drives unit weight -- which is
+    what the flip angle is read against and what a bound pool's saturation
+    reads -- and no transmit phase at all, since the rotation already turned by
+    it and the kernels would turn by it again.
+
+    Returns the tissue and the sensitivities, or the tissue unchanged and
+    ``None`` where no pulse asks for this.
+
+    Raises:
+        NotImplementedError: if the sequence also declares a transmit shim.
+        ValueError: if the pulses disagree on how many channels they drive, or
+            if the transmit maps do not lead with that many.
+    """
+    widths = {
+        definition.channel_count
+        for definition in description.rf_definitions.values()
+        if definition.rf_mode() is RfMode.DYNAMIC
+    }
+    if not widths:
+        return tissue, None
+    if len(widths) > 1:
+        raise ValueError(
+            f"the sequence's pulses drive {sorted(widths)} channels, and a "
+            f"voxel has one set of sensitivities"
+        )
+    (width,) = widths
+    if description.shim_definitions:
+        raise NotImplementedError(
+            "a pulse driving its own waveform per channel already says how "
+            "hard each channel plays; a static shim beside it is a second "
+            "answer to the same question"
+        )
+    resolved = torch.device(
+        device
+        if device is not None
+        else next(
+            (
+                value.device
+                for value in (tissue.b1, tissue.b1_phase_rad)
+                if isinstance(value, torch.Tensor)
+            ),
+            torch.device("cpu"),
+        )
+    )
+    magnitude, phase = torch.broadcast_tensors(
+        _as_float_tensor(tissue.b1, resolved),
+        _as_float_tensor(tissue.b1_phase_rad, resolved),
+    )
+    if magnitude.ndim == 0:
+        magnitude = magnitude.expand(width, 1)
+        phase = phase.expand(width, 1)
+    elif magnitude.shape[0] != width:
+        raise ValueError(
+            f"a pulse driving {width} channels reads a transmit map apiece, "
+            f"so b1 leads with {width} and not {magnitude.shape[0]}"
+        )
+    sensitivities = torch.polar(magnitude, phase).reshape(width, -1).mT.contiguous()
+    return (
+        replace(
+            tissue,
+            b1=sensitivities.sum(dim=-1).abs().reshape(magnitude.shape[1:]),
+            b1_phase_rad=0.0,
+        ),
+        sensitivities.to(torch.complex128),
+    )
 
 
 def _resolve_transmit(

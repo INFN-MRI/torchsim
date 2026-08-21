@@ -8754,6 +8754,10 @@ PyObject* simulate(PyObject*, PyObject* arguments) {
     const bool vectorize = lanes_enabled && train_count >= 4
         && buffers.shim_count == 1
         && buffers.profile == nullptr
+        // A per-voxel pair is the pulse, not a refinement of it: the lane
+        // kernel carries no rotation to read one into, so it would play a hard
+        // pulse instead of the one the caller described.
+        && buffers.dynamic == nullptr
         && pools == Pools::ONE
         && !any_diffusion(buffers.diffusion, buffers.atom_count)
         && !any_diffusion(buffers.velocity, buffers.atom_count);

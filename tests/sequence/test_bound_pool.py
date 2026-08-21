@@ -797,7 +797,7 @@ def test_the_second_order_pass_carries_the_bound_pool():
         value.detach().clone().requires_grad_(True) for value in prepared
     )
     signal = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None,
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None,
         lineshape_table(), False, None
     )
     gradients = torch.autograd.grad(signal, leaves, seed, create_graph=True)
@@ -1148,7 +1148,7 @@ def _routes(leaves, events, profile=None):
 
     table = lineshape_table()
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, table, False, None
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, None, table, False, None
     )
     reference = simulate_packed(
         leaves,

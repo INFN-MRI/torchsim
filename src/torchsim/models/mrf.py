@@ -25,10 +25,10 @@ class MRFModel(AbstractModel):
     set_properties(T1, T2, M0=1.0, B1=1.0, inv_efficiency=1.0):
         Sets tissue relaxation properties and experimental conditions.
 
-    set_sequence(flip, TR, TI=0.0, slice_prof=1.0, nstates=10, nreps=1):
+    set_sequence(flip, TR, TI=0.0, nstates=10, nreps=1):
         Configures the pulse sequence parameters for the simulation.
 
-    _engine(T1, T2, flip, TR, TI=0.0, M0=1.0, B1=1.0, inv_efficiency=1.0, slice_prof=1.0, nstates=10, nreps=1):
+    _engine(T1, T2, flip, TR, TI=0.0, M0=1.0, B1=1.0, inv_efficiency=1.0, nstates=10, nreps=1):
         Computes the MRF signal for given tissue properties and sequence parameters.
 
     Examples
@@ -85,7 +85,6 @@ class MRFModel(AbstractModel):
         flip: float | npt.ArrayLike,
         TR: float | npt.ArrayLike,
         TI: float = 0.0,
-        slice_prof: float | npt.ArrayLike = 1.0,
         nstates: int = 10,
         nreps: int = 1,
     ):
@@ -101,9 +100,6 @@ class MRFModel(AbstractModel):
         TI : float, optional
             Inversion time in milliseconds.
             The default is ``0.0``.
-        slice_prof : float | npt.ArrayLike, optional
-            Flip angle scaling along slice profile.
-            The default is ``1.0``.
         nstates : int, optional
             Number of EPG states to be retained.
             The default is ``10``.
@@ -115,7 +111,6 @@ class MRFModel(AbstractModel):
         self.sequence.flip = torch.pi * flip / 180.0
         self.sequence.TR = TR * 1e-3  # ms -> s
         self.sequence.TI = TI * 1e-3  # ms -> s
-        self.sequence.slice_prof = slice_prof
         self.sequence.nstates = nstates
         self.sequence.nreps = nreps
 
@@ -129,7 +124,6 @@ class MRFModel(AbstractModel):
         M0: float | npt.ArrayLike = 1.0,
         B1: float | npt.ArrayLike = 1.0,
         inv_efficiency: float | npt.ArrayLike = 1.0,
-        slice_prof: float | npt.ArrayLike = 1.0,
         nstates: int = 10,
         nreps: int = 1,
     ):
@@ -145,6 +139,5 @@ class MRFModel(AbstractModel):
             ),
             repetitions=nreps,
             nstates=nstates,
-            slice_profile=slice_prof,
         ).signal
         return 1j * signal[..., -len(flip) :]

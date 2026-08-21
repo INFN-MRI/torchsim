@@ -803,7 +803,7 @@ def _routes(leaves, events):
     from torchsim.sequence._accelerators import _NativeEpg
 
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, None,
+        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, None, None,
         lineshape_table(), True, None,
     )
     reference = simulate_packed(

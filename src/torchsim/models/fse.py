@@ -25,10 +25,10 @@ class FSEModel(AbstractModel):
     set_properties(T1, T2, M0=1.0, B1=1.0):
         Sets tissue relaxation properties and experimental conditions.
 
-    set_sequence(flip, ESP, phases=0.0, TR=1e6, exc_flip=90.0, exc_phase=90.0, slice_prof=1.0, nstates=10):
+    set_sequence(flip, ESP, phases=0.0, TR=1e6, exc_flip=90.0, exc_phase=90.0, nstates=10):
         Configures the pulse sequence parameters for the simulation.
 
-    _engine(T1, T2, flip, ESP, phases, TR=1e6, exc_flip=90.0, exc_phase=90.0, M0=1.0, B1=1.0, slice_prof=1.0, nstates=10):
+    _engine(T1, T2, flip, ESP, phases, TR=1e6, exc_flip=90.0, exc_phase=90.0, M0=1.0, B1=1.0, nstates=10):
         Computes the FSE signal for given tissue properties and sequence parameters.
 
     Examples
@@ -84,7 +84,6 @@ class FSEModel(AbstractModel):
         TR: float | npt.ArrayLike = 1e6,
         exc_flip: float = 90.0,
         exc_phase: float = 90.0,
-        slice_prof: float | npt.ArrayLike = 1.0,
         nstates: int = 10,
     ):
         """
@@ -108,9 +107,6 @@ class FSEModel(AbstractModel):
         exc_phase : float, optional
             Excitation flip angle phase in degrees.
             The default is ``90.0``.
-        slice_prof : float | npt.ArrayLike, optional
-            Flip angle scaling along slice profile.
-            The default is ``1.0``.
         nstates : int, optional
             Number of EPG states to be retained.
             The default is ``10``.
@@ -124,7 +120,6 @@ class FSEModel(AbstractModel):
         self.sequence.exc_flip = torch.pi * exc_flip / 180.0
         self.sequence.exc_phase = torch.pi * exc_phase / 180.0
         self.sequence.TR = TR * 1e-3  # ms -> s
-        self.sequence.slice_prof = slice_prof
         self.sequence.nstates = nstates
 
     @staticmethod
@@ -139,7 +134,6 @@ class FSEModel(AbstractModel):
         TR: float | npt.ArrayLike = 1e6,
         M0: float | npt.ArrayLike = 1.0,
         B1: float | npt.ArrayLike = 1.0,
-        slice_prof: float | npt.ArrayLike = 1.0,
         nstates: int = 10,
     ):
         description = fse_description(
@@ -153,7 +147,6 @@ class FSEModel(AbstractModel):
             description,
             TissueProperties(T1, T2, b1=B1),
             nstates=nstates,
-            slice_profile=slice_prof,
         ).signal
         # Get elapsed time and time left before next TR
         echo_train_length = torch.atleast_1d(torch.as_tensor(flip)).shape[-1]

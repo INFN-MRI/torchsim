@@ -14,7 +14,6 @@ def mpnrage_sim(
     TR: float | npt.ArrayLike,
     T1: float | npt.ArrayLike,
     diff: str | tuple[str] = None,
-    slice_prof: float | npt.ArrayLike = 1.0,
     B1: float | npt.ArrayLike = 1.0,
     inv_efficiency: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
@@ -38,9 +37,6 @@ def mpnrage_sim(
     diff : str | tuple[str], optional
         Arguments to get the signal derivative with respect to.
         The default is ``None`` (no differentation).
-    slice_prof : float | npt.ArrayLike, optional
-        Flip angle scaling along slice profile.
-        The default is ``1.0``.
     B1 : float | npt.ArrayLike, optional
         Flip angle scaling map, default is ``1.0``.
     inv_efficiency : float | npt.ArrayLike, optional
@@ -69,5 +65,5 @@ def mpnrage_sim(
     """
     model = MPnRAGEModel(diff, chunk_size, device)
     model.set_properties(T1, M0, B1, inv_efficiency)
-    model.set_sequence(nshots, flip, TR, TI, slice_prof)
+    model.set_sequence(nshots, flip, TR, TI)
     return model()

@@ -10756,12 +10756,10 @@ def simulate_into(
     # compiled out, so an unprofiled launch passes one it already has.
     table = None if profile is None else profile.packed(t1.device)
     pairs = None if dynamic is None else dynamic.packed(t1.device)
-    pair_rows = None if dynamic is None else dynamic.index.to(
-        device=t1.device, dtype=torch.int32
-    )
-    pairs = None if dynamic is None else dynamic.packed(t1.device)
-    pair_rows = None if dynamic is None else dynamic.index.to(
-        device=t1.device, dtype=torch.int32
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(train_count, kind.numel()).to(t1.device)
     )
     table_rows = None if profile is None else profile.rows(kind.device)
     absorption = None if lineshape is None else lineshape.packed(t1.device)
@@ -10990,8 +10988,10 @@ def simulate_jvp_into(
 
     table = None if profile is None else profile.packed(t1.device)
     pairs = None if dynamic is None else dynamic.packed(t1.device)
-    pair_rows = None if dynamic is None else dynamic.index.to(
-        device=t1.device, dtype=torch.int32
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(train_count, kind.numel()).to(t1.device)
     )
     pair_direction = (
         None if dynamic_direction is None else dynamic_direction.to(t1.device)
@@ -11413,8 +11413,10 @@ def simulate_vjp_jvp_into(
     trajectory, scratch = buffers.trajectory, buffers.scratch
     table = None if profile is None else profile.packed(t1.device)
     pairs = None if dynamic is None else dynamic.packed(t1.device)
-    pair_rows = None if dynamic is None else dynamic.index.to(
-        device=t1.device, dtype=torch.int32
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(train_count, kind.numel()).to(t1.device)
     )
     pair_direction = (
         None if dynamic_direction is None else dynamic_direction.to(t1.device)

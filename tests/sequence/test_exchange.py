@@ -733,8 +733,8 @@ def _routes(leaves, events, profile=None):
     from torchsim.sequence._accelerators import _NativeEpg
 
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, profile, None, True,
-        None,
+        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, profile, None, None,
+        True, None,
     )
     reference = simulate_packed(
         leaves,
@@ -806,7 +806,7 @@ def test_an_inversion_turns_both_pools_over():
     from torchsim.sequence._accelerators import _NativeEpg
 
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True, None
+        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, None, True, None
     )
     reference = simulate_packed(
         leaves, events, state_count=STATES, output_count=1, exchanging=True
@@ -831,7 +831,7 @@ def test_the_inversion_efficiency_carries_a_gradient_from_both_pools():
     seed = torch.full((1, 1), 1.0 + 1.0j, dtype=torch.complex64)
     fused = torch.autograd.grad(
         _NativeEpg.apply(
-            *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, True, None
+            *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, None, True, None
         ),
         leaves,
         seed,

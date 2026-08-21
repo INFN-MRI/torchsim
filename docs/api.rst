@@ -242,6 +242,5 @@ Other simulation utilities.
    :nosignatures:
 
    torchsim.utils.b1rms
-   torchsim.utils.slice_prof
 
 

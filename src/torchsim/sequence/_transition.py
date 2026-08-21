@@ -39,7 +39,9 @@ __all__ = [
     "transition_table",
 ]
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from itertools import chain, repeat
 from typing import Any
 
 import torch
@@ -144,7 +146,7 @@ class TransitionTable:
 
 
 def compose_spinor(
-    drive: torch.Tensor, turn_z: torch.Tensor
+    drive: Any, turn_z: torch.Tensor | Iterable[torch.Tensor]
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """The Cayley-Klein pair a shaped pulse leaves, sample by sample.
 
@@ -161,21 +163,38 @@ def compose_spinor(
         which is how a per-voxel field is composed without ever holding one
         for every sample at once.
     turn_z
-        The longitudinal turn per sample, radians, one per spin.
+        The longitudinal turn per sample, radians, one per spin. A tensor is
+        the turn every sample makes -- a gradient the scanner holds -- and an
+        iterable of per-sample tensors is one it moves, in the same form
+        ``drive`` takes.
 
     Returns:
-        ``(a, b)`` shaped like ``turn_z``.
+        ``(a, b)`` shaped like the turn.
+
+    Raises:
+        ValueError: if a moving gradient runs out before the pulse does, or
+            the other way about.
     """
-    a = torch.ones_like(turn_z, dtype=torch.complex128)
+    held = isinstance(turn_z, torch.Tensor)
+    if held:
+        turns: Iterator[torch.Tensor] = repeat(turn_z)
+        spins = turn_z
+    else:
+        turns = iter(turn_z)
+        spins = next(turns)
+        turns = chain((spins,), turns)
+    a = torch.ones_like(spins, dtype=torch.complex128)
     b = torch.zeros_like(a)
-    for sample in drive:
-        turn_x = sample.real.expand_as(turn_z)
-        turn_y = sample.imag.expand_as(turn_z)
+    steps = zip(drive, turns) if held else zip(drive, turns, strict=True)
+    for sample, turn in steps:
+        turn_x = sample.real.expand_as(spins)
+        turn_y = sample.imag.expand_as(spins)
+        turn = turn.expand_as(spins)
         # Both coefficients are smooth functions of the squared angle, and are
         # taken that way near the origin: a spin at the slice centre under no
         # flip sits at exactly zero, where the square root is continuous but
         # its derivative is not, and what reads this carries derivatives.
-        square = turn_x**2 + turn_y**2 + turn_z**2
+        square = turn_x**2 + turn_y**2 + turn**2
         turning = square > 1e-18
         angle = torch.sqrt(torch.where(turning, square, torch.ones_like(square)))
         half = 0.5 * angle
@@ -188,7 +207,7 @@ def compose_spinor(
             torch.sin(half) / angle,
             0.5 - square / 48.0 + square**2 / 3840.0,
         )
-        step_a = cosine - 1j * turn_z * scale
+        step_a = cosine - 1j * turn * scale
         step_b = -1j * (turn_x - 1j * turn_y) * scale
         a, b = step_a * a - step_b * b.conj(), step_b * a.conj() + step_a * b
     return a, b
@@ -229,6 +248,18 @@ class DynamicPairs:
                 f"a dynamic pair is one row per pulse of one entry per voxel, "
                 f"so it is two-dimensional, not {self.a.ndim}"
             )
+        if self.index.ndim not in (1, 2):
+            raise ValueError(
+                f"the index names a row per event, for one train or for each, "
+                f"so it is one- or two-dimensional, not {self.index.ndim}"
+            )
+        if self.index.numel() and (
+            int(self.index.min()) < 0 or int(self.index.max()) >= self.rows
+        ):
+            raise ValueError(
+                f"the index reaches row {int(self.index.max())} of "
+                f"{self.rows}"
+            )
 
     @property
     def rows(self) -> int:
@@ -243,6 +274,31 @@ class DynamicPairs:
     def at(self, row: int) -> tuple[torch.Tensor, torch.Tensor]:
         """The pair one pulse performs, one entry per voxel."""
         return self.a[row], self.b[row]
+
+    def rows_per_event(
+        self, train_count: int, event_count: int
+    ) -> torch.Tensor:
+        """The row each event of each train reads, as the kernels index it.
+
+        The kernels read this at ``train * event_count + event``, so it has to
+        span every train -- a shorter buffer is read past its end rather than
+        wrapped. An index given for one train is taken to mean that every train
+        reads the same rows, which is what a set of pulses shared across a
+        batch is; one given per train is flattened in place.
+
+        Raises:
+            ValueError: if the index fits neither shape.
+        """
+        flat = self.index.reshape(-1).to(torch.int32)
+        if flat.numel() == train_count * event_count:
+            return flat.contiguous()
+        if flat.numel() == event_count:
+            return flat.repeat(train_count).contiguous()
+        raise ValueError(
+            f"the index names {flat.numel()} rows, but this launch reads one "
+            f"per event of every train -- {event_count} or "
+            f"{train_count * event_count}"
+        )
 
     def packed(self, device: torch.device | str | None = None) -> torch.Tensor:
         """The pair laid out as the kernels index it.
@@ -259,13 +315,37 @@ class DynamicPairs:
         )
 
 
+def _longitudinal(
+    definition: RfDefinition,
+    detune: torch.Tensor,
+    placed: torch.Tensor | None,
+    samples: int,
+    device: torch.device | str | None,
+) -> torch.Tensor | Any:
+    """The longitudinal turn per sample: off-resonance, and where the spin sits.
+
+    A gradient the scanner holds contributes the same turn every sample, so the
+    two add once and the result is handed over as one tensor. A gradient it
+    moves scales the spin's own contribution sample by sample, which is what
+    :func:`compose_spinor` takes an iterable for.
+    """
+    waveform = definition.gradient_waveform()
+    if placed is None:
+        return detune
+    if waveform is None:
+        return detune + placed
+    moving = torch.as_tensor(waveform, dtype=torch.float64, device=device)
+    return (detune + placed * moving[sample] for sample in range(samples))
+
+
 def dynamic_pair(
     definition: RfDefinition,
-    weights: torch.Tensor,
     sensitivities: torch.Tensor,
     *,
+    weights: torch.Tensor | None = None,
     flip: torch.Tensor | float = 1.0,
     off_resonance_hz: torch.Tensor | None = None,
+    positions: torch.Tensor | None = None,
     rf_raster_time_s: float = 1e-6,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """The rotation a dynamically shimmed pulse performs, voxel by voxel.
@@ -287,28 +367,37 @@ def dynamic_pair(
     ----------
     definition
         The pulse. Its complex envelope is played sample by sample at
-        ``rf_raster_time_s`` and normalized by its own integral, so a voxel
-        the array puts unit field on turns through exactly ``flip``.
-    weights
-        Complex channel weights, ``(channels, samples)`` while the pulse plays,
-        or ``(channels,)`` for a weight it holds -- which is the static array
-        this generalizes.
+        ``rf_raster_time_s`` and normalized by its own integral, so a voxel the
+        array puts unit field on turns through exactly ``flip``. A per-channel
+        envelope is the drive itself; a single one is the waveform every
+        channel plays, and ``weights`` says how hard each drives it.
     sensitivities
         Complex per-channel transmit sensitivities, ``(voxels, channels)``.
+    weights
+        Complex channel weights, ``(channels, samples)`` while the pulse plays,
+        or ``(channels,)`` for a weight they hold. Unity when not given.
     flip
         The nominal flip the event drives, in radians. Scales every channel
         alike and so still factors out of the array.
     off_resonance_hz
         What each voxel is off resonance by while the pulse plays. Zero when
         not given.
+    positions
+        Where across the slice to integrate, in units of the slice thickness,
+        so that the passband is ``[-0.5, 0.5]``. The slice-select gradient is
+        taken to hold for the whole pulse, which makes position times the
+        definition's bandwidth the offset in Hz it adds. One location when not
+        given.
 
     Returns:
-        ``(a, b)`` per voxel, in ``complex64``.
+        ``(a, b)`` in ``complex64``, one entry per voxel and location with
+        **locations fastest** -- ``voxel * locations + location``, which is how
+        the kernels index an atom across a slice.
 
     Raises:
         ValueError: if the pulse has no samples, if it integrates to nothing,
-            or if the weights and the sensitivities disagree on the channel
-            count.
+            or if the envelope, the weights and the sensitivities disagree on
+            the channel count.
     """
     device = sensitivities.device
     envelope = torch.as_tensor(
@@ -316,6 +405,8 @@ def dynamic_pair(
     )
     if envelope.numel() == 0:
         raise ValueError(f"RF definition {definition.id} has an empty envelope")
+    if envelope.ndim == 1:
+        envelope = envelope[None]
     area = envelope.sum()
     if area.abs() <= 1e-6 * envelope.abs().sum():
         raise ValueError(
@@ -323,42 +414,77 @@ def dynamic_pair(
             f"flip angle to drive"
         )
     shape = envelope / area
+    samples = int(shape.shape[1])
 
-    weights = torch.as_tensor(weights).to(torch.complex128)
-    if weights.ndim == 1:
-        weights = weights[:, None]
     sensitivities = torch.as_tensor(sensitivities).to(torch.complex128)
-    if weights.shape[0] != sensitivities.shape[-1]:
+    if weights is None:
+        weights = torch.ones(shape.shape[0], 1, dtype=torch.complex128, device=device)
+    else:
+        weights = torch.as_tensor(weights).to(torch.complex128)
+        if weights.ndim == 1:
+            weights = weights[:, None]
+    if shape.shape[0] == 1 and weights.shape[0] != 1:
+        # One waveform every channel plays: the weights are what makes the
+        # channels differ, which is the static array this generalizes.
+        shape = shape.expand(weights.shape[0], -1)
+    channels = int(shape.shape[0])
+    if weights.shape[0] != channels:
         raise ValueError(
-            f"the weights drive {weights.shape[0]} channels and the "
+            f"the pulse drives {channels} channels and the weights {weights.shape[0]}"
+        )
+    if sensitivities.shape[-1] != channels:
+        raise ValueError(
+            f"the weights drive {channels} channels and the "
             f"sensitivities map {sensitivities.shape[-1]}"
         )
-    samples = int(shape.numel())
     if weights.shape[1] not in (1, samples):
         raise ValueError(
             f"the weights carry {weights.shape[1]} samples and the pulse "
             f"{samples}"
         )
 
-    voxels = sensitivities.shape[0]
-    if off_resonance_hz is None:
-        turn_z = torch.zeros(voxels, dtype=torch.float64, device=device)
+    voxels = int(sensitivities.shape[0])
+    if positions is None:
+        locations = 1
+        across = None
     else:
-        turn_z = (
+        across = torch.as_tensor(
+            positions, dtype=torch.float64, device=device
+        ).reshape(-1)
+        locations = int(across.numel())
+        across = (
+            2.0
+            * torch.pi
+            * float(definition.bandwidth_hz)
+            * across
+            * rf_raster_time_s
+        )
+
+    detune = torch.zeros(voxels * locations, dtype=torch.float64, device=device)
+    if off_resonance_hz is not None:
+        detune = detune + (
             2.0
             * torch.pi
             * torch.as_tensor(off_resonance_hz).to(torch.float64)
             * rf_raster_time_s
-        ).expand(voxels)
+        ).expand(voxels).repeat_interleave(locations)
+    placed = None if across is None else across.repeat(voxels)
+    if locations > 1:
+        # A voxel's transmit does not depend on where in the slice it sits.
+        sensitivities = sensitivities.repeat_interleave(locations, dim=0)
+
     driven = torch.as_tensor(flip, dtype=torch.float64, device=device)
 
     def field() -> Any:
         held = weights.shape[1] == 1
         for sample in range(samples):
-            column = weights[:, 0 if held else sample]
-            yield driven * shape[sample] * (sensitivities @ column)
+            column = shape[:, sample] * weights[:, 0 if held else sample]
+            yield driven * (sensitivities @ column)
 
-    a, b = compose_spinor(field(), turn_z)
+    a, b = compose_spinor(
+        field(),
+        _longitudinal(definition, detune, placed, samples, device),
+    )
     return a.to(torch.complex64), b.to(torch.complex64)
 
 
@@ -433,9 +559,18 @@ def transition_table(
         * rf_raster_time_s
     )
 
+    moving = definition.gradient_waveform()
+    if moving is not None:
+        moving = torch.as_tensor(moving, dtype=torch.float64, device=device)
+
     def integrate(flip: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """The pair the whole pulse leaves, at every (position, flip)."""
-        turn_z = offset[:, None].expand(positions.numel(), flip.numel())
+        held = offset[:, None].expand(positions.numel(), flip.numel())
+        turn_z = (
+            held
+            if moving is None
+            else (held * step for step in moving)
+        )
         return compose_spinor(weight[:, None, None] * flip, turn_z)
 
     values, slopes = torch.func.jvp(
@@ -452,11 +587,11 @@ def transition_table(
 
 @dataclass(frozen=True)
 class ExactSliceProfile:
-    """A request for the rotation a sequence's pulse actually performs.
+    """Where across the slice a sequence's pulse is to be integrated.
 
-    Passed as ``slice_profile=`` in place of a tensor of flip scalings. The
-    table is built from the sequence's own RF definition when the simulation
-    runs, because that is where the pulse and its raster are known.
+    Passed as ``slice_profile=``. The table is built from the sequence's own RF
+    definition when the simulation runs, because that is where the pulse and
+    its raster are known -- a caller names positions, never a response.
 
     ``points`` are the slice positions sampled, in units of the slice
     thickness, so the passband is ``[-0.5, 0.5]``. An integer asks for that
@@ -489,13 +624,16 @@ def exact_slice_profile(
     bins: int = 64,
     theta_max: float = 2.0 * torch.pi,
 ) -> ExactSliceProfile:
-    """Ask for the exact slice profile rather than a flip-angle scaling.
+    """Ask for a pulse to be integrated across the slice.
 
-    A slice profile is a Bloch response, and the scaling model treats it as
-    proportional to the pulse driving it -- fitted once at nominal amplitude
-    and then multiplied by the transmit field. That is exact only where the
-    transmit field is one. This asks instead for the rotation the pulse
-    performs at each position, which is right at any transmit scaling.
+    A slice profile is a Bloch response, so it is not proportional to the pulse
+    driving it and cannot be carried as a scaling on the flip angle. This names
+    the positions at which the rotation the pulse actually performs is worked
+    out, which is right at any transmit scaling.
+
+    A definition carrying a waveform worth integrating is tabulated whether or
+    not this is passed; what this adds is where across the slice to sample it,
+    and it puts a pulse that would otherwise be played hard on the same route.
 
     Parameters
     ----------

@@ -1,14 +1,12 @@
-"""Asking for the exact slice profile from the public API.
+"""Integrating a sequence's own pulse across the slice, from the public API.
 
-``slice_profile=`` has taken a tensor of flip-angle scalings: a Bloch response
-treated as proportional to the pulse driving it, which it is not. Passing
-:func:`exact_slice_profile` instead asks for the rotation the sequence's own
-pulse performs at each position, built from the RF definition the description
-already carries.
+A slice profile is a Bloch response, so it is worked out from the RF definition
+the description already carries rather than named by the caller.
+:func:`exact_slice_profile` says only where across the slice to sample it.
 
 The anchor is a pulse with no gradient across it, whose rotation is the same
-everywhere along the slice and must therefore reproduce a simulation with no
-profile at all.
+everywhere along the slice and must therefore reproduce a simulation that
+integrates nothing.
 """
 
 from __future__ import annotations
@@ -68,7 +66,7 @@ def _tissue(**overrides):
     )
 
 
-def _signal(description, profile, tissue=None, backend="native"):
+def _signal(description, profile=None, tissue=None, backend="native"):
     return FSE().simulate(
         description,
         _tissue() if tissue is None else tissue,
@@ -81,7 +79,7 @@ def _signal(description, profile, tissue=None, backend="native"):
 def test_a_pulse_with_no_gradient_across_it_is_no_profile_at_all() -> None:
     """The anchor: same rotation everywhere, so the mean over it is itself."""
     description = _describe()
-    plain = _signal(description, 1.0)
+    plain = _signal(description)
     exact = _signal(description, exact_slice_profile(5))
 
     assert exact.shape == plain.shape
@@ -91,52 +89,10 @@ def test_a_pulse_with_no_gradient_across_it_is_no_profile_at_all() -> None:
 def test_the_slice_shows_up_when_the_pulse_selects_one() -> None:
     """A real sinc under its gradient is not the pulse at the slice centre."""
     description = _describe(definition=_sinc(4.0e3))
-    flat = _signal(description, 1.0)
+    centre = _signal(description)
     exact = _signal(description, exact_slice_profile(15))
 
-    assert (exact - flat).abs().max() > 0.05 * flat.abs().max()
-
-
-def test_the_exact_profile_follows_the_transmit_where_a_scaling_cannot() -> None:
-    """The point of the stage, reached through the public API.
-
-    The scaling model fits the profile once at nominal amplitude, so it tracks
-    the transmit field only where that field is one. Two transmit values that
-    the exact profile separates must not move the scaled one the same way.
-    """
-    description = _describe(definition=_sinc(4.0e3))
-    positions = torch.linspace(-1.0, 1.0, 9)
-    # The profile the scaling model would fit: on-axis flip at nominal drive.
-    from torchsim.sequence._transition import transition_table
-
-    table = transition_table(
-        description.rf_definitions[0], positions, bins=64, rf_raster_time_s=1e-6
-    )
-    nominal = float(torch.deg2rad(torch.tensor(150.0)))
-    fitted = torch.tensor(
-        [
-            2.0
-            * float(
-                torch.arccos(table.a[index, :].abs().clamp(max=1.0)[
-                    min(63, int(round(nominal / table.step)))
-                ])
-            )
-            for index in range(len(positions))
-        ]
-    )
-    fitted = fitted / fitted[len(positions) // 2]
-
-    scaled = {}
-    exact = {}
-    for b1 in (1.0, 1.4):
-        tissue = _tissue(b1=torch.full((2,), b1))
-        scaled[b1] = _signal(description, fitted, tissue=tissue)
-        exact[b1] = _signal(description, exact_slice_profile(positions), tissue=tissue)
-
-    # At nominal transmit the two models are close; away from it they part.
-    near = (scaled[1.0] - exact[1.0]).abs().max()
-    far = (scaled[1.4] - exact[1.4]).abs().max()
-    assert far > 2.0 * near
+    assert (exact - centre).abs().max() > 0.05 * centre.abs().max()
 
 
 def test_the_gradients_reach_the_flip_angles_through_the_table() -> None:
@@ -209,7 +165,7 @@ def test_two_shapes_that_are_the_same_shape_are_the_one_table_twice() -> None:
     ).abs().max() < 1e-5 * _signal(single, profile).abs().max()
 
 
-def test_a_sequence_with_no_shaped_pulse_is_refused() -> None:
+def test_a_sequence_with_no_pulse_at_all_is_refused() -> None:
     from dataclasses import replace
 
     description = _describe()
@@ -219,7 +175,7 @@ def test_a_sequence_with_no_shaped_pulse_is_refused() -> None:
             event for event in description.events if event.type.name != "RF"
         ),
     )
-    with pytest.raises(ValueError, match="no shaped pulse"):
+    with pytest.raises(ValueError, match="no pulse to take it from"):
         _signal(description, exact_slice_profile(5))
 
 
@@ -251,3 +207,108 @@ def test_the_card_reads_each_shape_the_host_reads() -> None:
     ).signal
 
     assert (host - card.cpu()).abs().max() < 1e-4 * host.abs().max()
+
+
+# --- the waveform decides, not the call ---
+
+
+def test_a_shaped_pulse_is_integrated_without_being_asked() -> None:
+    """A definition carrying a waveform worth integrating is tabulated on its
+    own, so the caller never names a mode -- only where to sample it.
+    """
+    from torchsim.sequence._accelerators import _wants_a_table
+
+    shaped = _describe(definition=_sinc(4.0e3))
+    hard = _describe()
+
+    assert _wants_a_table(shaped, None)
+    assert not _wants_a_table(hard, None)
+    assert _wants_a_table(hard, exact_slice_profile(5))
+
+
+def test_a_builder_pulse_stays_the_hard_pulse_to_the_bit() -> None:
+    """Everything the builders emit is a rectangle played without slice
+    selection, which the instant operator turns exactly. Tabulating one and
+    reading it at a flip between knots would not, so it must not happen by
+    itself.
+    """
+    from torchsim.sequence._accelerators import _run_packed
+
+    description = _describe()
+    seen = {}
+    signal = None
+
+    from torchsim.sequence import _accelerators
+
+    original = _accelerators._run_packed
+
+    def record(*args, **kwargs):
+        seen.update(kwargs)
+        return original(*args, **kwargs)
+
+    _accelerators._run_packed = record
+    try:
+        signal = _signal(description)
+    finally:
+        _accelerators._run_packed = original
+
+    assert seen["profile"] is None
+    assert seen["dynamic"] is None
+    assert float(signal.abs().max()) > 0.0
+    assert _run_packed is original
+
+
+def test_a_flip_angle_scaling_is_refused() -> None:
+    """A response is not proportional to the pulse driving it, so a tensor of
+    scalings is not a slice profile and is not taken for one.
+    """
+    with pytest.raises(TypeError, match="exact_slice_profile"):
+        _signal(_describe(), torch.linspace(0.4, 1.0, 5))
+
+
+def test_the_table_lays_its_copies_out_voxel_major() -> None:
+    """The mean at the end folds the last axis, so the copies have to be there
+    and each voxel's have to be adjacent.
+    """
+    from torchsim.sequence._accelerators import _across_the_table
+
+    tissue = tuple(
+        torch.tensor([800.0, 1400.0], dtype=torch.float32) for _ in range(7)
+    )
+    spread = _across_the_table(tissue, 3)
+
+    assert spread[0].tolist() == [800.0, 800.0, 800.0, 1400.0, 1400.0, 1400.0]
+    # A position is not a scaling of anything, so the transmit is left alone.
+    assert torch.equal(spread[3], spread[0])
+    assert _across_the_table(tissue, 1)[0].numel() == 2
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_positions_are_counted_by_the_memory_policy() -> None:
+    """Spreading happens before the launch, so a streamed run has to see the
+    copies as the voxels rather than budget for the volume it started with.
+    """
+    from torchsim.sequence import offload
+
+    from test_offload import _peak_over_baseline
+
+    voxels, points = 40_000, 5
+    budget = 8 << 20
+    description = _describe(definition=_sinc(4.0e3))
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(300.0, 2000.0, voxels),
+        t2_ms=torch.linspace(20.0, 200.0, voxels),
+    )
+    profile = exact_slice_profile(points)
+    expected = _signal(description, profile, tissue=tissue)
+    streamed = []
+
+    def run():
+        with offload(["cuda"], budget_bytes=budget):
+            streamed.append(_signal(description, profile, tissue=tissue))
+
+    resident = _peak_over_baseline(run)
+
+    assert resident <= budget * 1.1
+    worst = (streamed[0] - expected).abs().max() / expected.abs().max()
+    assert worst < 1e-5

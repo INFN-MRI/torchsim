@@ -14,7 +14,6 @@ def mrf_sim(
     T1: float | npt.ArrayLike,
     T2: float | npt.ArrayLike,
     diff: str | tuple[str] = None,
-    slice_prof: float | npt.ArrayLike = 1.0,
     B1: float | npt.ArrayLike = 1.0,
     inv_efficiency: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
@@ -40,9 +39,6 @@ def mrf_sim(
     diff : str | tuple[str], optional
         Arguments to get the signal derivative with respect to.
         The default is ``None`` (no differentation).
-    slice_prof : float | npt.ArrayLike, optional
-        Flip angle scaling along slice profile.
-        The default is ``1.0``.
     B1 : float | npt.ArrayLike, optional
         Flip angle scaling map, default is ``1.0``.
     inv_efficiency : float | npt.ArrayLike, optional
@@ -77,5 +73,5 @@ def mrf_sim(
     """
     model = MRFModel(diff, chunk_size, device)
     model.set_properties(T1, T2, M0, B1, inv_efficiency)
-    model.set_sequence(flip, TR, TI, slice_prof, nstates, nreps)
+    model.set_sequence(flip, TR, TI, nstates, nreps)
     return model()

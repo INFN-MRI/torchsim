@@ -6,6 +6,7 @@ __all__ = [
     "AdcRole",
     "EventType",
     "RfDefinition",
+    "RfMode",
     "RfShape",
     "RfUse",
     "SequenceDescription",
@@ -30,6 +31,22 @@ class EventType(IntEnum):
     WAIT = 0
     RF = 1
     ADC = 2
+
+
+class RfMode(IntEnum):
+    """How a pulse's rotation is reached.
+
+    The three are alternatives rather than combinable. ``INSTANT`` turns
+    through a flip angle and a phase. ``PROFILED`` reads the rotation from a
+    table over slice position and effective flip. ``DYNAMIC`` reads it per
+    voxel, which is what a pulse whose channel weights vary while it plays
+    needs -- and which subsumes a profile, since a rotation integrated at the
+    voxel's own position is one.
+    """
+
+    INSTANT = 0
+    PROFILED = 1
+    DYNAMIC = 2
 
 
 class RfUse(IntEnum):
@@ -190,19 +207,128 @@ class RfDefinition:
     band_frequency_offsets_hz: tuple[float, ...]
     band_bandwidth_hz: float
     total_b1sq_power: float
-    magnitude: RfShape
-    phase: RfShape | None = None
+    magnitude: RfShape | tuple[RfShape, ...]
+    phase: RfShape | tuple[RfShape, ...] | None = None
     time: RfShape | None = None
+    gradient: RfShape | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.magnitude, tuple):
+            if not self.magnitude:
+                raise ValueError(f"RF definition {self.id} drives no channel")
+            if isinstance(self.phase, tuple):
+                if len(self.phase) != len(self.magnitude):
+                    raise ValueError(
+                        f"RF definition {self.id}: {len(self.magnitude)} "
+                        f"magnitude channels against {len(self.phase)} phase"
+                    )
+            elif self.phase is not None:
+                raise ValueError(
+                    f"RF definition {self.id}: a per-channel magnitude takes a "
+                    f"phase per channel, or none"
+                )
+        elif isinstance(self.phase, tuple):
+            raise ValueError(
+                f"RF definition {self.id}: a phase per channel takes a "
+                f"magnitude per channel"
+            )
+
+    @property
+    def channel_count(self) -> int:
+        """How many transmit channels drive their own waveform."""
+        return len(self.magnitude) if isinstance(self.magnitude, tuple) else 1
+
+    def channel_envelopes(self) -> np.ndarray:
+        """Return the normalized complex envelope per channel, ``(C, N)``."""
+        magnitudes = (
+            self.magnitude if isinstance(self.magnitude, tuple) else (self.magnitude,)
+        )
+        if isinstance(self.phase, tuple):
+            phases: tuple[RfShape | None, ...] = self.phase
+        else:
+            phases = (self.phase,) * len(magnitudes)
+        channels = []
+        for magnitude_shape, phase_shape in zip(magnitudes, phases):
+            magnitude = magnitude_shape.decompress()
+            if phase_shape is None:
+                channels.append(magnitude.astype(np.complex64))
+                continue
+            phase = phase_shape.decompress(scale=2.0 * np.pi)
+            if phase.size != magnitude.size:
+                raise ValueError(
+                    f"RF definition {self.id}: magnitude/phase size mismatch"
+                )
+            channels.append(magnitude * np.exp(1j * phase))
+        widths = {channel.size for channel in channels}
+        if len(widths) > 1:
+            raise ValueError(
+                f"RF definition {self.id}: channels of {sorted(widths)} samples"
+            )
+        return np.stack(channels)
 
     def complex_envelope(self) -> np.ndarray:
-        """Return the normalized complex RF envelope."""
-        magnitude = self.magnitude.decompress()
-        if self.phase is None:
-            return magnitude.astype(np.complex64)
-        phase = self.phase.decompress(scale=2.0 * np.pi)
-        if phase.size != magnitude.size:
-            raise ValueError(f"RF definition {self.id}: magnitude/phase size mismatch")
-        return magnitude * np.exp(1j * phase)
+        """Return the normalized complex RF envelope.
+
+        ``(samples,)`` for a pulse every channel plays alike, ``(channels,
+        samples)`` for one whose channels each carry their own waveform.
+        """
+        channels = self.channel_envelopes()
+        return channels[0] if self.channel_count == 1 else channels
+
+    def combined_envelope(self) -> np.ndarray:
+        """Return the envelope a voxel of unit sensitivity on every channel sees.
+
+        The sum over channels, ``(samples,)``. This is the shape the flip
+        angle, the integral and the saturation are all read against, so each
+        keeps the meaning it has for a pulse driving a single channel.
+        """
+        return self.channel_envelopes().sum(axis=0)
+
+    def gradient_waveform(self) -> np.ndarray | None:
+        """Return the slice-select gradient per sample, or ``None`` if it holds.
+
+        In units of the gradient ``bandwidth_hz`` is quoted at, so a shape of
+        ones is the gradient the scanner does not move and reproduces the
+        constant case exactly. What a spin at a normalized position accrues
+        while sample ``s`` lasts is ``bandwidth_hz * position * g[s]`` in Hz.
+
+        Raises:
+            ValueError: if the gradient and the envelope disagree on how many
+                samples the pulse has.
+        """
+        if self.gradient is None:
+            return None
+        waveform = self.gradient.decompress()
+        samples = self.channel_envelopes().shape[1]
+        if waveform.size != samples:
+            raise ValueError(
+                f"RF definition {self.id}: the gradient carries "
+                f"{waveform.size} samples and the pulse {samples}"
+            )
+        return waveform
+
+    def rf_mode(self) -> RfMode:
+        """Return which rotation this pulse's waveform asks the kernels for."""
+        if self.channel_count > 1:
+            return RfMode.DYNAMIC
+        if self._turns_about_one_axis():
+            return RfMode.INSTANT
+        return RfMode.PROFILED
+
+    def _turns_about_one_axis(self) -> bool:
+        """Whether a flip angle and a phase already say what this pulse does.
+
+        A rectangle played without slice selection holds its effective field
+        fixed for its whole duration, so integrating it lands on the rotation a
+        hard pulse performs -- and lands there exactly, where reading a
+        tabulated one at a flip between knots would not.
+        """
+        if self.bandwidth_hz != 0.0:
+            return False
+        envelope = self.combined_envelope()
+        if envelope.size < 2:
+            return True
+        return bool(np.all(envelope == envelope[0]))
 
     def integral(
         self,
@@ -224,7 +350,7 @@ class RfDefinition:
         elif rf_raster_time_s in cache:
             return cache[rf_raster_time_s]
 
-        envelope = self.complex_envelope()
+        envelope = self.combined_envelope()
         if envelope.size < 2:
             cache[rf_raster_time_s] = 0.0j
             return 0.0j
@@ -268,7 +394,7 @@ class RfDefinition:
             return cache[rf_raster_time_s]
 
         area = abs(self.integral(rf_raster_time_s=rf_raster_time_s))
-        envelope = self.complex_envelope()
+        envelope = self.combined_envelope()
         if area == 0.0 or envelope.size < 2:
             cache[rf_raster_time_s] = 0.0
             return 0.0

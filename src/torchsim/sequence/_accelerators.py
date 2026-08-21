@@ -16,6 +16,7 @@ from ._calibration import crossover, detection
 from ._description import (
     EventType,
     RfDefinition,
+    RfMode,
     RfUse,
     SequenceDescription,
     SequenceEvent,
@@ -36,6 +37,9 @@ from ._parameters import (
     TISSUE_COUNT as _TISSUE_COUNT,
 )
 from ._parameters import (
+    TRANSMIT_INPUTS as _TRANSMIT_INPUTS,
+)
+from ._parameters import (
     NO_GEOMETRY,
     TISSUE_NAMES,
     Geometry,
@@ -44,9 +48,11 @@ from ._parameters import (
     tissue_gradient_rows,
 )
 from ._transition import (
+    DynamicPairs,
     ExactSliceProfile,
     SliceTables,
     TransitionTable,
+    dynamic_pair,
     transition_table,
 )
 from ._transmit import shim_rows
@@ -114,35 +120,6 @@ class _PackedEvents:
         return self.flip.dim() == 2
 
 
-def _across_slice(
-    tissue: tuple[torch.Tensor, ...], profile: torch.Tensor
-) -> tuple[tuple[torch.Tensor, ...], int]:
-    """Spread each voxel over the slice profile, as many voxels as it has points.
-
-    A flip-angle scaling enters exactly as the transmit field does, and the
-    recorded signal is the mean over the profile. So a profile of n points is
-    n copies of every voxel at scaled transmit, which the state machine can run
-    without knowing anything about slices.
-
-    Returns the tissue laid out voxel-major, and how many points it holds.
-    """
-    locations = int(profile.numel())
-    if locations == 1:
-        return (
-            (*tissue[:3], (tissue[3] * profile.reshape(())).contiguous(), *tissue[4:]),
-            1,
-        )
-    transmit = 3
-    spread = [
-        value[:, None].expand(-1, locations).reshape(-1).contiguous()
-        for value in tissue
-    ]
-    spread[transmit] = (
-        (tissue[transmit][:, None] * profile[None, :]).reshape(-1).contiguous()
-    )
-    return tuple(spread), locations
-
-
 def _across_the_table(
     tissue: tuple[torch.Tensor, ...], locations: int
 ) -> tuple[torch.Tensor, ...]:
@@ -160,6 +137,99 @@ def _across_the_table(
     )
 
 
+def _dynamic_rotations(
+    description: SequenceDescription,
+    packed: _PackedEvents,
+    sensitivities: torch.Tensor,
+    *,
+    repetitions: int,
+    positions: torch.Tensor | None,
+    rf_raster_time_s: float,
+) -> tuple[Any, int]:
+    """The rotation each pulse performs, voxel by voxel, and how many positions.
+
+    One row per distinct pulse: a pair depends on the whole per-channel vector
+    and on the flip driving it, so two events share a row only when they agree
+    on both. Events that drive none read row zero, which nothing reads for them.
+
+    A definition carrying a single waveform is played by every channel alike,
+    which is what makes a hard or shaped pulse expressible in a train that also
+    carries a dynamic one -- the kernels take one rotation mode for the whole
+    sequence. The channels share it rather than each repeating it, so that a
+    voxel of unit sensitivity everywhere takes the nominal flip from either
+    kind of pulse and the sensitivities keep one reading across the train.
+    """
+    device = sensitivities.device
+    channels = int(sensitivities.shape[-1])
+    shared = torch.full(
+        (channels,), 1.0 / channels, dtype=torch.complex128, device=device
+    )
+    stream = [event for _ in range(repetitions) for event in description.events]
+    count = int(packed.kind.numel())
+    if len(stream) != count:
+        raise ValueError(
+            f"the description walks {len(stream)} events and the packed stream "
+            f"{count}"
+        )
+    trains = packed.train_count
+    flips = packed.flip.detach().reshape(trains, count)
+
+    index = torch.zeros(trains * count, dtype=torch.int32)
+    halves: list[tuple[torch.Tensor, torch.Tensor]] = []
+    rows: dict[tuple[int, float], int] = {}
+    for train in range(trains):
+        for position, event in enumerate(stream):
+            if event.type is not EventType.RF or event.rf_use is RfUse.INVERSION:
+                continue
+            definition = description.rf_definitions[event.rf_definition_id]
+            flip = float(flips[train, position])
+            key = (event.rf_definition_id, flip)
+            row = rows.get(key)
+            if row is None:
+                row = len(halves)
+                rows[key] = row
+                halves.append(
+                    dynamic_pair(
+                        definition,
+                        sensitivities,
+                        weights=None if definition.channel_count > 1 else shared,
+                        flip=flip,
+                        positions=positions,
+                        rf_raster_time_s=rf_raster_time_s,
+                    )
+                )
+            index[train * count + position] = row
+    if not halves:
+        return None, 1 if positions is None else int(positions.numel())
+
+    pairs = DynamicPairs(
+        a=torch.stack([half[0] for half in halves]),
+        b=torch.stack([half[1] for half in halves]),
+        index=index.to(device),
+    )
+    return pairs, 1 if positions is None else int(positions.numel())
+
+
+def _wants_a_table(
+    description: SequenceDescription, slice_profile: Any
+) -> bool:
+    """Whether the pulses are to be integrated into a rotation over the slice.
+
+    A definition carrying a waveform worth integrating asks for one by itself,
+    which is what makes the mode a property of the pulse rather than of the
+    call. A caller naming positions asks for one whatever the waveform is,
+    since a hard pulse tabulated at a bin is the hard pulse.
+    """
+    if slice_profile is not None:
+        return True
+    return any(
+        description.rf_definitions[event.rf_definition_id].rf_mode()
+        is RfMode.PROFILED
+        for event in description.events
+        if event.type is EventType.RF and event.rf_use is not RfUse.INVERSION
+    )
+
+
 def _pulse_shapes(
     description: SequenceDescription,
 ) -> dict[int, RfDefinition]:
@@ -173,7 +243,7 @@ def _pulse_shapes(
     the description happened to number it.
 
     Raises:
-        ValueError: if the sequence plays no shaped pulse.
+        ValueError: if the sequence plays no pulse to integrate.
     """
     used: dict[int, RfDefinition] = {}
     for event in description.events:
@@ -184,8 +254,8 @@ def _pulse_shapes(
             used[key] = description.rf_definitions[key]
     if not used:
         raise ValueError(
-            "an exact slice profile is the rotation a pulse performs, and this "
-            "sequence plays no shaped pulse to take it from"
+            "a slice profile is the rotation a pulse performs across the "
+            "slice, and this sequence plays no pulse to take it from"
         )
     return used
 
@@ -270,16 +340,22 @@ def simulate_native(
     repetitions: int,
     record: str,
     nstates: int,
-    slice_profile: torch.Tensor,
+    slice_profile: ExactSliceProfile | None,
     rf_raster_time_s: float,
     lineshape: Any = None,
     exchanging: bool = False,
     features: frozenset[str] | None = None,
+    transmit: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules.
 
     ``features`` names the terms the tissue gives anything to do, and the
     kernels carry those and no others. ``None`` leaves every term in.
+
+    ``transmit`` is the complex per-channel sensitivity, ``(voxels,
+    channels)``, given when the sequence drives a pulse whose channels carry
+    their own waveforms. Its rotation is then integrated per voxel rather than
+    reached through a flip and a phase.
     """
     device = prepared_tissue[0].device
     if device.type not in {"cpu", "cuda"} or not _backend_available(device):
@@ -287,9 +363,10 @@ def simulate_native(
     if policy_name not in _SHIFTS_AND_SPOILS:
         return None
 
+    asked = slice_profile if slice_profile is not None else ExactSliceProfile(points=1)
     shapes = (
         _pulse_shapes(description)
-        if isinstance(slice_profile, ExactSliceProfile)
+        if _wants_a_table(description, slice_profile)
         else {}
     )
     packed = _pack_events(
@@ -307,15 +384,25 @@ def simulate_native(
     )
     tissue = _order_weighted_rates(tissue, description)
     table = None
-    if shapes:
-        positions = slice_profile.positions()
+    dynamic = None
+    if transmit is not None:
+        dynamic, locations = _dynamic_rotations(
+            description,
+            packed,
+            transmit,
+            repetitions=repetitions,
+            positions=None if slice_profile is None else slice_profile.positions(),
+            rf_raster_time_s=rf_raster_time_s,
+        )
+        tissue = _across_the_table(tissue, locations)
+    elif shapes:
         table = SliceTables(
             tables=tuple(
                 transition_table(
                     definition,
-                    positions,
-                    bins=slice_profile.bins,
-                    theta_max=slice_profile.theta_max,
+                    asked.positions(),
+                    bins=asked.bins,
+                    theta_max=asked.theta_max,
                     rf_raster_time_s=rf_raster_time_s,
                 )
                 for definition in shapes.values()
@@ -325,7 +412,7 @@ def simulate_native(
         locations = table.points
         tissue = _across_the_table(tissue, locations)
     else:
-        tissue, locations = _across_slice(tissue, slice_profile)
+        locations = 1
     threads = int(os.environ.get("TORCHSIM_NUM_THREADS", str(torch.get_num_threads())))
     signal = _NativeEpg.apply(
         *tissue,
@@ -343,6 +430,7 @@ def simulate_native(
         threads,
         geometry_of(description),
         table,
+        dynamic,
         lineshape,
         exchanging,
         features,
@@ -591,6 +679,33 @@ def _stack(
     return torch.stack(values).to(dtype=dtype)
 
 
+# A per-voxel rotation is integrated before the kernels run, so the flip that
+# drove it and the transmit it was integrated against reach the answer through
+# the pair and not through a buffer the adjoint differentiates. The kernels do
+# return a cotangent on the pair itself; carrying it back to those inputs is
+# what this does not do yet, and a gradient that came back short of the pulse
+# would look like an answer.
+_THROUGH_THE_PAIR: dict[int, str] = {
+    **{index: TISSUE_NAMES[index] for index in _TRANSMIT_INPUTS},
+    _TISSUE_COUNT + 2: "the flip angle",
+}
+
+
+def _outside_the_pair(needed: Sequence[bool]) -> None:
+    """Refuse a derivative that would have to pass through the pulse integral.
+
+    Raises:
+        NotImplementedError: if one is asked for.
+    """
+    asked = [name for index, name in _THROUGH_THE_PAIR.items() if needed[index]]
+    if asked:
+        raise NotImplementedError(
+            f"a pulse whose channels carry their own waveforms is integrated "
+            f"into a rotation before the kernels run, so a derivative along "
+            f"{', '.join(asked)} does not reach the answer through them"
+        )
+
+
 def _spread(
     gradients: tuple[torch.Tensor, ...], needed: tuple[bool, ...]
 ) -> tuple[torch.Tensor | None, ...]:
@@ -692,6 +807,7 @@ class _NativeEpg(torch.autograd.Function):
         threads: int,
         geometry: Geometry,
         profile: Any,
+        dynamic: Any,
         lineshape: Any,
         exchanging: bool,
         features: frozenset[str] | None,
@@ -708,8 +824,8 @@ class _NativeEpg(torch.autograd.Function):
         )
         return _run_packed(
             tissue, events, state_count, output_count, threads, geometry=geometry,
-            profile=profile, lineshape=lineshape, exchanging=exchanging,
-            features=features,
+            profile=profile, dynamic=dynamic, lineshape=lineshape,
+            exchanging=exchanging, features=features,
         )
 
     @staticmethod
@@ -722,13 +838,18 @@ class _NativeEpg(torch.autograd.Function):
         ctx.threads = inputs[_PACKED_COUNT + 2]
         ctx.geometry = inputs[_PACKED_COUNT + 3]
         ctx.profile = inputs[_PACKED_COUNT + 4]
-        ctx.lineshape = inputs[_PACKED_COUNT + 5]
-        ctx.exchanging = inputs[_PACKED_COUNT + 6]
-        ctx.features = inputs[_PACKED_COUNT + 7]
+        ctx.dynamic = inputs[_PACKED_COUNT + 5]
+        ctx.lineshape = inputs[_PACKED_COUNT + 6]
+        ctx.exchanging = inputs[_PACKED_COUNT + 7]
+        ctx.features = inputs[_PACKED_COUNT + 8]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
         saved = ctx.saved_tensors
+        if ctx.dynamic is not None:
+            _outside_the_pair(
+                tuple(tangent is not None for tangent in tangents)
+            )
         float_tangents = tuple(
             torch.zeros_like(saved[index])
             if tangents[index] is None
@@ -743,6 +864,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.threads,
             ctx.geometry,
             ctx.profile,
+            ctx.dynamic,
             ctx.lineshape,
             ctx.exchanging,
             ctx.features,
@@ -751,6 +873,8 @@ class _NativeEpg(torch.autograd.Function):
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
+        if ctx.dynamic is not None:
+            _outside_the_pair(ctx.needs_input_grad)
         wanted = _wanted(ctx.needs_input_grad)
         fused = _NativeEpgVjp.apply(
             *saved,
@@ -761,13 +885,14 @@ class _NativeEpg(torch.autograd.Function):
             wanted,
             ctx.geometry,
             ctx.profile,
+            ctx.dynamic,
             ctx.lineshape,
             ctx.exchanging,
             ctx.features,
         )
         return (
-            *_spread(fused, ctx.needs_input_grad),
-            None, None, None, None, None, None, None, None,
+            *_spread(fused[:len(_FLOAT_INPUTS)], ctx.needs_input_grad),
+            None, None, None, None, None, None, None, None, None,
         )
 
     @staticmethod
@@ -802,9 +927,10 @@ class _NativeEpgVjp(torch.autograd.Function):
             wanted=inputs[_SEED_INPUT + 4],
             geometry=inputs[_SEED_INPUT + 5],
             profile=inputs[_SEED_INPUT + 6],
-            lineshape=inputs[_SEED_INPUT + 7],
-            exchanging=inputs[_SEED_INPUT + 8],
-            features=inputs[_SEED_INPUT + 9],
+            dynamic=inputs[_SEED_INPUT + 7],
+            lineshape=inputs[_SEED_INPUT + 8],
+            exchanging=inputs[_SEED_INPUT + 9],
+            features=inputs[_SEED_INPUT + 10],
         )
 
     @staticmethod
@@ -817,9 +943,10 @@ class _NativeEpgVjp(torch.autograd.Function):
         ctx.threads = inputs[_SEED_INPUT + 3]
         ctx.geometry = inputs[_SEED_INPUT + 5]
         ctx.profile = inputs[_SEED_INPUT + 6]
-        ctx.lineshape = inputs[_SEED_INPUT + 7]
-        ctx.exchanging = inputs[_SEED_INPUT + 8]
-        ctx.features = inputs[_SEED_INPUT + 9]
+        ctx.dynamic = inputs[_SEED_INPUT + 7]
+        ctx.lineshape = inputs[_SEED_INPUT + 8]
+        ctx.exchanging = inputs[_SEED_INPUT + 9]
+        ctx.features = inputs[_SEED_INPUT + 10]
 
     @staticmethod
     def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
@@ -866,7 +993,10 @@ class _NativeEpgVjp(torch.autograd.Function):
         guarded = _last(
             (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
         )
-        return (*guarded, None, None, None, None, None, None, None, None, None)
+        return (
+            *guarded,
+            None, None, None, None, None, None, None, None, None, None,
+        )
 
 
 class _NativeEpgJvp(torch.autograd.Function):
@@ -886,9 +1016,10 @@ class _NativeEpgJvp(torch.autograd.Function):
             inputs[_TANGENT_END + 2],
             geometry=inputs[_TANGENT_END + 3],
             profile=inputs[_TANGENT_END + 4],
-            lineshape=inputs[_TANGENT_END + 5],
-            exchanging=inputs[_TANGENT_END + 6],
-            features=inputs[_TANGENT_END + 7],
+            dynamic=inputs[_TANGENT_END + 5],
+            lineshape=inputs[_TANGENT_END + 6],
+            exchanging=inputs[_TANGENT_END + 7],
+            features=inputs[_TANGENT_END + 8],
         )
 
     @staticmethod
@@ -898,9 +1029,10 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.output_count = inputs[_TANGENT_END + 1]
         ctx.geometry = inputs[_TANGENT_END + 3]
         ctx.profile = inputs[_TANGENT_END + 4]
-        ctx.lineshape = inputs[_TANGENT_END + 5]
-        ctx.exchanging = inputs[_TANGENT_END + 6]
-        ctx.features = inputs[_TANGENT_END + 7]
+        ctx.dynamic = inputs[_TANGENT_END + 5]
+        ctx.lineshape = inputs[_TANGENT_END + 6]
+        ctx.exchanging = inputs[_TANGENT_END + 7]
+        ctx.features = inputs[_TANGENT_END + 8]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
@@ -914,6 +1046,8 @@ class _NativeEpgJvp(torch.autograd.Function):
             or bool(ctx.needs_input_grad[_PACKED_COUNT + position])
             for position, index in enumerate(_FLOAT_INPUTS)
         )
+        if ctx.dynamic is not None:
+            _outside_the_pair(ctx.needs_input_grad)
         primal_grads, tangent_grads = _run_packed_vjp_jvp(
             primal[:_TISSUE_COUNT],
             primal[_TISSUE_COUNT:_PACKED_COUNT],
@@ -925,18 +1059,23 @@ class _NativeEpgJvp(torch.autograd.Function):
             wanted=wanted,
             geometry=ctx.geometry,
             profile=ctx.profile,
+            dynamic=ctx.dynamic,
             lineshape=ctx.lineshape,
             exchanging=ctx.exchanging,
             features=ctx.features,
         )
         directions = tuple(
             gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
-            for offset, gradient in enumerate(tangent_grads)
+            for offset, gradient in enumerate(tangent_grads[:len(_FLOAT_INPUTS)])
         )
         guarded = _last(
-            (*_spread(primal_grads, ctx.needs_input_grad), *directions), saved
+            (
+                *_spread(primal_grads[:len(_FLOAT_INPUTS)], ctx.needs_input_grad),
+                *directions,
+            ),
+            saved,
         )
-        return (*guarded, None, None, None, None, None, None, None, None)
+        return (*guarded, None, None, None, None, None, None, None, None, None)
 
     @staticmethod
     def vmap(
@@ -982,6 +1121,7 @@ def real_subspace_axis(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
     profile: Any = None,
+    dynamic: Any = None,
 ) -> int | None:
     """The real axis the states are confined to, or ``None``.
 
@@ -1004,10 +1144,13 @@ def real_subspace_axis(
     """
     if _shim_count(tissue) > 1:
         return None
-    if profile is not None:
+    if profile is not None or dynamic is not None:
         # A shaped pulse turns about an axis with a component along z, which
         # makes its Cayley-Klein ``a`` complex -- and a complex ``a`` is
-        # exactly what carries a state out of the real subspace.
+        # exactly what carries a state out of the real subspace. A per-voxel
+        # pair is that same rotation reached another way, and the real kernels
+        # take no pair argument at all: a verdict of 1 would not slow the
+        # answer down, it would drop the pulse.
         return None
     (
         b0_free, phase_free, flow_free, has_refocusing, has_excitation, spread,
@@ -1084,6 +1227,7 @@ def _auto_real_axis(
     state_count: int,
     tangents: tuple[torch.Tensor, ...] = (),
     profile: Any = None,
+    dynamic: Any = None,
 ) -> int | None:
     """The subspace verdict, when deciding it costs less than it saves.
 
@@ -1105,7 +1249,7 @@ def _auto_real_axis(
         ).any()
         if bool(seeded):
             return None
-    return real_subspace_axis(events, tissue, profile)
+    return real_subspace_axis(events, tissue, profile, dynamic)
 
 
 
@@ -1116,6 +1260,7 @@ def _auto_real_axis_adjoint(
     tangents: tuple[torch.Tensor, ...],
     wanted: tuple[bool, ...] | None,
     profile: Any = None,
+    dynamic: Any = None,
 ) -> int | None:
     """The subspace verdict for an adjoint, given what the caller will read.
 
@@ -1138,6 +1283,7 @@ def _auto_real_axis_adjoint(
         if tangents
         else (),
         profile=profile,
+        dynamic=dynamic,
     )
 
 
@@ -1276,8 +1422,20 @@ def _pool_kind(lineshape: Any, exchanging: bool) -> int:
     return _POOL_SEMISOLID if lineshape is not None else _POOL_ONE
 
 
-def _tables(profile: Any, events: tuple[torch.Tensor, ...]) -> Any:
-    """A bare table read as the one every pulse drives."""
+def _tables(profile: Any, events: tuple[torch.Tensor, ...], dynamic: Any = None) -> Any:
+    """A bare table read as the one every pulse drives.
+
+    Raises:
+        ValueError: if a table is given beside a per-voxel pair. The two are
+            alternatives -- a rotation integrated at the voxel's own position
+            already is a profile -- and the kernels read the pair, so a table
+            handed over with one says nothing at all.
+    """
+    if profile is not None and dynamic is not None:
+        raise ValueError(
+            "a pulse reaches its rotation through a table over the slice or "
+            "through a pair per voxel, not through both"
+        )
     if isinstance(profile, TransitionTable):
         return SliceTables.alone(
             profile, int(events[1].numel()), events[1].device
@@ -2300,10 +2458,11 @@ def _run_packed(
     ``features`` names the terms the tissue gives anything to do, and the
     kernels carry those and no others. ``None`` leaves every term in.
     """
-    profile = _tables(profile, events)
+    profile = _tables(profile, events, dynamic)
     if real_axis is None:
         real_axis = _auto_real_axis(
-            "forward", events, tissue, state_count, profile=profile
+            "forward", events, tissue, state_count, profile=profile,
+            dynamic=dynamic,
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for: the semisolid one adds a longitudinal component, and the exchanging
@@ -2403,7 +2562,11 @@ def _run_packed(
     table_rows = None if profile is None else profile.rows()
     absorption = None if lineshape is None else lineshape.packed()
     pairs = None if dynamic is None else dynamic.packed()
-    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(_train_count(events), events[1].numel())
+    )
     _epg_cpu.simulate(
         _bound_pointers(
             pointers, table, table_rows, absorption, pairs, pair_rows
@@ -2458,9 +2621,9 @@ def _run_packed_vjp(
     ``features`` names the terms the tissue gives anything to do, and the
     kernels carry those and no others. ``None`` leaves every term in.
     """
-    profile = _tables(profile, events)
+    profile = _tables(profile, events, dynamic)
     real_axis = _auto_real_axis_adjoint(
-        events, tissue, state_count, (), wanted, profile
+        events, tissue, state_count, (), wanted, profile, dynamic
     )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
@@ -2561,7 +2724,11 @@ def _run_packed_vjp(
     # Bound to names rather than built in the call: the pointers are addresses,
     # so a buffer only the argument list holds is freed before the kernel runs.
     pairs = None if dynamic is None else dynamic.packed()
-    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(_train_count(events), events[1].numel())
+    )
     pair_grad = None if dynamic is None else torch.zeros_like(pairs)
     _epg_cpu.simulate_vjp(
         _bound_pointers(
@@ -2623,10 +2790,10 @@ def _run_packed_vjp_jvp(
     ``features`` names the terms the tissue gives anything to do, and the
     kernels carry those and no others. ``None`` leaves every term in.
     """
-    profile = _tables(profile, events)
+    profile = _tables(profile, events, dynamic)
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
-            events, tissue, state_count, tangents, wanted, profile
+            events, tissue, state_count, tangents, wanted, profile, dynamic
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
@@ -2763,7 +2930,11 @@ def _run_packed_vjp_jvp(
     # Bound to names rather than built in the call: the pointers are addresses,
     # so a buffer only the argument list holds is freed before the kernel runs.
     pairs = None if dynamic is None else dynamic.packed()
-    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(_train_count(events), events[1].numel())
+    )
     # The value plane of the dual cotangent is the adjoint and the tangent
     # plane its derivative, which is the same split the tissue gradients take.
     pair_grad = None if dynamic is None else torch.zeros_like(pairs)
@@ -2815,7 +2986,7 @@ def _run_packed_jvp(
     dynamic_direction: Any = None,
     features: frozenset[str] | None = None,
 ) -> torch.Tensor:
-    profile = _tables(profile, events)
+    profile = _tables(profile, events, dynamic)
     if profile is not None:
         _within_the_table(profile, events[2])
     if real_axis is None:
@@ -2828,6 +2999,7 @@ def _run_packed_jvp(
             state_count,
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
             profile=profile,
+            dynamic=dynamic,
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
@@ -2957,7 +3129,11 @@ def _run_packed_jvp(
     # Bound to names rather than built in the call: the pointers are addresses,
     # so a buffer only the argument list holds is freed before the kernel runs.
     pairs = None if dynamic is None else dynamic.packed()
-    pair_rows = None if dynamic is None else dynamic.index.to(torch.int32)
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(_train_count(events), events[1].numel())
+    )
     _epg_cpu.simulate_jvp(
         _bound_pointers(
             pointers, table, table_rows, absorption, pairs, pair_rows,

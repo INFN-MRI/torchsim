@@ -18,7 +18,6 @@ def fse_sim(
     exc_flip: float = 90.0,
     exc_phase: float = 90.0,
     diff: str | tuple[str] = None,
-    slice_prof: float | npt.ArrayLike = 1.0,
     B1: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
     nstates: int = 10,
@@ -53,9 +52,6 @@ def fse_sim(
     diff : str | tuple[str], optional
         Arguments to get the signal derivative with respect to.
         The default is ``None`` (no differentation).
-    slice_prof : float | npt.ArrayLike, optional
-        Flip angle scaling along slice profile.
-        The default is ``1.0``.
     B1 : float | npt.ArrayLike, optional
         Flip angle scaling map, default is ``1.0``.
     inv_efficiency : float | npt.ArrayLike, optional
@@ -87,5 +83,5 @@ def fse_sim(
     """
     model = FSEModel(diff, chunk_size, device)
     model.set_properties(T1, T2, M0, B1)
-    model.set_sequence(flip, ESP, phases, TR, exc_flip, exc_phase, slice_prof, nstates)
+    model.set_sequence(flip, ESP, phases, TR, exc_flip, exc_phase, nstates)
     return model()

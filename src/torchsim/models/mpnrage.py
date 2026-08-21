@@ -25,10 +25,10 @@ class MPnRAGEModel(AbstractModel):
     set_properties(T1, M0=1.0, B1=1.0, inv_efficiency=1.0):
         Sets tissue relaxation properties and experimental conditions.
 
-    set_sequence(nshots, flip, TR, TI=0.0, slice_prof=1.0):
+    set_sequence(nshots, flip, TR, TI=0.0):
         Configures the pulse sequence parameters for the simulation.
 
-    _engine(T1, flip, TR, TI=0.0, M0=1.0, B1=1.0, inv_efficiency=1.0, slice_prof=1.0):
+    _engine(T1, flip, TR, TI=0.0, M0=1.0, B1=1.0, inv_efficiency=1.0):
         Computes the MPnRAGE signal for given tissue properties and sequence parameters.
 
     Examples
@@ -81,7 +81,6 @@ class MPnRAGEModel(AbstractModel):
         flip: float,
         TR: float,
         TI: float = 0.0,
-        slice_prof: float | npt.ArrayLike = 1.0,
     ) -> None:
         """
         Set sequence parameters for the SPGR model.
@@ -97,16 +96,12 @@ class MPnRAGEModel(AbstractModel):
         TI : float, optional
             Inversion time in milliseconds.
             The default is ``0.0``.
-        slice_prof : float | npt.ArrayLike, optional
-            Flip angle scaling along slice profile.
-            The default is ``1.0``.
 
         """
         self.sequence.nshots = int(nshots.reshape(()).item())
         self.sequence.flip = torch.pi * flip / 180.0
         self.sequence.TR = TR * 1e-3  # ms -> s
         self.sequence.TI = TI * 1e-3  # ms -> s
-        self.sequence.slice_prof = slice_prof
 
     @staticmethod
     def _engine(
@@ -118,7 +113,6 @@ class MPnRAGEModel(AbstractModel):
         M0: float | npt.ArrayLike = 1.0,
         B1: float | npt.ArrayLike = 1.0,
         inv_efficiency: float | npt.ArrayLike = 1.0,
-        slice_prof: float | npt.ArrayLike = 1.0,
     ) -> torch.Tensor:
         description = mpnrage_description(
             nshots,
@@ -136,6 +130,5 @@ class MPnRAGEModel(AbstractModel):
                 inversion_efficiency=inv_efficiency,
             ),
             nstates=1,
-            slice_profile=slice_prof,
         ).signal
         return 1j * signal

@@ -8,6 +8,7 @@ against an independent integration, and against autograd.
 from __future__ import annotations
 
 import math
+from itertools import repeat
 
 import numpy as np
 import pytest
@@ -58,11 +59,12 @@ def _stepwise(drive, turn_z):
     pauli_y = torch.tensor([[0.0, -1.0j], [1.0j, 0.0]], dtype=torch.complex128)
     pauli_z = torch.tensor([[1.0, 0.0], [0.0, -1.0]], dtype=torch.complex128)
     net = torch.eye(2, dtype=torch.complex128)
-    for sample in drive:
+    turns = repeat(turn_z) if isinstance(turn_z, float) else iter(turn_z)
+    for sample, turn in zip(drive, turns):
         field = (
             complex(sample).real * pauli_x
             + complex(sample).imag * pauli_y
-            + turn_z * pauli_z
+            + turn * pauli_z
         )
         net = torch.matrix_exp(-0.5j * field) @ net
     return net
@@ -94,8 +96,8 @@ def test_weights_that_do_not_vary_reproduce_the_static_table():
 
     measured = dynamic_pair(
         definition,
-        torch.ones(1, dtype=torch.complex128),
         scaling.to(torch.complex128)[:, None],
+        weights=torch.ones(1, dtype=torch.complex128),
         flip=flip,
         rf_raster_time_s=RASTER,
     )
@@ -112,15 +114,17 @@ def test_a_channel_phase_turns_the_axis_and_nothing_else():
     phi = 0.9
     plain = dynamic_pair(
         definition,
-        torch.ones(1, dtype=torch.complex128),
         torch.ones(1, 1, dtype=torch.complex128),
+        weights=torch.ones(1, dtype=torch.complex128),
         flip=1.1,
         rf_raster_time_s=RASTER,
     )
     turned = dynamic_pair(
         definition,
-        torch.full((1,), complex(math.cos(phi), math.sin(phi)), dtype=torch.complex128),
         torch.ones(1, 1, dtype=torch.complex128),
+        weights=torch.full(
+            (1,), complex(math.cos(phi), math.sin(phi)), dtype=torch.complex128
+        ),
         flip=1.1,
         rf_raster_time_s=RASTER,
     )
@@ -139,7 +143,11 @@ def test_two_channels_in_antiphase_leave_the_voxel_alone():
     sensitivities = torch.ones(1, 2, dtype=torch.complex128)
 
     a, b = dynamic_pair(
-        definition, weights, sensitivities, flip=torch.pi, rf_raster_time_s=RASTER
+        definition,
+        sensitivities,
+        weights=weights,
+        flip=torch.pi,
+        rf_raster_time_s=RASTER,
     )
 
     assert abs(complex(a[0]) - 1.0) < 1e-9
@@ -163,8 +171,8 @@ def test_the_pair_is_what_exponentiating_each_sample_gives():
 
     a, b = dynamic_pair(
         definition,
-        weights,
         sensitivities,
+        weights=weights,
         flip=1.3,
         off_resonance_hz=torch.tensor([offset]),
         rf_raster_time_s=RASTER,
@@ -205,8 +213,8 @@ def test_the_pair_stays_on_the_unit_sphere():
 
     a, b = dynamic_pair(
         definition,
-        weights,
         sensitivities,
+        weights=weights,
         flip=2.0,
         off_resonance_hz=torch.linspace(-300.0, 300.0, 64),
         rf_raster_time_s=RASTER,
@@ -241,8 +249,8 @@ def test_the_pair_differentiates_back_to_the_array(name: str) -> None:
     def reading(**overrides):
         a, b = dynamic_pair(
             definition,
-            overrides.get("weights", leaves["weights"]),
             overrides.get("sensitivities", leaves["sensitivities"]),
+            weights=overrides.get("weights", leaves["weights"]),
             flip=1.0,
             rf_raster_time_s=RASTER,
         )
@@ -328,8 +336,8 @@ def _train():
     halves = [
         dynamic_pair(
             definition,
-            torch.ones(1, dtype=torch.complex128),
             scaling.to(torch.complex128)[:, None],
+            weights=torch.ones(1, dtype=torch.complex128),
             flip=float(packed.flip.reshape(-1, count)[0, event]),
             rf_raster_time_s=RASTER,
         )
@@ -813,3 +821,762 @@ def test_the_cuda_forward_mode_follows_the_direction_the_host_does():
 
     assert float(host.abs().max()) > 0.0
     assert float((host - card).abs().max() / host.abs().max()) < 1e-5
+
+
+# --- the routes that would drop the pair rather than carry it ---
+
+
+def _real_subspace_train(trains: int = 1):
+    """A train that satisfies every real-subspace condition, and its pairs.
+
+    One refocusing phase, an excitation sharing it, no off-resonance, no
+    transmit phase and no velocity -- so the verdict is 1 unless the pair
+    itself rules it out. That is the whole point: the reduced kernels take no
+    pair argument, so a verdict of 1 does not slow this train down, it plays a
+    different pulse.
+    """
+    from torchsim.sequence._accelerators import _pack_events
+    from torchsim.sequence._builders import fse_description
+    from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
+    from torchsim.sequence._transition import DynamicPairs
+
+    definition = _pulse(samples=96)
+    flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
+    if trains > 1:
+        flips = flips[None, :] * torch.linspace(0.9, 1.1, trains)[:, None]
+    packed = _pack_events(
+        "fse",
+        fse_description(
+            flips,
+            echo_spacing_s=5e-3,
+            phases_rad=torch.pi / 2,
+            excitation_phase_rad=torch.pi / 2,
+        ),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=RASTER,
+    )
+    events = (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+    scaling = torch.linspace(0.7, 1.3, VOXELS, dtype=torch.float64)
+    prepared, _, _ = _prepare_tissue(
+        TissueProperties(
+            t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+            t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+            b1=scaling.to(torch.float32),
+        ),
+        "cpu",
+    )
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+
+    count = int(packed.kind.numel())
+    flat = packed.flip.reshape(-1, count)
+    halves = [
+        dynamic_pair(
+            definition,
+            scaling.to(torch.complex128)[:, None],
+            weights=torch.ones(1, dtype=torch.complex128),
+            flip=float(flat[0, event]),
+            rf_raster_time_s=RASTER,
+        )
+        for event in range(count)
+    ]
+    pairs = DynamicPairs(
+        a=torch.stack([half[0] for half in halves]),
+        b=torch.stack([half[1] for half in halves]),
+        index=torch.arange(count, dtype=torch.int32),
+    )
+    return prepared, events, pairs, packed.output_count
+
+
+def test_the_subspace_verdict_refuses_a_per_voxel_pair():
+    """The predicate itself, held to the reason: this train is inside the real
+    subspace, and a pair still has to rule the reduced kernels out.
+    """
+    from torchsim.sequence._accelerators import real_subspace_axis
+
+    prepared, events, pairs, _ = _real_subspace_train()
+    assert real_subspace_axis(events, prepared) == 1
+    assert real_subspace_axis(events, prepared, dynamic=pairs) is None
+
+
+def test_a_pair_survives_a_train_the_real_kernel_would_have_taken(monkeypatch):
+    """And the verdict is reached rather than skipped.
+
+    ``detection`` is what decides whether the subspace is even tested for, and
+    it is measured per machine -- so a test that hopes to clear it by carrying
+    enough voxels is testing the machine. Forcing it to zero asks the question
+    directly.
+    """
+    from torchsim.sequence import _accelerators
+
+    monkeypatch.setattr(
+        _accelerators, "detection", lambda kind, device, state_count: 0.0
+    )
+    prepared, events, pairs, output_count = _real_subspace_train()
+    settled = _accelerators._run_packed(
+        prepared, events, 16, output_count, 1, dynamic=pairs
+    )
+    overruled = _accelerators._run_packed(
+        prepared, events, 16, output_count, 1, real_axis=0, dynamic=pairs
+    )
+    assert torch.equal(settled, overruled)
+
+
+def test_the_lane_forward_leaves_a_pair_to_the_scalar_kernel(monkeypatch):
+    """The lane kernel carries no rotation to read a pair into, so a run that
+    would otherwise vectorize has to fall back rather than play a hard pulse.
+    """
+    from torchsim.sequence import _accelerators
+
+    monkeypatch.setenv("TORCHSIM_LANES", "1")
+    prepared, events, pairs, output_count = _real_subspace_train(trains=4)
+    lanes = _accelerators._run_packed(
+        prepared, events, 16, output_count, 1, dynamic=pairs
+    )
+    monkeypatch.delenv("TORCHSIM_LANES")
+    scalar = _accelerators._run_packed(
+        prepared, events, 16, output_count, 1, dynamic=pairs
+    )
+    assert torch.equal(lanes, scalar)
+
+
+# --- the pulse's own channels, and where across the slice it is integrated ---
+
+
+def _per_channel(samples: int = 128, *, bandwidth_hz: float = 2000.0) -> RfDefinition:
+    """A sinc on one channel and a Gaussian on the other."""
+    grid = np.linspace(-2.0, 2.0, samples)
+    first = np.sinc(grid)
+    second = np.exp(-2.0 * grid**2)
+    return RfDefinition(
+        id=1,
+        bandwidth_hz=bandwidth_hz,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=bandwidth_hz,
+        total_b1sq_power=1.0,
+        magnitude=(
+            RfShape(samples, first.astype(np.float32)),
+            RfShape(samples, second.astype(np.float32)),
+        ),
+    )
+
+
+def test_a_per_channel_envelope_drives_what_per_sample_weights_would():
+    """The two ways of saying a channel plays its own waveform must agree: as
+    the definition's own envelope, or as one flat envelope with the waveform
+    put in the weights.
+    """
+    definition = _per_channel(samples=64)
+    channels = torch.as_tensor(
+        definition.complex_envelope(), dtype=torch.complex128
+    )
+    sensitivities = torch.tensor([[0.8 + 0.2j, 0.5 - 0.3j]], dtype=torch.complex128)
+
+    combined = definition.combined_envelope()
+    flat = RfDefinition(
+        id=2,
+        bandwidth_hz=definition.bandwidth_hz,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=definition.band_bandwidth_hz,
+        total_b1sq_power=1.0,
+        magnitude=RfShape(combined.size, np.ones(combined.size, dtype=np.float32)),
+    )
+
+    own = dynamic_pair(
+        definition, sensitivities, flip=1.4, rf_raster_time_s=RASTER
+    )
+    # The flat pulse normalizes by its own area, so scale the weights by the
+    # area the per-channel one is read against to drive the same flip.
+    weighted = dynamic_pair(
+        flat,
+        sensitivities,
+        weights=channels / channels.sum() * combined.size,
+        flip=1.4,
+        rf_raster_time_s=RASTER,
+    )
+
+    for reference, result in zip(own, weighted, strict=True):
+        assert float((reference - result).abs().max()) < 1e-6
+
+
+def test_a_pulse_of_no_bandwidth_turns_every_position_alike():
+    definition = _pulse(samples=64, bandwidth_hz=0.0)
+    sensitivities = torch.ones(1, 1, dtype=torch.complex128)
+    positions = torch.linspace(-0.5, 0.5, 5)
+
+    a, b = dynamic_pair(
+        definition,
+        sensitivities,
+        positions=positions,
+        flip=1.0,
+        rf_raster_time_s=RASTER,
+    )
+
+    assert a.numel() == positions.numel()
+    assert torch.equal(a, a[:1].expand_as(a))
+    assert torch.equal(b, b[:1].expand_as(b))
+
+
+def test_a_selective_pulse_falls_off_outside_the_slice():
+    """A four-lobe sinc played over ``4 / bandwidth_hz`` seconds, so that the
+    definition's bandwidth is the one the waveform actually has and a
+    normalized position of 0.5 lands on the edge of the passband.
+    """
+    definition = _pulse(samples=256, bandwidth_hz=2000.0)
+    sensitivities = torch.ones(1, 1, dtype=torch.complex128)
+    positions = torch.tensor([0.0, 0.25, 0.5, 1.0, 2.0])
+
+    _, b = dynamic_pair(
+        definition,
+        sensitivities,
+        positions=positions,
+        flip=torch.pi / 2.0,
+        rf_raster_time_s=4.0 / (2000.0 * 256.0),
+    )
+    turned = b.abs()
+
+    centre = float(turned[0])
+    assert centre > 0.7
+    assert float(turned[1]) > 0.8 * centre
+    # Half the thickness out is the half-amplitude edge of the slice.
+    assert 0.35 * centre < float(turned[2]) < 0.6 * centre
+    assert float(turned[3]) < 0.05 * centre
+    assert float(turned[4]) < float(turned[3])
+
+
+def test_positions_run_fastest_and_sensitivities_repeat_across_them():
+    """The kernels read an atom as ``voxel * locations + location``, so a voxel
+    the array reaches twice as hard must own a contiguous run of locations.
+    """
+    definition = _pulse(samples=64, bandwidth_hz=0.0)
+    sensitivities = torch.tensor([[1.0 + 0.0j], [0.5 + 0.0j]], dtype=torch.complex128)
+    positions = torch.tensor([-0.25, 0.0, 0.25])
+
+    _, b = dynamic_pair(
+        definition,
+        sensitivities,
+        positions=positions,
+        flip=1.0,
+        rf_raster_time_s=RASTER,
+    )
+
+    assert b.numel() == 6
+    first, second = b[:3], b[3:]
+    assert torch.equal(first, first[:1].expand_as(first))
+    assert torch.equal(second, second[:1].expand_as(second))
+    assert float(second[0].abs()) < float(first[0].abs())
+
+
+def test_a_position_and_an_off_resonance_reach_the_same_turn():
+    """Position enters through the slice-select gradient as an offset in Hz, so
+    a voxel a thickness off centre is a voxel that far off resonance.
+    """
+    definition = _pulse(samples=64)
+    sensitivities = torch.ones(1, 1, dtype=torch.complex128)
+    offset = 0.3
+
+    placed = dynamic_pair(
+        definition,
+        sensitivities,
+        positions=torch.tensor([offset]),
+        flip=1.0,
+        rf_raster_time_s=RASTER,
+    )
+    detuned = dynamic_pair(
+        definition,
+        sensitivities,
+        off_resonance_hz=torch.tensor([offset * definition.bandwidth_hz]),
+        flip=1.0,
+        rf_raster_time_s=RASTER,
+    )
+
+    for reference, result in zip(placed, detuned, strict=True):
+        assert float((reference - result).abs().max()) < 1e-7
+
+
+def test_a_pulse_reaches_its_rotation_one_way_or_the_other():
+    """Handed both, the kernels read the pair and the table says nothing, so a
+    caller who built one is owed the news rather than a silent choice.
+    """
+    from torchsim.sequence._accelerators import _run_packed
+    from torchsim.sequence._transition import transition_table
+
+    definition, prepared, events, pairs = _train()
+    table = transition_table(
+        definition,
+        torch.zeros(1, dtype=torch.float64),
+        bins=32,
+        rf_raster_time_s=RASTER,
+    )
+
+    with pytest.raises(ValueError, match="not through both"):
+        _run_packed(
+            prepared, events, 16, ECHOES, 1, profile=table, dynamic=pairs
+        )
+
+
+# --- end to end: the waveform picks the mode ---
+
+
+def _split_across_two_channels(flips: torch.Tensor):
+    """An FSE train whose pulses drive half their rectangle on each channel.
+
+    The channels sum back to the pulse every builder emits, so the rotation
+    integrated per voxel is the one a flip angle and a phase already name --
+    which is what lets the dynamic route be held against the ordinary one.
+    """
+    from dataclasses import replace
+
+    from torchsim.sequence._builders import fse_description
+
+    base = fse_description(
+        flips,
+        echo_spacing_s=5e-3,
+        phases_rad=torch.pi / 2,
+        excitation_phase_rad=torch.pi / 2,
+    )
+    half = RfShape(2, np.full(2, 0.5, dtype=np.float32))
+    twin = replace(base.rf_definitions[0], magnitude=(half, half))
+    return replace(base, rf_definitions={0: twin}), base
+
+
+def _sensitivities():
+    generator = torch.Generator().manual_seed(5)
+    magnitude = 0.6 + 0.8 * torch.rand(2, VOXELS, generator=generator)
+    phase = torch.pi * (2.0 * torch.rand(2, VOXELS, generator=generator) - 1.0)
+    return magnitude, phase
+
+
+def test_a_split_pulse_records_the_train_its_sum_records():
+    """The dispatch, end to end: the pulse's own waveform sends the run through
+    the per-voxel rotation, and the answer is the one the flip-and-phase route
+    gives for the field the channels sum to.
+    """
+    from torchsim.sequence import FSE, TissueProperties
+
+    flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
+    split, plain = _split_across_two_channels(flips)
+    magnitude, phase = _sensitivities()
+    # Each channel carries half the rectangle, so the field a voxel sees is the
+    # mean of what the two put there -- which is a transmit map the ordinary
+    # flip-and-phase route reads.
+    combined = torch.polar(magnitude, phase).mean(dim=0)
+    tissue = dict(
+        t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+        t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+    )
+
+    integrated = FSE().simulate(
+        split,
+        TissueProperties(**tissue, b1=magnitude, b1_phase_rad=phase),
+        nstates=16,
+        backend="native",
+    ).signal
+    turned = FSE().simulate(
+        plain,
+        TissueProperties(
+            **tissue, b1=combined.abs(), b1_phase_rad=combined.angle()
+        ),
+        nstates=16,
+        backend="native",
+    ).signal
+
+    assert float(turned.abs().max()) > 0.0
+    worst = float((integrated - turned).abs().max() / turned.abs().max())
+    assert worst < 1e-5, worst
+
+
+def test_a_split_pulse_leaves_the_transmit_phase_to_the_rotation():
+    """The pair is integrated against the complex sensitivities, so the phase
+    is already in it. Left on the tissue as well it would be turned by twice,
+    and the run would not answer the summed field.
+    """
+    from torchsim.sequence._simulation import _dynamic_transmit
+
+    split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
+    magnitude, phase = _sensitivities()
+    tissue = _tissue_properties(magnitude, phase)
+
+    left, sensitivities = _dynamic_transmit(tissue, split, None)
+
+    assert sensitivities.shape == (VOXELS, 2)
+    assert left.b1_phase_rad == 0.0
+    torch.testing.assert_close(
+        left.b1, torch.polar(magnitude, phase).sum(dim=0).abs(), atol=1e-6, rtol=0.0
+    )
+    torch.testing.assert_close(
+        sensitivities.to(torch.complex64), torch.polar(magnitude, phase).mT
+    )
+
+
+def _tissue_properties(magnitude, phase):
+    from torchsim.sequence import TissueProperties
+
+    return TissueProperties(
+        t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+        t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+        b1=magnitude,
+        b1_phase_rad=phase,
+    )
+
+
+def test_a_single_channel_train_never_reaches_the_pair():
+    """Nothing a builder emits is to be diverted onto the integrated route."""
+    from torchsim.sequence._builders import fse_description
+    from torchsim.sequence._simulation import _dynamic_transmit
+
+    plain = fse_description(torch.deg2rad(torch.full((ECHOES,), 140.0)), 5e-3)
+    magnitude, phase = _sensitivities()
+
+    _, sensitivities = _dynamic_transmit(
+        _tissue_properties(magnitude[:1, 0], phase[:1, 0]), plain, None
+    )
+
+    assert sensitivities is None
+
+
+def test_a_split_pulse_is_refused_by_the_operator_loop():
+    from torchsim.sequence import FSE
+
+    split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
+    magnitude, phase = _sensitivities()
+
+    with pytest.raises(NotImplementedError, match="axis the voxel has to itself"):
+        FSE().simulate(
+            split,
+            _tissue_properties(magnitude, phase),
+            nstates=8,
+            backend="torch",
+        )
+
+
+def test_a_static_shim_beside_a_dynamic_pulse_is_refused():
+    from dataclasses import replace
+
+    from torchsim.sequence import ShimDefinition
+    from torchsim.sequence._simulation import _dynamic_transmit
+
+    split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
+    shimmed = replace(
+        split,
+        shim_definitions={0: ShimDefinition(0, (1.0, 1.0), (0.0, 0.0))},
+    )
+    magnitude, phase = _sensitivities()
+
+    with pytest.raises(NotImplementedError, match="second answer"):
+        _dynamic_transmit(_tissue_properties(magnitude, phase), shimmed, None)
+
+
+def test_a_transmit_map_short_of_the_channels_is_refused():
+    from torchsim.sequence._simulation import _dynamic_transmit
+
+    split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
+    magnitude, phase = _sensitivities()
+
+    with pytest.raises(ValueError, match="transmit map apiece"):
+        _dynamic_transmit(_tissue_properties(magnitude[:1], phase[:1]), split, None)
+
+
+def test_the_dispatch_hands_the_kernels_a_pair_and_no_table(monkeypatch):
+    """Agreement with the flip-and-phase route is only evidence about the pair
+    if the pair is what ran.
+    """
+    from torchsim.sequence import FSE
+    from torchsim.sequence import _accelerators
+
+    split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
+    magnitude, phase = _sensitivities()
+    seen = {}
+    original = _accelerators._run_packed
+
+    def record(*args, **kwargs):
+        seen.update(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(_accelerators, "_run_packed", record)
+    FSE().simulate(
+        split, _tissue_properties(magnitude, phase), nstates=8, backend="native"
+    )
+
+    assert seen["profile"] is None
+    pairs = seen["dynamic"]
+    assert pairs is not None
+    assert pairs.voxels == VOXELS
+    # One row per distinct pulse: the excitation and the flip every refocusing
+    # shares, rather than one per event.
+    assert pairs.rows == 2
+    assert int(pairs.index.numel()) == len(split.events)
+
+
+def test_a_dynamic_pulse_is_integrated_across_the_slice():
+    """Asking for positions spreads each voxel over them and averages the
+    recorded signal, so a selective pulse records less than an ideal one.
+    """
+    from torchsim.sequence import FSE, exact_slice_profile
+
+    flips = torch.deg2rad(torch.full((ECHOES,), 150.0))
+    split, _ = _split_across_two_channels(flips)
+    magnitude, phase = _sensitivities()
+    tissue = _tissue_properties(magnitude, phase)
+
+    centred = FSE().simulate(
+        split, tissue, nstates=8, backend="native"
+    ).signal
+    across = FSE().simulate(
+        split,
+        tissue,
+        nstates=8,
+        backend="native",
+        slice_profile=exact_slice_profile(9, extent=2.0),
+    ).signal
+
+    assert centred.shape == across.shape
+    assert float(centred.abs().max()) > 0.0
+    # The pulse is a rectangle at zero bandwidth, so every position sees the
+    # same rotation and the mean over them is the centre.
+    worst = float((centred - across).abs().max() / centred.abs().max())
+    assert worst < 1e-6, worst
+
+
+def test_a_relaxation_gradient_reaches_through_the_pair():
+    """The pair fixes the rotation and the kernels differentiate everything
+    around it, so a relaxation gradient is the one the flip-and-phase route
+    returns for the same field.
+    """
+    from torchsim.sequence import FSE, TissueProperties
+
+    flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
+    split, plain = _split_across_two_channels(flips)
+    magnitude, phase = _sensitivities()
+    combined = torch.polar(magnitude, phase).mean(dim=0)
+
+    def gradients(description, b1, b1_phase):
+        t1 = torch.linspace(700.0, 1300.0, VOXELS).requires_grad_(True)
+        t2 = torch.linspace(50.0, 110.0, VOXELS).requires_grad_(True)
+        signal = FSE().simulate(
+            description,
+            TissueProperties(t1_ms=t1, t2_ms=t2, b1=b1, b1_phase_rad=b1_phase),
+            nstates=16,
+            backend="native",
+        ).signal
+        return torch.autograd.grad(signal.abs().square().sum(), (t1, t2))
+
+    integrated = gradients(split, magnitude, phase)
+    turned = gradients(plain, combined.abs(), combined.angle())
+
+    for reference, result in zip(turned, integrated, strict=True):
+        assert float(reference.abs().max()) > 0.0
+        assert float((reference - result).abs().max() / reference.abs().max()) < 1e-5
+
+
+@pytest.mark.parametrize("name", ["flip", "b1"])
+def test_a_gradient_through_the_pulse_integral_is_refused(name: str):
+    """The pair is integrated before the kernels run. A flip gradient taken
+    through them would carry only what the flip still does there -- saturate a
+    bound pool -- and come back short of the rotation without saying so.
+    """
+    from torchsim.sequence import FSE, TissueProperties
+
+    flips = torch.deg2rad(torch.full((ECHOES,), 140.0))
+    if name == "flip":
+        flips = flips.requires_grad_(True)
+    split, _ = _split_across_two_channels(flips)
+    magnitude, phase = _sensitivities()
+    if name == "b1":
+        magnitude = magnitude.requires_grad_(True)
+    leaf = flips if name == "flip" else magnitude
+
+    signal = FSE().simulate(
+        split,
+        TissueProperties(
+            t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+            t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+            b1=magnitude,
+            b1_phase_rad=phase,
+        ),
+        nstates=8,
+        backend="native",
+    ).signal
+
+    with pytest.raises(NotImplementedError, match="before the kernels run"):
+        torch.autograd.grad(signal.abs().square().sum(), leaf)
+
+
+# --- a gradient the scanner moves while the pulse plays ---
+
+
+def _under_gradient(waveform, *, samples: int = 64, bandwidth_hz: float = 2000.0):
+    """The sinc of :func:`_pulse`, played under a gradient that is not held.
+
+    The waveform is in units of the gradient ``bandwidth_hz`` is quoted at, so
+    a shape of ones is the pulse itself.
+    """
+    from dataclasses import replace
+
+    definition = _pulse(samples=samples, bandwidth_hz=bandwidth_hz)
+    return replace(
+        definition,
+        gradient=RfShape(len(waveform), np.asarray(waveform, dtype=np.float32)),
+    )
+
+
+def test_a_gradient_of_ones_is_the_gradient_held():
+    """The moving path has to land on the held one to the bit where the
+    waveform says the gradient never moved, or the two are different physics
+    wearing the same units.
+    """
+    samples = 64
+    held = _pulse(samples=samples)
+    moved = _under_gradient(np.ones(samples), samples=samples)
+    sensitivities = torch.tensor([[0.9 + 0.1j]], dtype=torch.complex128)
+    positions = torch.linspace(-0.5, 0.5, 5)
+    arguments = dict(
+        positions=positions,
+        flip=1.2,
+        off_resonance_hz=torch.tensor([40.0]),
+        rf_raster_time_s=RASTER,
+    )
+
+    for reference, result in zip(
+        dynamic_pair(held, sensitivities, **arguments),
+        dynamic_pair(moved, sensitivities, **arguments),
+        strict=True,
+    ):
+        assert torch.equal(reference, result)
+
+    table = dict(bins=32, rf_raster_time_s=RASTER)
+    tabulated = transition_table(held, positions, **table)
+    integrated = transition_table(moved, positions, **table)
+    assert torch.equal(tabulated.a, integrated.a)
+    assert torch.equal(tabulated.b, integrated.b)
+    assert torch.equal(tabulated.slope_a, integrated.slope_a)
+
+
+def test_a_moving_gradient_is_what_exponentiating_each_sample_gives():
+    """The oracle carries the gradient sample by sample too, so agreement is
+    evidence about where the turn is applied and not only about its size.
+    """
+    samples = 48
+    ramp = np.linspace(-1.0, 1.0, samples)
+    definition = _under_gradient(ramp, samples=samples)
+    sensitivities = torch.tensor([[0.8 + 0.2j]], dtype=torch.complex128)
+    position = 0.4
+    offset = 90.0
+
+    a, b = dynamic_pair(
+        definition,
+        sensitivities,
+        flip=1.3,
+        off_resonance_hz=torch.tensor([offset]),
+        positions=torch.tensor([position]),
+        rf_raster_time_s=RASTER,
+    )
+
+    envelope = torch.as_tensor(definition.complex_envelope(), dtype=torch.complex128)
+    shape = envelope / envelope.sum()
+    drive = [1.3 * shape[sample] * sensitivities[0, 0] for sample in range(samples)]
+    turns = [
+        2.0 * torch.pi * RASTER * (offset + 2000.0 * position * float(ramp[sample]))
+        for sample in range(samples)
+    ]
+    expected = _stepwise(drive, turns)
+    measured = torch.tensor(
+        [
+            [complex(a[0]), complex(b[0])],
+            [-complex(b[0]).conjugate(), complex(a[0]).conjugate()],
+        ],
+        dtype=torch.complex128,
+    )
+
+    assert float((expected - measured).abs().max()) < 1e-6
+
+
+def test_a_gradient_switched_off_mid_pulse_moves_the_profile():
+    """The whole point of the axis: where the gradient is off, the pulse
+    excites without selecting, so the slice is not the one the held gradient
+    would have cut.
+    """
+    samples = 128
+    blipped = np.ones(samples)
+    blipped[samples // 3 : 2 * samples // 3] = 0.0
+    positions = torch.linspace(-1.0, 1.0, 9)
+    sensitivities = torch.ones(1, 1, dtype=torch.complex128)
+    # Played over ``4 / bandwidth_hz``, so the sinc's four lobes are the
+    # bandwidth the definition declares and a position is a real thickness.
+    arguments = dict(
+        positions=positions,
+        flip=torch.pi / 2.0,
+        rf_raster_time_s=4.0 / (2000.0 * samples),
+    )
+
+    _, held = dynamic_pair(_pulse(samples=samples), sensitivities, **arguments)
+    _, moved = dynamic_pair(
+        _under_gradient(blipped, samples=samples), sensitivities, **arguments
+    )
+
+    assert float(held.abs().max()) > 0.1
+    assert float((held - moved).abs().max()) > 0.05 * float(held.abs().max())
+
+
+def test_a_gradient_that_is_never_on_selects_nothing():
+    """No gradient across the pulse is no slice, however wide the bandwidth."""
+    samples = 64
+    definition = _under_gradient(np.zeros(samples), samples=samples)
+    positions = torch.linspace(-2.0, 2.0, 5)
+
+    a, b = dynamic_pair(
+        definition,
+        torch.ones(1, 1, dtype=torch.complex128),
+        positions=positions,
+        flip=1.0,
+        rf_raster_time_s=RASTER,
+    )
+
+    assert torch.equal(a, a[:1].expand_as(a))
+    assert torch.equal(b, b[:1].expand_as(b))
+
+
+def test_a_gradient_of_the_wrong_length_is_refused():
+    with pytest.raises(ValueError, match="the gradient carries"):
+        _under_gradient(np.ones(9), samples=64).gradient_waveform()
+
+
+def test_a_moving_gradient_has_to_last_the_pulse():
+    """``compose_spinor`` takes the two waveforms in the same form, so a
+    gradient that runs out before the RF does is a caller's mistake, not a
+    shorter pulse.
+    """
+    from torchsim.sequence._transition import compose_spinor
+
+    drive = [torch.tensor(0.1, dtype=torch.complex128) for _ in range(4)]
+    turns = [torch.zeros(2, dtype=torch.float64) for _ in range(3)]
+
+    with pytest.raises(ValueError):
+        compose_spinor(drive, turns)
+
+
+def test_the_table_reads_the_moving_gradient_too():
+    """The tabulated route composes the same spinor, so it has to carry the
+    gradient sample by sample where one is given -- shown by a waveform that
+    changes the answer rather than by one that cannot.
+    """
+    samples = 128
+    blipped = np.ones(samples)
+    blipped[samples // 3 : 2 * samples // 3] = 0.0
+    positions = torch.linspace(-1.0, 1.0, 9)
+    arguments = dict(bins=64, rf_raster_time_s=4.0 / (2000.0 * samples))
+
+    held = transition_table(_pulse(samples=samples), positions, **arguments)
+    moved = transition_table(
+        _under_gradient(blipped, samples=samples), positions, **arguments
+    )
+
+    assert float(held.b.abs().max()) > 0.1
+    assert float((held.b - moved.b).abs().max()) > 0.05 * float(held.b.abs().max())

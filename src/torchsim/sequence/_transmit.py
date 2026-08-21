@@ -34,21 +34,16 @@ The net rotation is therefore about an axis at ``arg(B1(r))`` through a flip of
 already takes. Nothing is approximated here that was not already approximated
 for a single channel with a transmit map.
 
-That inheritance includes the slice profile. The state machine treats a pulse
-as instantaneous and carries its temporal shape as a flip-angle scaling along
-the slice, one voxel copy per profile point. The scaling is computed for the
-nominal amplitude, so it drifts once ``|B1|`` is far from one -- a slice
-profile is a Bloch response, and a response does not simply scale with the
-pulse driving it. A shim makes that drift easier to reach, but it is the
-single-channel approximation, not a new one.
+The slice comes in through the same factorization. A pulse carrying a waveform
+is integrated into the rotation it performs at each position across the slice
+and read from a table over position and effective flip, so ``|B1|`` scales the
+flip the table is read at rather than a response fitted at nominal amplitude.
 
 A pulse whose channel weights vary while it plays -- kT-points, spokes -- does
 not factor that way at all. Its effect on a voxel is a rotation about an
 arbitrary axis, three parameters rather than two, and no flip-and-phase pair
-can carry it. Reaching those needs the pulse replaced by a per-voxel rotation
-worked out ahead of time, by Bloch integration or by SLR; the same change would
-retire the flip-scaling slice profile, since an exact profile is that rotation
-as a function of position.
+can carry it. Those are integrated per voxel instead; see
+:func:`._transition.dynamic_pair`.
 """
 
 from __future__ import annotations

@@ -9,6 +9,9 @@ import torch
 from torchsim.sequence import (
     AdcRole,
     EventType,
+    RfDefinition,
+    RfMode,
+    RfShape,
     RfUse,
     SequenceEvent,
     decompress_shape,
@@ -80,3 +83,85 @@ def test_magnetization_prepared_builders_label_acquired_readouts() -> None:
     assert sum(
         event.adc_role is not AdcRole.NON_ACQUIRED for event in mprage.adc_events
     ) == 1
+
+
+# --- what the waveform says about the pulse ---
+
+
+def _shape(samples: np.ndarray) -> RfShape:
+    return RfShape(samples.size, samples.astype(np.float32))
+
+
+def _sinc(samples: int = 32, lobes: float = 2.0) -> np.ndarray:
+    return np.sinc(np.linspace(-lobes, lobes, samples))
+
+
+def _definition(magnitude, phase=None, *, bandwidth_hz: float = 0.0) -> RfDefinition:
+    return RfDefinition(
+        id=7,
+        bandwidth_hz=bandwidth_hz,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=0.0,
+        total_b1sq_power=0.0,
+        magnitude=magnitude,
+        phase=phase,
+    )
+
+
+def test_a_rectangle_off_resonance_free_is_the_hard_pulse_it_already_was() -> None:
+    """Every builder emits one of these, and it must keep taking the
+    instant-rotation path rather than being tabulated off-grid.
+    """
+    description = fse_description(torch.tensor([1.2]), 5e-3)
+
+    assert description.rf_definitions[0].rf_mode() is RfMode.INSTANT
+
+
+def test_a_shaped_pulse_asks_for_a_profile() -> None:
+    assert _definition(_shape(_sinc())).rf_mode() is RfMode.PROFILED
+
+
+def test_a_rectangle_that_selects_a_slice_asks_for_a_profile() -> None:
+    """Bandwidth is what makes the rotation depend on where the voxel sits, so
+    a flat envelope is no longer the whole story.
+    """
+    flat = _shape(np.ones(8))
+
+    assert _definition(flat).rf_mode() is RfMode.INSTANT
+    assert _definition(flat, bandwidth_hz=1200.0).rf_mode() is RfMode.PROFILED
+
+
+def test_a_waveform_per_channel_asks_for_a_rotation_per_voxel() -> None:
+    sinc = _sinc()
+    definition = _definition((_shape(sinc), _shape(0.5 * sinc)))
+
+    assert definition.channel_count == 2
+    assert definition.rf_mode() is RfMode.DYNAMIC
+    assert definition.complex_envelope().shape == (2, sinc.size)
+
+
+def test_the_derived_quantities_read_the_combined_envelope() -> None:
+    """Two channels driving half a shape each are the one-channel pulse, so the
+    flip a voxel of unit sensitivity everywhere takes is the same flip.
+    """
+    sinc = _sinc()
+    single = _definition(_shape(sinc))
+    split = _definition((_shape(0.5 * sinc), _shape(0.5 * sinc)))
+
+    np.testing.assert_allclose(
+        split.combined_envelope(), single.combined_envelope(), atol=1e-6
+    )
+    assert split.integral() == pytest.approx(single.integral())
+    assert split.saturation() == pytest.approx(single.saturation())
+
+
+def test_a_channel_count_has_one_reading() -> None:
+    sinc = _shape(_sinc())
+
+    with pytest.raises(ValueError, match="phase per channel"):
+        _definition((sinc, sinc), sinc)
+    with pytest.raises(ValueError, match="magnitude per channel"):
+        _definition(sinc, (sinc,))
+    with pytest.raises(ValueError, match="drives no channel"):
+        _definition(())
