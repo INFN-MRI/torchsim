@@ -171,8 +171,7 @@ def _problem(
 
     flip = torch.full((_PROBE_ECHOES,), math.radians(120.0))
     packed = _pack_events(
-        "fse",
-        fse_description(
+                fse_description(
             flip,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,

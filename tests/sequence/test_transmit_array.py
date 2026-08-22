@@ -62,9 +62,9 @@ def _description(shim: ShimDefinition | None = None, shim_ids: tuple[int, ...] =
         events = list(events)
         for position, identifier in zip(pulses, shim_ids, strict=False):
             event = events[position]
-            events[position] = SequenceEvent(
-                event.type, event.timestamp_us, (*event.params[:5], identifier,
-                                                 *event.params[6:])
+            events[position] = replace(
+                event,
+                params=(*event.params[:5], identifier, *event.params[6:]),
             )
         events = tuple(events)
     return replace(
@@ -228,8 +228,7 @@ def _packed(description, voxels: int = 3, device: str = "cpu"):
     )
     prepared, _, resolved = _prepare_tissue(tissue, device, shims)
     packed = _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=resolved,
@@ -794,8 +793,7 @@ def _pooled_shim_packed(voxels: int = 3, **properties):
     )
     prepared, _, resolved = _prepare_tissue(tissue, "cpu", shims)
     packed = _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=resolved,

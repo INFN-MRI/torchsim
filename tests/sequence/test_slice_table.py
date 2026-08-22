@@ -94,8 +94,7 @@ def _packed(voxels: int):
     prepared, _, device = _prepare_tissue(tissue, torch.device("cpu"))
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
     packed = _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=device,

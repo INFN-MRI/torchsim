@@ -784,8 +784,7 @@ def _train_events():
     spoil that a free-induction probe leaves alone.
     """
     packed = _pack_events(
-        "fse",
-        _description(),
+                _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -963,8 +962,7 @@ def test_a_streamed_volume_matches_the_whole_one():
 
     voxels = 3000
     packed = _pack_events(
-        "fse",
-        _description(),
+                _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -1012,8 +1010,7 @@ def test_a_streamed_adjoint_matches_the_whole_one():
 
     voxels = 3000
     packed = _pack_events(
-        "fse",
-        _description(),
+                _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),

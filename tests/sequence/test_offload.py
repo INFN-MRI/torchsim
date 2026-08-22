@@ -43,8 +43,7 @@ def _volume(voxels, trains=1):
     shape = (trains, ECHOES) if trains > 1 else (ECHOES,)
     flip = torch.deg2rad(80.0 + 80.0 * torch.rand(shape, generator=generator))
     packed = _pack_events(
-        "fse",
-        fse_description(
+                fse_description(
             flip,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -249,8 +248,7 @@ def _spgr_volume(voxels, trains=1, pulses=12):
     generator = torch.Generator().manual_seed(0)
     packed = [
         _pack_events(
-            "spgr",
-            spgr_description(
+                        spgr_description(
                 torch.deg2rad(5.0 + 20.0 * torch.rand(pulses, generator=generator)),
                 repetition_time_s=10e-3,
                 echo_time_s=4e-3,

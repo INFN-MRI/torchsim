@@ -5,6 +5,7 @@ from __future__ import annotations
 __all__ = [
     "AdcRole",
     "ExactSliceProfile",
+    "EventAction",
     "EventType",
     "RfDefinition",
     "RfMode",
@@ -48,6 +49,7 @@ from ._builders import (
 )
 from ._description import (
     AdcRole,
+    EventAction,
     EventType,
     RfDefinition,
     RfMode,

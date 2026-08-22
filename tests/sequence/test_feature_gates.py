@@ -276,8 +276,7 @@ def _gate_inputs(extra):
         "cuda",
     )
     packed = _pack_events(
-        "fse",
-        _description(),
+                _description(),
         repetitions=1,
         record="all",
         device=torch.device("cuda"),

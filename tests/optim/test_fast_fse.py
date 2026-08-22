@@ -50,8 +50,7 @@ def test_plan_buffers_match_the_generic_packer(trains, echoes):
         phases_rad=torch.pi * PHASES_DEG / 180.0,
     )
     generic = _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=torch.device("cpu"),

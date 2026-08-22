@@ -337,7 +337,6 @@ def _order_weighted_rates(
 
 
 def simulate_native(
-    policy_name: str,
     description: SequenceDescription,
     prepared_tissue: tuple[torch.Tensor, ...],
     output_shape: torch.Size,
@@ -351,6 +350,7 @@ def simulate_native(
     exchanging: bool = False,
     features: frozenset[str] | None = None,
     transmit: torch.Tensor | None = None,
+    carries_own_rules: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules.
 
@@ -361,11 +361,15 @@ def simulate_native(
     channels)``, given when the sequence drives a pulse whose channels carry
     their own waveforms. Its rotation is then integrated per voxel rather than
     reached through a flip and a phase.
+
+    ``carries_own_rules`` declines outright: a caller that manipulates the
+    states itself knows something the description does not, and the kernels
+    would answer for the description alone.
     """
     device = prepared_tissue[0].device
     if device.type not in {"cpu", "cuda"} or not _backend_available(device):
         return None
-    if policy_name not in _SHIFTS_AND_SPOILS:
+    if carries_own_rules:
         return None
 
     asked = slice_profile if slice_profile is not None else ExactSliceProfile(points=1)
@@ -375,7 +379,6 @@ def simulate_native(
         else {}
     )
     packed = _pack_events(
-        policy_name,
         description,
         repetitions=repetitions,
         record=record,
@@ -460,7 +463,6 @@ def simulate_native(
 
 
 def _pack_events(
-    policy_name: str,
     description: SequenceDescription,
     *,
     repetitions: int,
@@ -500,7 +502,7 @@ def _pack_events(
             durations.append((absolute - previous_absolute) * 1e-6)
             previous_absolute = absolute
             kinds.append(int(event.type))
-            action = _action(policy_name, event)
+            action = int(event.action)
             flip: Any = 0.0
             phase: Any = 0.0
             event_output_index = -1
@@ -585,26 +587,6 @@ def _pack_events(
         ),
         echo=torch.as_tensor(echo_flags, dtype=torch.bool, device=device),
     )
-
-
-# The crusher and spoiler placements these kernels can be told about, named by
-# the policy that asks for them. A policy outside this set has state handling
-# the packed events have no way to carry, so it does not reach the kernels.
-_SHIFTS_AND_SPOILS = frozenset({"base", "bssfp", "fse", "spgr", "ssfp-fid", "ssfp-echo"})
-
-
-def _action(policy_name: str, event: SequenceEvent) -> int:
-    if event.type is EventType.RF and event.rf_use is RfUse.REFOCUSING:
-        return _PRE_SHIFT | _POST_SHIFT if policy_name == "fse" else 0
-    if event.type is not EventType.ADC:
-        return 0
-    if policy_name == "spgr":
-        return _SPOIL_AFTER
-    if policy_name == "ssfp-fid":
-        return _SHIFT_AFTER
-    if policy_name == "ssfp-echo":
-        return _PRE_SHIFT
-    return 0
 
 
 def _record_event(event: SequenceEvent, mode: str) -> bool:

@@ -45,15 +45,12 @@ def _descriptions():
     flip = torch.deg2rad(torch.full((ECHOES,), 140.0))
     return {
         "fse": (
-            "fse",
             fse_description(flip, echo_spacing_s=5e-3, phases_rad=torch.pi / 2),
         ),
         "spgr": (
-            "spgr",
             spgr_description(torch.deg2rad(torch.full((ECHOES,), 15.0)), 8e-3, 3e-3),
         ),
         "mrf": (
-            "ssfpfid",
             mrf_description(
                 torch.deg2rad(torch.linspace(5.0, 60.0, ECHOES)),
                 torch.full((ECHOES,), 10e-3),
@@ -61,7 +58,6 @@ def _descriptions():
             ),
         ),
         "mprage": (
-            "spgr",
             mprage_description(
                 2, ECHOES - 2, torch.deg2rad(torch.tensor(8.0)), 8e-3, 20e-3
             ),
@@ -71,10 +67,9 @@ def _descriptions():
 
 def _packed(name: str = "fse", state_count: int = 8):
     """Prepared tissue and packed events, the pair both routes are fed."""
-    policy, description = _descriptions()[name]
+    (description,) = _descriptions()[name]
     prepared, _, device = _prepare_tissue(_tissue(), "cpu")
     packed = _pack_events(
-        policy,
         description,
         repetitions=1,
         record="all",
@@ -140,10 +135,9 @@ def _agree(expected, actual, names, tolerance: float = 1e-3) -> None:
 @pytest.mark.parametrize("name", sorted(_descriptions()))
 @pytest.mark.parametrize("threads", [1, 4])
 def test_fused_vjp_matches_the_reference(name: str, threads: int) -> None:
-    policy, description = _descriptions()[name]
+    (description,) = _descriptions()[name]
     prepared, _, device = _prepare_tissue(_tissue(), "cpu")
     packed = _pack_events(
-        policy,
         description,
         repetitions=1,
         record="all",

@@ -42,8 +42,7 @@ def _events(phases):
         _flip(), echo_spacing_s=ECHO_SPACING_S, phases_rad=phases
     )
     packed = _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=torch.device("cuda"),

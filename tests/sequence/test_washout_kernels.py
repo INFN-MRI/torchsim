@@ -73,8 +73,7 @@ def _packed(velocity: float = VELOCITY):
     """Prepared tissue and packed events, as the kernels take them."""
     prepared, _, resolved = _prepare_tissue(_tissue(velocity), "cpu")
     packed = _pack_events(
-        "fse",
-        _description(),
+                _description(),
         repetitions=1,
         record="all",
         device=resolved,

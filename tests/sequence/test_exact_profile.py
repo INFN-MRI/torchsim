@@ -109,7 +109,7 @@ def _two_shapes(second: RfDefinition):
     """An FSE whose excitation and refocusing are shaped differently."""
     from dataclasses import replace
 
-    from torchsim.sequence._description import RfUse, SequenceEvent
+    from torchsim.sequence._description import RfUse
 
     description = _describe(definition=_sinc(4.0e3))
     events = []
@@ -118,12 +118,8 @@ def _two_shapes(second: RfDefinition):
         if event.type.name == "RF" and event.rf_use is not RfUse.INVERSION:
             seen_rf += 1
             if seen_rf > 1:
-                event = SequenceEvent.rf(
-                    event.timestamp_us,
-                    second.id,
-                    event.rf_use,
-                    event.rf_amplitude_hz,
-                    event.rf_phase_rad,
+                event = replace(
+                    event, params=(second.id, *event.params[1:])
                 )
         events.append(event)
     return replace(

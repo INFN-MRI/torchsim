@@ -124,8 +124,7 @@ class FseT2Plan:
             excitation_phase_rad=excitation_phase_rad,
         )
         packed = _pack_events(
-            "fse",
-            description,
+                        description,
             repetitions=1,
             record="all",
             device=self.device,

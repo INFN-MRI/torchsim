@@ -50,8 +50,7 @@ def test_every_tissue_parameter_is_prepared():
 def test_every_event_parameter_is_packed():
     """The packed events carry a field per event parameter the table names."""
     packed = _pack_events(
-        "fse",
-        fse_description(
+                fse_description(
             torch.deg2rad(torch.full((4,), 140.0)),
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,

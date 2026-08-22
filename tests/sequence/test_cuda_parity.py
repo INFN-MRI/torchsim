@@ -52,8 +52,7 @@ def _case(trains, device):
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=torch.device(device),
@@ -85,8 +84,7 @@ def _real_case(trains, device, atoms=2):
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=torch.device(device),
@@ -410,8 +408,7 @@ def _spgr_case(device, trains, atoms):
     generator = torch.Generator().manual_seed(0)
     packed = [
         _pack_events(
-            "spgr",
-            _spgr_description(
+                        _spgr_description(
                 torch.deg2rad(5.0 + 20.0 * torch.rand(12, generator=generator)),
             ),
             repetitions=1,

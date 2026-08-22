@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from ._description import (
+    EventAction,
     AdcRole,
     RfDefinition,
     RfShape,
@@ -69,6 +70,7 @@ def fse_description(
                 RfUse.REFOCUSING,
                 flip[..., index],
                 phases[..., index],
+                action=EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER,
             )
         )
         events.append(
@@ -134,6 +136,7 @@ def mrf_description(
                 AdcRole.SINGLE,
                 phases[index],
                 is_echo=True,
+                action=EventAction.SHIFT_AFTER,
             )
         )
         current_s = current_s + repetition_time[index]
@@ -245,6 +248,7 @@ def spgr_description(
                 AdcRole.SINGLE,
                 phases[index],
                 is_echo=True,
+                action=EventAction.SPOIL_AFTER,
             )
         )
         current_s = current_s + repetition_time[index]
@@ -308,6 +312,7 @@ def _inversion_prepared_gre_description(
                 AdcRole.SINGLE if acquired else AdcRole.NON_ACQUIRED,
                 phases[index],
                 is_echo=acquired,
+                action=EventAction.SPOIL_AFTER,
             )
         )
         current_s = current_s + repetition_time[index]

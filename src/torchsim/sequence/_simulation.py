@@ -31,6 +31,7 @@ from ._accelerators import (
 from ._transition import ExactSliceProfile
 from ._description import (
     AdcRole,
+    EventAction,
     EventType,
     RfMode,
     RfUse,
@@ -208,9 +209,35 @@ class EpgSimulator:
         """Apply sequence-specific operations immediately after ADC."""
         return states
 
-    def shifts_per_repetition(self, _description: SequenceDescription) -> int:
-        """Return an upper bound used to size the EPG state matrix."""
-        return 0
+    _LOOP_HOOKS = ("before_rf", "after_rf", "before_adc", "after_adc")
+
+    def _carries_own_rules(self) -> bool:
+        """Whether this policy manipulates the states itself.
+
+        The shipped policies do not: what they used to do around an event is
+        what the description now says, and both backends read it from there.
+        One that overrides a hook knows something the description does not, so
+        the kernels are not asked to answer for it -- the operator loop still
+        calls it, after whatever the description said to play.
+        """
+        return any(
+            getattr(type(self), name) is not getattr(EpgSimulator, name)
+            for name in EpgSimulator._LOOP_HOOKS
+        )
+
+    def shifts_per_repetition(self, description: SequenceDescription) -> int:
+        """How far the sequence winds the states on in one repetition.
+
+        Read off the actions the description carries, so a state matrix is
+        sized by what the sequence plays rather than by which policy is
+        driving it.
+        """
+        winding = EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER
+        winding |= EventAction.SHIFT_AFTER
+        return sum(
+            bin(int(event.action & winding)).count("1")
+            for event in description.events
+        )
 
     def simulate(
         self,
@@ -276,7 +303,6 @@ class EpgSimulator:
             raise ValueError("backend must be 'auto', 'torch', or 'native'")
         if backend != "torch":
             accelerated = simulate_native(
-                self.name,
                 description,
                 prepared,
                 output_shape,
@@ -291,6 +317,7 @@ class EpgSimulator:
                 exchanging=exchange_pool,
                 features=features,
                 transmit=sensitivities,
+                carries_own_rules=self._carries_own_rules(),
             )
             if accelerated is not None:
                 return SimulationResult(*accelerated)
@@ -357,7 +384,7 @@ class EpgSimulator:
                 current_us = event.timestamp_us
 
                 if event.type is EventType.RF:
-                    states = self.before_rf(states, event)
+                    states = self.before_rf(_before(states, event), event)
                     if event.rf_use is RfUse.INVERSION:
                         states = epg.adiabatic_inversion(
                             states, inversion_efficiency[None, :, None, None]
@@ -380,9 +407,9 @@ class EpgSimulator:
                             B1phase=b1_phase[:, None],
                         )
                         states = epg.rf_pulse(states, operator)
-                    states = self.after_rf(states, event)
+                    states = self.after_rf(_after(states, event), event)
                 elif event.type is EventType.ADC:
-                    states = self.before_adc(states, event)
+                    states = self.before_adc(_before(states, event), event)
                     if _record_event(event, record):
                         phase = _as_float_tensor(event.adc_phase_rad, target_device)
                         signal = states.Fplus[0, :, :, 0].mean(dim=-1)
@@ -391,7 +418,7 @@ class EpgSimulator:
                         event_indices.append(event_index)
                         repetition_indices.append(repetition)
                         echo_flags.append(event.is_echo)
-                    states = self.after_adc(states, event)
+                    states = self.after_adc(_after(states, event), event)
 
             states = _free_precess(
                 states,
@@ -423,62 +450,31 @@ class EpgSimulator:
 
 
 class FSE(EpgSimulator):
-    """Fast spin echo policy: crusher, refocusing RF, crusher."""
+    """Fast spin echo: a refocusing pulse between its crushers."""
 
     name = "fse"
 
-    def before_rf(self, states: Any, event: SequenceEvent) -> Any:
-        if event.rf_use is RfUse.REFOCUSING:
-            return _shift(states)
-        return states
-
-    def after_rf(self, states: Any, event: SequenceEvent) -> Any:
-        if event.rf_use is RfUse.REFOCUSING:
-            return _shift(states)
-        return states
-
-    def shifts_per_repetition(self, description: SequenceDescription) -> int:
-        return 2 * sum(
-            event.type is EventType.RF and event.rf_use is RfUse.REFOCUSING
-            for event in description.events
-        )
-
 
 class SPGR(EpgSimulator):
-    """Spoiled GRE policy using ideal transverse spoiling after every ADC."""
+    """Spoiled GRE: ideal transverse spoiling after every readout."""
 
     name = "spgr"
 
-    def after_adc(self, states: Any, _event: SequenceEvent) -> Any:
-        return _spoil(states)
-
 
 class SSFPFID(EpgSimulator):
-    """Unbalanced SSFP-FID policy using one crusher after every ADC."""
+    """Unbalanced SSFP-FID: one crusher after every readout."""
 
     name = "ssfp-fid"
 
-    def after_adc(self, states: Any, _event: SequenceEvent) -> Any:
-        return _shift(states)
-
-    def shifts_per_repetition(self, description: SequenceDescription) -> int:
-        return sum(event.type is EventType.ADC for event in description.events)
-
 
 class SSFPEcho(EpgSimulator):
-    """SSFP-Echo policy using one dephasing crusher before every ADC."""
+    """SSFP-Echo: one dephasing crusher before every readout."""
 
     name = "ssfp-echo"
 
-    def before_adc(self, states: Any, _event: SequenceEvent) -> Any:
-        return _shift(states)
-
-    def shifts_per_repetition(self, description: SequenceDescription) -> int:
-        return sum(event.type is EventType.ADC for event in description.events)
-
 
 class BSSFP(EpgSimulator):
-    """Balanced SSFP policy without crushers or ideal spoiling."""
+    """Balanced SSFP: no crushers and no ideal spoiling."""
 
     name = "bssfp"
 
@@ -770,6 +766,27 @@ def _stack_scalars(values: list[Any], device: torch.device) -> torch.Tensor:
     if not values:
         return torch.empty(0, dtype=torch.float32, device=device)
     return torch.stack([_as_float_tensor(value, device) for value in values])
+
+
+def _before(states: Any, event: SequenceEvent) -> Any:
+    """What the sequence plays before an event, as the description says."""
+    if event.action & EventAction.CRUSH_BEFORE:
+        return _shift(states)
+    return states
+
+
+def _after(states: Any, event: SequenceEvent) -> Any:
+    """What the sequence plays after one.
+
+    A crusher and an ideal spoil are alternatives -- one winds the states on by
+    an order, the other discards the transverse magnetization outright -- so a
+    description asking for both is asking for two different sequences.
+    """
+    if event.action & EventAction.SPOIL_AFTER:
+        return _spoil(states)
+    if event.action & (EventAction.CRUSH_AFTER | EventAction.SHIFT_AFTER):
+        return _shift(states)
+    return states
 
 
 def _shift(states: Any, delta: int = 1) -> Any:

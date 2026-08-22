@@ -33,8 +33,7 @@ def _describe(flip: torch.Tensor):
 
 def _pack(flip: torch.Tensor):
     return _pack_events(
-        "fse",
-        _describe(flip),
+                _describe(flip),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),

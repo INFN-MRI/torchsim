@@ -74,8 +74,7 @@ def _packed(device: str = "cpu", diffusion: float = FREE_WATER, rate: bool = Tru
             for index, value in enumerate(prepared)
         )
     packed = _pack_events(
-        "fse",
-        _description(),
+                _description(),
         repetitions=1,
         record="all",
         device=resolved,

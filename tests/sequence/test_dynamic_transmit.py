@@ -304,8 +304,7 @@ def _train():
     definition = _pulse(samples=96)
     flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     packed = _pack_events(
-        "fse",
-        fse_description(
+                fse_description(
             flips,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -846,8 +845,7 @@ def _real_subspace_train(trains: int = 1):
     if trains > 1:
         flips = flips[None, :] * torch.linspace(0.9, 1.1, trains)[:, None]
     packed = _pack_events(
-        "fse",
-        fse_description(
+                fse_description(
             flips,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -1817,8 +1815,7 @@ def _pooled_train(**properties):
     definition = _pulse(samples=96)
     flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     packed = _pack_events(
-        "fse",
-        fse_description(
+                fse_description(
             flips,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,

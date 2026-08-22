@@ -45,7 +45,6 @@ def _axis(phases, excitation, b0_hz=0.0, b1_phase_rad=0.0):
         excitation_phase_rad=excitation,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
@@ -118,7 +117,6 @@ def test_real_kernel_reproduces_the_complex_one(phase):
         excitation_phase_rad=phase,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
@@ -148,7 +146,6 @@ def test_real_jvp_reproduces_the_complex_one():
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
@@ -175,8 +172,26 @@ def test_real_jvp_reproduces_the_complex_one():
     assert ((expected - actual).abs().max() / scale) < 1e-6
 
 
+@pytest.fixture
+def always_worth_detecting(monkeypatch):
+    """Reach for the subspace verdict however small the problem looks.
+
+    ``detection`` is measured against the machine rather than fixed, so what
+    counts as enough work depends on what else the card has been doing. A test
+    that wants the fast path taken has to say so: left to the threshold it
+    silently gets the complex kernel under load, which computes the four
+    gradients the real one leaves at zero -- and then fails for asserting
+    exactly that.
+    """
+    from torchsim.sequence import _accelerators
+
+    monkeypatch.setattr(
+        _accelerators, "detection", lambda kind, device, state_count: 0.0
+    )
+
+
 @pytest.mark.parametrize("phase", [0.0, torch.pi / 4, torch.pi / 2])
-def test_real_adjoint_reproduces_the_complex_one(phase):
+def test_real_adjoint_reproduces_the_complex_one(phase, always_worth_detecting):
     """The first-order adjoint through the real subspace, against the kernel it
     specializes: every gradient the subspace contains, and zero for the four it
     divides out.
@@ -194,7 +209,6 @@ def test_real_adjoint_reproduces_the_complex_one(phase):
         excitation_phase_rad=phase,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
@@ -251,7 +265,6 @@ def test_the_real_adjoint_reaches_the_inversion_gradient():
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
@@ -318,7 +331,6 @@ def test_real_second_order_kernel_reproduces_the_complex_one():
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
@@ -378,8 +390,7 @@ def _packed(trains):
         excitation_phase_rad=torch.pi / 2,
     )
     return _pack_events(
-        "fse",
-        description,
+                description,
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -442,8 +453,7 @@ def _tissue_events(trains, echoes=20, atoms=64, b0_hz=0.0):
         80.0 + 80.0 * torch.rand(trains, echoes, generator=generator)
     )
     packed = _pack_events(
-        "fse",
-        fse_description(
+                fse_description(
             flip,
             echo_spacing_s=ECHO_SPACING_S,
             phases_rad=torch.pi / 2,
@@ -658,7 +668,7 @@ def _forward_over_reverse(atoms):
     return torch.autograd.grad(derivative.abs().square().sum(), t2)[0]
 
 
-def test_autograd_asks_for_what_the_graph_needs(monkeypatch):
+def test_autograd_asks_for_what_the_graph_needs(monkeypatch, always_worth_detecting):
     """The verdict is reached inside backward, off ``needs_input_grad``.
 
     Differentiating T2 stays inside the subspace, so the fast adjoint is
@@ -693,7 +703,9 @@ CUDA_VOXELS = 8192
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 @pytest.mark.parametrize("state_count", [8, 10, 16, 17])
-def test_the_cuda_real_adjoint_agrees_with_the_second_order_kernel(state_count):
+def test_the_cuda_real_adjoint_agrees_with_the_second_order_kernel(
+    state_count, always_worth_detecting
+):
     """The device first-order adjoint against the forward-over-reverse pass it
     specializes, which is what produced this gradient before it existed.
 
@@ -710,7 +722,6 @@ def test_the_cuda_real_adjoint_agrees_with_the_second_order_kernel(state_count):
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
@@ -775,7 +786,9 @@ def test_the_cuda_real_adjoint_agrees_with_the_second_order_kernel(state_count):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
-def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass():
+def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass(
+    always_worth_detecting,
+):
     """The first-order kernel is the point of this route, so the test above has
     to be reaching it rather than agreeing with itself.
     """
@@ -789,7 +802,6 @@ def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass():
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-        "fse",
         description,
         repetitions=1,
         record="all",
