@@ -708,7 +708,7 @@ def _train_events():
     )
 
 
-def _instantaneous_table():
+def _instantaneous_table(device="cpu"):
     """A pulse with no gradient across it: one rotation, every position."""
     import numpy as np
 
@@ -724,7 +724,9 @@ def _instantaneous_table():
         total_b1sq_power=1.0,
         magnitude=RfShape(num_uncompressed=8, samples=np.ones(8, dtype=np.float32)),
     )
-    return transition_table(flat, torch.zeros(1), bins=1024, rf_raster_time_s=1e-6)
+    return transition_table(
+        flat, torch.zeros(1), bins=1024, rf_raster_time_s=1e-6, device=device
+    )
 
 
 def _routes(leaves, events, profile=None):
@@ -1192,3 +1194,156 @@ def test_a_streamed_adjoint_matches_the_whole_one():
                 assert float(measured.abs().max()) == 0.0
                 continue
             assert float((expected - measured).abs().max()) / scale < 5e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+@pytest.mark.parametrize("state_count", [8, 12, 17])
+def test_an_exchanging_pool_takes_the_first_order_kernel_on_the_card(
+    state_count: int,
+) -> None:
+    """An exchanging pool does not cost the kernel written for a gradient.
+
+    Held against the host's own first-order adjoint rather than against the
+    forward-over-reverse pass on the same card: two arms of one wrong kernel
+    agree with each other, and the backends share no code.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    voxels = 64
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.30, voxels),
+        pool_b_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 60.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    packed = _pack_events(
+        _description(),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    outputs = int(packed.output_count)
+
+    def side(device):
+        prepared, _, _ = _prepare_tissue(tissue, device)
+        prepared = tuple(
+            value.to(torch.float32).contiguous() for value in prepared
+        )
+        return prepared, tuple(value.to(device) for value in packed.buffers)
+
+    host_tissue, host_events = side("cpu")
+    card_tissue, card_events = side("cuda")
+    seed = torch.randn(
+        (voxels, outputs),
+        dtype=torch.complex64,
+        generator=torch.Generator().manual_seed(4),
+    )
+    arguments = dict(
+        state_count=state_count,
+        output_count=outputs,
+        threads=1,
+        exchanging=True,
+    )
+
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+
+    def record(*args, **kwargs):
+        reached.append(True)
+        return original(*args, **kwargs)
+
+    _accelerators._run_packed_vjp_jvp = record
+    try:
+        card = _run_packed_vjp(card_tissue, card_events, seed.cuda(), **arguments)
+    finally:
+        _accelerators._run_packed_vjp_jvp = original
+    host = _run_packed_vjp(host_tissue, host_events, seed, **arguments)
+
+    assert not reached
+    largest = max(float(value.abs().max()) for value in host)
+    assert largest > 0.0
+    for name, reference, result in zip(
+        (*TISSUE_NAMES, "duration", "flip", "phase"), host, card, strict=True
+    ):
+        assert reference.shape == result.shape, name
+        difference = float((reference.cpu() - result.cpu()).abs().max())
+        assert difference / largest < 1e-4, name
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_a_tabulated_rotation_beside_a_pool_takes_the_first_order_kernel() -> None:
+    """The pool's own share of a shaped pulse's cotangent.
+
+    A shaped rotation reaches both pools through one spinor pair, so the pool
+    contributes to the flip and the phase through the table's slopes rather
+    than through the instant rotation's derivative. Held against the host.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    voxels = 64
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.30, voxels),
+        pool_b_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 60.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    events = _train_events()
+    seed = torch.randn(
+        (voxels, ECHOES),
+        dtype=torch.complex64,
+        generator=torch.Generator().manual_seed(6),
+    )
+
+    def side(device):
+        prepared, _, _ = _prepare_tissue(tissue, device)
+        return (
+            tuple(value.to(torch.float32).contiguous() for value in prepared),
+            tuple(value.to(device) for value in events),
+        )
+
+    host_tissue, host_events = side("cpu")
+    card_tissue, card_events = side("cuda")
+    arguments = dict(
+        state_count=STATES, output_count=ECHOES, threads=1, exchanging=True
+    )
+
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+
+    def record(*args, **kwargs):
+        reached.append(True)
+        return original(*args, **kwargs)
+
+    _accelerators._run_packed_vjp_jvp = record
+    try:
+        card = _run_packed_vjp(
+            card_tissue,
+            card_events,
+            seed.cuda(),
+            profile=_instantaneous_table("cuda"),
+            **arguments,
+        )
+    finally:
+        _accelerators._run_packed_vjp_jvp = original
+    host = _run_packed_vjp(
+        host_tissue, host_events, seed, profile=_instantaneous_table(), **arguments
+    )
+
+    assert not reached
+    largest = max(float(value.abs().max()) for value in host)
+    assert largest > 0.0
+    for name, reference, result in zip(
+        (*TISSUE_NAMES, "duration", "flip", "phase"), host, card, strict=True
+    ):
+        difference = float((reference.cpu() - result.cpu()).abs().max())
+        assert difference / largest < 1e-4, name

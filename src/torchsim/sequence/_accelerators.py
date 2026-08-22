@@ -2781,10 +2781,10 @@ def _run_packed_vjp(
         _within_the_table(profile, events[2])
     # A first-order adjoint needs no dual: on a device it is its own kernel,
     # recording half the trajectory and holding half the state the
-    # forward-over-reverse pass does. Only for a run that kernel covers -- one
-    # pool, one transmit field, no tabulated rotation, no per-voxel pair -- and
-    # only where the whole volume fits one launch, since the streamed and
-    # sharded routes carry their own buffers.
+    # forward-over-reverse pass does. The real-subspace one carries no shim
+    # row, no table, no pair and no pool; the complex one carries all of them.
+    # A whole volume takes it here, a shard takes it a level down, and the
+    # streamed route has chunked launchers of its own.
     if tissue[0].device.type == "cuda":
         shards = _shard_bounds(_train_count(events))
         if shards:
@@ -2816,7 +2816,6 @@ def _run_packed_vjp(
             return _combine_shards(tuple(parts), home)
     if (
         tissue[0].device.type == "cuda"
-        and not exchanging
         # The real kernel carries no shim row, no table and no pair; the
         # complex one carries all three.
         and (
@@ -2825,6 +2824,7 @@ def _run_packed_vjp(
                 profile is None
                 and dynamic is None
                 and lineshape is None
+                and not exchanging
                 and _shim_count(tissue) == 1
             )
         )
@@ -2854,6 +2854,7 @@ def _run_packed_vjp(
             profile=profile,
             dynamic=dynamic,
             lineshape=lineshape,
+            exchanging=exchanging,
             features=features,
         )
     streamable = (

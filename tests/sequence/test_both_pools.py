@@ -1192,3 +1192,102 @@ def test_a_tabulated_rotation_reaches_both_pools() -> None:
     assert float(reference.abs().max()) > 0.0
     worst = float((fused - reference).abs().max() / reference.abs().max())
     assert worst < 1e-4, worst
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+@pytest.mark.parametrize("state_count", [8, 12, 17])
+def test_three_pools_take_the_first_order_kernel_on_the_card(
+    state_count: int,
+) -> None:
+    """Both second pools at once do not cost the kernel written for a gradient.
+
+    Held against the host's own first-order adjoint rather than against the
+    forward-over-reverse pass on the same card: two arms of one wrong kernel
+    agree with each other, and the backends share no code.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+    from torchsim.sequence._parameters import TISSUE_NAMES
+
+    voxels = 64
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        b0_hz=torch.linspace(-200.0, 200.0, voxels),
+        bound_fraction=torch.linspace(0.02, 0.20, voxels),
+        bound_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+        t1_bound_ms=torch.linspace(400.0, 1200.0, voxels),
+        pool_b_fraction=torch.linspace(0.05, 0.30, voxels),
+        pool_b_exchange_hz=torch.linspace(5.0, 60.0, voxels),
+        t1_pool_b_ms=torch.linspace(200.0, 900.0, voxels),
+        t2_pool_b_ms=torch.linspace(10.0, 60.0, voxels),
+        pool_b_shift_hz=torch.linspace(-500.0, 500.0, voxels),
+    )
+    packed = _pack_events(
+        _description(),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    outputs = int(packed.output_count)
+
+    def side(device):
+        prepared, _, _ = _prepare_tissue(tissue, device)
+        prepared = tuple(
+            value.to(torch.float32).contiguous() for value in prepared
+        )
+        return prepared, tuple(value.to(device) for value in packed.buffers)
+
+    host_tissue, host_events = side("cpu")
+    card_tissue, card_events = side("cuda")
+    seed = torch.randn(
+        (voxels, outputs),
+        dtype=torch.complex64,
+        generator=torch.Generator().manual_seed(13),
+    )
+
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+
+    def record(*args, **kwargs):
+        reached.append(True)
+        return original(*args, **kwargs)
+
+    _accelerators._run_packed_vjp_jvp = record
+    try:
+        card = _run_packed_vjp(
+            card_tissue,
+            card_events,
+            seed.cuda(),
+            state_count=state_count,
+            output_count=outputs,
+            threads=1,
+            exchanging=True,
+            lineshape=lineshape_table(device=torch.device("cuda")),
+        )
+    finally:
+        _accelerators._run_packed_vjp_jvp = original
+    host = _run_packed_vjp(
+        host_tissue,
+        host_events,
+        seed,
+        state_count=state_count,
+        output_count=outputs,
+        threads=1,
+        exchanging=True,
+        lineshape=lineshape_table(),
+    )
+
+    assert not reached
+    largest = max(float(value.abs().max()) for value in host)
+    assert largest > 0.0
+    for name, reference, result in zip(
+        (*TISSUE_NAMES, "duration", "flip", "phase"), host, card, strict=True
+    ):
+        assert reference.shape == result.shape, name
+        # The semisolid fraction reaches the answer through the free share the
+        # transverse operator sees as well as through its own plane, so it is
+        # the one a missing term shows up in first.
+        difference = float((reference.cpu() - result.cpu()).abs().max())
+        assert difference / largest < 1e-4, name
