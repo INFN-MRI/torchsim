@@ -26,9 +26,8 @@ back through the same cubic Hermite.
 stops being suppressed -- and the divergence is an artefact of the model
 rather than physics, so the region inside ``cutoff_hz`` is filled instead.
 
-The fill follows :func:`torchsim.epg.super_lorentzian_lineshape`: a cubic
-spline through the knots in ``[cutoff, 2 * cutoff)``, mirrored about
-resonance and extrapolated inward. Mirroring is what keeps it even, the
+The fill is a cubic spline through the knots in
+``[cutoff, 2 * cutoff)``, mirrored about resonance and extrapolated inward. Mirroring is what keeps it even, the
 interpolant through symmetric data being unique and therefore its own
 reflection, so the slope at resonance still comes out at zero.
 

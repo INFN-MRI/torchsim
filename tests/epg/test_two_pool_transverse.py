@@ -31,7 +31,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import epg
+from utils import epg
 from torchsim.base.config.relax_model import build_two_pool_exchange_matrix
 
 DOUBLE = torch.complex128

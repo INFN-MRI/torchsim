@@ -669,7 +669,7 @@ def test_a_common_phase_on_every_channel_only_turns_the_axis() -> None:
 
 def test_the_array_matches_the_operator_library() -> None:
     """Two implementations of the same superposition, written out separately."""
-    from torchsim.epg import phased_multidrive_rf_pulse_op
+    from utils.epg import phased_multidrive_rf_pulse_op
 
     voxels = 1
     b1, b1_phase = _sensitivity(voxels)

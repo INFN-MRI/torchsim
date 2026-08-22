@@ -4,7 +4,7 @@ import pytest
 import torch
 from types import SimpleNamespace
 
-from torchsim import epg
+from utils import epg
 
 
 # Fixtures for common test inputs

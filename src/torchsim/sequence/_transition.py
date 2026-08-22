@@ -5,8 +5,8 @@ and under a slice-select gradient the spins it acts on are off-resonance by an
 amount that grows with distance from the slice centre, so what it does to a
 spin is a rotation about an axis that is neither transverse nor the same
 everywhere. A flip angle and a phase cannot name that rotation; the
-Cayley-Klein pair ``(a, b)`` can, and :func:`torchsim.epg.spinor_rf_pulse_op`
-turns that pair into the operator.
+Cayley-Klein pair ``(a, b)`` can, and that pair is what the kernels turn
+the states through.
 
 Working the pair out during the simulation would mean integrating the pulse
 once per voxel per event. It is tabulated here instead, and the table is small

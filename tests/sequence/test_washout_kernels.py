@@ -17,7 +17,7 @@ import pytest
 import torch
 
 from torchsim import TissueProperties, fse_description
-from torchsim.epg import washout_op
+from utils.epg import washout_op
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     Geometry,

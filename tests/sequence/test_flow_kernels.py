@@ -14,7 +14,7 @@ import pytest
 import torch
 
 from torchsim import FSE, TissueProperties, fse_description
-from torchsim.epg import flow_op
+from utils.epg import flow_op
 from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed,

@@ -3,7 +3,6 @@
 __all__ = []
 
 from . import base  # noqa
-from . import epg  # noqa
 from . import estimators  # noqa
 from . import models  # noqa
 from . import optim  # noqa

@@ -186,7 +186,7 @@ def test_the_semisolid_pool_slows_the_transverse_exchange():
     three-pool system actually leaves.
     """
     from torchsim.base.config.relax_model import build_two_pool_exchange_matrix
-    from torchsim.epg import transverse_relaxation_exchange_op
+    from utils.epg import transverse_relaxation_exchange_op
 
     delay = 6e-3
     fraction_b, fraction_c, rate = 0.2, 0.3, 60.0
@@ -281,7 +281,7 @@ def test_the_longitudinal_step_reproduces_the_package_operator():
     writes both transverse pools' ``Z`` into the plane and the coil sums them,
     so what the reading follows is ``Z_a + Z_b`` and not the free water alone.
     """
-    from torchsim.epg import longitudinal_relaxation_exchange_op
+    from utils.epg import longitudinal_relaxation_exchange_op
 
     delays = (0.05, 0.3, 1.0)
     tissue = dict(LIVE)

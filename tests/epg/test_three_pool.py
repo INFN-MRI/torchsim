@@ -35,7 +35,7 @@ import math
 import pytest
 import torch
 
-from torchsim import epg
+from utils import epg
 
 REAL = torch.float64
 PI = math.pi

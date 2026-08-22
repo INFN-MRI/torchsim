@@ -13,7 +13,7 @@ import pytest
 import torch
 
 from torchsim import FSE, TissueProperties, fse_description
-from torchsim.epg import diffusion_op
+from utils.epg import diffusion_op
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _NativeEpg,

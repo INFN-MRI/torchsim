@@ -197,7 +197,7 @@ def test_the_transverse_step_reproduces_the_package_operator():
     -- and applied to the two-pool prediction.
     """
     from torchsim.base.config.relax_model import build_two_pool_exchange_matrix
-    from torchsim.epg import transverse_relaxation_exchange_op
+    from utils.epg import transverse_relaxation_exchange_op
 
     t2_ms, t2_b_ms = 80.0, 20.0
     delays = (2e-3, 5e-3, 1e-2, 2e-2)

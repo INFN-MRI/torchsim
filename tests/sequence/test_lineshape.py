@@ -177,12 +177,12 @@ def test_a_shorter_bound_t2_broadens_the_lineshape() -> None:
 def test_the_table_agrees_with_the_package_lineshape_past_the_cutoff(table) -> None:
     """The convention check, at the resolution that function actually holds.
 
-    ``epg.super_lorentzian_lineshape`` evaluates on a 128-point grid and then
+    ``utils.epg.super_lorentzian_lineshape`` evaluates on a 128-point grid and then
     takes the *nearest* one, so it is a step function of the offset with 516 Hz
     treads across which the lineshape moves by 10 to 20 percent. It pins the
     model -- the same integrand, the same T2b -- rather than the digits.
     """
-    from torchsim.epg._rf_pulse import super_lorentzian_lineshape
+    from utils.epg._rf_pulse import super_lorentzian_lineshape
 
     offsets = np.array([2.0e3, 5.0e3, 10.0e3, 20.0e3])
     expected = np.asarray(super_lorentzian_lineshape(offsets), dtype=np.float64)
@@ -199,7 +199,7 @@ def test_the_fill_follows_the_package_near_resonance() -> None:
     is left between them is the package's coarser quadrature and its 520 Hz
     grid, so they agree to a few percent rather than exactly.
     """
-    from torchsim.epg._rf_pulse import super_lorentzian_lineshape
+    from utils.epg._rf_pulse import super_lorentzian_lineshape
 
     built = lineshape_table(bins=128)
     offsets = np.array([0.0, 300.0, 600.0, 900.0])

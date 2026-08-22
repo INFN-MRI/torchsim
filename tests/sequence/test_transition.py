@@ -217,7 +217,7 @@ def _excited(a, b):
     That is the third column of the rotation, so it needs no state machine --
     and it is the quantity the old flip-scaling model gets wrong.
     """
-    from torchsim.epg import spinor_rf_pulse_op
+    from utils.epg import spinor_rf_pulse_op
 
     operator = spinor_rf_pulse_op(
         torch.as_tensor(a, dtype=torch.complex64),

@@ -170,7 +170,7 @@ def _oracle(delays_s, fraction, rate_hz, t1_ms, t1_bound_ms):
     The bound pool is untouched by the inversion, so the two pools start at
     ``(-(1 - f), f)`` and relax toward ``(1 - f, f)`` while exchanging.
     """
-    from torchsim.epg import longitudinal_relaxation_exchange_op
+    from utils.epg import longitudinal_relaxation_exchange_op
 
     free = 1.0 - fraction
     weight = torch.tensor([free, fraction], dtype=torch.float64)
