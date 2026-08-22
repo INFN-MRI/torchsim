@@ -2674,6 +2674,35 @@ def _run_packed_vjp(
     # pool, one transmit field, no tabulated rotation, no per-voxel pair -- and
     # only where the whole volume fits one launch, since the streamed and
     # sharded routes carry their own buffers.
+    if tissue[0].device.type == "cuda":
+        shards = _shard_bounds(_train_count(events))
+        if shards:
+            _carries_the_pair(dynamic, "sharded")
+            # Each shard is a smaller adjoint of the same kind, and a device
+            # holding one is a device with nothing left to split, so the piece
+            # can take the first-order kernel the whole would not have.
+            home = tissue[0].device
+            parts = []
+            for begin, end, device in shards:
+                with distribute([device]):
+                    parts.append(
+                        _run_packed_vjp(
+                            _to_device(tissue, device),
+                            _shard_events(events, begin, end, device),
+                            grad_output[begin:end].contiguous().to(device),
+                            state_count=state_count,
+                            output_count=output_count,
+                            threads=threads,
+                            wanted=wanted,
+                            geometry=geometry,
+                            profile=profile,
+                            lineshape=lineshape,
+                            exchanging=exchanging,
+                            dynamic=dynamic,
+                            features=features,
+                        )
+                    )
+            return _combine_shards(tuple(parts), home)
     if (
         tissue[0].device.type == "cuda"
         and profile is None
@@ -2681,7 +2710,6 @@ def _run_packed_vjp(
         and not exchanging
         and dynamic is None
         and _shim_count(tissue) == 1
-        and not _shard_bounds(_train_count(events))
         and _OFFLOAD is None
         and not _leaves_the_host(
             "adjoint", tissue, events, output_count, state_count, real_axis

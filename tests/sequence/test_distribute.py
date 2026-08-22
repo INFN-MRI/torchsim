@@ -186,3 +186,58 @@ def test_blocks_nest():
             assert len(accelerators._DEVICES) == 1
         assert accelerators._DEVICES == outer
     assert accelerators._DEVICES == ()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("count", [2, 4])
+def test_a_sharded_first_order_adjoint_matches_the_whole_one(count):
+    """Shards of a gradient are partial sums, and each takes the kernel the
+    whole one would have.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    events, prepared, outputs = _real_case(TRAINS, "cuda", atoms=ATOMS)
+    seed = torch.ones(
+        (TRAINS, ATOMS, outputs), dtype=torch.complex64, device="cuda"
+    )
+    arguments = dict(state_count=STATES, output_count=outputs, threads=1)
+
+    expected = _run_packed_vjp(prepared, events, seed, **arguments)
+    with distribute(["cuda:0"] * count):
+        actual = _run_packed_vjp(prepared, events, seed, **arguments)
+
+    largest = max(float(value.abs().max()) for value in expected)
+    assert largest > 0.0
+    for reference, result in zip(expected, actual, strict=True):
+        assert reference.shape == result.shape
+        assert float((reference - result).abs().max()) / largest < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_a_shard_reaches_the_first_order_kernel(monkeypatch):
+    """The point of cutting before choosing: a sharded gradient must not fall
+    to the forward-over-reverse pass, which costs twice the time and twice the
+    trajectory for a derivative nobody asked for.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    events, prepared, outputs = _real_case(TRAINS, "cuda", atoms=ATOMS)
+    seed = torch.ones(
+        (TRAINS, ATOMS, outputs), dtype=torch.complex64, device="cuda"
+    )
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+
+    def record(*args, **kwargs):
+        reached.append(True)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(_accelerators, "_run_packed_vjp_jvp", record)
+    with distribute(["cuda:0"] * 2):
+        _run_packed_vjp(
+            prepared, events, seed, state_count=STATES,
+            output_count=outputs, threads=1,
+        )
+
+    assert not reached
