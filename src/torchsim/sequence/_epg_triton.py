@@ -3748,6 +3748,39 @@ def _store_pair_cotangent(
 
 
 @triton.jit
+def _store_pair_gradient(
+    grad_pair, pair_index, event_base, event, atom, atom_count,
+    turning, mask, state_mask, grad_ar, grad_ai, grad_br, grad_bi,
+):
+    """Send the cotangent on one pulse's rotation to its row.
+
+    Summed over the dephasing orders first: the pair multiplies every one of
+    them, so what reaches the row is the sum. The block is padded to a power of
+    two and the orders past the last carry whatever the sweep left there, so
+    the sum is taken over the orders that exist rather than over the block.
+    """
+    row = tl.load(pair_index + event_base + event).to(tl.int64)
+    entry = (row * atom_count + atom) * 4
+    keep = turning & state_mask
+    tl.atomic_add(
+        grad_pair + entry + 0,
+        tl.sum(tl.where(keep, grad_ar, 0.0), axis=1)[:, None], mask=mask,
+    )
+    tl.atomic_add(
+        grad_pair + entry + 1,
+        tl.sum(tl.where(keep, grad_ai, 0.0), axis=1)[:, None], mask=mask,
+    )
+    tl.atomic_add(
+        grad_pair + entry + 2,
+        tl.sum(tl.where(keep, grad_br, 0.0), axis=1)[:, None], mask=mask,
+    )
+    tl.atomic_add(
+        grad_pair + entry + 3,
+        tl.sum(tl.where(keep, grad_bi, 0.0), axis=1)[:, None], mask=mask,
+    )
+
+
+@triton.jit
 def _dynamic_pair_dual_at(
     pairs, pair_direction, pair_index, event_base, event, atom, atom_count,
     mask, phi_value, phi_tangent, directed: tl.constexpr,
@@ -3990,6 +4023,99 @@ def _tangent_row(first, second, third, fp_r, fp_i, fm_r, fm_i, z_r, z_i):
 
 
 @triton.jit
+def _spinor_adjoint(ar, ai, br, bi, spr, spi, smr, smi, rzr, rzi,
+                    pbr, pbi, mbr, mbi, zbr, zbi):
+    """The spinor rotation's adjoint, carrying no forward direction.
+
+    Returns the cotangent on the Cayley-Klein pair and the three state
+    cotangents sent back through the conjugate transpose. Every entry of the
+    matrix is a product of two factors drawn from the pair and its conjugate,
+    so the pair's two Wirtinger halves are linear in the outer product of the
+    seed with the state the rotation acted on -- a closed form rather than a
+    differentiated matrix.
+    """
+    aa_r = ar * ar - ai * ai
+    aa_i = 2.0 * ar * ai
+    bb_r = br * br - bi * bi
+    bb_i = 2.0 * br * bi
+    ab_r = ar * br - ai * bi
+    ab_i = ar * bi + ai * br
+    cross_r = ar * br + ai * bi
+    cross_i = ar * bi - ai * br
+    t00_r, t00_i = aa_r, -aa_i
+    t01_r, t01_i = -bb_r, bb_i
+    t02_r, t02_i = -2.0 * ab_r, 2.0 * ab_i
+    t10_r, t10_i = -bb_r, -bb_i
+    t11_r, t11_i = aa_r, aa_i
+    t12_r, t12_i = -2.0 * ab_r, -2.0 * ab_i
+    t20_r, t20_i = cross_r, cross_i
+    t21_r, t21_i = cross_r, -cross_i
+    t22 = ar * ar + ai * ai - br * br - bi * bi
+
+    # ``m[i][j] = conj(seed_i) * state_j``: the outer product the pair's
+    # derivative is linear in.
+    m00 = _complex_mul(pbr, -pbi, spr, spi)
+    m01 = _complex_mul(pbr, -pbi, smr, smi)
+    m02 = _complex_mul(pbr, -pbi, rzr, rzi)
+    m10 = _complex_mul(mbr, -mbi, spr, spi)
+    m11 = _complex_mul(mbr, -mbi, smr, smi)
+    m12 = _complex_mul(mbr, -mbi, rzr, rzi)
+    m20 = _complex_mul(zbr, -zbi, spr, spi)
+    m21 = _complex_mul(zbr, -zbi, smr, smi)
+    m22 = _complex_mul(zbr, -zbi, rzr, rzi)
+
+    hca = _complex_mul(ar, ai, m11[0], m11[1])
+    hcb = _complex_mul(br, bi, m12[0], m12[1])
+    hcc = _complex_mul(br, -bi, m21[0], m21[1])
+    hcd = _complex_mul(ar, -ai, m22[0], m22[1])
+    holding_conj_a_r = 2.0 * hca[0] - 2.0 * hcb[0] + hcc[0] + hcd[0]
+    holding_conj_a_i = 2.0 * hca[1] - 2.0 * hcb[1] + hcc[1] + hcd[1]
+
+    ha = _complex_mul(ar, -ai, m00[0], m00[1])
+    hb = _complex_mul(br, -bi, m02[0], m02[1])
+    hc = _complex_mul(br, bi, m20[0], m20[1])
+    hd = _complex_mul(ar, ai, m22[0], m22[1])
+    holding_a_r = 2.0 * ha[0] - 2.0 * hb[0] + hc[0] + hd[0]
+    holding_a_i = 2.0 * ha[1] - 2.0 * hb[1] + hc[1] + hd[1]
+
+    ka = _complex_mul(br, bi, m10[0], m10[1])
+    kb = _complex_mul(ar, ai, m12[0], m12[1])
+    kc = _complex_mul(ar, -ai, m20[0], m20[1])
+    kd = _complex_mul(br, -bi, m22[0], m22[1])
+    holding_conj_b_r = -2.0 * ka[0] - 2.0 * kb[0] + kc[0] - kd[0]
+    holding_conj_b_i = -2.0 * ka[1] - 2.0 * kb[1] + kc[1] - kd[1]
+
+    la = _complex_mul(br, -bi, m01[0], m01[1])
+    lb = _complex_mul(ar, -ai, m02[0], m02[1])
+    lc = _complex_mul(ar, ai, m21[0], m21[1])
+    ld = _complex_mul(br, bi, m22[0], m22[1])
+    holding_b_r = -2.0 * la[0] - 2.0 * lb[0] + lc[0] - ld[0]
+    holding_b_i = -2.0 * la[1] - 2.0 * lb[1] + lc[1] - ld[1]
+
+    grad_a_r = holding_conj_a_r + holding_a_r
+    grad_a_i = -holding_conj_a_i + holding_a_i
+    grad_b_r = holding_conj_b_r + holding_b_r
+    grad_b_i = -holding_conj_b_i + holding_b_i
+
+    n0 = _complex_mul(t00_r, -t00_i, pbr, pbi)
+    n1 = _complex_mul(t10_r, -t10_i, mbr, mbi)
+    n2 = _complex_mul(t20_r, -t20_i, zbr, zbi)
+    next_pr, next_pi = n0[0] + n1[0] + n2[0], n0[1] + n1[1] + n2[1]
+    n0 = _complex_mul(t01_r, -t01_i, pbr, pbi)
+    n1 = _complex_mul(t11_r, -t11_i, mbr, mbi)
+    n2 = _complex_mul(t21_r, -t21_i, zbr, zbi)
+    next_mr, next_mi = n0[0] + n1[0] + n2[0], n0[1] + n1[1] + n2[1]
+    n0 = _complex_mul(t02_r, -t02_i, pbr, pbi)
+    n1 = _complex_mul(t12_r, -t12_i, mbr, mbi)
+    next_zr = n0[0] + n1[0] + t22 * zbr
+    next_zi = n0[1] + n1[1] + t22 * zbi
+    return (
+        grad_a_r, grad_a_i, grad_b_r, grad_b_i,
+        next_pr, next_pi, next_mr, next_mi, next_zr, next_zi,
+    )
+
+
+@triton.jit
 def _rotate_spinor(ar, ai, br, bi, fp_r, fp_i, fm_r, fm_i, z_r, z_i):
     """The rotation named by its Cayley-Klein pair, applied to the states.
 
@@ -4123,6 +4249,11 @@ def _epg_vjp_kernel(
     action,
     output_index,
     shim_index,
+    profile,
+    profile_index,
+    pairs,
+    pair_index,
+    grad_pair,
     grad_output_real,
     grad_output_imag,
     grad_tissue,
@@ -4144,8 +4275,12 @@ def _epg_vjp_kernel(
     flow_scale,
     washout_scale,
     shim_rows,
+    profile_step,
     state_count: tl.constexpr,
     shimmed: tl.constexpr,
+    locations: tl.constexpr,
+    profile_bins: tl.constexpr,
+    dynamic: tl.constexpr,
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
@@ -4220,6 +4355,7 @@ def _epg_vjp_kernel(
     r1_value = 1000.0 / atom_t1
     r2_value = 1000.0 / atom_t2
 
+    location = atom % locations
     event_base = train * event_count
     for event in range(0, event_count):
         slot = trajectory + event * record_stride
@@ -4317,13 +4453,47 @@ def _epg_vjp_kernel(
         c1 = _complex_mul(t21[0], t21[1], mvr, mvi)
         c2 = _complex_mul(t22[0], t22[1], zvr, zvi)
 
+        turned_pr = a0[0] + a1[0] + a2[0]
+        turned_pi = a0[1] + a1[1] + a2[1]
+        turned_mr = b0_[0] + b1_[0] + b2[0]
+        turned_mi = b0_[1] + b1_[1] + b2[1]
+        turned_zr = c0[0] + c1[0] + c2[0]
+        turned_zi = c0[1] + c1[1] + c2[1]
+        if profile_bins > 0 or dynamic:
+            if dynamic:
+                pair = _dynamic_pair_at(
+                    pairs, pair_index, event_base, event, atom, atom_count,
+                    active_atom,
+                )
+                shaped_ar, shaped_ai = pair[0], pair[1]
+                # The pair is integrated at zero RF phase, so the event's own
+                # phase turns the axis afterwards.
+                shaped_br, shaped_bi = _complex_mul(
+                    pair[2], pair[3], p1r, -p1i
+                )
+            else:
+                shaped_ar, shaped_ai, shaped_br, shaped_bi = _profile_pair(
+                    profile,
+                    _table_row(profile_index, event, location, locations),
+                    alpha_value, profile_bins, profile_step,
+                )
+                shaped_br, shaped_bi = _complex_mul(
+                    shaped_br, shaped_bi, p1r, -p1i
+                )
+            (
+                turned_pr, turned_pi, turned_mr, turned_mi, turned_zr, turned_zi,
+            ) = _rotate_spinor(
+                shaped_ar, shaped_ai, shaped_br, shaped_bi,
+                pvr, pvi, mvr, mvi, zvr, zvi,
+            )
+
         rotate = is_rf & ~is_inversion
-        pvr = tl.where(rotate, a0[0] + a1[0] + a2[0], pvr)
-        pvi = tl.where(rotate, a0[1] + a1[1] + a2[1], pvi)
-        mvr = tl.where(rotate, b0_[0] + b1_[0] + b2[0], mvr)
-        mvi = tl.where(rotate, b0_[1] + b1_[1] + b2[1], mvi)
-        zvr = tl.where(rotate, c0[0] + c1[0] + c2[0], zvr)
-        zvi = tl.where(rotate, c0[1] + c1[1] + c2[1], zvi)
+        pvr = tl.where(rotate, turned_pr, pvr)
+        pvi = tl.where(rotate, turned_pi, pvi)
+        mvr = tl.where(rotate, turned_mr, mvr)
+        mvi = tl.where(rotate, turned_mi, mvi)
+        zvr = tl.where(rotate, turned_zr, zvr)
+        zvi = tl.where(rotate, turned_zi, zvi)
 
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         svr, svi, wvr, wvi = _shift(
@@ -4537,6 +4707,56 @@ def _epg_vjp_kernel(
         ur, ui = -(u2[1] - u1[1]), u2[0] - u1[0]
         phi_v += zbvr * ur + zbvi * ui
 
+        if profile_bins > 0 or dynamic:
+            slope_ar, slope_ai, slope_br, slope_bi = 0.0, 0.0, 0.0, 0.0
+            if dynamic:
+                pair = _dynamic_pair_at(
+                    pairs, pair_index, event_base, event, atom, atom_count,
+                    active_atom,
+                )
+                shaped_ar, shaped_ai = pair[0], pair[1]
+                shaped_br, shaped_bi = _complex_mul(pair[2], pair[3], p1r, -p1i)
+            else:
+                (
+                    shaped_ar, slope_ar, shaped_ai, slope_ai,
+                    shaped_br, slope_br, shaped_bi, slope_bi,
+                ) = _profile_pair_slope(
+                    profile,
+                    _table_row(profile_index, event, location, locations),
+                    alpha_value, profile_bins, profile_step,
+                )
+                shaped_br, shaped_bi = _complex_mul(
+                    shaped_br, shaped_bi, p1r, -p1i
+                )
+                slope_br, slope_bi = _complex_mul(slope_br, slope_bi, p1r, -p1i)
+            (
+                grad_ar, grad_ai, grad_br, grad_bi,
+                shaped_pbr, shaped_pbi, shaped_mbr, shaped_mbi,
+                shaped_zbr, shaped_zbi,
+            ) = _spinor_adjoint(
+                shaped_ar, shaped_ai, shaped_br, shaped_bi,
+                spvr, spvi, smvr, smvi, rzvr, rzvi,
+                pbvr, pbvi, mbvr, mbvi, zbvr, zbvi,
+            )
+            if dynamic:
+                # The flip is inside the pair rather than read against it, so
+                # it has no gradient here: the cotangent goes out on the
+                # rotation and whatever integrated it carries the rest. ``b``
+                # was turned by the phase after the pair came out, so the
+                # cotangent turns back the other way.
+                alpha_v = alpha_v * 0.0
+                back_r, back_i = _complex_mul(grad_br, grad_bi, p1r, p1i)
+                _store_pair_gradient(
+                    grad_pair, pair_index, event_base, event, atom, atom_count,
+                    is_rf & ~is_inversion, active_atom, state_mask,
+                    grad_ar, grad_ai, back_r, back_i,
+                )
+            else:
+                alpha_v = grad_ar * slope_ar + grad_ai * slope_ai
+                alpha_v += grad_br * slope_br + grad_bi * slope_bi
+            # d(b e^{-i phi})/dphi is -i times it, and nothing else moves.
+            phi_v = grad_br * shaped_bi - grad_bi * shaped_br
+
         rotate = is_rf & ~is_inversion
         grad_alpha_v = tl.sum(tl.where(rotate, alpha_v, 0.0), axis=1)[:, None]
         grad_phi_v = tl.sum(tl.where(rotate, phi_v, 0.0), axis=1)[:, None]
@@ -4551,12 +4771,24 @@ def _epg_vjp_kernel(
         w0 = _complex_mul(t02[0], -t02[1], pbvr, pbvi)
         w1 = _complex_mul(t12[0], -t12[1], mbvr, mbvi)
         w2 = _complex_mul(t22[0], -t22[1], zbvr, zbvi)
-        pbvr = tl.where(rotate, n0[0] + n1[0] + n2[0], pbvr)
-        pbvi = tl.where(rotate, n0[1] + n1[1] + n2[1], pbvi)
-        mbvr = tl.where(rotate, q0[0] + q1[0] + q2[0], mbvr)
-        mbvi = tl.where(rotate, q0[1] + q1[1] + q2[1], mbvi)
-        zbvr = tl.where(rotate, w0[0] + w1[0] + w2[0], zbvr)
-        zbvi = tl.where(rotate, w0[1] + w1[1] + w2[1], zbvi)
+        back_pr = n0[0] + n1[0] + n2[0]
+        back_pi = n0[1] + n1[1] + n2[1]
+        back_mr = q0[0] + q1[0] + q2[0]
+        back_mi = q0[1] + q1[1] + q2[1]
+        back_zr = w0[0] + w1[0] + w2[0]
+        back_zi = w0[1] + w1[1] + w2[1]
+        if profile_bins > 0 or dynamic:
+            # A shaped pulse turned the states, so its own adjoint is what
+            # goes back rather than the instant rotation's.
+            back_pr, back_pi = shaped_pbr, shaped_pbi
+            back_mr, back_mi = shaped_mbr, shaped_mbi
+            back_zr, back_zi = shaped_zbr, shaped_zbi
+        pbvr = tl.where(rotate, back_pr, pbvr)
+        pbvi = tl.where(rotate, back_pi, pbvi)
+        mbvr = tl.where(rotate, back_mr, mbvr)
+        mbvi = tl.where(rotate, back_mi, mbvi)
+        zbvr = tl.where(rotate, back_zr, zbvr)
+        zbvi = tl.where(rotate, back_zi, zbvi)
 
         writes_flip = active_atom & rotate
         tl.atomic_add(
@@ -11244,6 +11476,8 @@ def simulate_vjp(
     state_count: int,
     output_count: int,
     geometry: Geometry = NO_GEOMETRY,
+    profile: Any = None,
+    dynamic: Any = None,
     features: frozenset[str] | None = None,
 ) -> tuple[torch.Tensor, ...]:
     """The first-order adjoint on CUDA, for one pool and one transmit field.
@@ -11269,6 +11503,16 @@ def simulate_vjp(
     block_states = triton.next_power_of_2(state_count)
     device = t1.device
     shims = max(1, b1.numel() // atom_count) if atom_count else 1
+    table = None if profile is None else profile.packed(device)
+    table_rows = None if profile is None else profile.rows().to(device)
+    pairs = None if dynamic is None else dynamic.packed(device)
+    pair_rows = (
+        None
+        if dynamic is None
+        else dynamic.rows_per_event(train_count, event_count).to(device)
+    )
+    grad_pair = None if dynamic is None else torch.zeros_like(pairs)
+    locations = 1 if profile is None else profile.points
 
     grad_tissue = torch.zeros(
         tissue_gradient_height(shims) * atom_count,
@@ -11311,6 +11555,11 @@ def simulate_vjp(
             action,
             output_index,
             shim_index,
+            table,
+            table_rows,
+            pairs,
+            pair_rows,
+            grad_pair,
             grad_real,
             grad_imag,
             grad_tissue,
@@ -11328,8 +11577,12 @@ def simulate_vjp(
             geometry.flow_scale,
             geometry.washout_scale,
             shims,
+            1.0 if profile is None else profile.step,
             state_count=state_count,
             shimmed=shims > 1,
+            locations=locations,
+            profile_bins=0 if profile is None else profile.bins,
+            dynamic=dynamic is not None,
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -11341,6 +11594,8 @@ def simulate_vjp(
             tissue_gradient_bases(shims), tissue_gradient_rows(shims), strict=True
         )
     )
+    if dynamic is not None:
+        return (*voxel, grad_duration, grad_flip, grad_phase, grad_pair)
     return (*voxel, grad_duration, grad_flip, grad_phase)
 
 
@@ -11655,6 +11910,11 @@ def simulate_vjp_into(
             velocity,
             duration, kind, flip, phase, action, output_index,
             shim_index,
+            None,
+            None,
+            None,
+            None,
+            None,
             grad_real,
             grad_imag,
             buffers.tissue,
@@ -11672,8 +11932,12 @@ def simulate_vjp_into(
             geometry.flow_scale,
             geometry.washout_scale,
             1,
+            1.0,
             state_count=state_count,
             shimmed=False,
+            locations=1,
+            profile_bins=0,
+            dynamic=False,
             block_states=block_states,
             problems=problems,
             num_warps=1,

@@ -1901,3 +1901,58 @@ def test_a_pool_moves_the_answer_a_pair_gives(pool: str):
 
     assert float(alone.abs().max()) > 0.0
     assert float((pooled - alone).abs().max()) > 1e-3 * float(alone.abs().max())
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("state_count", [8, 12, 17])
+def test_a_pair_takes_the_first_order_kernel_on_the_card(state_count):
+    """A per-voxel rotation does not cost the kernel written for a gradient.
+
+    Widths are swept because a reverse kernel has miscompiled silently at one
+    state count before, and the pair adds a per-event load and an atomic the
+    others do not make.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+    from torchsim.sequence._transition import DynamicPairs
+
+    _, prepared, events, pairs = _train()
+    prepared = tuple(value.cuda() for value in prepared)
+    events = tuple(value.cuda() for value in events)
+    moved = DynamicPairs(
+        a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
+    )
+    seed = torch.ones(
+        prepared[0].numel(), ECHOES, dtype=torch.complex64, device="cuda"
+    )
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+    arguments = dict(
+        state_count=state_count, output_count=ECHOES, threads=1, dynamic=moved
+    )
+
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+
+    def record(*args, **kwargs):
+        reached.append(True)
+        return original(*args, **kwargs)
+
+    _accelerators._run_packed_vjp_jvp = record
+    try:
+        fast = _run_packed_vjp(prepared, events, seed, **arguments)
+    finally:
+        _accelerators._run_packed_vjp_jvp = original
+    _, expected = original(prepared, events, still, seed, **arguments)
+
+    assert not reached
+    largest = max(float(value.abs().max()) for value in expected)
+    assert largest > 0.0
+    # The cotangent on the rotation itself comes back last, and is what
+    # carries the gradient to whatever integrated the pair.
+    assert fast[-1].shape == moved.packed().shape
+    for reference, result in zip(expected, fast, strict=True):
+        assert reference.shape == result.shape
+        assert float((reference - result).abs().max()) / largest < 1e-5

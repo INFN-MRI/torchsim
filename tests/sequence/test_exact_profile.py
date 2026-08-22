@@ -298,3 +298,73 @@ def test_the_positions_are_counted_by_the_memory_policy() -> None:
     assert resident <= budget * 1.1
     worst = (streamed[0] - expected).abs().max() / expected.abs().max()
     assert worst < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+@pytest.mark.parametrize("state_count", [8, 12, 17])
+def test_a_table_takes_the_first_order_kernel_on_the_card(state_count) -> None:
+    """A tabulated rotation does not cost the kernel written for a gradient.
+
+    The flip gradient comes off the table's own slope here rather than off a
+    differentiated rotation, which is the part a single width would not check.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import (
+        _pack_events,
+        _run_packed_vjp,
+        geometry_of,
+    )
+    from torchsim.sequence._simulation import _prepare_tissue
+    from torchsim.sequence._transition import transition_table
+
+    description = _describe(definition=_sinc(4.0e3))
+    packed = _pack_events(
+        description, repetitions=1, record="all",
+        device=torch.device("cuda"), rf_raster_time_s=1e-6,
+    )
+    events = (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+    prepared, _, _ = _prepare_tissue(_tissue(), "cuda")
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+    table = transition_table(
+        description.rf_definitions[0],
+        torch.zeros(1, dtype=torch.float64),
+        bins=64,
+        rf_raster_time_s=1e-6,
+        device="cuda",
+    )
+    outputs = int(packed.output_count)
+    seed = torch.ones(
+        prepared[0].numel(), outputs, dtype=torch.complex64, device="cuda"
+    )
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*prepared, events[0], events[2], events[3])
+    )
+    arguments = dict(
+        state_count=state_count, output_count=outputs, threads=1,
+        profile=table, geometry=geometry_of(description),
+    )
+
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+
+    def record(*args, **kwargs):
+        reached.append(True)
+        return original(*args, **kwargs)
+
+    _accelerators._run_packed_vjp_jvp = record
+    try:
+        fast = _run_packed_vjp(prepared, events, seed, **arguments)
+    finally:
+        _accelerators._run_packed_vjp_jvp = original
+    _, expected = original(prepared, events, still, seed, **arguments)
+
+    assert not reached
+    largest = max(float(value.abs().max()) for value in expected)
+    assert largest > 0.0
+    for reference, result in zip(expected, fast, strict=True):
+        assert float((reference - result).abs().max()) / largest < 1e-5
