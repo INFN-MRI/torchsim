@@ -109,7 +109,6 @@ def _run(monkeypatch, extra, crusher_rad, mask, gradients):
         _description(crusher_rad),
         TissueProperties(**leaves, **extra),
         nstates=STATES,
-        backend="native",
     ).signal
     if not gradients:
         return (signal,)
@@ -179,7 +178,6 @@ def _signal(monkeypatch, mask, extra, crusher_rad):
             **{name: torch.full((4,), value) for name, value in extra.items()},
         ),
         nstates=STATES,
-        backend="native",
     ).signal
     monkeypatch.undo()
     return signal
@@ -233,7 +231,6 @@ def test_an_inversion_the_tissue_never_declared_is_left_out(monkeypatch) -> None
                 inversion_efficiency=torch.full((4,), efficiency),
             ),
             nstates=STATES,
-            backend="native",
         ).signal
         monkeypatch.undo()
         return out

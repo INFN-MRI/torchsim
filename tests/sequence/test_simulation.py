@@ -97,7 +97,7 @@ def test_subspace_basis_uses_time_as_leading_dimension() -> None:
     reason="CPU extension has not been built",
 )
 @pytest.mark.parametrize("policy_name", ["fse", "ssfp-fid", "spgr"])
-def test_cpu_native_backend_matches_torch(policy_name: str) -> None:
+def test_the_host_kernels_match_the_reference(policy_name: str) -> None:
     policy, description = _case(policy_name, "cpu")
     tissue = TissueProperties(
         t1_ms=torch.tensor([700.0, 1200.0]),
@@ -107,17 +107,16 @@ def test_cpu_native_backend_matches_torch(policy_name: str) -> None:
         inversion_efficiency=0.95,
     )
 
-    expected = policy.simulate(description, tissue, nstates=10, backend="torch")
+    expected = _oracle(description, tissue, "cpu")
     with torch.no_grad():
-        actual = policy.simulate(description, tissue, nstates=10, backend="native")
+        actual = policy.simulate(description, tissue, nstates=10)
 
-    torch.testing.assert_close(actual.signal, expected.signal, atol=2e-6, rtol=2e-5)
-    torch.testing.assert_close(actual.time_us, expected.time_us)
+    torch.testing.assert_close(actual.signal, expected, atol=2e-6, rtol=2e-5)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 @pytest.mark.parametrize("policy_name", ["fse", "ssfp-fid", "spgr"])
-def test_triton_backend_matches_torch(policy_name: str) -> None:
+def test_the_card_matches_the_reference(policy_name: str) -> None:
     policy, description = _case(policy_name, "cuda")
     tissue = TissueProperties(
         t1_ms=torch.tensor([700.0, 1200.0], device="cuda"),
@@ -127,12 +126,11 @@ def test_triton_backend_matches_torch(policy_name: str) -> None:
         inversion_efficiency=0.95,
     )
 
-    expected = policy.simulate(description, tissue, nstates=10, backend="torch")
+    expected = _oracle(description, tissue, "cuda")
     with torch.no_grad():
-        actual = policy.simulate(description, tissue, nstates=10, backend="native")
+        actual = policy.simulate(description, tissue, nstates=10)
 
-    torch.testing.assert_close(actual.signal, expected.signal, atol=2e-6, rtol=2e-5)
-    torch.testing.assert_close(actual.time_us, expected.time_us)
+    torch.testing.assert_close(actual.signal, expected, atol=2e-6, rtol=2e-5)
 
 
 @pytest.mark.parametrize(
@@ -147,40 +145,42 @@ def test_triton_backend_matches_torch(policy_name: str) -> None:
         ),
     ],
 )
-def test_native_forward_mode_matches_torch_for_tissue_and_flip(device: str) -> None:
+def test_forward_mode_matches_differencing_for_tissue_and_flip(device: str) -> None:
+    """A forward direction through the public path, against differencing it.
+
+    The kernels carry the tangent themselves, so the check has to come from
+    outside them: two steps of the same simulation say what the derivative is
+    without any of the machinery that computes it.
+    """
     flip = torch.deg2rad(torch.tensor([135.0, 150.0, 165.0], device=device))
     t2 = torch.tensor([45.0, 90.0], device=device)
 
-    def simulate(
-        t2_ms: torch.Tensor,
-        flip_rad: torch.Tensor,
-        backend: str,
-    ) -> torch.Tensor:
+    def simulate(t2_ms: torch.Tensor, flip_rad: torch.Tensor) -> torch.Tensor:
         description = fse_description(flip_rad, 5e-3, phases_rad=torch.pi / 2)
         return FSE().simulate(
             description,
             TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
             nstates=10,
-            backend=backend,
         ).signal
 
     t2_tangent = torch.tensor([0.5, -0.25], device=device)
     flip_tangent = torch.tensor([0.1, -0.2, 0.3], device=device)
-    native = torch.func.jvp(
-        lambda current_t2, current_flip: simulate(
-            current_t2, current_flip, "native"
-        ),
-        (t2, flip),
-        (t2_tangent, flip_tangent),
-    )
-    reference = torch.func.jvp(
-        lambda current_t2, current_flip: simulate(current_t2, current_flip, "torch"),
-        (t2, flip),
-        (t2_tangent, flip_tangent),
+    value, followed = torch.func.jvp(
+        simulate, (t2, flip), (t2_tangent, flip_tangent)
     )
 
-    torch.testing.assert_close(native[0], reference[0], rtol=2e-5, atol=2e-6)
-    torch.testing.assert_close(native[1], reference[1], rtol=5e-5, atol=5e-6)
+    # Wide enough that float32 differencing is not reading its own round-off:
+    # at 1e-3 the T2 step is a part in 1e5 of the value, which is epsilon.
+    step = 2e-2
+    measured = (
+        simulate(t2 + step * t2_tangent, flip + step * flip_tangent)
+        - simulate(t2 - step * t2_tangent, flip - step * flip_tangent)
+    ) / (2.0 * step)
+
+    torch.testing.assert_close(value, simulate(t2, flip), rtol=0.0, atol=0.0)
+    assert float(measured.abs().max()) > 0.0
+    worst = float((followed - measured).abs().max() / measured.abs().max())
+    assert worst < 1e-3, worst
 
 
 @pytest.mark.parametrize(
@@ -206,7 +206,6 @@ def test_native_reverse_over_forward_supports_sequence_design(device: str) -> No
             description,
             TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
             nstates=10,
-            backend="native",
         ).signal
 
     _, derivative = torch.func.jvp(
@@ -221,6 +220,41 @@ def test_native_reverse_over_forward_supports_sequence_design(device: str) -> No
 
 
 # %% private module subroutines
+
+
+def _oracle(description, tissue, device: str, state_count: int = 10):
+    """The same run through the reference state machine written out in torch.
+
+    Fed the buffers the public path packs, so what it checks is the whole
+    route -- description, preparation, packing, kernel -- against an
+    implementation that shares none of it.
+    """
+    from utils.packed_reference import simulate_packed
+
+    from torchsim.sequence._accelerators import _pack_events, geometry_of
+    from torchsim.sequence._simulation import _prepare_tissue
+
+    prepared, shape, resolved = _prepare_tissue(tissue, device)
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=resolved,
+        rf_raster_time_s=1e-6,
+    )
+    events = (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+    signal = simulate_packed(
+        tuple(value.to(torch.float32).contiguous() for value in prepared),
+        events,
+        state_count=state_count,
+        output_count=int(packed.output_count),
+        geometry=geometry_of(description),
+    )
+    return signal.reshape(*shape, int(packed.output_count))
 
 
 def _case(name: str, device: str):

@@ -21,22 +21,15 @@ from typing import Any, Literal
 
 import torch
 
-from .. import epg
 from ._accelerators import (
-    _wants_a_table,
-    geometry_of,
     largest_pulse_offset,
     simulate_native,
 )
 from ._transition import ExactSliceProfile
 from ._description import (
-    AdcRole,
     EventAction,
-    EventType,
     RfMode,
-    RfUse,
     SequenceDescription,
-    SequenceEvent,
 )
 from ._lineshape import lineshape_reaching
 from ._parameters import (
@@ -173,57 +166,15 @@ class SubspaceBasis:
 
 
 class EpgSimulator:
-    """Translate RF/ADC events into differentiable TorchSim EPG operations."""
+    """Run a sequence description on the fused EPG kernels.
+
+    A policy is a name and the state matrix its sequence needs; everything it
+    plays around an event is on the events themselves, which is what lets a
+    description nobody shipped a policy for run exactly as well as one that
+    was.
+    """
 
     name = "base"
-
-    def before_rf(
-        self,
-        states: Any,
-        _event: SequenceEvent,
-    ) -> Any:
-        """Apply sequence-specific operations immediately before RF."""
-        return states
-
-    def after_rf(
-        self,
-        states: Any,
-        _event: SequenceEvent,
-    ) -> Any:
-        """Apply sequence-specific operations immediately after RF."""
-        return states
-
-    def before_adc(
-        self,
-        states: Any,
-        _event: SequenceEvent,
-    ) -> Any:
-        """Apply sequence-specific operations immediately before ADC."""
-        return states
-
-    def after_adc(
-        self,
-        states: Any,
-        _event: SequenceEvent,
-    ) -> Any:
-        """Apply sequence-specific operations immediately after ADC."""
-        return states
-
-    _LOOP_HOOKS = ("before_rf", "after_rf", "before_adc", "after_adc")
-
-    def _carries_own_rules(self) -> bool:
-        """Whether this policy manipulates the states itself.
-
-        The shipped policies do not: what they used to do around an event is
-        what the description now says, and both backends read it from there.
-        One that overrides a hook knows something the description does not, so
-        the kernels are not asked to answer for it -- the operator loop still
-        calls it, after whatever the description said to play.
-        """
-        return any(
-            getattr(type(self), name) is not getattr(EpgSimulator, name)
-            for name in EpgSimulator._LOOP_HOOKS
-        )
 
     def shifts_per_repetition(self, description: SequenceDescription) -> int:
         """How far the sequence winds the states on in one repetition.
@@ -250,14 +201,12 @@ class EpgSimulator:
         slice_profile: ExactSliceProfile | None = None,
         rf_raster_time_s: float = 1e-6,
         device: torch.device | str | None = None,
-        backend: Literal["auto", "torch", "native"] = "auto",
     ) -> SimulationResult:
         """Walk an event stream and record selected ADC signals.
 
-        The Torch implementation is intentionally fully functional with
-        respect to its numerical inputs. It is therefore the path used by
-        forward-mode AD and sequence optimization. Inference-only fused CPU
-        and CUDA kernels dispatch above this layer when available.
+        Raises:
+            RuntimeError: if no fused kernel can take this tissue -- a device
+                that has none, or a build without the extension.
         """
         repetitions = _as_integer(repetitions, "repetitions")
         if repetitions < 1:
@@ -299,154 +248,28 @@ class EpgSimulator:
                 "proportional to the pulse driving it, which it is not; give "
                 "the RF definition its waveform instead"
             )
-        if backend not in {"auto", "torch", "native"}:
-            raise ValueError("backend must be 'auto', 'torch', or 'native'")
-        if backend != "torch":
-            accelerated = simulate_native(
-                description,
-                prepared,
-                output_shape,
-                repetitions=repetitions,
-                record=record,
-                nstates=nstates,
-                slice_profile=slice_profile,
-                rf_raster_time_s=rf_raster_time_s,
-                lineshape=_absorption_table(description, b0, target_device)
-                if bound_pool
-                else None,
-                exchanging=exchange_pool,
-                features=features,
-                transmit=sensitivities,
-                carries_own_rules=self._carries_own_rules(),
-            )
-            if accelerated is not None:
-                return SimulationResult(*accelerated)
-            if backend == "native":
-                raise RuntimeError(
-                    "native EPG backend is unavailable for this device or AD context"
-                )
-        if bound_pool or exchange_pool:
-            raise NotImplementedError(
-                "a second pool is a two-pool step the fused kernels carry; "
-                "this sequence fell back to the operator loop, which has one "
-                "pool"
-            )
-        if _wants_a_table(description, slice_profile):
-            raise NotImplementedError(
-                "a pulse integrated across the slice is a tabulated rotation "
-                "the fused kernels read; the operator loop applies a flip "
-                "angle and a phase, which cannot name that rotation"
-            )
-        if sensitivities is not None:
-            raise NotImplementedError(
-                "a pulse whose channels carry their own waveforms turns about "
-                "an axis the voxel has to itself, which the fused kernels read "
-                "per voxel; the operator loop applies a flip angle and a "
-                "phase, which cannot name that rotation"
-            )
-        declared = geometry_of(description)
-        if (declared.flow_scale and bool((diffusion != 0.0).any())) or (
-            (declared.flow_scale or declared.washout_scale)
-            and bool((velocity != 0.0).any())
-        ):
-            raise NotImplementedError(
-                "diffusion, flow and washout are carried by the fused kernels "
-                "only; this sequence fell back to the operator loop, which does "
-                "not weight by dephasing order"
-            )
-        states = epg.states_matrix(
-            device=target_device,
+        accelerated = simulate_native(
+            description,
+            prepared,
+            output_shape,
+            repetitions=repetitions,
+            record=record,
             nstates=nstates,
-            nlocs=t1.numel(),
+            slice_profile=slice_profile,
+            rf_raster_time_s=rf_raster_time_s,
+            lineshape=_absorption_table(description, b0, target_device)
+            if bound_pool
+            else None,
+            exchanging=exchange_pool,
+            features=features,
+            transmit=sensitivities,
         )
-        atom_count = t1.numel()
-        location_count = 1
-        states = _reshape_states(states, atom_count, location_count)
-        centre = torch.ones(1, dtype=torch.float32, device=target_device)
-
-        signals: list[torch.Tensor] = []
-        times: list[Any] = []
-        event_indices: list[int] = []
-        repetition_indices: list[int] = []
-        echo_flags: list[bool] = []
-        absolute_offset_us: Any = 0.0
-
-        for repetition in range(repetitions):
-            current_us: Any = 0.0
-            for event_index, event in enumerate(description.events):
-                states = _free_precess(
-                    states,
-                    t1,
-                    t2,
-                    b0,
-                    (event.timestamp_us - current_us) * 1e-6,
-                )
-                current_us = event.timestamp_us
-
-                if event.type is EventType.RF:
-                    states = self.before_rf(_before(states, event), event)
-                    if event.rf_use is RfUse.INVERSION:
-                        states = epg.adiabatic_inversion(
-                            states, inversion_efficiency[None, :, None, None]
-                        )
-                    else:
-                        definition = description.rf_definitions[event.rf_definition_id]
-                        flip, integral_phase = definition.flip_angle(
-                            event.rf_amplitude_hz,
-                            rf_raster_time_s=rf_raster_time_s,
-                        )
-                        flip = _as_float_tensor(flip, target_device)
-                        phase = _as_float_tensor(
-                            event.rf_phase_rad + integral_phase, target_device
-                        )
-                        operator = epg.phased_rf_pulse_op(
-                            flip,
-                            phase,
-                            slice_prof=centre[None, :],
-                            B1=b1[:, None],
-                            B1phase=b1_phase[:, None],
-                        )
-                        states = epg.rf_pulse(states, operator)
-                    states = self.after_rf(_after(states, event), event)
-                elif event.type is EventType.ADC:
-                    states = self.before_adc(_before(states, event), event)
-                    if _record_event(event, record):
-                        phase = _as_float_tensor(event.adc_phase_rad, target_device)
-                        signal = states.Fplus[0, :, :, 0].mean(dim=-1)
-                        signals.append(signal * torch.exp(-1j * phase))
-                        times.append(absolute_offset_us + event.timestamp_us)
-                        event_indices.append(event_index)
-                        repetition_indices.append(repetition)
-                        echo_flags.append(event.is_echo)
-                    states = self.after_adc(_after(states, event), event)
-
-            states = _free_precess(
-                states,
-                t1,
-                t2,
-                b0,
-                (description.tr_duration_us - current_us) * 1e-6,
+        if accelerated is None:
+            raise RuntimeError(
+                f"no fused EPG kernel is available for a tissue on "
+                f"{target_device}"
             )
-            absolute_offset_us = absolute_offset_us + description.tr_duration_us
-
-        if signals:
-            signal = torch.stack(signals, dim=-1) * m0[:, None]
-        else:
-            signal = torch.empty(
-                (t1.numel(), 0), dtype=torch.complex64, device=target_device
-            )
-        signal = signal.reshape(*output_shape, signal.shape[-1])
-        return SimulationResult(
-            signal=signal,
-            time_us=_stack_scalars(times, target_device),
-            event_index=torch.as_tensor(
-                event_indices, dtype=torch.int64, device=target_device
-            ),
-            repetition=torch.as_tensor(
-                repetition_indices, dtype=torch.int64, device=target_device
-            ),
-            echo=torch.as_tensor(echo_flags, dtype=torch.bool, device=target_device),
-        )
+        return SimulationResult(*accelerated)
 
 
 class FSE(EpgSimulator):
@@ -721,86 +544,17 @@ def _as_integer(value: Any, name: str) -> int:
     return int(tensor.item())
 
 
-def _reshape_states(states: Any, atoms: int, locations: int) -> Any:
-    states.Fplus = states.Fplus.reshape(states.Fplus.shape[0], atoms, locations, -1)
-    states.Fminus = states.Fminus.reshape(
-        states.Fminus.shape[0], atoms, locations, -1
-    )
-    states.Z = states.Z.reshape(states.Z.shape[0], atoms, locations, -1)
-    return states
 
 
-def _free_precess(
-    states: Any,
-    t1_ms: torch.Tensor,
-    t2_ms: torch.Tensor,
-    b0_hz: torch.Tensor,
-    duration_s: Any,
-) -> Any:
-    duration = _as_float_tensor(duration_s, t1_ms.device)
-    e1, recovery = epg.longitudinal_relaxation_op(
-        1e3 / t1_ms[None, :, None, None], duration
-    )
-    e2 = epg.transverse_relaxation_op(
-        1e3 / t2_ms[None, :, None, None], duration
-    )
-    states = epg.longitudinal_relaxation(states, e1, recovery)
-    states = epg.transverse_relaxation(states, e2)
-    phase = torch.exp(
-        -1j * 2.0 * torch.pi * b0_hz[None, :, None, None] * duration
-    )
-    states.Fplus = states.Fplus * phase
-    states.Fminus = states.Fminus * phase.conj()
-    return states
 
 
-def _record_event(event: SequenceEvent, mode: RecordMode) -> bool:
-    if mode == "all":
-        return True
-    if mode == "acquired":
-        return event.adc_role is not AdcRole.NON_ACQUIRED
-    return event.is_echo
 
 
-def _stack_scalars(values: list[Any], device: torch.device) -> torch.Tensor:
-    if not values:
-        return torch.empty(0, dtype=torch.float32, device=device)
-    return torch.stack([_as_float_tensor(value, device) for value in values])
 
 
-def _before(states: Any, event: SequenceEvent) -> Any:
-    """What the sequence plays before an event, as the description says."""
-    if event.action & EventAction.CRUSH_BEFORE:
-        return _shift(states)
-    return states
 
 
-def _after(states: Any, event: SequenceEvent) -> Any:
-    """What the sequence plays after one.
-
-    A crusher and an ideal spoil are alternatives -- one winds the states on by
-    an order, the other discards the transverse magnetization outright -- so a
-    description asking for both is asking for two different sequences.
-    """
-    if event.action & EventAction.SPOIL_AFTER:
-        return _spoil(states)
-    if event.action & (EventAction.CRUSH_AFTER | EventAction.SHIFT_AFTER):
-        return _shift(states)
-    return states
 
 
-def _shift(states: Any, delta: int = 1) -> Any:
-    fminus = torch.roll(states.Fminus, -delta, dims=0)
-    fplus = torch.roll(states.Fplus, delta, dims=0)
-    zero = torch.zeros_like(fminus[:delta])
-    fminus = torch.cat((fminus[:-delta], zero), dim=0)
-    fplus = torch.cat((fminus[:1].conj(), fplus[1:]), dim=0)
-    states.Fplus = fplus
-    states.Fminus = fminus
-    return states
 
 
-def _spoil(states: Any) -> Any:
-    states.Fplus = torch.zeros_like(states.Fplus)
-    states.Fminus = torch.zeros_like(states.Fminus)
-    return states

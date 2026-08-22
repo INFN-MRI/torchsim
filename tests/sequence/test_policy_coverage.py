@@ -1,17 +1,16 @@
-"""Which sequences the fused kernels are allowed to answer for.
+"""Which sequences the fused kernels answer for, which is all of them.
 
 An event stream reaches the kernels through ``_pack_events``, which carries
 timing, flip angle, phase and a per-event action word -- and the action word is
-read off the description like everything else, so a sequence nobody shipped a
-policy for packs and runs. What the kernels cannot answer for is a policy that
-manipulates the states itself: it knows something the description does not, and
-would run to a different answer than the operator loop.
+read off the description like everything else. So a policy is a name and the
+state matrix its sequence needs, and a description nobody shipped a policy for
+runs exactly as well as one that was.
 """
 
 import pytest
 import torch
 
-from torchsim import TissueProperties, epg, fse_description
+from torchsim import TissueProperties, fse_description
 from torchsim.sequence._description import RfUse
 from torchsim.sequence._simulation import EpgSimulator, make_simulator
 
@@ -33,15 +32,34 @@ def _tissue():
     )
 
 
-class _Unknown(EpgSimulator):
-    """A sequence of a user's own, crushing around every refocusing pulse."""
+def _reference(description, tissue, state_count: int = STATES):
+    """The same train through the state machine written out in torch."""
+    from utils.packed_reference import simulate_packed
 
-    name = "a-policy-of-my-own"
+    from torchsim.sequence._accelerators import _pack_events, geometry_of
+    from torchsim.sequence._simulation import _prepare_tissue
 
-    def before_rf(self, states, event):
-        if event.rf_use is RfUse.REFOCUSING:
-            return epg.shift(states)
-        return states
+    prepared, shape, device = _prepare_tissue(tissue, "cpu")
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=device,
+        rf_raster_time_s=1e-6,
+    )
+    events = (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+    signal = simulate_packed(
+        tuple(value.to(torch.float32).contiguous() for value in prepared),
+        events,
+        state_count=state_count,
+        output_count=int(packed.output_count),
+        geometry=geometry_of(description),
+    )
+    return signal.reshape(*shape, int(packed.output_count))
 
 
 @pytest.mark.parametrize(
@@ -49,40 +67,15 @@ class _Unknown(EpgSimulator):
 )
 def test_every_shipped_policy_reaches_the_kernels(name):
     """A description packs and runs, whichever policy is driving it -- and to
-    the same answer, because both routes read the actions it carries.
+    the same answer, because the policy is no longer what says what it plays.
     """
     simulator = make_simulator(name)
-    loop = simulator.simulate(
-        _describe(), _tissue(), backend="torch", nstates=STATES
-    ).signal
-    fused = simulator.simulate(
-        _describe(), _tissue(), backend="native", nstates=STATES
-    ).signal
+    fused = simulator.simulate(_describe(), _tissue(), nstates=STATES).signal
+    reference = _reference(_describe(), _tissue())
 
-    scale = loop.abs().max()
+    scale = reference.abs().max()
     assert scale > 0.0
-    assert ((loop - fused).abs().max() / scale) < 1e-5
-
-
-def test_a_policy_the_packing_does_not_know_is_refused():
-    """Asked for outright, it must say so rather than answer differently."""
-    with pytest.raises(RuntimeError, match="native EPG backend is unavailable"):
-        _Unknown().simulate(
-            _describe(), _tissue(), backend="native", nstates=STATES
-        )
-
-
-def test_a_policy_the_packing_does_not_know_still_simulates():
-    """Left to choose, it takes the path that has the sequence's own state rules."""
-    simulator = _Unknown()
-    automatic = simulator.simulate(
-        _describe(), _tissue(), backend="auto", nstates=STATES
-    ).signal
-    loop = simulator.simulate(
-        _describe(), _tissue(), backend="torch", nstates=STATES
-    ).signal
-
-    assert torch.equal(automatic, loop)
+    assert ((reference - fused).abs().max() / scale) < 1e-5
 
 
 # --- a sequence nobody shipped a policy for ---
@@ -96,12 +89,12 @@ def _handmade():
     it reaches the kernels anyway.
     """
     from torchsim.sequence import EventAction
+    from torchsim.sequence._builders import _unit_flip_definition
     from torchsim.sequence._description import (
         AdcRole,
         SequenceDescription,
         SequenceEvent,
     )
-    from torchsim.sequence._builders import _unit_flip_definition
 
     events = [SequenceEvent.rf(0.0, 0, RfUse.EXCITATION, torch.pi / 2, torch.pi / 2)]
     for index in range(ECHOES):
@@ -129,20 +122,14 @@ def _handmade():
 
 def test_a_sequence_with_no_shipped_policy_reaches_the_kernels():
     """The payoff: the description says what it plays, so the base policy --
-    which knows nothing at all -- packs straight onto the fused kernels and
-    lands where the operator loop does.
+    which knows nothing at all -- packs straight onto the fused kernels.
     """
-    simulator = EpgSimulator()
-    fused = simulator.simulate(
-        _handmade(), _tissue(), backend="native", nstates=STATES
-    ).signal
-    loop = simulator.simulate(
-        _handmade(), _tissue(), backend="torch", nstates=STATES
-    ).signal
+    fused = EpgSimulator().simulate(_handmade(), _tissue(), nstates=STATES).signal
+    reference = _reference(_handmade(), _tissue())
 
-    scale = loop.abs().max()
+    scale = reference.abs().max()
     assert scale > 0.0
-    assert ((loop - fused).abs().max() / scale) < 1e-5
+    assert ((reference - fused).abs().max() / scale) < 1e-5
 
 
 def test_the_crushers_are_what_the_description_says_and_not_the_policy():
@@ -160,19 +147,33 @@ def test_the_crushers_are_what_the_description_says_and_not_the_policy():
             replace(event, action=EventAction.NONE) for event in described.events
         ),
     )
-    arguments = dict(backend="native", nstates=STATES)
 
-    crushed = EpgSimulator().simulate(described, _tissue(), **arguments).signal
-    plain = EpgSimulator().simulate(bare, _tissue(), **arguments).signal
+    crushed = EpgSimulator().simulate(described, _tissue(), nstates=STATES).signal
+    plain = EpgSimulator().simulate(bare, _tissue(), nstates=STATES).signal
 
     assert crushed.abs().max() > 0.0
     assert (crushed - plain).abs().max() > 1e-3 * crushed.abs().max()
 
 
-def test_a_policy_that_moves_the_states_itself_is_still_refused():
-    """The name gate is gone; what refuses now is a policy carrying rules the
-    description does not.
+def test_a_policy_is_a_name_and_the_states_its_sequence_needs():
+    """What a policy still decides, now that it decides nothing else."""
+    described = _handmade()
+
+    assert make_simulator("fse").name == "fse"
+    # Two crushers per refocusing pulse, read off the description.
+    assert EpgSimulator().shifts_per_repetition(described) == 2 * ECHOES
+
+
+def test_a_tissue_no_kernel_can_take_says_so():
+    """With one route there is no fallback, so an unreachable device raises
+    rather than quietly running somewhere else.
     """
-    assert not EpgSimulator()._carries_own_rules()
-    assert not make_simulator("fse")._carries_own_rules()
-    assert _Unknown()._carries_own_rules()
+    from torchsim.sequence import _accelerators
+
+    original = _accelerators._backend_available
+    _accelerators._backend_available = lambda device: False
+    try:
+        with pytest.raises(RuntimeError, match="no fused EPG kernel"):
+            EpgSimulator().simulate(_handmade(), _tissue(), nstates=STATES)
+    finally:
+        _accelerators._backend_available = original

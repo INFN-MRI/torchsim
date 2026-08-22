@@ -350,7 +350,6 @@ def simulate_native(
     exchanging: bool = False,
     features: frozenset[str] | None = None,
     transmit: torch.Tensor | None = None,
-    carries_own_rules: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules.
 
@@ -361,15 +360,9 @@ def simulate_native(
     channels)``, given when the sequence drives a pulse whose channels carry
     their own waveforms. Its rotation is then integrated per voxel rather than
     reached through a flip and a phase.
-
-    ``carries_own_rules`` declines outright: a caller that manipulates the
-    states itself knows something the description does not, and the kernels
-    would answer for the description alone.
     """
     device = prepared_tissue[0].device
     if device.type not in {"cpu", "cuda"} or not _backend_available(device):
-        return None
-    if carries_own_rules:
         return None
 
     asked = slice_profile if slice_profile is not None else ExactSliceProfile(points=1)

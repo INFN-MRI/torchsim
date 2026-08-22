@@ -66,13 +66,12 @@ def _tissue(**overrides):
     )
 
 
-def _signal(description, profile=None, tissue=None, backend="native"):
+def _signal(description, profile=None, tissue=None):
     return FSE().simulate(
         description,
         _tissue() if tissue is None else tissue,
         slice_profile=profile,
         nstates=STATES,
-        backend=backend,
     ).signal
 
 
@@ -174,14 +173,6 @@ def test_a_sequence_with_no_pulse_at_all_is_refused() -> None:
     with pytest.raises(ValueError, match="no pulse to take it from"):
         _signal(description, exact_slice_profile(5))
 
-
-def test_the_operator_loop_refuses_an_exact_profile() -> None:
-    """It applies a flip and a phase, which cannot name a general rotation."""
-    description = _describe(definition=_sinc(4.0e3))
-    with pytest.raises(NotImplementedError, match="tabulated rotation"):
-        _signal(description, exact_slice_profile(5), backend="torch")
-
-
 def test_a_slice_needs_at_least_one_position() -> None:
     with pytest.raises(ValueError, match="at least one position"):
         exact_slice_profile(0).positions()
@@ -198,7 +189,6 @@ def test_the_card_reads_each_shape_the_host_reads() -> None:
         tissue,
         slice_profile=profile,
         nstates=STATES,
-        backend="native",
         device="cuda",
     ).signal
 

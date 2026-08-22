@@ -326,22 +326,6 @@ def test_the_diffusion_gradient_survives_a_zero_coefficient() -> None:
     assert gradients[DIFFUSION_INDEX].abs().min() > 0
 
 
-def test_the_operator_loop_refuses_diffusion() -> None:
-    """The fallback path does not carry the damping, so it must say so."""
-    simulator = FSE()
-    with pytest.raises(NotImplementedError, match="fused kernels"):
-        simulator.simulate(
-            _description(), _tissue(), nstates=STATE_COUNT, backend="torch"
-        )
-
-
-def test_the_operator_loop_still_runs_without_diffusion() -> None:
-    simulator = FSE()
-    result = simulator.simulate(
-        _description(), _tissue(0.0), nstates=STATE_COUNT, backend="torch"
-    )
-    assert torch.isfinite(result.signal).all()
-
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_the_cuda_kernels_agree_with_the_cpu_ones() -> None:

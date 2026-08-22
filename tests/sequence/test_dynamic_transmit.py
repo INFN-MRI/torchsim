@@ -1176,7 +1176,6 @@ def test_a_split_pulse_records_the_train_its_sum_records():
         split,
         TissueProperties(**tissue, b1=magnitude, b1_phase_rad=phase),
         nstates=16,
-        backend="native",
     ).signal
     turned = FSE().simulate(
         plain,
@@ -1184,7 +1183,6 @@ def test_a_split_pulse_records_the_train_its_sum_records():
             **tissue, b1=combined.abs(), b1_phase_rad=combined.angle()
         ),
         nstates=16,
-        backend="native",
     ).signal
 
     assert float(turned.abs().max()) > 0.0
@@ -1240,22 +1238,6 @@ def test_a_single_channel_train_never_reaches_the_pair():
 
     assert sensitivities is None
 
-
-def test_a_split_pulse_is_refused_by_the_operator_loop():
-    from torchsim.sequence import FSE
-
-    split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
-    magnitude, phase = _sensitivities()
-
-    with pytest.raises(NotImplementedError, match="axis the voxel has to itself"):
-        FSE().simulate(
-            split,
-            _tissue_properties(magnitude, phase),
-            nstates=8,
-            backend="torch",
-        )
-
-
 def test_a_static_shim_beside_a_dynamic_pulse_is_refused():
     from dataclasses import replace
 
@@ -1301,7 +1283,7 @@ def test_the_dispatch_hands_the_kernels_a_pair_and_no_table(monkeypatch):
 
     monkeypatch.setattr(_accelerators, "_run_packed", record)
     FSE().simulate(
-        split, _tissue_properties(magnitude, phase), nstates=8, backend="native"
+        split, _tissue_properties(magnitude, phase), nstates=8
     )
 
     assert seen["profile"] is None
@@ -1326,13 +1308,12 @@ def test_a_dynamic_pulse_is_integrated_across_the_slice():
     tissue = _tissue_properties(magnitude, phase)
 
     centred = FSE().simulate(
-        split, tissue, nstates=8, backend="native"
+        split, tissue, nstates=8
     ).signal
     across = FSE().simulate(
         split,
         tissue,
         nstates=8,
-        backend="native",
         slice_profile=exact_slice_profile(9, extent=2.0),
     ).signal
 
@@ -1363,7 +1344,6 @@ def test_a_relaxation_gradient_reaches_through_the_pair():
             description,
             TissueProperties(t1_ms=t1, t2_ms=t2, b1=b1, b1_phase_rad=b1_phase),
             nstates=16,
-            backend="native",
         ).signal
         return torch.autograd.grad(signal.abs().square().sum(), (t1, t2))
 
@@ -1402,7 +1382,7 @@ def test_the_flip_gradient_comes_back_through_the_pulse_integral():
             )
         )
         signal = FSE().simulate(
-            split if splitting else plain, tissue, nstates=16, backend="native"
+            split if splitting else plain, tissue, nstates=16
         ).signal
         return torch.autograd.grad(signal.abs().square().sum(), flips)[0]
 
@@ -1435,7 +1415,6 @@ def test_a_transmit_gradient_comes_back_through_the_pulse_integral(name: str):
                 b1_phase_rad=b1_phase,
             ),
             nstates=16,
-            backend="native",
         ).signal
         return signal.abs().square().sum()
 
@@ -1481,7 +1460,6 @@ def test_a_forward_direction_follows_the_pair():
                 b1_phase_rad=phase,
             ),
             nstates=12,
-            backend="native",
         ).signal
         return signal.abs().square().sum()
 
@@ -1519,7 +1497,6 @@ def test_a_hessian_vector_product_reaches_through_the_pair():
                 b1_phase_rad=phase,
             ),
             nstates=12,
-            backend="native",
         ).signal
         return signal.abs().square().sum()
 

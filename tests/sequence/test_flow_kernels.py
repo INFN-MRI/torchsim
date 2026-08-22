@@ -369,9 +369,3 @@ def test_the_cuda_adjoint_agrees_with_the_cpu_one() -> None:
         compared.append(name)
     assert "velocity_m_per_s" in compared
 
-
-def test_the_operator_loop_refuses_flow() -> None:
-    with pytest.raises(NotImplementedError, match="fused kernels"):
-        FSE().simulate(
-            _description(), _tissue(), nstates=STATE_COUNT, backend="torch"
-        )
