@@ -806,6 +806,16 @@ inline float scaled(const float value, const float factor, const bool live) {
 
 // The same, for a kernel carrying a forward direction: an absent scalar sits at
 // one and its direction at zero, and neither buffer is read.
+// A rate whose identity is zero, for a kernel carrying a forward direction.
+inline DualFloat held_rate(
+    const float* const value,
+    const float* const direction,
+    const std::int64_t atom,
+    const bool live
+) {
+    return live ? DualFloat{value[atom], direction[atom]} : DualFloat{0.0F, 0.0F};
+}
+
 inline DualFloat held(
     const float* const value,
     const float* const direction,
@@ -2642,17 +2652,19 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         const DualFloat transverse_free = THREE
             ? DualFloat{1.0F, 0.0F} - bound_fraction - semisolid_fraction
             : DualFloat{1.0F, 0.0F} - bound_fraction;
-        const DualFloat damping_rate{
-            primal.diffusion[atom], buffers.diffusion[atom]
-        };
+        const DualFloat damping_rate = held_rate(
+            primal.diffusion, buffers.diffusion, atom, primal.diffusing
+        );
         // With one shim the transmit field is a property of the voxel and
         // lifts out of the event loop; with several it belongs to the shim a
         // pulse drives, and is read where the pulse is.
         const bool shimmed = primal.shim_count > 1;
         const float voxel_b1 = primal.transmit ? primal.b1[atom] : 1.0F;
         const float voxel_dot_b1 = primal.transmit ? buffers.b1[atom] : 0.0F;
-        const float voxel_b1_phase = primal.b1_phase[atom];
-        const float voxel_dot_b1_phase = buffers.b1_phase[atom];
+        const float voxel_b1_phase =
+            primal.off_axis ? primal.b1_phase[atom] : 0.0F;
+        const float voxel_dot_b1_phase =
+            primal.off_axis ? buffers.b1_phase[atom] : 0.0F;
         const float velocity = flowing ? primal.velocity[atom] : 0.0F;
         const float dot_velocity = flowing ? buffers.velocity[atom] : 0.0F;
         const DualFloat flow_rate{
@@ -3206,9 +3218,9 @@ void simulate_real_jvp_range(
         const float dot_t2 = buffers.t2[atom];
         const float dot_b1 = primal.transmit ? buffers.b1[atom] : 0.0F;
         const float dot_m0 = buffers.m0[atom];
-        const DualFloat damping_rate{
-            primal.diffusion[atom], buffers.diffusion[atom]
-        };
+        const DualFloat damping_rate = held_rate(
+            primal.diffusion, buffers.diffusion, atom, primal.diffusing
+        );
 
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
@@ -3886,11 +3898,16 @@ void simulate_lane_range(
             // keep the lane axis innermost and contiguous so they vectorize.
             for (std::size_t lane = 0; lane < LANES; ++lane) {
                 const float dt = duration[lane];
-                const float angle = -2.0F * PI * b0 * dt;
                 const float e2 = std::exp(-r2 * dt);
                 recovery[lane] = std::exp(-r1 * dt);
-                off_real[lane] = e2 * std::cos(angle);
-                off_imag[lane] = e2 * std::sin(angle);
+                if (buffers.off_axis) {
+                    const float angle = -2.0F * PI * b0 * dt;
+                    off_real[lane] = e2 * std::cos(angle);
+                    off_imag[lane] = e2 * std::sin(angle);
+                } else {
+                    off_real[lane] = e2;
+                    off_imag[lane] = 0.0F;
+                }
             }
             for (std::size_t state = 0; state < states; ++state) {
                 const std::size_t base = state * LANES;
@@ -5773,7 +5790,8 @@ void simulate_real_vjp_range(
             primal.inverting ? primal.inversion_efficiency[atom] : 1.0F;
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
-        const float damping_rate = primal.diffusion[atom];
+        const float damping_rate =
+            primal.diffusing ? primal.diffusion[atom] : 0.0F;
 
         std::fill(plus.begin(), plus.end(), 0.0F);
         std::fill(minus.begin(), minus.end(), 0.0F);
@@ -6433,9 +6451,9 @@ void simulate_real_vjp_jvp_range(
         const DualFloat r2{
             1000.0F / t2.value, -1000.0F * t2.tangent / (t2.value * t2.value)
         };
-        const DualFloat damping_rate{
-            primal.diffusion[atom], buffers.dot_diffusion[atom]
-        };
+        const DualFloat damping_rate = held_rate(
+            primal.diffusion, buffers.dot_diffusion, atom, primal.diffusing
+        );
 
         std::fill(plus.begin(), plus.end(), DualFloat{0.0F, 0.0F});
         std::fill(minus.begin(), minus.end(), DualFloat{0.0F, 0.0F});
@@ -7179,11 +7197,11 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
         const DualFloat t2{primal.t2[atom], buffers.dot_t2[atom]};
         const DualFloat m0 = held(primal.m0, buffers.dot_m0, atom, primal.density);
         const DualFloat b1 = held(primal.b1, buffers.dot_b1, atom, primal.transmit);
-        const DualFloat b1_phase{
-            primal.b1_phase[atom], buffers.dot_b1_phase[atom]
-        };
+        const DualFloat b1_phase =
+            held_rate(primal.b1_phase, buffers.dot_b1_phase, atom, primal.off_axis);
         const bool shimmed = primal.shim_count > 1;
-        const DualFloat b0{primal.b0[atom], buffers.dot_b0[atom]};
+        const DualFloat b0 =
+            held_rate(primal.b0, buffers.dot_b0, atom, primal.off_axis);
         const DualFloat efficiency{
             primal.inversion_efficiency[atom],
             buffers.dot_inversion_efficiency[atom],
@@ -7245,11 +7263,12 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
                 primal.pool_b_shift[atom], buffers.dot_pool_b_shift[atom]
             }
             : DualFloat{};
-        const DualFloat damping_rate{
-            primal.diffusion[atom], buffers.dot_diffusion[atom]
-        };
-        const float velocity = primal.velocity[atom];
-        const float dot_velocity = buffers.dot_velocity[atom];
+        const DualFloat damping_rate = held_rate(
+            primal.diffusion, buffers.dot_diffusion, atom, primal.diffusing
+        );
+        const float velocity = primal.moving ? primal.velocity[atom] : 0.0F;
+        const float dot_velocity =
+            primal.moving ? buffers.dot_velocity[atom] : 0.0F;
         const DualFloat flow_rate{
             velocity * primal.flow_scale, dot_velocity * primal.flow_scale
         };

@@ -4146,6 +4146,9 @@ def _epg_vjp_kernel(
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -4177,14 +4180,22 @@ def _epg_vjp_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
         atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
         atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
-    atom_inv = tl.load(inversion_efficiency + atom, mask=active_atom, other=1.0)
+    atom_inv = 1.0
+    if inverting:
+        atom_inv = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     atom_damping = 0.0
     if diffusing:
         atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
@@ -4729,6 +4740,9 @@ def _epg_vjp_jvp_kernel(
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
     block_states: tl.constexpr,
@@ -4879,26 +4893,40 @@ def _epg_vjp_jvp_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
         atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
         atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
-    atom_inv = tl.load(inversion_efficiency + atom, mask=active_atom, other=1.0)
+    atom_inv = 1.0
+    if inverting:
+        atom_inv = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     d_t1 = tl.load(dot_t1 + atom, mask=active_atom, other=0.0)
     d_t2 = tl.load(dot_t2 + atom, mask=active_atom, other=0.0)
-    d_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
-    d_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
+    d_m0 = 0.0
+    if density:
+        d_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
+    d_b1 = 0.0
+    if transmit:
+        d_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
     d_b1_phase = 0.0
     d_b0 = 0.0
     if off_axis:
         d_b1_phase = tl.load(dot_b1_phase + atom, mask=active_atom, other=0.0)
         d_b0 = tl.load(dot_b0 + atom, mask=active_atom, other=0.0)
-    d_inv = tl.load(
-        dot_inversion_efficiency + atom, mask=active_atom, other=0.0
-    )
+    d_inv = 0.0
+    if inverting:
+        d_inv = tl.load(
+            dot_inversion_efficiency + atom, mask=active_atom, other=0.0
+        )
     atom_damping = 0.0
     d_damping = 0.0
     if diffusing:
@@ -5245,7 +5273,11 @@ def _epg_vjp_jvp_kernel(
         # several give each pulse a row of its own.
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
-            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1 = 1.0
+            if transmit:
+                atom_b1 = tl.load(
+                    b1 + row + atom, mask=active_atom, other=1.0
+                )
             if off_axis:
                 atom_b1_phase = tl.load(
                     b1_phase + row + atom, mask=active_atom, other=0.0
@@ -6264,7 +6296,11 @@ def _epg_vjp_jvp_kernel(
         # several give each pulse a row of its own.
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
-            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1 = 1.0
+            if transmit:
+                atom_b1 = tl.load(
+                    b1 + row + atom, mask=active_atom, other=1.0
+                )
             if off_axis:
                 atom_b1_phase = tl.load(
                     b1_phase + row + atom, mask=active_atom, other=0.0
@@ -7626,6 +7662,9 @@ def _epg_real_vjp_jvp_kernel(
     output_count,
     state_count: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -7659,18 +7698,30 @@ def _epg_real_vjp_jvp_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
-    atom_inversion = tl.load(
-        inversion_efficiency + atom, mask=active_atom, other=1.0
-    )
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = 1.0
+    if inverting:
+        atom_inversion = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     atom_dot_t1 = tl.load(dot_t1 + atom, mask=active_atom, other=0.0)
     atom_dot_t2 = tl.load(dot_t2 + atom, mask=active_atom, other=0.0)
-    atom_dot_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
-    atom_dot_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
-    atom_dot_inversion = tl.load(
-        dot_inversion_efficiency + atom, mask=active_atom, other=0.0
-    )
+    atom_dot_m0 = 0.0
+    if density:
+        atom_dot_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
+    atom_dot_b1 = 0.0
+    if transmit:
+        atom_dot_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
+    atom_dot_inversion = 0.0
+    if inverting:
+        atom_dot_inversion = tl.load(
+            dot_inversion_efficiency + atom, mask=active_atom, other=0.0
+        )
     atom_damping = 0.0
     atom_dot_damping = 0.0
     if diffusing:
@@ -8256,6 +8307,9 @@ def _epg_real_vjp_kernel(
     output_count,
     state_count: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -8286,11 +8340,17 @@ def _epg_real_vjp_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
-    atom_inversion = tl.load(
-        inversion_efficiency + atom, mask=active_atom, other=1.0
-    )
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = 1.0
+    if inverting:
+        atom_inversion = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     atom_damping = 0.0
     if diffusing:
         atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
@@ -8594,6 +8654,9 @@ def _epg_real_kernel(
     output_count,
     state_count: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -8614,11 +8677,17 @@ def _epg_real_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
-    atom_inversion = tl.load(
-        inversion_efficiency + atom, mask=active_atom, other=1.0
-    )
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = 1.0
+    if inverting:
+        atom_inversion = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
     atom_damping = 0.0
@@ -8723,6 +8792,9 @@ def _epg_real_jvp_kernel(
     output_count,
     state_count: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -8746,18 +8818,30 @@ def _epg_real_jvp_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
-    atom_inversion = tl.load(
-        inversion_efficiency + atom, mask=active_atom, other=1.0
-    )
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_inversion = 1.0
+    if inverting:
+        atom_inversion = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     dot_t1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
     dot_t2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
-    dot_m0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
-    dot_b1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
-    dot_inversion = tl.load(
-        tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
-    )
+    dot_m0 = 0.0
+    if density:
+        dot_m0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
+    dot_b1 = 0.0
+    if transmit:
+        dot_b1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
+    dot_inversion = 0.0
+    if inverting:
+        dot_inversion = tl.load(
+            tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
+        )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
     atom_damping = 0.0
@@ -8989,6 +9073,9 @@ def _epg_kernel(
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -9077,16 +9164,22 @@ def _epg_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
         atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
         atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
-    atom_inversion = tl.load(
-        inversion_efficiency + atom, mask=active_atom, other=1.0
-    )
+    atom_inversion = 1.0
+    if inverting:
+        atom_inversion = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     atom_damping = 0.0
     if diffusing:
         atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
@@ -9327,7 +9420,11 @@ def _epg_kernel(
         # several give each pulse a row of its own.
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
-            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1 = 1.0
+            if transmit:
+                atom_b1 = tl.load(
+                    b1 + row + atom, mask=active_atom, other=1.0
+                )
             if off_axis:
                 atom_b1_phase = tl.load(
                     b1_phase + row + atom, mask=active_atom, other=0.0
@@ -9659,6 +9756,9 @@ def _epg_jvp_kernel(
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
+    transmit: tl.constexpr,
+    density: tl.constexpr,
+    inverting: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -9790,16 +9890,22 @@ def _epg_jvp_kernel(
 
     atom_t1 = tl.load(t1 + atom, mask=active_atom, other=1.0)
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
-    atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
-    atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+    atom_m0 = 1.0
+    if density:
+        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+    atom_b1 = 1.0
+    if transmit:
+        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
         atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
         atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
-    atom_inversion = tl.load(
-        inversion_efficiency + atom, mask=active_atom, other=1.0
-    )
+    atom_inversion = 1.0
+    if inverting:
+        atom_inversion = tl.load(
+            inversion_efficiency + atom, mask=active_atom, other=1.0
+        )
     atom_damping = 0.0
     d_damping = 0.0
     if diffusing:
@@ -9830,8 +9936,12 @@ def _epg_jvp_kernel(
     order = state.to(tl.float32)
     dt1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
     dt2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
-    dm0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
-    db1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
+    dm0 = 0.0
+    if density:
+        dm0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
+    db1 = 0.0
+    if transmit:
+        db1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
     db1_phase = 0.0
     db0 = 0.0
     if off_axis:
@@ -9839,9 +9949,11 @@ def _epg_jvp_kernel(
             tangent_b1_phase + atom, mask=active_atom, other=0.0
         )
         db0 = tl.load(tangent_b0 + atom, mask=active_atom, other=0.0)
-    dinversion = tl.load(
-        tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
-    )
+    dinversion = 0.0
+    if inverting:
+        dinversion = tl.load(
+            tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
+        )
 
     event_base = train * event_count
     for event in range(0, event_count):
@@ -10325,7 +10437,11 @@ def _epg_jvp_kernel(
         # several give each pulse a row of its own.
         if shimmed:
             row = tl.load(shim_index + event).to(tl.int64) * atom_count
-            atom_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            atom_b1 = 1.0
+            if transmit:
+                atom_b1 = tl.load(
+                    b1 + row + atom, mask=active_atom, other=1.0
+                )
             db1 = tl.load(tangent_b1 + row + atom, mask=active_atom, other=0.0)
             if off_axis:
                 atom_b1_phase = tl.load(
@@ -10659,6 +10775,19 @@ def _scratch(
     ]
 
 
+def _only_scalars(flags: dict) -> dict:
+    """The switches a real-subspace kernel takes.
+
+    Off-resonance and flow are not in its representation to begin with -- it
+    carries three real planes where the complex kernels carry four -- so it is
+    given the terms that survive that reduction and no others.
+    """
+    return {
+        name: flags[name]
+        for name in ("diffusing", "transmit", "density", "inverting")
+    }
+
+
 def simulate(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],
@@ -10785,7 +10914,7 @@ def simulate_into(
             kind.numel(),
             output_count,
             state_count=state_count,
-            diffusing=_feature_flags(features, geometry)["diffusing"],
+            **_only_scalars(_feature_flags(features, geometry)),
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -10979,7 +11108,7 @@ def simulate_jvp_into(
             kind.numel(),
             output_count,
             state_count=state_count,
-            diffusing=_feature_flags(features, geometry)["diffusing"],
+            **_only_scalars(_feature_flags(features, geometry)),
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -11235,7 +11364,7 @@ def simulate_real_vjp(
             event_count,
             output_count,
             state_count=state_count,
-            diffusing=_feature_flags(features, NO_GEOMETRY)["diffusing"],
+            **_only_scalars(_feature_flags(features, NO_GEOMETRY)),
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -11472,7 +11601,7 @@ def simulate_vjp_jvp_into(
                 train_count,
                 event_count,
                 output_count,
-                diffusing=_feature_flags(features, geometry)["diffusing"],
+                **_only_scalars(_feature_flags(features, geometry)),
                 **shape,
             )
         else:

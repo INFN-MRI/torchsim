@@ -158,6 +158,8 @@ DROPPED = [
         {"diffusion_um2_per_ms": 0.0},
         CRUSHED,
     ),
+    ("transmit", {"b1": 0.6}, {"b1": 1.0}, 0.0),
+    ("density", {"m0": 0.4}, {"m0": 1.0}, 0.0),
 ]
 
 
@@ -186,7 +188,10 @@ def _signal(monkeypatch, mask, extra, crusher_rad):
 @pytest.mark.parametrize(
     ("name", "loud", "silent", "crusher_rad"),
     DROPPED,
-    ids=["off-resonance", "transmit-phase", "flow", "diffusion"],
+    ids=[
+        "off-resonance", "transmit-phase", "flow", "diffusion",
+        "transmit", "density",
+    ],
 )
 def test_a_dropped_term_gives_the_answer_of_a_tissue_without_it(
     monkeypatch, name, loud, silent, crusher_rad
@@ -207,4 +212,35 @@ def test_a_dropped_term_gives_the_answer_of_a_tissue_without_it(
     # refocused train moves very little with off-resonance, and it is the
     # exact match above that says the branch was taken.
     carried = _signal(monkeypatch, ALL_ON, loud, crusher_rad)
+    assert not torch.equal(carried, absent)
+
+
+def test_an_inversion_the_tissue_never_declared_is_left_out(monkeypatch) -> None:
+    """The one term a refocused train cannot exercise: it drives no inversion,
+    so the gate is held against a sequence that does.
+    """
+    from torchsim.sequence import SPGR, mprage_description
+
+    def signal(mask, efficiency):
+        monkeypatch.setattr(
+            _accelerators, "feature_mask", lambda features, geometry: mask
+        )
+        out = SPGR().simulate(
+            mprage_description(2, 4, torch.deg2rad(torch.tensor(12.0)), 5e-3, 20e-3),
+            TissueProperties(
+                t1_ms=torch.full((4,), 1000.0),
+                t2_ms=torch.full((4,), 80.0),
+                inversion_efficiency=torch.full((4,), efficiency),
+            ),
+            nstates=STATES,
+            backend="native",
+        ).signal
+        monkeypatch.undo()
+        return out
+
+    dropped = signal(_without("inverting"), 0.4)
+    absent = signal(ALL_ON, 1.0)
+    carried = signal(ALL_ON, 0.4)
+
+    assert torch.equal(dropped, absent)
     assert not torch.equal(carried, absent)
