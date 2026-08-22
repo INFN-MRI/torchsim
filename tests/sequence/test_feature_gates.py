@@ -64,7 +64,21 @@ def test_each_absent_property_takes_its_term_with_it():
         "off_axis": False,
         "moving": False,
         "diffusing": False,
+        "transmit": False,
+        "density": False,
+        "inverting": False,
     }
+
+
+def test_a_scalar_at_its_identity_is_named_one_property_at_a_time():
+    """The three per-voxel scalars are three switches, so declaring a transmit
+    map must not turn a proton density on with it.
+    """
+    flags = _feature_flags(frozenset({"T1", "T2", "B1"}), WINDING)
+
+    assert flags["transmit"]
+    assert not flags["density"]
+    assert not flags["inverting"]
 
 
 def test_the_attenuation_answers_to_itself_alone():

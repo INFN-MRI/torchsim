@@ -192,11 +192,15 @@ enum Feature : int {
     FEATURE_OFF_AXIS = 1 << 0,
     FEATURE_MOVING = 1 << 1,
     FEATURE_DIFFUSING = 1 << 2,
+    FEATURE_TRANSMIT = 1 << 3,
+    FEATURE_DENSITY = 1 << 4,
+    FEATURE_INVERTING = 1 << 5,
 };
 
 // What a caller who declares nothing gets, which is every term.
-constexpr int FEATURE_ALL =
-    FEATURE_OFF_AXIS | FEATURE_MOVING | FEATURE_DIFFUSING;
+constexpr int FEATURE_ALL = FEATURE_OFF_AXIS | FEATURE_MOVING
+    | FEATURE_DIFFUSING | FEATURE_TRANSMIT | FEATURE_DENSITY
+    | FEATURE_INVERTING;
 
 struct Buffers {
     const float* t1;
@@ -264,6 +268,11 @@ struct Buffers {
     bool off_axis;
     bool moving;
     bool diffusing;
+    // The three per-voxel scalars whose identity is one. Absent, the buffer is
+    // not read and the multiply is not made.
+    bool transmit;
+    bool density;
+    bool inverting;
     std::int64_t shim_count;
     // The rotation a shaped pulse performs, tabulated over slice position and
     // effective flip angle: rows of ``profile_bins`` knots, eight floats each
@@ -787,6 +796,23 @@ inline void flow_turn_dual(
     const float order = static_cast<float>(state);
     longitudinal = (-order) * turn;
     transverse = (-(order + 0.5F)) * turn;
+}
+
+// A per-voxel scalar whose identity is one: absent, the buffer is not read and
+// the multiply that would have used it is not made.
+inline float scaled(const float value, const float factor, const bool live) {
+    return live ? value * factor : value;
+}
+
+// The same, for a kernel carrying a forward direction: an absent scalar sits at
+// one and its direction at zero, and neither buffer is read.
+inline DualFloat held(
+    const float* const value,
+    const float* const direction,
+    const std::int64_t atom,
+    const bool live
+) {
+    return live ? DualFloat{value[atom], direction[atom]} : DualFloat{1.0F, 0.0F};
 }
 
 // A turn through an angle, or the plain scaling a zero angle amounts to.
@@ -2623,8 +2649,8 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
         // lifts out of the event loop; with several it belongs to the shim a
         // pulse drives, and is read where the pulse is.
         const bool shimmed = primal.shim_count > 1;
-        const float voxel_b1 = primal.b1[atom];
-        const float voxel_dot_b1 = buffers.b1[atom];
+        const float voxel_b1 = primal.transmit ? primal.b1[atom] : 1.0F;
+        const float voxel_dot_b1 = primal.transmit ? buffers.b1[atom] : 0.0F;
         const float voxel_b1_phase = primal.b1_phase[atom];
         const float voxel_dot_b1_phase = buffers.b1_phase[atom];
         const float velocity = flowing ? primal.velocity[atom] : 0.0F;
@@ -2834,9 +2860,12 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
             if (primal.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
                     // Only the free pool; see the forward kernel for why.
-                    const float efficiency = -primal.inversion_efficiency[atom];
-                    const float efficiency_tangent =
-                        -buffers.inversion_efficiency[atom];
+                    const float efficiency = -scaled(
+                        1.0F, primal.inversion_efficiency[atom], primal.inverting
+                    );
+                    const float efficiency_tangent = primal.inverting
+                        ? -buffers.inversion_efficiency[atom]
+                        : 0.0F;
                     for (DualComplex& value : longitudinal) {
                         value.tangent = efficiency_tangent * value.value
                             + efficiency * value.tangent;
@@ -2978,10 +3007,13 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
                         fplus[0].tangent + bound_plus[0].tangent,
                     }
                     : fplus[0];
+                const float density = primal.density ? primal.m0[atom] : 1.0F;
+                const float dot_density =
+                    primal.density ? buffers.m0[atom] : 0.0F;
                 const Complex signal_tangent =
-                    buffers.m0[atom] * fp.value * demodulation
-                    + primal.m0[atom] * fp.tangent * demodulation
-                    + primal.m0[atom] * fp.value * demodulation_tangent;
+                    dot_density * fp.value * demodulation
+                    + density * fp.tangent * demodulation
+                    + density * fp.value * demodulation_tangent;
                 const std::int64_t index = view.output_base + output;
                 primal.output_real[index] = signal_tangent.real();
                 primal.output_imag[index] = signal_tangent.imag();
@@ -3065,9 +3097,10 @@ void simulate_real_range(
 
         const float r1 = 1000.0F / buffers.t1[atom];
         const float r2 = 1000.0F / buffers.t2[atom];
-        const float b1 = buffers.b1[atom];
-        const float m0 = buffers.m0[atom];
-        const float damping_rate = buffers.diffusion[atom];
+        const float b1 = buffers.transmit ? buffers.b1[atom] : 1.0F;
+        const float m0 = buffers.density ? buffers.m0[atom] : 1.0F;
+        const float damping_rate =
+            buffers.diffusing ? buffers.diffusion[atom] : 0.0F;
 
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
@@ -3088,7 +3121,9 @@ void simulate_real_range(
             }
             if (buffers.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
-                    const float efficiency = -buffers.inversion_efficiency[atom];
+                    const float efficiency = -scaled(
+                        1.0F, buffers.inversion_efficiency[atom], buffers.inverting
+                    );
                     for (std::size_t state = 0; state < states; ++state) {
                         longitudinal[state] *= efficiency;
                     }
@@ -3165,11 +3200,11 @@ void simulate_real_jvp_range(
         const float t2 = primal.t2[atom];
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
-        const float b1 = primal.b1[atom];
-        const float m0 = primal.m0[atom];
+        const float b1 = primal.transmit ? primal.b1[atom] : 1.0F;
+        const float m0 = primal.density ? primal.m0[atom] : 1.0F;
         const float dot_t1 = buffers.t1[atom];
         const float dot_t2 = buffers.t2[atom];
-        const float dot_b1 = buffers.b1[atom];
+        const float dot_b1 = primal.transmit ? buffers.b1[atom] : 0.0F;
         const float dot_m0 = buffers.m0[atom];
         const DualFloat damping_rate{
             primal.diffusion[atom], buffers.diffusion[atom]
@@ -3214,9 +3249,12 @@ void simulate_real_jvp_range(
             }
             if (primal.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
-                    const float efficiency = -primal.inversion_efficiency[atom];
-                    const float efficiency_tangent =
-                        -buffers.inversion_efficiency[atom];
+                    const float efficiency = -scaled(
+                        1.0F, primal.inversion_efficiency[atom], primal.inverting
+                    );
+                    const float efficiency_tangent = primal.inverting
+                        ? -buffers.inversion_efficiency[atom]
+                        : 0.0F;
                     for (std::size_t state = 0; state < states; ++state) {
                         dot_longitudinal[state] =
                             dot_longitudinal[state] * efficiency
@@ -3469,10 +3507,10 @@ void simulate_real_jvp_lane_range(
         const float t2 = primal.t2[atom];
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
-        const float b1 = primal.b1[atom];
-        const float m0 = primal.m0[atom];
-        const float dot_b1 = buffers.b1[atom];
-        const float dot_m0 = buffers.m0[atom];
+        const float b1 = primal.transmit ? primal.b1[atom] : 1.0F;
+        const float m0 = primal.density ? primal.m0[atom] : 1.0F;
+        const float dot_b1 = primal.transmit ? buffers.b1[atom] : 0.0F;
+        const float dot_m0 = primal.density ? buffers.m0[atom] : 0.0F;
         const float t1_scale = 1000.0F * buffers.t1[atom] / (t1 * t1);
         const float t2_scale = 1000.0F * buffers.t2[atom] / (t2 * t2);
 
@@ -3520,8 +3558,12 @@ void simulate_real_jvp_lane_range(
             }
             if (primal.kind[event] == 1) {
                 if ((action & INVERSION) != 0) {
-                    const float efficiency = -primal.inversion_efficiency[atom];
-                    const float efficiency_dot = -buffers.inversion_efficiency[atom];
+                    const float efficiency = -scaled(
+                        1.0F, primal.inversion_efficiency[atom], primal.inverting
+                    );
+                    const float efficiency_dot = primal.inverting
+                        ? -buffers.inversion_efficiency[atom]
+                        : 0.0F;
                     for (std::size_t slot = 0; slot < width; ++slot) {
                         dot_longitudinal[slot] = dot_longitudinal[slot] * efficiency
                             + longitudinal[slot] * efficiency_dot;
@@ -3827,11 +3869,13 @@ void simulate_lane_range(
 
         const float r1 = 1000.0F / buffers.t1[atom];
         const float r2 = 1000.0F / buffers.t2[atom];
-        const float b0 = buffers.b0[atom];
-        const float b1 = buffers.b1[atom];
-        const float b1_phase = buffers.b1_phase[atom];
-        const float m0 = buffers.m0[atom];
-        const float efficiency = -buffers.inversion_efficiency[atom];
+        const float b0 = buffers.off_axis ? buffers.b0[atom] : 0.0F;
+        const float b1 = buffers.transmit ? buffers.b1[atom] : 1.0F;
+        const float b1_phase = buffers.off_axis ? buffers.b1_phase[atom] : 0.0F;
+        const float m0 = buffers.density ? buffers.m0[atom] : 1.0F;
+        const float efficiency = -scaled(
+            1.0F, buffers.inversion_efficiency[atom], buffers.inverting
+        );
 
         for (std::int64_t event = 0; event < event_count; ++event) {
             for (std::size_t lane = 0; lane < LANES; ++lane) {
@@ -4034,7 +4078,7 @@ void simulate_range(
         // With one shim the transmit field is a property of the voxel and
         // lifts out of the event loop; with several it belongs to the shim a
         // pulse drives, and is read where the pulse is.
-        const float b1 = buffers.b1[atom];
+        const float b1 = buffers.transmit ? buffers.b1[atom] : 1.0F;
         const float b1_phase = buffers.off_axis ? buffers.b1_phase[atom] : 0.0F;
         for (std::int64_t event = 0; event < event_count; ++event) {
             const float dt = view.duration[event];
@@ -4173,7 +4217,9 @@ void simulate_range(
                     // it saturates by is already carried by the pulse's own
                     // saturation term. A chemically exchanging pool is free
                     // water and inverts like any other.
-                    const float efficiency = -buffers.inversion_efficiency[atom];
+                    const float efficiency = -scaled(
+                        1.0F, buffers.inversion_efficiency[atom], buffers.inverting
+                    );
                     for (Complex& value : longitudinal) {
                         value *= efficiency;
                     }
@@ -4186,8 +4232,11 @@ void simulate_range(
                     const bool shimmed = buffers.shim_count > 1;
                     const std::int64_t transmit =
                         shimmed ? transmit_row(buffers, event, atom) : atom;
-                    const float theta = view.flip[event]
-                        * (shimmed ? buffers.b1[transmit] : b1);
+                    const float theta = scaled(
+                        view.flip[event],
+                        shimmed ? buffers.b1[transmit] : b1,
+                        buffers.transmit
+                    );
                     const float phi = view.phase[event]
                         + (shimmed ? buffers.b1_phase[transmit] : b1_phase);
                     if constexpr (SATURATED) {
@@ -4252,7 +4301,9 @@ void simulate_range(
                 // equilibrium at t = 0.
                 const Complex recorded =
                     PAIRED ? fplus[0] + bound_plus[0] : fplus[0];
-                const Complex signal = buffers.m0[atom] * recorded * demodulation;
+                const Complex signal = buffers.density
+                    ? buffers.m0[atom] * recorded * demodulation
+                    : recorded * demodulation;
                 const std::int64_t index = view.output_base + output;
                 buffers.output_real[index] = signal.real();
                 buffers.output_imag[index] = signal.imag();
@@ -4662,14 +4713,15 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
         const float transverse_free =
             1.0F - bound_fraction - (THREE ? semisolid_fraction : 0.0F);
         const float b0 = primal.off_axis ? primal.b0[atom] : 0.0F;
-        const float m0 = primal.m0[atom];
+        const float m0 = primal.density ? primal.m0[atom] : 1.0F;
         // With one shim the transmit field is a property of the voxel and
         // lifts out of the event loop; with several it belongs to the shim a
         // pulse drives, and is read where the pulse is.
-        const float b1 = primal.b1[atom];
+        const float b1 = primal.transmit ? primal.b1[atom] : 1.0F;
         const float b1_phase = primal.off_axis ? primal.b1_phase[atom] : 0.0F;
         const bool shimmed = primal.shim_count > 1;
-        const float efficiency = primal.inversion_efficiency[atom];
+        const float efficiency =
+            primal.inverting ? primal.inversion_efficiency[atom] : 1.0F;
         const float damping_rate =
             primal.diffusing ? primal.diffusion[atom] : 0.0F;
         const float velocity = flowing ? primal.velocity[atom] : 0.0F;
@@ -5715,9 +5767,10 @@ void simulate_real_vjp_range(
 
         const float t1 = primal.t1[atom];
         const float t2 = primal.t2[atom];
-        const float m0 = primal.m0[atom];
-        const float b1 = primal.b1[atom];
-        const float inversion = primal.inversion_efficiency[atom];
+        const float m0 = primal.density ? primal.m0[atom] : 1.0F;
+        const float b1 = primal.transmit ? primal.b1[atom] : 1.0F;
+        const float inversion =
+            primal.inverting ? primal.inversion_efficiency[atom] : 1.0F;
         const float r1 = 1000.0F / t1;
         const float r2 = 1000.0F / t2;
         const float damping_rate = primal.diffusion[atom];
@@ -6368,11 +6421,11 @@ void simulate_real_vjp_jvp_range(
 
         const DualFloat t1{primal.t1[atom], buffers.dot_t1[atom]};
         const DualFloat t2{primal.t2[atom], buffers.dot_t2[atom]};
-        const DualFloat m0{primal.m0[atom], buffers.dot_m0[atom]};
-        const DualFloat b1{primal.b1[atom], buffers.dot_b1[atom]};
+        const DualFloat m0 = held(primal.m0, buffers.dot_m0, atom, primal.density);
+        const DualFloat b1 = held(primal.b1, buffers.dot_b1, atom, primal.transmit);
         const DualFloat inversion{
-            primal.inversion_efficiency[atom],
-            buffers.dot_inversion_efficiency[atom]
+            primal.inverting ? primal.inversion_efficiency[atom] : 1.0F,
+            primal.inverting ? buffers.dot_inversion_efficiency[atom] : 0.0F
         };
         const DualFloat r1{
             1000.0F / t1.value, -1000.0F * t1.tangent / (t1.value * t1.value)
@@ -6770,10 +6823,12 @@ void simulate_real_vjp_jvp_lane_range(
 
         const DualFloat t1{primal.t1[atom], buffers.dot_t1[atom]};
         const DualFloat t2{primal.t2[atom], buffers.dot_t2[atom]};
-        const DualLane m0 =
-            dual_lane_splat(DualFloat{primal.m0[atom], buffers.dot_m0[atom]});
-        const DualLane b1 =
-            dual_lane_splat(DualFloat{primal.b1[atom], buffers.dot_b1[atom]});
+        const DualLane m0 = dual_lane_splat(
+            held(primal.m0, buffers.dot_m0, atom, primal.density)
+        );
+        const DualLane b1 = dual_lane_splat(
+            held(primal.b1, buffers.dot_b1, atom, primal.transmit)
+        );
         const DualLane inversion = dual_lane_splat(DualFloat{
             primal.inversion_efficiency[atom],
             buffers.dot_inversion_efficiency[atom],
@@ -7122,8 +7177,8 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
         DualFloat* const grad_duration_train = grad_duration_local + view.event_base;
         const DualFloat t1{primal.t1[atom], buffers.dot_t1[atom]};
         const DualFloat t2{primal.t2[atom], buffers.dot_t2[atom]};
-        const DualFloat m0{primal.m0[atom], buffers.dot_m0[atom]};
-        const DualFloat b1{primal.b1[atom], buffers.dot_b1[atom]};
+        const DualFloat m0 = held(primal.m0, buffers.dot_m0, atom, primal.density);
+        const DualFloat b1 = held(primal.b1, buffers.dot_b1, atom, primal.transmit);
         const DualFloat b1_phase{
             primal.b1_phase[atom], buffers.dot_b1_phase[atom]
         };
@@ -8393,6 +8448,9 @@ inline Buffers packed_buffers(
     buffers.off_axis = (features & FEATURE_OFF_AXIS) != 0;
     buffers.moving = (features & FEATURE_MOVING) != 0;
     buffers.diffusing = (features & FEATURE_DIFFUSING) != 0;
+    buffers.transmit = (features & FEATURE_TRANSMIT) != 0;
+    buffers.density = (features & FEATURE_DENSITY) != 0;
+    buffers.inverting = (features & FEATURE_INVERTING) != 0;
     const float** tissue[TISSUE_COUNT] = {
         &buffers.t1, &buffers.t2, &buffers.m0, &buffers.b1,
         &buffers.b1_phase, &buffers.b0, &buffers.inversion_efficiency,

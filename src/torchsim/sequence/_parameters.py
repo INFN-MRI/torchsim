@@ -281,6 +281,13 @@ def feature_flags(features: Any, geometry: Geometry) -> dict[str, bool]:
     factor where the other two are phases, and it reaches the second pools that
     have no coefficient of their own.
 
+    The last three are per-voxel scalars whose identity is one, and each is a
+    different multiply in a different place: ``transmit`` scales the flip a
+    pulse drives, ``density`` scales the equilibrium and what an ADC records,
+    and ``inverting`` scales what an inversion leaves behind. Three switches
+    rather than one, because a model declaring a transmit map is not thereby
+    declaring a proton density.
+
     Kept here rather than beside either backend's launcher, because both read
     it and a launcher must not be able to describe the tissue one way while the
     kernel reads it another.
@@ -291,12 +298,17 @@ def feature_flags(features: Any, geometry: Geometry) -> dict[str, bool]:
         "moving": (undeclared or "FLOW" in features)
         and (geometry.flow_scale != 0.0 or geometry.washout_scale != 0.0),
         "diffusing": undeclared or "DIFFUSION" in features,
+        "transmit": undeclared or "B1" in features,
+        "density": undeclared or "M0" in features,
+        "inverting": undeclared or "INVERSION" in features,
     }
 
 
 # The order is the C++ ABI: ``feature_mask`` packs these bits and
 # ``_epg_cpu.cpp`` unpacks them by the same names, so the two move together.
-FEATURE_BITS: tuple[str, ...] = ("off_axis", "moving", "diffusing")
+FEATURE_BITS: tuple[str, ...] = (
+    "off_axis", "moving", "diffusing", "transmit", "density", "inverting",
+)
 
 
 def feature_mask(features: Any, geometry: Geometry) -> int:
