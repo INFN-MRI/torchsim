@@ -2816,13 +2816,17 @@ def _run_packed_vjp(
             return _combine_shards(tuple(parts), home)
     if (
         tissue[0].device.type == "cuda"
-        and lineshape is None
         and not exchanging
         # The real kernel carries no shim row, no table and no pair; the
         # complex one carries all three.
         and (
             real_axis != 1
-            or (profile is None and dynamic is None and _shim_count(tissue) == 1)
+            or (
+                profile is None
+                and dynamic is None
+                and lineshape is None
+                and _shim_count(tissue) == 1
+            )
         )
         and _OFFLOAD is None
         and not _leaves_the_host(
@@ -2849,6 +2853,7 @@ def _run_packed_vjp(
             geometry=geometry,
             profile=profile,
             dynamic=dynamic,
+            lineshape=lineshape,
             features=features,
         )
     streamable = (
