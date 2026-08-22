@@ -2820,7 +2820,8 @@ def _run_packed_vjp(
         and lineshape is None
         and not exchanging
         and dynamic is None
-        and _shim_count(tissue) == 1
+        # The real kernel carries no shim row; the complex one does.
+        and (real_axis != 1 or _shim_count(tissue) == 1)
         and _OFFLOAD is None
         and not _leaves_the_host(
             "adjoint", tissue, events, output_count, state_count, real_axis

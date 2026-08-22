@@ -4122,6 +4122,7 @@ def _epg_vjp_kernel(
     phase,
     action,
     output_index,
+    shim_index,
     grad_output_real,
     grad_output_imag,
     grad_tissue,
@@ -4142,7 +4143,9 @@ def _epg_vjp_kernel(
     output_count,
     flow_scale,
     washout_scale,
+    shim_rows,
     state_count: tl.constexpr,
+    shimmed: tl.constexpr,
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
@@ -4279,8 +4282,20 @@ def _epg_vjp_kernel(
 
         event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
         event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
-        alpha_value = event_flip * atom_b1
-        phi_value = event_phase + atom_b1_phase
+        pulse_b1 = atom_b1
+        pulse_b1_phase = atom_b1_phase
+        # One shim is the whole sequence's transmit field, loaded once above;
+        # several give each pulse a row of its own.
+        if shimmed:
+            row = tl.load(shim_index + event).to(tl.int64) * atom_count
+            if transmit:
+                pulse_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            if off_axis:
+                pulse_b1_phase = tl.load(
+                    b1_phase + row + atom, mask=active_atom, other=0.0
+                )
+        alpha_value = event_flip * pulse_b1
+        phi_value = event_phase + pulse_b1_phase
         cos_value = tl.cos(alpha_value)
         sin_value = tl.sin(alpha_value)
         p1r, p1i = tl.cos(phi_value), tl.sin(phi_value)
@@ -4416,6 +4431,16 @@ def _epg_vjp_kernel(
 
         event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
         event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        pulse_b1 = atom_b1
+        pulse_b1_phase = atom_b1_phase
+        if shimmed:
+            row = tl.load(shim_index + event).to(tl.int64) * atom_count
+            if transmit:
+                pulse_b1 = tl.load(b1 + row + atom, mask=active_atom, other=1.0)
+            if off_axis:
+                pulse_b1_phase = tl.load(
+                    b1_phase + row + atom, mask=active_atom, other=0.0
+                )
 
         # ---- recorded sample ----
         record = ((event_action & 32) != 0) & (event_kind == 2)
@@ -4460,8 +4485,8 @@ def _epg_vjp_kernel(
         zbvr = tl.where(invert, -atom_inv * zbvr, zbvr)
         zbvi = tl.where(invert, -atom_inv * zbvi, zbvi)
 
-        alpha_value = event_flip * atom_b1
-        phi_value = event_phase + atom_b1_phase
+        alpha_value = event_flip * pulse_b1
+        phi_value = event_phase + pulse_b1_phase
         cos_value = tl.cos(alpha_value)
         sin_value = tl.sin(alpha_value)
         p1r, p1i = tl.cos(phi_value), tl.sin(phi_value)
@@ -4536,14 +4561,30 @@ def _epg_vjp_kernel(
         writes_flip = active_atom & rotate
         tl.atomic_add(
             grad_flip + event_base + event,
-            grad_alpha_v * atom_b1,
+            grad_alpha_v * pulse_b1,
             mask=writes_flip,
         )
         tl.atomic_add(
             grad_phase + event_base + event, grad_phi_v, mask=writes_flip
         )
-        g_b1v += grad_alpha_v * event_flip
-        g_b1pv += grad_phi_v
+        if shimmed:
+            # A pulse's transmit gradient belongs to the shim it drives, so with
+            # several it lands in that shim's row rather than in a register
+            # summed over the whole train.
+            tl.atomic_add(
+                grad_tissue + _B1_ROW * atom_count + row + atom,
+                grad_alpha_v * event_flip,
+                mask=writes_flip,
+            )
+            tl.atomic_add(
+                grad_tissue
+                + (_B1_PHASE_ROW + shim_rows - 1) * atom_count + row + atom,
+                grad_phi_v,
+                mask=writes_flip,
+            )
+        else:
+            g_b1v += grad_alpha_v * event_flip
+            g_b1pv += grad_phi_v
 
         avr, avi, bvr, bvi = _shift_adjoint(
             pbvr, pbvi, mbvr, mbvi, sp_r, sp_i, sm_r, sm_i, state, state_mask,
@@ -4640,11 +4681,18 @@ def _epg_vjp_kernel(
         g_t1v, g_t2v, g_m0v, g_b1v, g_b1pv, g_b0v, g_invv, g_diffv, velocity_v,
     )
     for parameter in tl.static_range(_FREE_POOL_COUNT):
-        tl.atomic_add(
-            grad_tissue + parameter * atom_count + atom,
-            values[parameter],
-            mask=active_atom,
-        )
+        # The transmit pair went to its shim's row above when there is more
+        # than one; the rest sit past whatever rows that pair took.
+        if not shimmed or (parameter != _B1_ROW and parameter != _B1_PHASE_ROW):
+            plane = (
+                parameter if parameter < _B1_ROW
+                else parameter + 2 * (shim_rows - 1)
+            )
+            tl.atomic_add(
+                grad_tissue + plane * atom_count + atom,
+                values[parameter],
+                mask=active_atom,
+            )
 
 @triton.jit
 def _epg_vjp_jvp_kernel(
@@ -11213,16 +11261,19 @@ def simulate_vjp(
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
         *_pools,
     ) = tissue
-    duration, kind, flip, phase, action, output_index = events[:6]
+    duration, kind, flip, phase, action, output_index, shim_index = events[:7]
     atom_count = t1.numel()
     train_count = _train_count(events)
     event_count = kind.numel()
     total = train_count * atom_count
     block_states = triton.next_power_of_2(state_count)
     device = t1.device
+    shims = max(1, b1.numel() // atom_count) if atom_count else 1
 
     grad_tissue = torch.zeros(
-        tissue_gradient_height(1) * atom_count, dtype=torch.float32, device=device
+        tissue_gradient_height(shims) * atom_count,
+        dtype=torch.float32,
+        device=device,
     )
     grad_flip = torch.zeros_like(flip)
     grad_phase = torch.zeros_like(phase)
@@ -11259,6 +11310,7 @@ def simulate_vjp(
             phase,
             action,
             output_index,
+            shim_index,
             grad_real,
             grad_imag,
             grad_tissue,
@@ -11275,7 +11327,9 @@ def simulate_vjp(
             output_count,
             geometry.flow_scale,
             geometry.washout_scale,
+            shims,
             state_count=state_count,
+            shimmed=shims > 1,
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -11284,7 +11338,7 @@ def simulate_vjp(
     voxel = tuple(
         grad_tissue[base * atom_count : (base + rows) * atom_count]
         for base, rows in zip(
-            tissue_gradient_bases(1), tissue_gradient_rows(1), strict=True
+            tissue_gradient_bases(shims), tissue_gradient_rows(shims), strict=True
         )
     )
     return (*voxel, grad_duration, grad_flip, grad_phase)
@@ -11579,7 +11633,7 @@ def simulate_vjp_into(
         t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
         *_pools,
     ) = tissue
-    duration, kind, flip, phase, action, output_index = events[:6]
+    duration, kind, flip, phase, action, output_index, shim_index = events[:7]
     train_count = _train_count(events)
     event_count = kind.numel()
     total = train_count * atom_count
@@ -11600,6 +11654,7 @@ def simulate_vjp_into(
             t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
             velocity,
             duration, kind, flip, phase, action, output_index,
+            shim_index,
             grad_real,
             grad_imag,
             buffers.tissue,
@@ -11616,7 +11671,9 @@ def simulate_vjp_into(
             output_count,
             geometry.flow_scale,
             geometry.washout_scale,
+            1,
             state_count=state_count,
+            shimmed=False,
             block_states=block_states,
             problems=problems,
             num_warps=1,

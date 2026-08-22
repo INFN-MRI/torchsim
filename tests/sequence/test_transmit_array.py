@@ -852,3 +852,82 @@ def test_a_pooled_pulse_still_reads_only_the_shim_it_names(pool: str) -> None:
 
     assert float(reference.abs().max()) > 0.0
     assert torch.equal(_run_packed(tuple(padded), events, **arguments), reference)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+@pytest.mark.parametrize("state_count", [8, 12, 17])
+def test_a_shimmed_gradient_takes_the_first_order_kernel(state_count) -> None:
+    """A transmit array does not cost the kernel written for a gradient.
+
+    Widths are swept because a reverse kernel has miscompiled silently at one
+    state count before, and the shim adds a per-event load the others do not
+    make.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    tissue, events, output_count = _two_shim_packed(voxels=64, device="cuda")
+    seed = torch.randn(
+        (tissue[0].numel(), output_count),
+        dtype=torch.complex64,
+        device="cuda",
+        generator=torch.Generator(device="cuda").manual_seed(5),
+    )
+    arguments = dict(
+        state_count=state_count, output_count=output_count, threads=1
+    )
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*tissue, events[0], events[2], events[3])
+    )
+
+    reached = []
+    original = _accelerators._run_packed_vjp_jvp
+
+    def record(*args, **kwargs):
+        reached.append(True)
+        return original(*args, **kwargs)
+
+    _accelerators._run_packed_vjp_jvp = record
+    try:
+        fast = _run_packed_vjp(tissue, events, seed, **arguments)
+    finally:
+        _accelerators._run_packed_vjp_jvp = original
+    _, expected = original(tissue, events, still, seed, **arguments)
+
+    assert not reached
+    largest = max(float(value.abs().max()) for value in expected)
+    assert largest > 0.0
+    # The transmit pair keeps a row per shim; every other gradient keeps one.
+    assert fast[3].numel() == 2 * tissue[0].numel()
+    assert fast[4].numel() == 2 * tissue[0].numel()
+    for reference, result in zip(expected, fast, strict=True):
+        assert reference.shape == result.shape
+        assert float((reference - result).abs().max()) / largest < 1e-5
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_a_row_no_pulse_drives_gets_no_gradient() -> None:
+    """The gradient lands in the shim the pulse named, so a row nobody drives
+    comes back at zero -- which is what says the row index was read.
+    """
+    from torchsim.sequence._accelerators import _run_packed_vjp
+
+    tissue, events, output_count = _two_shim_packed(voxels=32, device="cuda")
+    atoms = tissue[0].numel()
+    padded = list(tissue)
+    for index in (3, 4):
+        padded[index] = torch.cat(
+            (tissue[index], torch.full((atoms,), 7.0, device="cuda"))
+        ).contiguous()
+    seed = torch.ones(atoms, output_count, dtype=torch.complex64, device="cuda")
+
+    gradients = _run_packed_vjp(
+        tuple(padded), events, seed, state_count=8,
+        output_count=output_count, threads=1,
+    )
+
+    for index in (3, 4):
+        rows = gradients[index].view(3, atoms)
+        assert float(rows[:2].abs().max()) > 0.0
+        assert float(rows[2].abs().max()) == 0.0
