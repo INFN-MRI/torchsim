@@ -759,3 +759,98 @@ def test_the_channel_gradient_matches_a_finite_difference() -> None:
             bump[channel, voxel] = step
             numeric = (loss(b1 + bump) - loss(b1 - bump)) / (2.0 * step)
             assert abs(numeric - leaf.grad[channel, voxel]) < 2e-3 * abs(numeric)
+
+
+# --- the shim rows against every pool the kernels carry ---
+
+
+POOLS = {
+    "semisolid": dict(bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0),
+    "exchanging": dict(
+        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+    ),
+    "three": dict(
+        bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0,
+        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+    ),
+}
+
+
+def _pooled_shim_packed(voxels: int = 3, **properties):
+    """The two-shim train on a tissue carrying a second pool.
+
+    A transmit row per shim is read by the same kernel that carries the pools,
+    so the two together are a case of their own -- and one nothing reached
+    while each was tested alone.
+    """
+    description = _two_shim_description()
+    b1, b1_phase = _sensitivity(voxels)
+    tissue, shims = _resolve_transmit(
+        _tissue(voxels, b1=b1, b1_phase_rad=b1_phase, **properties),
+        description,
+        "cpu",
+    )
+    prepared, _, resolved = _prepare_tissue(tissue, "cpu", shims)
+    packed = _pack_events(
+        "fse",
+        description,
+        repetitions=1,
+        record="all",
+        device=resolved,
+        rf_raster_time_s=1e-6,
+        shim_rows=shim_rows(description),
+    )
+    return prepared, packed.buffers, int(packed.output_count)
+
+
+@pytest.mark.parametrize("pool", sorted(POOLS))
+def test_the_shim_rows_reach_every_pool_the_kernels_carry(pool: str) -> None:
+    """Against the oracle, which indexes the rows and the pools independently."""
+    from torchsim.sequence._lineshape import lineshape_table
+
+    tissue, events, output_count = _pooled_shim_packed(**POOLS[pool])
+    carried = dict(
+        lineshape=lineshape_table() if pool in ("semisolid", "three") else None,
+        exchanging=pool in ("exchanging", "three"),
+    )
+
+    expected = simulate_packed(
+        tissue, events, state_count=8, output_count=output_count, **carried
+    )
+    actual = _run_packed(
+        tissue, events, state_count=8, output_count=output_count, threads=1,
+        **carried,
+    )
+
+    assert float(expected.abs().max()) > 0.0
+    assert (expected - actual).abs().max() / expected.abs().max() < 1e-5
+
+
+@pytest.mark.parametrize("pool", sorted(POOLS))
+def test_a_pooled_pulse_still_reads_only_the_shim_it_names(pool: str) -> None:
+    """A row no pulse drives is dead weight whatever pools are carried, so
+    filling it must leave the signal alone to the bit.
+    """
+    from torchsim.sequence._lineshape import lineshape_table
+
+    tissue, events, output_count = _pooled_shim_packed(**POOLS[pool])
+    atoms = tissue[0].numel()
+    arguments = dict(
+        state_count=8,
+        output_count=output_count,
+        threads=1,
+        lineshape=lineshape_table() if pool in ("semisolid", "three") else None,
+        exchanging=pool in ("exchanging", "three"),
+    )
+    reference = _run_packed(tissue, events, **arguments)
+
+    padded = list(tissue)
+    for index in (3, 4):
+        padded[index] = torch.cat(
+            (tissue[index], torch.full((atoms,), 7.0))
+        ).contiguous()
+
+    assert float(reference.abs().max()) > 0.0
+    assert torch.equal(_run_packed(tuple(padded), events, **arguments), reference)

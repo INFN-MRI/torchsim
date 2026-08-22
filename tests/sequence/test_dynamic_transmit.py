@@ -285,6 +285,7 @@ def test_the_pair_differentiates_back_to_the_array(name: str) -> None:
 
 ECHOES = 6
 VOXELS = 5
+STATES = 16
 
 
 def _train():
@@ -1460,36 +1461,90 @@ def test_a_transmit_gradient_comes_back_through_the_pulse_integral(name: str):
         )
 
 
-@pytest.mark.parametrize("order", ["a direction", "a second derivative"])
-def test_an_order_the_pair_does_not_carry_is_refused(order: str):
-    """The kernels take no direction along the pair and return no curvature to
-    it, so those two come back short of the pulse and are refused instead.
+def test_a_forward_direction_follows_the_pair():
+    """Forward mode sends a direction along the pair the same way reverse mode
+    brings a cotangent back from it, so a directional derivative through the
+    per-channel maps is the one differencing the simulation gives.
     """
-    from torchsim.sequence import FSE
+    from torchsim.sequence import FSE, TissueProperties
 
     magnitude, phase = _sensitivities()
-    flips = torch.deg2rad(torch.full((ECHOES,), 140.0)).requires_grad_(True)
-    split, _ = _split_across_two_channels(flips)
-    tissue = _tissue_properties(magnitude, phase)
-
-    if order == "a direction":
-        with pytest.raises(NotImplementedError, match="not carried back"):
-            torch.func.jvp(
-                lambda value: FSE().simulate(
-                    split, _tissue_properties(value, phase), nstates=8,
-                    backend="native",
-                ).signal.abs().sum(),
-                (magnitude,),
-                (torch.ones_like(magnitude),),
-            )
-        return
-
-    signal = FSE().simulate(split, tissue, nstates=8, backend="native").signal
-    (first,) = torch.autograd.grad(
-        signal.abs().square().sum(), flips, create_graph=True
+    split, _ = _split_across_two_channels(
+        torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     )
-    with pytest.raises(NotImplementedError, match="not carried back"):
-        torch.autograd.grad(first.sum(), flips)
+
+    def loss(b1):
+        signal = FSE().simulate(
+            split,
+            TissueProperties(
+                t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+                t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+                b1=b1,
+                b1_phase_rad=phase,
+            ),
+            nstates=12,
+            backend="native",
+        ).signal
+        return signal.abs().square().sum()
+
+    generator = torch.Generator().manual_seed(7)
+    direction = torch.randn(magnitude.shape, generator=generator) * 0.1
+    _, followed = torch.func.jvp(loss, (magnitude,), (direction,))
+
+    step = 1e-3
+    measured = (
+        float(loss(magnitude + step * direction))
+        - float(loss(magnitude - step * direction))
+    ) / (2.0 * step)
+
+    assert abs(measured) > 0.0
+    assert abs(float(followed) - measured) < 5e-3 * abs(measured)
+
+
+def test_a_hessian_vector_product_reaches_through_the_pair():
+    """The second derivative is the first one differenced, and the pair carries
+    both halves: a direction along it going in, a curvature coming back.
+    """
+    from torchsim.sequence import FSE, TissueProperties
+
+    magnitude, phase = _sensitivities()
+    nominal = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
+
+    def loss(flips):
+        split, _ = _split_across_two_channels(flips)
+        signal = FSE().simulate(
+            split,
+            TissueProperties(
+                t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+                t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+                b1=magnitude,
+                b1_phase_rad=phase,
+            ),
+            nstates=12,
+            backend="native",
+        ).signal
+        return signal.abs().square().sum()
+
+    def gradient(flips):
+        leaf = flips.clone().requires_grad_(True)
+        return torch.autograd.grad(loss(leaf), leaf, create_graph=True)[0]
+
+    generator = torch.Generator().manual_seed(11)
+    direction = torch.randn(ECHOES, generator=generator) * 0.1
+    leaf = nominal.clone().requires_grad_(True)
+    (product,) = torch.autograd.grad(
+        (gradient(leaf) * direction).sum(), leaf
+    )
+
+    step = 1e-3
+    measured = (
+        gradient(nominal + step * direction).detach()
+        - gradient(nominal - step * direction).detach()
+    ) / (2.0 * step)
+
+    assert float(measured.abs().max()) > 0.0
+    worst = float((product - measured).abs().max() / measured.abs().max())
+    assert worst < 5e-3, worst
 
 
 # --- a gradient the scanner moves while the pulse plays ---
@@ -1742,3 +1797,133 @@ def test_the_sharded_route_refuses_a_per_voxel_pair():
     with distribute(["cuda", "cuda"]):
         with pytest.raises(NotImplementedError, match="sharded route does not cut"):
             _run_packed(prepared, events, 16, echoes, 1, dynamic=moved)
+
+
+# --- the rotation mode against every pool the kernels carry ---
+
+
+def _pooled_train(**properties):
+    """The dynamic train of :func:`_train`, on a tissue carrying a second pool.
+
+    The kernels are templated on the rotation mode and the pool count together,
+    so a pair beside a pool is an instantiation of its own -- and one nothing
+    reached until now.
+    """
+    from torchsim.sequence._accelerators import _pack_events
+    from torchsim.sequence._builders import fse_description
+    from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
+    from torchsim.sequence._transition import DynamicPairs
+
+    definition = _pulse(samples=96)
+    flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
+    packed = _pack_events(
+        "fse",
+        fse_description(
+            flips,
+            echo_spacing_s=5e-3,
+            phases_rad=torch.pi / 2,
+            excitation_phase_rad=torch.pi / 2,
+        ),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=RASTER,
+    )
+    events = (
+        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
+        packed.output_index, packed.shim_index, packed.saturation,
+        packed.rf_frequency_hz,
+    )
+    scaling = torch.linspace(0.7, 1.3, VOXELS, dtype=torch.float64)
+    prepared, _, _ = _prepare_tissue(
+        TissueProperties(
+            t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+            t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+            b1=scaling.to(torch.float32),
+            **properties,
+        ),
+        "cpu",
+    )
+    prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
+
+    count = int(packed.kind.numel())
+    flat = packed.flip.reshape(-1, count)
+    halves = [
+        dynamic_pair(
+            definition,
+            scaling.to(torch.complex128)[:, None],
+            weights=torch.ones(1, dtype=torch.complex128),
+            flip=float(flat[0, event]),
+            rf_raster_time_s=RASTER,
+        )
+        for event in range(count)
+    ]
+    pairs = DynamicPairs(
+        a=torch.stack([half[0] for half in halves]),
+        b=torch.stack([half[1] for half in halves]),
+        index=torch.arange(count, dtype=torch.int32),
+    )
+    return prepared, events, pairs, int(packed.output_count)
+
+
+POOLS = {
+    "semisolid": dict(bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0),
+    "exchanging": dict(
+        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+    ),
+    "three": dict(
+        bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0,
+        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+    ),
+}
+
+
+@pytest.mark.parametrize("pool", sorted(POOLS))
+def test_a_pair_reaches_every_pool_the_kernels_carry(pool: str):
+    """One instantiation of the kernel template per (rotation, pools), against
+    the oracle reading the same buffers.
+    """
+    from torchsim.sequence._accelerators import _run_packed
+    from torchsim.sequence._lineshape import lineshape_table
+
+    prepared, events, pairs, echoes = _pooled_train(**POOLS[pool])
+    carried = dict(
+        lineshape=lineshape_table() if pool in ("semisolid", "three") else None,
+        exchanging=pool in ("exchanging", "three"),
+    )
+
+    expected = simulate_packed(
+        prepared, events, state_count=STATES, output_count=echoes,
+        dynamic=pairs, **carried,
+    )
+    measured = _run_packed(
+        prepared, events, STATES, echoes, 1, dynamic=pairs, **carried
+    )
+
+    assert float(expected.abs().max()) > 0.0
+    worst = float((expected - measured).abs().max() / expected.abs().max())
+    assert worst < 1e-5, worst
+
+
+@pytest.mark.parametrize("pool", sorted(POOLS))
+def test_a_pool_moves_the_answer_a_pair_gives(pool: str):
+    """The agreement above is only worth having if the pool is doing something,
+    so the same train without one must record a different signal.
+    """
+    from torchsim.sequence._accelerators import _run_packed
+    from torchsim.sequence._lineshape import lineshape_table
+
+    prepared, events, pairs, echoes = _pooled_train(**POOLS[pool])
+    bare, _, _, _ = _pooled_train()
+
+    pooled = _run_packed(
+        prepared, events, STATES, echoes, 1, dynamic=pairs,
+        lineshape=lineshape_table() if pool in ("semisolid", "three") else None,
+        exchanging=pool in ("exchanging", "three"),
+    )
+    alone = _run_packed(bare, events, STATES, echoes, 1, dynamic=pairs)
+
+    assert float(alone.abs().max()) > 0.0
+    assert float((pooled - alone).abs().max()) > 1e-3 * float(alone.abs().max())

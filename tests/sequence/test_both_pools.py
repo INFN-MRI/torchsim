@@ -1144,3 +1144,54 @@ def test_a_streamed_forward_mode_matches_the_whole_one():
         streamed = _live_readout(prepared, seed)
 
     assert float((whole - streamed).abs().max() / whole.abs().max()) < 1e-6
+
+
+# --- a tabulated rotation beside both pools ---
+
+
+def _instantaneous_table():
+    """A pulse with no gradient across it: one rotation, every position."""
+    import numpy as np
+
+    from torchsim.sequence._description import RfDefinition, RfShape
+    from torchsim.sequence._transition import transition_table
+
+    flat = RfDefinition(
+        id=0,
+        bandwidth_hz=0.0,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=0.0,
+        total_b1sq_power=1.0,
+        magnitude=RfShape(num_uncompressed=8, samples=np.ones(8, dtype=np.float32)),
+    )
+    return transition_table(flat, torch.zeros(1), bins=1024, rf_raster_time_s=1e-6)
+
+
+def test_a_tabulated_rotation_reaches_both_pools() -> None:
+    """The kernels are templated on the rotation mode and the pool count
+    together, so a table beside three pools is an instantiation of its own.
+    """
+    from torchsim.sequence._accelerators import _NativeEpg
+
+    leaves = _prepared()
+    events = _train_events()
+    profile = _instantaneous_table()
+
+    fused = _NativeEpg.apply(
+        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, profile, None, None,
+        lineshape_table(), True, None,
+    )
+    reference = simulate_packed(
+        leaves,
+        events,
+        state_count=STATES,
+        output_count=ECHOES,
+        profile=profile,
+        lineshape=lineshape_table(),
+        exchanging=True,
+    )
+
+    assert float(reference.abs().max()) > 0.0
+    worst = float((fused - reference).abs().max() / reference.abs().max())
+    assert worst < 1e-4, worst

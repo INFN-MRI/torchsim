@@ -37,9 +37,6 @@ from ._parameters import (
     TISSUE_COUNT as _TISSUE_COUNT,
 )
 from ._parameters import (
-    TRANSMIT_INPUTS as _TRANSMIT_INPUTS,
-)
-from ._parameters import (
     NO_GEOMETRY,
     TISSUE_NAMES,
     Geometry,
@@ -688,39 +685,6 @@ def _stack(
     return torch.stack(values).to(dtype=dtype)
 
 
-# A per-voxel rotation is integrated before the kernels run, so the flip that
-# drove it and the transmit it was integrated against reach the answer through
-# the pair and not through a buffer the adjoint differentiates. The kernels do
-# return a cotangent on the pair itself; carrying it back to those inputs is
-# what this does not do yet, and a gradient that came back short of the pulse
-# would look like an answer.
-_THROUGH_THE_PAIR: dict[int, str] = {
-    **{index: TISSUE_NAMES[index] for index in _TRANSMIT_INPUTS},
-    _TISSUE_COUNT + 2: "the flip angle",
-}
-
-
-def _outside_the_pair(needed: Sequence[bool], order: str) -> None:
-    """Refuse an order of differentiation the pair does not carry.
-
-    The kernels return a cotangent on the pair, which is what takes a first
-    reverse-mode derivative back to the flip and the sensitivities. They take
-    no direction along it from this layer and return no curvature to it, so a
-    forward direction or a second derivative would come back short of the
-    pulse.
-
-    Raises:
-        NotImplementedError: if one is asked for.
-    """
-    asked = [name for index, name in _THROUGH_THE_PAIR.items() if needed[index]]
-    if asked:
-        raise NotImplementedError(
-            f"a pulse whose channels carry their own waveforms is integrated "
-            f"into a rotation before the kernels run, and {order} along "
-            f"{', '.join(asked)} is not carried back through that integral"
-        )
-
-
 def _spread(
     gradients: tuple[torch.Tensor, ...], needed: tuple[bool, ...]
 ) -> tuple[torch.Tensor | None, ...]:
@@ -863,10 +827,6 @@ class _NativeEpg(torch.autograd.Function):
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
         saved = ctx.saved_tensors
-        if ctx.pair_values is not None:
-            _outside_the_pair(
-                tuple(tangent is not None for tangent in tangents), "a direction"
-            )
         float_tangents = tuple(
             torch.zeros_like(saved[index])
             if tangents[index] is None
@@ -883,6 +843,7 @@ class _NativeEpg(torch.autograd.Function):
             ctx.profile,
             ctx.pair_values,
             ctx.pair_index,
+            _followed(tangents[_PACKED_COUNT + 5], ctx.pair_values),
             ctx.lineshape,
             ctx.exchanging,
             ctx.features,
@@ -983,13 +944,15 @@ class _NativeEpgVjp(torch.autograd.Function):
         saved = ctx.saved_tensors
         primal, seed = saved[:_PACKED_COUNT], saved[_SEED_INPUT]
         dynamic = _pairs_of(ctx.pair_values, ctx.pair_index)
+        pair_direction = None
         if dynamic is not None:
-            # This pass follows a direction along the packed buffers and returns
-            # a curvature on them. The pair takes neither here, so a second
-            # derivative that runs through the pulse integral is refused; one
-            # that does not is answered with the pair in place.
-            _outside_the_pair(ctx.needs_input_grad, "a second derivative")
-            cotangents = cotangents[:len(_FLOAT_INPUTS)]
+            # The pair's own cotangent is the last of them, and it is a
+            # direction along the pair exactly as the others are along the
+            # buffers they belong to.
+            cotangents, pair_direction = (
+                cotangents[:len(_FLOAT_INPUTS)],
+                _followed(cotangents[len(_FLOAT_INPUTS)], ctx.pair_values),
+            )
         directions = tuple(
             torch.zeros_like(primal[index])
             if cotangent is None
@@ -1009,6 +972,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             geometry=ctx.geometry,
             profile=ctx.profile,
             dynamic=dynamic,
+            dynamic_direction=pair_direction,
             lineshape=ctx.lineshape,
             exchanging=ctx.exchanging,
             features=ctx.features,
@@ -1026,10 +990,17 @@ class _NativeEpgVjp(torch.autograd.Function):
                 geometry=ctx.geometry,
                 profile=ctx.profile,
                 dynamic=dynamic,
+                dynamic_direction=pair_direction,
                 lineshape=ctx.lineshape,
                 exchanging=ctx.exchanging,
                 features=ctx.features,
             )
+        pair_curvature = (
+            curvature[len(_FLOAT_INPUTS)]
+            if len(curvature) > len(_FLOAT_INPUTS)
+            and ctx.needs_input_grad[_SEED_INPUT + 7]
+            else None
+        )
         guarded = _last(
             (*_spread(curvature[:len(_FLOAT_INPUTS)], ctx.needs_input_grad),
              seed_grad),
@@ -1037,7 +1008,9 @@ class _NativeEpgVjp(torch.autograd.Function):
         )
         return (
             *guarded,
-            None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None,
+            pair_curvature,
+            None, None, None, None,
         )
 
 
@@ -1059,9 +1032,10 @@ class _NativeEpgJvp(torch.autograd.Function):
             geometry=inputs[_TANGENT_END + 3],
             profile=inputs[_TANGENT_END + 4],
             dynamic=_pairs_of(inputs[_TANGENT_END + 5], inputs[_TANGENT_END + 6]),
-            lineshape=inputs[_TANGENT_END + 7],
-            exchanging=inputs[_TANGENT_END + 8],
-            features=inputs[_TANGENT_END + 9],
+            dynamic_direction=inputs[_TANGENT_END + 7],
+            lineshape=inputs[_TANGENT_END + 8],
+            exchanging=inputs[_TANGENT_END + 9],
+            features=inputs[_TANGENT_END + 10],
         )
 
     @staticmethod
@@ -1073,9 +1047,10 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.profile = inputs[_TANGENT_END + 4]
         ctx.pair_values = inputs[_TANGENT_END + 5]
         ctx.pair_index = inputs[_TANGENT_END + 6]
-        ctx.lineshape = inputs[_TANGENT_END + 7]
-        ctx.exchanging = inputs[_TANGENT_END + 8]
-        ctx.features = inputs[_TANGENT_END + 9]
+        ctx.pair_direction = inputs[_TANGENT_END + 7]
+        ctx.lineshape = inputs[_TANGENT_END + 8]
+        ctx.exchanging = inputs[_TANGENT_END + 9]
+        ctx.features = inputs[_TANGENT_END + 10]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
@@ -1089,8 +1064,6 @@ class _NativeEpgJvp(torch.autograd.Function):
             or bool(ctx.needs_input_grad[_PACKED_COUNT + position])
             for position, index in enumerate(_FLOAT_INPUTS)
         )
-        if ctx.pair_values is not None:
-            _outside_the_pair(ctx.needs_input_grad, "a second derivative")
         primal_grads, tangent_grads = _run_packed_vjp_jvp(
             primal[:_TISSUE_COUNT],
             primal[_TISSUE_COUNT:_PACKED_COUNT],
@@ -1103,9 +1076,22 @@ class _NativeEpgJvp(torch.autograd.Function):
             geometry=ctx.geometry,
             profile=ctx.profile,
             dynamic=_pairs_of(ctx.pair_values, ctx.pair_index),
+            dynamic_direction=ctx.pair_direction,
             lineshape=ctx.lineshape,
             exchanging=ctx.exchanging,
             features=ctx.features,
+        )
+        pair_curvature = (
+            primal_grads[len(_FLOAT_INPUTS)]
+            if len(primal_grads) > len(_FLOAT_INPUTS)
+            and ctx.needs_input_grad[_TANGENT_END + 5]
+            else None
+        )
+        pair_slope = (
+            tangent_grads[len(_FLOAT_INPUTS)]
+            if len(tangent_grads) > len(_FLOAT_INPUTS)
+            and ctx.needs_input_grad[_TANGENT_END + 7]
+            else None
         )
         directions = tuple(
             gradient if ctx.needs_input_grad[_PACKED_COUNT + offset] else None
@@ -1120,7 +1106,11 @@ class _NativeEpgJvp(torch.autograd.Function):
         )
         return (
             *guarded,
-            None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None,
+            pair_curvature,
+            None,
+            pair_slope,
+            None, None, None,
         )
 
     @staticmethod
@@ -1392,6 +1382,18 @@ def _dynamic_pointers(
         for value in (direction, gradient, curvature)
     )
     return (*held, *tail)
+
+
+def _followed(direction: Any, values: torch.Tensor | None) -> Any:
+    """A direction along the pair, as the kernels take one.
+
+    Forward mode leaves a tangent out where the input it belongs to is not
+    being followed; the kernels read a buffer rather than a null there, so a
+    pair that is present is followed by zeros rather than by nothing.
+    """
+    if values is None:
+        return None
+    return torch.zeros_like(values) if direction is None else direction
 
 
 def _pairs_of(values: torch.Tensor | None, index: torch.Tensor | None) -> Any:
