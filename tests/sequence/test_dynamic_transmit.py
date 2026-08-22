@@ -1376,37 +1376,120 @@ def test_a_relaxation_gradient_reaches_through_the_pair():
         assert float((reference - result).abs().max() / reference.abs().max()) < 1e-5
 
 
-@pytest.mark.parametrize("name", ["flip", "b1"])
-def test_a_gradient_through_the_pulse_integral_is_refused(name: str):
-    """The pair is integrated before the kernels run. A flip gradient taken
-    through them would carry only what the flip still does there -- saturate a
-    bound pool -- and come back short of the rotation without saying so.
+def test_the_flip_gradient_comes_back_through_the_pulse_integral():
+    """The rotation is integrated before the kernels run, so what they return
+    for it is a cotangent on the pair. Carried the rest of the way by autograd,
+    it has to be the gradient the flip-and-phase route gives for the field the
+    channels sum to.
     """
     from torchsim.sequence import FSE, TissueProperties
 
-    flips = torch.deg2rad(torch.full((ECHOES,), 140.0))
-    if name == "flip":
-        flips = flips.requires_grad_(True)
-    split, _ = _split_across_two_channels(flips)
     magnitude, phase = _sensitivities()
-    if name == "b1":
-        magnitude = magnitude.requires_grad_(True)
-    leaf = flips if name == "flip" else magnitude
+    combined = torch.polar(magnitude, phase).mean(dim=0)
 
-    signal = FSE().simulate(
-        split,
-        TissueProperties(
-            t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
-            t2_ms=torch.linspace(50.0, 110.0, VOXELS),
-            b1=magnitude,
-            b1_phase_rad=phase,
-        ),
-        nstates=8,
-        backend="native",
-    ).signal
+    def gradient(splitting: bool):
+        flips = torch.deg2rad(
+            torch.linspace(100.0, 170.0, ECHOES)
+        ).requires_grad_(True)
+        split, plain = _split_across_two_channels(flips)
+        tissue = (
+            _tissue_properties(magnitude, phase)
+            if splitting
+            else TissueProperties(
+                t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+                t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+                b1=combined.abs(),
+                b1_phase_rad=combined.angle(),
+            )
+        )
+        signal = FSE().simulate(
+            split if splitting else plain, tissue, nstates=16, backend="native"
+        ).signal
+        return torch.autograd.grad(signal.abs().square().sum(), flips)[0]
 
-    with pytest.raises(NotImplementedError, match="before the kernels run"):
-        torch.autograd.grad(signal.abs().square().sum(), leaf)
+    integrated = gradient(True)
+    turned = gradient(False)
+
+    assert float(turned.abs().max()) > 0.0
+    assert float((integrated - turned).abs().max() / turned.abs().max()) < 1e-5
+
+
+@pytest.mark.parametrize("name", ["b1", "b1_phase_rad"])
+def test_a_transmit_gradient_comes_back_through_the_pulse_integral(name: str):
+    """Against central differences, because there is no second route to the
+    per-channel maps: the pair is the only thing that reads them.
+    """
+    from torchsim.sequence import FSE, TissueProperties
+
+    magnitude, phase = _sensitivities()
+    split, _ = _split_across_two_channels(
+        torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
+    )
+
+    def loss(b1, b1_phase):
+        signal = FSE().simulate(
+            split,
+            TissueProperties(
+                t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+                t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+                b1=b1,
+                b1_phase_rad=b1_phase,
+            ),
+            nstates=16,
+            backend="native",
+        ).signal
+        return signal.abs().square().sum()
+
+    leaves = {"b1": magnitude.clone(), "b1_phase_rad": phase.clone()}
+    leaves[name] = leaves[name].requires_grad_(True)
+    analytic = torch.autograd.grad(
+        loss(leaves["b1"], leaves["b1_phase_rad"]), leaves[name]
+    )[0]
+
+    step = 2e-3
+    assert float(analytic.abs().max()) > 0.0
+    for cell in ((0, 1), (1, 2)):
+        moved = {key: value.detach().clone() for key, value in leaves.items()}
+        moved[name][cell] += step
+        forward = float(loss(moved["b1"], moved["b1_phase_rad"]))
+        moved[name][cell] -= 2.0 * step
+        backward = float(loss(moved["b1"], moved["b1_phase_rad"]))
+        measured = (forward - backward) / (2.0 * step)
+        assert abs(measured - float(analytic[cell])) < 3e-3 * max(
+            abs(measured), 1.0
+        )
+
+
+@pytest.mark.parametrize("order", ["a direction", "a second derivative"])
+def test_an_order_the_pair_does_not_carry_is_refused(order: str):
+    """The kernels take no direction along the pair and return no curvature to
+    it, so those two come back short of the pulse and are refused instead.
+    """
+    from torchsim.sequence import FSE
+
+    magnitude, phase = _sensitivities()
+    flips = torch.deg2rad(torch.full((ECHOES,), 140.0)).requires_grad_(True)
+    split, _ = _split_across_two_channels(flips)
+    tissue = _tissue_properties(magnitude, phase)
+
+    if order == "a direction":
+        with pytest.raises(NotImplementedError, match="not carried back"):
+            torch.func.jvp(
+                lambda value: FSE().simulate(
+                    split, _tissue_properties(value, phase), nstates=8,
+                    backend="native",
+                ).signal.abs().sum(),
+                (magnitude,),
+                (torch.ones_like(magnitude),),
+            )
+        return
+
+    signal = FSE().simulate(split, tissue, nstates=8, backend="native").signal
+    (first,) = torch.autograd.grad(
+        signal.abs().square().sum(), flips, create_graph=True
+    )
+    with pytest.raises(NotImplementedError, match="not carried back"):
+        torch.autograd.grad(first.sum(), flips)
 
 
 # --- a gradient the scanner moves while the pulse plays ---
@@ -1580,3 +1663,82 @@ def test_the_table_reads_the_moving_gradient_too():
 
     assert float(held.b.abs().max()) > 0.1
     assert float((held.b - moved.b).abs().max()) > 0.05 * float(held.b.abs().max())
+
+
+# --- the routes that cannot cut a per-voxel rotation say so ---
+
+
+class _Elsewhere:
+    """Stands in for a streaming plan, so the refusal can be reached without a
+    second device to stream to. Nothing reads it: the guard runs first.
+    """
+
+    devices = ()
+    budget_bytes = 1 << 20
+    lanes = 1
+
+
+def _streamed(monkeypatch):
+    from torchsim.sequence import _accelerators
+
+    monkeypatch.setattr(_accelerators, "_OFFLOAD", _Elsewhere())
+
+
+@pytest.mark.parametrize("pass_name", ["forward", "forward-mode", "adjoint"])
+def test_the_streamed_route_refuses_a_per_voxel_pair(monkeypatch, pass_name):
+    """A table is the same for every voxel so a chunked run can broadcast one.
+    The pair is per voxel, so a route that moves the volume a piece at a time
+    would have to cut it the same way -- and is told to say so rather than
+    quietly reach for a hard pulse.
+    """
+    from torchsim.sequence._accelerators import (
+        _run_packed,
+        _run_packed_jvp,
+        _run_packed_vjp,
+    )
+
+    _, prepared, events, pairs = _train()
+    _streamed(monkeypatch)
+    still = tuple(torch.zeros_like(value) for value in prepared)
+    quiet = tuple(torch.zeros_like(events[index]) for index in (0, 2, 3))
+    seed = torch.ones(VOXELS, ECHOES, dtype=torch.complex64)
+    arguments = dict(state_count=16, output_count=ECHOES, dynamic=pairs)
+
+    with pytest.raises(NotImplementedError, match="streamed route does not cut"):
+        if pass_name == "forward":
+            _run_packed(prepared, events, 16, ECHOES, 1, dynamic=pairs)
+        elif pass_name == "forward-mode":
+            _run_packed_jvp(
+                prepared, events, still, quiet, threads=1, **arguments
+            )
+        else:
+            _run_packed_vjp(prepared, events, seed, threads=1, **arguments)
+
+
+def test_the_streamed_route_still_takes_a_train_with_no_pair(monkeypatch):
+    """The guard has to be about the pair and not about the route, or a plain
+    sequence would lose streaming with it.
+    """
+    from torchsim.sequence._accelerators import _carries_the_pair
+
+    assert _carries_the_pair(None, "streamed") is None
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_the_sharded_route_refuses_a_per_voxel_pair():
+    """Shards cut the trains rather than the voxels, but each device gets its
+    own launch and the pair would have to travel with it.
+    """
+    from torchsim.sequence._accelerators import _run_packed, distribute
+    from torchsim.sequence._transition import DynamicPairs
+
+    prepared, events, pairs, echoes = _real_subspace_train(trains=4)
+    prepared = tuple(value.cuda() for value in prepared)
+    events = tuple(value.cuda() for value in events)
+    moved = DynamicPairs(
+        a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
+    )
+
+    with distribute(["cuda", "cuda"]):
+        with pytest.raises(NotImplementedError, match="sharded route does not cut"):
+            _run_packed(prepared, events, 16, echoes, 1, dynamic=moved)

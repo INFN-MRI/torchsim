@@ -96,7 +96,9 @@ def _sinc(samples: int = 32, lobes: float = 2.0) -> np.ndarray:
     return np.sinc(np.linspace(-lobes, lobes, samples))
 
 
-def _definition(magnitude, phase=None, *, bandwidth_hz: float = 0.0) -> RfDefinition:
+def _definition(
+    magnitude, phase=None, *, bandwidth_hz: float = 0.0, time=None
+) -> RfDefinition:
     return RfDefinition(
         id=7,
         bandwidth_hz=bandwidth_hz,
@@ -106,6 +108,7 @@ def _definition(magnitude, phase=None, *, bandwidth_hz: float = 0.0) -> RfDefini
         total_b1sq_power=0.0,
         magnitude=magnitude,
         phase=phase,
+        time=time,
     )
 
 
@@ -165,3 +168,35 @@ def test_a_channel_count_has_one_reading() -> None:
         _definition(sinc, (sinc,))
     with pytest.raises(ValueError, match="drives no channel"):
         _definition(())
+
+
+def test_a_pulse_with_no_declared_times_is_played_at_the_raster() -> None:
+    durations = _definition(_shape(_sinc(8))).sample_durations(rf_raster_time_s=2e-6)
+
+    np.testing.assert_array_equal(durations, np.full(8, 2e-6))
+
+
+def test_a_sample_lasts_the_distance_between_the_midpoints_beside_it() -> None:
+    """The two ends have one neighbour apiece, so they last the whole spacing
+    to it -- which is what makes an evenly spaced pulse last its sample count
+    times the step, rather than one step less.
+    """
+    times = np.array([0.5, 1.5, 3.5, 4.5], dtype=np.float32)
+    durations = _definition(
+        _shape(np.ones(4)), time=RfShape(4, times)
+    ).sample_durations(rf_raster_time_s=1.0)
+
+    np.testing.assert_allclose(durations, [1.0, 1.5, 1.5, 1.0], rtol=1e-6)
+    assert durations.sum() == pytest.approx(5.0)
+
+
+def test_declared_times_have_to_match_the_pulse() -> None:
+    envelope = _shape(_sinc(8))
+
+    with pytest.raises(ValueError, match="sample times against"):
+        _definition(envelope, time=RfShape(3, np.arange(3, dtype=np.float32))
+                    ).sample_durations()
+    with pytest.raises(ValueError, match="do not advance"):
+        _definition(
+            envelope, time=RfShape(8, np.zeros(8, dtype=np.float32))
+        ).sample_durations()

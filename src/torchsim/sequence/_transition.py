@@ -300,6 +300,19 @@ class DynamicPairs:
             f"{train_count * event_count}"
         )
 
+    @classmethod
+    def from_packed(cls, values: torch.Tensor, index: torch.Tensor) -> "DynamicPairs":
+        """The set a packed buffer describes, ``(rows, voxels, 4)``.
+
+        The inverse of :meth:`packed`, which is what lets the pair cross a
+        kernel boundary as one differentiable tensor and come back as a pair.
+        """
+        return cls(
+            a=torch.complex(values[..., 0], values[..., 1]),
+            b=torch.complex(values[..., 2], values[..., 3]),
+            index=index,
+        )
+
     def packed(self, device: torch.device | str | None = None) -> torch.Tensor:
         """The pair laid out as the kernels index it.
 
@@ -315,27 +328,47 @@ class DynamicPairs:
         )
 
 
-def _longitudinal(
+def _sample_steps(
     definition: RfDefinition,
-    detune: torch.Tensor,
-    placed: torch.Tensor | None,
-    samples: int,
+    rf_raster_time_s: float,
     device: torch.device | str | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """How long each sample is held, and what a spin off centre accrues in it.
+
+    Returns ``(dwell, steps)`` in seconds: ``dwell`` is what the pulse's own
+    sample times say each sample lasts, and ``steps`` is that under the
+    gradient played across it, so a gradient the scanner switches off
+    contributes no position-dependent turn however long the sample.
+    """
+    dwell = torch.as_tensor(
+        definition.sample_durations(rf_raster_time_s=rf_raster_time_s),
+        dtype=torch.float64,
+        device=device,
+    )
+    waveform = definition.gradient_waveform()
+    if waveform is None:
+        return dwell, dwell
+    moving = torch.as_tensor(waveform, dtype=torch.float64, device=device)
+    return dwell, dwell * moving
+
+
+def _longitudinal(
+    detune: torch.Tensor,
+    rate: torch.Tensor | None,
+    steps: torch.Tensor,
 ) -> torch.Tensor | Any:
     """The longitudinal turn per sample: off-resonance, and where the spin sits.
 
-    A gradient the scanner holds contributes the same turn every sample, so the
-    two add once and the result is handed over as one tensor. A gradient it
-    moves scales the spin's own contribution sample by sample, which is what
-    :func:`compose_spinor` takes an iterable for.
+    ``rate`` is what a spin at its position turns per second of pulse. Where
+    every sample accrues alike the two add once and the result is handed over
+    as one tensor; otherwise it is an iterable, which is the second form
+    :func:`compose_spinor` takes.
     """
-    waveform = definition.gradient_waveform()
-    if placed is None:
+    if rate is None:
         return detune
-    if waveform is None:
-        return detune + placed
-    moving = torch.as_tensor(waveform, dtype=torch.float64, device=device)
-    return (detune + placed * moving[sample] for sample in range(samples))
+    if bool(torch.all(steps == steps[0])):
+        return detune + rate * steps[0]
+    return (detune + rate * step for step in steps)
 
 
 def dynamic_pair(
@@ -407,6 +440,8 @@ def dynamic_pair(
         raise ValueError(f"RF definition {definition.id} has an empty envelope")
     if envelope.ndim == 1:
         envelope = envelope[None]
+    dwell, steps = _sample_steps(definition, rf_raster_time_s, device)
+    envelope = envelope * dwell
     area = envelope.sum()
     if area.abs() <= 1e-6 * envelope.abs().sum():
         raise ValueError(
@@ -452,13 +487,7 @@ def dynamic_pair(
             positions, dtype=torch.float64, device=device
         ).reshape(-1)
         locations = int(across.numel())
-        across = (
-            2.0
-            * torch.pi
-            * float(definition.bandwidth_hz)
-            * across
-            * rf_raster_time_s
-        )
+        across = 2.0 * torch.pi * float(definition.bandwidth_hz) * across
 
     detune = torch.zeros(voxels * locations, dtype=torch.float64, device=device)
     if off_resonance_hz is not None:
@@ -481,10 +510,7 @@ def dynamic_pair(
             column = shape[:, sample] * weights[:, 0 if held else sample]
             yield driven * (sensitivities @ column)
 
-    a, b = compose_spinor(
-        field(),
-        _longitudinal(definition, detune, placed, samples, device),
-    )
+    a, b = compose_spinor(field(), _longitudinal(detune, placed, steps))
     return a.to(torch.complex64), b.to(torch.complex64)
 
 
@@ -537,6 +563,8 @@ def transition_table(
     # axis. Normalizing by the complex sum puts both right -- an on-resonance
     # spin turns through exactly theta, about the axis at zero -- so the grid
     # axis is the same flip angle the packed events carry.
+    dwell, steps = _sample_steps(definition, rf_raster_time_s, device)
+    envelope = envelope * dwell
     area = envelope.sum()
     if area.abs() <= 1e-6 * envelope.abs().sum():
         raise ValueError(
@@ -548,29 +576,21 @@ def transition_table(
     positions = torch.as_tensor(positions, dtype=torch.float64, device=device)
     theta = torch.linspace(0.0, theta_max, bins, dtype=torch.float64, device=device)
 
-    # Off-resonance a spin at each position accrues per sample. The pulse
-    # selects one slice thickness across its bandwidth, so position measured in
+    # What a spin at each position turns per second of pulse. The pulse selects
+    # one slice thickness across its bandwidth, so position measured in
     # thicknesses times bandwidth is the offset in Hz.
-    offset = (
-        2.0
-        * torch.pi
-        * float(definition.bandwidth_hz)
-        * positions
-        * rf_raster_time_s
-    )
-
-    moving = definition.gradient_waveform()
-    if moving is not None:
-        moving = torch.as_tensor(moving, dtype=torch.float64, device=device)
+    rate = 2.0 * torch.pi * float(definition.bandwidth_hz) * positions
 
     def integrate(flip: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """The pair the whole pulse leaves, at every (position, flip)."""
-        held = offset[:, None].expand(positions.numel(), flip.numel())
-        turn_z = (
-            held
-            if moving is None
-            else (held * step for step in moving)
+        wide = (positions.numel(), flip.numel())
+        turn_z = _longitudinal(
+            torch.zeros((), dtype=torch.float64, device=device),
+            rate[:, None].expand(wide),
+            steps,
         )
+        if not isinstance(turn_z, torch.Tensor):
+            turn_z = (turn.expand(wide) for turn in turn_z)
         return compose_spinor(weight[:, None, None] * flip, turn_z)
 
     values, slopes = torch.func.jvp(

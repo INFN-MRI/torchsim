@@ -172,18 +172,26 @@ def _dynamic_rotations(
             f"{count}"
         )
     trains = packed.train_count
-    flips = packed.flip.detach().reshape(trains, count)
+    flips = packed.flip.reshape(trains, count)
 
+    # Two events share a row only when they are the same pulse driven to the
+    # same flip. A flip carrying a gradient is never shared: the row's cotangent
+    # would reach whichever event built it and none of the others it stands for.
+    sharing = not flips.requires_grad
     index = torch.zeros(trains * count, dtype=torch.int32)
     halves: list[tuple[torch.Tensor, torch.Tensor]] = []
-    rows: dict[tuple[int, float], int] = {}
+    rows: dict[Any, int] = {}
     for train in range(trains):
         for position, event in enumerate(stream):
             if event.type is not EventType.RF or event.rf_use is RfUse.INVERSION:
                 continue
             definition = description.rf_definitions[event.rf_definition_id]
-            flip = float(flips[train, position])
-            key = (event.rf_definition_id, flip)
+            flip = flips[train, position]
+            key = (
+                (event.rf_definition_id, float(flip.detach()))
+                if sharing
+                else (train, position)
+            )
             row = rows.get(key)
             if row is None:
                 row = len(halves)
@@ -430,7 +438,8 @@ def simulate_native(
         threads,
         geometry_of(description),
         table,
-        dynamic,
+        None if dynamic is None else dynamic.packed(),
+        None if dynamic is None else dynamic.index,
         lineshape,
         exchanging,
         features,
@@ -691,8 +700,14 @@ _THROUGH_THE_PAIR: dict[int, str] = {
 }
 
 
-def _outside_the_pair(needed: Sequence[bool]) -> None:
-    """Refuse a derivative that would have to pass through the pulse integral.
+def _outside_the_pair(needed: Sequence[bool], order: str) -> None:
+    """Refuse an order of differentiation the pair does not carry.
+
+    The kernels return a cotangent on the pair, which is what takes a first
+    reverse-mode derivative back to the flip and the sensitivities. They take
+    no direction along it from this layer and return no curvature to it, so a
+    forward direction or a second derivative would come back short of the
+    pulse.
 
     Raises:
         NotImplementedError: if one is asked for.
@@ -701,8 +716,8 @@ def _outside_the_pair(needed: Sequence[bool]) -> None:
     if asked:
         raise NotImplementedError(
             f"a pulse whose channels carry their own waveforms is integrated "
-            f"into a rotation before the kernels run, so a derivative along "
-            f"{', '.join(asked)} does not reach the answer through them"
+            f"into a rotation before the kernels run, and {order} along "
+            f"{', '.join(asked)} is not carried back through that integral"
         )
 
 
@@ -807,7 +822,8 @@ class _NativeEpg(torch.autograd.Function):
         threads: int,
         geometry: Geometry,
         profile: Any,
-        dynamic: Any,
+        pair_values: torch.Tensor | None,
+        pair_index: torch.Tensor | None,
         lineshape: Any,
         exchanging: bool,
         features: frozenset[str] | None,
@@ -824,8 +840,8 @@ class _NativeEpg(torch.autograd.Function):
         )
         return _run_packed(
             tissue, events, state_count, output_count, threads, geometry=geometry,
-            profile=profile, dynamic=dynamic, lineshape=lineshape,
-            exchanging=exchanging, features=features,
+            profile=profile, dynamic=_pairs_of(pair_values, pair_index),
+            lineshape=lineshape, exchanging=exchanging, features=features,
         )
 
     @staticmethod
@@ -838,17 +854,18 @@ class _NativeEpg(torch.autograd.Function):
         ctx.threads = inputs[_PACKED_COUNT + 2]
         ctx.geometry = inputs[_PACKED_COUNT + 3]
         ctx.profile = inputs[_PACKED_COUNT + 4]
-        ctx.dynamic = inputs[_PACKED_COUNT + 5]
-        ctx.lineshape = inputs[_PACKED_COUNT + 6]
-        ctx.exchanging = inputs[_PACKED_COUNT + 7]
-        ctx.features = inputs[_PACKED_COUNT + 8]
+        ctx.pair_values = inputs[_PACKED_COUNT + 5]
+        ctx.pair_index = inputs[_PACKED_COUNT + 6]
+        ctx.lineshape = inputs[_PACKED_COUNT + 7]
+        ctx.exchanging = inputs[_PACKED_COUNT + 8]
+        ctx.features = inputs[_PACKED_COUNT + 9]
 
     @staticmethod
     def jvp(ctx: Any, *tangents: torch.Tensor | None) -> torch.Tensor:
         saved = ctx.saved_tensors
-        if ctx.dynamic is not None:
+        if ctx.pair_values is not None:
             _outside_the_pair(
-                tuple(tangent is not None for tangent in tangents)
+                tuple(tangent is not None for tangent in tangents), "a direction"
             )
         float_tangents = tuple(
             torch.zeros_like(saved[index])
@@ -864,7 +881,8 @@ class _NativeEpg(torch.autograd.Function):
             ctx.threads,
             ctx.geometry,
             ctx.profile,
-            ctx.dynamic,
+            ctx.pair_values,
+            ctx.pair_index,
             ctx.lineshape,
             ctx.exchanging,
             ctx.features,
@@ -873,8 +891,6 @@ class _NativeEpg(torch.autograd.Function):
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
-        if ctx.dynamic is not None:
-            _outside_the_pair(ctx.needs_input_grad)
         wanted = _wanted(ctx.needs_input_grad)
         fused = _NativeEpgVjp.apply(
             *saved,
@@ -885,14 +901,27 @@ class _NativeEpg(torch.autograd.Function):
             wanted,
             ctx.geometry,
             ctx.profile,
-            ctx.dynamic,
+            ctx.pair_values,
+            ctx.pair_index,
             ctx.lineshape,
             ctx.exchanging,
             ctx.features,
         )
+        # The rotation is worked out before the kernels run, so what they
+        # return for it is a cotangent on the pair itself; autograd carries it
+        # the rest of the way to the flip and the sensitivities it was
+        # integrated from.
+        pair_grad = (
+            fused[len(_FLOAT_INPUTS)]
+            if len(fused) > len(_FLOAT_INPUTS)
+            and ctx.needs_input_grad[_PACKED_COUNT + 5]
+            else None
+        )
         return (
             *_spread(fused[:len(_FLOAT_INPUTS)], ctx.needs_input_grad),
-            None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None,
+            pair_grad,
+            None, None, None, None,
         )
 
     @staticmethod
@@ -927,10 +956,10 @@ class _NativeEpgVjp(torch.autograd.Function):
             wanted=inputs[_SEED_INPUT + 4],
             geometry=inputs[_SEED_INPUT + 5],
             profile=inputs[_SEED_INPUT + 6],
-            dynamic=inputs[_SEED_INPUT + 7],
-            lineshape=inputs[_SEED_INPUT + 8],
-            exchanging=inputs[_SEED_INPUT + 9],
-            features=inputs[_SEED_INPUT + 10],
+            dynamic=_pairs_of(inputs[_SEED_INPUT + 7], inputs[_SEED_INPUT + 8]),
+            lineshape=inputs[_SEED_INPUT + 9],
+            exchanging=inputs[_SEED_INPUT + 10],
+            features=inputs[_SEED_INPUT + 11],
         )
 
     @staticmethod
@@ -943,15 +972,24 @@ class _NativeEpgVjp(torch.autograd.Function):
         ctx.threads = inputs[_SEED_INPUT + 3]
         ctx.geometry = inputs[_SEED_INPUT + 5]
         ctx.profile = inputs[_SEED_INPUT + 6]
-        ctx.dynamic = inputs[_SEED_INPUT + 7]
-        ctx.lineshape = inputs[_SEED_INPUT + 8]
-        ctx.exchanging = inputs[_SEED_INPUT + 9]
-        ctx.features = inputs[_SEED_INPUT + 10]
+        ctx.pair_values = inputs[_SEED_INPUT + 7]
+        ctx.pair_index = inputs[_SEED_INPUT + 8]
+        ctx.lineshape = inputs[_SEED_INPUT + 9]
+        ctx.exchanging = inputs[_SEED_INPUT + 10]
+        ctx.features = inputs[_SEED_INPUT + 11]
 
     @staticmethod
     def backward(ctx: Any, *cotangents: torch.Tensor | None) -> tuple[Any, ...]:
         saved = ctx.saved_tensors
         primal, seed = saved[:_PACKED_COUNT], saved[_SEED_INPUT]
+        dynamic = _pairs_of(ctx.pair_values, ctx.pair_index)
+        if dynamic is not None:
+            # This pass follows a direction along the packed buffers and returns
+            # a curvature on them. The pair takes neither here, so a second
+            # derivative that runs through the pulse integral is refused; one
+            # that does not is answered with the pair in place.
+            _outside_the_pair(ctx.needs_input_grad, "a second derivative")
+            cotangents = cotangents[:len(_FLOAT_INPUTS)]
         directions = tuple(
             torch.zeros_like(primal[index])
             if cotangent is None
@@ -970,6 +1008,7 @@ class _NativeEpgVjp(torch.autograd.Function):
             wanted=wanted,
             geometry=ctx.geometry,
             profile=ctx.profile,
+            dynamic=dynamic,
             lineshape=ctx.lineshape,
             exchanging=ctx.exchanging,
             features=ctx.features,
@@ -986,16 +1025,19 @@ class _NativeEpgVjp(torch.autograd.Function):
                 ctx.threads,
                 geometry=ctx.geometry,
                 profile=ctx.profile,
+                dynamic=dynamic,
                 lineshape=ctx.lineshape,
                 exchanging=ctx.exchanging,
                 features=ctx.features,
             )
         guarded = _last(
-            (*_spread(curvature, ctx.needs_input_grad), seed_grad), saved
+            (*_spread(curvature[:len(_FLOAT_INPUTS)], ctx.needs_input_grad),
+             seed_grad),
+            saved,
         )
         return (
             *guarded,
-            None, None, None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None, None, None,
         )
 
 
@@ -1016,10 +1058,10 @@ class _NativeEpgJvp(torch.autograd.Function):
             inputs[_TANGENT_END + 2],
             geometry=inputs[_TANGENT_END + 3],
             profile=inputs[_TANGENT_END + 4],
-            dynamic=inputs[_TANGENT_END + 5],
-            lineshape=inputs[_TANGENT_END + 6],
-            exchanging=inputs[_TANGENT_END + 7],
-            features=inputs[_TANGENT_END + 8],
+            dynamic=_pairs_of(inputs[_TANGENT_END + 5], inputs[_TANGENT_END + 6]),
+            lineshape=inputs[_TANGENT_END + 7],
+            exchanging=inputs[_TANGENT_END + 8],
+            features=inputs[_TANGENT_END + 9],
         )
 
     @staticmethod
@@ -1029,10 +1071,11 @@ class _NativeEpgJvp(torch.autograd.Function):
         ctx.output_count = inputs[_TANGENT_END + 1]
         ctx.geometry = inputs[_TANGENT_END + 3]
         ctx.profile = inputs[_TANGENT_END + 4]
-        ctx.dynamic = inputs[_TANGENT_END + 5]
-        ctx.lineshape = inputs[_TANGENT_END + 6]
-        ctx.exchanging = inputs[_TANGENT_END + 7]
-        ctx.features = inputs[_TANGENT_END + 8]
+        ctx.pair_values = inputs[_TANGENT_END + 5]
+        ctx.pair_index = inputs[_TANGENT_END + 6]
+        ctx.lineshape = inputs[_TANGENT_END + 7]
+        ctx.exchanging = inputs[_TANGENT_END + 8]
+        ctx.features = inputs[_TANGENT_END + 9]
 
     @staticmethod
     def backward(ctx: Any, grad_output: torch.Tensor) -> tuple[Any, ...]:
@@ -1046,8 +1089,8 @@ class _NativeEpgJvp(torch.autograd.Function):
             or bool(ctx.needs_input_grad[_PACKED_COUNT + position])
             for position, index in enumerate(_FLOAT_INPUTS)
         )
-        if ctx.dynamic is not None:
-            _outside_the_pair(ctx.needs_input_grad)
+        if ctx.pair_values is not None:
+            _outside_the_pair(ctx.needs_input_grad, "a second derivative")
         primal_grads, tangent_grads = _run_packed_vjp_jvp(
             primal[:_TISSUE_COUNT],
             primal[_TISSUE_COUNT:_PACKED_COUNT],
@@ -1059,7 +1102,7 @@ class _NativeEpgJvp(torch.autograd.Function):
             wanted=wanted,
             geometry=ctx.geometry,
             profile=ctx.profile,
-            dynamic=ctx.dynamic,
+            dynamic=_pairs_of(ctx.pair_values, ctx.pair_index),
             lineshape=ctx.lineshape,
             exchanging=ctx.exchanging,
             features=ctx.features,
@@ -1075,7 +1118,10 @@ class _NativeEpgJvp(torch.autograd.Function):
             ),
             saved,
         )
-        return (*guarded, None, None, None, None, None, None, None, None, None)
+        return (
+            *guarded,
+            None, None, None, None, None, None, None, None, None, None,
+        )
 
     @staticmethod
     def vmap(
@@ -1346,6 +1392,20 @@ def _dynamic_pointers(
         for value in (direction, gradient, curvature)
     )
     return (*held, *tail)
+
+
+def _pairs_of(values: torch.Tensor | None, index: torch.Tensor | None) -> Any:
+    """The per-voxel rotations a packed buffer and its index describe.
+
+    The pair crosses the autograd boundary as a plain tensor so that the
+    cotangent the kernels return for it has somewhere to go; this is where it
+    becomes a pair again.
+    """
+    if values is None:
+        return None
+    from ._transition import DynamicPairs
+
+    return DynamicPairs.from_packed(values, index)
 
 
 def _carries_the_pair(dynamic: Any, route: str) -> None:

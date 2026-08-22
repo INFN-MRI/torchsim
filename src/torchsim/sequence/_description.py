@@ -307,6 +307,38 @@ class RfDefinition:
             )
         return waveform
 
+    def sample_durations(self, *, rf_raster_time_s: float = 1e-6) -> np.ndarray:
+        """Return how long each sample holds its field, in seconds.
+
+        ``time`` names where along the pulse each sample sits, so what a sample
+        lasts is the distance between the midpoints either side of it, and the
+        whole spacing to its one neighbour at the two ends. A definition
+        declaring no time is played one sample per raster step.
+
+        This is what the rotation a pulse performs is composed from: the field
+        is held constant across a sample, so a longer sample turns further and
+        lets a spin off the slice centre accrue more phase.
+
+        Raises:
+            ValueError: if the declared times and the envelope disagree on how
+                many samples the pulse has, or the times do not advance.
+        """
+        samples = int(self.channel_envelopes().shape[1])
+        if self.time is None or samples < 2:
+            return np.full(samples, float(rf_raster_time_s), dtype=np.float64)
+        time_s = self.time.decompress(scale=rf_raster_time_s).astype(np.float64)
+        if time_s.size != samples:
+            raise ValueError(
+                f"RF definition {self.id}: {time_s.size} sample times against "
+                f"{samples} samples"
+            )
+        if not np.all(np.diff(time_s) > 0.0):
+            raise ValueError(
+                f"RF definition {self.id}: the sample times do not advance, so "
+                f"they do not say how long a sample lasts"
+            )
+        return np.gradient(time_s)
+
     def rf_mode(self) -> RfMode:
         """Return which rotation this pulse's waveform asks the kernels for."""
         if self.channel_count > 1:

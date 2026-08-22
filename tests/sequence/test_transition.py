@@ -1,15 +1,14 @@
 """Tabulating the rotation a shaped pulse actually performs.
 
-The state machine's pulse is instantaneous and its slice profile is a flip
-scaling, which is a Bloch response pretending to be proportional to the pulse
-driving it. This table is the response itself, sampled over slice position and
-effective flip angle, and read back between the samples.
+The state machine's pulse is instantaneous, so a pulse with a duration is
+integrated ahead of time into the Bloch response it leaves, sampled over slice
+position and effective flip angle and read back between the samples.
 
 The checks that matter are that the integration is the pulse (at the slice
 centre it must reduce to the instantaneous rotation, which pins the envelope
-normalization), that the interpolation is faithful between the knots, and that
-the stored slope is the derivative of the same integration rather than of
-something near it.
+normalization), that the interpolation is faithful between the knots, that the
+stored slope is the derivative of the same integration rather than of something
+near it, and that the pulse's own sample times are what say how long it lasts.
 """
 
 from __future__ import annotations
@@ -231,16 +230,16 @@ def _excited(a, b):
 def test_the_table_follows_the_transmit_where_a_flip_scaling_cannot(table, b1) -> None:
     """The point of the stage, stated as a number.
 
-    A slice profile is a Bloch response, and the flip-scaling model treats it
-    as proportional to the pulse driving it: the profile is fitted once at
-    nominal amplitude and then multiplied by B1. That is exact only at B1 = 1.
-    Reading the table at ``flip * b1`` is the response itself, at any B1.
+    A slice profile is a Bloch response. Treating it as proportional to the
+    pulse driving it -- fitted once at nominal amplitude, then multiplied by B1
+    -- is exact only at B1 = 1. Reading the table at ``flip * b1`` is the
+    response itself, at any B1.
     """
     nominal = np.deg2rad(180.0)
     positions = torch.linspace(-1.0, 1.0, 9)
     inside = positions.abs() <= 0.5
 
-    # The profile the old model fits: the on-axis flip at nominal amplitude.
+    # The profile a scaling model fits: the on-axis flip at nominal amplitude.
     fitted = []
     for position in positions.tolist():
         pair = _integrate(nominal, position)
@@ -286,3 +285,121 @@ def test_a_pulse_with_no_samples_is_refused() -> None:
     )
     with pytest.raises(ValueError, match="empty envelope"):
         transition_table(empty, torch.zeros(3))
+
+
+# --- the pulse's own sample times say how long it lasts ---
+
+
+def _timed(times: np.ndarray, *, samples: int = SAMPLES) -> RfDefinition:
+    """The same pulse, told where along itself each sample sits.
+
+    ``times`` is in raster steps, which is the scale a description stores them
+    at, so a grid stepping by one is the raster the caller passes.
+    """
+    from dataclasses import replace
+
+    return replace(
+        _definition(), time=RfShape(samples, times.astype(np.float32))
+    )
+
+
+def test_a_declared_raster_is_the_raster_it_declares() -> None:
+    """Sample times stepping by one raster step are the pulse played at that
+    raster, so declaring them changes nothing.
+    """
+    positions = torch.linspace(-1.0, 1.0, 9, dtype=torch.float64)
+    arguments = dict(bins=32, rf_raster_time_s=RASTER)
+
+    silent = transition_table(_definition(), positions, **arguments)
+    declared = transition_table(
+        _timed(np.arange(SAMPLES, dtype=np.float64) + 0.5), positions, **arguments
+    )
+
+    worst = float((silent.b - declared.b).abs().max() / silent.b.abs().max())
+    assert worst < 1e-5, worst
+
+
+def test_a_pulse_that_says_it_is_longer_cuts_a_thinner_slice() -> None:
+    """A pulse stored on its own coarser grid lasts what its times say, not
+    what a sample count times the caller's raster says. Getting that wrong
+    scales the whole profile: the slice would come out as many times too thick.
+    """
+    stretch = 2.0
+    positions = torch.linspace(-1.0, 1.0, 9, dtype=torch.float64)
+    coarse = stretch * np.arange(SAMPLES, dtype=np.float64)
+
+    declared = transition_table(
+        _timed(coarse), positions, bins=32, rf_raster_time_s=RASTER
+    )
+    # The same pulse handed over as a plain waveform at the raster it implies.
+    equivalent = transition_table(
+        _definition(), positions, bins=32, rf_raster_time_s=stretch * RASTER
+    )
+
+    assert float(equivalent.b.abs().max()) > 0.1
+    worst = float(
+        (declared.b - equivalent.b).abs().max() / equivalent.b.abs().max()
+    )
+    assert worst < 1e-5, worst
+
+
+def test_the_slice_centre_stays_the_flip_however_long_the_pulse() -> None:
+    """The table is indexed by flip, so the sample times must not move its
+    axis -- only what a spin off centre accrues while the pulse plays.
+    """
+    theta = 0.7 * np.pi
+    for times in (
+        np.arange(SAMPLES, dtype=np.float64) + 0.5,
+        3.0 * np.arange(SAMPLES, dtype=np.float64),
+    ):
+        table = transition_table(
+            _timed(times),
+            torch.zeros(1, dtype=torch.float64),
+            bins=256,
+            rf_raster_time_s=RASTER,
+        )
+        a, _ = table.at(torch.zeros(1, dtype=torch.int64), torch.tensor([theta]))
+        assert abs(float(a.abs()) - np.cos(theta / 2.0)) < 1e-4
+
+
+def test_a_dynamic_pair_reads_the_same_sample_times() -> None:
+    """The per-voxel integrator and the table are the same integration, so a
+    declared duration has to reach both.
+    """
+    from torchsim.sequence._transition import dynamic_pair
+
+    stretch = 2.0
+    coarse = stretch * np.arange(SAMPLES, dtype=np.float64)
+    sensitivities = torch.tensor([[0.9 + 0.2j]], dtype=torch.complex128)
+    positions = torch.tensor([0.3])
+
+    declared = dynamic_pair(
+        _timed(coarse),
+        sensitivities,
+        flip=1.1,
+        positions=positions,
+        rf_raster_time_s=RASTER,
+    )
+    equivalent = dynamic_pair(
+        _definition(),
+        sensitivities,
+        flip=1.1,
+        positions=positions,
+        rf_raster_time_s=stretch * RASTER,
+    )
+
+    for reference, result in zip(equivalent, declared, strict=True):
+        assert float((reference - result).abs().max()) < 1e-5
+
+
+def test_sample_times_that_do_not_advance_are_refused() -> None:
+    times = np.arange(SAMPLES, dtype=np.float64)
+    times[10] = times[9]
+
+    with pytest.raises(ValueError, match="do not advance"):
+        transition_table(
+            _timed(times),
+            torch.zeros(1, dtype=torch.float64),
+            bins=8,
+            rf_raster_time_s=RASTER,
+        )
