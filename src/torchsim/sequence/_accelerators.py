@@ -1767,7 +1767,10 @@ def _bytes_per_voxel(
     real_axis: int | None,
     shims: int = 1,
 ) -> int:
-    """Device bytes one voxel needs for a ``forward``, ``jvp`` or ``adjoint`` pass."""
+    """Device bytes one voxel needs for one pass.
+
+    ``kind`` is ``forward``, ``jvp``, ``adjoint`` or ``first-order adjoint``.
+    """
     planes = 2 if real_axis == 1 else 4
     scratch = train_count * planes * state_count * 4
     # Two float planes of signal and the complex copy staged for the transfer.
@@ -1787,6 +1790,17 @@ def _bytes_per_voxel(
             + train_count * event_count * 3 * state_count * planes * 4
             + scratch
             + 2 * tissue
+        )
+    if kind == "first-order adjoint":
+        # The same shape without the dual: one accumulator per gradient rather
+        # than two, and half the trajectory planes, which is what makes the
+        # chunks wider for one budget.
+        return (
+            tissue
+            + signal
+            + train_count * 2 * 4 * output_count
+            + train_count * event_count * 3 * state_count * (planes // 2) * 4
+            + scratch
         )
     inputs = 2 * tissue if kind == "jvp" else tissue
     return inputs + signal + scratch
@@ -2289,6 +2303,103 @@ def _run_offloaded_jvp(
     return signal
 
 
+def _run_offloaded_vjp(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    plan: _Offload,
+    state_count: int,
+    output_count: int,
+    real_axis: int | None,
+    geometry: Geometry,
+    features: frozenset[str] | None = None,
+) -> tuple[torch.Tensor, ...]:
+    """Stream a first-order adjoint through the devices, chunk by chunk.
+
+    The gradients part the same way the forward-over-reverse pass parts them: a
+    tissue gradient belongs to one voxel and goes straight back to pinned host
+    memory, an event gradient collects from every voxel and each lane keeps its
+    own until the end.
+
+    Carrying no forward direction, a chunk holds half the trajectory the other
+    pass holds -- so for one budget the chunks are wider, which is the second
+    saving on top of the kernel being faster.
+    """
+    from ._epg_triton import (
+        GradientBuffers,
+        simulate_real_vjp_into,
+        simulate_vjp_into,
+    )
+
+    train_count = _train_count(events)
+    voxels = tissue[0].numel()
+    event_count = int(events[1].numel())
+    shape = (train_count, event_count, output_count, state_count, real_axis, 1)
+    chunk = min(voxels, _chunk_voxels(plan, "first-order adjoint", *shape))
+    grad_output = grad_output.resolve_conj()
+    batched = train_count > 1
+
+    rows = tissue_gradient_rows(1)
+    tissue_grads = [
+        torch.empty(count * voxels, dtype=torch.float32, pin_memory=True)
+        for count in rows
+    ]
+    per_device = {device: _to_device(events, device) for device in plan.devices}
+    lanes = [
+        _Lane(
+            device, chunk, train_count, output_count, state_count, real_axis
+        )
+        for device in plan.devices
+        for _ in range(plan.lanes)
+    ]
+    for lane in lanes:
+        lane.adjoint = GradientBuffers(
+            per_device[lane.device],
+            chunk,
+            state_count=state_count,
+            output_count=output_count,
+            real_axis=real_axis,
+        )
+
+    def body(lane: _Lane, begin: int, end: int) -> None:
+        width = end - begin
+        loaded = lane.load(tissue, begin, end)
+        piece = grad_output[:, begin:end] if batched else grad_output[begin:end]
+        cotangent = lane.send(piece)
+        arguments = dict(
+            state_count=state_count,
+            output_count=output_count,
+            atom_count=width,
+            features=features,
+        )
+        if real_axis == 1:
+            voxel_grads = simulate_real_vjp_into(
+                loaded, per_device[lane.device], cotangent, lane.adjoint,
+                **arguments,
+            )
+        else:
+            voxel_grads = simulate_vjp_into(
+                loaded, per_device[lane.device], cotangent, lane.adjoint,
+                geometry=geometry, **arguments,
+            )
+        for index, count in enumerate(rows):
+            home = tissue_grads[index].view(count, voxels)
+            for row in range(count):
+                home[row, begin:end].copy_(
+                    voxel_grads[index][row * width : (row + 1) * width],
+                    non_blocking=True,
+                )
+
+    _stream_chunks(plan, voxels, chunk, lanes, body)
+    event_grads = [
+        torch.zeros_like(value) for value in (events[0], events[2], events[3])
+    ]
+    for lane in lanes:
+        for index, value in enumerate(lane.adjoint.event_gradients()):
+            event_grads[index] += value.cpu()
+    return (*tissue_grads, *event_grads)
+
+
 def _run_offloaded_vjp_jvp(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],
@@ -2735,6 +2846,28 @@ def _run_packed_vjp(
             geometry=geometry,
             features=features,
         )
+    streamable = (
+        profile is None
+        and lineshape is None
+        and not exchanging
+        and dynamic is None
+        and _shim_count(tissue) == 1
+    )
+    if streamable and tissue[0].device.type == "cpu":
+        plan = _OFFLOAD
+        if plan is None:
+            choice = _choose(
+                "adjoint", tissue, events, output_count, state_count, real_axis
+            )
+            if choice is not None and choice.where == "stream":
+                plan = choice.offload
+        if plan is not None:
+            # A chunk of a first-order adjoint is a first-order adjoint, so the
+            # piece takes the kernel the whole volume could not be given.
+            return _run_offloaded_vjp(
+                tissue, events, grad_output, plan, state_count, output_count,
+                real_axis, geometry, features,
+            )
     if tissue[0].device.type != "cpu" or _leaves_the_host(
         "adjoint", tissue, events, output_count, state_count, real_axis
     ):

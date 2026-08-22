@@ -11482,6 +11482,203 @@ class AdjointBuffers:
         )
 
 
+class GradientBuffers:
+    """Device memory a first-order adjoint writes into.
+
+    Half of what the forward-over-reverse pass needs: one accumulator per
+    gradient rather than a dual, and one trajectory plane per real state rather
+    than a plane per component of one. Sized for ``chunk`` voxels and reusable
+    for any narrower one; per-event gradients accumulate over every pass the
+    buffers serve.
+
+    ``real_axis`` of 1 halves the planes again, so buffers built for one
+    representation cannot be handed to the other.
+    """
+
+    def __init__(
+        self,
+        events: tuple[torch.Tensor, ...],
+        chunk: int,
+        *,
+        state_count: int,
+        output_count: int,
+        real_axis: int | None = None,
+    ) -> None:
+        duration, kind, flip, phase = events[:4]
+        device = kind.device
+        train_count = _train_count(events)
+        event_count = kind.numel()
+        self.real_axis = real_axis
+        self.planes = 1 if real_axis == 1 else 2
+        self.chunk = chunk
+        self.rows = tissue_gradient_height(1)
+        self.state_count = state_count
+        self.output_count = output_count
+        self.train_count = train_count
+        self.tissue = torch.zeros(
+            self.rows * chunk, dtype=torch.float32, device=device
+        )
+        self.flip = torch.zeros_like(flip)
+        self.duration = torch.zeros_like(duration)
+        self.phase = torch.zeros_like(phase)
+        self.cotangent = [
+            torch.empty(
+                train_count * chunk * output_count,
+                dtype=torch.float32,
+                device=device,
+            )
+            for _ in range(2)
+        ]
+        self.wave = _trajectory_wave(
+            event_count, state_count, train_count * chunk, self.planes
+        )
+        self.trajectory = [
+            torch.empty(
+                (self.wave, event_count * 3 * state_count),
+                dtype=torch.float32,
+                device=device,
+            )
+            for _ in range(self.planes)
+        ]
+        self.scratch = _scratch(
+            2 if real_axis == 1 else 4, self.wave, device, state_count
+        )
+
+    def tissue_gradients(self, atom_count: int) -> tuple[torch.Tensor, ...]:
+        """The per-voxel gradients of the last pass, one entry per parameter."""
+        return tuple(
+            self.tissue[base * atom_count : (base + rows) * atom_count]
+            for base, rows in zip(
+                tissue_gradient_bases(1), tissue_gradient_rows(1), strict=True
+            )
+        )
+
+    def event_gradients(self) -> tuple[torch.Tensor, ...]:
+        """``(duration, flip, phase)``, summed over every pass so far."""
+        return (self.duration, self.flip, self.phase)
+
+
+def simulate_vjp_into(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    buffers: GradientBuffers,
+    *,
+    state_count: int,
+    output_count: int,
+    atom_count: int,
+    geometry: Geometry = NO_GEOMETRY,
+    features: frozenset[str] | None = None,
+) -> tuple[torch.Tensor, ...]:
+    """One chunk of a first-order adjoint, into buffers the caller owns.
+
+    ``grad_output`` is already on the device. Returns the per-voxel gradients
+    of this chunk; the per-event ones accumulate in ``buffers``.
+    """
+    (
+        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion, velocity,
+        *_pools,
+    ) = tissue
+    duration, kind, flip, phase, action, output_index = events[:6]
+    train_count = _train_count(events)
+    event_count = kind.numel()
+    total = train_count * atom_count
+    block_states = triton.next_power_of_2(state_count)
+
+    buffers.tissue.zero_()
+    grad_output = grad_output.resolve_conj()
+    size = total * output_count
+    grad_real = buffers.cotangent[0][:size]
+    grad_imag = buffers.cotangent[1][:size]
+    grad_real.copy_(grad_output.real.reshape(-1))
+    grad_imag.copy_(grad_output.imag.reshape(-1))
+
+    problems = _problems_per_program(buffers.wave, block_states)
+    for base in range(0, total, buffers.wave):
+        span = min(buffers.wave, total - base)
+        _epg_vjp_kernel[(triton.cdiv(span, problems),)](
+            t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
+            velocity,
+            duration, kind, flip, phase, action, output_index,
+            grad_real,
+            grad_imag,
+            buffers.tissue,
+            buffers.flip,
+            buffers.phase,
+            buffers.duration,
+            *buffers.trajectory,
+            *buffers.scratch,
+            base,
+            base + span,
+            atom_count,
+            train_count,
+            event_count,
+            output_count,
+            geometry.flow_scale,
+            geometry.washout_scale,
+            state_count=state_count,
+            block_states=block_states,
+            problems=problems,
+            num_warps=1,
+            **_feature_flags(features, geometry),
+        )
+    return buffers.tissue_gradients(atom_count)
+
+
+def simulate_real_vjp_into(
+    tissue: tuple[torch.Tensor, ...],
+    events: tuple[torch.Tensor, ...],
+    grad_output: torch.Tensor,
+    buffers: GradientBuffers,
+    *,
+    state_count: int,
+    output_count: int,
+    atom_count: int,
+    features: frozenset[str] | None = None,
+) -> tuple[torch.Tensor, ...]:
+    """The same, for a train the real subspace covers."""
+    (
+        t1, t2, m0, b1, _b1_phase, _b0, inversion_efficiency, diffusion,
+        *_rest,
+    ) = tissue
+    duration, kind, flip, _phase, action, output_index = events[:6]
+    train_count = _train_count(events)
+    event_count = kind.numel()
+    total = train_count * atom_count
+    block_states = triton.next_power_of_2(state_count)
+
+    buffers.tissue.zero_()
+    size = total * output_count
+    grad_imag = buffers.cotangent[1][:size]
+    grad_imag.copy_(grad_output.resolve_conj().imag.reshape(-1))
+
+    problems = _problems_per_program(buffers.wave, block_states)
+    for base in range(0, total, buffers.wave):
+        span = min(buffers.wave, total - base)
+        _epg_real_vjp_kernel[(triton.cdiv(span, problems),)](
+            t1, t2, m0, b1, inversion_efficiency, diffusion,
+            duration, kind, flip, action, output_index,
+            grad_imag,
+            buffers.tissue,
+            buffers.flip,
+            buffers.duration,
+            buffers.trajectory[0],
+            *buffers.scratch,
+            base,
+            base + span,
+            atom_count,
+            train_count,
+            event_count,
+            output_count,
+            state_count=state_count,
+            block_states=block_states,
+            problems=problems,
+            num_warps=1,
+            **_only_scalars(_feature_flags(features, NO_GEOMETRY)),
+        )
+    return buffers.tissue_gradients(atom_count)
+
+
 def simulate_vjp_jvp_into(
     tissue: tuple[torch.Tensor, ...],
     events: tuple[torch.Tensor, ...],

@@ -733,11 +733,17 @@ def test_a_backward_through_the_public_api_streams():
 
     voxels = 20_000
     reached = []
-    forwarded = accelerators._run_offloaded_vjp_jvp
+    forwarded = accelerators._run_offloaded_vjp
+    second_order = []
+    around = accelerators._run_offloaded_vjp_jvp
 
     def spy(*arguments, **options):
         reached.append(True)
         return forwarded(*arguments, **options)
+
+    def watch(*arguments, **options):
+        second_order.append(True)
+        return around(*arguments, **options)
 
     def gradients():
         t1 = torch.linspace(600.0, 1400.0, voxels, requires_grad=True)
@@ -756,12 +762,62 @@ def test_a_backward_through_the_public_api_streams():
         return t1.grad, t2.grad
 
     expected = gradients()
-    accelerators._run_offloaded_vjp_jvp = spy
+    accelerators._run_offloaded_vjp = spy
+    accelerators._run_offloaded_vjp_jvp = watch
     try:
         with offload(["cuda"], budget_bytes=1 << 24):
             actual = gradients()
     finally:
-        accelerators._run_offloaded_vjp_jvp = forwarded
+        accelerators._run_offloaded_vjp = forwarded
+        accelerators._run_offloaded_vjp_jvp = around
 
     assert reached, "the backward never reached the streamed route"
+    # And took the kernel written for it, rather than the pass that carries a
+    # forward direction nobody asked for.
+    assert not second_order
     assert _compare_gradients((expected,), (actual,)) < 1e-4
+
+
+
+
+@pytest.mark.parametrize("trains", [1, 3])
+def test_a_streamed_first_order_adjoint_takes_its_own_kernel(trains):
+    """A chunk of a first-order adjoint is a first-order adjoint, so streaming
+    must not cost the kernel written for it.
+    """
+    from torchsim.sequence import _accelerators as accelerators
+
+    voxels = 2000
+    events, prepared, outputs = _volume(voxels, trains=trains)
+    wanted = _inside_the_subspace()
+    second_order = []
+    around = accelerators._run_offloaded_vjp_jvp
+
+    def watch(*arguments, **options):
+        second_order.append(True)
+        return around(*arguments, **options)
+
+    accelerators._run_offloaded_vjp_jvp = watch
+    try:
+        streamed = _first_order_adjoint(
+            events, prepared, outputs, voxels, trains, wanted, 1 << 20
+        )
+    finally:
+        accelerators._run_offloaded_vjp_jvp = around
+
+    assert not second_order
+    assert max(float(value.abs().max()) for value in streamed) > 0.0
+
+
+def test_streaming_a_first_order_adjoint_makes_wider_chunks():
+    """Half the trajectory is the second saving: for one budget the chunks come
+    out wider than the pass carrying a forward direction would allow.
+    """
+    from torchsim.sequence._accelerators import _bytes_per_voxel
+
+    shape = (4, 40, 8, 16, None, 1)
+    around = _bytes_per_voxel("adjoint", *shape)
+    direct = _bytes_per_voxel("first-order adjoint", *shape)
+
+    assert direct < around
+    assert around / direct > 1.8
