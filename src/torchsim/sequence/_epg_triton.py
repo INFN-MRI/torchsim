@@ -6031,7 +6031,7 @@ def _epg_vjp_kernel(
                     mask=active_atom,
                     other=0,
                 )
-                held = pool_bars + (problem * row_count + row) * 12
+                held = pool_bars + (local * row_count + row) * 12
                 tl.store(
                     held + 0,
                     tl.load(held + 0, mask=active_atom, other=0.0)
@@ -6443,7 +6443,7 @@ def _epg_vjp_kernel(
         # and the closed form is linear in them, so the pieces of the sum are
         # the sum of the pieces.
         for row in range(0, row_count):
-            held = pool_bars + (problem * row_count + row) * 12
+            held = pool_bars + (local * row_count + row) * 12
             row_dt = tl.load(pool_durations + row) + zero
             one_att = 1.0 + 0.0 * row_dt
             nil = 0.0 * row_dt
@@ -13038,11 +13038,18 @@ _TABLE_FLOOR_BYTES = 64 << 20
 
 
 def _three_pool_table_bytes(
-    tissue: tuple[torch.Tensor, ...], rows: int, *, bars: bool
+    tissue: tuple[torch.Tensor, ...], rows: int, *, problems: int | None
 ) -> int:
-    """What the tables would take -- the operator's, and the adjoint's bars."""
-    per_row = _TABLE_FLOATS_PER_ROW + (_BAR_FLOATS_PER_ROW if bars else 0)
-    return int(tissue[0].numel()) * int(rows) * per_row * 4
+    """What the tables would take -- the operator's, and the adjoint's bars.
+
+    The operator table holds a row of voxels; the cotangent table holds a row
+    of problems, which is voxels times trains cut to what one chunk carries.
+    ``problems`` of ``None`` is a caller that builds no cotangent table.
+    """
+    total = int(tissue[0].numel()) * int(rows) * _TABLE_FLOATS_PER_ROW
+    if problems is not None:
+        total += int(problems) * int(rows) * _BAR_FLOATS_PER_ROW
+    return total * 4
 
 
 def _table_budget(device: torch.device) -> int:
@@ -13059,7 +13066,7 @@ def _tabulate_three_pool(
     *,
     pools: int,
     narrow: bool,
-    bars: bool = False,
+    problems: int | None = None,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
     """The operator table an event loop should read, or ``None`` to form it.
 
@@ -13084,9 +13091,10 @@ def _tabulate_three_pool(
         Which pool model the launch carries.
     narrow:
         Whether every interval keeps the eigenvalues close together.
-    bars:
-        Whether the caller also allocates the adjoint's cotangent table, which
-        is what the budget has to cover.
+    problems:
+        How many problems a chunk of the adjoint carries, which is the height
+        of the cotangent table it allocates. ``None`` for a caller that builds
+        no such table.
 
     Returns
     -------
@@ -13102,7 +13110,7 @@ def _tabulate_three_pool(
     if distinct.numel() >= duration.numel():
         return None, None, None
     if _three_pool_table_bytes(
-        tissue, distinct.numel(), bars=bars
+        tissue, distinct.numel(), problems=problems
     ) > _table_budget(tissue[0].device):
         # A pathological train has as many lengths as events, and the tables
         # grow with their product. Forming the operator per event is slower
@@ -13698,19 +13706,20 @@ def simulate_vjp(
     # four.
     pools = _pool_flag(lineshape, exchanging)
     narrow = narrow_three_pool(tissue, duration, pools=pools)
+    blocks = 7 if pools == 3 else (6 if pools == 2 else (4 if pools == 1 else 3))
+    wave = _trajectory_wave(event_count, state_count, total, 2, blocks)
     duration_row, pool_table, pool_durations = _tabulate_three_pool(
-        tissue, duration, pools=pools, narrow=narrow, bars=True
+        tissue, duration, pools=pools, narrow=narrow, problems=wave
     )
     row_count = 0 if pool_durations is None else pool_durations.numel()
     pool_bars = None
     if pool_table is not None:
-        # A slot per problem, so the walk back accumulates into memory it owns
-        # and no two programs contend for a row.
+        # A slot per problem the chunk carries, so the walk back accumulates
+        # into memory it owns and no two programs contend for a row. The
+        # chunks run one after another, so one chunk's worth is enough.
         pool_bars = torch.zeros(
-            total * row_count * 12, dtype=torch.float32, device=device
+            wave * row_count * 12, dtype=torch.float32, device=device
         )
-    blocks = 7 if pools == 3 else (6 if pools == 2 else (4 if pools == 1 else 3))
-    wave = _trajectory_wave(event_count, state_count, total, 2, blocks)
     trajectory = [
         torch.empty(
             (wave, event_count * blocks * state_count),
@@ -13724,6 +13733,9 @@ def simulate_vjp(
     problems = _problems_per_program(wave, block_states)
     for base in range(0, total, wave):
         span = min(wave, total - base)
+        if pool_bars is not None:
+            # The slots are per chunk, so each chunk starts from nothing.
+            pool_bars.zero_()
         _epg_vjp_kernel[(triton.cdiv(span, problems),)](
             t1,
             t2,

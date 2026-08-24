@@ -108,12 +108,13 @@ def _both(run: Any, force_narrow: bool) -> tuple[Any, Any]:
     original = _epg_triton._tabulate_three_pool
     built: list[bool] = []
 
-    def patched(tissue, duration, *, pools, narrow, bars=False):
+    def patched(tissue, duration, *, pools, narrow, problems=None):
         if not built_wanted[0]:
             return None, None, None
         rows, table, lengths = original(
             tissue, duration, pools=pools,
-            narrow=False if force_narrow else narrow, bars=bars,
+            narrow=False if force_narrow else narrow,
+            problems=problems,
         )
         built.append(table is not None)
         return rows, table, lengths
@@ -144,6 +145,25 @@ def _worst(without: tuple[Any, ...], with_table: tuple[Any, ...]) -> float:
     )
 
 
+def _chunked(voxels: int) -> Any:
+    """Force the adjoint to take more than one chunk, whatever the volume.
+
+    The cotangent table is sized and indexed per chunk, so a single-chunk run
+    cannot tell a chunk-local index from a global one.
+    """
+    from torchsim.sequence import _epg_triton
+
+    cut: list[int] = []
+
+    def narrow_wave(*arguments: Any, **keywords: Any) -> int:
+        wave = max(1, voxels // 2)
+        cut.append(wave)
+        return wave
+
+    _epg_triton._trajectory_wave = narrow_wave
+    return cut
+
+
 def _case(name: str) -> None:
     install()
     from torchsim.sequence import _epg_triton
@@ -157,7 +177,7 @@ def _case(name: str) -> None:
             torch.full((echoes,), math.radians(150.0)), 8e-3
         )
         force_narrow, tolerance = True, NARROW_TOLERANCE
-    elif name == "wide":
+    elif name in ("wide", "chunked"):
         shots = 6
         description = _builders.mrf_description(
             torch.full((shots,), math.radians(50.0)),
@@ -168,6 +188,7 @@ def _case(name: str) -> None:
     else:
         raise SystemExit(f"unknown case {name!r}")
 
+    cut = _chunked(voxels) if name == "chunked" else None
     tissue = _tissue(voxels)
     events, outputs = _events(description)
     options: dict[str, Any] = dict(
@@ -203,6 +224,10 @@ def _case(name: str) -> None:
     adjoint = _worst(without, with_table)
     print(f"  first-order adjoint {adjoint:.2e}")
     assert adjoint <= tolerance, f"adjoint drifted: {adjoint:.2e}"
+    if cut is not None:
+        # A chunked case that ran in one chunk tests nothing it claims to.
+        assert cut and max(cut) < voxels, f"never chunked: waves {cut}"
+        print(f"  chunks              {-(-voxels // max(cut))}")
 
 
 if __name__ == "__main__":

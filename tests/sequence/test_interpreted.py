@@ -40,14 +40,16 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.interpreted
-@pytest.mark.parametrize("case", ["narrow", "wide"])
+@pytest.mark.parametrize("case", ["narrow", "wide", "chunked"])
 def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
     """Both arms run the same launch; only where the operator comes from differs.
 
     ``narrow`` forces a table onto a train the launch-wide gate calls narrow,
     so every row takes the series and the two arms agree to the bit. ``wide``
     is the case that ships -- an inversion makes the launch decline the gate,
-    and the table carries series rows beside a roots row.
+    and the table carries series rows beside a roots row. ``chunked`` is the
+    same launch cut into chunks, which is what tells a chunk-local index for
+    the cotangent table from a global one.
     """
     finished = _run(case)
     assert finished.returncode == 0, (
