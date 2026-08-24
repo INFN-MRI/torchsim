@@ -393,7 +393,13 @@ def _case(name: str) -> None:
         for value in tissue
     )
     event_directions = (
-        torch.full_like(events[0], 1e-4),
+        # Varying, so that events sharing a length carry different interval
+        # directions: a pooled second-order adjoint that weighed the whole row
+        # by one direction would agree with the per-event arm under a uniform
+        # one and only differ under this.
+        torch.linspace(0.5e-4, 2e-4, events[0].numel()).reshape(
+            events[0].shape
+        ),
         torch.zeros_like(events[2]),
         torch.zeros_like(events[3]),
     )
