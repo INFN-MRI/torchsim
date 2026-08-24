@@ -1291,3 +1291,283 @@ def test_three_pools_take_the_first_order_kernel_on_the_card(
         # the one a missing term shows up in first.
         difference = float((reference.cpu() - result.cpu()).abs().max())
         assert difference / largest < 1e-4, name
+
+
+# --- the series branch, and the bound that says it is enough ---
+
+
+def _three_pool_columns(voxels, *, seconds, seed):
+    """A physical three-pool tissue and one interval, as the helper reads them."""
+    generator = torch.Generator().manual_seed(seed)
+
+    def spread(low, high):
+        return torch.rand(voxels, generator=generator) * (high - low) + low
+
+    return (
+        1000.0 / spread(200.0, 3000.0),
+        1000.0 / spread(50.0, 2000.0),
+        1000.0 / spread(100.0, 2000.0),
+        spread(1.0, 200.0),
+        spread(1.0, 200.0),
+        spread(0.01, 0.40),
+        spread(0.01, 0.35),
+        torch.full((voxels,), float(seconds)),
+        spread(0.2, 1.0),
+    )
+
+
+def _matrix_exp_oracle(columns):
+    """``expm((K - diag(R1)) t)`` and the recoveries, built and exponentiated.
+
+    Shares no code with the closed form under test: the generator is assembled
+    and exponentiated by :func:`torch.linalg.matrix_exp` in double.
+    """
+    r1a, r1b, r1c, exb, exc, fb, fc, dt, att = (
+        value.double() for value in columns
+    )
+    free = 1.0 - fb - fc
+    zero = torch.zeros_like(free)
+    generator = torch.stack(
+        [
+            torch.stack([-exb * fb - exc * fc - r1a, exb * free, exc * free], -1),
+            torch.stack([exb * fb, -exb * free - r1b, zero], -1),
+            torch.stack([exc * fc, zero, -exc * free - r1c], -1),
+        ],
+        dim=-2,
+    ) * dt[..., None, None]
+    step = att[..., None, None] * torch.linalg.matrix_exp(generator)
+    start = torch.stack([free, fb, fc], dim=-1)
+    grow = start - (step @ start[..., None]).squeeze(-1)
+    return torch.cat([step.reshape(-1, 9), grow], dim=-1)
+
+
+def _spread_over(columns):
+    """The bound :func:`narrow_three_pool` tests, computed the long way."""
+    r1a, r1b, r1c, exb, exc, fb, fc, dt, _att = (
+        value.double() for value in columns
+    )
+    free = 1.0 - fb - fc
+    a00 = (-exb * fb - exc * fc - r1a) * dt
+    a11 = (-exb * free - r1b) * dt
+    a22 = (-exc * free - r1c) * dt
+    third = (a00 + a11 + a22) / 3.0
+    s00, s11, s22 = a00 - third, a11 - third, a22 - third
+    minors = (
+        s00 * s11 - (exb * free * dt) * (exb * fb * dt)
+        + s00 * s22 - (exc * free * dt) * (exc * fc * dt)
+        + s11 * s22
+    )
+    return torch.sqrt(torch.clamp(-2.0 * minors, min=0.0))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_the_series_carries_the_answer_up_to_the_spread_it_is_trusted_to() -> None:
+    """``NARROW_SPREAD`` is a measurement, so it is pinned as one.
+
+    The series branch alone, in float32, against ``matrix_exp`` in double, at
+    the widest spread the gate will let through. Above the bound it is expected
+    to fail -- which is what makes the bound a choice rather than a hope.
+    """
+    import triton
+    import triton.language as tl
+
+    from torchsim.sequence._epg_triton import _three_pool_step
+    from torchsim.sequence._parameters import NARROW_SPREAD
+
+    @triton.jit
+    def only_the_series(
+        a, b, c, d, e, f, g, h, i, out, n,
+        NARROW: tl.constexpr, BLOCK: tl.constexpr,
+    ):
+        j = tl.arange(0, BLOCK)
+        mask = j < n
+        entries = _three_pool_step(
+            tl.load(a + j, mask=mask, other=1.0),
+            tl.load(b + j, mask=mask, other=1.0),
+            tl.load(c + j, mask=mask, other=1.0),
+            tl.load(d + j, mask=mask, other=1.0),
+            tl.load(e + j, mask=mask, other=1.0),
+            tl.load(f + j, mask=mask, other=0.1),
+            tl.load(g + j, mask=mask, other=0.1),
+            tl.load(h + j, mask=mask, other=0.005),
+            tl.load(i + j, mask=mask, other=1.0),
+            NARROW,
+        )
+        for entry in tl.static_range(12):
+            tl.store(out + entry * n + j, entries[entry], mask=mask)
+
+    voxels = 4096
+    worst = {}
+    for label, seconds in (("inside", 20e-3), ("at the bound", None), ("past", 1.0)):
+        columns = _three_pool_columns(voxels, seconds=seconds or 1.0, seed=5)
+        if seconds is None:
+            # Stretch the interval until the widest voxel sits on the bound.
+            rate = float(_spread_over(columns).max())
+            columns = _three_pool_columns(
+                voxels, seconds=NARROW_SPREAD / rate, seed=5
+            )
+        reached = float(_spread_over(columns).max())
+        expected = _matrix_exp_oracle(columns)
+        scale = expected.abs().amax(dim=1, keepdim=True).clamp_min(1e-12)
+        out = torch.zeros(12 * voxels, device="cuda", dtype=torch.float32)
+        only_the_series[(1,)](
+            *[value.to("cuda", torch.float32) for value in columns],
+            out, voxels, NARROW=True, BLOCK=triton.next_power_of_2(voxels),
+        )
+        got = out.reshape(12, voxels).T.double().cpu()
+        worst[label] = (
+            reached, float(((got - expected).abs() / scale).amax(dim=1).max())
+        )
+
+    inside_spread, inside = worst["inside"]
+    bound_spread, at_bound = worst["at the bound"]
+    past_spread, past = worst["past"]
+    assert inside_spread < NARROW_SPREAD
+    assert abs(bound_spread - NARROW_SPREAD) < 1e-6 * NARROW_SPREAD
+    assert past_spread > 2.0 * NARROW_SPREAD
+    # Float32 holds up to the bound: five ulps of the largest entry.
+    assert inside < 1e-6, inside
+    assert at_bound < 1e-6, at_bound
+    # And does not past it, which is why the roots are still there. Far enough
+    # out the series overflows rather than merely drifting, so the check is
+    # that it fails, not that it fails by a particular amount.
+    assert not past <= 1e-4, past
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_a_long_interval_declines_the_series_branch() -> None:
+    """The gate is refused where it must be, and taken where it may be.
+
+    A preparation delay spreads the eigenvalues past what the series carries,
+    so the launch has to fall back to the roots -- checked on the predicate the
+    launchers call, not inferred from the answer agreeing.
+    """
+    from torchsim.sequence._parameters import narrow_three_pool
+
+    voxels = 256
+    tissue, _, _ = _prepare_tissue(
+        TissueProperties(
+            t1_ms=torch.linspace(300.0, 2000.0, voxels),
+            t2_ms=torch.linspace(20.0, 200.0, voxels),
+            **{
+                name: torch.full((voxels,), value)
+                for name, value in {**SEMISOLID, **EXCHANGING}.items()
+            },
+        ),
+        "cpu",
+    )
+    tissue = tuple(value.to(torch.float32) for value in tissue)
+
+    packed = _pack_events(
+        _description(),
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    assert narrow_three_pool(tissue, packed.duration, pools=3)
+    assert not narrow_three_pool(
+        tissue, torch.tensor([2.5], dtype=torch.float32), pools=3
+    )
+    # One pool cannot reach the branch at all, so it never pays for the bound.
+    assert not narrow_three_pool(tissue, packed.duration, pools=2)
+    assert not narrow_three_pool(tissue, packed.duration, pools=1)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+@pytest.mark.parametrize("state_count", [8, 16])
+def test_the_series_branch_gives_the_answer_the_roots_give(state_count) -> None:
+    """Every pass, the flag forced both ways under one fixed input.
+
+    The gate cannot be measured against the host: that comparison moves for
+    reasons of its own. What it has to be held to is the branch it replaces.
+    """
+    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _epg_triton
+
+    voxels = 256
+    tissue, _, _ = _prepare_tissue(
+        TissueProperties(
+            t1_ms=torch.linspace(300.0, 2000.0, voxels),
+            t2_ms=torch.linspace(20.0, 200.0, voxels),
+            b0_hz=torch.linspace(-30.0, 30.0, voxels),
+            **{
+                name: torch.full((voxels,), value)
+                for name, value in {**SEMISOLID, **EXCHANGING}.items()
+            },
+        ),
+        "cuda",
+    )
+    tissue = tuple(value.to(torch.float32).contiguous() for value in tissue)
+    packed = _pack_events(
+        _description(),
+        repetitions=1,
+        record="all",
+        device=torch.device("cuda"),
+        rf_raster_time_s=1e-6,
+    )
+    events = tuple(packed.buffers)
+    outputs = int(packed.output_count)
+    table = lineshape_table(device=torch.device("cuda"))
+    seed = torch.randn(
+        (voxels, outputs),
+        dtype=torch.complex64,
+        generator=torch.Generator().manual_seed(3),
+    ).cuda()
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*tissue, events[0], events[2], events[3])
+    )
+    options = dict(
+        state_count=state_count, output_count=outputs, threads=1,
+        exchanging=True, lineshape=table,
+    )
+
+    def both_ways(run):
+        settled = _epg_triton.narrow_three_pool
+        sides = []
+        for forced in (True, False):
+            _epg_triton.narrow_three_pool = (
+                lambda *a, taken=forced, **k: taken
+            )
+            try:
+                sides.append(run())
+            finally:
+                _epg_triton.narrow_three_pool = settled
+        return sides
+
+    def leaves(value):
+        if isinstance(value, torch.Tensor):
+            return [value]
+        return [leaf for part in value for leaf in leaves(part)]
+
+    runs = {
+        "forward": lambda: _accelerators._run_packed(
+            tissue, events, state_count, outputs, 1,
+            exchanging=True, lineshape=table,
+        ),
+        "forward mode": lambda: _accelerators._run_packed_jvp(
+            tissue, events,
+            tuple(torch.full_like(value, 1e-2) for value in tissue),
+            tuple(
+                torch.zeros_like(value)
+                for value in (events[0], events[2], events[3])
+            ),
+            state_count, outputs, 1, exchanging=True, lineshape=table,
+        ),
+        "adjoint": lambda: _accelerators._run_packed_vjp(
+            tissue, events, seed, **options
+        ),
+        "second order": lambda: _accelerators._run_packed_vjp_jvp(
+            tissue, events, still, seed, **options
+        ),
+    }
+    for name, run in runs.items():
+        narrow, roots = (leaves(side) for side in both_ways(run))
+        largest = max(float(value.abs().max()) for value in roots)
+        assert largest > 0.0, name
+        worst = max(
+            float((left - right).abs().max())
+            for left, right in zip(narrow, roots, strict=True)
+        )
+        assert worst / largest < 1e-5, (name, worst / largest)

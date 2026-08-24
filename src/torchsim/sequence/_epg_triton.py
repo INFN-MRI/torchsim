@@ -16,6 +16,7 @@ from triton.language.extra import libdevice
 from ._parameters import (
     NO_GEOMETRY,
     feature_flags as _feature_flags,
+    narrow_three_pool,
     Geometry,
     tissue_gradient_bases,
     tissue_gradient_height,
@@ -267,9 +268,30 @@ def _exp_difference(lower, upper, exp_lower, exp_upper):
 
 
 @triton.jit
+def _three_pool_recovery(
+    e00, e01, e02, e10, e11, e12, e20, e21, e22, free, pool_b, pool_c
+):
+    """What each pool recovers over the interval, beside the operator itself.
+
+    Returns the nine entries and the three recoveries, narrowed to float32
+    once they are an operator.
+    """
+    grow_free = free - (e00 * free + e01 * pool_b + e02 * pool_c)
+    grow_pool_b = pool_b - (e10 * free + e11 * pool_b + e12 * pool_c)
+    grow_bound = pool_c - (e20 * free + e21 * pool_b + e22 * pool_c)
+    return (
+        e00.to(tl.float32), e01.to(tl.float32), e02.to(tl.float32),
+        e10.to(tl.float32), e11.to(tl.float32), e12.to(tl.float32),
+        e20.to(tl.float32), e21.to(tl.float32), e22.to(tl.float32),
+        grow_free.to(tl.float32), grow_pool_b.to(tl.float32),
+        grow_bound.to(tl.float32),
+    )
+
+
+@triton.jit
 def _three_pool_step(
     r1_free, r1_pool_b, r1_bound, exchange_b, exchange_c,
-    fraction_b, fraction_c, dt, attenuation,
+    fraction_b, fraction_c, dt, attenuation, narrow: tl.constexpr = False,
 ):
     """``expm((K - diag(R1)) t)`` for free water beside both second pools.
 
@@ -283,22 +305,30 @@ def _three_pool_step(
     polynomial, which forms no root at all. Where they are far apart the
     interpolating polynomial is taken in Newton form at the three roots, each
     of which is non-positive, so a long interval cannot overflow.
+
+    ``narrow`` says the caller has bounded the spread below
+    :data:`_NARROW_SPREAD` for every voxel and every interval it will pass, so
+    only the series can be reached. The roots then cost nothing, and the series
+    holds the answer to float32 without being carried in double --
+    :func:`torchsim.sequence._parameters.narrow_three_pool` is what decides it.
     """
-    step = dt.to(tl.float64)
-    free = (1.0 - fraction_b - fraction_c).to(tl.float64)
-    pool_b = fraction_b.to(tl.float64)
-    pool_c = fraction_c.to(tl.float64)
-    kab = exchange_b.to(tl.float64) * pool_b
-    kba = exchange_b.to(tl.float64) * free
-    kac = exchange_c.to(tl.float64) * pool_c
-    kca = exchange_c.to(tl.float64) * free
-    a00 = (-kab - kac - r1_free.to(tl.float64)) * step
+    work: tl.constexpr = tl.float32 if narrow else tl.float64
+    terms: tl.constexpr = 24 if narrow else 16
+    step = dt.to(work)
+    free = (1.0 - fraction_b - fraction_c).to(work)
+    pool_b = fraction_b.to(work)
+    pool_c = fraction_c.to(work)
+    kab = exchange_b.to(work) * pool_b
+    kba = exchange_b.to(work) * free
+    kac = exchange_c.to(work) * pool_c
+    kca = exchange_c.to(work) * free
+    a00 = (-kab - kac - r1_free.to(work)) * step
     a01 = kba * step
     a02 = kca * step
     a10 = kab * step
-    a11 = (-kba - r1_pool_b.to(tl.float64)) * step
+    a11 = (-kba - r1_pool_b.to(work)) * step
     a20 = kac * step
-    a22 = (-kca - r1_bound.to(tl.float64)) * step
+    a22 = (-kca - r1_bound.to(work)) * step
 
     third = (a00 + a11 + a22) / 3.0
     s00 = a00 - third
@@ -317,7 +347,7 @@ def _three_pool_step(
     sum_linear = linear
     sum_square = square
     factorial = 1.0
-    for order in tl.static_range(1, 16):
+    for order in tl.static_range(1, terms):
         next_flat = square * determinant
         next_linear = flat - square * minors
         next_square = linear
@@ -350,6 +380,20 @@ def _three_pool_step(
     c22 = lift * (sum_flat + sum_linear * s22 + sum_square * q22)
 
     # --- far apart: the Newton form at the three roots ---
+    damp = attenuation.to(work)
+    if narrow:
+        e00 = damp * c00
+        e01 = damp * c01
+        e02 = damp * c02
+        e10 = damp * c10
+        e11 = damp * c11
+        e12 = damp * c12
+        e20 = damp * c20
+        e21 = damp * c21
+        e22 = damp * c22
+        return _three_pool_recovery(
+            e00, e01, e02, e10, e11, e12, e20, e21, e22, free, pool_b, pool_c
+        )
     radius = tl.sqrt(tl.maximum(-minors * (1.0 / 3.0), 1e-300))
     argument = tl.minimum(
         tl.maximum(0.5 * determinant / (radius * radius * radius), -_ARG_LIMIT),
@@ -401,7 +445,6 @@ def _three_pool_step(
     # The shifted roots sum to zero, so the sum of their squares is -2 * minors
     # and none is larger than the root of that.
     close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
-    damp = attenuation.to(tl.float64)
     e00 = damp * tl.where(close, c00, d00)
     e01 = damp * tl.where(close, c01, d01)
     e02 = damp * tl.where(close, c02, d02)
@@ -411,15 +454,8 @@ def _three_pool_step(
     e20 = damp * tl.where(close, c20, d20)
     e21 = damp * tl.where(close, c21, d21)
     e22 = damp * tl.where(close, c22, d22)
-    grow_free = free - (e00 * free + e01 * pool_b + e02 * pool_c)
-    grow_pool_b = pool_b - (e10 * free + e11 * pool_b + e12 * pool_c)
-    grow_bound = pool_c - (e20 * free + e21 * pool_b + e22 * pool_c)
-    return (
-        e00.to(tl.float32), e01.to(tl.float32), e02.to(tl.float32),
-        e10.to(tl.float32), e11.to(tl.float32), e12.to(tl.float32),
-        e20.to(tl.float32), e21.to(tl.float32), e22.to(tl.float32),
-        grow_free.to(tl.float32), grow_pool_b.to(tl.float32),
-        grow_bound.to(tl.float32),
+    return _three_pool_recovery(
+        e00, e01, e02, e10, e11, e12, e20, e21, e22, free, pool_b, pool_c
     )
 
 
@@ -461,6 +497,7 @@ def _three_pool_pieces_jvp(
     exchange_b, d_exchange_b, exchange_c, d_exchange_c,
     fraction_b, d_fraction_b, fraction_c, d_fraction_c,
     dt, d_dt,
+    narrow: tl.constexpr = False,
 ):
     """The three-pool operator's shared front half, as duals.
 
@@ -469,18 +506,19 @@ def _three_pool_pieces_jvp(
     operator and its reverse sweep are assembled from, computed once in double
     so the two cannot drift apart.
     """
-    step = dt.to(tl.float64)
-    d_step = d_dt.to(tl.float64)
-    free = (1.0 - fraction_b - fraction_c).to(tl.float64)
-    d_free = (-d_fraction_b - d_fraction_c).to(tl.float64)
-    pool_b = fraction_b.to(tl.float64)
-    d_pool_b = d_fraction_b.to(tl.float64)
-    pool_c = fraction_c.to(tl.float64)
-    d_pool_c = d_fraction_c.to(tl.float64)
-    rate_b = exchange_b.to(tl.float64)
-    d_rate_b = d_exchange_b.to(tl.float64)
-    rate_c = exchange_c.to(tl.float64)
-    d_rate_c = d_exchange_c.to(tl.float64)
+    work: tl.constexpr = tl.float32 if narrow else tl.float64
+    step = dt.to(work)
+    d_step = d_dt.to(work)
+    free = (1.0 - fraction_b - fraction_c).to(work)
+    d_free = (-d_fraction_b - d_fraction_c).to(work)
+    pool_b = fraction_b.to(work)
+    d_pool_b = d_fraction_b.to(work)
+    pool_c = fraction_c.to(work)
+    d_pool_c = d_fraction_c.to(work)
+    rate_b = exchange_b.to(work)
+    d_rate_b = d_exchange_b.to(work)
+    rate_c = exchange_c.to(work)
+    d_rate_c = d_exchange_c.to(work)
     kab = rate_b * pool_b
     d_kab = d_rate_b * pool_b + rate_b * d_pool_b
     kba = rate_b * free
@@ -489,12 +527,12 @@ def _three_pool_pieces_jvp(
     d_kac = d_rate_c * pool_c + rate_c * d_pool_c
     kca = rate_c * free
     d_kca = d_rate_c * free + rate_c * d_free
-    row_a = -kab - kac - r1_free.to(tl.float64)
-    d_row_a = -d_kab - d_kac - d_r1_free.to(tl.float64)
-    row_b = -kba - r1_pool_b.to(tl.float64)
-    d_row_b = -d_kba - d_r1_pool_b.to(tl.float64)
-    row_c = -kca - r1_bound.to(tl.float64)
-    d_row_c = -d_kca - d_r1_bound.to(tl.float64)
+    row_a = -kab - kac - r1_free.to(work)
+    d_row_a = -d_kab - d_kac - d_r1_free.to(work)
+    row_b = -kba - r1_pool_b.to(work)
+    d_row_b = -d_kba - d_r1_pool_b.to(work)
+    row_c = -kca - r1_bound.to(work)
+    d_row_c = -d_kca - d_r1_bound.to(work)
     a00 = row_a * step
     d_a00 = d_row_a * step + row_a * d_step
     a01 = kba * step
@@ -824,6 +862,7 @@ def _three_pool_assemble_jvp(
     d_q21,
     q22,
     d_q22,
+    narrow: tl.constexpr = False,
 ):
     """The bare three-pool operator, assembled from its shared pieces.
 
@@ -932,25 +971,38 @@ def _three_pool_assemble_jvp(
     e22 = leading + first * m22 + second * p22
     d_e22 = d_leading + d_first * m22 + first * d_m22 + d_second * p22 + second * d_p22
 
-    close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
-    def_00 = tl.where(close, c00, e00)
-    dif_00 = tl.where(close, d_c00, d_e00)
-    def_01 = tl.where(close, c01, e01)
-    dif_01 = tl.where(close, d_c01, d_e01)
-    def_02 = tl.where(close, c02, e02)
-    dif_02 = tl.where(close, d_c02, d_e02)
-    def_10 = tl.where(close, c10, e10)
-    dif_10 = tl.where(close, d_c10, d_e10)
-    def_11 = tl.where(close, c11, e11)
-    dif_11 = tl.where(close, d_c11, d_e11)
-    def_12 = tl.where(close, c12, e12)
-    dif_12 = tl.where(close, d_c12, d_e12)
-    def_20 = tl.where(close, c20, e20)
-    dif_20 = tl.where(close, d_c20, d_e20)
-    def_21 = tl.where(close, c21, e21)
-    dif_21 = tl.where(close, d_c21, d_e21)
-    def_22 = tl.where(close, c22, e22)
-    dif_22 = tl.where(close, d_c22, d_e22)
+    if narrow:
+        # The caller has bounded the spread, so the roots are unreachable and
+        # everything that leads to them goes with this select.
+        def_00, dif_00 = c00, d_c00
+        def_01, dif_01 = c01, d_c01
+        def_02, dif_02 = c02, d_c02
+        def_10, dif_10 = c10, d_c10
+        def_11, dif_11 = c11, d_c11
+        def_12, dif_12 = c12, d_c12
+        def_20, dif_20 = c20, d_c20
+        def_21, dif_21 = c21, d_c21
+        def_22, dif_22 = c22, d_c22
+    else:
+        close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
+        def_00 = tl.where(close, c00, e00)
+        dif_00 = tl.where(close, d_c00, d_e00)
+        def_01 = tl.where(close, c01, e01)
+        dif_01 = tl.where(close, d_c01, d_e01)
+        def_02 = tl.where(close, c02, e02)
+        dif_02 = tl.where(close, d_c02, d_e02)
+        def_10 = tl.where(close, c10, e10)
+        dif_10 = tl.where(close, d_c10, d_e10)
+        def_11 = tl.where(close, c11, e11)
+        dif_11 = tl.where(close, d_c11, d_e11)
+        def_12 = tl.where(close, c12, e12)
+        dif_12 = tl.where(close, d_c12, d_e12)
+        def_20 = tl.where(close, c20, e20)
+        dif_20 = tl.where(close, d_c20, d_e20)
+        def_21 = tl.where(close, c21, e21)
+        dif_21 = tl.where(close, d_c21, d_e21)
+        def_22 = tl.where(close, c22, e22)
+        dif_22 = tl.where(close, d_c22, d_e22)
 
     return (
         def_00,
@@ -1002,14 +1054,16 @@ def _three_pool_weigh_jvp(
     d_pool_c,
     attenuation,
     d_attenuation,
+    narrow: tl.constexpr = False,
 ):
     """An interval's step, from the bare operator and what survives it.
 
     The recovery is ``(I - E) m0`` rather than a solve, which is what the
     equilibrium being a fixed point of the generator buys.
     """
-    damp = attenuation.to(tl.float64)
-    d_damp = d_attenuation.to(tl.float64)
+    work: tl.constexpr = tl.float32 if narrow else tl.float64
+    damp = attenuation.to(work)
+    d_damp = d_attenuation.to(work)
     w00 = damp * def_00
     dw00 = d_damp * def_00 + damp * dif_00
     w01 = damp * def_01
@@ -1063,7 +1117,7 @@ def _three_pool_step_jvp(
     r1_free, d_r1_free, r1_pool_b, d_r1_pool_b, r1_bound, d_r1_bound,
     exchange_b, d_exchange_b, exchange_c, d_exchange_c,
     fraction_b, d_fraction_b, fraction_c, d_fraction_c,
-    dt, d_dt, attenuation, d_attenuation,
+    dt, d_dt, attenuation, d_attenuation, narrow: tl.constexpr = False,
 ):
     """The three-pool longitudinal step and its directional derivative.
 
@@ -1172,6 +1226,7 @@ def _three_pool_step_jvp(
         d_fraction_c,
         dt,
         d_dt,
+        narrow,
     )
     (
         def_00,
@@ -1276,6 +1331,7 @@ def _three_pool_step_jvp(
         d_q21,
         q22,
         d_q22,
+        narrow,
     )
     (
         w00,
@@ -1329,6 +1385,7 @@ def _three_pool_step_jvp(
         d_pool_c,
         attenuation,
         d_attenuation,
+        narrow,
     )
     return (
         w00.to(tl.float32),
@@ -1563,6 +1620,7 @@ def _three_pool_step_adjoint_jvp(
     dif_21,
     def_22,
     dif_22,
+    narrow: tl.constexpr = False,
 ):
     """The reverse sweep of :func:`_three_pool_step`, carried on a direction.
 
@@ -1582,34 +1640,35 @@ def _three_pool_step_adjoint_jvp(
     exchange_b, exchange_c, fraction_b, fraction_c, dt, attenuation)`` and
     then their nine tangents.
     """
+    work: tl.constexpr = tl.float32 if narrow else tl.float64
     # --- the recovery and the attenuation, which both branches share ---
-    damp = attenuation.to(tl.float64)
-    d_damp = d_attenuation.to(tl.float64)
-    r0 = bar_grow_free.to(tl.float64)
-    d_r0 = d_bar_grow_free.to(tl.float64)
-    r1 = bar_grow_pool_b.to(tl.float64)
-    d_r1 = d_bar_grow_pool_b.to(tl.float64)
-    r2 = bar_grow_bound.to(tl.float64)
-    d_r2 = d_bar_grow_bound.to(tl.float64)
+    damp = attenuation.to(work)
+    d_damp = d_attenuation.to(work)
+    r0 = bar_grow_free.to(work)
+    d_r0 = d_bar_grow_free.to(work)
+    r1 = bar_grow_pool_b.to(work)
+    d_r1 = d_bar_grow_pool_b.to(work)
+    r2 = bar_grow_bound.to(work)
+    d_r2 = d_bar_grow_bound.to(work)
 
-    y00 = bar_e00.to(tl.float64) - r0 * free
-    d_y00 = d_bar_e00.to(tl.float64) - d_r0 * free - r0 * d_free
-    y01 = bar_e01.to(tl.float64) - r0 * pool_b
-    d_y01 = d_bar_e01.to(tl.float64) - d_r0 * pool_b - r0 * d_pool_b
-    y02 = bar_e02.to(tl.float64) - r0 * pool_c
-    d_y02 = d_bar_e02.to(tl.float64) - d_r0 * pool_c - r0 * d_pool_c
-    y10 = bar_e10.to(tl.float64) - r1 * free
-    d_y10 = d_bar_e10.to(tl.float64) - d_r1 * free - r1 * d_free
-    y11 = bar_e11.to(tl.float64) - r1 * pool_b
-    d_y11 = d_bar_e11.to(tl.float64) - d_r1 * pool_b - r1 * d_pool_b
-    y12 = bar_e12.to(tl.float64) - r1 * pool_c
-    d_y12 = d_bar_e12.to(tl.float64) - d_r1 * pool_c - r1 * d_pool_c
-    y20 = bar_e20.to(tl.float64) - r2 * free
-    d_y20 = d_bar_e20.to(tl.float64) - d_r2 * free - r2 * d_free
-    y21 = bar_e21.to(tl.float64) - r2 * pool_b
-    d_y21 = d_bar_e21.to(tl.float64) - d_r2 * pool_b - r2 * d_pool_b
-    y22 = bar_e22.to(tl.float64) - r2 * pool_c
-    d_y22 = d_bar_e22.to(tl.float64) - d_r2 * pool_c - r2 * d_pool_c
+    y00 = bar_e00.to(work) - r0 * free
+    d_y00 = d_bar_e00.to(work) - d_r0 * free - r0 * d_free
+    y01 = bar_e01.to(work) - r0 * pool_b
+    d_y01 = d_bar_e01.to(work) - d_r0 * pool_b - r0 * d_pool_b
+    y02 = bar_e02.to(work) - r0 * pool_c
+    d_y02 = d_bar_e02.to(work) - d_r0 * pool_c - r0 * d_pool_c
+    y10 = bar_e10.to(work) - r1 * free
+    d_y10 = d_bar_e10.to(work) - d_r1 * free - r1 * d_free
+    y11 = bar_e11.to(work) - r1 * pool_b
+    d_y11 = d_bar_e11.to(work) - d_r1 * pool_b - r1 * d_pool_b
+    y12 = bar_e12.to(work) - r1 * pool_c
+    d_y12 = d_bar_e12.to(work) - d_r1 * pool_c - r1 * d_pool_c
+    y20 = bar_e20.to(work) - r2 * free
+    d_y20 = d_bar_e20.to(work) - d_r2 * free - r2 * d_free
+    y21 = bar_e21.to(work) - r2 * pool_b
+    d_y21 = d_bar_e21.to(work) - d_r2 * pool_b - r2 * d_pool_b
+    y22 = bar_e22.to(work) - r2 * pool_c
+    d_y22 = d_bar_e22.to(work) - d_r2 * pool_c - r2 * d_pool_c
 
     # The bare operator is read rather than the attenuation divided back out
     # of the weighed one -- a washed-out interval leaves nothing to divide by.
@@ -2194,43 +2253,57 @@ def _three_pool_step_adjoint_jvp(
     ) / (6.0 * safe_radius)
 
     # --- the branch chosen on the cotangents, not on the way in ---
-    close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
-    bar_a00 = tl.where(close, v00, first * o00 + u00 + w00)
-    d_bar_a00 = tl.where(
-        close, d_v00, d_first * o00 + first * d_o00 + d_u00 + d_w00
-    )
-    bar_a01 = tl.where(close, v01, first * o01 + u01 + w01)
-    d_bar_a01 = tl.where(
-        close, d_v01, d_first * o01 + first * d_o01 + d_u01 + d_w01
-    )
-    bar_a02 = tl.where(close, v02, first * o02 + u02 + w02)
-    d_bar_a02 = tl.where(
-        close, d_v02, d_first * o02 + first * d_o02 + d_u02 + d_w02
-    )
-    bar_a10 = tl.where(close, v10, first * o10 + u10 + w10)
-    d_bar_a10 = tl.where(
-        close, d_v10, d_first * o10 + first * d_o10 + d_u10 + d_w10
-    )
-    bar_a11 = tl.where(close, v11, first * o11 + u11 + w11)
-    d_bar_a11 = tl.where(
-        close, d_v11, d_first * o11 + first * d_o11 + d_u11 + d_w11
-    )
-    bar_a20 = tl.where(close, v20, first * o20 + u20 + w20)
-    d_bar_a20 = tl.where(
-        close, d_v20, d_first * o20 + first * d_o20 + d_u20 + d_w20
-    )
-    bar_a22 = tl.where(close, v22, first * o22 + u22 + w22)
-    d_bar_a22 = tl.where(
-        close, d_v22, d_first * o22 + first * d_o22 + d_u22 + d_w22
-    )
-    bar_third = tl.where(close, turn_series, turn_roots)
-    d_bar_third = tl.where(close, d_turn_series, d_turn_roots)
-    bar_minors = tl.where(close, minors_series, minors_roots)
-    d_bar_minors = tl.where(close, d_minors_series, d_minors_roots)
-    bar_determinant = tl.where(close, determinant_series, determinant_roots)
-    d_bar_determinant = tl.where(
-        close, d_determinant_series, d_determinant_roots
-    )
+    if narrow:
+        bar_a00, d_bar_a00 = v00, d_v00
+        bar_a01, d_bar_a01 = v01, d_v01
+        bar_a02, d_bar_a02 = v02, d_v02
+        bar_a10, d_bar_a10 = v10, d_v10
+        bar_a11, d_bar_a11 = v11, d_v11
+        bar_a20, d_bar_a20 = v20, d_v20
+        bar_a22, d_bar_a22 = v22, d_v22
+        bar_third, d_bar_third = turn_series, d_turn_series
+        bar_minors, d_bar_minors = minors_series, d_minors_series
+        bar_determinant, d_bar_determinant = (
+            determinant_series, d_determinant_series
+        )
+    else:
+        close = -2.0 * minors < _SPREAD_CUT * _SPREAD_CUT
+        bar_a00 = tl.where(close, v00, first * o00 + u00 + w00)
+        d_bar_a00 = tl.where(
+            close, d_v00, d_first * o00 + first * d_o00 + d_u00 + d_w00
+        )
+        bar_a01 = tl.where(close, v01, first * o01 + u01 + w01)
+        d_bar_a01 = tl.where(
+            close, d_v01, d_first * o01 + first * d_o01 + d_u01 + d_w01
+        )
+        bar_a02 = tl.where(close, v02, first * o02 + u02 + w02)
+        d_bar_a02 = tl.where(
+            close, d_v02, d_first * o02 + first * d_o02 + d_u02 + d_w02
+        )
+        bar_a10 = tl.where(close, v10, first * o10 + u10 + w10)
+        d_bar_a10 = tl.where(
+            close, d_v10, d_first * o10 + first * d_o10 + d_u10 + d_w10
+        )
+        bar_a11 = tl.where(close, v11, first * o11 + u11 + w11)
+        d_bar_a11 = tl.where(
+            close, d_v11, d_first * o11 + first * d_o11 + d_u11 + d_w11
+        )
+        bar_a20 = tl.where(close, v20, first * o20 + u20 + w20)
+        d_bar_a20 = tl.where(
+            close, d_v20, d_first * o20 + first * d_o20 + d_u20 + d_w20
+        )
+        bar_a22 = tl.where(close, v22, first * o22 + u22 + w22)
+        d_bar_a22 = tl.where(
+            close, d_v22, d_first * o22 + first * d_o22 + d_u22 + d_w22
+        )
+        bar_third = tl.where(close, turn_series, turn_roots)
+        d_bar_third = tl.where(close, d_turn_series, d_turn_roots)
+        bar_minors = tl.where(close, minors_series, minors_roots)
+        d_bar_minors = tl.where(close, d_minors_series, d_minors_roots)
+        bar_determinant = tl.where(close, determinant_series, determinant_roots)
+        d_bar_determinant = tl.where(
+            close, d_determinant_series, d_determinant_roots
+        )
 
     # --- the two invariants back onto the shifted generator ---
     cofactor00 = s11 * s22
@@ -2294,12 +2367,12 @@ def _three_pool_step_adjoint_jvp(
     d_bar_a22 = d_bar_a22 + d_bar_third / 3.0
 
     # --- the generator back onto the rates, the fractions and the interval ---
-    step = dt.to(tl.float64)
-    d_step = d_dt.to(tl.float64)
-    rate_b = exchange_b.to(tl.float64)
-    d_rate_b = d_exchange_b.to(tl.float64)
-    rate_c = exchange_c.to(tl.float64)
-    d_rate_c = d_exchange_c.to(tl.float64)
+    step = dt.to(work)
+    d_step = d_dt.to(work)
+    rate_b = exchange_b.to(work)
+    d_rate_b = d_exchange_b.to(work)
+    rate_c = exchange_c.to(work)
+    d_rate_c = d_exchange_c.to(work)
     kab = rate_b * pool_b
     d_kab = d_rate_b * pool_b + rate_b * d_pool_b
     kba = rate_b * free
@@ -2308,12 +2381,12 @@ def _three_pool_step_adjoint_jvp(
     d_kac = d_rate_c * pool_c + rate_c * d_pool_c
     kca = rate_c * free
     d_kca = d_rate_c * free + rate_c * d_free
-    row_a = -kab - kac - r1_free.to(tl.float64)
-    d_row_a = -d_kab - d_kac - d_r1_free.to(tl.float64)
-    row_b = -kba - r1_pool_b.to(tl.float64)
-    d_row_b = -d_kba - d_r1_pool_b.to(tl.float64)
-    row_c = -kca - r1_bound.to(tl.float64)
-    d_row_c = -d_kca - d_r1_bound.to(tl.float64)
+    row_a = -kab - kac - r1_free.to(work)
+    d_row_a = -d_kab - d_kac - d_r1_free.to(work)
+    row_b = -kba - r1_pool_b.to(work)
+    d_row_b = -d_kba - d_r1_pool_b.to(work)
+    row_c = -kca - r1_bound.to(work)
+    d_row_c = -d_kca - d_r1_bound.to(work)
 
     bar_step = (
         row_a * bar_a00 + kba * bar_a01 + kca * bar_a02 + kab * bar_a10
@@ -4295,6 +4368,7 @@ def _epg_vjp_kernel(
     dynamic: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
+    narrow: tl.constexpr,
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
@@ -4528,6 +4602,7 @@ def _epg_vjp_kernel(
                 atom_exchange, nil, atom_semisolid_exchange, nil,
                 atom_bound, nil, atom_semisolid, nil,
                 dt_value, nil, hold_value, nil,
+                narrow,
             )
             spin_r, spin_i = damp_z * szr, damp_z * szi
             mix_fr = w11 * zvr + w12 * poolvr + w13 * semivr
@@ -5008,6 +5083,7 @@ def _epg_vjp_kernel(
                 nil,
                 dt_value,
                 nil,
+                narrow,
             )
             (
                 three_def_00,
@@ -5112,6 +5188,7 @@ def _epg_vjp_kernel(
                 three_d_q21,
                 three_q22,
                 three_d_q22,
+                narrow,
             )
             (
                 w11, w12, w13, w21, w22, w23, w31, w32, w33,
@@ -5145,6 +5222,7 @@ def _epg_vjp_kernel(
                 three_d_pool_c,
                 hold_value,
                 nil,
+                narrow,
             )
             # The operator is O(1) once formed, so the per-order loop below
             # takes it at the width the states are carried in.
@@ -5881,6 +5959,7 @@ def _epg_vjp_kernel(
                 three_dif_21,
                 three_def_22,
                 three_dif_22,
+                narrow,
             )
             g_t1v += back_r1 * (-1000.0 / (atom_t1 * atom_t1))
             g_t1bv += back_r1b * (-1000.0 / (atom_t1b * atom_t1b))
@@ -6252,6 +6331,7 @@ def _epg_vjp_jvp_kernel(
     inverting: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
+    narrow: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -6632,6 +6712,7 @@ def _epg_vjp_jvp_kernel(
                 atom_semisolid_exchange, d_semisolid_exchange,
                 atom_bound, d_boundf, atom_semisolid, d_semisolidf,
                 dt_value, dt_tangent, wout_value, wout_tangent,
+                narrow,
             )
             spin = _dual_scale(damp_z, damp_z_tangent, szr, szi, sztr, szti)
             was_free = (zvr, zvi, ztr, zti)
@@ -7384,6 +7465,7 @@ def _epg_vjp_jvp_kernel(
                 d_semisolidf,
                 dt_value,
                 dt_tangent,
+                narrow,
             )
             (
                 three_def_00,
@@ -7488,6 +7570,7 @@ def _epg_vjp_jvp_kernel(
                 three_d_q21,
                 three_q22,
                 three_d_q22,
+                narrow,
             )
             (
                 w11, w12, w13, w21, w22, w23, w31, w32, w33,
@@ -7521,6 +7604,7 @@ def _epg_vjp_jvp_kernel(
                 three_d_pool_c,
                 wout_value,
                 wout_tangent,
+                narrow,
             )
             # The operator is O(1) once formed, so the per-order loop below
             # takes it at the width the states are carried in.
@@ -8570,6 +8654,7 @@ def _epg_vjp_jvp_kernel(
                 three_dif_21,
                 three_def_22,
                 three_dif_22,
+                narrow,
             )
             slope1_v = -1000.0 / (atom_t1 * atom_t1)
             slope1_t = 2000.0 * d_t1 / (atom_t1 * atom_t1 * atom_t1)
@@ -10577,6 +10662,7 @@ def _epg_kernel(
     dynamic: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
+    narrow: tl.constexpr,
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
@@ -10802,7 +10888,7 @@ def _epg_kernel(
             ) = _three_pool_step(
                 1000.0 / atom_t1, atom_r1_bound, atom_r1_semisolid,
                 atom_exchange, atom_semisolid_exchange,
-                atom_bound, atom_semisolid, dt, wout,
+                atom_bound, atom_semisolid, dt, wout, narrow,
             )
             free_real = (
                 t11 * longitudinal_real + t12 * bound_real + t13 * semisolid_real
@@ -11260,6 +11346,7 @@ def _epg_jvp_kernel(
     dynamic: tl.constexpr,
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
+    narrow: tl.constexpr,
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
@@ -11716,6 +11803,7 @@ def _epg_jvp_kernel(
                 atom_bound, d_bound,
                 atom_semisolid, d_semisolid,
                 event_dt, ddt, wout, dwout,
+                narrow,
             )
             spun_hr = br * turn_cos - bi * turn_sin
             spun_hi = br * turn_sin + bi * turn_cos
@@ -12381,6 +12469,7 @@ def simulate_into(
     ) = events
     train_count = _train_count(events)
     shims = _shim_count(tissue)
+    pools = _pool_flag(lineshape, exchanging)
     block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
     problems = _problems_per_program(total, block_states)
@@ -12478,7 +12567,8 @@ def simulate_into(
         profile_bins=0 if profile is None else profile.bins,
         dynamic=dynamic is not None,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
-        pools=_pool_flag(lineshape, exchanging),
+        pools=pools,
+        narrow=narrow_three_pool(tissue, duration, pools=pools),
         **_feature_flags(features, geometry),
         block_states=block_states,
         problems=problems,
@@ -12576,6 +12666,7 @@ def simulate_jvp_into(
     ) = events
     tangent_duration, tangent_flip, tangent_phase = event_tangents
     train_count = _train_count(events)
+    pools = _pool_flag(lineshape, exchanging)
     shims = _shim_count(tissue)
     block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
@@ -12673,7 +12764,8 @@ def simulate_jvp_into(
         profile_bins=0 if profile is None else profile.bins,
         dynamic=dynamic is not None,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
-        pools=_pool_flag(lineshape, exchanging),
+        pools=pools,
+        narrow=narrow_three_pool(tissue, duration, pools=pools),
         **_feature_flags(features, geometry),
         block_states=block_states,
         problems=problems,
@@ -12839,6 +12931,9 @@ def simulate_vjp(
             dynamic=dynamic is not None,
             lineshape_bins=0 if lineshape is None else lineshape.bins,
             pools=pools,
+            narrow=narrow_three_pool(
+                tissue, duration, pools=pools
+            ),
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -13207,6 +13302,7 @@ def simulate_vjp_into(
             dynamic=False,
             lineshape_bins=0,
             pools=0,
+            narrow=False,
             block_states=block_states,
             problems=problems,
             num_warps=1,
@@ -13310,6 +13406,7 @@ def simulate_vjp_jvp_into(
         _saturation, _rf_frequency,
     ) = events
     train_count = _train_count(events)
+    pools = _pool_flag(lineshape, exchanging)
     event_count = kind.numel()
     total = train_count * atom_count
     block_states = triton.next_power_of_2(state_count)
@@ -13429,7 +13526,8 @@ def simulate_vjp_jvp_into(
                 dynamic=dynamic is not None,
                 directed=dynamic_direction is not None,
                 lineshape_bins=0 if lineshape is None else lineshape.bins,
-                pools=_pool_flag(lineshape, exchanging),
+                pools=pools,
+                narrow=narrow_three_pool(tissue, duration, pools=pools),
                 **_feature_flags(features, geometry),
                 **shape,
             )

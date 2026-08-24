@@ -26,6 +26,8 @@ __all__ = [
     "tissue_gradient_bases",
     "tissue_gradient_rows",
     "tissue_gradient_height",
+    "NARROW_SPREAD",
+    "narrow_three_pool",
 ]
 
 from dataclasses import dataclass
@@ -369,3 +371,63 @@ def tissue_gradient_bases(shims: int) -> tuple[int, ...]:
 def tissue_gradient_height(shims: int) -> int:
     """How many rows of one voxel each the whole tissue gradient plane takes."""
     return TISSUE_COUNT + (shims - 1) * len(TRANSMIT_INPUTS)
+
+
+# How far the three-pool eigenvalues may spread before the series that reduces
+# the exponential modulo the characteristic polynomial stops carrying the
+# answer to float32. Measured against ``torch.linalg.matrix_exp``: the worst
+# relative error is 1.0e-6 below this, 2.7e-6 by a spread of 8, and 1.3e-4 by
+# 10, where the Newton form at the three roots takes over.
+NARROW_SPREAD = 4.0
+
+
+def narrow_three_pool(
+    tissue: tuple[Any, ...], duration: Any, *, pools: int
+) -> bool:
+    """Whether every interval keeps the three pools' eigenvalues close together.
+
+    The generator is proportional to the interval, so the spread is too: one
+    pass over the voxels gives the spread a unit interval would produce, and
+    the longest interval scales it. That makes this an exact bound over the
+    whole launch rather than a sample of it, for one reduction and one
+    synchronisation -- taken only for a tissue that carries both second pools,
+    which is the only one whose answer it changes.
+
+    Parameters
+    ----------
+    tissue:
+        The prepared per-voxel buffers, in ``TISSUE_NAMES`` order.
+    duration:
+        The packed event durations, in seconds.
+    pools:
+        Which pool model the launch carries, as the kernels' constexpr reads it.
+
+    Returns
+    -------
+    bool
+        True when the series alone reaches every voxel and every interval.
+    """
+    if pools != 3:
+        return False
+    index = {name: position for position, name in enumerate(TISSUE_NAMES)}
+    take = lambda name: tissue[index[name]].to(torch.float64)  # noqa: E731
+    fraction_b = take("pool_b_fraction")
+    fraction_c = take("bound_fraction")
+    free = 1.0 - fraction_b - fraction_c
+    exchange_b = take("pool_b_exchange_hz")
+    exchange_c = take("bound_exchange_hz")
+    # A unit interval, so the longest one scales what it gives.
+    a00 = -exchange_b * fraction_b - exchange_c * fraction_c - 1000.0 / take("t1_ms")
+    a11 = -exchange_b * free - 1000.0 / take("t1_pool_b_ms")
+    a22 = -exchange_c * free - 1000.0 / take("t1_bound_ms")
+    third = (a00 + a11 + a22) / 3.0
+    s00, s11, s22 = a00 - third, a11 - third, a22 - third
+    minors = (
+        s00 * s11
+        - (exchange_b * free) * (exchange_b * fraction_b)
+        + s00 * s22
+        - (exchange_c * free) * (exchange_c * fraction_c)
+        + s11 * s22
+    )
+    rate = torch.sqrt(torch.clamp(-2.0 * minors, min=0.0)).max()
+    return bool(float(rate) * float(duration.abs().max()) <= NARROW_SPREAD)
