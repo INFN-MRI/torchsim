@@ -314,6 +314,20 @@ def _case(name: str) -> None:
     print(f"  forward mode        {forward_mode:.2e}")
     assert forward_mode <= tolerance, f"forward mode drifted: {forward_mode:.2e}"
 
+    # Real directions, so the tangent half of the table is genuinely read.
+    seeded = (*directions, *event_directions)
+    for half, label in ((0, "curvature"), (1, "gradient")):
+        without, with_table = _both(
+            lambda h=half: _epg_triton.simulate_vjp_jvp(
+                tissue, events, seeded, seed,
+                state_count=states, output_count=outputs, **options,
+            )[h],
+            force_narrow,
+        )
+        second = _worst(without, with_table)
+        print(f"  second order {label:<10} {second:.2e}")
+        assert second <= tolerance, f"second order {label}: {second:.2e}"
+
     if cut is not None:
         # A chunked case that ran in one chunk tests nothing it claims to.
         assert cut and max(cut) < voxels, f"never chunked: waves {cut}"

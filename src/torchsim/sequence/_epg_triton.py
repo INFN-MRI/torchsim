@@ -7138,6 +7138,8 @@ def _epg_vjp_jvp_kernel(
     dot_duration,
     dot_flip,
     dot_phase,
+    duration_row,
+    pool_table,
     grad_output_real,
     grad_output_imag,
     grad_tissue_value,
@@ -7182,6 +7184,7 @@ def _epg_vjp_jvp_kernel(
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
     narrow: tl.constexpr,
+    tabulated: tl.constexpr,
     block_states: tl.constexpr,
     problems: tl.constexpr,
 ):
@@ -7550,20 +7553,42 @@ def _epg_vjp_jvp_kernel(
             # Three pools mix through a 3x3 formed in double, tangent and all:
             # a direction through an operator this ill-conditioned needs the
             # width as much as the value does.
-            (
-                t11, t12, t13, t21, t22, t23, t31, t32, t33,
-                grow_free, grow_pool_b, grow_semisolid,
-                d_t11, d_t12, d_t13, d_t21, d_t22, d_t23, d_t31, d_t32, d_t33,
-                d_grow_free, d_grow_pool_b, d_grow_semisolid,
-            ) = _three_pool_step_jvp(
-                r1_value, r1_tangent, r1b_value, r1b_tangent,
-                r1c_value, r1c_tangent,
-                atom_exchange, d_exchange,
-                atom_semisolid_exchange, d_semisolid_exchange,
-                atom_bound, d_boundf, atom_semisolid, d_semisolidf,
-                dt_value, dt_tangent, wout_value, wout_tangent,
-                narrow,
-            )
+            if tabulated:
+                (
+                    t11, t12, t13, t21, t22, t23, t31, t32, t33,
+                    grow_free, grow_pool_b, grow_semisolid,
+                    d_t11, d_t12, d_t13, d_t21, d_t22, d_t23,
+                    d_t31, d_t32, d_t33,
+                    d_grow_free, d_grow_pool_b, d_grow_semisolid,
+                ) = _three_pool_from_table_jvp(
+                    pool_table,
+                    tl.load(
+                        duration_row + event_base + event,
+                        mask=active_atom,
+                        other=0,
+                    ),
+                    atom, atom_count, active_atom,
+                    r1_value, r1b_value, r1c_value,
+                    atom_exchange, atom_semisolid_exchange,
+                    atom_bound, d_boundf, atom_semisolid, d_semisolidf,
+                    dt_tangent, wout_value, wout_tangent,
+                )
+            else:
+                (
+                    t11, t12, t13, t21, t22, t23, t31, t32, t33,
+                    grow_free, grow_pool_b, grow_semisolid,
+                    d_t11, d_t12, d_t13, d_t21, d_t22, d_t23,
+                    d_t31, d_t32, d_t33,
+                    d_grow_free, d_grow_pool_b, d_grow_semisolid,
+                ) = _three_pool_step_jvp(
+                    r1_value, r1_tangent, r1b_value, r1b_tangent,
+                    r1c_value, r1c_tangent,
+                    atom_exchange, d_exchange,
+                    atom_semisolid_exchange, d_semisolid_exchange,
+                    atom_bound, d_boundf, atom_semisolid, d_semisolidf,
+                    dt_value, dt_tangent, wout_value, wout_tangent,
+                    narrow,
+                )
             spin = _dual_scale(damp_z, damp_z_tangent, szr, szi, sztr, szti)
             was_free = (zvr, zvi, ztr, zti)
             was_pool_b = (bvr, bvi, btr, bti)
@@ -14577,6 +14602,10 @@ def simulate_vjp_jvp_into(
     )
     table_rows = None if profile is None else profile.rows(kind.device)
     absorption = None if lineshape is None else lineshape.packed(t1.device)
+    narrow = narrow_three_pool(tissue, duration, pools=pools)
+    duration_row, pool_table, _lengths = _tabulate_three_pool(
+        tissue, duration, pools=pools, narrow=narrow, tangents=tangents
+    )
 
     wave = buffers.wave
     problems = _problems_per_program(wave, block_states)
@@ -14638,6 +14667,8 @@ def simulate_vjp_jvp_into(
                 t1 if grad_pair_value is None else grad_pair_value,
                 t1 if grad_pair_tangent is None else grad_pair_tangent,
                 *tangents,
+                kind if duration_row is None else duration_row,
+                t1 if pool_table is None else pool_table,
                 grad_real,
                 grad_imag,
                 *grad_tissue,
@@ -14664,7 +14695,8 @@ def simulate_vjp_jvp_into(
                 directed=dynamic_direction is not None,
                 lineshape_bins=0 if lineshape is None else lineshape.bins,
                 pools=pools,
-                narrow=narrow_three_pool(tissue, duration, pools=pools),
+                narrow=narrow,
+                tabulated=pool_table is not None,
                 **_feature_flags(features, geometry),
                 **shape,
             )
