@@ -123,13 +123,16 @@ def _both(run: Any, force_narrow: bool) -> tuple[Any, Any]:
     original = _epg_triton._tabulate_three_pool
     built: list[bool] = []
 
-    def patched(tissue, duration, *, pools, narrow, problems=None):
+    def patched(
+        tissue, duration, *, pools, narrow, problems=None,
+        tangents=None,
+    ):
         if not built_wanted[0]:
             return None, None, None
         rows, table, lengths = original(
             tissue, duration, pools=pools,
             narrow=False if force_narrow else narrow,
-            problems=problems,
+            problems=problems, tangents=tangents,
         )
         built.append(table is not None)
         return rows, table, lengths
@@ -288,6 +291,29 @@ def _case(name: str) -> None:
     adjoint = _worst(without, with_table)
     print(f"  first-order adjoint {adjoint:.2e}")
     assert adjoint <= tolerance, f"adjoint drifted: {adjoint:.2e}"
+    directions = tuple(
+        torch.linspace(0.01, 0.03, value.numel()).reshape(value.shape)
+        if value.numel() else value.clone()
+        for value in tissue
+    )
+    event_directions = (
+        torch.full_like(events[0], 1e-4),
+        torch.zeros_like(events[2]),
+        torch.zeros_like(events[3]),
+    )
+    without, with_table = _both(
+        lambda: _epg_triton.simulate_jvp(
+            tissue, events, directions, event_directions,
+            state_count=states, output_count=outputs, **options,
+        ),
+        force_narrow,
+    )
+    forward_mode = float(
+        (with_table - without).abs().max() / without.abs().max()
+    )
+    print(f"  forward mode        {forward_mode:.2e}")
+    assert forward_mode <= tolerance, f"forward mode drifted: {forward_mode:.2e}"
+
     if cut is not None:
         # A chunked case that ran in one chunk tests nothing it claims to.
         assert cut and max(cut) < voxels, f"never chunked: waves {cut}"

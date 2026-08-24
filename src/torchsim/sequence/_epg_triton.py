@@ -489,6 +489,180 @@ def _three_pool_from_table(
 
 
 @triton.jit
+def _three_pool_from_table_jvp(
+    table, row, atom, voxel_count, mask,
+    r1_free, r1_pool_b, r1_bound, exchange_b, exchange_c,
+    fraction_b, d_fraction_b, fraction_c, d_fraction_c,
+    d_dt, attenuation, d_attenuation,
+):
+    """Read one interval's three-pool operator and a direction through it.
+
+    The row carries the tissue's share of the direction; the interval's own is
+    ``A1 C d_dt``, formed here because ``d_dt`` belongs to the event and the
+    row is shared. Returns the nine entries and three recoveries with their
+    tangents, in the order :func:`_three_pool_step_jvp` returns them.
+    """
+    free = 1.0 - fraction_b - fraction_c
+    d_free = -d_fraction_b - d_fraction_c
+    a00 = -exchange_b * fraction_b - exchange_c * fraction_c - r1_free
+    a01 = exchange_b * free
+    a02 = exchange_c * free
+    a10 = exchange_b * fraction_b
+    a11 = -exchange_b * free - r1_pool_b
+    a20 = exchange_c * fraction_c
+    a22 = -exchange_c * free - r1_bound
+    base = table + row * (18 * voxel_count) + atom
+    c00 = tl.load(base + 0 * voxel_count, mask=mask, other=0.0)
+    c01 = tl.load(base + 1 * voxel_count, mask=mask, other=0.0)
+    c02 = tl.load(base + 2 * voxel_count, mask=mask, other=0.0)
+    c10 = tl.load(base + 3 * voxel_count, mask=mask, other=0.0)
+    c11 = tl.load(base + 4 * voxel_count, mask=mask, other=0.0)
+    c12 = tl.load(base + 5 * voxel_count, mask=mask, other=0.0)
+    c20 = tl.load(base + 6 * voxel_count, mask=mask, other=0.0)
+    c21 = tl.load(base + 7 * voxel_count, mask=mask, other=0.0)
+    c22 = tl.load(base + 8 * voxel_count, mask=mask, other=0.0)
+    # The row's tangent, plus what the event's own interval direction adds.
+    t00 = tl.load(base + 9 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a00 * c00 + a01 * c10 + a02 * c20
+    )
+    t01 = tl.load(base + 10 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a00 * c01 + a01 * c11 + a02 * c21
+    )
+    t02 = tl.load(base + 11 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a00 * c02 + a01 * c12 + a02 * c22
+    )
+    t10 = tl.load(base + 12 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a10 * c00 + a11 * c10
+    )
+    t11 = tl.load(base + 13 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a10 * c01 + a11 * c11
+    )
+    t12 = tl.load(base + 14 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a10 * c02 + a11 * c12
+    )
+    t20 = tl.load(base + 15 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a20 * c00 + a22 * c20
+    )
+    t21 = tl.load(base + 16 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a20 * c01 + a22 * c21
+    )
+    t22 = tl.load(base + 17 * voxel_count, mask=mask, other=0.0) + d_dt * (
+        a20 * c02 + a22 * c22
+    )
+    e00 = attenuation * c00
+    e01 = attenuation * c01
+    e02 = attenuation * c02
+    e10 = attenuation * c10
+    e11 = attenuation * c11
+    e12 = attenuation * c12
+    e20 = attenuation * c20
+    e21 = attenuation * c21
+    e22 = attenuation * c22
+    f00 = d_attenuation * c00 + attenuation * t00
+    f01 = d_attenuation * c01 + attenuation * t01
+    f02 = d_attenuation * c02 + attenuation * t02
+    f10 = d_attenuation * c10 + attenuation * t10
+    f11 = d_attenuation * c11 + attenuation * t11
+    f12 = d_attenuation * c12 + attenuation * t12
+    f20 = d_attenuation * c20 + attenuation * t20
+    f21 = d_attenuation * c21 + attenuation * t21
+    f22 = d_attenuation * c22 + attenuation * t22
+    # The equilibrium the recoveries are taken against moves with the
+    # fractions, so it carries a direction of its own.
+    grow_free = free - (e00 * free + e01 * fraction_b + e02 * fraction_c)
+    grow_pool_b = fraction_b - (e10 * free + e11 * fraction_b + e12 * fraction_c)
+    grow_bound = fraction_c - (e20 * free + e21 * fraction_b + e22 * fraction_c)
+    d_grow_free = d_free - (
+        f00 * free + f01 * fraction_b + f02 * fraction_c
+        + e00 * d_free + e01 * d_fraction_b + e02 * d_fraction_c
+    )
+    d_grow_pool_b = d_fraction_b - (
+        f10 * free + f11 * fraction_b + f12 * fraction_c
+        + e10 * d_free + e11 * d_fraction_b + e12 * d_fraction_c
+    )
+    d_grow_bound = d_fraction_c - (
+        f20 * free + f21 * fraction_b + f22 * fraction_c
+        + e20 * d_free + e21 * d_fraction_b + e22 * d_fraction_c
+    )
+    return (
+        e00, e01, e02, e10, e11, e12, e20, e21, e22,
+        grow_free, grow_pool_b, grow_bound,
+        f00, f01, f02, f10, f11, f12, f20, f21, f22,
+        d_grow_free, d_grow_pool_b, d_grow_bound,
+    )
+
+
+@triton.jit
+def _three_pool_table_jvp_kernel(
+    t1, t1_pool_b, t1_bound, pool_b_exchange, bound_exchange,
+    pool_b_fraction, bound_fraction,
+    d_t1, d_t1_pool_b, d_t1_bound, d_pool_b_exchange, d_bound_exchange,
+    d_pool_b_fraction, d_bound_fraction,
+    durations, rows, table, voxel_count,
+    BLOCK: tl.constexpr, narrow: tl.constexpr,
+):
+    """Fill one row of the three-pool operator table, value and direction.
+
+    The row holds nine undamped entries and the nine a direction through the
+    tissue gives them, both at ``d_dt`` of zero -- the interval's own share of
+    the direction is ``A1 C d_dt``, which the reading event adds because
+    ``d_dt`` is its own and the row's is not. Laid out ``(rows, 18, voxels)``,
+    the tangent following the value.
+    """
+    row = tl.load(rows + tl.program_id(0))
+    atom = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
+    live = atom < voxel_count
+    dt = tl.load(durations + row)
+    nil = 0.0 * dt
+    value_t1 = tl.load(t1 + atom, mask=live, other=1.0)
+    value_t1b = tl.load(t1_pool_b + atom, mask=live, other=1.0)
+    value_t1c = tl.load(t1_bound + atom, mask=live, other=1.0)
+    (
+        e00, e01, e02, e10, e11, e12, e20, e21, e22, _, _, _,
+        d00, d01, d02, d10, d11, d12, d20, d21, d22, _, _, _,
+    ) = _three_pool_step_jvp(
+        1000.0 / value_t1,
+        -1000.0 * tl.load(d_t1 + atom, mask=live, other=0.0)
+        / (value_t1 * value_t1),
+        1000.0 / value_t1b,
+        -1000.0 * tl.load(d_t1_pool_b + atom, mask=live, other=0.0)
+        / (value_t1b * value_t1b),
+        1000.0 / value_t1c,
+        -1000.0 * tl.load(d_t1_bound + atom, mask=live, other=0.0)
+        / (value_t1c * value_t1c),
+        tl.load(pool_b_exchange + atom, mask=live, other=0.0),
+        tl.load(d_pool_b_exchange + atom, mask=live, other=0.0),
+        tl.load(bound_exchange + atom, mask=live, other=0.0),
+        tl.load(d_bound_exchange + atom, mask=live, other=0.0),
+        tl.load(pool_b_fraction + atom, mask=live, other=0.0),
+        tl.load(d_pool_b_fraction + atom, mask=live, other=0.0),
+        tl.load(bound_fraction + atom, mask=live, other=0.0),
+        tl.load(d_bound_fraction + atom, mask=live, other=0.0),
+        dt, nil, 1.0 + nil, nil,
+        narrow,
+    )
+    base = table + row * (18 * voxel_count) + atom
+    tl.store(base + 0 * voxel_count, e00, mask=live)
+    tl.store(base + 1 * voxel_count, e01, mask=live)
+    tl.store(base + 2 * voxel_count, e02, mask=live)
+    tl.store(base + 3 * voxel_count, e10, mask=live)
+    tl.store(base + 4 * voxel_count, e11, mask=live)
+    tl.store(base + 5 * voxel_count, e12, mask=live)
+    tl.store(base + 6 * voxel_count, e20, mask=live)
+    tl.store(base + 7 * voxel_count, e21, mask=live)
+    tl.store(base + 8 * voxel_count, e22, mask=live)
+    tl.store(base + 9 * voxel_count, d00, mask=live)
+    tl.store(base + 10 * voxel_count, d01, mask=live)
+    tl.store(base + 11 * voxel_count, d02, mask=live)
+    tl.store(base + 12 * voxel_count, d10, mask=live)
+    tl.store(base + 13 * voxel_count, d11, mask=live)
+    tl.store(base + 14 * voxel_count, d12, mask=live)
+    tl.store(base + 15 * voxel_count, d20, mask=live)
+    tl.store(base + 16 * voxel_count, d21, mask=live)
+    tl.store(base + 17 * voxel_count, d22, mask=live)
+
+
+@triton.jit
 def _three_pool_interval_adjoint(
     table, row, atom, voxel_count, mask,
     r1_free, r1_pool_b, r1_bound, exchange_b, exchange_c,
@@ -12018,6 +12192,8 @@ def _epg_jvp_kernel(
     pairs,
     pair_index,
     pair_direction,
+    duration_row,
+    pool_table,
     output_real,
     output_imag,
     scratch_fplus_real,
@@ -12041,6 +12217,7 @@ def _epg_jvp_kernel(
     lineshape_bins: tl.constexpr,
     pools: tl.constexpr,
     narrow: tl.constexpr,
+    tabulated: tl.constexpr,
     off_axis: tl.constexpr,
     moving: tl.constexpr,
     diffusing: tl.constexpr,
@@ -12483,12 +12660,34 @@ def _epg_jvp_kernel(
             # Three pools mix through a 3x3 formed in double, tangent and all:
             # a direction through an operator this ill-conditioned needs the
             # width as much as the value does.
-            (
-                t11, t12, t13, t21, t22, t23, t31, t32, t33,
-                grow_free, grow_pool_b, grow_semisolid,
-                d_t11, d_t12, d_t13, d_t21, d_t22, d_t23, d_t31, d_t32, d_t33,
-                d_grow_free, d_grow_pool_b, d_grow_semisolid,
-            ) = _three_pool_step_jvp(
+            if tabulated:
+                (
+                    t11, t12, t13, t21, t22, t23, t31, t32, t33,
+                    grow_free, grow_pool_b, grow_semisolid,
+                    d_t11, d_t12, d_t13, d_t21, d_t22, d_t23,
+                    d_t31, d_t32, d_t33,
+                    d_grow_free, d_grow_pool_b, d_grow_semisolid,
+                ) = _three_pool_from_table_jvp(
+                    pool_table,
+                    tl.load(
+                        duration_row + event_base + event,
+                        mask=active_atom,
+                        other=0,
+                    ),
+                    atom, atom_count, active_atom,
+                    r1, atom_r1_bound, atom_r1_semisolid,
+                    atom_exchange, atom_semisolid_exchange,
+                    atom_bound, d_bound, atom_semisolid, d_semisolid,
+                    ddt, wout, dwout,
+                )
+            else:
+                (
+                    t11, t12, t13, t21, t22, t23, t31, t32, t33,
+                    grow_free, grow_pool_b, grow_semisolid,
+                    d_t11, d_t12, d_t13, d_t21, d_t22, d_t23,
+                    d_t31, d_t32, d_t33,
+                    d_grow_free, d_grow_pool_b, d_grow_semisolid,
+                ) = _three_pool_step_jvp(
                 r1, -1000.0 * dt1 / (atom_t1 * atom_t1),
                 atom_r1_bound, d_r1_bound,
                 atom_r1_semisolid, d_r1_semisolid,
@@ -13060,6 +13259,57 @@ def _table_budget(device: torch.device) -> int:
     return max(_TABLE_FLOOR_BYTES, int(free * _TABLE_SHARE))
 
 
+def _three_pool_table_jvp(
+    tissue: tuple[torch.Tensor, ...],
+    tangents: tuple[torch.Tensor, ...],
+    durations: torch.Tensor,
+) -> torch.Tensor:
+    """The three-pool operator and a direction through it, per distinct length.
+
+    Parameters
+    ----------
+    tissue:
+        The prepared per-voxel buffers, in ``TISSUE_NAMES`` order.
+    tangents:
+        The directions along them, in the same order.
+    durations:
+        The distinct interval lengths, in seconds.
+
+    Returns
+    -------
+    torch.Tensor
+        ``(rows, 18, voxels)`` float32, undamped and at ``d_dt`` of zero.
+    """
+    voxels = int(tissue[0].numel())
+    rows = int(durations.numel())
+    table = torch.empty(
+        (rows, 18, voxels), dtype=torch.float32, device=tissue[0].device
+    )
+    order = (0, 14, 11, 13, 10, 12, 9)
+    block = min(1024, triton.next_power_of_2(max(voxels, 1)))
+    spread = durations.abs().to(torch.float64) * three_pool_spread_rate(tissue)
+    for picked, narrow in (
+        (torch.nonzero(spread <= NARROW_SPREAD).flatten(), True),
+        (torch.nonzero(spread > NARROW_SPREAD).flatten(), False),
+    ):
+        if picked.numel() == 0:
+            continue
+        _three_pool_table_jvp_kernel[
+            (picked.numel(), triton.cdiv(voxels, block))
+        ](
+            *(tissue[index] for index in order),
+            *(tangents[index] for index in order),
+            durations.to(torch.float32),
+            picked.to(torch.int32),
+            table,
+            voxels,
+            BLOCK=block,
+            narrow=narrow,
+            num_warps=4,
+        )
+    return table
+
+
 def _tabulate_three_pool(
     tissue: tuple[torch.Tensor, ...],
     duration: torch.Tensor,
@@ -13067,6 +13317,7 @@ def _tabulate_three_pool(
     pools: int,
     narrow: bool,
     problems: int | None = None,
+    tangents: tuple[torch.Tensor, ...] | None = None,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
     """The operator table an event loop should read, or ``None`` to form it.
 
@@ -13095,6 +13346,10 @@ def _tabulate_three_pool(
         How many problems a chunk of the adjoint carries, which is the height
         of the cotangent table it allocates. ``None`` for a caller that builds
         no such table.
+    tangents:
+        The directions along the tissue, for a caller that follows one. The
+        table then carries the direction through the operator beside its
+        value, at twice the width.
 
     Returns
     -------
@@ -13109,18 +13364,20 @@ def _tabulate_three_pool(
     # lengths are all different has nothing to gain and a table to write.
     if distinct.numel() >= duration.numel():
         return None, None, None
-    if _three_pool_table_bytes(
+    width = 2 if tangents is not None else 1
+    if width * _three_pool_table_bytes(
         tissue, distinct.numel(), problems=problems
     ) > _table_budget(tissue[0].device):
         # A pathological train has as many lengths as events, and the tables
         # grow with their product. Forming the operator per event is slower
         # and always fits, so that is what an unbounded one falls back to.
         return None, None, None
-    return (
-        inverse.reshape(duration.shape).to(torch.int32),
-        _three_pool_table(tissue, distinct),
-        distinct.to(torch.float32).contiguous(),
-    )
+    lengths = distinct.to(torch.float32).contiguous()
+    if tangents is not None:
+        built = _three_pool_table_jvp(tissue, tangents, lengths)
+    else:
+        built = _three_pool_table(tissue, lengths)
+    return inverse.reshape(duration.shape).to(torch.int32), built, lengths
 
 
 def _three_pool_table(
@@ -13151,8 +13408,7 @@ def _three_pool_table(
     table = torch.empty((rows, 9, voxels), dtype=torch.float32, device=t1.device)
     # The spread a row reaches is its own length times the rate, so the split
     # is exact per row rather than one verdict for the whole table.
-    rate = three_pool_spread_rate(tissue)
-    spread = durations.abs().to(torch.float64) * rate
+    spread = durations.abs().to(torch.float64) * three_pool_spread_rate(tissue)
     block = min(1024, triton.next_power_of_2(max(voxels, 1)))
     narrow_rows = torch.nonzero(spread <= NARROW_SPREAD, as_tuple=False).flatten()
     wide_rows = torch.nonzero(spread > NARROW_SPREAD, as_tuple=False).flatten()
@@ -13573,6 +13829,10 @@ def simulate_jvp_into(
     )
     table_rows = None if profile is None else profile.rows(kind.device)
     absorption = None if lineshape is None else lineshape.packed(t1.device)
+    narrow = narrow_three_pool(tissue, duration, pools=pools)
+    duration_row, pool_table, _lengths = _tabulate_three_pool(
+        tissue, duration, pools=pools, narrow=narrow, tangents=tissue_tangents
+    )
     _epg_jvp_kernel[grid](
         *tissue,
         duration,
@@ -13594,6 +13854,8 @@ def simulate_jvp_into(
         t1 if pairs is None else pairs,
         kind if pair_rows is None else pair_rows,
         t1 if pair_direction is None else pair_direction,
+        kind if duration_row is None else duration_row,
+        t1 if pool_table is None else pool_table,
         output_real,
         output_imag,
         *scratch,
@@ -13613,7 +13875,8 @@ def simulate_jvp_into(
         dynamic=dynamic is not None,
         lineshape_bins=0 if lineshape is None else lineshape.bins,
         pools=pools,
-        narrow=narrow_three_pool(tissue, duration, pools=pools),
+        narrow=narrow,
+        tabulated=pool_table is not None,
         **_feature_flags(features, geometry),
         block_states=block_states,
         problems=problems,
