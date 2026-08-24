@@ -1,9 +1,10 @@
-"""The three-pool operator table, held to the arm that forms it per event.
+"""The Triton kernels, held to what they specialize or to an oracle.
 
 Triton's CPU interpreter runs the kernels in Python over host tensors, so
 these reach the plumbing without a GPU and without invalidating a compile
-cache: the argument alignment of the launchers, the table's row indexing, and
-the washout and recoveries the reading event applies.
+cache: the argument alignment of the launchers, the trajectory planes a pool
+model claims, the operator table's row indexing, and the washout and
+recoveries the reading event applies.
 
 They are slow -- a minute each, since the interpreter walks every element in
 Python -- so they are opt-in: ``pytest -m interpreted``.
@@ -42,10 +43,15 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
 @pytest.mark.interpreted
 @pytest.mark.parametrize(
     "case",
-    ["narrow", "wide", "chunked", "unread", "streamed", "washed", "shimmed"],
+    ["narrow", "wide", "chunked", "unread", "streamed", "washed", "shimmed",
+     "one_pool", "two_pools", "real"],
 )
-def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
-    """Both arms run the same launch; only where the operator comes from differs.
+def test_the_kernels_agree_with_what_they_specialize(case: str) -> None:
+    """Each case runs one launch two ways and holds the two to each other.
+
+    The table cases differ only in where the operator comes from; the pool
+    cases hold a kernel to an oracle sharing no code with it, and to the pass
+    it specializes.
 
     ``narrow`` forces a table onto a train the launch-wide gate calls narrow,
     so every row takes the series and the two arms agree to the bit. ``wide``
@@ -57,7 +63,14 @@ def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
     ``streamed`` runs the chunked launcher, whose fixed positional list is
     what a grown kernel signature misaligns first. ``washed`` gives the
     interval a washout, so a pooled row has to carry its own attenuation
-    rather than one.
+    rather than one. ``shimmed`` drives a transmit row per shim, which is
+    what tells the three-pool row index from the shim row it sits beside.
+    ``one_pool`` and ``two_pools`` reach the pool models the table cases
+    never do, against the packed reference and against the
+    forward-over-reverse pass. ``real`` reaches the real-subspace kernels,
+    which carry three real planes where every other case here carries four
+    components -- against the reference, against the complex adjoint, and
+    with the gradients the representation cannot hold held to exactly zero.
     """
     finished = _run(case)
     assert finished.returncode == 0, (

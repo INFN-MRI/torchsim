@@ -28,6 +28,11 @@ import triton.language as tl
 NARROW_TOLERANCE = 1e-6
 WIDE_TOLERANCE = 1e-5
 
+# What a kernel is held to against the packed reference, which accumulates in
+# double where the kernel carries float32. That is a different comparison from
+# holding one arm of a launch to another, and a looser one.
+ORACLE_TOLERANCE = 5e-5
+
 
 @triton.jit
 def _acos(x: Any) -> Any:
@@ -318,6 +323,137 @@ def _washed(voxels: int, states: int) -> None:
     assert worst <= NARROW_TOLERANCE, f"washed adjoint drifted: {worst:.2e}"
 
 
+def _real(voxels: int, states: int) -> None:
+    """The real-subspace kernels, against the oracle and the complex pair.
+
+    Three real planes where the complex kernels carry four components, so
+    every plane count, trajectory stride and gradient row differs -- and none
+    of it is reached by the other cases here, which are all complex.
+    """
+    install()
+    from torchsim.sequence import _epg_triton
+    from torchsim.sequence._accelerators import real_subspace_axis
+    from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
+    from torchsim.sequence import _builders
+
+    from utils.packed_reference import simulate_packed
+
+    echoes = 6
+    tissue = _tissue(voxels)
+    # The subspace is the CPMG arrangement: refocusing a quarter turn from the
+    # excitation, which is what holds the states on one axis.
+    events, outputs = _events(_builders.fse_description(
+        torch.full((echoes,), math.radians(150.0)), 8e-3,
+        phases_rad=math.pi / 2, excitation_phase_rad=math.pi / 2,
+    ))
+    # Forcing the verdict rather than earning it would compare the real kernel
+    # against a train it was never contracted for.
+    assert real_subspace_axis(events, tissue) == 1, "this train is not in the subspace"
+    shape = dict(state_count=states, output_count=outputs)
+
+    expected = simulate_packed(tissue, events, **shape)
+    signal = _epg_triton.simulate(tissue, events, real_axis=1, **shape)
+    forward = float((signal - expected).abs().max() / expected.abs().max())
+    print(f"  real forward        {forward:.2e}")
+    assert forward <= ORACLE_TOLERANCE, f"real forward drifted: {forward:.2e}"
+
+    seed = (
+        torch.rand(
+            voxels, outputs, generator=torch.Generator().manual_seed(17)
+        ) * 2.0 - 1.0
+    ).to(torch.complex64)
+    real = _epg_triton.simulate_real_vjp(tissue, events, seed, **shape)
+    complex_side = _epg_triton.simulate_vjp(tissue, events, seed, **shape)
+    scale = max(
+        float(value.abs().max()) for value in complex_side if value.numel()
+    )
+    assert scale > 1e-3, f"the adjoint returned nothing: {scale:.2e}"
+    worst = 0.0
+    for index, (a, b) in enumerate(zip(complex_side, real, strict=False)):
+        if not a.numel() or not b.numel():
+            continue
+        if index in OUTSIDE_THE_SUBSPACE:
+            # Not "small": the representation divides the RF phase out, so it
+            # has no place to put these at all and a number here would mean
+            # the kernel wrote somewhere it should not.
+            assert float(b.abs().max()) == 0.0, (
+                f"{FLOAT_NAMES[index]} is outside the subspace but reads "
+                f"{float(b.abs().max()):.2e}"
+            )
+            continue
+        worst = max(worst, float((a - b).abs().max()) / scale)
+    print(f"  real adjoint        {worst:.2e} of {scale:.2e}")
+    assert worst <= ORACLE_TOLERANCE, f"real adjoint drifted: {worst:.2e}"
+
+
+def _pooled(voxels: int, states: int, pools: int) -> None:
+    """One and two pools, against an oracle and against the pass they specialize.
+
+    The table cases reach ``pools == 3`` only. What a second pool costs
+    structurally is its own trajectory planes and its own place in every
+    launcher's positional list -- the two things this interpreter is for --
+    and neither is exercised at one or two pools without a card.
+    """
+    install()
+    from torchsim.sequence import _epg_triton
+    from torchsim.sequence._lineshape import lineshape_table
+    from torchsim.sequence import _builders
+
+    from utils.packed_reference import simulate_packed
+
+    echoes = 6
+    tissue = _tissue(voxels)
+    events, outputs = _events(_builders.fse_description(
+        torch.full((echoes,), math.radians(150.0)), 8e-3
+    ))
+    options: dict[str, Any] = dict(
+        lineshape=lineshape_table() if pools in (1, 3) else None,
+        exchanging=pools in (2, 3),
+    )
+    assert _epg_triton._pool_flag(**options) == pools, "not the pool model asked for"
+
+    shape = dict(state_count=states, output_count=outputs)
+    signal = _epg_triton.simulate(tissue, events, **shape, **options)
+    expected = simulate_packed(tissue, events, **shape, **options)
+    forward = float((signal - expected).abs().max() / expected.abs().max())
+    print(f"  {pools}-pool forward     {forward:.2e}")
+    assert forward <= ORACLE_TOLERANCE, f"{pools}-pool forward drifted: {forward:.2e}"
+
+    # Agreement between two ways of carrying nothing would say nothing, so the
+    # pool has to be shown to move the answer it is being checked against.
+    bare = _epg_triton.simulate(tissue, events, **shape)
+    moved = float((signal - bare).abs().max() / bare.abs().max())
+    print(f"  {pools}-pool moves it    {moved:.2e}")
+    assert moved > 1e-3, f"the {pools}-pool model changed nothing: {moved:.2e}"
+
+    seed = (
+        torch.rand(
+            voxels, outputs, generator=torch.Generator().manual_seed(13)
+        ) * 2.0 - 1.0
+    ).to(torch.complex64)
+    first = _epg_triton.simulate_vjp(tissue, events, seed, **shape, **options)
+    # The pass the first-order kernel specializes: zero directions in, the
+    # adjoint out as the gradient with respect to the tangent inputs.
+    still = tuple(
+        torch.zeros_like(value)
+        for value in (*tissue, events[0], events[2], events[3])
+    )
+    _curve, adjoint = _epg_triton.simulate_vjp_jvp(
+        tissue, events, still, seed, **shape, **options
+    )
+    scale = max(float(value.abs().max()) for value in first if value.numel())
+    # Two sets of zeros agree perfectly, so the scale has to be shown before
+    # the agreement means anything.
+    assert scale > 1e-3, f"the {pools}-pool adjoint returned nothing: {scale:.2e}"
+    worst = max(
+        float((a - b).abs().max()) / scale
+        for a, b in zip(first, adjoint, strict=False)
+        if a.numel() and b.numel()
+    )
+    print(f"  {pools}-pool adjoint     {worst:.2e} of {scale:.2e}")
+    assert worst <= WIDE_TOLERANCE, f"{pools}-pool adjoint drifted: {worst:.2e}"
+
+
 def _shimmed(voxels: int, states: int) -> None:
     """The pooled adjoint where the pulse reads a transmit row per shim.
 
@@ -403,6 +539,15 @@ def _shimmed(voxels: int, states: int) -> None:
 
 
 def _case(name: str) -> None:
+    if name == "real":
+        _real(3, 4)
+        return
+    if name == "one_pool":
+        _pooled(3, 4, 1)
+        return
+    if name == "two_pools":
+        _pooled(3, 4, 2)
+        return
     if name == "shimmed":
         _shimmed(3, 4)
         return
