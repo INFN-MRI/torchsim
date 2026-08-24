@@ -13026,13 +13026,41 @@ def _pool_flag(lineshape: Any, exchanging: bool) -> int:
     return 1 if lineshape is not None else 0
 
 
+# The operator table holds nine entries per voxel per distinct interval and
+# the adjoint's cotangent table twelve, both float32.
+_TABLE_FLOATS_PER_ROW = 9
+_BAR_FLOATS_PER_ROW = 12
+
+# What the two tables may take of what the card can spare. The trajectory is
+# the larger claim on the same memory and is allocated after them.
+_TABLE_SHARE = 0.25
+_TABLE_FLOOR_BYTES = 64 << 20
+
+
+def _three_pool_table_bytes(
+    tissue: tuple[torch.Tensor, ...], rows: int, *, bars: bool
+) -> int:
+    """What the tables would take -- the operator's, and the adjoint's bars."""
+    per_row = _TABLE_FLOATS_PER_ROW + (_BAR_FLOATS_PER_ROW if bars else 0)
+    return int(tissue[0].numel()) * int(rows) * per_row * 4
+
+
+def _table_budget(device: torch.device) -> int:
+    """How many bytes the three-pool tables may claim on this device."""
+    if device.type != "cuda":
+        return _TABLE_FLOOR_BYTES
+    free, _total = torch.cuda.mem_get_info(device)
+    return max(_TABLE_FLOOR_BYTES, int(free * _TABLE_SHARE))
+
+
 def _tabulate_three_pool(
     tissue: tuple[torch.Tensor, ...],
     duration: torch.Tensor,
     *,
     pools: int,
     narrow: bool,
-) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    bars: bool = False,
+) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
     """The operator table an event loop should read, or ``None`` to form it.
 
     Only a wide launch has anything to gain: under ``narrow`` the operator is
@@ -13056,6 +13084,9 @@ def _tabulate_three_pool(
         Which pool model the launch carries.
     narrow:
         Whether every interval keeps the eigenvalues close together.
+    bars:
+        Whether the caller also allocates the adjoint's cotangent table, which
+        is what the budget has to cover.
 
     Returns
     -------
@@ -13069,6 +13100,13 @@ def _tabulate_three_pool(
     # A row costs a formation, an event costs one too, so a train whose
     # lengths are all different has nothing to gain and a table to write.
     if distinct.numel() >= duration.numel():
+        return None, None, None
+    if _three_pool_table_bytes(
+        tissue, distinct.numel(), bars=bars
+    ) > _table_budget(tissue[0].device):
+        # A pathological train has as many lengths as events, and the tables
+        # grow with their product. Forming the operator per event is slower
+        # and always fits, so that is what an unbounded one falls back to.
         return None, None, None
     return (
         inverse.reshape(duration.shape).to(torch.int32),
@@ -13661,7 +13699,7 @@ def simulate_vjp(
     pools = _pool_flag(lineshape, exchanging)
     narrow = narrow_three_pool(tissue, duration, pools=pools)
     duration_row, pool_table, pool_durations = _tabulate_three_pool(
-        tissue, duration, pools=pools, narrow=narrow
+        tissue, duration, pools=pools, narrow=narrow, bars=True
     )
     row_count = 0 if pool_durations is None else pool_durations.numel()
     pool_bars = None
