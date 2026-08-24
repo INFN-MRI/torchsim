@@ -28,6 +28,7 @@ __all__ = [
     "tissue_gradient_height",
     "NARROW_SPREAD",
     "narrow_three_pool",
+    "three_pool_spread_rate",
 ]
 
 from dataclasses import dataclass
@@ -409,6 +410,28 @@ def narrow_three_pool(
     """
     if pools != 3:
         return False
+    rate = three_pool_spread_rate(tissue)
+    return bool(rate * float(duration.abs().max()) <= NARROW_SPREAD)
+
+
+def three_pool_spread_rate(tissue: tuple[Any, ...]) -> float:
+    """The eigenvalue spread a unit interval produces, over every voxel.
+
+    The generator is proportional to the interval, so multiplying this by an
+    interval gives that interval's spread -- a bound over the whole tissue for
+    one reduction, whether it is asked about a launch or about a single row of
+    an operator table.
+
+    Parameters
+    ----------
+    tissue:
+        The prepared per-voxel buffers, in ``TISSUE_NAMES`` order.
+
+    Returns
+    -------
+    float
+        The largest spread any voxel reaches per second of interval.
+    """
     index = {name: position for position, name in enumerate(TISSUE_NAMES)}
     take = lambda name: tissue[index[name]].to(torch.float64)  # noqa: E731
     fraction_b = take("pool_b_fraction")
@@ -429,5 +452,4 @@ def narrow_three_pool(
         - (exchange_c * free) * (exchange_c * fraction_c)
         + s11 * s22
     )
-    rate = torch.sqrt(torch.clamp(-2.0 * minors, min=0.0)).max()
-    return bool(float(rate) * float(duration.abs().max()) <= NARROW_SPREAD)
+    return float(torch.sqrt(torch.clamp(-2.0 * minors, min=0.0)).max())
