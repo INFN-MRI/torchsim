@@ -47,15 +47,30 @@ def _acos(x: Any) -> Any:
     return theta
 
 
+@triton.jit
+def _poisoned_acos(x: Any) -> Any:
+    """An ``acos`` whose result cannot be used without showing.
+
+    A narrow launch is supposed to reach only the series. Nothing that passes
+    through this can stay finite, so a finite answer is proof the roots were
+    never read.
+    """
+    return x * float("nan")
+
+
 class _Interpretable:
     acos = _acos
 
 
-def install() -> None:
+class _Poisoned:
+    acos = _poisoned_acos
+
+
+def install(poison: bool = False) -> None:
     """Point the kernels at an ``acos`` the interpreter can evaluate."""
     from torchsim.sequence import _epg_triton
 
-    _epg_triton.libdevice = _Interpretable
+    _epg_triton.libdevice = _Poisoned if poison else _Interpretable
 
 
 def _tissue(voxels: int) -> tuple[torch.Tensor, ...]:
@@ -97,7 +112,7 @@ def _events(description: Any) -> tuple[tuple[torch.Tensor, ...], int]:
 
 
 def _both(run: Any, force_narrow: bool) -> tuple[Any, Any]:
-    """The same launch with the table refused and with it forced.
+    """Run the same launch with the table refused and with it forced.
 
     ``force_narrow`` builds a table for a train the launch-wide gate calls
     narrow, so every row takes the series and the two arms should agree to the
@@ -164,7 +179,56 @@ def _chunked(voxels: int) -> Any:
     return cut
 
 
+def _unread(voxels: int, states: int) -> None:
+    """Check that a narrow launch does not read the three roots.
+
+    The `close` select sits in the consumers of `_three_pool_pieces_jvp`, and
+    each of them takes the series outright when the caller has bounded the
+    spread -- so the roots the pieces still form are unread. Poisoning `acos`
+    is what says so rather than reading the branches and believing it.
+    """
+    install(poison=True)
+    from torchsim.sequence import _epg_triton
+    from torchsim.sequence._lineshape import lineshape_table
+    from torchsim.sequence._parameters import narrow_three_pool
+    from torchsim.sequence import _builders
+
+    echoes = 6
+    tissue = _tissue(voxels)
+    events, outputs = _events(_builders.fse_description(
+        torch.full((echoes,), math.radians(150.0)), 8e-3
+    ))
+    assert narrow_three_pool(tissue, events[0].reshape(-1), pools=3), (
+        "this train has to be narrow for the check to mean anything"
+    )
+    options: dict[str, Any] = dict(
+        lineshape=lineshape_table(), exchanging=True
+    )
+    signal = _epg_triton.simulate(
+        tissue, events, state_count=states, output_count=outputs, **options
+    )
+    assert bool(torch.isfinite(torch.view_as_real(signal)).all()), (
+        "the forward read the roots"
+    )
+    seed = (
+        torch.rand(
+            voxels, outputs, generator=torch.Generator().manual_seed(7)
+        ) * 2.0 - 1.0
+    ).to(torch.complex64)
+    for index, gradient in enumerate(_epg_triton.simulate_vjp(
+        tissue, events, seed, state_count=states, output_count=outputs,
+        **options,
+    )):
+        assert not gradient.numel() or bool(torch.isfinite(gradient).all()), (
+            f"gradient {index} read the roots"
+        )
+    print("  the roots are unread")
+
+
 def _case(name: str) -> None:
+    if name == "unread":
+        _unread(3, 4)
+        return
     install()
     from torchsim.sequence import _epg_triton
     from torchsim.sequence._lineshape import lineshape_table
@@ -232,3 +296,5 @@ def _case(name: str) -> None:
 
 if __name__ == "__main__":
     _case(sys.argv[1] if len(sys.argv) > 1 else "narrow")
+    # The wrapper reads this: a case that fell out early prints no such line.
+    print("checked")

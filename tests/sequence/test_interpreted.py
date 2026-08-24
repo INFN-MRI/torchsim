@@ -40,7 +40,9 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.interpreted
-@pytest.mark.parametrize("case", ["narrow", "wide", "chunked"])
+@pytest.mark.parametrize(
+    "case", ["narrow", "wide", "chunked", "unread"]
+)
 def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
     """Both arms run the same launch; only where the operator comes from differs.
 
@@ -49,10 +51,12 @@ def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
     is the case that ships -- an inversion makes the launch decline the gate,
     and the table carries series rows beside a roots row. ``chunked`` is the
     same launch cut into chunks, which is what tells a chunk-local index for
-    the cotangent table from a global one.
+    the cotangent table from a global one. ``unread`` poisons ``acos`` so a
+    narrow launch that touched the three roots could not come back finite.
     """
     finished = _run(case)
     assert finished.returncode == 0, (
         f"{case} case failed:\n{finished.stdout}\n{finished.stderr}"
     )
-    assert "forward" in finished.stdout, finished.stdout
+    # A case that fell out before its checks prints no terminator.
+    assert finished.stdout.rstrip().endswith("checked"), finished.stdout
