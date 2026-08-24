@@ -100,7 +100,11 @@ minversion = "6.0"
 addopts = [
     "--cov=torchsim",
     "--cov-report=term-missing",
-    "--cov-report=xml"
+    "--cov-report=xml",
+    "-m", "not interpreted"
+]
+markers = [
+    "interpreted: runs a kernel in Triton's CPU interpreter; a minute each"
 ]
 
 # linting using ruff.
