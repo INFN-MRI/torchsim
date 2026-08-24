@@ -318,7 +318,94 @@ def _washed(voxels: int, states: int) -> None:
     assert worst <= NARROW_TOLERANCE, f"washed adjoint drifted: {worst:.2e}"
 
 
+def _shimmed(voxels: int, states: int) -> None:
+    """The pooled adjoint where the pulse reads a transmit row per shim.
+
+    The three-pool row index and the shim row are both natural to call `row`,
+    and the shim one is rebound between the operator read and the cotangent
+    pooling. Nothing else here drives a transmit array, so this is the only
+    case that would show one standing in for the other.
+    """
+    install()
+    from torchsim.sequence import _epg_triton
+    from torchsim.sequence._lineshape import lineshape_table
+    from torchsim.sequence import _builders
+
+    shims, echoes = 2, 6
+    held = _tissue(voxels)
+    tissue = list(held)
+    # A transmit row per shim, each row a different field, so a pulse reading
+    # the wrong row cannot agree with one reading the right one.
+    tissue[3] = torch.cat([
+        torch.linspace(0.7 + 0.3 * shim, 1.1 + 0.3 * shim, voxels)
+        for shim in range(shims)
+    ]).contiguous()
+    tissue[4] = torch.cat([
+        torch.linspace(-0.4 + 0.8 * shim, 0.4 + 0.8 * shim, voxels)
+        for shim in range(shims)
+    ]).contiguous()
+    tissue = tuple(tissue)
+    events, outputs = _events(_builders.mrf_description(
+        torch.full((echoes,), math.radians(50.0)),
+        torch.tensor([(6 + (i % 3)) * 1e-3 for i in range(echoes)]),
+        inversion_time_s=1.0,
+    ))
+    events = list(events)
+    events[6] = (
+        torch.arange(events[6].numel(), dtype=torch.int32) % shims
+    ).contiguous()
+    events = tuple(events)
+    assert _epg_triton._shim_count(tissue) == shims, (
+        "the transmit array did not reach the kernel"
+    )
+
+    options: dict[str, Any] = dict(
+        lineshape=lineshape_table(), exchanging=True
+    )
+    seed = (
+        torch.rand(
+            voxels, outputs, generator=torch.Generator().manual_seed(5)
+        ) * 2.0 - 1.0
+    ).to(torch.complex64)
+    without, with_table = _both(
+        lambda: _epg_triton.simulate_vjp(
+            tissue, events, seed, state_count=states, output_count=outputs,
+            **options,
+        ),
+        False,
+    )
+    worst = _worst(without, with_table)
+    print(f"  shimmed adjoint     {worst:.2e}")
+    assert worst <= WIDE_TOLERANCE, f"shimmed adjoint drifted: {worst:.2e}"
+
+    without, with_table = _both(
+        lambda: _epg_triton.simulate_vjp_jvp(
+            tissue, events,
+            (
+                *(
+                    torch.linspace(0.01, 0.03, value.numel()).reshape(value.shape)
+                    if value.numel() else value.clone()
+                    for value in tissue
+                ),
+                torch.linspace(0.5e-4, 2e-4, events[0].numel()).reshape(
+                    events[0].shape
+                ),
+                torch.zeros_like(events[2]),
+                torch.zeros_like(events[3]),
+            ),
+            seed, state_count=states, output_count=outputs, **options,
+        )[1],
+        False,
+    )
+    second = _worst(without, with_table)
+    print(f"  shimmed second order {second:.2e}")
+    assert second <= WIDE_TOLERANCE, f"shimmed second order: {second:.2e}"
+
+
 def _case(name: str) -> None:
+    if name == "shimmed":
+        _shimmed(3, 4)
+        return
     if name == "washed":
         _washed(3, 4)
         return

@@ -42,7 +42,7 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
 @pytest.mark.interpreted
 @pytest.mark.parametrize(
     "case",
-    ["narrow", "wide", "chunked", "unread", "streamed", "washed"],
+    ["narrow", "wide", "chunked", "unread", "streamed", "washed", "shimmed"],
 )
 def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
     """Both arms run the same launch; only where the operator comes from differs.
