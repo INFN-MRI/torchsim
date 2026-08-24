@@ -323,7 +323,7 @@ def _washed(voxels: int, states: int) -> None:
     assert worst <= NARROW_TOLERANCE, f"washed adjoint drifted: {worst:.2e}"
 
 
-def _real(voxels: int, states: int) -> None:
+def _real(voxels: int, states: int, shims: int = 1) -> None:
     """The real-subspace kernels, against the oracle and the complex pair.
 
     Three real planes where the complex kernels carry four components, so
@@ -339,13 +339,34 @@ def _real(voxels: int, states: int) -> None:
     from utils.packed_reference import simulate_packed
 
     echoes = 6
-    tissue = _tissue(voxels)
+    tissue = list(_tissue(voxels))
+    if shims > 1:
+        # A transmit row per shim, each a different field. The last row is
+        # driven by no pulse, so a kernel that read the layout as merely wide
+        # rather than reading the index would not leave it at zero.
+        tissue[3] = torch.cat([
+            torch.linspace(0.7 + 0.2 * shim, 1.1 + 0.2 * shim, voxels)
+            for shim in range(shims)
+        ]).contiguous()
+        # Both transmit maps carry a row per shim, or a pulse reading the row
+        # its event names would run off the end of the shorter one. The phase
+        # stays at zero, which is what keeps the train inside the subspace.
+        tissue[4] = torch.zeros(shims * voxels)
+    tissue = tuple(tissue)
     # The subspace is the CPMG arrangement: refocusing a quarter turn from the
     # excitation, which is what holds the states on one axis.
     events, outputs = _events(_builders.fse_description(
         torch.full((echoes,), math.radians(150.0)), 8e-3,
         phases_rad=math.pi / 2, excitation_phase_rad=math.pi / 2,
     ))
+    driven = max(1, shims - 1)
+    if shims > 1:
+        events = list(events)
+        events[6] = (
+            torch.arange(events[6].numel(), dtype=torch.int32) % driven
+        ).contiguous()
+        events = tuple(events)
+    assert _epg_triton._shim_count(tissue) == shims, "the array did not reach the kernel"
     # Forcing the verdict rather than earning it would compare the real kernel
     # against a train it was never contracted for.
     assert real_subspace_axis(events, tissue) == 1, "this train is not in the subspace"
@@ -357,15 +378,24 @@ def _real(voxels: int, states: int) -> None:
     print(f"  real forward        {forward:.2e}")
     assert forward <= ORACLE_TOLERANCE, f"real forward drifted: {forward:.2e}"
 
-    seed = (
-        torch.rand(
-            voxels, outputs, generator=torch.Generator().manual_seed(17)
-        ) * 2.0 - 1.0
-    ).to(torch.complex64)
+    # A CPMG train records a purely imaginary sample and the real kernels read
+    # only the imaginary cotangent, so a seed with no imaginary part drives
+    # nothing at all: every gradient inside the subspace comes back at
+    # round-off and the two kernels agree about nothing.
+    generator = torch.Generator().manual_seed(17)
+    seed = torch.complex(
+        torch.rand(voxels, outputs, generator=generator) * 2.0 - 1.0,
+        torch.rand(voxels, outputs, generator=generator) * 2.0 - 1.0,
+    )
     real = _epg_triton.simulate_real_vjp(tissue, events, seed, **shape)
     complex_side = _epg_triton.simulate_vjp(tissue, events, seed, **shape)
+    # Drawn from the gradients actually compared: a scale taken from one the
+    # loop skips would let two nothings agree perfectly against a large number
+    # that neither of them carries.
     scale = max(
-        float(value.abs().max()) for value in complex_side if value.numel()
+        float(value.abs().max())
+        for index, value in enumerate(complex_side)
+        if value.numel() and index not in OUTSIDE_THE_SUBSPACE
     )
     assert scale > 1e-3, f"the adjoint returned nothing: {scale:.2e}"
     worst = 0.0
@@ -384,6 +414,16 @@ def _real(voxels: int, states: int) -> None:
         worst = max(worst, float((a - b).abs().max()) / scale)
     print(f"  real adjoint        {worst:.2e} of {scale:.2e}")
     assert worst <= ORACLE_TOLERANCE, f"real adjoint drifted: {worst:.2e}"
+    if shims > 1:
+        rows = real[3].reshape(shims, voxels)
+        for shim in range(driven):
+            assert float(rows[shim].abs().max()) > 0.0, (
+                f"shim {shim} is driven but its transmit gradient is zero"
+            )
+        assert float(rows[driven:].abs().max()) == 0.0, (
+            "a shim no pulse drives took a transmit gradient"
+        )
+        print(f"  undriven shim row   {float(rows[driven:].abs().max()):.2e}")
 
 
 def _pooled(voxels: int, states: int, pools: int) -> None:
@@ -541,6 +581,9 @@ def _shimmed(voxels: int, states: int) -> None:
 def _case(name: str) -> None:
     if name == "real":
         _real(3, 4)
+        return
+    if name == "real_shimmed":
+        _real(3, 4, shims=3)
         return
     if name == "one_pool":
         _pooled(3, 4, 1)

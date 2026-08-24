@@ -44,7 +44,7 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
 @pytest.mark.parametrize(
     "case",
     ["narrow", "wide", "chunked", "unread", "streamed", "washed", "shimmed",
-     "one_pool", "two_pools", "real"],
+     "one_pool", "two_pools", "real", "real_shimmed"],
 )
 def test_the_kernels_agree_with_what_they_specialize(case: str) -> None:
     """Each case runs one launch two ways and holds the two to each other.
@@ -71,6 +71,9 @@ def test_the_kernels_agree_with_what_they_specialize(case: str) -> None:
     which carry three real planes where every other case here carries four
     components -- against the reference, against the complex adjoint, and
     with the gradients the representation cannot hold held to exactly zero.
+    ``real_shimmed`` gives those kernels a transmit row per shim and leaves
+    the last row undriven, so a layout that is merely wide enough cannot pass
+    for one that reads the index.
     """
     finished = _run(case)
     assert finished.returncode == 0, (

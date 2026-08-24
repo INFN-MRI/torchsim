@@ -1146,6 +1146,10 @@ def real_subspace_axis(
     carry it, so any velocity at all is refused here whatever geometry drives
     it.
 
+    A transmit array is not on that list: a row per shim scales the flip its
+    own pulse turns through, which is a scaling along the axis. Its phase is,
+    and a shimmed array is held to the same zero as a single map.
+
     Two arrangements make the recorded echoes look real without confining the
     states, and both are refused. Off-resonance is refocused at the echo
     centers but not between them. An excitation a quarter turn from the
@@ -1153,8 +1157,6 @@ def real_subspace_axis(
     states fill the plane -- a real projection of a complex trajectory, not a
     subspace a kernel can be built on.
     """
-    if _shim_count(tissue) > 1:
-        return None
     if profile is not None or dynamic is not None:
         # A shaped pulse turns about an axis with a component along z, which
         # makes its Cayley-Klein ``a`` complex -- and a complex ``a`` is
@@ -2781,8 +2783,8 @@ def _run_packed_vjp(
         _within_the_table(profile, events[2])
     # A first-order adjoint needs no dual: on a device it is its own kernel,
     # recording half the trajectory and holding half the state the
-    # forward-over-reverse pass does. The real-subspace one carries no shim
-    # row, no table, no pair and no pool; the complex one carries all of them.
+    # forward-over-reverse pass does. The real-subspace one carries a shim row
+    # but no table, no pair and no pool; the complex one carries all of them.
     # A whole volume takes it here, a shard takes it a level down, and the
     # streamed route has chunked launchers of its own.
     if tissue[0].device.type == "cuda":
@@ -2816,8 +2818,8 @@ def _run_packed_vjp(
             return _combine_shards(tuple(parts), home)
     if (
         tissue[0].device.type == "cuda"
-        # The real kernel carries no shim row, no table and no pair; the
-        # complex one carries all three.
+        # The real kernel carries a shim row but no table, no pair and no
+        # pool; the complex one carries all of them.
         and (
             real_axis != 1
             or (
@@ -2825,7 +2827,6 @@ def _run_packed_vjp(
                 and dynamic is None
                 and lineshape is None
                 and not exchanging
-                and _shim_count(tissue) == 1
             )
         )
         and _OFFLOAD is None
