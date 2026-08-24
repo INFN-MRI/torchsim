@@ -41,7 +41,8 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.interpreted
 @pytest.mark.parametrize(
-    "case", ["narrow", "wide", "chunked", "unread"]
+    "case",
+    ["narrow", "wide", "chunked", "unread", "streamed", "washed"],
 )
 def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
     """Both arms run the same launch; only where the operator comes from differs.
@@ -53,6 +54,10 @@ def test_the_table_gives_what_forming_it_per_event_gives(case: str) -> None:
     same launch cut into chunks, which is what tells a chunk-local index for
     the cotangent table from a global one. ``unread`` poisons ``acos`` so a
     narrow launch that touched the three roots could not come back finite.
+    ``streamed`` runs the chunked launcher, whose fixed positional list is
+    what a grown kernel signature misaligns first. ``washed`` gives the
+    interval a washout, so a pooled row has to carry its own attenuation
+    rather than one.
     """
     finished = _run(case)
     assert finished.returncode == 0, (

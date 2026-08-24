@@ -228,7 +228,103 @@ def _unread(voxels: int, states: int) -> None:
     print("  the roots are unread")
 
 
+def _streamed(voxels: int, states: int) -> None:
+    """The chunked adjoint launcher, against the whole-volume one.
+
+    It passes a fixed positional list for every optional buffer the kernel
+    takes, so it is the launcher a grown kernel signature misaligns first --
+    and nothing else here reaches it.
+    """
+    install()
+    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _builders
+
+    echoes = 6
+    tissue = _tissue(voxels)
+    events, outputs = _events(_builders.fse_description(
+        torch.full((echoes,), math.radians(150.0)), 8e-3
+    ))
+    seed = (
+        torch.rand(
+            voxels, outputs, generator=torch.Generator().manual_seed(3)
+        ) * 2.0 - 1.0
+    ).to(torch.complex64)
+    whole = _epg_triton.simulate_vjp(
+        tissue, events, seed, state_count=states, output_count=outputs
+    )
+    buffers = _epg_triton.GradientBuffers(
+        events, voxels, state_count=states, output_count=outputs
+    )
+    chunked = _epg_triton.simulate_vjp_into(
+        tissue, events, seed, buffers, state_count=states,
+        output_count=outputs, atom_count=voxels,
+    )
+    scale = max(float(v.abs().max()) for v in whole if v.numel())
+    worst = max(
+        float((a - b).abs().max()) / max(scale, 1e-30)
+        for a, b in zip(whole, chunked, strict=False)
+        if a.numel() and b.numel()
+    )
+    print(f"  streamed vs whole   {worst:.2e}")
+    assert worst <= NARROW_TOLERANCE, f"streamed drifted: {worst:.2e}"
+
+
+def _washed(voxels: int, states: int) -> None:
+    """The pooled adjoint where the interval carries a washout.
+
+    Every event sharing a length shares its attenuation too, since washout is
+    ``1 - rate dt`` -- but the row has to be given that attenuation rather
+    than one, because the gradients it pools are scaled by it.
+    """
+    install()
+    from torchsim.sequence import _epg_triton
+    from torchsim.sequence._lineshape import lineshape_table
+    from torchsim.sequence._parameters import Geometry, TISSUE_NAMES
+    from torchsim.sequence import _builders
+
+    echoes = 6
+    tissue = list(_tissue(voxels))
+    # A velocity, so the washout the geometry declares is genuinely live.
+    tissue[TISSUE_NAMES.index("velocity_m_per_s")] = torch.linspace(
+        0.02, 0.09, voxels
+    )
+    tissue = tuple(tissue)
+    events, outputs = _events(_builders.mrf_description(
+        torch.full((echoes,), math.radians(50.0)),
+        torch.tensor([(6 + (i % 2)) * 1e-3 for i in range(echoes)]),
+        inversion_time_s=1.0,
+    ))
+    options: dict[str, Any] = dict(
+        lineshape=lineshape_table(), exchanging=True,
+        geometry=Geometry(flow_scale=0.0, washout_scale=12.0),
+    )
+    seed = (
+        torch.rand(
+            voxels, outputs, generator=torch.Generator().manual_seed(11)
+        ) * 2.0 - 1.0
+    ).to(torch.complex64)
+    without, with_table = _both(
+        lambda: _epg_triton.simulate_vjp(
+            tissue, events, seed, state_count=states, output_count=outputs,
+            **options,
+        ),
+        False,
+    )
+    worst = _worst(without, with_table)
+    print(f"  washed adjoint      {worst:.2e}")
+    # Held to the narrow tolerance deliberately: a row given an attenuation of
+    # one rather than its own reads about 4e-6 here, which this catches and
+    # the looser bound would not.
+    assert worst <= NARROW_TOLERANCE, f"washed adjoint drifted: {worst:.2e}"
+
+
 def _case(name: str) -> None:
+    if name == "washed":
+        _washed(3, 4)
+        return
+    if name == "streamed":
+        _streamed(3, 4)
+        return
     if name == "unread":
         _unread(3, 4)
         return

@@ -6619,7 +6619,8 @@ def _epg_vjp_kernel(
         for row in range(0, row_count):
             held = pool_bars + (local * row_count + row) * 12
             row_dt = tl.load(pool_durations + row) + zero
-            one_att = 1.0 + 0.0 * row_dt
+            one_att = (_washout(atom_washout, row_dt) if moving
+                       else 1.0 + 0.0 * row_dt)
             nil = 0.0 * row_dt
             (
                 three_free,
