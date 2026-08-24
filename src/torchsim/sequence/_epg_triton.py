@@ -489,6 +489,72 @@ def _three_pool_from_table(
 
 
 @triton.jit
+def _three_pool_interval_adjoint(
+    table, row, atom, voxel_count, mask,
+    r1_free, r1_pool_b, r1_bound, exchange_b, exchange_c,
+    fraction_b, fraction_c, attenuation,
+    b11, b12, b13, b21, b22, b23, b31, b32, b33, bfree, bpool_b, bbound,
+):
+    """What one interval's cotangents give its length and its attenuation.
+
+    The generator is proportional to the interval, so ``dE/d(dt) == A1 E`` and
+    the length's gradient needs the operator and 27 multiplies rather than the
+    eigenvalues -- which is what lets every other gradient be pooled over the
+    events that share a length while this one stays per event.
+
+    Returns the two contractions, in the order
+    :func:`_three_pool_step_adjoint_jvp` returns them.
+    """
+    free = 1.0 - fraction_b - fraction_c
+    a00 = -exchange_b * fraction_b - exchange_c * fraction_c - r1_free
+    a01 = exchange_b * free
+    a02 = exchange_c * free
+    a10 = exchange_b * fraction_b
+    a11 = -exchange_b * free - r1_pool_b
+    a20 = exchange_c * fraction_c
+    a22 = -exchange_c * free - r1_bound
+    base = table + row * (9 * voxel_count) + atom
+    c00 = tl.load(base + 0 * voxel_count, mask=mask, other=0.0)
+    c01 = tl.load(base + 1 * voxel_count, mask=mask, other=0.0)
+    c02 = tl.load(base + 2 * voxel_count, mask=mask, other=0.0)
+    c10 = tl.load(base + 3 * voxel_count, mask=mask, other=0.0)
+    c11 = tl.load(base + 4 * voxel_count, mask=mask, other=0.0)
+    c12 = tl.load(base + 5 * voxel_count, mask=mask, other=0.0)
+    c20 = tl.load(base + 6 * voxel_count, mask=mask, other=0.0)
+    c21 = tl.load(base + 7 * voxel_count, mask=mask, other=0.0)
+    c22 = tl.load(base + 8 * voxel_count, mask=mask, other=0.0)
+    # A1 C, the second and third rows of A1 having no entry off their own pool.
+    p00 = a00 * c00 + a01 * c10 + a02 * c20
+    p01 = a00 * c01 + a01 * c11 + a02 * c21
+    p02 = a00 * c02 + a01 * c12 + a02 * c22
+    p10 = a10 * c00 + a11 * c10
+    p11 = a10 * c01 + a11 * c11
+    p12 = a10 * c02 + a11 * c12
+    p20 = a20 * c00 + a22 * c20
+    p21 = a20 * c01 + a22 * c21
+    p22 = a20 * c02 + a22 * c22
+    # The recoveries are ``m - E m``, so they differentiate through the same
+    # derivative with the equilibrium contracted out of it.
+    grad_dt = attenuation * (
+        b11 * p00 + b12 * p01 + b13 * p02
+        + b21 * p10 + b22 * p11 + b23 * p12
+        + b31 * p20 + b32 * p21 + b33 * p22
+        - bfree * (p00 * free + p01 * fraction_b + p02 * fraction_c)
+        - bpool_b * (p10 * free + p11 * fraction_b + p12 * fraction_c)
+        - bbound * (p20 * free + p21 * fraction_b + p22 * fraction_c)
+    )
+    grad_att = (
+        b11 * c00 + b12 * c01 + b13 * c02
+        + b21 * c10 + b22 * c11 + b23 * c12
+        + b31 * c20 + b32 * c21 + b33 * c22
+        - bfree * (c00 * free + c01 * fraction_b + c02 * fraction_c)
+        - bpool_b * (c10 * free + c11 * fraction_b + c12 * fraction_c)
+        - bbound * (c20 * free + c21 * fraction_b + c22 * fraction_c)
+    )
+    return grad_dt, grad_att
+
+
+@triton.jit
 def _three_pool_table_kernel(
     t1,
     t1_pool_b,
@@ -4425,6 +4491,9 @@ def _epg_vjp_kernel(
     pair_index,
     duration_row,
     pool_table,
+    pool_bars,
+    pool_durations,
+    row_count,
     grad_pair,
     grad_output_real,
     grad_output_imag,
@@ -5935,147 +6004,259 @@ def _epg_vjp_kernel(
             e31_v = semibr * spun_fr + semibi * spun_fi
             e32_v = semibr * spun_br + semibi * spun_bi
             e33_v = semibr * spun_cr + semibi * spun_ci
-            (
-                back_r1, back_r1b, back_r1c,
-                back_exch, back_sexch, back_bound, back_semi,
-                back_dt, back_att,
-                _q1, _q2, _q3, _q4, _q5, _q6, _q7, _q8, _q9,
-            ) = _three_pool_step_adjoint_jvp(
-                r1_value, nil, r1b_value, nil,
-                r1c_value, nil,
-                atom_exchange, nil,
-                atom_semisolid_exchange, nil,
-                atom_bound, nil, atom_semisolid, nil,
-                dt_value, nil, hold_value, nil,
-                tl.sum(e11_v, axis=1)[:, None], nil,
-                tl.sum(e12_v, axis=1)[:, None], nil,
-                tl.sum(e13_v, axis=1)[:, None], nil,
-                tl.sum(e21_v, axis=1)[:, None], nil,
-                tl.sum(e22_v, axis=1)[:, None], nil,
-                tl.sum(e23_v, axis=1)[:, None], nil,
-                tl.sum(e31_v, axis=1)[:, None], nil,
-                tl.sum(e32_v, axis=1)[:, None], nil,
-                tl.sum(e33_v, axis=1)[:, None], nil,
-                tl.sum(tl.where(state == 0, zbvr, nil), axis=1)[:, None],
-                nil,
-                tl.sum(tl.where(state == 0, poolbr, nil), axis=1)[:, None],
-                nil,
-                tl.sum(tl.where(state == 0, semibr, nil), axis=1)[:, None],
-                nil,
-                three_free,
-                three_d_free,
-                three_pool_b,
-                three_d_pool_b,
-                three_pool_c,
-                three_d_pool_c,
-                three_a00,
-                three_d_a00,
-                three_a01,
-                three_d_a01,
-                three_a02,
-                three_d_a02,
-                three_a10,
-                three_d_a10,
-                three_a11,
-                three_d_a11,
-                three_a20,
-                three_d_a20,
-                three_a22,
-                three_d_a22,
-                three_s00,
-                three_d_s00,
-                three_s11,
-                three_d_s11,
-                three_s22,
-                three_d_s22,
-                three_minors,
-                three_d_minors,
-                three_sum_flat,
-                three_sum_linear,
-                three_sum_square,
-                three_d_sum_flat,
-                three_d_sum_linear,
-                three_d_sum_square,
-                three_lift,
-                three_d_lift,
-                three_low,
-                three_middle,
-                three_d_low,
-                three_d_middle,
-                three_leading,
-                three_d_leading,
-                three_first,
-                three_d_first,
-                three_second,
-                three_d_second,
-                three_determinant,
-                three_d_determinant,
-                three_high,
-                three_d_high,
-                three_radius,
-                three_d_radius,
-                three_cube,
-                three_raw,
-                three_d_raw,
-                three_argument,
-                three_inside_limit,
-                three_angle,
-                three_d_angle,
-                three_centre,
-                three_d_centre,
-                three_trailing,
-                three_d_trailing,
-                three_guarded,
-                three_d_guarded,
-                three_q00,
-                three_d_q00,
-                three_q01,
-                three_d_q01,
-                three_q02,
-                three_d_q02,
-                three_q10,
-                three_d_q10,
-                three_q11,
-                three_d_q11,
-                three_q12,
-                three_d_q12,
-                three_q20,
-                three_d_q20,
-                three_q21,
-                three_d_q21,
-                three_q22,
-                three_d_q22,
-                three_def_00,
-                three_dif_00,
-                three_def_01,
-                three_dif_01,
-                three_def_02,
-                three_dif_02,
-                three_def_10,
-                three_dif_10,
-                three_def_11,
-                three_dif_11,
-                three_def_12,
-                three_dif_12,
-                three_def_20,
-                three_dif_20,
-                three_def_21,
-                three_dif_21,
-                three_def_22,
-                three_dif_22,
-                narrow,
-            )
-            g_t1v += back_r1 * (-1000.0 / (atom_t1 * atom_t1))
-            g_t1bv += back_r1b * (-1000.0 / (atom_t1b * atom_t1b))
-            g_t1cv += back_r1c * (-1000.0 / (atom_t1c * atom_t1c))
-            g_exchv += back_exch
-            g_sexchv += back_sexch
-            g_boundv += back_bound
-            g_semiv += back_semi
-            # Both halves of the interval reach the same two, so the
-            # transverse pass has already put its share here.
-            attenuation_v += back_att
-            two_pool_dt_v += back_dt
+            if tabulated:
+                # Every gradient but the interval's own is linear in these
+                # twelve, so the events sharing a length pool them here and
+                # pay the closed form once each after the walk back.
+                bar11 = tl.sum(e11_v, axis=1)[:, None]
+                bar12 = tl.sum(e12_v, axis=1)[:, None]
+                bar13 = tl.sum(e13_v, axis=1)[:, None]
+                bar21 = tl.sum(e21_v, axis=1)[:, None]
+                bar22 = tl.sum(e22_v, axis=1)[:, None]
+                bar23 = tl.sum(e23_v, axis=1)[:, None]
+                bar31 = tl.sum(e31_v, axis=1)[:, None]
+                bar32 = tl.sum(e32_v, axis=1)[:, None]
+                bar33 = tl.sum(e33_v, axis=1)[:, None]
+                bar_free = tl.sum(
+                    tl.where(state == 0, zbvr, nil), axis=1
+                )[:, None]
+                bar_pool_b = tl.sum(
+                    tl.where(state == 0, poolbr, nil), axis=1
+                )[:, None]
+                bar_bound = tl.sum(
+                    tl.where(state == 0, semibr, nil), axis=1
+                )[:, None]
+                row = tl.load(
+                    duration_row + event_base + event,
+                    mask=active_atom,
+                    other=0,
+                )
+                held = pool_bars + (problem * row_count + row) * 12
+                tl.store(
+                    held + 0,
+                    tl.load(held + 0, mask=active_atom, other=0.0)
+                    + bar11,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 1,
+                    tl.load(held + 1, mask=active_atom, other=0.0)
+                    + bar12,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 2,
+                    tl.load(held + 2, mask=active_atom, other=0.0)
+                    + bar13,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 3,
+                    tl.load(held + 3, mask=active_atom, other=0.0)
+                    + bar21,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 4,
+                    tl.load(held + 4, mask=active_atom, other=0.0)
+                    + bar22,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 5,
+                    tl.load(held + 5, mask=active_atom, other=0.0)
+                    + bar23,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 6,
+                    tl.load(held + 6, mask=active_atom, other=0.0)
+                    + bar31,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 7,
+                    tl.load(held + 7, mask=active_atom, other=0.0)
+                    + bar32,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 8,
+                    tl.load(held + 8, mask=active_atom, other=0.0)
+                    + bar33,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 9,
+                    tl.load(held + 9, mask=active_atom, other=0.0)
+                    + bar_free,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 10,
+                    tl.load(held + 10, mask=active_atom, other=0.0)
+                    + bar_pool_b,
+                    mask=active_atom,
+                )
+                tl.store(
+                    held + 11,
+                    tl.load(held + 11, mask=active_atom, other=0.0)
+                    + bar_bound,
+                    mask=active_atom,
+                )
+                back_dt, back_att = _three_pool_interval_adjoint(
+                    pool_table, row, atom, atom_count, active_atom,
+                    r1_value, r1b_value, r1c_value,
+                    atom_exchange, atom_semisolid_exchange,
+                    atom_bound, atom_semisolid, hold_value,
+                    bar11, bar12, bar13, bar21, bar22, bar23,
+                    bar31, bar32, bar33,
+                    bar_free, bar_pool_b, bar_bound,
+                )
+                attenuation_v += back_att
+                two_pool_dt_v += back_dt
+            else:
+                (
+                    back_r1, back_r1b, back_r1c,
+                    back_exch, back_sexch, back_bound, back_semi,
+                    back_dt, back_att,
+                    _q1, _q2, _q3, _q4, _q5, _q6, _q7, _q8, _q9,
+                ) = _three_pool_step_adjoint_jvp(
+                    r1_value, nil, r1b_value, nil,
+                    r1c_value, nil,
+                    atom_exchange, nil,
+                    atom_semisolid_exchange, nil,
+                    atom_bound, nil, atom_semisolid, nil,
+                    dt_value, nil, hold_value, nil,
+                    tl.sum(e11_v, axis=1)[:, None], nil,
+                    tl.sum(e12_v, axis=1)[:, None], nil,
+                    tl.sum(e13_v, axis=1)[:, None], nil,
+                    tl.sum(e21_v, axis=1)[:, None], nil,
+                    tl.sum(e22_v, axis=1)[:, None], nil,
+                    tl.sum(e23_v, axis=1)[:, None], nil,
+                    tl.sum(e31_v, axis=1)[:, None], nil,
+                    tl.sum(e32_v, axis=1)[:, None], nil,
+                    tl.sum(e33_v, axis=1)[:, None], nil,
+                    tl.sum(tl.where(state == 0, zbvr, nil), axis=1)[:, None],
+                    nil,
+                    tl.sum(tl.where(state == 0, poolbr, nil), axis=1)[:, None],
+                    nil,
+                    tl.sum(tl.where(state == 0, semibr, nil), axis=1)[:, None],
+                    nil,
+                    three_free,
+                    three_d_free,
+                    three_pool_b,
+                    three_d_pool_b,
+                    three_pool_c,
+                    three_d_pool_c,
+                    three_a00,
+                    three_d_a00,
+                    three_a01,
+                    three_d_a01,
+                    three_a02,
+                    three_d_a02,
+                    three_a10,
+                    three_d_a10,
+                    three_a11,
+                    three_d_a11,
+                    three_a20,
+                    three_d_a20,
+                    three_a22,
+                    three_d_a22,
+                    three_s00,
+                    three_d_s00,
+                    three_s11,
+                    three_d_s11,
+                    three_s22,
+                    three_d_s22,
+                    three_minors,
+                    three_d_minors,
+                    three_sum_flat,
+                    three_sum_linear,
+                    three_sum_square,
+                    three_d_sum_flat,
+                    three_d_sum_linear,
+                    three_d_sum_square,
+                    three_lift,
+                    three_d_lift,
+                    three_low,
+                    three_middle,
+                    three_d_low,
+                    three_d_middle,
+                    three_leading,
+                    three_d_leading,
+                    three_first,
+                    three_d_first,
+                    three_second,
+                    three_d_second,
+                    three_determinant,
+                    three_d_determinant,
+                    three_high,
+                    three_d_high,
+                    three_radius,
+                    three_d_radius,
+                    three_cube,
+                    three_raw,
+                    three_d_raw,
+                    three_argument,
+                    three_inside_limit,
+                    three_angle,
+                    three_d_angle,
+                    three_centre,
+                    three_d_centre,
+                    three_trailing,
+                    three_d_trailing,
+                    three_guarded,
+                    three_d_guarded,
+                    three_q00,
+                    three_d_q00,
+                    three_q01,
+                    three_d_q01,
+                    three_q02,
+                    three_d_q02,
+                    three_q10,
+                    three_d_q10,
+                    three_q11,
+                    three_d_q11,
+                    three_q12,
+                    three_d_q12,
+                    three_q20,
+                    three_d_q20,
+                    three_q21,
+                    three_d_q21,
+                    three_q22,
+                    three_d_q22,
+                    three_def_00,
+                    three_dif_00,
+                    three_def_01,
+                    three_dif_01,
+                    three_def_02,
+                    three_dif_02,
+                    three_def_10,
+                    three_dif_10,
+                    three_def_11,
+                    three_dif_11,
+                    three_def_12,
+                    three_dif_12,
+                    three_def_20,
+                    three_dif_20,
+                    three_def_21,
+                    three_dif_21,
+                    three_def_22,
+                    three_dif_22,
+                    narrow,
+                )
+                g_t1v += back_r1 * (-1000.0 / (atom_t1 * atom_t1))
+                g_t1bv += back_r1b * (-1000.0 / (atom_t1b * atom_t1b))
+                g_t1cv += back_r1c * (-1000.0 / (atom_t1c * atom_t1c))
+                g_exchv += back_exch
+                g_sexchv += back_sexch
+                g_boundv += back_bound
+                g_semiv += back_semi
+                # Both halves of the interval reach the same two, so the
+                # transverse pass has already put its share here.
+                attenuation_v += back_att
+                two_pool_dt_v += back_dt
             # All three pools take the same per-order damping and turn, so each
             # collects the cotangent of the mixture that reached it.
             sfr, sfi = _complex_mul(spin_r, spin_i, mix_fr, mix_fi)
@@ -6255,6 +6436,397 @@ def _epg_vjp_kernel(
         tl.atomic_add(
             grad_duration + event_base + event, duration_v, mask=active_atom
         )
+
+    if pools == 3 and tabulated:
+        # One closed form per distinct length rather than one per event. The
+        # walk back pooled the cotangents the eigenvalues are pushed through,
+        # and the closed form is linear in them, so the pieces of the sum are
+        # the sum of the pieces.
+        for row in range(0, row_count):
+            held = pool_bars + (problem * row_count + row) * 12
+            row_dt = tl.load(pool_durations + row) + zero
+            one_att = 1.0 + 0.0 * row_dt
+            nil = 0.0 * row_dt
+            (
+                three_free,
+                three_d_free,
+                three_pool_b,
+                three_d_pool_b,
+                three_pool_c,
+                three_d_pool_c,
+                three_a00,
+                three_d_a00,
+                three_a01,
+                three_d_a01,
+                three_a02,
+                three_d_a02,
+                three_a10,
+                three_d_a10,
+                three_a11,
+                three_d_a11,
+                three_a20,
+                three_d_a20,
+                three_a22,
+                three_d_a22,
+                three_s00,
+                three_d_s00,
+                three_s11,
+                three_d_s11,
+                three_s22,
+                three_d_s22,
+                three_minors,
+                three_d_minors,
+                three_sum_flat,
+                three_sum_linear,
+                three_sum_square,
+                three_d_sum_flat,
+                three_d_sum_linear,
+                three_d_sum_square,
+                three_lift,
+                three_d_lift,
+                three_low,
+                three_middle,
+                three_d_low,
+                three_d_middle,
+                three_leading,
+                three_d_leading,
+                three_first,
+                three_d_first,
+                three_second,
+                three_d_second,
+                three_determinant,
+                three_d_determinant,
+                three_high,
+                three_d_high,
+                three_radius,
+                three_d_radius,
+                three_cube,
+                three_raw,
+                three_d_raw,
+                three_argument,
+                three_inside_limit,
+                three_angle,
+                three_d_angle,
+                three_centre,
+                three_d_centre,
+                three_trailing,
+                three_d_trailing,
+                three_guarded,
+                three_d_guarded,
+                three_q00,
+                three_d_q00,
+                three_q01,
+                three_d_q01,
+                three_q02,
+                three_d_q02,
+                three_q10,
+                three_d_q10,
+                three_q11,
+                three_d_q11,
+                three_q12,
+                three_d_q12,
+                three_q20,
+                three_d_q20,
+                three_q21,
+                three_d_q21,
+                three_q22,
+                three_d_q22,
+            ) = _three_pool_pieces_jvp(
+                r1_value,
+                nil,
+                r1b_value,
+                nil,
+                r1c_value,
+                nil,
+                atom_exchange,
+                nil,
+                atom_semisolid_exchange,
+                nil,
+                atom_bound,
+                nil,
+                atom_semisolid,
+                nil,
+                row_dt,
+                nil,
+                narrow,
+            )
+            (
+                three_def_00,
+                three_dif_00,
+                three_def_01,
+                three_dif_01,
+                three_def_02,
+                three_dif_02,
+                three_def_10,
+                three_dif_10,
+                three_def_11,
+                three_dif_11,
+                three_def_12,
+                three_dif_12,
+                three_def_20,
+                three_dif_20,
+                three_def_21,
+                three_dif_21,
+                three_def_22,
+                three_dif_22,
+            ) = _three_pool_assemble_jvp(
+                three_free,
+                three_d_free,
+                three_pool_b,
+                three_d_pool_b,
+                three_pool_c,
+                three_d_pool_c,
+                three_a00,
+                three_d_a00,
+                three_a01,
+                three_d_a01,
+                three_a02,
+                three_d_a02,
+                three_a10,
+                three_d_a10,
+                three_a11,
+                three_d_a11,
+                three_a20,
+                three_d_a20,
+                three_a22,
+                three_d_a22,
+                three_s00,
+                three_d_s00,
+                three_s11,
+                three_d_s11,
+                three_s22,
+                three_d_s22,
+                three_minors,
+                three_d_minors,
+                three_sum_flat,
+                three_sum_linear,
+                three_sum_square,
+                three_d_sum_flat,
+                three_d_sum_linear,
+                three_d_sum_square,
+                three_lift,
+                three_d_lift,
+                three_low,
+                three_middle,
+                three_d_low,
+                three_d_middle,
+                three_leading,
+                three_d_leading,
+                three_first,
+                three_d_first,
+                three_second,
+                three_d_second,
+                three_determinant,
+                three_d_determinant,
+                three_high,
+                three_d_high,
+                three_radius,
+                three_d_radius,
+                three_cube,
+                three_raw,
+                three_d_raw,
+                three_argument,
+                three_inside_limit,
+                three_angle,
+                three_d_angle,
+                three_centre,
+                three_d_centre,
+                three_trailing,
+                three_d_trailing,
+                three_guarded,
+                three_d_guarded,
+                three_q00,
+                three_d_q00,
+                three_q01,
+                three_d_q01,
+                three_q02,
+                three_d_q02,
+                three_q10,
+                three_d_q10,
+                three_q11,
+                three_d_q11,
+                three_q12,
+                three_d_q12,
+                three_q20,
+                three_d_q20,
+                three_q21,
+                three_d_q21,
+                three_q22,
+                three_d_q22,
+                narrow,
+            )
+            (
+                w11, w12, w13, w21, w22, w23, w31, w32, w33,
+                grow_free, grow_pool_b, grow_semisolid,
+                d_w11, d_w12, d_w13, d_w21, d_w22, d_w23, d_w31, d_w32, d_w33,
+                d_grow_free, d_grow_pool_b, d_grow_semisolid,
+            ) = _three_pool_weigh_jvp(
+                three_def_00,
+                three_dif_00,
+                three_def_01,
+                three_dif_01,
+                three_def_02,
+                three_dif_02,
+                three_def_10,
+                three_dif_10,
+                three_def_11,
+                three_dif_11,
+                three_def_12,
+                three_dif_12,
+                three_def_20,
+                three_dif_20,
+                three_def_21,
+                three_dif_21,
+                three_def_22,
+                three_dif_22,
+                three_free,
+                three_d_free,
+                three_pool_b,
+                three_d_pool_b,
+                three_pool_c,
+                three_d_pool_c,
+                one_att,
+                nil,
+                narrow,
+            )
+            (
+                back_r1, back_r1b, back_r1c,
+                back_exch, back_sexch, back_bound, back_semi,
+                back_dt, back_att,
+                _q1, _q2, _q3, _q4, _q5, _q6, _q7, _q8, _q9,
+            ) = _three_pool_step_adjoint_jvp(
+                r1_value, nil, r1b_value, nil,
+                r1c_value, nil,
+                atom_exchange, nil,
+                atom_semisolid_exchange, nil,
+                atom_bound, nil, atom_semisolid, nil,
+                row_dt, nil, one_att, nil,
+                tl.load(held + 0, mask=active_atom, other=0.0), nil,
+                tl.load(held + 1, mask=active_atom, other=0.0), nil,
+                tl.load(held + 2, mask=active_atom, other=0.0), nil,
+                tl.load(held + 3, mask=active_atom, other=0.0), nil,
+                tl.load(held + 4, mask=active_atom, other=0.0), nil,
+                tl.load(held + 5, mask=active_atom, other=0.0), nil,
+                tl.load(held + 6, mask=active_atom, other=0.0), nil,
+                tl.load(held + 7, mask=active_atom, other=0.0), nil,
+                tl.load(held + 8, mask=active_atom, other=0.0), nil,
+                tl.load(held + 9, mask=active_atom, other=0.0),
+                nil,
+                tl.load(held + 10, mask=active_atom, other=0.0),
+                nil,
+                tl.load(held + 11, mask=active_atom, other=0.0),
+                nil,
+                three_free,
+                three_d_free,
+                three_pool_b,
+                three_d_pool_b,
+                three_pool_c,
+                three_d_pool_c,
+                three_a00,
+                three_d_a00,
+                three_a01,
+                three_d_a01,
+                three_a02,
+                three_d_a02,
+                three_a10,
+                three_d_a10,
+                three_a11,
+                three_d_a11,
+                three_a20,
+                three_d_a20,
+                three_a22,
+                three_d_a22,
+                three_s00,
+                three_d_s00,
+                three_s11,
+                three_d_s11,
+                three_s22,
+                three_d_s22,
+                three_minors,
+                three_d_minors,
+                three_sum_flat,
+                three_sum_linear,
+                three_sum_square,
+                three_d_sum_flat,
+                three_d_sum_linear,
+                three_d_sum_square,
+                three_lift,
+                three_d_lift,
+                three_low,
+                three_middle,
+                three_d_low,
+                three_d_middle,
+                three_leading,
+                three_d_leading,
+                three_first,
+                three_d_first,
+                three_second,
+                three_d_second,
+                three_determinant,
+                three_d_determinant,
+                three_high,
+                three_d_high,
+                three_radius,
+                three_d_radius,
+                three_cube,
+                three_raw,
+                three_d_raw,
+                three_argument,
+                three_inside_limit,
+                three_angle,
+                three_d_angle,
+                three_centre,
+                three_d_centre,
+                three_trailing,
+                three_d_trailing,
+                three_guarded,
+                three_d_guarded,
+                three_q00,
+                three_d_q00,
+                three_q01,
+                three_d_q01,
+                three_q02,
+                three_d_q02,
+                three_q10,
+                three_d_q10,
+                three_q11,
+                three_d_q11,
+                three_q12,
+                three_d_q12,
+                three_q20,
+                three_d_q20,
+                three_q21,
+                three_d_q21,
+                three_q22,
+                three_d_q22,
+                three_def_00,
+                three_dif_00,
+                three_def_01,
+                three_dif_01,
+                three_def_02,
+                three_dif_02,
+                three_def_10,
+                three_dif_10,
+                three_def_11,
+                three_dif_11,
+                three_def_12,
+                three_dif_12,
+                three_def_20,
+                three_dif_20,
+                three_def_21,
+                three_dif_21,
+                three_def_22,
+                three_dif_22,
+                narrow,
+            )
+            g_t1v += back_r1 * (-1000.0 / (atom_t1 * atom_t1))
+            g_t1bv += back_r1b * (-1000.0 / (atom_t1b * atom_t1b))
+            g_t1cv += back_r1c * (-1000.0 / (atom_t1c * atom_t1c))
+            g_exchv += back_exch
+            g_sexchv += back_sexch
+            g_boundv += back_bound
+            g_semiv += back_semi
+
 
     velocity_v = g_flowv * flow_scale + g_washv * direction * washout_scale
     values = (
@@ -12488,17 +13060,20 @@ def _tabulate_three_pool(
     Returns
     -------
     tuple
-        The per-event row index and the table, or ``(None, None)``.
+        The per-event row index, the table and the distinct lengths, or
+        ``(None, None, None)``.
     """
     if pools != 3 or narrow:
-        return None, None
+        return None, None, None
     distinct, inverse = torch.unique(duration.detach(), return_inverse=True)
     # A row costs a formation, an event costs one too, so a train whose
     # lengths are all different has nothing to gain and a table to write.
     if distinct.numel() >= duration.numel():
-        return None, None
-    return inverse.reshape(duration.shape).to(torch.int32), _three_pool_table(
-        tissue, distinct
+        return None, None, None
+    return (
+        inverse.reshape(duration.shape).to(torch.int32),
+        _three_pool_table(tissue, distinct),
+        distinct.to(torch.float32).contiguous(),
     )
 
 
@@ -12709,7 +13284,7 @@ def simulate_into(
     table_rows = None if profile is None else profile.rows(kind.device)
     absorption = None if lineshape is None else lineshape.packed(t1.device)
     narrow = narrow_three_pool(tissue, duration, pools=pools)
-    duration_row, pool_table = _tabulate_three_pool(
+    duration_row, pool_table, _lengths = _tabulate_three_pool(
         tissue, duration, pools=pools, narrow=narrow
     )
 
@@ -13085,9 +13660,17 @@ def simulate_vjp(
     # four.
     pools = _pool_flag(lineshape, exchanging)
     narrow = narrow_three_pool(tissue, duration, pools=pools)
-    duration_row, pool_table = _tabulate_three_pool(
+    duration_row, pool_table, pool_durations = _tabulate_three_pool(
         tissue, duration, pools=pools, narrow=narrow
     )
+    row_count = 0 if pool_durations is None else pool_durations.numel()
+    pool_bars = None
+    if pool_table is not None:
+        # A slot per problem, so the walk back accumulates into memory it owns
+        # and no two programs contend for a row.
+        pool_bars = torch.zeros(
+            total * row_count * 12, dtype=torch.float32, device=device
+        )
     blocks = 7 if pools == 3 else (6 if pools == 2 else (4 if pools == 1 else 3))
     wave = _trajectory_wave(event_count, state_count, total, 2, blocks)
     trajectory = [
@@ -13137,6 +13720,9 @@ def simulate_vjp(
             pair_rows,
             duration_row,
             pool_table,
+            pool_bars,
+            pool_durations,
+            row_count,
             grad_pair,
             grad_real,
             grad_imag,
@@ -13510,6 +14096,9 @@ def simulate_vjp_into(
             None,
             None,
             None,
+            None,
+            None,
+            0,
             grad_real,
             grad_imag,
             buffers.tissue,
