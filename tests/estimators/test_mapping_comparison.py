@@ -4,24 +4,18 @@ from __future__ import annotations
 
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.estimators import DictionaryMatcher, PERK
+from torchsim.simulators import FSESimulator
 
 
 def test_perk_is_comparable_to_dictionary_matching_under_noise() -> None:
     generator = torch.Generator().manual_seed(4)
-    description = fse_description(
-        torch.deg2rad(torch.full((16,), 150.0)),
-        5e-3,
-        phases_rad=torch.pi / 2,
+    sequence = FSESimulator(
+        flip=torch.full((16,), 150.0), ESP=5.0, phases=90.0, states=10
     )
 
     def simulate(t2_ms: torch.Tensor) -> torch.Tensor:
-        return EpgEngine().simulate(
-            description,
-            TissueProperties(t1_ms=1000.0, t2_ms=t2_ms.reshape(-1)),
-            nstates=10,
-        ).signal
+        return sequence.simulate(T1=1000.0, T2=t2_ms.reshape(-1))
 
     training_t2 = 20.0 + 280.0 * torch.rand(3000, 1, generator=generator)
     test_t2 = 20.0 + 280.0 * torch.rand(512, 1, generator=generator)
@@ -44,8 +38,9 @@ def test_perk_is_comparable_to_dictionary_matching_under_noise() -> None:
         seed=4,
         complex_mode="magnitude",
     ).fit_simulator(
-        lambda parameters, _known: simulate(parameters[:, 0]),
-        training_t2,
+        sequence,
+        {"T2": training_t2},
+        T1=1000.0,
         noise_std=noise_std,
     )
 

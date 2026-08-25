@@ -1,15 +1,19 @@
-"""Sequence-optimization algorithms."""
+"""Designing a sequence: an acquisition, a cost, and the parameters under it."""
 
 from __future__ import annotations
 
 __all__ = [
-    "FSET2Precision",
-    "FseT2Optimizer",
-    "FseT2Plan",
+    "Acquisition",
+    "Bounded",
+    "SequenceDesign",
     "SequenceOptimization",
-    "SequenceOptimizer",
+    "crlb",
 ]
 
-from ._fast_fse import FseT2Optimizer, FseT2Plan
-from ._objectives import FSET2Precision
-from ._sequence import SequenceOptimization, SequenceOptimizer
+from ._design import (
+    Acquisition,
+    Bounded,
+    SequenceDesign,
+    SequenceOptimization,
+    crlb,
+)

@@ -2,4 +2,8 @@ coverage
 sphinx-book-theme
 sphinx-copybutton
 sphinx-exec-directive
+sphinx-gallery
 matplotlib
+# the examples the gallery executes
+sigpy
+torchio

@@ -20,6 +20,7 @@ from ._accelerators import (
     simulate_native,
 )
 from ._transition import ExactSliceProfile
+from .._subspace import Subspace
 from ._description import (
     EventAction,
     RfMode,
@@ -151,12 +152,21 @@ class SimulationResult:
 
 @dataclass(frozen=True)
 class SubspaceBasis:
-    """Low-rank temporal basis and its simulated dictionary."""
+    """Low-rank temporal basis and the dictionary it was fitted to."""
 
-    basis: torch.Tensor
-    singular_values: torch.Tensor
+    subspace: Subspace
     dictionary: torch.Tensor
     simulation: SimulationResult
+
+    @property
+    def basis(self) -> torch.Tensor:
+        """The temporal basis, ``(contrasts, rank)``."""
+        return self.subspace.basis
+
+    @property
+    def singular_values(self) -> torch.Tensor:
+        """Every singular value of the simulated dictionary."""
+        return self.subspace.singular_values
 
 
 class EpgEngine:
@@ -194,8 +204,13 @@ class EpgEngine:
         slice_profile: ExactSliceProfile | None = None,
         rf_raster_time_s: float = 1e-6,
         device: torch.device | str | None = None,
+        events: Any = None,
     ) -> SimulationResult:
         """Walk an event stream and record selected ADC signals.
+
+        ``events`` is the description's stream already packed into buffers, for
+        a caller that holds the structure fixed and rebuilds only what varies;
+        see :mod:`torchsim.optim`. It must be the packing of ``description``.
 
         Raises:
             RuntimeError: if no fused kernel can take this tissue -- a device
@@ -223,9 +238,9 @@ class EpgEngine:
         exchange_pool = wants_exchange_pool(tissue.pool_b_fraction)
         _within_one_voxel(tissue.bound_fraction, tissue.pool_b_fraction)
 
-        minimum_states = 1 + repetitions * self.shifts_per_repetition(description)
         if nstates is None:
-            nstates = max(8, min(64, minimum_states))
+            winding = repetitions * self.shifts_per_repetition(description)
+            nstates = max(8, min(64, 1 + winding))
         else:
             nstates = _as_integer(nstates, "nstates")
         if nstates < 1:
@@ -256,6 +271,7 @@ class EpgEngine:
             exchanging=exchange_pool,
             features=features,
             transmit=sensitivities,
+            packed=events,
         )
         if accelerated is None:
             raise RuntimeError(
@@ -278,8 +294,6 @@ def simulate_subspace(
     device: torch.device | str | None = None,
 ) -> SubspaceBasis:
     """Simulate a dictionary and return its leading temporal basis."""
-    if rank < 1:
-        raise ValueError("rank must be positive")
     result = EpgEngine().simulate(
         description,
         tissue,
@@ -290,17 +304,8 @@ def simulate_subspace(
         rf_raster_time_s=rf_raster_time_s,
         device=device,
     )
-    dictionary = result.signal.reshape(-1, result.signal.shape[-1])
-    if rank > min(dictionary.shape):
-        raise ValueError(
-            f"rank={rank} exceeds dictionary dimensions {tuple(dictionary.shape)}"
-        )
-    basis, singular_values, _ = torch.linalg.svd(
-        dictionary.mT, full_matrices=False
-    )
     return SubspaceBasis(
-        basis=basis[:, :rank],
-        singular_values=singular_values,
+        subspace=Subspace.fit(result.signal, rank),
         dictionary=result.signal,
         simulation=result,
     )
@@ -420,18 +425,33 @@ def _resolve_transmit(
     )
 
 
+def target_device(
+    tissue: TissueProperties, device: torch.device | str | None = None
+) -> torch.device:
+    """Where a run's per-voxel buffers will live.
+
+    A device named by the caller, otherwise the one the tissue is already on,
+    otherwise the host.
+    """
+    if device is not None:
+        return torch.device(device)
+    return next(
+        (
+            getattr(tissue, name).device
+            for name in TISSUE_NAMES
+            if isinstance(getattr(tissue, name), torch.Tensor)
+        ),
+        torch.device("cpu"),
+    )
+
+
 def _prepare_tissue(
     tissue: TissueProperties,
     device: torch.device | str | None,
     shims: int = 1,
 ) -> tuple[tuple[torch.Tensor, ...], torch.Size, torch.device]:
     values = tuple(getattr(tissue, name) for name in TISSUE_NAMES)
-    if device is None:
-        device = next(
-            (value.device for value in values if isinstance(value, torch.Tensor)),
-            torch.device("cpu"),
-        )
-    device = torch.device(device)
+    device = target_device(tissue, device)
     given = [_as_float_tensor(value, device) for value in values]
     # The transmit buffers may lead with a shim axis, which is not a voxel axis
     # and must stay out of the broadcast that decides how many voxels there are.

@@ -29,6 +29,7 @@ from torchsim.sequence._accelerators import (
 from torchsim.sequence._builders import fse_description
 from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
 import torchsim.sequence._accelerators as accelerators
+import torchsim._execution as _policy
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA is unavailable"
@@ -142,7 +143,7 @@ def test_one_lane_by_default():
     where two take 94 ms; the regime where two win is 2-4 chunks, by 5-23%.
     """
     with offload(["cuda"]):
-        assert accelerators._OFFLOAD.lanes == 1
+        assert _policy._OFFLOAD.lanes == 1
 
 
 def test_more_lanes_do_not_widen_the_footprint():
@@ -218,13 +219,13 @@ def test_a_nonsense_budget_is_refused(budget, lanes):
 
 
 def test_the_previous_setting_comes_back_after_a_failure():
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import EpgEngine
 
     with pytest.raises(RuntimeError):
         with offload(["cuda"], budget_bytes=1 << 20):
             raise RuntimeError("boom")
 
-    assert _accelerators._OFFLOAD is None
+    assert _policy._OFFLOAD is None
 
 
 # The spoiler this volume declares and the voxel it winds across, without

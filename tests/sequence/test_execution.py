@@ -24,7 +24,7 @@ from torchsim.sequence._accelerators import (
     _run_packed_vjp,
     _run_packed_vjp_jvp,
 )
-import torchsim.sequence._accelerators as accelerators
+import torchsim._execution as _policy
 
 from test_offload import _seeds, _volume  # noqa: E402
 
@@ -286,7 +286,7 @@ def test_nonsense_settings_are_refused(arguments):
 
 def test_naming_the_host_as_a_device_means_the_host():
     with execution(["cpu"]):
-        assert accelerators._EXECUTION.target == "cpu"
+        assert _policy._EXECUTION.target == "cpu"
 
 
 def test_the_previous_setting_comes_back_after_a_failure():
@@ -294,12 +294,12 @@ def test_the_previous_setting_comes_back_after_a_failure():
         with execution("cpu"):
             raise RuntimeError("boom")
 
-    assert accelerators._EXECUTION is None
+    assert _policy._EXECUTION is None
 
 
 def test_blocks_nest():
     with execution("cpu"):
         with execution("auto"):
-            assert accelerators._EXECUTION.target == "auto"
-        assert accelerators._EXECUTION.target == "cpu"
-    assert accelerators._EXECUTION is None
+            assert _policy._EXECUTION.target == "auto"
+        assert _policy._EXECUTION.target == "cpu"
+    assert _policy._EXECUTION is None

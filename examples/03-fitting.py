@@ -38,6 +38,7 @@ import numpy as np
 import torch
 import torchio as tio
 import torchsim
+from torchsim.simulators import FSESimulator
 
 path = os.path.realpath("data")
 ixi_dataset = tio.datasets.IXI(
@@ -77,7 +78,9 @@ def simulate(T2, flip, ESP, device="cpu"):
         flip=flip, ESP=ESP, T1=T1, T2=T2.flatten(), device=device
     )
 
-    return abs(output.T.reshape(-1, *ishape)).numpy(force=True)
+    # T2 arrived as a NumPy array, so the signal comes back as one -- even
+    # when the simulation itself ran on the GPU.
+    return abs(output.T.reshape(-1, *ishape))
 
 
 # simulate acquisition
@@ -104,25 +107,19 @@ plt.title("echoes 1, 17 and 32")
 
 # %%
 #
-# Both estimators need the same thing: a batch of signals simulated over a
-# grid of candidate T2 values. We express that once, as a plain function of a
-# parameter matrix shaped ``(natoms, nparams)``. This is exactly the signature
-# :meth:`torchsim.PERK.fit_simulator` expects.
+# One problem, stated once
+# ------------------------
 #
+# What is being estimated, from what acquisition, at what noise level is one
+# statement -- a :class:`torchsim.ParameterMapping` over an
+# :class:`torchsim.Acquisition`. The method that fills it in is a separate
+# choice, and swapping one for another is a word.
+#
+import time
 
-
-def signal_model(parameters, known=None):
-    """Simulate magnitude FSE signals for a batch of T2 values."""
-    return abs(
-        torchsim.fse_sim(
-            flip=flip,
-            ESP=ESP,
-            T1=T1,
-            T2=parameters[:, 0],
-            device=device,
-        )
-    )
-
+acquisition = torchsim.Acquisition(
+    FSESimulator(ESP=ESP, flip=flip), T1=T1
+)
 
 # %%
 #
@@ -130,31 +127,31 @@ def signal_model(parameters, known=None):
 # -------------------
 #
 # The reference approach evaluates every atom and keeps the best normalized
-# inner product. :class:`torchsim.DictionaryMatcher` chunks the score matrix so
+# inner product. A dictionary wants a *grid*, so that is what this mapping is
+# trained over. :class:`torchsim.DictionaryMatcher` chunks the score matrix so
 # memory stays bounded, while each chunk is a BLAS/cuBLAS matrix product.
 #
-import time
+t2_grid = torch.linspace(1.0, 350.0, 1000)
 
-t2_grid = torch.linspace(1.0, 350.0, 1000, device=device)[:, None]
-dictionary = signal_model(t2_grid)
-
-matcher = torchsim.DictionaryMatcher(dictionary, t2_grid).to(device)
+by_dictionary = torchsim.ParameterMapping(
+    acquisition, T2=t2_grid, seed=0
+).train(torchsim.DictionaryMatcher(), samples=t2_grid.numel())
+matcher = by_dictionary.method
 
 # %%
 #
-# The measured series is shaped ``(nechoes, ny, nx)``; the estimators expect
-# the contrast axis last.
+# The measured series is shaped ``(nechoes, ny, nx)``; a mapping expects the
+# contrast axis last, and returns one map per unknown, under its own name.
 #
 signals = torch.as_tensor(echo_series, device=device).permute(1, 2, 0)
 
 start = time.perf_counter()
-match = matcher.match(signals)
+T2_dict = by_dictionary(signals)["T2"].numpy(force=True)
 dictionary_time = time.perf_counter() - start
 
-T2_dict = match.parameters[..., 0, 0].numpy(force=True)
 # The scale is the complex least-squares fit between the measured signal and
 # the matched atom, i.e. the proton density.
-M0_dict = abs(match.scales[..., 0]).numpy(force=True)
+M0_dict = abs(matcher.match(signals).scales[..., 0]).numpy(force=True)
 
 # %%
 #
@@ -162,10 +159,10 @@ M0_dict = abs(match.scales[..., 0]).numpy(force=True)
 # ----
 #
 # PERK regresses the parameter directly from a random Fourier feature map of
-# the signal. Training draws T2 from a prior, simulates the corresponding
-# signals, and adds noise so that the estimator learns the *noisy* inverse
-# mapping. ``normalize=True`` makes the estimate invariant to the unknown
-# proton density.
+# the signal. It wants a *prior* rather than a grid: training draws T2 from
+# it, simulates the corresponding signals, and adds noise so that the
+# estimator learns the *noisy* inverse mapping. ``normalize=True`` makes the
+# estimate invariant to the unknown proton density.
 #
 # The prior is sampled *log*-uniformly. Sampling it uniformly spends most of
 # the training budget on long T2, where the echo train is nearly flat and
@@ -173,23 +170,26 @@ M0_dict = abs(match.scales[..., 0]).numpy(force=True)
 #
 import math
 
-generator = torch.Generator(device=device).manual_seed(11)
+generator = torch.Generator().manual_seed(11)
 log_low, log_high = math.log(5.0), math.log(400.0)
 t2_train = torch.exp(
-    log_low
-    + (log_high - log_low) * torch.rand(20000, 1, generator=generator, device=device)
+    log_low + (log_high - log_low) * torch.rand(20000, generator=generator)
 )
 
 start = time.perf_counter()
-training_signals = signal_model(t2_train)
-estimator = torchsim.PERK(
-    n_features=1000,
-    regularization=1e-6,
-    complex_mode="magnitude",
-    normalize=True,
-    seed=4,
-).to(device)
-estimator.fit(training_signals, t2_train, noise_std=0.02)
+by_regression = torchsim.ParameterMapping(
+    acquisition, T2=t2_train, noise_std=0.02, seed=4
+).train(
+    torchsim.PERK(
+        n_features=1000,
+        regularization=1e-6,
+        complex_mode="magnitude",
+        normalize=True,
+        seed=4,
+    ),
+    samples=t2_train.numel(),
+)
+estimator = by_regression.method
 training_time = time.perf_counter() - start
 
 # %%
@@ -203,7 +203,7 @@ training_time = time.perf_counter() - start
 # the atom energy, which collapses to zero as T2 does.
 #
 start = time.perf_counter()
-T2_estimate = estimator(signals)[..., 0].clamp(5.0, 350.0)
+T2_estimate = by_regression(signals)["T2"].clamp(5.0, 350.0)
 
 # %%
 #
@@ -214,12 +214,15 @@ T2_estimate = estimator(signals)[..., 0].clamp(5.0, 350.0)
 # forward model is simulated a second time.
 #
 index = torch.searchsorted(
-    t2_grid[:, 0].contiguous(), T2_estimate.reshape(-1).contiguous()
-).clamp(0, t2_grid.shape[0] - 1)
-atom = dictionary[index]
-measured = signals.reshape(-1, len(flip))
+    t2_grid.contiguous().to(T2_estimate.device),
+    T2_estimate.reshape(-1).contiguous(),
+).clamp(0, t2_grid.numel() - 1)
+atoms = matcher.dictionary.to(T2_estimate.device)
+atom = atoms[index]
+measured = signals.reshape(-1, len(flip)).to(atom.device).to(atom.dtype)
 M0_perk = (
-    ((atom * measured).sum(-1) / atom.square().sum(-1))
+    ((atom.conj() * measured).sum(-1) / atom.abs().square().sum(-1))
+    .abs()
     .reshape(T2_estimate.shape)
     .numpy(force=True)
 )
@@ -313,8 +316,10 @@ plt.legend(), plt.tight_layout()
 #
 print(f"{'atoms':>8} {'matching':>10} {'vs PERK':>9}")
 for n_atoms in [1000, 4000, 16000, 64000]:
-    grid = torch.linspace(1.0, 350.0, n_atoms, device=device)[:, None]
-    scaling_matcher = torchsim.DictionaryMatcher(signal_model(grid), grid).to(device)
+    grid = torch.linspace(1.0, 350.0, n_atoms)
+    scaling_matcher = torchsim.ParameterMapping(
+        acquisition, T2=grid, seed=0
+    ).train(torchsim.DictionaryMatcher(), samples=n_atoms).method
     scaling_matcher.match(signals[:1])  # warm up
     start = time.perf_counter()
     scaling_matcher.match(signals)

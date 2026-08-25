@@ -22,7 +22,15 @@ setup(
             extra_compile_args=_compile_args(),
             language="c++",
             py_limited_api=True,
-        )
+        ),
+        Extension(
+            "torchsim._perk_cpu",
+            ["src/torchsim/_perk_cpu.cpp"],
+            define_macros=[("Py_LIMITED_API", "0x030A0000")],
+            extra_compile_args=_compile_args(),
+            language="c++",
+            py_limited_api=True,
+        ),
     ],
     options={"bdist_wheel": {"py_limited_api": "cp310"}},
 )

@@ -1709,9 +1709,9 @@ class _Elsewhere:
 
 
 def _streamed(monkeypatch):
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim import _execution
 
-    monkeypatch.setattr(_accelerators, "_OFFLOAD", _Elsewhere())
+    monkeypatch.setattr(_execution, "_OFFLOAD", _Elsewhere())
 
 
 @pytest.mark.parametrize("pass_name", ["forward", "forward-mode", "adjoint"])

@@ -144,32 +144,47 @@ Subspace
    :toctree: generated
    :nosignatures:
 
+   torchsim.Subspace
    torchsim.simulate_subspace
    torchsim.SubspaceBasis
 
-Parameter Estimation
---------------------
-Quantitative estimators built on TorchSim signal models.
+Parameter mapping
+-----------------
+Estimating tissue properties from a measured volume. A
+:class:`~torchsim.ParameterMapping` states the problem over an
+:class:`~torchsim.Acquisition` -- what is unknown and over what range, what is
+measured separately, how noisy -- and any :class:`~torchsim.Estimator` fills it
+in, returning one named map per unknown.
+
+Both shipped methods honour :func:`~torchsim.execution`, so a volume larger
+than a card is streamed through it and a second card halves the work.
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
+   torchsim.ParameterMapping
+   torchsim.Estimator
    torchsim.DictionaryMatcher
    torchsim.DictionaryMatch
    torchsim.PERK
 
-Sequence Optimization
----------------------
-Differentiable acquisition design.
+Sequence design
+---------------
+Choosing a sequence's parameters by minimizing a cost you write. An
+:class:`~torchsim.Acquisition` is a simulator with the tissue it is designed
+for already in place; the cost is a plain function of what it records; a
+:class:`~torchsim.SequenceDesign` holds the parameters and runs the loop.
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
-   torchsim.SequenceOptimizer
+   torchsim.Acquisition
+   torchsim.Bounded
+   torchsim.SequenceDesign
    torchsim.SequenceOptimization
-   torchsim.FSET2Precision
+   torchsim.crlb
 
 Miscellaneous
 -------------

@@ -12,6 +12,18 @@ from typing import Any
 
 import torch
 
+from .._execution import (
+    Lane,
+    _Choice,
+    _Offload,
+    choose,
+    chunk_voxels,
+    execution,  # noqa: F401  -- re-exported: this is where callers look for it
+    offload,  # noqa: F401
+    offloading,
+    stream_chunks,
+    without_policy,
+)
 from ._calibration import crossover, detection
 from ._description import (
     EventType,
@@ -215,6 +227,55 @@ def _dynamic_rotations(
     return pairs, 1 if positions is None else int(positions.numel())
 
 
+def pack_description(
+    description: SequenceDescription,
+    *,
+    repetitions: int,
+    record: str,
+    device: torch.device,
+    rf_raster_time_s: float = 1e-6,
+    slice_profile: Any = None,
+) -> _PackedEvents:
+    """Pack a description's events into the buffers a run would hand a kernel.
+
+    The same call :func:`simulate_native` makes, exposed for a caller holding
+    one description's structure fixed across many sets of values.
+    """
+    shapes = (
+        _pulse_shapes(description)
+        if _wants_a_table(description, slice_profile)
+        else {}
+    )
+    return _pack_for(
+        description,
+        shapes,
+        repetitions=repetitions,
+        record=record,
+        device=device,
+        rf_raster_time_s=rf_raster_time_s,
+    )
+
+
+def _pack_for(
+    description: SequenceDescription,
+    shapes: dict[int, RfDefinition],
+    *,
+    repetitions: int,
+    record: str,
+    device: torch.device,
+    rf_raster_time_s: float,
+) -> _PackedEvents:
+    return _pack_events(
+        description,
+        repetitions=repetitions,
+        record=record,
+        device=device,
+        rf_raster_time_s=rf_raster_time_s,
+        shim_rows=shim_rows(description),
+        table_rows={key: row for row, key in enumerate(shapes)},
+    )
+
+
 def _wants_a_table(
     description: SequenceDescription, slice_profile: Any
 ) -> bool:
@@ -227,12 +288,23 @@ def _wants_a_table(
     """
     if slice_profile is not None:
         return True
-    return any(
-        description.rf_definitions[event.rf_definition_id].rf_mode()
-        is RfMode.PROFILED
-        for event in description.events
-        if event.type is EventType.RF and event.rf_use is not RfUse.INVERSION
-    )
+    # Asked once per definition rather than once per event -- the mode is a
+    # property of the pulse, and a train of a thousand refocusings names one --
+    # and memoized on the (immutable) description, since a caller holding one
+    # description asks again on every run.
+    cached = getattr(description, "_profiled_cache", None)
+    if cached is None:
+        driven = {
+            event.rf_definition_id
+            for event in description.events
+            if event.type is EventType.RF and event.rf_use is not RfUse.INVERSION
+        }
+        cached = any(
+            description.rf_definitions[key].rf_mode() is RfMode.PROFILED
+            for key in driven
+        )
+        object.__setattr__(description, "_profiled_cache", cached)
+    return cached
 
 
 def _pulse_shapes(
@@ -350,6 +422,7 @@ def simulate_native(
     exchanging: bool = False,
     features: frozenset[str] | None = None,
     transmit: torch.Tensor | None = None,
+    packed: _PackedEvents | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules.
 
@@ -360,6 +433,12 @@ def simulate_native(
     channels)``, given when the sequence drives a pulse whose channels carry
     their own waveforms. Its rotation is then integrated per voxel rather than
     reached through a flip and a phase.
+
+    ``packed`` is the event stream already in buffers. The description is still
+    read for everything structural -- its RF definitions, its gradient
+    geometry, how far it winds -- so the two must describe the same sequence;
+    what is skipped is walking the events again to rebuild what only their
+    values changed.
     """
     device = prepared_tissue[0].device
     if device.type not in {"cpu", "cuda"} or not _backend_available(device):
@@ -371,15 +450,22 @@ def simulate_native(
         if _wants_a_table(description, slice_profile)
         else {}
     )
-    packed = _pack_events(
-        description,
-        repetitions=repetitions,
-        record=record,
-        device=prepared_tissue[0].device,
-        rf_raster_time_s=rf_raster_time_s,
-        shim_rows=shim_rows(description),
-        table_rows={key: row for row, key in enumerate(shapes)},
-    )
+    if packed is not None and (
+        packed.kind.device != device
+        or int(packed.kind.numel()) != repetitions * len(description.events)
+    ):
+        # A packing built for another device or another number of repetitions
+        # is not this run's; rebuilding is slower and right.
+        packed = None
+    if packed is None:
+        packed = _pack_for(
+            description,
+            shapes,
+            repetitions=repetitions,
+            record=record,
+            device=device,
+            rf_raster_time_s=rf_raster_time_s,
+        )
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
@@ -489,7 +575,12 @@ def _pack_events(
     output_index = 0
 
     for repetition in range(repetitions):
-        repetition_offset = description.tr_duration_us * repetition
+        # A single playing never advances by the repetition time, so it does
+        # not matter what shape that time has -- which is what lets a protocol
+        # give each train in a batch its own.
+        repetition_offset = (
+            description.tr_duration_us * repetition if repetition else 0.0
+        )
         for event_index, event in enumerate(description.events):
             absolute = repetition_offset + event.timestamp_us
             durations.append((absolute - previous_absolute) * 1e-6)
@@ -1681,83 +1772,6 @@ def _combine_shards(
     return tuple(combined)
 
 
-# ---------------------------------------------------------------------------
-# Streaming a host-resident volume through a memory-limited device.
-#
-# Parameter mapping and model-based imaging scale with voxels, and the signal
-# alone runs to tens of gigabytes -- more than a recon server's card has spare
-# once the product pipeline's kernels are loaded. So the volume stays on the
-# host and moves through the device a chunk at a time, on reusable buffers
-# whose size the caller sets. Several chunks are in flight at once so a copy
-# can proceed while another chunk computes.
-# ---------------------------------------------------------------------------
-
-_DEFAULT_BUDGET_BYTES = 512 << 20
-
-
-@dataclass(frozen=True)
-class _Offload:
-    devices: tuple[torch.device, ...]
-    budget_bytes: int
-    lanes: int
-
-
-_OFFLOAD: _Offload | None = None
-
-
-@contextmanager
-def offload(
-    devices: Sequence[torch.device | str] = ("cuda",),
-    *,
-    budget_bytes: int = _DEFAULT_BUDGET_BYTES,
-    lanes: int = 1,
-) -> Iterator[None]:
-    """Run host-resident volumes on CUDA without holding them there.
-
-    Inside the block a simulation whose tissue is on the host still runs on
-    ``devices``, in voxel chunks sized so that the device buffers stay within
-    ``budget_bytes`` in total. The result comes back on the host.
-
-    The budget buys memory with time, and steeply once the chunks get small: a
-    chunk both fills the device less well and pays its own launch and transfer
-    latency, so quartering the budget costs far more than a quarter of the
-    throughput. Give it as much as the card can spare.
-
-    ``lanes`` is how many chunks may be in flight per device. A lane owns a
-    stream and its own buffers, so a second one lets a chunk's transfer overlap
-    another chunk's arithmetic -- but it takes its share out of the same
-    budget, and every chunk gets narrower as a result. Narrower chunks lose
-    more than the overlap recovers except when the volume was barely splitting
-    to begin with, so one lane is the default and raising it is worth measuring
-    before believing. A machine that overlaps transfers better than this one
-    would move that balance.
-
-    Whatever ``lanes`` is set to, it changes only throughput: what makes a
-    volume larger than the card runnable at all is the chunking.
-
-    Raises:
-        ValueError: if ``devices`` is empty, names a device that is not CUDA,
-            or if ``budget_bytes`` or ``lanes`` is not positive.
-    """
-    global _OFFLOAD
-    resolved = tuple(torch.device(value) for value in devices)
-    if not resolved:
-        raise ValueError("offload needs at least one device")
-    for device in resolved:
-        if device.type != "cuda":
-            raise ValueError(f"offload is for CUDA devices, got {device}")
-    if budget_bytes <= 0:
-        raise ValueError(f"budget_bytes must be positive, got {budget_bytes}")
-    if lanes <= 0:
-        raise ValueError(f"lanes must be positive, got {lanes}")
-    previous = _OFFLOAD
-    _OFFLOAD = _Offload(resolved, int(budget_bytes), int(lanes))
-    try:
-        yield
-    finally:
-        _OFFLOAD = previous
-
-
 # What one voxel costs on the device, by pass. These are what both the chunk
 # size and the whole-problem footprint are derived from, so they stay in step.
 def _bytes_per_voxel(
@@ -1810,123 +1824,8 @@ def _bytes_per_voxel(
 
 def _chunk_voxels(plan: _Offload, kind: str, *shape: Any) -> int:
     """Largest voxel chunk whose buffers fit the budget, across every lane."""
-    across = plan.lanes * len(plan.devices)
-    per_voxel = max(1, _bytes_per_voxel(kind, *shape))
-    return max(1, plan.budget_bytes // (across * per_voxel))
+    return chunk_voxels(plan, _bytes_per_voxel(kind, *shape))
 
-
-# ---------------------------------------------------------------------------
-# Choosing where to run.
-#
-# How much work it takes before a launch earns itself back is a property of the
-# machine, so ``crossover`` measures it rather than assuming it.
-# ---------------------------------------------------------------------------
-
-# Left free on every card. A recon server's product pipeline keeps its own
-# kernels and workspaces resident, and taking the last of the memory would
-# evict them rather than fail honestly.
-_RESERVE_BYTES = 512 << 20
-
-
-@dataclass(frozen=True)
-class _Execution:
-    """What the caller asked for, before any problem is in hand."""
-
-    target: str  # "auto", "cpu" or "devices"
-    devices: tuple[torch.device, ...]
-    stream: bool | None
-    budget_bytes: int | None
-    lanes: int
-    reserve_bytes: int
-
-
-@dataclass(frozen=True)
-class _Choice:
-    """What to do with one particular problem."""
-
-    where: str  # "cpu", "upfront" or "stream"
-    devices: tuple[torch.device, ...] = ()
-    offload: _Offload | None = None
-
-
-_EXECUTION: _Execution | None = None
-_ON_HOST = _Choice("cpu")
-
-
-@contextmanager
-def execution(
-    target: str | torch.device | Sequence[torch.device | str] = "auto",
-    *,
-    stream: bool | None = None,
-    budget_bytes: int | None = None,
-    lanes: int = 1,
-    reserve_bytes: int = _RESERVE_BYTES,
-) -> Iterator[None]:
-    """Choose where simulations run inside the block.
-
-    ``target`` is ``"auto"`` to decide per call, ``"cpu"`` to insist on the
-    host, or a device or list of devices to insist on those. Deciding weighs
-    the problem against what each card has free right now: work too small to
-    repay a launch stays on the CPU, work that fits goes across in one piece,
-    and work that does not is streamed through in chunks.
-
-    ``stream`` overrules that last step -- ``False`` demands the whole volume
-    be resident and lets it fail if it will not fit, ``True`` streams even when
-    it would have fit. ``budget_bytes`` caps what streaming may hold, and
-    defaults to what the devices report free less ``reserve_bytes``. ``lanes``
-    is passed to :func:`offload` for streamed work and rarely wants changing.
-
-    Outside a block, simulations run wherever their tensors already are.
-
-    Raises:
-        ValueError: for an empty device list, a non-CUDA device, or a
-            non-positive ``budget_bytes`` or ``lanes``.
-    """
-    global _EXECUTION
-    if lanes <= 0:
-        raise ValueError(f"lanes must be positive, got {lanes}")
-    if budget_bytes is not None and budget_bytes <= 0:
-        raise ValueError(f"budget_bytes must be positive, got {budget_bytes}")
-
-    if isinstance(target, str) and target in {"auto", "cpu"}:
-        name, devices = target, ()
-    else:
-        named = (target,) if isinstance(target, (str, torch.device)) else tuple(target)
-        if not named:
-            raise ValueError("execution needs at least one device")
-        devices = tuple(torch.device(value) for value in named)
-        if all(device.type == "cpu" for device in devices):
-            name, devices = "cpu", ()
-        else:
-            for device in devices:
-                if device.type != "cuda":
-                    raise ValueError(
-                        f"execution takes CUDA devices or 'cpu', got {device}"
-                    )
-            name = "devices"
-
-    previous = _EXECUTION
-    _EXECUTION = _Execution(
-        name, devices, stream, budget_bytes, int(lanes), int(reserve_bytes)
-    )
-    try:
-        yield
-    finally:
-        _EXECUTION = previous
-
-
-def _free_bytes(device: torch.device, reserve: int) -> int:
-    """What this card can spare, after leaving the reserve alone."""
-    free, _total = torch.cuda.mem_get_info(device)
-    return max(0, free - reserve)
-
-
-def _candidate_devices(plan: _Execution) -> tuple[torch.device, ...]:
-    if plan.devices:
-        return plan.devices
-    return tuple(
-        torch.device("cuda", index) for index in range(torch.cuda.device_count())
-    )
 
 
 def _choose(
@@ -1937,55 +1836,33 @@ def _choose(
     state_count: int,
     real_axis: int | None,
 ) -> _Choice | None:
-    """Decide where one problem runs, given the policy and the free memory.
+    """Decide where one simulation runs, given the policy and the free memory.
 
-    ``None`` means there is no policy in force and the call stands as written:
-    it runs wherever its tensors already are.
+    The policy is general; what an EPG pass costs is not. The work estimate and
+    the per-voxel footprint are worked out here, and the decision itself is
+    :func:`torchsim._execution.choose`.
     """
-    plan = _EXECUTION
-    if plan is None:
-        return None
-    if plan.target == "cpu":
-        return _ON_HOST
-    if not torch.cuda.is_available():
-        return _ON_HOST
-
-    devices = _candidate_devices(plan)
-    if not devices:
-        return _ON_HOST
-
     train_count = _train_count(events)
     voxels = int(tissue[0].numel())
     event_count = int(events[1].numel())
-    work = voxels * train_count * event_count
-    if plan.target == "auto" and work < crossover(kind, devices[0], state_count):
-        return _ON_HOST
-
-    per_voxel = _bytes_per_voxel(
-        kind, train_count, event_count, output_count, state_count, real_axis,
-        _shim_count(tissue),
-    )
-    footprint = voxels * per_voxel
-    free = [_free_bytes(device, plan.reserve_bytes) for device in devices]
-
-    if plan.stream is not True:
-        # Fewest cards that can hold it, so the rest stay out of the way.
-        for count in range(1, len(devices) + 1):
-            if sum(free[:count]) >= footprint:
-                return _Choice("upfront", devices[:count])
-        if plan.stream is False:
-            # Asked for resident and it will not fit; let the allocator say so
-            # rather than silently doing something else.
-            return _Choice("upfront", devices)
-
-    budget = plan.budget_bytes or max(1, min(free) if free else 0)
-    return _Choice(
-        "stream", devices, _Offload(devices, max(1, budget), plan.lanes)
+    return choose(
+        work=voxels * train_count * event_count,
+        voxels=voxels,
+        bytes_per_voxel=_bytes_per_voxel(
+            kind,
+            train_count,
+            event_count,
+            output_count,
+            state_count,
+            real_axis,
+            _shim_count(tissue),
+        ),
+        crossover=lambda device: crossover(kind, device, state_count),
     )
 
 
-class _Lane:
-    """One stream and the device buffers it reuses for every chunk."""
+class _Lane(Lane):
+    """The device buffers one lane reuses for every chunk of a simulation."""
 
     def __init__(
         self,
@@ -1998,8 +1875,7 @@ class _Lane:
         voxel_inputs: int = _TISSUE_COUNT,
         shims: int = 1,
     ) -> None:
-        self.device = device
-        self.stream = torch.cuda.Stream(device=device)
+        super().__init__(device)
         self.train_count = train_count
         self.output_count = output_count
         # Tissue, and for a forward-mode pass its per-voxel seeds behind it.
@@ -2024,10 +1900,6 @@ class _Lane:
             )
             for _ in range(planes)
         ]
-        # Claimed by the first ``send``; a pass that only brings signals home
-        # never needs it.
-        self.staging: torch.Tensor | None = None
-        self.drained = torch.cuda.Event()
         # A forward-over-reverse pass needs a trajectory and gradient
         # accumulators as well; the adjoint path hangs them here.
         self.adjoint: Any = None
@@ -2047,24 +1919,9 @@ class _Lane:
         )
 
     def send(self, piece: torch.Tensor) -> torch.Tensor:
-        """Put one chunk of a host signal on the device, and return it there.
-
-        The staging buffer is pinned, so the transfer runs asynchronously and
-        the stream reads the buffer long after the host wrote it. Overwriting
-        it for the next chunk therefore has to wait for that read.
-        """
-        if self.staging is None:
-            self.staging = torch.empty_like(
-                self.signal, device="cpu", pin_memory=True
-            )
-        self.drained.synchronize()
+        """Put one chunk of a host signal on this lane's signal buffer."""
         size = piece.numel()
-        host = self.staging[:size].view(piece.shape)
-        host.copy_(piece)
-        landed = self.signal[:size].view(piece.shape)
-        landed.copy_(host, non_blocking=True)
-        self.drained.record(torch.cuda.current_stream(self.device))
-        return landed
+        return self.stage(piece, self.signal[:size].view(piece.shape))
 
     def load(self, values: Sequence[torch.Tensor], begin: int, end: int) -> tuple[
         torch.Tensor, ...
@@ -2090,28 +1947,6 @@ class _Lane:
             staged.append(piece)
         return tuple(staged)
 
-
-def _stream_chunks(
-    plan: _Offload,
-    voxels: int,
-    chunk: int,
-    lanes: list[_Lane],
-    body: Any,
-) -> None:
-    """Walk the volume one chunk per lane, then wait for every stream.
-
-    The launches are asynchronous, so the loop runs ahead of the devices and a
-    chunk's transfer can proceed while another chunk computes.
-    """
-    for index, begin in enumerate(range(0, voxels, chunk)):
-        end = min(voxels, begin + chunk)
-        lane = lanes[index % len(lanes)]
-        with torch.cuda.stream(lane.stream):
-            body(lane, begin, end)
-    for lane in lanes:
-        torch.cuda.current_stream(lane.device).wait_stream(lane.stream)
-    for device in plan.devices:
-        torch.cuda.synchronize(device)
 
 
 def _offload_plan(
@@ -2230,7 +2065,7 @@ def _run_offloaded(
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
 
-    _stream_chunks(plan, voxels, chunk, lanes, body)
+    stream_chunks(plan, voxels, chunk, lanes, body)
     return signal
 
 
@@ -2301,7 +2136,7 @@ def _run_offloaded_jvp(
         torch.complex(real, imag, out=staged)
         _write_signal(signal, staged, begin, end, train_count > 1)
 
-    _stream_chunks(plan, voxels, chunk, lanes, body)
+    stream_chunks(plan, voxels, chunk, lanes, body)
     return signal
 
 
@@ -2392,7 +2227,7 @@ def _run_offloaded_vjp(
                     non_blocking=True,
                 )
 
-    _stream_chunks(plan, voxels, chunk, lanes, body)
+    stream_chunks(plan, voxels, chunk, lanes, body)
     event_grads = [
         torch.zeros_like(value) for value in (events[0], events[2], events[3])
     ]
@@ -2520,7 +2355,7 @@ def _run_offloaded_vjp_jvp(
                         non_blocking=True,
                     )
 
-    _stream_chunks(plan, voxels, chunk, lanes, body)
+    stream_chunks(plan, voxels, chunk, lanes, body)
     event_grads = [
         [torch.zeros_like(value) for value in (events[0], events[2], events[3])]
         for _ in range(2)
@@ -2560,7 +2395,7 @@ def _leaves_the_host(
     """
     if tissue[0].device.type != "cpu":
         return False
-    if _OFFLOAD is not None:
+    if offloading() is not None:
         return True
     choice = _choose(kind, tissue, events, output_count, state_count, real_axis)
     if choice is None:
@@ -2571,13 +2406,14 @@ def _leaves_the_host(
 @contextmanager
 def _using(devices: tuple[torch.device, ...]) -> Iterator[None]:
     """Shard over these devices for one call, without a nested policy."""
-    global _DEVICES, _EXECUTION
-    previous_devices, previous_execution = _DEVICES, _EXECUTION
-    _DEVICES, _EXECUTION = devices, None
+    global _DEVICES
+    previous = _DEVICES
+    _DEVICES = devices
     try:
-        yield
+        with without_policy():
+            yield
     finally:
-        _DEVICES, _EXECUTION = previous_devices, previous_execution
+        _DEVICES = previous
 
 
 def _run_packed(
@@ -2623,10 +2459,11 @@ def _run_packed(
         real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
-    if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+    forced = offloading()
+    if forced is not None and tissue[0].device.type == "cpu":
         _carries_the_pair(dynamic, "streamed")
         return _run_offloaded(
-            tissue, events, _OFFLOAD, state_count, output_count, real_axis,
+            tissue, events, forced, state_count, output_count, real_axis,
             geometry, profile, lineshape, exchanging, features,
         )
     choice = _choose(
@@ -2829,7 +2666,7 @@ def _run_packed_vjp(
                 and not exchanging
             )
         )
-        and _OFFLOAD is None
+        and offloading() is None
         and not _leaves_the_host(
             "adjoint", tissue, events, output_count, state_count, real_axis
         )
@@ -2866,7 +2703,7 @@ def _run_packed_vjp(
         and _shim_count(tissue) == 1
     )
     if streamable and tissue[0].device.type == "cpu":
-        plan = _OFFLOAD
+        plan = offloading()
         if plan is None:
             choice = _choose(
                 "adjoint", tissue, events, output_count, state_count, real_axis
@@ -3011,14 +2848,15 @@ def _run_packed_vjp_jvp(
         real_axis = None
     if profile is not None:
         _within_the_table(profile, events[2])
-    if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+    forced = offloading()
+    if forced is not None and tissue[0].device.type == "cpu":
         _carries_the_pair(dynamic, "streamed")
         return _run_offloaded_vjp_jvp(
             tissue,
             events,
             tangents,
             grad_output,
-            _OFFLOAD,
+            forced,
             state_count,
             output_count,
             real_axis,
@@ -3215,14 +3053,15 @@ def _run_packed_jvp(
     # for; see the forward path for why.
     if lineshape is not None or exchanging:
         real_axis = None
-    if _OFFLOAD is not None and tissue[0].device.type == "cpu":
+    forced = offloading()
+    if forced is not None and tissue[0].device.type == "cpu":
         _carries_the_pair(dynamic, "streamed")
         return _run_offloaded_jvp(
             tissue,
             events,
             tissue_tangents,
             event_tangents,
-            _OFFLOAD,
+            forced,
             state_count,
             output_count,
             real_axis,

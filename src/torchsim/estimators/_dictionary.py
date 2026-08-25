@@ -5,8 +5,12 @@ from __future__ import annotations
 __all__ = ["DictionaryMatch", "DictionaryMatcher"]
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
+
+from .._execution import per_voxel
+from ._calibrate import crossover
 
 
 @dataclass(frozen=True)
@@ -24,8 +28,10 @@ class DictionaryMatcher(torch.nn.Module):
 
     Parameters
     ----------
-    dictionary : torch.Tensor
-        Simulated atoms shaped ``(n_atoms, n_contrasts)``.
+    dictionary : torch.Tensor, optional
+        Simulated atoms shaped ``(n_atoms, n_contrasts)``. Leave it out and
+        give them to :meth:`fit` instead, which is what
+        :class:`~torchsim.ParameterMapping` does.
     parameters : torch.Tensor, optional
         Parameter values shaped ``(n_atoms, n_parameters)``. If provided,
         :meth:`forward` returns parameter estimates; otherwise it returns atom
@@ -48,7 +54,7 @@ class DictionaryMatcher(torch.nn.Module):
 
     def __init__(
         self,
-        dictionary: torch.Tensor,
+        dictionary: torch.Tensor | None = None,
         parameters: torch.Tensor | None = None,
         *,
         query_chunk_size: int = 4096,
@@ -56,43 +62,190 @@ class DictionaryMatcher(torch.nn.Module):
         top_k: int = 1,
     ) -> None:
         super().__init__()
-        dictionary = torch.as_tensor(dictionary)
-        if dictionary.ndim != 2 or dictionary.shape[0] < 1:
-            raise ValueError("dictionary must have shape (atoms, contrasts)")
         if query_chunk_size < 1 or dictionary_chunk_size < 1:
             raise ValueError("chunk sizes must be positive")
-        if top_k < 1 or top_k > dictionary.shape[0]:
-            raise ValueError("top_k must be between one and the atom count")
-        if not torch.is_floating_point(dictionary) and not torch.is_complex(dictionary):
-            dictionary = dictionary.to(torch.float32)
-        parameters = _prepare_parameters(parameters, dictionary)
-
-        norm = torch.linalg.vector_norm(dictionary, dim=-1).clamp_min(
-            torch.finfo(dictionary.real.dtype).eps
-        )
-        self.register_buffer("dictionary", dictionary)
-        self.register_buffer("normalized_dictionary", dictionary / norm[:, None])
-        self.register_buffer("dictionary_power", norm.square())
-        self.register_buffer("parameter_values", parameters)
+        if top_k < 1:
+            raise ValueError("top_k must be at least one")
         self.query_chunk_size = int(query_chunk_size)
         self.dictionary_chunk_size = int(dictionary_chunk_size)
         self.top_k = int(top_k)
+        self.register_buffer("dictionary", torch.empty(0))
+        self.register_buffer("normalized_dictionary", torch.empty(0))
+        self.register_buffer("dictionary_power", torch.empty(0))
+        self.register_buffer("parameter_values", torch.empty(0))
+        # Copies of the dictionary, one per device a match has reached.
+        self._replicas: dict[str, DictionaryMatcher] = {}
+        if dictionary is not None:
+            self._adopt(dictionary, parameters)
 
-    def forward(self, signals: torch.Tensor) -> torch.Tensor:
+    @property
+    def fitted(self) -> bool:
+        """Whether the matcher holds a dictionary."""
+        return self.dictionary.numel() != 0
+
+    def fit(
+        self,
+        signals: torch.Tensor,
+        parameters: torch.Tensor,
+        known: torch.Tensor | None = None,
+        *,
+        noise_std: float | torch.Tensor = 0.0,
+    ) -> DictionaryMatcher:
+        """Adopt simulated signals as the dictionary to match against.
+
+        Parameters
+        ----------
+        signals:
+            ``(samples, contrasts)`` -- the atoms.
+        parameters:
+            ``(samples, parameters)`` -- what each atom stands for.
+        known:
+            Not supported. A dictionary spans one grid of parameters, and a
+            property measured per voxel would need a different sub-dictionary
+            for every voxel. Estimate it instead, or use a method that takes
+            it as a feature.
+        noise_std:
+            Accepted and unused. A matched estimate comes from a normalized
+            inner product, which noise on the atoms would only degrade -- the
+            dictionary is the clean model the measurement is compared to.
+
+        Returns
+        -------
+        DictionaryMatcher
+            This matcher, holding the dictionary.
+
+        Raises
+        ------
+        ValueError
+            If ``known`` is given.
+        """
+        del noise_std
+        if known is not None:
+            raise ValueError(
+                "a dictionary match cannot take a separately measured "
+                "property; estimate it as an unknown instead"
+            )
+        self._adopt(signals, parameters)
+        return self
+
+    def forward(
+        self, signals: torch.Tensor, known: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Return best parameter values, or indices if none were supplied."""
+        if known is not None:
+            raise ValueError(
+                "a dictionary match cannot take a separately measured property"
+            )
         result = self.match(signals)
         if result.parameters is None:
             return result.indices[..., 0]
         return result.parameters[..., 0, :]
 
+    def _placed(
+        self, signals: torch.Tensor
+    ) -> tuple[torch.Tensor, ...] | None:
+        """Match under the execution policy, or ``None`` if none applies.
+
+        Every voxel is matched against the same dictionary, so a volume too
+        large for a card is streamed through it and two cards halve it. The
+        dictionary crosses once per device; the volume is what moves.
+        """
+        atoms, contrasts = self.dictionary.shape
+        outcome = per_voxel(
+            [signals],
+            bytes_per_voxel=contrasts * 8 + self.dictionary_chunk_size * 4,
+            work=int(signals.shape[0]) * atoms * contrasts,
+            crossover=lambda device: crossover(
+                (atoms, contrasts, self.top_k),
+                device,
+                self._probe(contrasts),
+                atoms * contrasts,
+            ),
+            body=lambda chunk, device: self._beside(device)._match_here(chunk[0]),
+        )
+        return outcome
+
+    def _probe(self, contrasts: int) -> Any:
+        """A closure the calibrator can time, running the real match."""
+
+        def build(device: torch.device, voxels: int) -> Any:
+            generator = torch.Generator(device=device).manual_seed(0)
+            signals = torch.randn(
+                voxels, contrasts, dtype=torch.float32,
+                generator=generator, device=device,
+            ).to(self.dictionary.dtype)
+            replica = self._beside(device)
+            return lambda: replica._match_here(signals)
+
+        return build
+
+    def _beside(self, device: torch.device) -> DictionaryMatcher:
+        """This matcher with its dictionary on ``device``."""
+        key = str(device)
+        replica = self._replicas.get(key)
+        if replica is None:
+            if self.dictionary.device == device:
+                replica = self
+            else:
+                replica = DictionaryMatcher(
+                    query_chunk_size=self.query_chunk_size,
+                    dictionary_chunk_size=self.dictionary_chunk_size,
+                    top_k=self.top_k,
+                )
+                replica.dictionary = self.dictionary.to(device)
+                replica.normalized_dictionary = self.normalized_dictionary.to(device)
+                replica.dictionary_power = self.dictionary_power.to(device)
+                replica.parameter_values = self.parameter_values.to(device)
+            self._replicas[key] = replica
+        return replica
+
+    def _adopt(
+        self, dictionary: torch.Tensor, parameters: torch.Tensor | None
+    ) -> None:
+        """Keep these atoms, and what each of them stands for."""
+        dictionary = torch.as_tensor(dictionary)
+        if dictionary.ndim != 2 or dictionary.shape[0] < 1:
+            raise ValueError("dictionary must have shape (atoms, contrasts)")
+        if self.top_k > dictionary.shape[0]:
+            raise ValueError("top_k must be between one and the atom count")
+        if not torch.is_floating_point(dictionary) and not torch.is_complex(dictionary):
+            dictionary = dictionary.to(torch.float32)
+        norm = torch.linalg.vector_norm(dictionary, dim=-1).clamp_min(
+            torch.finfo(dictionary.real.dtype).eps
+        )
+        self.dictionary = dictionary
+        self.normalized_dictionary = dictionary / norm[:, None]
+        self.dictionary_power = norm.square()
+        self.parameter_values = _prepare_parameters(parameters, dictionary)
+        self._replicas = {}
+
     @torch.no_grad()
     def match(self, signals: torch.Tensor) -> DictionaryMatch:
         """Return the top matching atoms, scores, scales, and parameters."""
-        signals = torch.as_tensor(signals, device=self.dictionary.device)
+        if not self.fitted:
+            raise RuntimeError("the matcher has no dictionary to match against")
+        signals = torch.as_tensor(signals)
         if signals.shape[-1] != self.dictionary.shape[-1]:
             raise ValueError("signal and dictionary contrast counts differ")
         sample_shape = signals.shape[:-1]
         signals = signals.reshape(-1, signals.shape[-1]).to(self.dictionary.dtype)
+        placed = self._placed(signals)
+        found = (
+            placed
+            if placed is not None
+            else self._match_here(signals.to(self.dictionary.device))
+        )
+        return self._shaped(found, sample_shape)
+
+    def _match_here(
+        self, signals: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Match ``(voxels, contrasts)`` against the dictionary beside it.
+
+        The indices, scores, scales and matched parameters come back flat
+        along the voxel axis, which is the shape a chunk of a larger volume
+        has to be in to be joined to the others.
+        """
         signal_norm = torch.linalg.vector_norm(signals, dim=-1).clamp_min(
             torch.finfo(signals.real.dtype).eps
         )
@@ -107,14 +260,24 @@ class DictionaryMatcher(torch.nn.Module):
             best_indices = torch.empty(
                 (query.shape[0], 0), dtype=torch.int64, device=query.device
             )
-            for start in range(0, self.dictionary.shape[0], self.dictionary_chunk_size):
-                stop = min(start + self.dictionary_chunk_size, self.dictionary.shape[0])
-                scores = torch.abs(query @ self.normalized_dictionary[start:stop].mH)
+            for start in range(
+                0, self.dictionary.shape[0], self.dictionary_chunk_size
+            ):
+                stop = min(
+                    start + self.dictionary_chunk_size, self.dictionary.shape[0]
+                )
+                scores = torch.abs(
+                    query @ self.normalized_dictionary[start:stop].mH
+                )
                 local_count = min(self.top_k, scores.shape[-1])
-                local_scores, local_indices = torch.topk(scores, local_count, dim=-1)
+                local_scores, local_indices = torch.topk(
+                    scores, local_count, dim=-1
+                )
                 local_indices += start
                 candidates = torch.cat((best_scores, local_scores), dim=-1)
-                candidate_indices = torch.cat((best_indices, local_indices), dim=-1)
+                candidate_indices = torch.cat(
+                    (best_indices, local_indices), dim=-1
+                )
                 keep = min(self.top_k, candidates.shape[-1])
                 best_scores, selection = torch.topk(candidates, keep, dim=-1)
                 best_indices = torch.gather(candidate_indices, -1, selection)
@@ -128,16 +291,29 @@ class DictionaryMatcher(torch.nn.Module):
             torch.sum(atoms.conj() * signals[:, None, :], dim=-1)
             / self.dictionary_power[indices]
         )
-        matched_parameters = (
-            None
+        matched = (
+            torch.empty(
+                (*indices.shape, 0),
+                dtype=self.parameter_values.dtype,
+                device=indices.device,
+            )
             if self.parameter_values.numel() == 0
             else self.parameter_values[indices]
         )
+        return indices, scores, scales, matched
+
+    def _shaped(
+        self,
+        found: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+        sample_shape: torch.Size,
+    ) -> DictionaryMatch:
+        """One flat match, given the voxel shape it came from."""
+        indices, scores, scales, matched = found
         output_shape = (*sample_shape, self.top_k)
         return DictionaryMatch(
             parameters=None
-            if matched_parameters is None
-            else matched_parameters.reshape(*output_shape, -1),
+            if matched.shape[-1] == 0
+            else matched.reshape(*output_shape, -1),
             indices=indices.reshape(output_shape),
             scores=scores.reshape(output_shape),
             scales=scales.reshape(output_shape),

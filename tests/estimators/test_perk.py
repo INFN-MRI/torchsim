@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 import torch
 
 from torchsim.estimators import PERK
+from torchsim.model import SignalModel
 
 
 @pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable"))])
@@ -59,21 +62,85 @@ def test_perk_estimation_is_differentiable() -> None:
     assert torch.isfinite(measured.grad).all()
 
 
-def test_perk_fit_simulator_chunks_generation() -> None:
-    parameter = torch.linspace(0.1, 1.0, 65)[:, None]
-    seen: list[int] = []
+class _Counted(SignalModel):
+    """A model whose signal is its property and its square, and that counts."""
 
-    def simulator(values: torch.Tensor, _known: torch.Tensor | None) -> torch.Tensor:
-        seen.append(values.shape[0])
+    properties = ("x",)
+
+    def __init__(self, seen: list[int]) -> None:
+        super().__init__()
+        self._seen = seen
+
+    def evaluate(self, properties, **sequence):
+        values = properties["x"].reshape(-1, 1)
+        self._seen.append(values.shape[0])
         return torch.cat((values, values.square()), dim=-1)
 
+
+def test_perk_fit_simulator_chunks_generation() -> None:
+    """Memory follows the chunk, and the dictionary is never retained."""
+    parameter = torch.linspace(0.1, 1.0, 65)
+    seen: list[int] = []
+
     estimator = PERK(n_features=32, seed=1).fit_simulator(
-        simulator,
-        parameter,
+        _Counted(seen),
+        {"x": parameter},
         simulation_chunk_size=16,
     )
 
     assert estimator.fitted
-    # PERK makes bounded passes for input statistics, feature statistics, and
-    # covariance accumulation; it never retains the simulated dictionary.
-    assert seen == [16, 16, 16, 16, 1] * 3
+    # One pass to read the kernel width off the inputs, one to fit.
+    assert seen == [16, 16, 16, 16, 1] * 2
+
+
+def test_a_given_length_scale_costs_one_pass() -> None:
+    """The kernel width is the only reason to look at the data twice.
+
+    Nothing can be accumulated until the random features exist, and they
+    cannot be drawn until the width is known. Say what it is and the training
+    set is walked once -- which for a source that simulates is the difference
+    between simulating it once and simulating it twice.
+    """
+    parameter = torch.linspace(0.1, 1.0, 65)
+    seen: list[int] = []
+
+    estimator = PERK(n_features=32, seed=1, length_scale=0.5).fit_simulator(
+        _Counted(seen),
+        {"x": parameter},
+        simulation_chunk_size=16,
+    )
+
+    assert estimator.fitted
+    assert seen == [16, 16, 16, 16, 1]
+
+
+def test_the_merged_pass_gives_the_covariance_it_would_have_centred() -> None:
+    """Means and products come out of one pass, not a pass each.
+
+    A covariance can be accumulated centred, which needs the mean first, or as
+    a raw second moment the mean is subtracted from afterwards. The second
+    reads the data once. This asserts the two agree where it matters -- in the
+    weights that come out.
+    """
+    generator = torch.Generator().manual_seed(0)
+    signals = torch.randn(2000, 12, generator=generator)
+    parameters = torch.stack(
+        (signals.square().sum(-1), signals.abs().mean(-1)), dim=-1
+    )
+    estimator = PERK(n_features=64, seed=3).fit(signals, parameters)
+
+    features = _reference_features(estimator, signals).to(torch.float64)
+    targets = parameters.to(torch.float64)
+    centred = features - features.mean(0)
+    covariance = centred.mT @ centred / (signals.shape[0] - 1)
+    covariance.diagonal().add_(estimator.regularization)
+    cross = (targets - targets.mean(0)).mT @ centred / (signals.shape[0] - 1)
+    expected = torch.linalg.solve(covariance, cross.mT).mT
+
+    assert torch.allclose(estimator.weight, expected.to(torch.float32), rtol=1e-4)
+
+
+def _reference_features(estimator, signals):
+    """The feature map, written out rather than called."""
+    scale = math.sqrt(2.0 / estimator.frequency.shape[0])
+    return scale * torch.cos(signals @ estimator.frequency.mT + estimator.phase)

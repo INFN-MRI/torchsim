@@ -81,7 +81,8 @@ def simulate(T2, flip, ESP, device="cpu"):
         flip=flip, ESP=ESP, T1=1000.0, T2=T2.flatten(), device=device
     )
 
-    return output.T.reshape(-1, *ishape).numpy(force=True)
+    # T2 arrived as a NumPy array, so the signal comes back as one.
+    return output.T.reshape(-1, *ishape)
 
 
 # %%

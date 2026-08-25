@@ -12,6 +12,7 @@ examples/*.ipynb
 .idea
 *.log
 tmp/
+private/
 
 *_cache/
 *.py[cod]

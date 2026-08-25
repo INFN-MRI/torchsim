@@ -228,13 +228,16 @@ def test_fused_vjp_is_bitwise_deterministic(monkeypatch) -> None:
 
 
 def _objective_gradient():
-    from torchsim import EpgEngine, FSET2Precision
+    """A precision cost, which is a directional derivative differentiated back."""
+    from torchsim.optim import crlb
+    from torchsim.simulators import FSESimulator
 
-    objective = FSET2Precision(
-        torch.tensor([800.0, 1400.0]), torch.tensor([45.0, 120.0]), 5.0
-    )
+    sequence = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     flip = torch.linspace(150.0, 90.0, 12).requires_grad_(True)
-    loss = objective(flip)
+    _, derivative = sequence.jacobian(
+        "T2", flip=flip, T1=[800.0, 1400.0], T2=[45.0, 120.0]
+    )
+    loss = crlb(derivative.unsqueeze(-2)).sum().log()
     (gradient,) = torch.autograd.grad(loss, flip)
     return loss.detach(), gradient
 

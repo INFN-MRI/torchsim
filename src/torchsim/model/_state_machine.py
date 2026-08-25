@@ -34,6 +34,7 @@ __all__ = [
 
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
+from copy import copy as shallow_copy
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
@@ -62,7 +63,8 @@ from ..sequence import (
 )
 from ..sequence._array import brought, is_array, read
 from ..sequence._parameters import TISSUE_NAMES
-from ..sequence._simulation import RecordMode
+from ..sequence._simulation import RecordMode, target_device
+from ._binding import Packing, bind, run_key
 from ._signal import SignalModel
 
 _EMPTY: Mapping[str, Any] = MappingProxyType({})
@@ -70,6 +72,11 @@ _EMPTY: Mapping[str, Any] = MappingProxyType({})
 # What a caller may name that describes the run rather than the sequence. Each
 # has an attribute of the same name, set once at construction.
 RUN_SETTINGS = ("nstates", "repetitions", "record", "device", "execution")
+
+# The raster :class:`~torchsim.sequence.EpgEngine` reads a pulse's shape on,
+# named here because a packing resolved against one is not valid against
+# another.
+_RF_RASTER_TIME_S = 1e-6
 
 
 @dataclass(frozen=True)
@@ -244,6 +251,9 @@ class AbstractSimulator(SignalModel):
         self.execution = execution
         self.crusher_dephasing_rad = crusher_dephasing_rad
         self.voxel_size_m = voxel_size_m
+        self._resolving = False
+        self._packing: Packing | None = None
+        self._refused: list[Any] = []
         # Read once, so a layout can be written in torch whatever the caller
         # brought, and so the answer knows where to go back to.
         self._brought = brought(protocol.values())
@@ -255,6 +265,57 @@ class AbstractSimulator(SignalModel):
             }
         )
         self._described: SequenceDescription | None = None
+
+    def resolved(self) -> AbstractSimulator:
+        """Return a copy that resolves its structure once and rebinds values.
+
+        A protocol called many times with the same arguments and different
+        numbers -- a design loop, a dictionary sweep -- otherwise rebuilds the
+        same event stream every call, which on a small problem costs an order
+        of magnitude more than the kernels. This says the structure is fixed,
+        so it is walked once and each call rebinds only the values; see
+        :mod:`torchsim.model._binding` for what that can and cannot follow.
+
+        The answer agrees with the ordinary path to float32 round-off rather
+        than to the bit, because the same product is formed in a different
+        order. Anything the map cannot follow simply is not bound, and the
+        copy behaves as this one does.
+        """
+        copy = shallow_copy(self)
+        copy._resolving = True
+        copy._packing = None
+        copy._refused = []
+        return copy
+
+    def _structure(
+        self,
+        played: Mapping[str, Any],
+        tissue: TissueProperties,
+        *,
+        repetitions: int,
+        record: str,
+        device: Any,
+    ) -> tuple[SequenceDescription, Any]:
+        """The description to run, and its events already packed if they are."""
+        if not self._resolving or self._described is not None:
+            return self.describe(**played), None
+        where = target_device(tissue, device)
+        settings = {
+            "repetitions": repetitions,
+            "record": record,
+            "rf_raster_time_s": _RF_RASTER_TIME_S,
+        }
+        key = run_key(played, device=where, **settings)
+        if self._packing is not None and self._packing.matches(key):
+            return self._packing.description, self._packing.pack(played)
+        if any(key == refused for refused in self._refused):
+            return self.describe(**played), None
+        packing = bind(self, played, device=where, **settings)
+        if packing is None:
+            self._refused.append(key)
+            return self.describe(**played), None
+        self._packing = packing
+        return packing.description, packing.pack(played)
 
     def _backend(self, values: Mapping[str, Any]) -> Any:
         """Return the caller's array library, from the call or the constructor.
@@ -361,12 +422,19 @@ class AbstractSimulator(SignalModel):
             "device": given.pop("device", None),
         }
         target = given.pop("execution", self.execution)
-        described = self.describe(**self.played(**given))
+        played = self.played(**given)
         tissue = self.model.tissue(properties)
+        described, events = self._structure(
+            played,
+            tissue,
+            repetitions=settings["repetitions"],
+            record=settings["record"],
+            device=settings["device"],
+        )
         block = nullcontext() if target is None else execution(target)
         with block:
             return EpgEngine().simulate(
-                described, tissue, nstates=states, **settings
+                described, tissue, nstates=states, events=events, **settings
             ).signal
 
 

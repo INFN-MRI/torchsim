@@ -372,12 +372,22 @@ class RfDefinition:
         return np.gradient(time_s)
 
     def rf_mode(self) -> RfMode:
-        """Return which rotation this pulse's waveform asks the kernels for."""
+        """Return which rotation this pulse's waveform asks the kernels for.
+
+        Memoized on the (immutable) definition: every event naming this pulse
+        asks the same question, and answering it reads the whole envelope.
+        """
+        cached = getattr(self, "_mode_cache", None)
+        if cached is not None:
+            return cached
         if self.channel_count > 1:
-            return RfMode.DYNAMIC
-        if self._turns_about_one_axis():
-            return RfMode.INSTANT
-        return RfMode.PROFILED
+            mode = RfMode.DYNAMIC
+        elif self._turns_about_one_axis():
+            mode = RfMode.INSTANT
+        else:
+            mode = RfMode.PROFILED
+        object.__setattr__(self, "_mode_cache", mode)
+        return mode
 
     def _turns_about_one_axis(self) -> bool:
         """Whether a flip angle and a phase already say what this pulse does.

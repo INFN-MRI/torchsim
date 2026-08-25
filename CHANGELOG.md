@@ -4,6 +4,53 @@
 
 ### Added
 
+- **`torchsim.ParameterMapping`**, with `Estimator` and `Subspace`. A mapping
+  problem is stated the way a design problem is: an `Acquisition`, the
+  properties that are unknown and the range to train each over, the ones
+  measured separately, and the noise. `train(method)` simulates the training
+  set and fits any `Estimator` to it; calling the mapping returns one **named**
+  map per unknown, shaped like the volume, rather than columns whose order the
+  caller has to remember.
+
+  `PERK` and `DictionaryMatcher` are both `Estimator`s, so swapping one for the
+  other is a word. `DictionaryMatcher` gains `fit`, which is also what stops a
+  user assembling a dictionary by hand; its `dictionary` argument is now
+  optional.
+
+  `Subspace` is the compression both can use. It is fitted by SVD of the
+  training signals and reports `retained` -- and that number *is* the
+  approximation: one minus it equals the relative squared error of projecting
+  those signals through the basis and back. At rank 16 out of 500 contrasts a
+  dictionary match does about thirty times fewer operations.
+
+- **Fused kernels for PERK**, forward and adjoint, in Triton on CUDA and in a
+  new `torchsim._perk_cpu` extension on the host. The feature matrix is never
+  written: a tile of features is formed and consumed into the output
+  accumulator in registers. On a million voxels of 64 contrasts at a thousand
+  features that is 3.3x on this card and 2.4-2.9x on this host, agreeing with
+  the composed path to float32 round-off. The host kernel carries its own
+  vectorized cosine, because `libm`'s does not vectorize and is the single
+  largest term; `target_clones` emits one copy per instruction set so an AVX2
+  machine gets AVX2 without the wheel requiring it.
+
+  `PERK` stays differentiable with respect to its input, and keeps the fused
+  kernel while doing it.
+
+- **The estimators run under `execution()`**, which until now only reached
+  simulation. Voxels are independent, so a volume too large for a card is
+  streamed through it a chunk at a time with the transfers overlapping, and a
+  machine with two cards uses both. Streaming a host-resident 488 MiB volume
+  through this card runs 8.4x faster than the host does it. What the policy
+  cannot carry is a gradient -- a streamed chunk goes through a pinned buffer
+  that the next chunk overwrites -- so a call that wants one keeps the
+  ordinary path.
+
+- **`scripts/build_docs.sh`**, which builds the HTML documentation with every
+  example executed. `docs/requirements.txt` now lists what that actually needs
+  -- `sphinx-gallery`, and the `sigpy` and `torchio` the examples import -- and
+  `docs/conf.py` drops sphinx-gallery's code-link pass on interpreters whose
+  standard library has no `dbm`.
+
 - **`torchsim.model`**, with `SignalModel`, `StateMachineModel`, `Triggers`
   and `AbstractSimulator`. A signal model is written in two pieces: a
   state-machine model saying what a voxel holds -- `properties` maps the name
@@ -38,6 +85,32 @@
 - **`torchsim.sequence.ideal_rf_definition`**, the hard-pulse RF definition a
   description built by hand needs.
 
+- **Sequence design: `Acquisition`, `Bounded`, `SequenceDesign` and `crlb`.**
+  A design problem is stated in three pieces. An `Acquisition` is a simulator
+  with the tissue it is being designed for already in place, answering the
+  same two questions a simulator does -- `simulate` and `jacobian` -- with
+  only the parameters under design left to give. The cost is a plain function
+  taking those parameters by name and returning one number. A
+  `SequenceDesign` holds the cost and the parameters, each with the limits it
+  may move between, and `minimize()` runs the loop.
+
+  Everything sequence-specific is in the cost, so the same object carries a
+  quantitative design -- a Cramer-Rao bound on what the sequence estimates,
+  read off the acquisition's Jacobian -- and an image-quality design, where
+  the cost is a property of the point spread function the echo train
+  produces and the tissue is never differentiated at all. `crlb` is the one
+  statistic that ships, because every precision cost needs it and none of it
+  is sequence-specific.
+
+- **`AbstractSimulator.resolved()`**, which returns a copy holding the
+  protocol's structure fixed so that each call rebinds only its values. A
+  design loop plays the same sequence with different numbers every iteration
+  and otherwise rebuilds the whole event stream every time, which on a small
+  problem costs several times what the kernels do. An `Acquisition` asks for
+  this by default. What the map cannot follow -- a layout that is not affine
+  in what varies, or one event drawing on two of the values at once -- is
+  simply not bound, and the ordinary path answers.
+
 - **`Dephase()` and `Spoil()`**, and the composite readouts `bSSFPReadout`,
   `SSFPFidReadout`, `SPGRReadout` and `FSEReadout` built from them. An
   unbalanced gradient was previously spelled as a keyword on the sample; it is
@@ -57,6 +130,29 @@
   arrays in the caller's own library.
 
 ### Changed
+
+- **`PERK.fit` walks its source twice rather than three times**, and once when
+  `length_scale` is given. The covariance is accumulated as a raw second moment
+  the mean is subtracted from afterwards, instead of needing the mean first.
+  Under `fit_simulator` that is the difference between simulating the training
+  set twice and simulating it three times.
+
+- **`Acquisition` moved to `torchsim.model`**, where both `torchsim.optim` and
+  `torchsim.estimators` can reach it without either depending on the other. It
+  is still exported from `torchsim` and `torchsim.optim`.
+
+- **`SubspaceBasis` carries a `Subspace`** rather than its own copy of the
+  basis and singular values, which it still exposes under the same names.
+
+- **A mapping's maps come back beside the volume**, not beside whatever device
+  the method was fitted on.
+
+- **`PERK.fit_simulator` takes a simulator**, with the properties being
+  estimated named as `{name: value per training sample}` and any measured
+  separately given as `known=`. It took a callable over a parameter matrix,
+  which left the caller to keep the column order of that matrix in step with
+  the sequence by hand. Handing it the simulator is what keeps the training
+  signals and the ones the scanner will produce the same object.
 
 - **Operators are named for the thing they are, not the act of making one:**
   `Excitation`, `Refocusing`, `Inversion`, `Saturation`, `Readout`, `Delay`,
@@ -82,6 +178,24 @@
   maps and compiled the ungated kernel.
 
 ### Removed
+
+- **`FSET2Precision`, `FseT2Plan` and `FseT2Optimizer`**, and the C++
+  `optimize_fse_t2` behind the last of them. All three were one sequence and
+  one cost: an A-optimal T2 objective for an FSE refocusing train, with its
+  penalty weights, a packed event layout addressed by index, and an Adam loop
+  compiled into the extension. A user wanting a different cost -- and for an
+  anatomical sequence the interesting cost is not a Cramer-Rao bound at all --
+  got nothing from any of it.
+
+  Write the cost and hand it to `SequenceDesign`; `examples/04` designs for
+  precision and `examples/07` for image quality. The reason the specialized
+  path existed was that the generic one rebuilt the event stream every
+  iteration, which `AbstractSimulator.resolved()` now does not.
+
+- **`SequenceOptimizer`.** `SequenceDesign` replaces it. The cost is called
+  with the designed parameters by keyword rather than with a dictionary, and
+  each parameter carries its own limits through `Bounded` rather than through
+  a parallel `bounds` argument.
 
 - **`EpgSimulator` is now `EpgEngine`**, and its five subclasses -- `FSE`,
   `SPGR`, `SSFPFID`, `SSFPEcho`, `BSSFP` -- are gone with `make_simulator`.

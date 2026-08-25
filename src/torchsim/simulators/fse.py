@@ -91,12 +91,22 @@ class FSESimulator(AbstractSimulator):
         played = self.played(**sequence)
         signal = super().evaluate(properties, **sequence)
         echoes = torch.atleast_1d(played["flip"]).shape[-1]
-        left_ms = played.get("TR", 1e6) - played["ESP"] * echoes
-        recovered = torch.exp(-1e3 / properties["T1"] * left_ms * 1e-3)
+
+        def beside(value: Any) -> Any:
+            """Put a value where the signal came back from.
+
+            A run may be asked for a device the tissue was not written on, and
+            what is worked out here multiplies the signal rather than reaching
+            a kernel.
+            """
+            return value.to(signal.device) if torch.is_tensor(value) else value
+
+        left_ms = beside(played.get("TR", 1e6)) - beside(played["ESP"]) * echoes
+        recovered = torch.exp(-1e3 / beside(properties["T1"]) * left_ms * 1e-3)
         # Both carry the tissue shape and the signal is (..., tissue, echo), so
         # one trailing axis lines them up and any leading train axis broadcasts.
         recovered = recovered[..., None]
-        density = properties.get("M0", 1.0)
+        density = beside(properties.get("M0", 1.0))
         if torch.is_tensor(density):
             density = density[..., None]
         return density * signal * (1 - recovered) / (1 - recovered * signal)

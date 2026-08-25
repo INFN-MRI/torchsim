@@ -5,10 +5,13 @@ from __future__ import annotations
 __all__ = ["PERK"]
 
 import math
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any, Literal
 
 import torch
+
+from .._execution import per_voxel
+from ._calibrate import crossover
 
 
 class PERK(torch.nn.Module):
@@ -75,11 +78,15 @@ class PERK(torch.nn.Module):
         self.normalize = bool(normalize)
         self._requested_length_scale = length_scale
         self.register_buffer("frequency", torch.empty(0))
+        # The same frequencies laid out for the host kernel's inner loop.
+        self.register_buffer("frequency_t", torch.empty(0))
         self.register_buffer("phase", torch.empty(0))
         self.register_buffer("feature_mean", torch.empty(0))
         self.register_buffer("parameter_mean", torch.empty(0))
         self.register_buffer("weight", torch.empty(0))
         self.register_buffer("length_scale", torch.empty(0))
+        # Copies of the fitted tensors, one per device a mapping has reached.
+        self._replicas: dict[str, tuple[torch.Tensor, ...]] = {}
 
     @property
     def fitted(self) -> bool:
@@ -148,43 +155,91 @@ class PERK(torch.nn.Module):
     @torch.no_grad()
     def fit_simulator(
         self,
-        simulator: Callable[[torch.Tensor, torch.Tensor | None], torch.Tensor],
-        parameters: torch.Tensor,
-        known: torch.Tensor | None = None,
+        simulator: Any,
+        properties: Mapping[str, Any],
+        known: Mapping[str, Any] | None = None,
         *,
         simulation_chunk_size: int | None = None,
         noise_std: float | torch.Tensor = 0.0,
+        **sequence: Any,
     ) -> PERK:
-        """Generate training signals with a vectorized simulator and fit.
+        """Train on signals a simulator generates, without ever holding them.
 
-        The simulator receives one parameter chunk and the matching known
-        parameters, and returns a batch of signals. This keeps sequence-model
-        details out of the estimator while allowing large dictionaries to be
-        generated within a bounded memory budget.
+        Parameters
+        ----------
+        simulator : SignalModel
+            The sequence being inverted -- the same object sequence design and
+            a reconstruction pipeline take, so the training signals cannot
+            drift from the ones the scanner will produce.
+        properties : mapping
+            What is being estimated, as ``{name: value per training sample}``
+            under the names the simulator exposes. The order is the order of
+            the estimator's output columns.
+        known : mapping, optional
+            Properties measured separately and given to the estimator along
+            with the signal -- a transmit map, say. They reach the simulator
+            too, so the training signals carry their effect.
+        simulation_chunk_size : int, optional
+            How many samples to simulate at once. Memory follows this rather
+            than the number of training samples.
+        noise_std : float or tensor, optional
+            Noise added to the training signals, which is what teaches the
+            estimator how far to trust them.
+        sequence
+            Anything else the simulator takes, passed on unchanged.
+
+        Returns
+        -------
+        PERK
+            This estimator, fitted.
+
+        Raises
+        ------
+        ValueError
+            If ``properties`` is empty, if the values disagree on how many
+            training samples there are, or if the chunk size is not positive.
         """
-        parameters = torch.as_tensor(parameters)
-        reference = parameters.real if torch.is_complex(parameters) else parameters
-        parameters = _parameter_matrix(parameters, reference)
-        count = parameters.shape[0]
+        if not properties:
+            raise ValueError("name at least one property to estimate")
         chunk_size = simulation_chunk_size or self.chunk_size
         if chunk_size < 1:
             raise ValueError("simulation_chunk_size must be positive")
-        known = _known_matrix(known, parameters, count)
+        columns = _sample_columns(properties)
+        parameters = torch.stack(columns, dim=-1)
+        count = parameters.shape[0]
+        known_names = tuple(known or ())
+        known_matrix = (
+            torch.stack(_sample_columns(known, count), dim=-1) if known else None
+        )
         random_seed = _random_seed(self.seed)
+        names = tuple(properties)
 
         def batches() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
             for start in range(0, count, chunk_size):
                 stop = min(start + chunk_size, count)
-                known_chunk = None if known is None else known[start:stop]
+                known_chunk = (
+                    None if known_matrix is None else known_matrix[start:stop]
+                )
+                given = {
+                    name: parameters[start:stop, column]
+                    for column, name in enumerate(names)
+                }
+                if known_chunk is not None:
+                    given.update(
+                        {
+                            name: known_chunk[:, column]
+                            for column, name in enumerate(known_names)
+                        }
+                    )
                 signals = torch.as_tensor(
-                    simulator(parameters[start:stop], known_chunk),
+                    simulator.simulate(**given, **sequence),
                     device=parameters.device,
                 )
                 generator = _generator(parameters.device, random_seed + start)
                 signals = _add_noise(signals, noise_std, generator=generator)
                 yield (
                     _feature_matrix(
-                        signals,
+                        signals.reshape(stop - start, -1),
                         known_chunk,
                         stop - start,
                         complex_mode=self.complex_mode,
@@ -213,6 +268,20 @@ class PERK(torch.nn.Module):
             complex_mode=self.complex_mode,
             normalize=self.normalize,
         )
+        placed = self._placed(inputs)
+        if placed is not None:
+            return placed[0].reshape(*sample_shape, -1)
+        if self._fused(inputs):
+            values = _FusedRegression.apply(
+                inputs,
+                self.frequency,
+                self.frequency_t,
+                self.phase,
+                self.feature_mean,
+                self.weight,
+                self.parameter_mean,
+            )
+            return values.reshape(*sample_shape, -1)
         outputs = []
         for chunk in inputs.split(self.chunk_size):
             features = _rff(chunk, self.frequency, self.phase)
@@ -221,125 +290,330 @@ class PERK(torch.nn.Module):
             )
         return torch.cat(outputs, dim=0).reshape(*sample_shape, -1)
 
+    def _placed(self, inputs: torch.Tensor) -> tuple[torch.Tensor, ...] | None:
+        """Run under the execution policy, or ``None`` if none applies.
+
+        Voxels are independent, so a volume too large for a card is streamed
+        through it and a machine with two cards uses both. What the policy
+        cannot carry is a gradient: a streamed chunk is copied through a
+        reused pinned buffer, which is not something autograd can be walked
+        back through. A call that wants a derivative gets the ordinary path.
+        """
+        if torch.is_grad_enabled() and inputs.requires_grad:
+            return None
+        contrasts = int(inputs.shape[-1])
+        parameters = int(self.weight.shape[0])
+        with torch.no_grad():
+            return per_voxel(
+                [inputs],
+                bytes_per_voxel=(contrasts + parameters) * 4,
+                work=int(inputs.shape[0]) * contrasts * self.n_features,
+                crossover=lambda device: crossover(
+                    (contrasts, self.n_features, parameters),
+                    device,
+                    self._probe(contrasts, parameters),
+                    contrasts * self.n_features,
+                ),
+                body=lambda chunk, device: (
+                    self._regress(chunk[0], self._fitted_on(device)),
+                ),
+            )
+
+    def _probe(self, contrasts: int, parameters: int) -> Any:
+        """A closure the calibrator can time, running the real regression."""
+
+        def build(device: torch.device, voxels: int) -> Any:
+            generator = torch.Generator(device=device).manual_seed(0)
+            signals = torch.randn(
+                voxels, contrasts, generator=generator, device=device
+            )
+            held = self._fitted_on(device)
+            return lambda: self._regress(signals, held)
+
+        return build
+
+    def _fitted_on(self, device: torch.device) -> tuple[torch.Tensor, ...]:
+        """The fitted tensors on ``device``.
+
+        They are the same for every chunk, so they cross once per device
+        rather than once per chunk.
+        """
+        key = str(device)
+        held = self._replicas.get(key)
+        if held is None:
+            held = tuple(
+                tensor.to(device)
+                for tensor in (
+                    self.frequency,
+                    self.frequency_t,
+                    self.phase,
+                    self.feature_mean,
+                    self.weight,
+                    self.parameter_mean,
+                )
+            )
+            self._replicas[key] = held
+        return held
+
+    def _regress(
+        self, inputs: torch.Tensor, held: tuple[torch.Tensor, ...]
+    ) -> torch.Tensor:
+        """One chunk, on whichever device its tensors are on."""
+        frequency, transposed, phase, feature_mean, weight, parameter_mean = held
+        backend = _kernels(inputs.device)
+        if backend is not None:
+            if inputs.device.type == "cuda":
+                return backend.regress(
+                    inputs, frequency, phase, feature_mean, weight,
+                    parameter_mean,
+                )
+            return backend.regress(
+                inputs, frequency, transposed, phase, feature_mean, weight,
+                parameter_mean,
+            )
+        outputs = []
+        for piece in inputs.split(self.chunk_size):
+            features = _rff(piece, frequency, phase)
+            outputs.append(parameter_mean + (features - feature_mean) @ weight.mT)
+        return torch.cat(outputs, dim=0)
+
+    def _fused(self, inputs: torch.Tensor) -> bool:
+        """Whether the fused kernel can answer this call.
+
+        It differentiates with respect to the signals, which is what a PERK
+        inside a reconstruction network needs. A gradient wanted for one of the
+        fitted tensors instead is rare enough to be worth the composed path
+        rather than a second adjoint.
+        """
+        if _kernels(inputs.device) is None:
+            return False
+        return not any(
+            tensor.requires_grad
+            for tensor in (
+                self.frequency,
+                self.phase,
+                self.feature_mean,
+                self.weight,
+                self.parameter_mean,
+            )
+        )
+
     def _fit_batches(
         self,
         batches: Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]],
         sample_count: int,
     ) -> PERK:
+        """Fit from a source that can be walked more than once.
+
+        The kernel width is read from the spread of the training inputs, and
+        the random features cannot be drawn until it is known -- so estimating
+        it costs one pass over the source before the fitting one. Give
+        ``length_scale`` and there is only the fitting pass.
+        """
         if sample_count < 2:
             raise ValueError("PERK requires at least two training samples")
 
-        input_sum = None
-        input_square_sum = None
+        length_scale = None
+        if self._requested_length_scale is None:
+            length_scale = self._estimated_length_scale(batches, sample_count)
+
+        frequency: torch.Tensor | None = None
+        phase: torch.Tensor | None = None
+        feature_sum = None
+        second_moment = None
+        cross_moment = None
         parameter_sum = None
         observed = 0
         for inputs, targets in batches():
             inputs = inputs.to(torch.float32)
             targets = targets.to(torch.float32)
-            if input_sum is None:
-                input_sum = torch.zeros(
-                    inputs.shape[-1], dtype=torch.float64, device=inputs.device
+            if frequency is None:
+                if length_scale is None:
+                    length_scale = self._given_length_scale(
+                        inputs.shape[-1], inputs.device
+                    )
+                frequency, phase = self._random_features(length_scale)
+                feature_sum = torch.zeros(
+                    self.n_features, dtype=torch.float64, device=inputs.device
                 )
-                input_square_sum = torch.zeros_like(input_sum)
+                second_moment = torch.zeros(
+                    self.n_features,
+                    self.n_features,
+                    dtype=torch.float64,
+                    device=inputs.device,
+                )
+                cross_moment = torch.zeros(
+                    targets.shape[-1],
+                    self.n_features,
+                    dtype=torch.float64,
+                    device=inputs.device,
+                )
                 parameter_sum = torch.zeros(
                     targets.shape[-1], dtype=torch.float64, device=inputs.device
                 )
-            input_sum += inputs.sum(dim=0, dtype=torch.float64)
-            input_square_sum += inputs.square().sum(dim=0, dtype=torch.float64)
-            parameter_sum += targets.sum(dim=0, dtype=torch.float64)
+            features = _rff(inputs, frequency, phase).to(torch.float64)
+            targets = targets.to(torch.float64)
+            feature_sum += features.sum(dim=0)
+            parameter_sum += targets.sum(dim=0)
+            second_moment += features.mT @ features
+            cross_moment += targets.mT @ features
             observed += inputs.shape[0]
-        if observed != sample_count or input_sum is None:
+        if observed != sample_count or frequency is None:
             raise ValueError("batch source returned an inconsistent sample count")
 
-        length_scale = self._make_length_scale(
-            input_sum, input_square_sum, sample_count
-        )
-        generator = _generator(input_sum.device, _random_seed(self.seed))
+        # Centred covariances from uncentred moments, so one pass carries both
+        # the means and the products they would otherwise have to precede.
+        feature_mean = feature_sum / sample_count
+        parameter_mean = parameter_sum / sample_count
+        covariance = (
+            second_moment
+            - sample_count * torch.outer(feature_mean, feature_mean)
+        ) / (sample_count - 1)
+        cross_covariance = (
+            cross_moment
+            - sample_count * torch.outer(parameter_mean, feature_mean)
+        ) / (sample_count - 1)
+        covariance.diagonal().add_(self.regularization)
+        weight = torch.linalg.solve(covariance, cross_covariance.mT).mT
+
+        self._replicas = {}
+        self.frequency = frequency
+        self.frequency_t = frequency.mT.contiguous()
+        self.phase = phase
+        self.feature_mean = feature_mean.to(torch.float32)
+        self.parameter_mean = parameter_mean.to(torch.float32)
+        self.weight = weight.to(torch.float32)
+        self.length_scale = length_scale
+        return self
+
+    def _random_features(
+        self, length_scale: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """The fixed frequency and phase of the random Fourier feature map."""
+        generator = _generator(length_scale.device, _random_seed(self.seed))
         frequency = torch.randn(
             self.n_features,
-            input_sum.numel(),
+            length_scale.numel(),
             dtype=torch.float32,
-            device=input_sum.device,
+            device=length_scale.device,
             generator=generator,
         ) / length_scale[None, :]
         phase = 2.0 * math.pi * torch.rand(
             self.n_features,
             dtype=torch.float32,
-            device=input_sum.device,
+            device=length_scale.device,
             generator=generator,
         )
+        return frequency, phase
 
-        feature_sum = torch.zeros_like(frequency[:, 0], dtype=torch.float64)
-        for inputs, _ in batches():
-            feature_sum += _rff(inputs, frequency, phase).sum(
-                dim=0, dtype=torch.float64
-            )
-        feature_mean = (feature_sum / sample_count).to(torch.float32)
-        parameter_mean = (parameter_sum / sample_count).to(torch.float32)
-
-        covariance = torch.zeros(
-            self.n_features,
-            self.n_features,
-            dtype=torch.float64,
-            device=input_sum.device,
-        )
-        cross_covariance = torch.zeros(
-            parameter_mean.numel(),
-            self.n_features,
-            dtype=torch.float64,
-            device=input_sum.device,
-        )
-        for inputs, targets in batches():
-            centered_features = (
-                _rff(inputs, frequency, phase) - feature_mean
-            ).to(torch.float64)
-            centered_targets = (targets - parameter_mean).to(torch.float64)
-            covariance += centered_features.mT @ centered_features
-            cross_covariance += centered_targets.mT @ centered_features
-        covariance /= sample_count - 1
-        cross_covariance /= sample_count - 1
-        covariance.diagonal().add_(self.regularization)
-        weight = torch.linalg.solve(covariance, cross_covariance.mT).mT
-
-        self.frequency = frequency
-        self.phase = phase
-        self.feature_mean = feature_mean
-        self.parameter_mean = parameter_mean
-        self.weight = weight.to(torch.float32)
-        self.length_scale = length_scale
-        return self
-
-    def _make_length_scale(
+    def _estimated_length_scale(
         self,
-        input_sum: torch.Tensor,
-        input_square_sum: torch.Tensor,
+        batches: Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]],
         sample_count: int,
     ) -> torch.Tensor:
-        if self._requested_length_scale is None:
-            variance = (
-                input_square_sum - input_sum.square() / sample_count
-            ) / (sample_count - 1)
-            floor = torch.finfo(torch.float32).eps
-            scale = variance.clamp_min(0.0).sqrt().to(torch.float32)
-            # Per-coordinate standard deviations make a high-dimensional
-            # Gaussian kernel vanish between almost every pair of samples.
-            # This factor implements the usual O(sqrt(d)) median-distance
-            # scaling while retaining feature-wise physical units.
-            scale *= math.sqrt(input_sum.numel())
-            return scale.clamp_min(floor)
+        """Read the kernel width off the spread of the training inputs."""
+        input_sum = None
+        input_square_sum = None
+        observed = 0
+        for inputs, _targets in batches():
+            inputs = inputs.to(torch.float32)
+            if input_sum is None:
+                input_sum = torch.zeros(
+                    inputs.shape[-1], dtype=torch.float64, device=inputs.device
+                )
+                input_square_sum = torch.zeros_like(input_sum)
+            input_sum += inputs.sum(dim=0, dtype=torch.float64)
+            input_square_sum += inputs.square().sum(dim=0, dtype=torch.float64)
+            observed += inputs.shape[0]
+        if observed != sample_count or input_sum is None:
+            raise ValueError("batch source returned an inconsistent sample count")
+        variance = (
+            input_square_sum - input_sum.square() / sample_count
+        ) / (sample_count - 1)
+        floor = torch.finfo(torch.float32).eps
+        scale = variance.clamp_min(0.0).sqrt().to(torch.float32)
+        # Per-coordinate standard deviations make a high-dimensional Gaussian
+        # kernel vanish between almost every pair of samples. This factor
+        # implements the usual O(sqrt(d)) median-distance scaling while
+        # retaining feature-wise physical units.
+        scale *= math.sqrt(input_sum.numel())
+        return scale.clamp_min(floor)
+
+    def _given_length_scale(
+        self, width: int, device: torch.device
+    ) -> torch.Tensor:
+        """The kernel width the caller asked for, checked against the inputs."""
         scale = torch.as_tensor(
-            self._requested_length_scale,
-            dtype=torch.float32,
-            device=input_sum.device,
+            self._requested_length_scale, dtype=torch.float32, device=device
         ).flatten()
         if scale.numel() == 1:
-            scale = scale.expand(input_sum.numel())
-        if scale.numel() != input_sum.numel() or torch.any(scale <= 0):
+            scale = scale.expand(width)
+        if scale.numel() != width or torch.any(scale <= 0):
             raise ValueError("length_scale must be positive and match input features")
         return scale
 
 
 # %% private module subroutines
+
+
+def _loaded(name: str) -> Any:
+    """One kernel backend, or ``None`` where it cannot be imported."""
+    try:
+        return __import__(f"torchsim.estimators.{name}", fromlist=[name])
+    except ImportError:
+        return None
+
+
+_TRITON = _loaded("_perk_triton")
+_NATIVE = _loaded("_perk_native")
+
+
+def _kernels(device: torch.device) -> Any:
+    """The fused backend for this device, or ``None``."""
+    return _TRITON if device.type == "cuda" else _NATIVE
+
+
+class _FusedRegression(torch.autograd.Function):
+    """The feature map and its regression, without the features in between."""
+
+    @staticmethod
+    def forward(
+        ctx: Any,
+        signals: torch.Tensor,
+        frequency: torch.Tensor,
+        transposed: torch.Tensor,
+        phase: torch.Tensor,
+        feature_mean: torch.Tensor,
+        weight: torch.Tensor,
+        parameter_mean: torch.Tensor,
+    ) -> torch.Tensor:
+        ctx.save_for_backward(signals, frequency, transposed, phase, weight)
+        if signals.device.type == "cuda":
+            return _TRITON.regress(
+                signals, frequency, phase, feature_mean, weight, parameter_mean
+            )
+        return _NATIVE.regress(
+            signals, frequency, transposed, phase, feature_mean, weight,
+            parameter_mean,
+        )
+
+    @staticmethod
+    def backward(
+        ctx: Any, cotangent: torch.Tensor
+    ) -> tuple[torch.Tensor | None, ...]:
+        signals, frequency, transposed, phase, weight = ctx.saved_tensors
+        if not ctx.needs_input_grad[0]:
+            return (None,) * 7
+        gradient = (
+            _TRITON.regress_vjp(cotangent, signals, frequency, phase, weight)
+            if signals.device.type == "cuda"
+            else _NATIVE.regress_vjp(
+                cotangent, signals, frequency, transposed, phase, weight
+            )
+        )
+        return gradient, None, None, None, None, None, None
+
+
 
 
 def _feature_matrix(
@@ -376,6 +650,25 @@ def _rff(
 ) -> torch.Tensor:
     scale = math.sqrt(2.0 / frequency.shape[0])
     return scale * torch.cos(inputs @ frequency.mT + phase)
+
+
+def _sample_columns(
+    values: Mapping[str, Any], expected: int | None = None
+) -> list[torch.Tensor]:
+    """One column per named property, all agreeing on the sample count."""
+    columns = [
+        torch.as_tensor(value, dtype=torch.float32).reshape(-1)
+        for value in values.values()
+    ]
+    counts = {int(column.numel()) for column in columns}
+    if expected is not None:
+        counts.add(expected)
+    if len(counts) > 1:
+        raise ValueError(
+            f"the properties disagree on the training sample count: "
+            f"{sorted(counts)}"
+        )
+    return columns
 
 
 def _parameter_matrix(parameters: Any, reference: torch.Tensor) -> torch.Tensor:

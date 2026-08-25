@@ -126,3 +126,20 @@ html_theme_options = {
 # html_logo = "_static/logos/mri-nufft.png"
 # html_favicon = "_static/logos/mri-nufft-icon.png"
 html_title = "TorchSim Documentation"
+
+
+def setup(app):
+    """Drop sphinx-gallery's code-link pass when :mod:`dbm` is missing.
+
+    That pass caches the URLs it resolves with :mod:`shelve`, and some Python
+    distributions package ``dbm`` separately from the interpreter. The links
+    it would add are the only thing lost.
+    """
+    try:
+        import dbm  # noqa: F401
+    except ImportError:
+        from sphinx_gallery.docs_resolv import embed_code_links
+
+        for listener in list(app.events.listeners.get("build-finished", [])):
+            if listener.handler is embed_code_links:
+                app.disconnect(listener.id)

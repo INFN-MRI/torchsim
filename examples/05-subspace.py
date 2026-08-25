@@ -32,9 +32,13 @@ subspace = simulate_subspace(
     nstates=12,
 )
 dictionary = subspace.dictionary
-projected = (dictionary @ subspace.basis) @ subspace.basis.mH
+projected = subspace.subspace.expand(subspace.subspace.project(dictionary))
 relative_error = (dictionary - projected).norm() / dictionary.norm()
 print(f"rank-5 relative dictionary error: {relative_error:.3e}")
+
+# The basis says what it keeps before anything is projected through it, so a
+# rank can be chosen against a number rather than measured after the fact.
+print(f"rank-5 retained energy:            {subspace.subspace.retained:.9f}")
 
 # %%
 # Nonlinear route: use the simulator directly and let Torch differentiate the

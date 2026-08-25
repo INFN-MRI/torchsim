@@ -141,24 +141,16 @@ def _measure_detection(kind: str, device: torch.device, state_count: int) -> flo
 @contextmanager
 def _unpoliced() -> Iterator[None]:
     """Run a probe as written, whatever policy the caller has in force."""
+    from .. import _execution
     from . import _accelerators
 
-    previous = (
-        _accelerators._EXECUTION,
-        _accelerators._OFFLOAD,
-        _accelerators._DEVICES,
-    )
-    _accelerators._EXECUTION = None
-    _accelerators._OFFLOAD = None
+    previous = _accelerators._DEVICES
     _accelerators._DEVICES = ()
     try:
-        yield
+        with _execution.unpoliced():
+            yield
     finally:
-        (
-            _accelerators._EXECUTION,
-            _accelerators._OFFLOAD,
-            _accelerators._DEVICES,
-        ) = previous
+        _accelerators._DEVICES = previous
 
 
 def _problem(
