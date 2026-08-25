@@ -23,8 +23,10 @@ from __future__ import annotations
 
 __all__ = [
     "Operator",
+    "bssfp_readout",
     "compose",
     "delay",
+    "dephase",
     "excitation",
     "inversion",
     "module",
@@ -34,6 +36,9 @@ __all__ = [
     "refocusing",
     "register_operator",
     "saturation",
+    "spgr_readout",
+    "spoil",
+    "ssfp_fid_readout",
 ]
 
 from collections.abc import Callable
@@ -299,6 +304,98 @@ def delay(
     return Operator(emit, duration_s)
 
 
+def dephase() -> Operator:
+    """Return an unbalanced gradient, taking no time to play.
+
+    Every configuration order winds on by one: this is the crusher a
+    refocusing pulse sits between and the unbalanced gradient an SSFP-FID
+    readout is followed by, which are the same winding played in two places.
+    How far it dephases is the description's ``crusher_dephasing_rad``, one
+    figure for the whole sequence.
+    """
+    return Operator(
+        lambda start_s: (
+            SequenceEvent(
+                EventType.WAIT, _TO_US * start_s, (), EventAction.CRUSH_AFTER
+            ),
+        )
+    )
+
+
+def spoil() -> Operator:
+    """Return ideal transverse spoiling, taking no time to play.
+
+    Every transverse order is discarded rather than wound on, which is what a
+    spoiled gradient echo assumes its spoiler and its RF phase cycling achieve
+    together.
+    """
+    return Operator(
+        lambda start_s: (
+            SequenceEvent(
+                EventType.WAIT, _TO_US * start_s, (), EventAction.SPOIL_AFTER
+            ),
+        )
+    )
+
+
+def bssfp_readout(
+    phase_rad: Any = 0.0,
+    *,
+    duration_s: Any = 0.0,
+    role: AdcRole = AdcRole.SINGLE,
+    is_echo: bool = True,
+) -> Operator:
+    """Return a sample the repetition rewinds after.
+
+    The states are left where they were, which is what makes the sequence
+    balanced. ``duration_s`` is what is left of the repetition after the
+    sample.
+    """
+    return module(
+        readout(phase_rad, role=role, is_echo=is_echo),
+        delay(duration_s),
+        duration_s=duration_s,
+    )
+
+
+def ssfp_fid_readout(
+    phase_rad: Any = 0.0,
+    *,
+    duration_s: Any = 0.0,
+    role: AdcRole = AdcRole.SINGLE,
+    is_echo: bool = True,
+) -> Operator:
+    """Return a sample followed by one unbalanced gradient.
+
+    ``duration_s`` is what is left of the repetition after the sample.
+    """
+    return module(
+        readout(phase_rad, role=role, is_echo=is_echo),
+        dephase(),
+        delay(duration_s),
+        duration_s=duration_s,
+    )
+
+
+def spgr_readout(
+    phase_rad: Any = 0.0,
+    *,
+    duration_s: Any = 0.0,
+    role: AdcRole = AdcRole.SINGLE,
+    is_echo: bool = True,
+) -> Operator:
+    """Return a sample followed by ideal transverse spoiling.
+
+    ``duration_s`` is what is left of the repetition after the sample.
+    """
+    return module(
+        readout(phase_rad, role=role, is_echo=is_echo),
+        spoil(),
+        delay(duration_s),
+        duration_s=duration_s,
+    )
+
+
 _REGISTRY: dict[str, Callable[..., Operator]] = {
     "excitation": excitation,
     "refocusing": refocusing,
@@ -306,6 +403,11 @@ _REGISTRY: dict[str, Callable[..., Operator]] = {
     "saturation": saturation,
     "readout": readout,
     "delay": delay,
+    "dephase": dephase,
+    "spoil": spoil,
+    "bssfp-readout": bssfp_readout,
+    "ssfp-fid-readout": ssfp_fid_readout,
+    "spgr-readout": spgr_readout,
 }
 
 

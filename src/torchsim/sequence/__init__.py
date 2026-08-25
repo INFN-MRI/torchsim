@@ -27,8 +27,10 @@ __all__ = [
     "decompress_shape",
     "execution",
     "Operator",
+    "bssfp_readout",
     "compose",
     "delay",
+    "dephase",
     "distribute",
     "exact_slice_profile",
     "excitation",
@@ -48,6 +50,9 @@ __all__ = [
     "register_operator",
     "saturation",
     "simulate_subspace",
+    "spgr_readout",
+    "spoil",
+    "ssfp_fid_readout",
     "spgr_description",
 ]
 
@@ -62,8 +67,10 @@ from ._builders import (
 )
 from ._operators import (
     Operator,
+    bssfp_readout,
     compose,
     delay,
+    dephase,
     excitation,
     inversion,
     module,
@@ -73,6 +80,9 @@ from ._operators import (
     refocusing,
     register_operator,
     saturation,
+    spgr_readout,
+    spoil,
+    ssfp_fid_readout,
 )
 from ._description import (
     AdcRole,
