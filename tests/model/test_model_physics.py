@@ -14,10 +14,9 @@ import torch
 
 from torchsim.model import EpgModel
 from torchsim.sequence import (
-    SSFPFID,
-    EpgSimulator,
-    TissueProperties,
+    EpgEngine,
     mrf_description,
+    TissueProperties,
 )
 from torchsim.sequence import _accelerators
 from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_NAMES
@@ -38,7 +37,7 @@ class Anything(EpgModel):
         "bound_exchange": "bound_exchange_hz",
         "T1_bound": "t1_bound_ms",
     }
-    simulator = SSFPFID()
+    simulator = EpgEngine()
     states = 8
 
     def describe(self, *, flip, TR):
@@ -54,7 +53,7 @@ def _by_hand(**pool) -> torch.Tensor:
     """The same run, with the tissue and the description written out."""
     described = mrf_description(torch.deg2rad(FLIP), 10e-3)
     tissue = TissueProperties(t1_ms=T1, t2_ms=T2, **pool)
-    return SSFPFID().simulate(described, tissue, nstates=8).signal
+    return EpgEngine().simulate(described, tissue, nstates=8).signal
 
 
 def test_a_model_reaches_the_semisolid_pool() -> None:
@@ -107,7 +106,7 @@ class Relaxation(EpgModel):
     """T1 and T2 over an unbalanced train."""
 
     properties = {"T1": "t1_ms", "T2": "t2_ms"}
-    simulator = SSFPFID()
+    simulator = EpgEngine()
     states = 8
 
     def describe(self, *, flip, TR):

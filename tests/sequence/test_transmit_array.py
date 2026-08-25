@@ -19,7 +19,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence._description import EventType, SequenceEvent, ShimDefinition
 from torchsim.sequence._accelerators import (
     _across_the_table,
@@ -300,8 +300,8 @@ def test_two_identical_shims_are_the_same_as_one() -> None:
     tissue = _tissue(voxels, b1=b1, b1_phase_rad=b1_phase)
 
     assert torch.equal(
-        FSE().simulate(doubled, tissue, nstates=8).signal,
-        FSE().simulate(_description(shim), tissue, nstates=8).signal,
+        EpgEngine().simulate(doubled, tissue, nstates=8).signal,
+        EpgEngine().simulate(_description(shim), tissue, nstates=8).signal,
     )
 
 
@@ -533,7 +533,7 @@ def test_a_gradient_reaches_the_weights_of_each_shim() -> None:
         shim_definitions=shims,
     )
 
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
     ).signal
     signal.abs().square().sum().backward()
@@ -557,7 +557,7 @@ def test_the_weight_gradients_match_a_finite_difference_shim_by_shim() -> None:
             _description(shims[0], shim_ids=(0, 1, 1, 1, 1, 1, 1)),
             shim_definitions=shims,
         )
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
         ).signal
         return signal.abs().square().sum()
@@ -589,8 +589,8 @@ def test_the_weight_gradients_match_a_finite_difference_shim_by_shim() -> None:
 def test_a_uniform_array_reproduces_the_single_channel_signal() -> None:
     """Bitwise: the array resolves to exactly the buffers it would have had."""
     voxels = 3
-    plain = FSE().simulate(_description(), _tissue(voxels), nstates=8).signal
-    array = FSE().simulate(
+    plain = EpgEngine().simulate(_description(), _tissue(voxels), nstates=8).signal
+    array = EpgEngine().simulate(
         _description(_uniform_shim()),
         _tissue(voxels, b1=torch.full((CHANNELS, voxels), 1.0)),
         nstates=8,
@@ -603,12 +603,12 @@ def test_the_array_reaches_the_signal() -> None:
     voxels = 3
     b1, b1_phase = _sensitivity(voxels)
     shim = _uniform_shim()
-    uniform = FSE().simulate(
+    uniform = EpgEngine().simulate(
         _description(shim),
         _tissue(voxels, b1=torch.full((CHANNELS, voxels), 1.0)),
         nstates=8,
     ).signal
-    shaped = FSE().simulate(
+    shaped = EpgEngine().simulate(
         _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
     ).signal
     relative = (uniform - shaped).abs().max() / uniform.abs().max()
@@ -629,10 +629,10 @@ def test_the_resolved_field_matches_a_hand_built_single_channel_run() -> None:
     )
     field = (torch.polar(b1, b1_phase) * weights[:, None]).sum(dim=0)
 
-    array = FSE().simulate(
+    array = EpgEngine().simulate(
         _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
     ).signal
-    equivalent = FSE().simulate(
+    equivalent = EpgEngine().simulate(
         _description(),
         _tissue(voxels, b1=field.abs(), b1_phase_rad=field.angle()),
         nstates=8,
@@ -706,7 +706,7 @@ def test_a_gradient_reaches_each_channel_of_the_array() -> None:
     b1 = b1.clone().requires_grad_(True)
     b1_phase = b1_phase.clone().requires_grad_(True)
 
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(_uniform_shim()),
         _tissue(voxels, b1=b1, b1_phase_rad=b1_phase),
         nstates=8,
@@ -725,7 +725,7 @@ def test_a_gradient_reaches_the_shim_weights() -> None:
     magnitudes = torch.full((CHANNELS,), 1.0 / CHANNELS, requires_grad=True)
     shim = ShimDefinition(0, magnitudes, (0.0,) * CHANNELS)
 
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
     ).signal
     signal.abs().square().sum().backward()
@@ -741,7 +741,7 @@ def test_the_channel_gradient_matches_a_finite_difference() -> None:
     shim = _uniform_shim()
 
     def loss(magnitude: torch.Tensor) -> torch.Tensor:
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(shim),
             _tissue(voxels, b1=magnitude, b1_phase_rad=b1_phase),
             nstates=8,
@@ -863,7 +863,7 @@ def test_a_shimmed_gradient_takes_the_first_order_kernel(state_count) -> None:
     state count before, and the shim adds a per-event load the others do not
     make.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     tissue, events, output_count = _two_shim_packed(voxels=64, device="cuda")

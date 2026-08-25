@@ -7,7 +7,7 @@ cannot drift away from the behaviour it is meant to predict.
 import pytest
 import torch
 
-from torchsim import FSE, fse_description
+from torchsim import EpgEngine, fse_description
 from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
 
 # The gradients a real adjoint does produce: every differentiable input the
@@ -53,7 +53,7 @@ def _axis(phases, excitation, b0_hz=0.0, b1_phase_rad=0.0):
     )
     events = packed.buffers
     prepared, _, _ = _prepare_tissue(_tissue(b0_hz, b1_phase_rad), "cpu")
-    signal = FSE().simulate(description, _tissue(b0_hz, b1_phase_rad)).signal
+    signal = EpgEngine().simulate(description, _tissue(b0_hz, b1_phase_rad)).signal
     return real_subspace_axis(events, prepared), signal
 
 
@@ -183,7 +183,7 @@ def always_worth_detecting(monkeypatch):
     gradients the real one leaves at zero -- and then fails for asserting
     exactly that.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
 
     monkeypatch.setattr(
         _accelerators, "detection", lambda kind, device, state_count: 0.0
@@ -647,7 +647,7 @@ def test_an_adjoint_that_stays_in_the_subspace_reaches_the_real_kernel():
 
 def _forward_over_reverse(atoms):
     """A directional derivative, differentiated: what backward fuses."""
-    from torchsim import FSE
+    from torchsim import EpgEngine
     from torchsim.sequence._simulation import TissueProperties
 
     generator = torch.Generator().manual_seed(0)
@@ -662,7 +662,7 @@ def _forward_over_reverse(atoms):
 
     def simulate(values):
         tissue = TissueProperties(t1_ms=torch.full((atoms,), 900.0), t2_ms=values)
-        return FSE().simulate(description, tissue, nstates=10).signal
+        return EpgEngine().simulate(description, tissue, nstates=10).signal
 
     _signal, derivative = torch.func.jvp(simulate, (t2,), (torch.ones_like(t2),))
     return torch.autograd.grad(derivative.abs().square().sum(), t2)[0]
@@ -674,7 +674,7 @@ def test_autograd_asks_for_what_the_graph_needs(monkeypatch, always_worth_detect
     Differentiating T2 stays inside the subspace, so the fast adjoint is
     available -- and the answer must not depend on it being taken.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
 
     chosen = []
     original = _accelerators._auto_real_axis_adjoint
@@ -712,7 +712,7 @@ def test_the_cuda_real_adjoint_agrees_with_the_second_order_kernel(
     Widths are swept because a reverse kernel has miscompiled silently at one
     state count before, and a single width would not have caught it.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     description = fse_description(
@@ -792,7 +792,7 @@ def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass(
     """The first-order kernel is the point of this route, so the test above has
     to be reaching it rather than agreeing with itself.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     description = fse_description(

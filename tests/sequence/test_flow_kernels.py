@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, TissueProperties, fse_description
 from utils.epg import flow_op
 from torchsim.sequence._accelerators import (
     _pack_events,

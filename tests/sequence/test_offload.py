@@ -15,7 +15,7 @@ the narrow one.
 import pytest
 import torch
 
-from torchsim.sequence import offload
+from torchsim.sequence import EpgEngine, offload
 from torchsim.sequence._parameters import NO_GEOMETRY, OUTSIDE_THE_SUBSPACE, Geometry
 from torchsim.sequence._accelerators import (
     _FLOAT_INPUTS,
@@ -218,7 +218,7 @@ def test_a_nonsense_budget_is_refused(budget, lanes):
 
 
 def test_the_previous_setting_comes_back_after_a_failure():
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
 
     with pytest.raises(RuntimeError):
         with offload(["cuda"], budget_bytes=1 << 20):
@@ -678,7 +678,7 @@ def test_a_host_resident_first_order_adjoint_follows_the_execution_target():
     """The forward moves to the card under this policy, so the backward has to
     move with it rather than stay behind.
     """
-    from torchsim.sequence import execution
+    from torchsim.sequence import EpgEngine, execution
 
     voxels = 20_000
     events, prepared, outputs = _volume(voxels)
@@ -729,7 +729,7 @@ def test_a_backward_through_the_public_api_streams():
     ``torch.autograd`` reaches the adjoint by a route of its own, and it is
     the one an ordinary user's ``.backward()`` takes.
     """
-    from torchsim.sequence import FSE, TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     voxels = 20_000
     reached = []
@@ -748,7 +748,7 @@ def test_a_backward_through_the_public_api_streams():
     def gradients():
         t1 = torch.linspace(600.0, 1400.0, voxels, requires_grad=True)
         t2 = torch.linspace(40.0, 120.0, voxels, requires_grad=True)
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             fse_description(
                 torch.deg2rad(torch.full((ECHOES,), 120.0)),
                 echo_spacing_s=5e-3,
@@ -785,7 +785,7 @@ def test_a_streamed_first_order_adjoint_takes_its_own_kernel(trains):
     """A chunk of a first-order adjoint is a first-order adjoint, so streaming
     must not cost the kernel written for it.
     """
-    from torchsim.sequence import _accelerators as accelerators
+    from torchsim.sequence import _accelerators as accelerators, EpgEngine
 
     voxels = 2000
     events, prepared, outputs = _volume(voxels, trains=trains)

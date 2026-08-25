@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.estimators import DictionaryMatcher, PERK
 
 
@@ -17,7 +17,7 @@ def test_perk_is_comparable_to_dictionary_matching_under_noise() -> None:
     )
 
     def simulate(t2_ms: torch.Tensor) -> torch.Tensor:
-        return FSE().simulate(
+        return EpgEngine().simulate(
             description,
             TissueProperties(t1_ms=1000.0, t2_ms=t2_ms.reshape(-1)),
             nstates=10,

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence import _epg_triton
 from torchsim.sequence._epg_triton import _feature_flags
 from torchsim.sequence._parameters import Geometry, at_identity
@@ -145,7 +145,7 @@ def test_the_transmit_phase_derivative_survives_at_zero_phase():
     from torch.autograd.forward_ad import dual_level, make_dual, unpack_dual
 
     def signal(phase):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]),
@@ -180,7 +180,7 @@ def _adjoint(crusher_rad=0.0, **properties):
         name: value.cuda() if isinstance(value, torch.Tensor) else value
         for name, value in properties.items()
     }
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(crusher_rad),
         TissueProperties(
             **{name: value.cuda() for name, value in leaves.items()}, **held
@@ -225,7 +225,7 @@ def test_an_off_resonance_asked_for_its_gradient_gets_a_real_one():
     that moves the answer when it is there.
     """
     b0 = torch.tensor([30.0], device="cuda", requires_grad=True)
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(),
         TissueProperties(
             t1_ms=torch.tensor([1000.0], device="cuda"),
@@ -394,7 +394,7 @@ def test_a_diffusion_coefficient_asked_for_its_gradient_gets_a_real_one():
     moves the answer when the tissue declares it.
     """
     coefficient = torch.tensor([2.0], device="cuda", requires_grad=True)
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(CRUSHED),
         TissueProperties(
             t1_ms=torch.tensor([1000.0], device="cuda"),

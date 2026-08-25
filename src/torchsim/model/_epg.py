@@ -24,7 +24,7 @@ from typing import Any
 
 import torch
 
-from ..sequence import EpgSimulator, SequenceDescription, TissueProperties
+from ..sequence import EpgEngine, SequenceDescription, TissueProperties
 from ..sequence._parameters import TISSUE_NAMES
 from ..sequence._simulation import RecordMode
 from ._signal import SignalModel
@@ -56,7 +56,7 @@ class EpgModel(SignalModel):
         it.
     """
 
-    simulator: EpgSimulator = EpgSimulator()
+    simulator: EpgEngine = EpgEngine()
     states: int | None = None
     repetitions: int = 1
     record: RecordMode = "all"

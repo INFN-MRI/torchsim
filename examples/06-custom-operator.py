@@ -27,12 +27,10 @@ import matplotlib.pyplot as plt
 import torch
 
 from torchsim.sequence import (
-    FSE,
-    EventAction,
-    SequenceDescription,
-    TissueProperties,
     compose,
     delay,
+    EpgEngine,
+    EventAction,
     excitation,
     ideal_rf_definition,
     module,
@@ -40,6 +38,8 @@ from torchsim.sequence import (
     readout,
     refocusing,
     register_operator,
+    SequenceDescription,
+    TissueProperties,
 )
 
 # %%
@@ -123,7 +123,7 @@ prep_times_ms = torch.linspace(0.0, 120.0, 13)
 prepared = []
 for prep_ms in prep_times_ms:
     described = prepared_train(float(prep_ms) * 1e-3, 5e-3, echoes=1)
-    result = FSE().simulate(described, tissue, nstates=8)
+    result = EpgEngine().simulate(described, tissue, nstates=8)
     prepared.append(result.signal[..., 0].abs())
 
 prepared = torch.stack(prepared, dim=-1)

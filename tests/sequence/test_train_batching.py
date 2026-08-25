@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence._accelerators import _pack_events, _run_packed, _run_packed_vjp
 from torchsim.sequence._parameters import TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue
@@ -64,9 +64,9 @@ def test_forward_matches_single_trains():
     flip = _schedules(6, 12)
     tissue = _tissue()
     expected = torch.stack(
-        [FSE().simulate(_describe(row), tissue).signal for row in flip]
+        [EpgEngine().simulate(_describe(row), tissue).signal for row in flip]
     )
-    actual = FSE().simulate(_describe(flip), tissue).signal
+    actual = EpgEngine().simulate(_describe(flip), tissue).signal
     assert actual.shape == expected.shape
     assert torch.equal(actual, expected)
 
@@ -77,12 +77,12 @@ def test_event_gradients_stay_per_train():
     tissue = _tissue()
 
     first = flip.clone().requires_grad_(True)
-    FSE().simulate(_describe(first), tissue).signal.abs().sum().backward()
+    EpgEngine().simulate(_describe(first), tissue).signal.abs().sum().backward()
 
     moved = flip.clone()
     moved[2] += 0.3
     second = moved.requires_grad_(True)
-    FSE().simulate(_describe(second), tissue).signal.abs().sum().backward()
+    EpgEngine().simulate(_describe(second), tissue).signal.abs().sum().backward()
 
     assert first.grad.shape == flip.shape
     for train in (0, 1, 3):

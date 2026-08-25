@@ -29,14 +29,14 @@ import torch
 
 from torchsim.model import EpgModel
 from torchsim.sequence import (
-    SSFPFID,
-    EventAction,
-    SequenceDescription,
     compose,
+    EpgEngine,
+    EventAction,
     excitation,
     ideal_rf_definition,
     inversion,
     readout,
+    SequenceDescription,
 )
 
 # %%
@@ -87,7 +87,7 @@ class SSFPMRFModel(EpgModel):
     """Inversion-prepared unbalanced SSFP with a variable flip-angle schedule."""
 
     properties = {"T1": "t1_ms", "T2": "t2_ms"}
-    simulator = SSFPFID()
+    simulator = EpgEngine()
     states = 10
 
     def describe(self, *, flip, TR, TI=0.0):

@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _pack_events,
@@ -44,7 +44,7 @@ def _description():
 
 
 def _signal(**properties):
-    return FSE().simulate(
+    return EpgEngine().simulate(
         _description(),
         TissueProperties(**{"t1_ms": 1000.0, "t2_ms": 80.0, **properties}),
         nstates=STATES,
@@ -392,14 +392,14 @@ def test_forward_mode_leaves_the_single_pool_answer_untouched():
     t2 = torch.tensor([80.0])
 
     def signal(value):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=value),
             nstates=STATES,
         ).signal
 
     def gated(value):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]),
@@ -421,7 +421,7 @@ def test_forward_mode_reaches_an_exchanging_pool_through_the_public_api():
     fraction = torch.tensor([FRACTION])
 
     def signal(value):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]),
@@ -542,7 +542,7 @@ def test_a_refocused_train_carries_the_gradient_through_the_pulses():
         name: torch.tensor([value], requires_grad=True)
         for name, value in held.items()
     }
-    FSE().simulate(
+    EpgEngine().simulate(
         _description(), TissueProperties(**leaves), nstates=STATES
     ).signal.abs().square().sum().backward()
 
@@ -571,7 +571,7 @@ def test_the_second_order_pass_differentiates_the_adjoint():
             name: torch.tensor([value])
             for name, value in live.items() if name != "t2_ms"
         }
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(),
             TissueProperties(t2_ms=t2, pool_b_fraction=fraction, **leaves),
             nstates=STATES,
@@ -600,7 +600,7 @@ def test_the_adjoint_leaves_the_single_pool_answer_untouched():
     """
     def gradient(**extra):
         t2 = torch.tensor([80.0], requires_grad=True)
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]), t2_ms=t2, **extra
@@ -625,7 +625,7 @@ def test_the_single_pool_gradient_still_reaches_every_property():
         name: torch.tensor([value], requires_grad=True)
         for name, value in (("t1_ms", 1000.0), ("t2_ms", 80.0))
     }
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(),
         TissueProperties(**leaves, pool_b_fraction=0.0, pool_b_exchange_hz=0.0),
         nstates=STATES,
@@ -648,7 +648,7 @@ def test_an_empty_pool_asked_for_its_gradient_gives_the_true_one():
     """
 
     def loss(fraction):
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=1000.0, t2_ms=80.0, pool_b_fraction=fraction,
@@ -667,7 +667,7 @@ def test_an_empty_pool_asked_for_its_gradient_gives_the_true_one():
         name: torch.tensor([value], requires_grad=True)
         for name, value in (("pool_b_fraction", 0.0), *described.items())
     }
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(),
         TissueProperties(t1_ms=1000.0, t2_ms=80.0, **leaves),
         nstates=STATES,
@@ -1207,7 +1207,7 @@ def test_an_exchanging_pool_takes_the_first_order_kernel_on_the_card(
     forward-over-reverse pass on the same card: two arms of one wrong kernel
     agree with each other, and the backends share no code.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     voxels = 64
@@ -1284,7 +1284,7 @@ def test_a_tabulated_rotation_beside_a_pool_takes_the_first_order_kernel() -> No
     contributes to the flip and the phase through the table's slopes rather
     than through the instant rotation's derivative. Held against the host.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     voxels = 64

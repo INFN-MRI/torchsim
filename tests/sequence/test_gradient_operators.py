@@ -14,10 +14,8 @@ import pytest
 import torch
 
 from torchsim.sequence import (
-    FSE,
-    SPGR,
-    SSFPFID,
     AdcRole,
+    EpgEngine,
     EventAction,
     SequenceDescription,
     TissueProperties,
@@ -59,20 +57,20 @@ def _described(modules):
     )
 
 
-def _run(policy, modules, nstates=10):
-    return policy().simulate(_described(modules), TISSUE, nstates=nstates).signal
+def _run(modules, nstates=10):
+    return EpgEngine().simulate(_described(modules), TISSUE, nstates=nstates).signal
 
 
 @pytest.mark.parametrize(
-    ("policy", "action", "composite"),
+    ("action", "composite"),
     [
-        (SSFPFID, EventAction.SHIFT_AFTER, ssfp_fid_readout),
-        (SPGR, EventAction.SPOIL_AFTER, spgr_readout),
-        (SSFPFID, EventAction.NONE, bssfp_readout),
+        (EventAction.SHIFT_AFTER, ssfp_fid_readout),
+        (EventAction.SPOIL_AFTER, spgr_readout),
+        (EventAction.NONE, bssfp_readout),
     ],
     ids=["ssfp-fid", "spgr", "bssfp"],
 )
-def test_a_composite_readout_is_its_action_word(policy, action, composite) -> None:
+def test_a_composite_readout_is_its_action_word(action, composite) -> None:
     """The composite and the keyword are the same events in the same order."""
     keyword = [
         part
@@ -84,7 +82,7 @@ def test_a_composite_readout_is_its_action_word(policy, action, composite) -> No
         for _ in range(SHOTS)
         for part in (excitation(FLIP), composite(duration_s=TR))
     ]
-    assert torch.equal(_run(policy, keyword), _run(policy, composed))
+    assert torch.equal(_run(keyword), _run(composed))
 
 
 def test_a_crusher_pair_is_the_refocusing_keyword() -> None:
@@ -101,7 +99,7 @@ def test_a_crusher_pair_is_the_refocusing_keyword() -> None:
             delay(TR / 2),
             readout(),
         ]
-    assert torch.equal(_run(FSE, keyword), _run(FSE, composed))
+    assert torch.equal(_run(keyword), _run(composed))
 
 
 def test_the_spelling_is_a_choice_and_not_a_coincidence() -> None:
@@ -111,12 +109,11 @@ def test_the_spelling_is_a_choice_and_not_a_coincidence() -> None:
     """
     answers = [
         _run(
-            SSFPFID,
             [
                 part
                 for _ in range(SHOTS)
                 for part in (excitation(FLIP), composite(duration_s=TR))
-            ],
+            ]
         )
         for composite in (bssfp_readout, ssfp_fid_readout, spgr_readout)
     ]

@@ -6,14 +6,13 @@ import pytest
 import torch
 
 from torchsim import (
-    FSE,
     TissueProperties,
     fse_description,
     mprage_description,
     mrf_description,
     spgr_description,
 )
-from torchsim.sequence import _accelerators
+from torchsim.sequence import _accelerators, EpgEngine
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _NativeEpg,
@@ -209,7 +208,7 @@ def _gradients():
     )
     t1 = torch.full((64,), 1000.0, requires_grad=True)
     t2 = torch.linspace(40.0, 120.0, 64).requires_grad_(True)
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         description, TissueProperties(t1_ms=t1, t2_ms=t2), nstates=10
     ).signal
     return torch.autograd.grad(signal.abs().square().sum(), (t1, t2))
@@ -229,7 +228,7 @@ def test_fused_vjp_is_bitwise_deterministic(monkeypatch) -> None:
 
 
 def _objective_gradient():
-    from torchsim import FSET2Precision
+    from torchsim import EpgEngine, FSET2Precision
 
     objective = FSET2Precision(
         torch.tensor([800.0, 1400.0]), torch.tensor([45.0, 120.0]), 5.0

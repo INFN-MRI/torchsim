@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _pack_events,
@@ -47,7 +47,7 @@ def _description():
 
 
 def _signal(**properties):
-    return FSE().simulate(
+    return EpgEngine().simulate(
         _description(),
         TissueProperties(t1_ms=1000.0, t2_ms=80.0, **properties),
         nstates=STATES,
@@ -607,14 +607,14 @@ def test_forward_mode_leaves_the_single_pool_answer_untouched():
     t2 = torch.tensor([80.0])
 
     def signal(value):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=value),
             nstates=STATES,
         ).signal
 
     def gated(value):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]),
@@ -751,7 +751,7 @@ def test_an_adjoint_of_a_bound_pool_run_reaches_the_public_api():
             ("bound_exchange_hz", RATE_HZ), ("t1_bound_ms", 200.0),
         )
     }
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(), TissueProperties(**leaves), nstates=STATES
     ).signal
     signal.abs().square().sum().backward()
@@ -828,7 +828,7 @@ def test_forward_mode_reaches_a_bound_pool_through_the_public_api():
     fraction = torch.tensor([FRACTION])
 
     def signal(value):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]),
@@ -858,7 +858,7 @@ def test_the_single_pool_gradient_still_reaches_every_property():
         name: torch.tensor([value], requires_grad=True)
         for name, value in (("t1_ms", 1000.0), ("t2_ms", 80.0))
     }
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(),
         TissueProperties(**leaves, bound_fraction=0.0, bound_exchange_hz=0.0),
         nstates=STATES,
@@ -886,7 +886,7 @@ def test_an_empty_pool_asked_for_its_gradient_gives_the_true_one():
     """
 
     def loss(fraction):
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=1000.0, t2_ms=80.0, bound_fraction=fraction,
@@ -903,7 +903,7 @@ def test_an_empty_pool_asked_for_its_gradient_gives_the_true_one():
             ("t1_bound_ms", 400.0),
         )
     }
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(),
         TissueProperties(t1_ms=1000.0, t2_ms=80.0, **leaves),
         nstates=STATES,
@@ -1018,7 +1018,7 @@ def test_a_far_off_resonance_prep_reaches_the_public_api():
     simulated through the public API rather than through the packed buffers.
     """
     def signal(offset_hz):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _tuned(offset_hz),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]),
@@ -1557,7 +1557,7 @@ def test_a_streamed_public_simulation_matches_the_whole_one():
     )
 
     def run():
-        return FSE().simulate(_description(), tissue, nstates=STATES).signal
+        return EpgEngine().simulate(_description(), tissue, nstates=STATES).signal
 
     whole = run()
     with offload(["cuda"], budget_bytes=1 << 20):
@@ -1588,7 +1588,7 @@ def test_a_gradient_taken_after_a_streamed_forward_matches_the_whole_one():
                 ("t1_bound_ms", torch.linspace(50.0, 900.0, voxels)),
             )
         }
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(), _volume(voxels, **leaves), nstates=STATES
         ).signal
         signal.abs().square().sum().backward()
@@ -1610,7 +1610,7 @@ def test_a_pool_takes_the_first_order_kernel_on_the_card(state_count) -> None:
     forward-over-reverse pass on the same card: two arms of one wrong kernel
     agree with each other, and the backends share no code.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     voxels = 64

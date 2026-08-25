@@ -12,7 +12,7 @@ model-based reconstruction or fitting problem.
 import matplotlib.pyplot as plt
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description, simulate_subspace
+from torchsim import EpgEngine, fse_description, simulate_subspace, TissueProperties
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 description = fse_description(
@@ -27,7 +27,6 @@ description = fse_description(
 t2_dictionary = torch.linspace(20.0, 300.0, 512, device=device)
 subspace = simulate_subspace(
     description,
-    "fse",
     TissueProperties(t1_ms=1000.0, t2_ms=t2_dictionary),
     rank=5,
     nstates=12,
@@ -42,7 +41,7 @@ print(f"rank-5 relative dictionary error: {relative_error:.3e}")
 # forward model. In a model-based reconstruction this function is composed
 # with coil sensitivities and Fourier encoding instead of the small loss here.
 t2_true = torch.tensor(87.0, device=device)
-measured = FSE().simulate(
+measured = EpgEngine().simulate(
     description,
     TissueProperties(t1_ms=1000.0, t2_ms=t2_true),
     nstates=12,
@@ -54,7 +53,7 @@ optimizer = torch.optim.LBFGS([raw_t2], max_iter=25, line_search_fn="strong_wolf
 def closure() -> torch.Tensor:
     optimizer.zero_grad(set_to_none=True)
     t2_ms = raw_t2.exp()
-    predicted = FSE().simulate(
+    predicted = EpgEngine().simulate(
         description,
         TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
         nstates=12,

@@ -14,7 +14,7 @@ import pytest
 import torch
 
 from torchsim.model import EpgModel
-from torchsim.sequence import FSE, fse_description
+from torchsim.sequence import EpgEngine, fse_description
 from torchsim.sequence import _simulation
 
 
@@ -22,7 +22,7 @@ class Relaxation(EpgModel):
     """T1 and T2 alone -- the narrowest a model can be."""
 
     properties = {"T1": "t1_ms", "T2": "t2_ms"}
-    simulator = FSE()
+    simulator = EpgEngine()
 
     def describe(self, *, flip, ESP, phases=0.0):
         """Return a refocused train at the flip angles given."""

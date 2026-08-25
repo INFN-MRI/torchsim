@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _pack_events,
@@ -52,7 +52,7 @@ def _description():
 
 def _signal(device="cpu", **properties):
     held = {"t1_ms": 1000.0, "t2_ms": 80.0, **properties}
-    return FSE().simulate(
+    return EpgEngine().simulate(
         _description(),
         TissueProperties(
             **{name: torch.tensor([value], device=device) for name, value in held.items()}
@@ -422,7 +422,7 @@ def test_forward_mode_leaves_the_two_pool_answers_untouched():
 
     def along(**extra):
         def run(value):
-            return FSE().simulate(
+            return EpgEngine().simulate(
                 _description(),
                 TissueProperties(
                     t1_ms=torch.tensor([1000.0]), t2_ms=value, **extra
@@ -447,7 +447,7 @@ def test_forward_mode_reaches_three_pools_through_the_public_api():
     fraction = torch.tensor([0.2])
 
     def run(value):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(
                 t1_ms=torch.tensor([1000.0]),
@@ -651,7 +651,7 @@ def test_the_adjoint_leaves_the_two_pool_answers_untouched():
     """
     def gradient(**extra):
         t2 = torch.tensor([80.0], requires_grad=True)
-        FSE().simulate(
+        EpgEngine().simulate(
             _description(),
             TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=t2, **extra),
             nstates=STATES,
@@ -674,7 +674,7 @@ def test_a_three_pool_gradient_reaches_the_public_api():
         name: torch.tensor([value], requires_grad=True)
         for name, value in dict(LIVE, t1_ms=1000.0, t2_ms=80.0).items()
     }
-    FSE().simulate(
+    EpgEngine().simulate(
         _description(), TissueProperties(**leaves), nstates=STATES
     ).signal.abs().square().sum().backward()
 
@@ -709,7 +709,7 @@ def test_the_cuda_gradient_matches_the_cpu_gradient():
             name: value.to(device).clone().requires_grad_(True)
             for name, value in spread.items()
         }
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(), TissueProperties(**leaves), nstates=STATES
         ).signal
         signal.abs().square().sum().backward()
@@ -758,7 +758,7 @@ def test_the_cuda_second_order_pass_matches_the_cpu_one():
             name: value.to(device).clone().requires_grad_(True)
             for name, value in spread.items()
         }
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             _description(), TissueProperties(**leaves), nstates=STATES
         ).signal
         loss = signal.abs().square().sum()
@@ -948,7 +948,7 @@ def test_the_cuda_kernel_matches_the_cpu_kernel():
     )
 
     def run(device):
-        return FSE().simulate(
+        return EpgEngine().simulate(
             _description(),
             TissueProperties(
                 **{name: value.to(device) for name, value in spread.items()}
@@ -1213,7 +1213,7 @@ def test_three_pools_take_the_first_order_kernel_on_the_card(
     forward-over-reverse pass on the same card: two arms of one wrong kernel
     agree with each other, and the backends share no code.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
     from torchsim.sequence._parameters import TISSUE_NAMES
 
@@ -1490,8 +1490,8 @@ def test_the_series_branch_gives_the_answer_the_roots_give(state_count) -> None:
     The gate cannot be measured against the host: that comparison moves for
     reasons of its own. What it has to be held to is the branch it replaces.
     """
-    from torchsim.sequence import _accelerators
-    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _epg_triton, EpgEngine
 
     voxels = 256
     tissue, _, _ = _prepare_tissue(

@@ -11,7 +11,7 @@ import numpy.typing as npt
 import torch
 
 from ..model import EpgModel
-from ..sequence import FSE, SequenceDescription, fse_description
+from ..sequence import SequenceDescription, fse_description
 
 
 class FSEModel(EpgModel):
@@ -32,7 +32,6 @@ class FSEModel(EpgModel):
     """
 
     properties = {"T1": "t1_ms", "T2": "t2_ms", "M0": None, "B1": "b1"}
-    simulator = FSE()
 
     def describe(
         self,

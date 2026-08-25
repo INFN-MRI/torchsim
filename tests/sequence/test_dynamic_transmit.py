@@ -911,7 +911,7 @@ def test_a_pair_survives_a_train_the_real_kernel_would_have_taken(monkeypatch):
     enough voxels is testing the machine. Forcing it to zero asks the question
     directly.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
 
     monkeypatch.setattr(
         _accelerators, "detection", lambda kind, device, state_count: 0.0
@@ -930,7 +930,7 @@ def test_the_lane_forward_leaves_a_pair_to_the_scalar_kernel(monkeypatch):
     """The lane kernel carries no rotation to read a pair into, so a run that
     would otherwise vectorize has to fall back rather than play a hard pulse.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
 
     monkeypatch.setenv("TORCHSIM_LANES", "1")
     prepared, events, pairs, output_count = _real_subspace_train(trains=4)
@@ -1158,7 +1158,7 @@ def test_a_split_pulse_records_the_train_its_sum_records():
     the per-voxel rotation, and the answer is the one the flip-and-phase route
     gives for the field the channels sum to.
     """
-    from torchsim.sequence import FSE, TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     split, plain = _split_across_two_channels(flips)
@@ -1172,12 +1172,12 @@ def test_a_split_pulse_records_the_train_its_sum_records():
         t2_ms=torch.linspace(50.0, 110.0, VOXELS),
     )
 
-    integrated = FSE().simulate(
+    integrated = EpgEngine().simulate(
         split,
         TissueProperties(**tissue, b1=magnitude, b1_phase_rad=phase),
         nstates=16,
     ).signal
-    turned = FSE().simulate(
+    turned = EpgEngine().simulate(
         plain,
         TissueProperties(
             **tissue, b1=combined.abs(), b1_phase_rad=combined.angle()
@@ -1214,7 +1214,7 @@ def test_a_split_pulse_leaves_the_transmit_phase_to_the_rotation():
 
 
 def _tissue_properties(magnitude, phase):
-    from torchsim.sequence import TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     return TissueProperties(
         t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
@@ -1241,7 +1241,7 @@ def test_a_single_channel_train_never_reaches_the_pair():
 def test_a_static_shim_beside_a_dynamic_pulse_is_refused():
     from dataclasses import replace
 
-    from torchsim.sequence import ShimDefinition
+    from torchsim.sequence import EpgEngine, ShimDefinition
     from torchsim.sequence._simulation import _dynamic_transmit
 
     split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
@@ -1269,8 +1269,8 @@ def test_the_dispatch_hands_the_kernels_a_pair_and_no_table(monkeypatch):
     """Agreement with the flip-and-phase route is only evidence about the pair
     if the pair is what ran.
     """
-    from torchsim.sequence import FSE
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import EpgEngine
+    from torchsim.sequence import _accelerators, EpgEngine
 
     split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
     magnitude, phase = _sensitivities()
@@ -1282,7 +1282,7 @@ def test_the_dispatch_hands_the_kernels_a_pair_and_no_table(monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(_accelerators, "_run_packed", record)
-    FSE().simulate(
+    EpgEngine().simulate(
         split, _tissue_properties(magnitude, phase), nstates=8
     )
 
@@ -1300,17 +1300,17 @@ def test_a_dynamic_pulse_is_integrated_across_the_slice():
     """Asking for positions spreads each voxel over them and averages the
     recorded signal, so a selective pulse records less than an ideal one.
     """
-    from torchsim.sequence import FSE, exact_slice_profile
+    from torchsim.sequence import EpgEngine, exact_slice_profile
 
     flips = torch.deg2rad(torch.full((ECHOES,), 150.0))
     split, _ = _split_across_two_channels(flips)
     magnitude, phase = _sensitivities()
     tissue = _tissue_properties(magnitude, phase)
 
-    centred = FSE().simulate(
+    centred = EpgEngine().simulate(
         split, tissue, nstates=8
     ).signal
-    across = FSE().simulate(
+    across = EpgEngine().simulate(
         split,
         tissue,
         nstates=8,
@@ -1330,7 +1330,7 @@ def test_a_relaxation_gradient_reaches_through_the_pair():
     around it, so a relaxation gradient is the one the flip-and-phase route
     returns for the same field.
     """
-    from torchsim.sequence import FSE, TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     split, plain = _split_across_two_channels(flips)
@@ -1340,7 +1340,7 @@ def test_a_relaxation_gradient_reaches_through_the_pair():
     def gradients(description, b1, b1_phase):
         t1 = torch.linspace(700.0, 1300.0, VOXELS).requires_grad_(True)
         t2 = torch.linspace(50.0, 110.0, VOXELS).requires_grad_(True)
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             description,
             TissueProperties(t1_ms=t1, t2_ms=t2, b1=b1, b1_phase_rad=b1_phase),
             nstates=16,
@@ -1361,7 +1361,7 @@ def test_the_flip_gradient_comes_back_through_the_pulse_integral():
     it has to be the gradient the flip-and-phase route gives for the field the
     channels sum to.
     """
-    from torchsim.sequence import FSE, TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     magnitude, phase = _sensitivities()
     combined = torch.polar(magnitude, phase).mean(dim=0)
@@ -1381,7 +1381,7 @@ def test_the_flip_gradient_comes_back_through_the_pulse_integral():
                 b1_phase_rad=combined.angle(),
             )
         )
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             split if splitting else plain, tissue, nstates=16
         ).signal
         return torch.autograd.grad(signal.abs().square().sum(), flips)[0]
@@ -1398,7 +1398,7 @@ def test_a_transmit_gradient_comes_back_through_the_pulse_integral(name: str):
     """Against central differences, because there is no second route to the
     per-channel maps: the pair is the only thing that reads them.
     """
-    from torchsim.sequence import FSE, TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     magnitude, phase = _sensitivities()
     split, _ = _split_across_two_channels(
@@ -1406,7 +1406,7 @@ def test_a_transmit_gradient_comes_back_through_the_pulse_integral(name: str):
     )
 
     def loss(b1, b1_phase):
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             split,
             TissueProperties(
                 t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
@@ -1443,7 +1443,7 @@ def test_a_forward_direction_follows_the_pair():
     brings a cotangent back from it, so a directional derivative through the
     per-channel maps is the one differencing the simulation gives.
     """
-    from torchsim.sequence import FSE, TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     magnitude, phase = _sensitivities()
     split, _ = _split_across_two_channels(
@@ -1451,7 +1451,7 @@ def test_a_forward_direction_follows_the_pair():
     )
 
     def loss(b1):
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             split,
             TissueProperties(
                 t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
@@ -1481,14 +1481,14 @@ def test_a_hessian_vector_product_reaches_through_the_pair():
     """The second derivative is the first one differenced, and the pair carries
     both halves: a direction along it going in, a curvature coming back.
     """
-    from torchsim.sequence import FSE, TissueProperties
+    from torchsim.sequence import EpgEngine, TissueProperties
 
     magnitude, phase = _sensitivities()
     nominal = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
 
     def loss(flips):
         split, _ = _split_across_two_channels(flips)
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             split,
             TissueProperties(
                 t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
@@ -1709,7 +1709,7 @@ class _Elsewhere:
 
 
 def _streamed(monkeypatch):
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
 
     monkeypatch.setattr(_accelerators, "_OFFLOAD", _Elsewhere())
 
@@ -1912,7 +1912,7 @@ def test_a_pair_takes_the_first_order_kernel_on_the_card(state_count):
     state count before, and the pair adds a per-event load and an atomic the
     others do not make.
     """
-    from torchsim.sequence import _accelerators
+    from torchsim.sequence import _accelerators, EpgEngine
     from torchsim.sequence._accelerators import _run_packed_vjp
     from torchsim.sequence._transition import DynamicPairs
 

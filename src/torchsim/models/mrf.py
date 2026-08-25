@@ -11,7 +11,7 @@ import numpy.typing as npt
 import torch
 
 from ..model import EpgModel
-from ..sequence import SSFPFID, SequenceDescription, mrf_description
+from ..sequence import SequenceDescription, mrf_description
 
 
 class MRFModel(EpgModel):
@@ -43,7 +43,6 @@ class MRFModel(EpgModel):
         "B1": "b1",
         "inv_efficiency": "inversion_efficiency",
     }
-    simulator = SSFPFID()
     states = 10
 
     def describe(

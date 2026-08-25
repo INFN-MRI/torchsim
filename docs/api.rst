@@ -116,21 +116,15 @@ Builders
    torchsim.mpnrage_description
    torchsim.mrf_description
 
-Interpreters
-~~~~~~~~~~~~
-Differentiable EPG interpreters driven by a sequence description.
+Engine
+~~~~~~
+The differentiable state machine a sequence description is run on.
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
-   torchsim.EpgSimulator
-   torchsim.FSE
-   torchsim.SPGR
-   torchsim.BSSFP
-   torchsim.SSFPFID
-   torchsim.SSFPEcho
-   torchsim.make_simulator
+   torchsim.EpgEngine
 
 Subspace
 ~~~~~~~~

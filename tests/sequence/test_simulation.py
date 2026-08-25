@@ -8,14 +8,12 @@ import pytest
 import torch
 
 from torchsim.sequence import (
-    FSE,
-    SPGR,
-    SSFPFID,
-    TissueProperties,
+    EpgEngine,
     fse_description,
     mrf_description,
     simulate_subspace,
     spgr_description,
+    TissueProperties,
 )
 
 
@@ -26,7 +24,7 @@ def test_fse_simulates_many_atoms_in_one_state_machine() -> None:
         t2_ms=torch.tensor([50.0, 80.0, 120.0]),
     )
 
-    result = FSE().simulate(description, tissue)
+    result = EpgEngine().simulate(description, tissue)
 
     assert result.signal.shape == (3, 4)
     assert result.time_us.shape == (4,)
@@ -37,7 +35,7 @@ def test_state_machine_supports_forward_mode_for_tissue() -> None:
     description = fse_description(torch.deg2rad(torch.full((3,), 140.0)), 5e-3)
 
     def signal(t2: torch.Tensor) -> torch.Tensor:
-        result = FSE().simulate(
+        result = EpgEngine().simulate(
             description,
             TissueProperties(t1_ms=1000.0, t2_ms=t2),
         )
@@ -53,7 +51,7 @@ def test_state_machine_supports_forward_mode_for_tissue() -> None:
 def test_state_machine_supports_reverse_mode_for_flip_train() -> None:
     flip = torch.deg2rad(torch.full((3,), 150.0)).requires_grad_()
 
-    result = FSE().simulate(
+    result = EpgEngine().simulate(
         fse_description(flip, 5e-3),
         TissueProperties(t1_ms=1000.0, t2_ms=80.0),
     )
@@ -65,11 +63,11 @@ def test_state_machine_supports_reverse_mode_for_flip_train() -> None:
 
 def test_mrf_and_spgr_policies_have_expected_shapes() -> None:
     tissue = TissueProperties(t1_ms=torch.tensor([700.0, 1200.0]), t2_ms=80.0)
-    mrf = SSFPFID().simulate(
+    mrf = EpgEngine().simulate(
         mrf_description(torch.deg2rad(torch.tensor([5.0, 10.0, 15.0])), 8e-3),
         tissue,
     )
-    spgr = SPGR().simulate(
+    spgr = EpgEngine().simulate(
         spgr_description(torch.deg2rad(torch.tensor([5.0, 10.0])), 8e-3, 3e-3),
         tissue,
     )
@@ -85,7 +83,7 @@ def test_subspace_basis_uses_time_as_leading_dimension() -> None:
         t2_ms=torch.linspace(30.0, 180.0, 8),
     )
 
-    result = simulate_subspace(description, "fse", tissue, rank=3)
+    result = simulate_subspace(description, tissue, rank=3)
 
     assert result.dictionary.shape == (8, 6)
     assert result.basis.shape == (6, 3)
@@ -157,7 +155,7 @@ def test_forward_mode_matches_differencing_for_tissue_and_flip(device: str) -> N
 
     def simulate(t2_ms: torch.Tensor, flip_rad: torch.Tensor) -> torch.Tensor:
         description = fse_description(flip_rad, 5e-3, phases_rad=torch.pi / 2)
-        return FSE().simulate(
+        return EpgEngine().simulate(
             description,
             TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
             nstates=10,
@@ -202,7 +200,7 @@ def test_native_reverse_over_forward_supports_sequence_design(device: str) -> No
     description = fse_description(flip, 5e-3, phases_rad=torch.pi / 2)
 
     def signal(t2_ms: torch.Tensor) -> torch.Tensor:
-        return FSE().simulate(
+        return EpgEngine().simulate(
             description,
             TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
             nstates=10,
@@ -260,7 +258,7 @@ def _oracle(description, tissue, device: str, state_count: int = 10):
 def _case(name: str, device: str):
     flip = torch.deg2rad(torch.tensor([15.0, 60.0, 120.0], device=device))
     if name == "fse":
-        return FSE(), fse_description(flip, 5e-3, phases_rad=torch.pi / 2)
+        return EpgEngine(), fse_description(flip, 5e-3, phases_rad=torch.pi / 2)
     if name == "ssfp-fid":
-        return SSFPFID(), mrf_description(flip, 8e-3, inversion_time_s=20e-3)
-    return SPGR(), spgr_description(flip, 8e-3, 3e-3)
+        return EpgEngine(), mrf_description(flip, 8e-3, inversion_time_s=20e-3)
+    return EpgEngine(), spgr_description(flip, 8e-3, 3e-3)

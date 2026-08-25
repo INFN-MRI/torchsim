@@ -3,16 +3,10 @@
 from __future__ import annotations
 
 __all__ = [
-    "BSSFP",
-    "FSE",
-    "SPGR",
-    "SSFPFID",
-    "EpgSimulator",
-    "SSFPEcho",
+    "EpgEngine",
     "SimulationResult",
     "SubspaceBasis",
     "TissueProperties",
-    "make_simulator",
     "simulate_subspace",
 ]
 
@@ -165,16 +159,15 @@ class SubspaceBasis:
     simulation: SimulationResult
 
 
-class EpgSimulator:
+class EpgEngine:
     """Run a sequence description on the fused EPG kernels.
 
-    A policy is a name and the state matrix its sequence needs; everything it
-    plays around an event is on the events themselves, which is what lets a
-    description nobody shipped a policy for run exactly as well as one that
-    was.
+    What a sequence plays around an event is on the events themselves, so
+    every description runs here -- one written by hand, one a builder emitted,
+    one that arrived from a scanner. Which pulses and gradients those events
+    stand for is settled before a description exists; see
+    :mod:`torchsim.sequence._operators`.
     """
-
-    name = "base"
 
     def shifts_per_repetition(self, description: SequenceDescription) -> int:
         """How far the sequence winds the states on in one repetition.
@@ -272,55 +265,8 @@ class EpgSimulator:
         return SimulationResult(*accelerated)
 
 
-class FSE(EpgSimulator):
-    """Fast spin echo: a refocusing pulse between its crushers."""
-
-    name = "fse"
-
-
-class SPGR(EpgSimulator):
-    """Spoiled GRE: ideal transverse spoiling after every readout."""
-
-    name = "spgr"
-
-
-class SSFPFID(EpgSimulator):
-    """Unbalanced SSFP-FID: one crusher after every readout."""
-
-    name = "ssfp-fid"
-
-
-class SSFPEcho(EpgSimulator):
-    """SSFP-Echo: one dephasing crusher before every readout."""
-
-    name = "ssfp-echo"
-
-
-class BSSFP(EpgSimulator):
-    """Balanced SSFP: no crushers and no ideal spoiling."""
-
-    name = "bssfp"
-
-
-def make_simulator(name: str) -> EpgSimulator:
-    """Construct a built-in sequence policy by name."""
-    normalized = name.lower().replace("_", "-")
-    policies = {
-        "fse": FSE,
-        "spgr": SPGR,
-        "ssfp-fid": SSFPFID,
-        "ssfp-echo": SSFPEcho,
-        "bssfp": BSSFP,
-    }
-    try:
-        return policies[normalized]()
-    except KeyError as error:
-        raise ValueError(f"unknown EPG simulator {name!r}") from error
-
-
 def simulate_subspace(
     description: SequenceDescription,
-    simulator: EpgSimulator | str,
     tissue: TissueProperties,
     *,
     rank: int,
@@ -334,9 +280,7 @@ def simulate_subspace(
     """Simulate a dictionary and return its leading temporal basis."""
     if rank < 1:
         raise ValueError("rank must be positive")
-    if isinstance(simulator, str):
-        simulator = make_simulator(simulator)
-    result = simulator.simulate(
+    result = EpgEngine().simulate(
         description,
         tissue,
         repetitions=repetitions,

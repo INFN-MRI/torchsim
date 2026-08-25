@@ -11,7 +11,7 @@ import dataclasses
 
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence import _accelerators
 from torchsim.sequence._accelerators import _pack_events
 from torchsim.sequence._parameters import (
@@ -142,7 +142,7 @@ def test_autograd_asks_for_exactly_the_differentiable_inputs():
     _accelerators._wanted = record
     try:
         t2 = torch.tensor([45.0, 120.0], requires_grad=True)
-        signal = FSE().simulate(
+        signal = EpgEngine().simulate(
             fse_description(
                 torch.deg2rad(torch.full((4,), 140.0)),
                 echo_spacing_s=5e-3,

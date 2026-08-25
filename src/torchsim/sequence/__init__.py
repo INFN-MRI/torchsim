@@ -14,12 +14,7 @@ __all__ = [
     "SequenceDescription",
     "SequenceEvent",
     "ShimDefinition",
-    "BSSFP",
-    "FSE",
-    "SPGR",
-    "SSFPFID",
-    "EpgSimulator",
-    "SSFPEcho",
+    "EpgEngine",
     "SimulationResult",
     "SubspaceBasis",
     "TissueProperties",
@@ -37,7 +32,6 @@ __all__ = [
     "fse_description",
     "ideal_rf_definition",
     "inversion",
-    "make_simulator",
     "module",
     "operator",
     "operator_names",
@@ -100,15 +94,9 @@ from ._description import (
 )
 from ._transition import ExactSliceProfile, exact_slice_profile
 from ._simulation import (
-    BSSFP,
-    FSE,
-    SPGR,
-    SSFPEcho,
-    SSFPFID,
-    EpgSimulator,
+    EpgEngine,
     SimulationResult,
     SubspaceBasis,
     TissueProperties,
-    make_simulator,
     simulate_subspace,
 )

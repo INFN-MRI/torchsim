@@ -11,7 +11,7 @@ import numpy.typing as npt
 import torch
 
 from ..model import EpgModel
-from ..sequence import SPGR, SequenceDescription, mpnrage_description
+from ..sequence import SequenceDescription, mpnrage_description
 
 
 class MPnRAGEModel(EpgModel):
@@ -39,7 +39,6 @@ class MPnRAGEModel(EpgModel):
     # The train samples at the pulse and spoils after it, so no transverse
     # magnetization survives an interval and no T2 is asked for.
     fixed = {"t2_ms": 100.0}
-    simulator = SPGR()
     states = 1
 
     def describe(

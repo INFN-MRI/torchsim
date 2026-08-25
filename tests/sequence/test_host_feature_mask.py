@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import FSE, TissueProperties, fse_description
+from torchsim import EpgEngine, fse_description, TissueProperties
 from torchsim.sequence import _accelerators
 from torchsim.sequence._parameters import (
     FEATURE_BITS,
@@ -105,7 +105,7 @@ def _run(monkeypatch, extra, crusher_rad, mask, gradients):
             (("t1_ms", (600.0, 1800.0)), ("t2_ms", (30.0, 150.0))), start=10
         )
     }
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(crusher_rad),
         TissueProperties(**leaves, **extra),
         nstates=STATES,
@@ -170,7 +170,7 @@ def _signal(monkeypatch, mask, extra, crusher_rad):
     monkeypatch.setattr(
         _accelerators, "feature_mask", lambda features, geometry: mask
     )
-    signal = FSE().simulate(
+    signal = EpgEngine().simulate(
         _description(crusher_rad),
         TissueProperties(
             t1_ms=torch.full((4,), 1000.0),
@@ -217,13 +217,13 @@ def test_an_inversion_the_tissue_never_declared_is_left_out(monkeypatch) -> None
     """The one term a refocused train cannot exercise: it drives no inversion,
     so the gate is held against a sequence that does.
     """
-    from torchsim.sequence import SPGR, mprage_description
+    from torchsim.sequence import EpgEngine, mprage_description
 
     def signal(mask, efficiency):
         monkeypatch.setattr(
             _accelerators, "feature_mask", lambda features, geometry: mask
         )
-        out = SPGR().simulate(
+        out = EpgEngine().simulate(
             mprage_description(2, 4, torch.deg2rad(torch.tensor(12.0)), 5e-3, 20e-3),
             TissueProperties(
                 t1_ms=torch.full((4,), 1000.0),
