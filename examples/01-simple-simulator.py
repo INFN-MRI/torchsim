@@ -1,16 +1,16 @@
 """
-================
-Custom Simulator
-================
+======================
+Writing a signal model
+======================
 
-This example shows how to use TorchSim to implement a simulator.
+A signal model says two things: which tissue properties it exposes, and what
+sequence it plays. Everything else -- which kernel runs, how the work is cut
+across memory and devices, how derivatives are taken -- follows from those two
+and is not yours to write.
 
-
-First, we want to implement the simulation engine.
-Parallelization and automatic differentiation are abstracted
-away from the user, which can focus on implementing single-voxel
-simulation.
-    
+This example builds an inversion-prepared SSFP fingerprinting model from
+scratch, differentiates it with respect to tissue, and then differentiates a
+cost with respect to the sequence.
 """
 
 # %%
@@ -23,253 +23,204 @@ simulation.
 #
 # We begin with the necessary imports:
 #
-import warnings
-
-warnings.filterwarnings("ignore")
-
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from torchsim import base
-from torchsim import epg
+from torchsim.model import EpgModel
+from torchsim.sequence import (
+    SSFPFID,
+    EventAction,
+    SequenceDescription,
+    compose,
+    excitation,
+    ideal_rf_definition,
+    inversion,
+    readout,
+)
 
 # %%
+# Describing the sequence
+# -----------------------
+# A description is a stream of events at absolute times. You do not write those
+# times: you lay out *operators* -- a pulse, a readout, a delay, a whole
+# preparation -- and :func:`~torchsim.sequence.compose` turns the span each one
+# holds into the timestamps the stream carries.
 #
-# Defining the model
-# ------------------
+# Our sequence is an inversion, then one excitation and one sample per
+# repetition, with the states wound on by an unbalanced gradient afterwards.
+# ``EventAction.SHIFT_AFTER`` on the readout is what says so.
+
+
+def ssfp_train(flip_rad, repetition_s, inversion_s):
+    """Lay out one inversion-prepared unbalanced SSFP train."""
+    modules = [inversion(duration_s=inversion_s)]
+    for index in range(flip_rad.numel()):
+        modules.append(excitation(flip_rad[index]))
+        modules.append(
+            readout(
+                action=EventAction.SHIFT_AFTER,
+                duration_s=repetition_s,
+            )
+        )
+    return compose(*modules)
+
+
+# %%
+# Declaring the model
+# -------------------
+# ``properties`` maps the name a caller uses to the tissue field it fills, so
+# the model keeps the vocabulary your protocol is written in while the engine
+# keeps its own.
 #
-# The model can be derived by ``base.AbstractModel`` as:
+# It is also the whole of how you ask for physics. A field you do not name is
+# never handed to the tissue, and the kernels leave its term out -- so a T1/T2
+# model pays for no off-resonance turn, no diffusion attenuation and no flow
+# winding. Name ``b0_hz`` and the off-resonance term comes back.
+#
+# ``describe`` receives the sequence arguments in the units a user quotes them
+# in -- milliseconds, degrees -- and converts them, because that conversion is
+# part of the sequence rather than of the engine.
 
 
-class SSFPMRFModel(base.AbstractModel):
-    """Class to simulate inversion-prepared (variable flip angle) SSFP."""
+class SSFPMRFModel(EpgModel):
+    """Inversion-prepared unbalanced SSFP with a variable flip-angle schedule."""
 
-    @base.autocast
-    def set_properties(self, T1, T2):
-        self.properties.T1 = T1
-        self.properties.T2 = T2
+    properties = {"T1": "t1_ms", "T2": "t2_ms"}
+    simulator = SSFPFID()
+    states = 10
 
-    @base.autocast
-    def set_sequence(self, flip, TR):
-        self.sequence.flip = torch.pi * flip / 180.0
-        self.sequence.TR = TR * 1e-3  # ms -> s
-
-    @staticmethod
-    def _engine(T1, T2, flip, TR):
-        # Prepare relaxation parameters
-        R1, R2 = 1e3 / T1, 1e3 / T2
-
-        # Prepare EPG states matrix
-        states = epg.states_matrix(
-            device=R1.device,
-            nstates=10,
+    def describe(self, *, flip, TR, TI=0.0):
+        """Return the train, in the seconds and radians a description carries."""
+        events, duration_s = ssfp_train(
+            torch.pi / 180.0 * torch.as_tensor(flip),
+            torch.as_tensor(TR) * 1e-3,
+            torch.as_tensor(TI) * 1e-3,
+        )
+        return SequenceDescription(
+            subsequence_index=0,
+            tr_duration_us=1e6 * duration_s,
+            events=events,
+            rf_definitions={0: ideal_rf_definition()},
         )
 
-        # Prepare relaxation operator for sequence loop
-        E1, rE1 = epg.longitudinal_relaxation_op(R1, TR)
-        E2 = epg.transverse_relaxation_op(R2, TR)
-
-        # Get number of shots
-        nshots = len(flip)
-
-        # Initialize signal
-        signal = []
-
-        # Apply inversion
-        states = epg.adiabatic_inversion(states)
-
-        # Scan loop
-        for p in range(nshots):
-            RF = epg.rf_pulse_op(flip[p])
-
-            # Apply RF pulse
-            states = epg.rf_pulse(states, RF)
-
-            # Record signal
-            signal.append(epg.get_signal(states))
-
-            # Evolve
-            states = epg.longitudinal_relaxation(states, E1, rE1)
-            states = epg.transverse_relaxation(states, E2)
-            states = epg.shift(states)
-
-        return torch.stack(signal)
-
 
 # %%
-# With this definition, the simulator can be used as follows.
-#
-# Instantiating the simulator
-# ---------------------------
-# The simulator is derived from base class.
-# Base constructor accept the following parameters:
-#
-# 1. ``diff``: this is either a string or a tuple of strings containing the name of the parameter we want to calculate the derivatives (e.g., ``"T1"`` or ``("T1", "T2")``).
-#    If not provided, simulator only computes the forward pass.
-#
-# 2. ``chunk_size``: computation is vectorized in batches of size ``chunk_size``. The larger, the
-#    faster the computation is, but at expense of increased memory usage. At the moment, it must
-#    be tuned manually by the user. If not provided, attempt to process the whole batch.
-#
-# 3. ``device``: computational device of choice. If not provided, it is inferred from inputs (more later).
-#
-model = SSFPMRFModel(diff=("T1", "T2"))  # we use the defaults here
-
-# %%
-# Setting object properties
-# -------------------------
-# The ``set_properties`` method must contain all the object-dependent parameters (T1, T2, B1, ...), which are
-# automatically broadcasted.
-#
-#
-# Here, we provide ``T1``, ``T2``, ``M0``. These can be either scalar or array-valued quantities (e.g., for a whole parameter map).
-# Input will be automatically converted to ``torch.Tensor`` and moved to the same device as the first argument (``T1``) thanks to ``base.autocast`` decorator.
-#
-# In this method, the arguments must be assigned to the ``properties`` attribute (``self.properties``).
-#
-model.set_properties(T1=1000.0, T2=100.0)
-
-# %%
-# Setting sequence properties
-# ---------------------------
-# The ``set_sequence`` method must contain all the sequence-depenent parameters, which are
-# shared amongst all the simulated atoms.
-#
-# Here, we provide the flip angle schedule and the sequence TR.
-# Input will be automatically converted to ``torch.Tensor`` and moved to the same device as the first argument (``flip``) thanks to ``base.autocast`` decorator.
-#
-# Other preprocessing such as unit conversions (e.g., ``deg to rad``) must be performed manually by the user in this function.
-# After preprocessing, the arguments must be assigned to the ``sequence`` attribute (``self.sequence``).
+# Running it
+# ----------
+# Property and sequence arguments are given together and told apart by
+# ``properties``. A scalar property is one voxel; an array is a map, and every
+# voxel runs at once.
 #
 flip = np.concatenate(
-    (np.linspace(5.0, 60.0, 350), np.linspace(60.0, 1.0, 350), 1.0 * np.ones(180))
+    (np.linspace(5.0, 60.0, 350), np.linspace(60.0, 1.0, 350), np.ones(180))
 )
-model.set_sequence(flip=flip, TR=10.0)
 
-# %%
-# Notes on simulation engine
-# --------------------------
-#
-# After defining ``set_properties`` and ``set_sequence`` The user should implement the actual simulator
-# by overriding the ``_engine`` method. This must be decorated as a ``static_method`` and contain each and exclusively the
-# parameters defined in ``set_properties`` and ``set_sequence`` signature.
-#
-# For consistent derivative scaling, all unit conversions must be performed in the body of this function.
-#
-# The user should implement the simulation as it were acting on a single atom (e.g., a single combination of ``properties`` parameters).
-# The base class will ensure that all ``properties`` are broadcasted and computation vectorized over batches of size ``chunk_size``.
-#
-# By contrast, ``sequence`` parameters will not be broadcasted, and are shared amongst all the atoms.
-#
-# Running the simulation
-# ----------------------
-# After object instantiation and definition of object and sequence parameters, simulation can be executed by
-# using the magic ``__call__`` method:
-#
-signal, derivatives = model()
+model = SSFPMRFModel()
+signal = model.simulate(T1=1000.0, T2=100.0, flip=flip, TR=10.0, TI=20.0)
 
-# %%
-#
-# When using this method, all the parameters are automatically moved to the device specified
-# at object construction or, if this is not provided, to the same device as the first
-# argument of ``set_properties`` method (here, ``T1``).
-#
-# Advanced Usage
-# --------------
-#
-# As an alternative, forward and jacobian callables can be extracted, e.g., to be used with external
-# packages for parameter fitting, model based reconstruction or sequence optimization.
-#
-# This can be achieved as
-#
-forw_fn = model.forward(compile=False)  # compile=True is still experimental
-jac_fn = model.jacobian(compile=False)
-
-# %%
-# These functions capture all ``sequence`` parameters, and have the same signature
-# as ``set_properties``, i.e., they accept object parameters as inputs:
-#
-signal = forw_fn(T1=1000.0, T2=100.0)
-derivatives = jac_fn(T1=1000.0, T2=100.0)
-
-# %%
-# Here, we use autodifferentiation to compute the jacobian function.
-# As an alternative, user can specify a manual jacobain function by overriding
-# the ``_jacobian_engine`` method. Similarly to the ``_engine`` method,
-# this must be a ``staticmethod`` and contain each and exclusively the
-# parameters defined in ``set_properties`` and ``set_sequence`` signature.
-#
-# Functional Wrappers
-# -------------------
-# We can wrap the Model class in a function, for user convenience:
-
-
-def mrf_sim(flip, TR, T1, T2, diff=None, device="cpu"):
-    """
-    Simulate an inversion-prepared SSFP sequence with variable flip angles.
-
-    Parameters
-    ----------
-    flip : array-like
-        Flip angle in [deg] of shape (npulses,).
-    TR: float
-        Repetition time in [ms].
-    T1 : float | array-like
-        Longitudinal relaxation time in [ms].
-    T2 : float | array-like
-        Transverse relaxation time in [ms].
-    diff : str | tuple[str], optional:
-        Arguments to get the signal derivative with respect to.
-        Defaults to None (no differentation).
-    device : str, optional Computational device.
-        Defaults to "cpu".
-
-    Returns
-    -------
-    signal : torch.Tensor
-        Simulated signal
-    jac : torch.Tensor
-        Partial derivative(s) of simulated signal. Returned
-        only if ``diff`` is not None.
-
-    """
-    # initialize simulator
-    model = SSFPMRFModel(diff=diff, device=device)
-    model.set_properties(T1, T2)
-    model.set_sequence(flip, TR)
-    return model()
-
-
-# %%
-#
-# That's it!
-# The simulator can be used on single voxel, to quickly predict signal evolution:
-#
-import numpy as np
-import matplotlib.pyplot as plt
-
-sig = mrf_sim(flip, 10.0, 1000.0, 100.0)
-
-plt.plot(abs(sig))
+plt.figure()
+plt.plot(abs(signal))
 plt.xlabel("TR index")
 plt.ylabel("signal magnitude [a.u.]")
 
 # %%
+# The same call over a parameter map returns one row per voxel:
 #
-# As mentioned, parallelization with automatic broadcasting is supported...
-#
-sig = mrf_sim(flip, 10.0, [1000.0, 500.0], 100.0)
+signals = model.simulate(
+    T1=torch.tensor([500.0, 1000.0, 1500.0]),
+    T2=torch.tensor([50.0, 100.0, 150.0]),
+    flip=flip,
+    TR=10.0,
+    TI=20.0,
+)
 
-plt.plot(abs(sig.T))
+plt.figure()
+plt.plot(abs(signals.T))
 plt.xlabel("TR index")
 plt.ylabel("signal magnitude [a.u.]")
 
 # %%
+# Derivatives with respect to tissue: forward mode
+# ------------------------------------------------
+# A Bloch simulation records far more samples than it takes parameters, so a
+# derivative with respect to tissue is cheapest taken forwards: one directional
+# derivative per property yields every voxel's derivative at once, and the cost
+# is one pass per property rather than per voxel.
 #
-# ...as well as automatic differentiation controlled by ``diff`` argument:
+# That is what :meth:`~torchsim.model.SignalModel.jacobian` does. A single name
+# collapses the parameter axis; a sequence of names keeps it.
 #
-sig, jac = mrf_sim(flip, 10.0, 1000.0, 100.0, diff=("T1", "T2"))
+signal, jacobian = model.jacobian(
+    ("T1", "T2"), T1=1000.0, T2=100.0, flip=flip, TR=10.0, TI=20.0
+)
 
-plt.plot(abs(jac.T))
+plt.figure()
+plt.plot(abs(jacobian.T))
 plt.xlabel("TR index")
 plt.ylabel("signal jacobian [a.u.]")
+
+# %%
+# Derivatives with respect to the sequence: reverse mode
+# ------------------------------------------------------
+# The acquisition optimization problem runs the other way: one scalar cost,
+# many sequence parameters. That is reverse mode, and it is deliberately not
+# wrapped -- build a cost on the signal and call ``backward()``. The engine
+# reads which of its inputs carry a gradient and picks its kernel from that, so
+# a layer here would only hide the choice.
+#
+schedule = torch.tensor(flip, dtype=torch.float32, requires_grad=True)
+recorded = model.simulate(T1=1000.0, T2=100.0, flip=schedule, TR=10.0, TI=20.0)
+loss = -recorded.abs().square().sum()
+loss.backward()
+
+plt.figure()
+plt.plot(schedule.grad)
+plt.xlabel("TR index")
+plt.ylabel("d(loss) / d(flip) [1/deg]")
+
+# %%
+# Asking for more physics
+# -----------------------
+# Off-resonance is one line: name the tissue field, and the kernels start
+# carrying the turn it puts on the states.
+#
+
+
+class OffResonantMRFModel(SSFPMRFModel):
+    """The same train, with an off-resonance map."""
+
+    properties = {"T1": "t1_ms", "T2": "t2_ms", "B0": "b0_hz"}
+
+
+detuned = OffResonantMRFModel().simulate(
+    T1=1000.0, T2=100.0, B0=torch.tensor([0.0, 30.0, 60.0]), flip=flip, TR=10.0, TI=20.0
+)
+
+plt.figure()
+plt.plot(abs(detuned.T))
+plt.xlabel("TR index")
+plt.ylabel("signal magnitude [a.u.]")
+
+# %%
+# Note that ``B0`` is a *map* here. Had it been left at its scalar default the
+# model would have declared it and still paid nothing: a property at the value
+# where it has no effect is reported as absent, and its term stays out of the
+# kernel.
+#
+# A functional wrapper
+# --------------------
+# The shipped models come with one, and yours can too:
+
+
+def ssfp_mrf_sim(flip, TR, T1, T2, TI=0.0, diff=None):
+    """Simulate an inversion-prepared SSFP train, and differentiate it."""
+    model = SSFPMRFModel()
+    values = {"flip": flip, "TR": TR, "T1": T1, "T2": T2, "TI": TI}
+    if diff is None:
+        return model.simulate(**values)
+    return model.jacobian(diff, **values)
+
+
+signal, jacobian = ssfp_mrf_sim(flip, 10.0, 1000.0, 100.0, diff=("T1", "T2"))
+print(signal.shape, jacobian.shape)

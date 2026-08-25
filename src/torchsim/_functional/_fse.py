@@ -6,6 +6,7 @@ import numpy.typing as npt
 import torch
 
 from ..models.fse import FSEModel
+from ._run import evaluated
 
 
 def fse_sim(
@@ -21,9 +22,8 @@ def fse_sim(
     B1: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
     nstates: int = 10,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     Fast Spin Echo simulator wrapper.
 
@@ -64,9 +64,6 @@ def fse_sim(
     nstates : int, optional
         Number of EPG states to be retained.
         The default is ``10``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -81,7 +78,19 @@ def fse_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = FSEModel(diff, chunk_size, device)
-    model.set_properties(T1, T2, M0, B1)
-    model.set_sequence(flip, ESP, phases, TR, exc_flip, exc_phase, nstates)
-    return model()
+    return evaluated(
+        FSEModel(),
+        diff,
+        device,
+        T1=T1,
+        T2=T2,
+        M0=M0,
+        B1=B1,
+        flip=flip,
+        ESP=ESP,
+        phases=phases,
+        TR=TR,
+        exc_flip=exc_flip,
+        exc_phase=exc_phase,
+        nstates=nstates,
+    )

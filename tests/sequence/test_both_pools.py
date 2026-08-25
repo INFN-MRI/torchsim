@@ -185,7 +185,7 @@ def test_the_semisolid_pool_slows_the_transverse_exchange():
     Taken against the package's own operator, given the free fraction the
     three-pool system actually leaves.
     """
-    from torchsim.base.config.relax_model import build_two_pool_exchange_matrix
+    from utils.exchange import build_two_pool_exchange_matrix
     from utils.epg import transverse_relaxation_exchange_op
 
     delay = 6e-3

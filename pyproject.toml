@@ -129,6 +129,9 @@ ignore = [
 "src/torchsim/sequence/_epg_triton.py" = ["ANN"]
 "src/torchsim/sequence/_operators.py" = ["ANN401"]
 "src/torchsim/model/_signal.py" = ["ANN401"]
+"src/torchsim/model/_epg.py" = ["ANN401"]
+"src/torchsim/_functional/_run.py" = ["ANN401"]
+"src/torchsim/models/*.py" = ["ANN401"]
 "src/torchsim/sequence/_simulation.py" = ["ANN401"]
 
 [tool.ruff.lint.pydocstyle]

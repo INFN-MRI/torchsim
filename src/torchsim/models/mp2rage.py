@@ -1,35 +1,24 @@
-"""MP2RAGE sub-routines."""
+"""MP2RAGE model."""
+
+from __future__ import annotations
 
 __all__ = ["MP2RAGEModel"]
 
-from ..base import AbstractModel
-from ..base import autocast
+from collections.abc import Mapping
+from typing import Any
 
 import numpy.typing as npt
 import torch
 
+from ..model import SignalModel
 
-class MP2RAGEModel(AbstractModel):
-    """
-    Magnetization Prepared (2) RApid Gradient Echo (MPnRAGE) Model.
 
-    This class models Magnetization Prepared RApid Gradient Echo with 2 volumes per segment
-    (MP2RAGE) signals based on tissue properties, pulse sequence parameters,
-    and experimental conditions. It uses Extended Phase Graph (EPG) formalism
-    to compute the magnetization evolution over time.
+class MP2RAGEModel(SignalModel):
+    """Two gradient-echo blocks read at two inversion times, in closed form.
 
-    Assume that signal is sampled at center of k-space only.
-
-    Methods
-    -------
-    set_properties(T1, M0=1.0, inv_efficiency=1.0):
-        Sets tissue relaxation properties and experimental conditions.
-
-    set_sequence(nshots, flip, TR, TI=0.0):
-        Configures the pulse sequence parameters for the simulation.
-
-    _engine(T1, TI, flip, TRspgr, TRmp2rage, nshots, M0=1.0, inv_efficiency=1.0):
-        Computes the MP2RAGE signal for given tissue properties and sequence parameters.
+    The train is spoiled and sampled at the k-space centre of each block, so
+    only the longitudinal magnetization carries between shots and the steady
+    state it settles into has a closed form.
 
     Examples
     --------
@@ -38,146 +27,136 @@ class MP2RAGEModel(AbstractModel):
         from torchsim.models import MP2RAGEModel
 
         model = MP2RAGEModel()
-        model.set_properties(T1=(200, 1000), inv_efficiency=0.95)
-        model.set_sequence(TI=(500.0, 1500.0), flip=5.0, TRspgr=5.0, TRmp2rage=3000.0, nshots=128)
-        signal = model()
+        signal = model.simulate(
+            T1=(200.0, 1000.0),
+            inv_efficiency=0.95,
+            TI=(500.0, 1500.0),
+            flip=5.0,
+            TRspgr=5.0,
+            TRmp2rage=3000.0,
+            nshots=128,
+        )
 
     """
 
-    @autocast
-    def set_properties(
+    properties = ("T1", "M0", "inv_efficiency")
+
+    def evaluate(
         self,
-        T1: float | npt.ArrayLike,
-        M0: float | npt.ArrayLike = 1.0,
-        inv_efficiency: float | npt.ArrayLike = 1.0,
-    ):
-        """
-        Set tissue and system-specific properties for the MRF model.
+        properties: Mapping[str, Any],
+        *,
+        TI: npt.ArrayLike,
+        flip: float | npt.ArrayLike,
+        TRspgr: float | npt.ArrayLike,
+        TRmp2rage: float | npt.ArrayLike,
+        nshots: int | npt.ArrayLike,
+    ) -> torch.Tensor:
+        """Return the two sampled magnetizations, along a trailing axis.
 
         Parameters
         ----------
-        T1 : float | npt.ArrayLike
-            Longitudinal relaxation time in milliseconds.
-        M0 : float or array-like, optional
-            Proton density scaling factor, default is ``1.0``.
-        inv_efficiency : float | npt.ArrayLike, optional
-            Inversion efficiency map, default is ``1.0``.
-
+        properties:
+            ``T1`` in milliseconds, ``M0`` as a scaling, and the inversion
+            efficiency.
+        TI:
+            The two inversion times in milliseconds, measured to the sampled
+            shot of each block.
+        flip:
+            Excitation flip angle in degrees, one per block or one shared.
+        TRspgr:
+            Repetition time in milliseconds of one readout.
+        TRmp2rage:
+            Repetition time in milliseconds of the whole inversion block.
+        nshots:
+            Readouts per block, either the total -- halved for each block --
+            or ``(before, after)`` the sampled shot.
         """
-        self.properties.T1 = T1
-        self.properties.M0 = M0
-        self.properties.inv_efficiency = inv_efficiency
+        radians = torch.pi / 180.0
+        angle = _shared_or_two(radians * torch.as_tensor(flip))
+        before, after = _shots_either_side(nshots)
+        inversion_s = torch.as_tensor(TI).flatten() * 1e-3
+        readout_s = torch.as_tensor(TRspgr) * 1e-3
+        block_s = torch.as_tensor(TRmp2rage) * 1e-3
 
-    @autocast
-    def set_sequence(
-        self,
-        TI: npt.ArrayLike,
-        flip: float | npt.ArrayLike,
-        TRspgr: float,
-        TRmp2rage: float,
-        nshots: int | npt.ArrayLike,
-    ):
-        """
-        Set sequence parameters for the SPGR model.
+        efficiency = properties.get("inv_efficiency", 1.0)
+        rate = 1e3 / properties["T1"]
 
-        Parameters
-        ----------
-        TI : npt.ArrayLike
-            Inversion time (s) in milliseconds of shape ``(2,)``.
-        flip : float | npt.ArrayLike
-            Flip angle train in degrees of shape ``(2,)``.
-            If scalar, assume same angle for both blocks.
-        TRspgr : float
-            Repetition time in milliseconds for each SPGR readout.
-        TRmp2rage : float
-            Repetition time in milliseconds for the whole inversion block.
-        nshots : int | npt.ArrayLike
-            Number of SPGR readout within the inversion block of shape ``(npre, npost)``
-            If scalar, assume ``npre == npost == 0.5 * nshots``. Usually, this
-            is the number of slice encoding lines ``(nshots = nz / Rz)``,
-            i.e., the number of slices divided by the total acceleration factor along ``z``.
+        # The three waits the magnetization recovers through freely: before the
+        # first block, between the two, and after the second.
+        waits = (
+            inversion_s[0] - before * readout_s,
+            inversion_s[1] - inversion_s[0] - (after + before) * readout_s,
+            block_s - inversion_s[1] - after * readout_s,
+        )
+        held = [torch.exp(-rate * wait) for wait in waits]
+        shot = torch.exp(-rate * readout_s)
+        turn = torch.cos(angle)
+        shots = before + after
 
-        """
-        self.sequence.nshots = nshots
-        self.sequence.TI = TI * 1e-3  # ms -> s
-        if flip.numel() == 1:
-            flip = torch.repeat_interleave(flip, 2)
-        self.sequence.flip = torch.pi * flip / 180.0
-        self.sequence.TRspgr = TRspgr * 1e-3  # ms -> s
-        self.sequence.TRmp2rage = TRmp2rage * 1e-3  # ms -> s
-        if nshots.numel() == 1:
-            nshots = torch.repeat_interleave(nshots // 2, 2)
-        self.sequence.nshots = nshots
-
-    @staticmethod
-    def _engine(
-        T1: float | npt.ArrayLike,
-        TI: npt.ArrayLike,
-        flip: float | npt.ArrayLike,
-        TRspgr: float,
-        TRmp2rage: float,
-        nshots: int | npt.ArrayLike,
-        M0: float | npt.ArrayLike = 1.0,
-        inv_efficiency: float | npt.ArrayLike = 1.0,
-    ):
-        R1 = 1e3 / T1
-
-        # Calculate number of shots before and after DC sampling
-        nshots_bef = nshots[0]
-        nshots_aft = nshots[1]
-        nslices = torch.sum(nshots)
-
-        time_bef = nshots_bef * TRspgr
-        time_aft = nshots_aft * TRspgr
-
-        # calculate timing
-        TD = []
-        TD.append(TI[0] - time_bef)
-        TD.append(TI[1] - TI[0] - (time_aft + time_bef))
-        TD.append(TRmp2rage - TI[1] - time_aft)
-
-        # Calculate longitudinal relaxation operators
-        E1 = torch.exp(-R1 * TRspgr)  # within SPGR shot relaxation
-        ETD = [torch.exp(-R1 * time) for time in TD]  # between SPGR blocks relaxation
-
-        # Compute RF rotation
-        ca = torch.cos(flip)
-        sa = torch.sin(flip)
-
-        # compute steady state longitudinal magnetization
-        MZsteadystate = 1 / (
+        # The steady state one whole block leaves behind, which is what the
+        # inversion of the next block acts on.
+        settled = (1 - held[0]) * _through_shots(1.0, turn[0], shot, shots)
+        settled = settled * held[1] + (1 - held[1])
+        settled = settled * _through_shots(1.0, turn[1], shot, shots)
+        settled = settled * held[2] + (1 - held[2])
+        settled = settled / (
             1
-            + inv_efficiency * (ETD[0] * ETD[1] * ETD[2] * (ca * E1).prod() ** nslices)
+            + efficiency
+            * held[0]
+            * held[1]
+            * held[2]
+            * (turn[0] * shot * turn[1] * shot) ** shots
         )
-        MZsteadystatenumerator = 1 - ETD[0]
-        MZsteadystatenumerator *= (ca[0] * E1) ** nslices + (1 - E1) * (
-            1 - (ca[0] * E1) ** nslices
-        ) / (1 - ca[0] * E1)
-        MZsteadystatenumerator = MZsteadystatenumerator * ETD[1] + (1 - ETD[1])
-        MZsteadystatenumerator *= (ca[1] * E1) ** nslices + (1 - E1) * (
-            1 - (ca[1] * E1) ** nslices
-        ) / (1 - ca[1] * E1)
-        MZsteadystatenumerator = MZsteadystatenumerator * ETD[2] + (1 - ETD[2])
-        MZsteadystate = MZsteadystate * MZsteadystatenumerator
 
-        # Initialize signal
-        signal = []
-
-        # Compute signal for first volume
-        temp = (-inv_efficiency * MZsteadystate * ETD[0] + (1 - ETD[0])) * (
-            ca[0] * E1
-        ) ** (nshots_bef) + (1 - E1) * (1 - (ca[0] * E1) ** (nshots_bef)) / (
-            1 - (ca[0] * E1)
+        # The first block reads what the inversion left, driven down over the
+        # readouts before its centre.
+        driven = _through_shots(
+            -efficiency * settled * held[0] + (1 - held[0]), turn[0], shot, before
         )
-        signal.append(sa[0] * temp)
+        first = torch.sin(angle[0]) * driven
 
-        # signal for second volume
-        temp *= (ca[1] * E1) ** (nshots_aft) + (1 - E1) * (
-            1 - (ca[1] * E1) ** (nshots_aft)
-        ) / (1 - (ca[1] * E1))
-        temp = (temp * ETD[1] + (1 - ETD[1])) * (ca[1] * E1) ** (nshots_bef) + (
-            1 - E1
-        ) * (1 - (ca[1] * E1) ** (nshots_bef)) / (1 - (ca[1] * E1))
-        signal.append(sa[1] * temp)
+        # The second reads what the rest of the first block, the wait between
+        # them and its own leading readouts leave.
+        driven = driven * _through_shots(1.0, turn[1], shot, after)
+        driven = _through_shots(
+            driven * held[1] + (1 - held[1]), turn[1], shot, before
+        )
+        second = torch.sin(angle[1]) * driven
 
-        return M0 * torch.stack(signal)
+        # Both blocks carry the voxel shape and the signal is (..., voxel,
+        # block), so one trailing axis lines the density up with them.
+        density = properties.get("M0", 1.0)
+        if torch.is_tensor(density):
+            density = density[..., None]
+        return density * torch.stack((first, second), dim=-1)
+
+
+# %% private module subroutines
+
+
+def _through_shots(
+    held: Any, turn: torch.Tensor, shot: torch.Tensor, count: Any
+) -> torch.Tensor:
+    """Return what ``count`` spoiled readouts leave of what they find.
+
+    Each readout tips the longitudinal magnetization down by ``turn`` and lets
+    it recover by ``shot``, which drives whatever it started from towards a
+    steady state of its own.
+    """
+    survives = (turn * shot) ** count
+    return held * survives + (1 - shot) * (1 - survives) / (1 - turn * shot)
+
+
+def _shared_or_two(value: torch.Tensor) -> torch.Tensor:
+    """Return one value per block, sharing a single one between the two."""
+    flat = value.flatten()
+    return flat.repeat(2) if flat.numel() == 1 else flat
+
+
+def _shots_either_side(nshots: int | npt.ArrayLike) -> tuple[Any, Any]:
+    """Split the readouts into those before and after the sampled one."""
+    counts = torch.as_tensor(nshots).flatten()
+    if counts.numel() == 1:
+        half = counts[0] // 2
+        return half, half
+    return counts[0], counts[1]

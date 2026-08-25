@@ -4,33 +4,18 @@ from __future__ import annotations
 
 __all__ = ["MPRAGEModel"]
 
+from collections.abc import Mapping
+from typing import Any
+
 import numpy.typing as npt
 import torch
 
-from ..base import AbstractModel, autocast
-from ..sequence import SPGR, TissueProperties, mprage_description
+from ..model import EpgModel
+from ..sequence import SPGR, SequenceDescription, mprage_description
 
 
-class MPRAGEModel(AbstractModel):
-    """
-    Magnetization Prepared RApid Gradient Echo (MPnRAGE) Model.
-
-    This class models Magnetization Prepared RApid Gradient Echo (MPRAGE) signals
-    based on tissue properties, pulse sequence parameters, and experimental conditions.
-    It uses Extended Phase Graph (EPG) formalism to compute the magnetization evolution over time.
-
-    Assume that signal is sampled at center of k-space only.
-
-    Methods
-    -------
-    set_properties(T1, M0=1.0, inv_efficiency=1.0):
-        Sets tissue relaxation properties and experimental conditions.
-
-    set_sequence(nshots, flip, TR, TI=0.0):
-        Configures the pulse sequence parameters for the simulation.
-
-    _engine(T1, TI, flip, TRspgr, nshots, M0=1.0, inv_efficiency=1.0):
-        Computes the MPRAGE signal for given tissue properties and sequence parameters.
+class MPRAGEModel(EpgModel):
+    """An inversion followed by a spoiled train, sampled at the k-space centre.
 
     Examples
     --------
@@ -39,114 +24,89 @@ class MPRAGEModel(AbstractModel):
         from torchsim.models import MPRAGEModel
 
         model = MPRAGEModel()
-        model.set_properties(T1=(200, 1000), inv_efficiency=0.95)
-        model.set_sequence(TI=500.0, flip=5.0, TRspgr=5.0, nshots=128)
-        signal = model()
+        signal = model.simulate(
+            T1=(200.0, 1000.0),
+            inv_efficiency=0.95,
+            TI=500.0,
+            flip=5.0,
+            TRspgr=5.0,
+            nshots=128,
+        )
 
     """
 
-    vectorized_engine = True
+    properties = {"T1": "t1_ms", "M0": "m0", "inv_efficiency": "inversion_efficiency"}
+    # The train samples at the pulse and spoils after it, so no transverse
+    # magnetization survives an interval and no T2 is asked for.
+    fixed = {"t2_ms": 100.0}
+    simulator = SPGR()
+    states = 1
+    record = "acquired"
 
-    @autocast
-    def set_properties(
+    def describe(
         self,
-        T1: float | npt.ArrayLike,
-        M0: float | npt.ArrayLike = 1.0,
-        inv_efficiency: float | npt.ArrayLike = 1.0,
-    ) -> None:
-        """
-        Set tissue and system-specific properties for the MRF model.
-
-        Parameters
-        ----------
-        T1 : float | npt.ArrayLike
-            Longitudinal relaxation time in milliseconds.
-        M0 : float or array-like, optional
-            Proton density scaling factor, default is ``1.0``.
-        inv_efficiency : float | npt.ArrayLike, optional
-            Inversion efficiency map, default is ``1.0``.
-
-        """
-        self.properties.T1 = T1
-        self.properties.M0 = M0
-        self.properties.inv_efficiency = inv_efficiency
-
-    @autocast
-    def set_sequence(
-        self,
-        TI: float,
-        flip: float,
-        TRspgr: float,
-        nshots: int | npt.ArrayLike,
-    ) -> None:
-        """
-        Set sequence parameters for the SPGR model.
-
-        Parameters
-        ----------
-        TI : float
-            Inversion time in milliseconds of shape ``(2,)``.
-        flip : float | npt.ArrayLike
-            Flip angle train in degrees.
-        TRspgr : float
-            Repetition time in milliseconds for each SPGR readout.
-        TRmprage : float
-            Repetition time in milliseconds for the whole inversion block.
-        nshots : int | npt.ArrayLike
-            Number of SPGR readout within the inversion block of shape ``(npre, npost)``
-            If scalar, assume ``npre == npost == 0.5 * nshots``. Usually, this
-            is the number of slice encoding lines ``(nshots = nz / Rz)``,
-            i.e., the number of slices divided by the total acceleration factor along ``z``.
-
-        """
-        self.sequence.TI = TI * 1e-3  # ms -> s
-        self.sequence.flip = torch.pi * flip / 180.0
-        self.sequence.TRspgr = TRspgr * 1e-3  # ms -> s
-        nshots = nshots.flatten()
-        if nshots.numel() == 1:
-            shot_count = int(nshots.item())
-            if shot_count < 1:
-                raise ValueError("nshots must be positive")
-            nshots_before = shot_count // 2
-            nshots_after = shot_count - nshots_before - 1
-        elif nshots.numel() == 2:
-            nshots_before, nshots_after = (int(value.item()) for value in nshots)
-            if nshots_before < 0 or nshots_after < 0:
-                raise ValueError("nshots entries must be nonnegative")
-        else:
-            raise ValueError("nshots must be scalar or (before, after)")
-        if bool(self.sequence.TI < nshots_before * self.sequence.TRspgr):
-            raise ValueError("TI must not precede the first MPRAGE excitation")
-        self.sequence.nshots_before = nshots_before
-        self.sequence.nshots_after = nshots_after
-
-    @staticmethod
-    def _engine(
-        T1: float | npt.ArrayLike,
-        TI: npt.ArrayLike,
+        *,
+        TI: float | npt.ArrayLike,
         flip: float | npt.ArrayLike,
-        TRspgr: float,
-        nshots_before: int,
-        nshots_after: int,
-        M0: float | npt.ArrayLike = 1.0,
-        inv_efficiency: float | npt.ArrayLike = 1.0,
-    ) -> torch.Tensor:
-        description = mprage_description(
-            nshots_before,
-            nshots_after,
-            flip,
-            TRspgr,
-            TI,
+        TRspgr: float | npt.ArrayLike,
+        nshots: int | npt.ArrayLike,
+    ) -> SequenceDescription:
+        """Return the prepared train, in the units a description carries.
+
+        Parameters
+        ----------
+        TI:
+            Inversion time in milliseconds, measured to the sampled shot.
+        flip:
+            Excitation flip angle in degrees, scalar or one per shot.
+        TRspgr:
+            Repetition time in milliseconds of one readout.
+        nshots:
+            Readouts in the inversion block, either the total -- split as
+            evenly as an odd centre allows -- or ``(before, after)`` the shot
+            that samples the k-space centre.
+
+        Raises
+        ------
+        ValueError
+            If the inversion time falls before the train's first excitation.
+        """
+        before, after = _shots_either_side(nshots)
+        radians = torch.pi / 180.0
+        inversion_s = torch.as_tensor(TI) * 1e-3
+        readout_s = torch.as_tensor(TRspgr) * 1e-3
+        if bool(inversion_s < before * readout_s):
+            raise ValueError("TI must not precede the first MPRAGE excitation")
+        return mprage_description(
+            before,
+            after,
+            radians * torch.as_tensor(flip),
+            readout_s,
+            inversion_s,
         )
-        signal = SPGR().simulate(
-            description,
-            TissueProperties(
-                T1,
-                T1,
-                m0=M0,
-                inversion_efficiency=inv_efficiency,
-            ),
-            record="acquired",
-            nstates=1,
-        ).signal
-        return 1j * signal[..., 0]
+
+    def evaluate(
+        self, properties: Mapping[str, Any], **sequence: Any
+    ) -> torch.Tensor:
+        """Return the one sample the train acquires."""
+        return 1j * super().evaluate(properties, **sequence)[..., 0]
+
+
+# %% private module subroutines
+
+
+def _shots_either_side(nshots: int | npt.ArrayLike) -> tuple[int, int]:
+    """Split the readouts into those before and after the sampled one."""
+    counts = torch.as_tensor(nshots).flatten()
+    if counts.numel() == 1:
+        total = int(counts.item())
+        if total < 1:
+            raise ValueError("nshots must be positive")
+        before = total // 2
+        return before, total - before - 1
+    if counts.numel() == 2:
+        before, after = (int(value.item()) for value in counts)
+        if before < 0 or after < 0:
+            raise ValueError("nshots entries must be nonnegative")
+        return before, after
+    raise ValueError("nshots must be scalar or (before, after)")

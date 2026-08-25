@@ -89,7 +89,7 @@ def _handmade():
     it reaches the kernels anyway.
     """
     from torchsim.sequence import EventAction
-    from torchsim.sequence._builders import _unit_flip_definition
+    from torchsim.sequence import ideal_rf_definition
     from torchsim.sequence._description import (
         AdcRole,
         SequenceDescription,
@@ -116,7 +116,7 @@ def _handmade():
         subsequence_index=0,
         tr_duration_us=5e3 * (ECHOES + 1),
         events=tuple(events),
-        rf_definitions={0: _unit_flip_definition()},
+        rf_definitions={0: ideal_rf_definition()},
     )
 
 

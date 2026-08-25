@@ -2,8 +2,8 @@
 
 __all__ = []
 
-from . import base  # noqa
 from . import estimators  # noqa
+from . import model  # noqa
 from . import models  # noqa
 from . import optim  # noqa
 from . import sequence  # noqa

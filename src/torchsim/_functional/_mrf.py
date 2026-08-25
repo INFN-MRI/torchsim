@@ -6,6 +6,7 @@ import numpy.typing as npt
 import torch
 
 from ..models.mrf import MRFModel
+from ._run import evaluated
 
 
 def mrf_sim(
@@ -20,9 +21,8 @@ def mrf_sim(
     TI: float = 0.0,
     nstates: int = 10,
     nreps: int = 1,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     SSFP MR Fingerprinting simulator wrapper.
 
@@ -54,9 +54,6 @@ def mrf_sim(
     nreps : int, optional
         Number of simulation repetitions.
         The default is ``1``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -71,7 +68,18 @@ def mrf_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = MRFModel(diff, chunk_size, device)
-    model.set_properties(T1, T2, M0, B1, inv_efficiency)
-    model.set_sequence(flip, TR, TI, nstates, nreps)
-    return model()
+    return evaluated(
+        MRFModel(),
+        diff,
+        device,
+        T1=T1,
+        T2=T2,
+        M0=M0,
+        B1=B1,
+        inv_efficiency=inv_efficiency,
+        flip=flip,
+        TR=TR,
+        TI=TI,
+        nstates=nstates,
+        repetitions=nreps,
+    )

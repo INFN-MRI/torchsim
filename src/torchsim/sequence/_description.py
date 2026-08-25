@@ -14,6 +14,7 @@ __all__ = [
     "SequenceEvent",
     "ShimDefinition",
     "decompress_shape",
+    "ideal_rf_definition",
 ]
 
 from dataclasses import dataclass, field
@@ -585,3 +586,34 @@ def decompress_shape(
         )
     return (np.cumsum(delta, dtype=np.float32) * scale).astype(np.float32)
 
+
+
+def ideal_rf_definition(definition_id: int = 0) -> RfDefinition:
+    """Return the definition of a pulse that turns instantly and selects nothing.
+
+    Its envelope integrates to exactly ``1 / (2 pi)`` seconds, so an event
+    amplitude expressed in radians comes back unchanged as the flip that event
+    turns. It declares no bandwidth, which is what keeps a sequence built from
+    it on the instant operator rather than on a tabulated rotation.
+
+    Parameters
+    ----------
+    definition_id:
+        The identifier events name this pulse by.
+
+    Returns
+    -------
+    RfDefinition
+        The ideal hard pulse.
+    """
+    duration_us = 1e6 / (2.0 * np.pi)
+    return RfDefinition(
+        id=definition_id,
+        bandwidth_hz=0.0,
+        num_bands=1,
+        band_frequency_offsets_hz=(0.0,),
+        band_bandwidth_hz=0.0,
+        total_b1sq_power=0.0,
+        magnitude=RfShape(2, np.ones(2, dtype=np.float32)),
+        time=RfShape(2, np.asarray([0.0, duration_us], dtype=np.float32)),
+    )

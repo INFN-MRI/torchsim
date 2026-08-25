@@ -26,12 +26,10 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-from functools import partial
 
 import numpy as np
 import torch
 
-from torch.func import jacrev
 
 import matplotlib.pyplot as plt
 import time
@@ -80,7 +78,9 @@ def calculate_crlb(grad, W=None, weight=1.0):
 # For optimization, we need the gradient of this cost
 # wrt sequence parameters.
 #
-# This can be obtained as:
+# The cost is one number and the schedule is many, which is what reverse mode
+# is for: build the cost on the signal and ask autograd for its gradient. The
+# simulator reads which of its inputs carry one and picks its kernel from that.
 #
 
 
@@ -94,14 +94,13 @@ def _crlb_cost(ESP, T1, T2, flip):
 
 
 def crlb_cost(flip, ESP, T1, T2):
-    flip = torch.as_tensor(flip, dtype=torch.float32)
+    flip = torch.as_tensor(flip, dtype=torch.float32).clone()
     flip.requires_grad = True
 
-    # get partial function
-    _cost = partial(_crlb_cost, ESP, T1, T2)
-    _dcost = jacrev(_cost)
+    cost = _crlb_cost(ESP, T1, T2, flip)
+    (dcost,) = torch.autograd.grad(cost, flip)
 
-    return _cost(flip).detach().cpu().numpy(), _dcost(flip).detach().cpu().numpy()
+    return cost.detach().cpu().numpy(), dcost.detach().cpu().numpy()
 
 
 # %%

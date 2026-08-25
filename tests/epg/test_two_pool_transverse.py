@@ -32,7 +32,7 @@ import pytest
 import torch
 
 from utils import epg
-from torchsim.base.config.relax_model import build_two_pool_exchange_matrix
+from utils.exchange import build_two_pool_exchange_matrix
 
 DOUBLE = torch.complex128
 REAL = torch.float64

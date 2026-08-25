@@ -6,6 +6,7 @@ import numpy.typing as npt
 import torch
 
 from ..models.mpnrage import MPnRAGEModel
+from ._run import evaluated
 
 
 def mpnrage_sim(
@@ -18,9 +19,8 @@ def mpnrage_sim(
     inv_efficiency: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
     TI: float = 0.0,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     MPnRAGE simulator wrapper.
 
@@ -46,9 +46,6 @@ def mpnrage_sim(
     TI : float | npt.ArrayLike, optional
         Inversion time in milliseconds.
         The default is ``0.0``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -63,7 +60,16 @@ def mpnrage_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = MPnRAGEModel(diff, chunk_size, device)
-    model.set_properties(T1, M0, B1, inv_efficiency)
-    model.set_sequence(nshots, flip, TR, TI)
-    return model()
+    return evaluated(
+        MPnRAGEModel(),
+        diff,
+        device,
+        T1=T1,
+        M0=M0,
+        B1=B1,
+        inv_efficiency=inv_efficiency,
+        nshots=nshots,
+        flip=flip,
+        TR=TR,
+        TI=TI,
+    )

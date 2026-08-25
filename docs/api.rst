@@ -1,29 +1,16 @@
 API References
 ==============
 
-Base
-----
-Base classes and routines for MR simulator implementation.
+Signal model authoring
+----------------------
+Base classes for writing a signal model of your own.
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
-   torchsim.base.AbstractModel
-   torchsim.base.autocast
-   
-Parameter configuration
-~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autosummary::
-   :toctree: generated
-   :nosignatures:
-   
-   torchsim.base.prepare_environmental_parameters
-   torchsim.base.prepare_single_pool
-   torchsim.base.prepare_two_pool_bm
-   torchsim.base.prepare_two_pool_mt
-   torchsim.base.prepare_three_pool
+   torchsim.model.SignalModel
+   torchsim.model.EpgModel
 
 Signal Models
 -------------
@@ -92,6 +79,29 @@ the estimators, and the sequence optimizer.
    torchsim.SequenceEvent
    torchsim.TissueProperties
    torchsim.SimulationResult
+
+Operators
+~~~~~~~~~
+The modules a description is assembled from, and the registry that reaches one
+by name.
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.Operator
+   torchsim.compose
+   torchsim.module
+   torchsim.excitation
+   torchsim.refocusing
+   torchsim.inversion
+   torchsim.saturation
+   torchsim.readout
+   torchsim.delay
+   torchsim.ideal_rf_definition
+   torchsim.register_operator
+   torchsim.operator
+   torchsim.operator_names
 
 Builders
 ~~~~~~~~

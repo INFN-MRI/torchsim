@@ -13,12 +13,12 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim.model import SignalModel
+from torchsim.model import EpgModel
 from torchsim.sequence import FSE, fse_description
 from torchsim.sequence import _simulation
 
 
-class Relaxation(SignalModel):
+class Relaxation(EpgModel):
     """T1 and T2 alone -- the narrowest a model can be."""
 
     properties = {"T1": "t1_ms", "T2": "t2_ms"}

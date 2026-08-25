@@ -1,7 +1,8 @@
 """The Jacobian shape contract must not drift.
 
-A vectorized engine takes a forward-mode shortcut instead of ``vmap``; both
-routes have to expose exactly the same shapes to callers.
+One directional derivative per differentiated property covers every voxel, so
+what a caller sees is a parameter axis that a single name collapses and a
+sequence of names keeps.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import pytest
 import torch
 
 import torchsim
-from torchsim.base import AbstractModel, autocast
+from torchsim.model import SignalModel
 
 FLIP = np.ones(7) * 120.0
 ECHOES = 7
@@ -58,28 +59,23 @@ def test_signal_matches_undifferentiated_call() -> None:
     assert torch.equal(signal, plain)
 
 
-class _SingleVoxelModel(AbstractModel):
-    """A model written the ergonomic way: one voxel, no batching awareness."""
+class _DecayModel(SignalModel):
+    """The smallest model there is: one property, one closed form."""
 
-    @autocast
-    def set_properties(self, decay):
-        self.properties.decay = decay
+    properties = ("decay",)
 
-    @autocast
-    def set_sequence(self, times):
-        self.sequence.times = times
-
-    @staticmethod
-    def _engine(decay, times):
-        return torch.exp(-times / decay)
+    def evaluate(self, properties, *, times):
+        return torch.exp(-times / properties["decay"][..., None])
 
 
-def test_single_voxel_engine_still_supported() -> None:
-    """The vmap route stays available for engines that are not vectorized."""
-    model = _SingleVoxelModel(diff="decay")
-    model.set_properties(decay=torch.tensor([50.0, 100.0, 200.0]))
-    model.set_sequence(times=torch.linspace(0.0, 100.0, ECHOES))
-    signal, jacobian = model()
+def test_a_model_of_ones_own_gets_the_same_contract() -> None:
+    """Nothing in the contract is particular to the shipped models."""
+    model = _DecayModel()
+    signal, jacobian = model.jacobian(
+        "decay",
+        decay=torch.tensor([50.0, 100.0, 200.0]),
+        times=torch.linspace(0.0, 100.0, ECHOES),
+    )
 
     assert signal.shape == (3, ECHOES)
     assert jacobian.shape == (3, ECHOES)

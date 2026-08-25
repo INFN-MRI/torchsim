@@ -196,7 +196,7 @@ def test_the_transverse_step_reproduces_the_package_operator():
     single-pool run -- whose transverse state is the elementary ``exp(-t R2)``
     -- and applied to the two-pool prediction.
     """
-    from torchsim.base.config.relax_model import build_two_pool_exchange_matrix
+    from utils.exchange import build_two_pool_exchange_matrix
     from utils.epg import transverse_relaxation_exchange_op
 
     t2_ms, t2_b_ms = 80.0, 20.0

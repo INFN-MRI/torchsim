@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Added
+
+- **`torchsim.model`**, with `SignalModel` and `EpgModel`. A model declares
+  which properties it exposes and how it turns them into a signal; which
+  kernel runs, how the work is cut across memory and devices, and how
+  derivatives are taken belong below it. `EpgModel` adds a `describe` that
+  returns the sequence to run, and a `properties` mapping from the name a
+  caller uses to the tissue field it fills -- so declaring `b0_hz` or a second
+  pool is what asks the kernels to carry that physics.
+
+- **`torchsim.sequence` operators.** `Operator`, `compose`, `module` and the
+  factories `excitation`, `refocusing`, `inversion`, `saturation`, `readout`
+  and `delay`, with a name registry (`register_operator`, `operator`,
+  `operator_names`). A preparation, a readout or a shaped pulse is written by
+  composing these and reaches the fused kernels with no change to them. The
+  five shipped builders are written over them.
+
+- **`torchsim.sequence.ideal_rf_definition`**, the hard-pulse RF definition a
+  description built by hand needs.
+
+### Changed
+
+- **Models are called rather than configured.** `set_properties` /
+  `set_sequence` / `__call__` are replaced by `simulate(**values)` and
+  `jacobian(diff, **values)`, which take the property and sequence arguments
+  together and tell them apart by what the model declares. The seven
+  `*_sim` wrappers keep their signatures.
+
+- **A model's signal keeps one dtype.** The old layer dropped a vanishing
+  imaginary part, so the same quantity came back real from one call and
+  complex from another depending on its value. It is now whatever the model
+  computes, every time.
+
+- **Only a differentiated property is broadcast to the voxel count.** A
+  property left at its scalar default reaches the kernels as a scalar and its
+  term is left out, which is what the feature gates are read from. Widening
+  every declared property ahead of the simulation reported defaults as live
+  maps and compiled the ungated kernel.
+
 ### Removed
 
 - **`torchsim.epg`.** The package held the state-machine operators the
@@ -31,3 +70,13 @@
 - **`slice_prof` on `FSEModel`, `MRFModel`, `MPnRAGEModel`** and their
   functional wrappers, for the same reason. Give the RF definition its
   waveform instead.
+
+- **`torchsim.base`**, with `AbstractModel`, `autocast`, and the
+  `prepare_single_pool` / `prepare_two_pool_bm` / `prepare_two_pool_mt` /
+  `prepare_three_pool` / `prepare_environmental_parameters` helpers. Write a
+  model over `torchsim.model.SignalModel` or `EpgModel` instead; a tissue is
+  built by naming the fields a model exposes.
+
+- **`chunk_size` on the seven `*_sim` wrappers.** It selected a `torch.vmap`
+  batch size on a route no model takes any more. Memory is `offload()` and
+  devices are `distribute()`, both context managers around the call.

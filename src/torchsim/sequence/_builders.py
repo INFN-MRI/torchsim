@@ -12,15 +12,13 @@ __all__ = [
 
 from typing import Any
 
-import numpy as np
 import torch
 
 from ._description import (
     EventAction,
     AdcRole,
-    RfDefinition,
-    RfShape,
     SequenceDescription,
+    ideal_rf_definition,
 )
 from ._operators import compose, excitation, inversion, module, readout, refocusing
 
@@ -76,7 +74,7 @@ def fse_description(
         subsequence_index=0,
         tr_duration_us=1e6 * duration,
         events=events,
-        rf_definitions={0: _unit_flip_definition()},
+        rf_definitions={0: ideal_rf_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
     )
@@ -122,7 +120,7 @@ def mrf_description(
         subsequence_index=0,
         tr_duration_us=1e6 * current_s,
         events=events,
-        rf_definitions={0: _unit_flip_definition()},
+        rf_definitions={0: ideal_rf_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
     )
@@ -227,29 +225,13 @@ def spgr_description(
         subsequence_index=0,
         tr_duration_us=1e6 * current_s,
         events=events,
-        rf_definitions={0: _unit_flip_definition()},
+        rf_definitions={0: ideal_rf_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
     )
 
 
 # %% private module subroutines
-
-
-def _unit_flip_definition() -> RfDefinition:
-    # The envelope integral is exactly 1 / (2*pi) seconds. Consequently an
-    # event amplitude expressed in radians is returned unchanged as its flip.
-    duration_us = 1e6 / (2.0 * np.pi)
-    return RfDefinition(
-        id=0,
-        bandwidth_hz=0.0,
-        num_bands=1,
-        band_frequency_offsets_hz=(0.0,),
-        band_bandwidth_hz=0.0,
-        total_b1sq_power=0.0,
-        magnitude=RfShape(2, np.ones(2, dtype=np.float32)),
-        time=RfShape(2, np.asarray([0.0, duration_us], dtype=np.float32)),
-    )
 
 
 def _inversion_prepared_gre_description(
@@ -282,7 +264,7 @@ def _inversion_prepared_gre_description(
         subsequence_index=0,
         tr_duration_us=1e6 * current_s,
         events=events,
-        rf_definitions={0: _unit_flip_definition()},
+        rf_definitions={0: ideal_rf_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
     )
