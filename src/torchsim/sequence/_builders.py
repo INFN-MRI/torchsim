@@ -20,10 +20,9 @@ from ._description import (
     AdcRole,
     RfDefinition,
     RfShape,
-    RfUse,
     SequenceDescription,
-    SequenceEvent,
 )
+from ._operators import compose, excitation, inversion, module, readout, refocusing
 
 
 def fse_description(
@@ -51,43 +50,32 @@ def fse_description(
     if phases.shape[-1] != flip.shape[-1]:
         raise ValueError("refocusing phases must be scalar or match flip angles")
 
-    events = [
-        SequenceEvent.rf(
-            0.0,
-            0,
-            RfUse.EXCITATION,
-            excitation_flip_rad,
-            excitation_phase_rad,
-        )
-    ]
     echo_train_length = flip.shape[-1]
+    # An FSE train times itself from each echo rather than by accumulating, so
+    # the modules are placed at the times it computes.
+    modules = [(0.0, excitation(excitation_flip_rad, excitation_phase_rad))]
     for index in range(echo_train_length):
         echo_time_s = (index + 1) * echo_spacing_s
-        events.append(
-            SequenceEvent.rf(
-                1e6 * (echo_time_s - 0.5 * echo_spacing_s),
-                0,
-                RfUse.REFOCUSING,
-                flip[..., index],
-                phases[..., index],
-                action=EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER,
+        modules.append(
+            (
+                echo_time_s - 0.5 * echo_spacing_s,
+                refocusing(flip[..., index], phases[..., index]),
             )
         )
-        events.append(
-            SequenceEvent.adc(
-                1e6 * echo_time_s,
-                AdcRole.ECHO_CENTER,
-                phases[..., index],
-                is_echo=True,
+        modules.append(
+            (
+                echo_time_s,
+                readout(phases[..., index], role=AdcRole.ECHO_CENTER),
             )
         )
+    events, _ = compose(*modules)
 
     train_duration = echo_train_length * echo_spacing_s
     duration = train_duration if repetition_time_s is None else repetition_time_s
     return SequenceDescription(
         subsequence_index=0,
         tr_duration_us=1e6 * duration,
-        events=tuple(events),
+        events=events,
         rf_definitions={0: _unit_flip_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
@@ -118,33 +106,22 @@ def mrf_description(
     if repetition_time.shape != flip.shape or phases.shape != flip.shape:
         raise ValueError("TR and phase must be scalar or match flip angles")
 
-    events = [SequenceEvent.rf(0.0, 0, RfUse.INVERSION, torch.pi, 0.0)]
-    current_s = inversion_time_s
+    modules = [inversion(duration_s=inversion_time_s)]
     for index in range(flip.numel()):
-        events.append(
-            SequenceEvent.rf(
-                1e6 * current_s,
-                0,
-                RfUse.EXCITATION,
-                flip[index],
+        modules.append(excitation(flip[index], phases[index]))
+        modules.append(
+            readout(
                 phases[index],
-            )
-        )
-        events.append(
-            SequenceEvent.adc(
-                1e6 * current_s,
-                AdcRole.SINGLE,
-                phases[index],
-                is_echo=True,
                 action=EventAction.SHIFT_AFTER,
+                duration_s=repetition_time[index],
             )
         )
-        current_s = current_s + repetition_time[index]
+    events, current_s = compose(*modules)
 
     return SequenceDescription(
         subsequence_index=0,
         tr_duration_us=1e6 * current_s,
-        events=tuple(events),
+        events=events,
         rf_definitions={0: _unit_flip_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
@@ -230,32 +207,26 @@ def spgr_description(
     if torch.any(echo_time < 0) or torch.any(echo_time > repetition_time):
         raise ValueError("SPGR requires 0 <= TE <= TR")
 
-    events = []
-    current_s = torch.zeros((), device=flip.device, dtype=flip.dtype)
-    for index in range(flip.numel()):
-        events.append(
-            SequenceEvent.rf(
-                1e6 * current_s,
-                0,
-                RfUse.EXCITATION,
-                flip[index],
-                phases[index],
-            )
+    # The sample sits a TE into a repetition that runs from the pulse, so a
+    # shot is one module with the readout offset inside it.
+    shots = [
+        module(
+            excitation(flip[index], phases[index]),
+            (
+                echo_time[index],
+                readout(phases[index], action=EventAction.SPOIL_AFTER),
+            ),
+            duration_s=repetition_time[index],
         )
-        events.append(
-            SequenceEvent.adc(
-                1e6 * (current_s + echo_time[index]),
-                AdcRole.SINGLE,
-                phases[index],
-                is_echo=True,
-                action=EventAction.SPOIL_AFTER,
-            )
-        )
-        current_s = current_s + repetition_time[index]
+        for index in range(flip.numel())
+    ]
+    events, current_s = compose(
+        *shots, start_s=torch.zeros((), device=flip.device, dtype=flip.dtype)
+    )
     return SequenceDescription(
         subsequence_index=0,
         tr_duration_us=1e6 * current_s,
-        events=tuple(events),
+        events=events,
         rf_definitions={0: _unit_flip_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
@@ -293,33 +264,24 @@ def _inversion_prepared_gre_description(
 ) -> SequenceDescription:
     repetition_time = _expand_like(repetition_time_s, flip, "TR")
     phases = _expand_like(phases_rad, flip, "phase")
-    events = [SequenceEvent.rf(0.0, 0, RfUse.INVERSION, torch.pi, 0.0)]
-    current_s = inversion_time_s
+    modules = [inversion(duration_s=inversion_time_s)]
     for index in range(flip.numel()):
-        events.append(
-            SequenceEvent.rf(
-                1e6 * current_s,
-                0,
-                RfUse.EXCITATION,
-                flip[index],
-                phases[index],
-            )
-        )
         acquired = center_index is None or index == center_index
-        events.append(
-            SequenceEvent.adc(
-                1e6 * current_s,
-                AdcRole.SINGLE if acquired else AdcRole.NON_ACQUIRED,
+        modules.append(excitation(flip[index], phases[index]))
+        modules.append(
+            readout(
                 phases[index],
+                role=AdcRole.SINGLE if acquired else AdcRole.NON_ACQUIRED,
                 is_echo=acquired,
                 action=EventAction.SPOIL_AFTER,
+                duration_s=repetition_time[index],
             )
         )
-        current_s = current_s + repetition_time[index]
+    events, current_s = compose(*modules)
     return SequenceDescription(
         subsequence_index=0,
         tr_duration_us=1e6 * current_s,
-        events=tuple(events),
+        events=events,
         rf_definitions={0: _unit_flip_definition()},
         crusher_dephasing_rad=crusher_dephasing_rad,
         voxel_size_m=voxel_size_m,
