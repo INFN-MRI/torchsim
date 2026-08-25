@@ -5,7 +5,7 @@ __all__ = ["fse_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.fse import FSEModel
+from ..simulators.fse import FSESimulator
 from ._run import evaluated
 
 
@@ -79,7 +79,7 @@ def fse_sim(
 
     """
     return evaluated(
-        FSEModel(),
+        FSESimulator(),
         diff,
         device,
         T1=T1,

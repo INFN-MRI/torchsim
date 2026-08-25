@@ -1,8 +1,8 @@
-"""Spoiled gradient-echo model."""
+"""Spoiled gradient echo, in closed form."""
 
 from __future__ import annotations
 
-__all__ = ["SPGRModel"]
+__all__ = ["SPGRSimulator"]
 
 from collections.abc import Mapping
 from typing import Any
@@ -10,11 +10,11 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import SignalModel
+from ..model import AbstractSimulator, StateMachineModel
 from ._contrast import across_contrasts
 
 
-class SPGRModel(SignalModel):
+class SPGRSimulator(AbstractSimulator):
     """The spoiled gradient-echo steady state, read at the echo time.
 
     Spoiling leaves no transverse magnetization to carry over, so the steady
@@ -24,16 +24,31 @@ class SPGRModel(SignalModel):
     --------
     .. exec::
 
-        from torchsim.models import SPGRModel
+        from torchsim.simulators import SPGRSimulator
 
-        model = SPGRModel()
-        signal = model.simulate(T1=1000.0, T2star=30.0, flip=13.0, TR=10.0, TE=5.0)
+        sequence = SPGRSimulator(flip=13.0, TR=10.0, TE=5.0)
+        signal = sequence.simulate(T1=1000.0, T2star=30.0)
 
     """
 
-    properties = ("T1", "T2star", "M0", "B0", "chemshift")
+    model = StateMachineModel(
+        properties={
+            "T1": None,
+            "T2star": None,
+            "M0": None,
+            "B0": None,
+            "chemshift": None,
+        },
+    )
 
     def evaluate(
+        self, properties: Mapping[str, Any], **sequence: Any
+    ) -> torch.Tensor:
+        """Evaluate the closed form, no state machine and no description."""
+        played = {**self.protocol, **sequence}
+        return self._signal(properties, **played)
+
+    def _signal(
         self,
         properties: Mapping[str, Any],
         *,

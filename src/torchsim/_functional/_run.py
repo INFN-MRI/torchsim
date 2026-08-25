@@ -20,21 +20,21 @@ def evaluated(
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """Return the signal, and its Jacobian where one was asked for.
 
-    Property and sequence arguments are given together; the model tells them
-    apart. Array-like arguments are placed on ``device``, while a plain count
-    -- a number of states or of shots -- stays what it is.
+    Property and sequence arguments are given together; the simulator tells
+    them apart. Array-like arguments are placed on ``device``, while a plain
+    count -- a number of states or of shots -- stays what it is.
 
     Parameters
     ----------
     model:
-        The model to run.
+        The simulator to run.
     diff:
         What to differentiate with respect to, or ``None`` for the signal
         alone.
     device:
         Where to run, or ``None`` to follow the inputs.
     values:
-        The model's property and sequence arguments.
+        The simulator's property and sequence arguments.
 
     Returns
     -------

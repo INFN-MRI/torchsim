@@ -5,7 +5,7 @@ __all__ = ["bssfp_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.bssfp import bSSFPModel
+from ..simulators.bssfp import bSSFPSimulator
 from ._run import evaluated
 
 
@@ -64,7 +64,7 @@ def bssfp_sim(
 
     """
     return evaluated(
-        bSSFPModel(),
+        bSSFPSimulator(),
         diff,
         device,
         T1=T1,

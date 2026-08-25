@@ -5,7 +5,7 @@ __all__ = ["mp2rage_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.mp2rage import MP2RAGEModel
+from ..simulators.mp2rage import MP2RAGESimulator
 from ._run import evaluated
 
 
@@ -67,7 +67,7 @@ def mp2rage_sim(
 
     """
     return evaluated(
-        MP2RAGEModel(),
+        MP2RAGESimulator(),
         diff,
         device,
         T1=T1,

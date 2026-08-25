@@ -5,7 +5,7 @@ __all__ = ["mpnrage_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.mpnrage import MPnRAGEModel
+from ..simulators.mpnrage import MPnRAGESimulator
 from ._run import evaluated
 
 
@@ -61,7 +61,7 @@ def mpnrage_sim(
 
     """
     return evaluated(
-        MPnRAGEModel(),
+        MPnRAGESimulator(),
         diff,
         device,
         T1=T1,

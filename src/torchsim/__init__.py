@@ -4,7 +4,7 @@ __all__ = []
 
 from . import estimators  # noqa
 from . import model  # noqa
-from . import models  # noqa
+from . import simulators  # noqa
 from . import optim  # noqa
 from . import sequence  # noqa
 from . import utils  # noqa

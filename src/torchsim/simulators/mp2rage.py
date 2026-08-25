@@ -1,8 +1,8 @@
-"""MP2RAGE model."""
+"""MP2RAGE, in closed form."""
 
 from __future__ import annotations
 
-__all__ = ["MP2RAGEModel"]
+__all__ = ["MP2RAGESimulator"]
 
 from collections.abc import Mapping
 from typing import Any
@@ -10,10 +10,10 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import SignalModel
+from ..model import AbstractSimulator, StateMachineModel
 
 
-class MP2RAGEModel(SignalModel):
+class MP2RAGESimulator(AbstractSimulator):
     """Two gradient-echo blocks read at two inversion times, in closed form.
 
     The train is spoiled and sampled at the k-space centre of each block, so
@@ -24,24 +24,35 @@ class MP2RAGEModel(SignalModel):
     --------
     .. exec::
 
-        from torchsim.models import MP2RAGEModel
+        from torchsim.simulators import MP2RAGESimulator
 
-        model = MP2RAGEModel()
-        signal = model.simulate(
-            T1=(200.0, 1000.0),
-            inv_efficiency=0.95,
+        sequence = MP2RAGESimulator(
             TI=(500.0, 1500.0),
             flip=5.0,
             TRspgr=5.0,
             TRmp2rage=3000.0,
             nshots=128,
         )
+        signal = sequence.simulate(T1=(200.0, 1000.0), inv_efficiency=0.95)
 
     """
 
-    properties = ("T1", "M0", "inv_efficiency")
+    model = StateMachineModel(
+        properties={
+            "T1": None,
+            "M0": None,
+            "inv_efficiency": None,
+        },
+    )
 
     def evaluate(
+        self, properties: Mapping[str, Any], **sequence: Any
+    ) -> torch.Tensor:
+        """Evaluate the closed form, no state machine and no description."""
+        played = {**self.protocol, **sequence}
+        return self._signal(properties, **played)
+
+    def _signal(
         self,
         properties: Mapping[str, Any],
         *,

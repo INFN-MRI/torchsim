@@ -3,41 +3,46 @@ API References
 
 Signal model authoring
 ----------------------
-Base classes for writing a signal model of your own.
+What a sequence of your own is written from: a state-machine model saying what
+each kind of event does to the spins, and a simulator saying what order they
+are played in.
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
    torchsim.model.SignalModel
-   torchsim.model.EpgModel
+   torchsim.model.StateMachineModel
+   torchsim.model.AbstractSimulator
+   torchsim.model.Triggers
 
-Signal Models
--------------
-Pre-defined signal models.
+Simulators
+----------
+The sequences that ship with TorchSim. Each names its protocol at construction
+and its tissue at the call.
 
-Analytical
-~~~~~~~~~~
-
-.. autosummary::
-   :toctree: generated
-   :nosignatures:  
-   
-   torchsim.models.bSSFPModel
-   torchsim.models.SPGRModel
-   
-Iterative
-~~~~~~~~~
+Closed form
+~~~~~~~~~~~
 
 .. autosummary::
    :toctree: generated
-   :nosignatures:  
-   
-   torchsim.models.FSEModel
-   torchsim.models.MPRAGEModel
-   torchsim.models.MP2RAGEModel
-   torchsim.models.MPnRAGEModel
-   torchsim.models.MRFModel
+   :nosignatures:
+
+   torchsim.simulators.bSSFPSimulator
+   torchsim.simulators.SPGRSimulator
+   torchsim.simulators.MP2RAGESimulator
+
+State machine
+~~~~~~~~~~~~~
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.simulators.FSESimulator
+   torchsim.simulators.MPRAGESimulator
+   torchsim.simulators.MPnRAGESimulator
+   torchsim.simulators.MRFSimulator
    
 Functional
 ----------
@@ -99,6 +104,11 @@ by name.
    torchsim.readout
    torchsim.delay
    torchsim.ideal_rf_definition
+   torchsim.dephase
+   torchsim.spoil
+   torchsim.bssfp_readout
+   torchsim.ssfp_fid_readout
+   torchsim.spgr_readout
    torchsim.register_operator
    torchsim.operator
    torchsim.operator_names

@@ -5,7 +5,7 @@ __all__ = ["mrf_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.mrf import MRFModel
+from ..simulators.mrf import MRFSimulator
 from ._run import evaluated
 
 
@@ -69,7 +69,7 @@ def mrf_sim(
 
     """
     return evaluated(
-        MRFModel(),
+        MRFSimulator(),
         diff,
         device,
         T1=T1,

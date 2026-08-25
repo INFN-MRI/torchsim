@@ -1,8 +1,8 @@
-"""Balanced steady-state free precession model."""
+"""Balanced steady-state free precession, in closed form."""
 
 from __future__ import annotations
 
-__all__ = ["bSSFPModel"]
+__all__ = ["bSSFPSimulator"]
 
 from collections.abc import Mapping
 from typing import Any
@@ -10,11 +10,11 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import SignalModel
+from ..model import AbstractSimulator, StateMachineModel
 from ._contrast import across_contrasts
 
 
-class bSSFPModel(SignalModel):
+class bSSFPSimulator(AbstractSimulator):
     """The balanced SSFP steady state, read at the echo time.
 
     A balanced repetition returns the transverse magnetization to where it
@@ -25,16 +25,31 @@ class bSSFPModel(SignalModel):
     --------
     .. exec::
 
-        from torchsim.models import bSSFPModel
+        from torchsim.simulators import bSSFPSimulator
 
-        model = bSSFPModel()
-        signal = model.simulate(T1=1000.0, T2=100.0, flip=60.0, TR=10.0, TE=5.0)
+        sequence = bSSFPSimulator(flip=60.0, TR=10.0, TE=5.0)
+        signal = sequence.simulate(T1=1000.0, T2=100.0)
 
     """
 
-    properties = ("T1", "T2", "M0", "B0", "chemshift")
+    model = StateMachineModel(
+        properties={
+            "T1": None,
+            "T2": None,
+            "M0": None,
+            "B0": None,
+            "chemshift": None,
+        },
+    )
 
     def evaluate(
+        self, properties: Mapping[str, Any], **sequence: Any
+    ) -> torch.Tensor:
+        """Evaluate the closed form, no state machine and no description."""
+        played = {**self.protocol, **sequence}
+        return self._signal(properties, **played)
+
+    def _signal(
         self,
         properties: Mapping[str, Any],
         *,

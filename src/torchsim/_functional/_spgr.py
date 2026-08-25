@@ -5,7 +5,7 @@ __all__ = ["spgr_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.spgr import SPGRModel
+from ..simulators.spgr import SPGRSimulator
 from ._run import evaluated
 
 
@@ -60,7 +60,7 @@ def spgr_sim(
 
     """
     return evaluated(
-        SPGRModel(),
+        SPGRSimulator(),
         diff,
         device,
         T1=T1,

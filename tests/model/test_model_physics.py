@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim.model import EpgModel
+from torchsim.model import UNBALANCED, AbstractSimulator, StateMachineModel
 from torchsim.sequence import (
     EpgEngine,
     mrf_description,
@@ -27,17 +27,19 @@ T2 = torch.tensor([40.0, 80.0, 120.0])
 BOUND = torch.tensor([0.05, 0.10, 0.15])
 
 
-class Anything(EpgModel):
+class Anything(AbstractSimulator):
     """A model over the whole tissue: whatever is named is what is carried."""
 
-    properties = {
-        "T1": "t1_ms",
-        "T2": "t2_ms",
-        "bound_fraction": "bound_fraction",
-        "bound_exchange": "bound_exchange_hz",
-        "T1_bound": "t1_bound_ms",
-    }
-    simulator = EpgEngine()
+    model = StateMachineModel(
+        properties={
+            "T1": "t1_ms",
+            "T2": "t2_ms",
+            "bound_fraction": "bound_fraction",
+            "bound_exchange": "bound_exchange_hz",
+            "T1_bound": "t1_bound_ms",
+        },
+        triggers=UNBALANCED,
+    )
     states = 8
 
     def describe(self, *, flip, TR):
@@ -58,7 +60,7 @@ def _by_hand(**pool) -> torch.Tensor:
 
 def test_a_model_reaches_the_semisolid_pool() -> None:
     """The generic model is the whole tissue, not a chosen corner of it."""
-    through_the_model = Anything().simulate(T1=T1, T2=T2, **POOLED, **SEQUENCE)
+    through_the_model = Anything(**SEQUENCE).simulate(T1=T1, T2=T2, **POOLED)
     assert torch.allclose(
         through_the_model,
         _by_hand(bound_fraction=BOUND, bound_exchange_hz=30.0, t1_bound_ms=1000.0),
@@ -68,15 +70,15 @@ def test_a_model_reaches_the_semisolid_pool() -> None:
 
 def test_the_pool_genuinely_moves_the_answer() -> None:
     """Otherwise the agreement above is two ways of carrying nothing."""
-    pooled = Anything().simulate(T1=T1, T2=T2, **POOLED, **SEQUENCE)
-    free = Anything().simulate(T1=T1, T2=T2, **SEQUENCE)
+    pooled = Anything(**SEQUENCE).simulate(T1=T1, T2=T2, **POOLED)
+    free = Anything(**SEQUENCE).simulate(T1=T1, T2=T2)
     assert float((pooled - free).abs().max()) > 1e-3
 
 
 def test_a_pool_parameter_carries_a_real_derivative() -> None:
     """A physics a model can reach but not differentiate is half reachable."""
-    _, jacobian = Anything().jacobian(
-        "bound_fraction", T1=T1, T2=T2, **POOLED, **SEQUENCE
+    _, jacobian = Anything(**SEQUENCE).jacobian(
+        "bound_fraction", T1=T1, T2=T2, **POOLED
     )
     assert float(jacobian.abs().max()) > 0.0
 
@@ -102,11 +104,12 @@ def asked(monkeypatch):
     return seen
 
 
-class Relaxation(EpgModel):
+class Relaxation(AbstractSimulator):
     """T1 and T2 over an unbalanced train."""
 
-    properties = {"T1": "t1_ms", "T2": "t2_ms"}
-    simulator = EpgEngine()
+    model = StateMachineModel(
+        properties={"T1": "t1_ms", "T2": "t2_ms"}, triggers=UNBALANCED
+    )
     states = 8
 
     def describe(self, *, flip, TR):
@@ -124,7 +127,7 @@ def test_a_cost_on_the_sequence_alone_leaves_the_tissue_unwanted(asked) -> None:
     than answering it.
     """
     flip = FLIP.clone().requires_grad_(True)
-    signal = Relaxation().simulate(T1=T1, T2=T2, flip=flip, TR=10.0)
+    signal = Relaxation(flip=flip, TR=10.0).simulate(T1=T1, T2=T2)
     signal.abs().square().sum().backward()
 
     assert asked, "the adjoint never ran"
@@ -136,7 +139,7 @@ def test_differentiating_the_tissue_asks_for_it(asked) -> None:
     """And the answer changes with the question, so it is read rather than fixed."""
     t1 = T1.clone().requires_grad_(True)
     flip = FLIP.clone().requires_grad_(True)
-    signal = Relaxation().simulate(T1=t1, T2=T2, flip=flip, TR=10.0)
+    signal = Relaxation(flip=flip, TR=10.0).simulate(T1=t1, T2=T2)
     signal.abs().square().sum().backward()
 
     assert asked[-1] == {"t1_ms"}, "the question was not read from the graph"

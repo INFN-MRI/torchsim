@@ -3,12 +3,14 @@
 Writing a signal model
 ======================
 
-A signal model says two things: which tissue properties it exposes, and what
-sequence it plays. Everything else -- which kernel runs, how the work is cut
-across memory and devices, how derivatives are taken -- follows from those two
-and is not yours to write.
+A signal model is written in two pieces. A **state-machine model** says what a
+voxel holds -- which tissue properties are exposed, and so which physics the
+kernels carry -- and what each kind of event does to it. A **simulator** says
+what order the events are played in. Everything else -- which kernel runs, how
+the work is cut across memory and devices, how derivatives are taken --
+follows from those two and is not yours to write.
 
-This example builds an inversion-prepared SSFP fingerprinting model from
+This example builds an inversion-prepared SSFP fingerprinting sequence from
 scratch, differentiates it with respect to tissue, and then differentiates a
 cost with respect to the sequence.
 """
@@ -23,86 +25,69 @@ cost with respect to the sequence.
 #
 # We begin with the necessary imports:
 #
+from dataclasses import replace
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from torchsim.model import EpgModel
-from torchsim.sequence import (
-    compose,
-    EpgEngine,
-    EventAction,
-    excitation,
-    ideal_rf_definition,
-    inversion,
-    readout,
-    SequenceDescription,
+from torchsim.model import (
+    SPOILED,
+    UNBALANCED,
+    AbstractSimulator,
+    StateMachineModel,
 )
 
 # %%
-# Describing the sequence
-# -----------------------
-# A description is a stream of events at absolute times. You do not write those
-# times: you lay out *operators* -- a pulse, a readout, a delay, a whole
-# preparation -- and :func:`~torchsim.sequence.compose` turns the span each one
-# holds into the timestamps the stream carries.
-#
-# Our sequence is an inversion, then one excitation and one sample per
-# repetition, with the states wound on by an unbalanced gradient afterwards.
-# ``EventAction.SHIFT_AFTER`` on the readout is what says so.
-
-
-def ssfp_train(flip_rad, repetition_s, inversion_s):
-    """Lay out one inversion-prepared unbalanced SSFP train."""
-    modules = [inversion(duration_s=inversion_s)]
-    for index in range(flip_rad.numel()):
-        modules.append(excitation(flip_rad[index]))
-        modules.append(
-            readout(
-                action=EventAction.SHIFT_AFTER,
-                duration_s=repetition_s,
-            )
-        )
-    return compose(*modules)
-
-
-# %%
-# Declaring the model
-# -------------------
-# ``properties`` maps the name a caller uses to the tissue field it fills, so
-# the model keeps the vocabulary your protocol is written in while the engine
-# keeps its own.
+# Saying what the events do
+# -------------------------
+# A :class:`~torchsim.model.StateMachineModel` is the physics. ``properties``
+# maps the name a caller uses to the tissue field it fills, so the model keeps
+# the vocabulary your protocol is written in while the engine keeps its own.
 #
 # It is also the whole of how you ask for physics. A field you do not name is
 # never handed to the tissue, and the kernels leave its term out -- so a T1/T2
 # model pays for no off-resonance turn, no diffusion attenuation and no flow
 # winding. Name ``b0_hz`` and the off-resonance term comes back.
 #
-# ``describe`` receives the sequence arguments in the units a user quotes them
-# in -- milliseconds, degrees -- and converts them, because that conversion is
-# part of the sequence rather than of the engine.
+# ``triggers`` is what each kind of event is realized as. ``UNBALANCED`` says
+# a readout is followed by one unbalanced gradient, which is what makes this
+# an SSFP-FID rather than a balanced or a spoiled train. Swapping it is how
+# you change that, and it is the only thing you change.
+
+physics = StateMachineModel(
+    properties={"T1": "t1_ms", "T2": "t2_ms"},
+    triggers=UNBALANCED,
+)
+
+# %%
+# Saying what order they play in
+# ------------------------------
+# An :class:`~torchsim.model.AbstractSimulator` is the protocol. You do not
+# write timestamps: ``layout`` returns the *operators* of one repetition in
+# order, and the simulator turns the span each one holds into the timestamps a
+# description carries.
+#
+# The triggers are bound when the simulator is constructed. What ``layout``
+# then produces is an ordinary description whose events carry their own action
+# word, and from there the path is the fused one -- packing, the feature mask,
+# offload and sharding. Nothing consults a trigger during a run.
 
 
-class SSFPMRFModel(EpgModel):
-    """Inversion-prepared unbalanced SSFP with a variable flip-angle schedule."""
+class SSFPMRF(AbstractSimulator):
+    """An inversion, then one excitation and one sample per repetition."""
 
-    properties = {"T1": "t1_ms", "T2": "t2_ms"}
-    simulator = EpgEngine()
+    model = physics
     states = 10
 
-    def describe(self, *, flip, TR, TI=0.0):
-        """Return the train, in the seconds and radians a description carries."""
-        events, duration_s = ssfp_train(
-            torch.pi / 180.0 * torch.as_tensor(flip),
-            torch.as_tensor(TR) * 1e-3,
-            torch.as_tensor(TI) * 1e-3,
-        )
-        return SequenceDescription(
-            subsequence_index=0,
-            tr_duration_us=1e6 * duration_s,
-            events=events,
-            rf_definitions={0: ideal_rf_definition()},
-        )
+    def layout(self, *, flip, TR, TI=0.0):
+        """Return one repetition's operators, in the order they are played."""
+        angles = torch.deg2rad(torch.as_tensor(flip))
+        parts = [self.triggers.inversion(duration_s=TI * 1e-3)]
+        for index in range(angles.numel()):
+            parts.append(self.triggers.excitation(angles[index]))
+            parts.append(self.triggers.readout(duration_s=TR * 1e-3))
+        return parts
 
 
 # %%
@@ -116,8 +101,8 @@ flip = np.concatenate(
     (np.linspace(5.0, 60.0, 350), np.linspace(60.0, 1.0, 350), np.ones(180))
 )
 
-model = SSFPMRFModel()
-signal = model.simulate(T1=1000.0, T2=100.0, flip=flip, TR=10.0, TI=20.0)
+sequence = SSFPMRF(flip=flip, TR=10.0, TI=20.0)
+signal = sequence.simulate(T1=1000.0, T2=100.0)
 
 plt.figure()
 plt.plot(abs(signal))
@@ -127,12 +112,9 @@ plt.ylabel("signal magnitude [a.u.]")
 # %%
 # The same call over a parameter map returns one row per voxel:
 #
-signals = model.simulate(
+signals = sequence.simulate(
     T1=torch.tensor([500.0, 1000.0, 1500.0]),
     T2=torch.tensor([50.0, 100.0, 150.0]),
-    flip=flip,
-    TR=10.0,
-    TI=20.0,
 )
 
 plt.figure()
@@ -151,9 +133,7 @@ plt.ylabel("signal magnitude [a.u.]")
 # That is what :meth:`~torchsim.model.SignalModel.jacobian` does. A single name
 # collapses the parameter axis; a sequence of names keeps it.
 #
-signal, jacobian = model.jacobian(
-    ("T1", "T2"), T1=1000.0, T2=100.0, flip=flip, TR=10.0, TI=20.0
-)
+signal, jacobian = sequence.jacobian(("T1", "T2"), T1=1000.0, T2=100.0)
 
 plt.figure()
 plt.plot(abs(jacobian.T))
@@ -170,7 +150,7 @@ plt.ylabel("signal jacobian [a.u.]")
 # a layer here would only hide the choice.
 #
 schedule = torch.tensor(flip, dtype=torch.float32, requires_grad=True)
-recorded = model.simulate(T1=1000.0, T2=100.0, flip=schedule, TR=10.0, TI=20.0)
+recorded = sequence.simulate(T1=1000.0, T2=100.0, flip=schedule)
 loss = -recorded.abs().square().sum()
 loss.backward()
 
@@ -187,15 +167,12 @@ plt.ylabel("d(loss) / d(flip) [1/deg]")
 #
 
 
-class OffResonantMRFModel(SSFPMRFModel):
-    """The same train, with an off-resonance map."""
-
-    properties = {"T1": "t1_ms", "T2": "t2_ms", "B0": "b0_hz"}
-
-
-detuned = OffResonantMRFModel().simulate(
-    T1=1000.0, T2=100.0, B0=torch.tensor([0.0, 30.0, 60.0]), flip=flip, TR=10.0, TI=20.0
-)
+detuned = SSFPMRF(
+    model=replace(physics, properties={"T1": "t1_ms", "T2": "t2_ms", "B0": "b0_hz"}),
+    flip=flip,
+    TR=10.0,
+    TI=20.0,
+).simulate(T1=1000.0, T2=100.0, B0=torch.tensor([0.0, 30.0, 60.0]))
 
 plt.figure()
 plt.plot(abs(detuned.T))
@@ -215,11 +192,10 @@ plt.ylabel("signal magnitude [a.u.]")
 
 def ssfp_mrf_sim(flip, TR, T1, T2, TI=0.0, diff=None):
     """Simulate an inversion-prepared SSFP train, and differentiate it."""
-    model = SSFPMRFModel()
-    values = {"flip": flip, "TR": TR, "T1": T1, "T2": T2, "TI": TI}
+    sequence = SSFPMRF(flip=flip, TR=TR, TI=TI)
     if diff is None:
-        return model.simulate(**values)
-    return model.jacobian(diff, **values)
+        return sequence.simulate(T1=T1, T2=T2)
+    return sequence.jacobian(diff, T1=T1, T2=T2)
 
 
 signal, jacobian = ssfp_mrf_sim(flip, 10.0, 1000.0, 100.0, diff=("T1", "T2"))

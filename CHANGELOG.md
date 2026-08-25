@@ -4,13 +4,29 @@
 
 ### Added
 
-- **`torchsim.model`**, with `SignalModel` and `EpgModel`. A model declares
-  which properties it exposes and how it turns them into a signal; which
-  kernel runs, how the work is cut across memory and devices, and how
-  derivatives are taken belong below it. `EpgModel` adds a `describe` that
-  returns the sequence to run, and a `properties` mapping from the name a
-  caller uses to the tissue field it fills -- so declaring `b0_hz` or a second
-  pool is what asks the kernels to carry that physics.
+- **`torchsim.model`**, with `SignalModel`, `StateMachineModel`, `Triggers`
+  and `AbstractSimulator`. A signal model is written in two pieces: a
+  state-machine model saying what a voxel holds -- `properties` maps the name
+  a caller uses to the tissue field it fills, so declaring `b0_hz` or a second
+  pool is what asks the kernels to carry that physics -- and what each kind of
+  event does to it, and a simulator saying what order the events are played
+  in. Which kernel runs, how the work is cut across memory and devices, and
+  how derivatives are taken all belong below both.
+
+  `Triggers` is the assignable part: `BALANCED`, `UNBALANCED` and `SPOILED`
+  say whether a readout is rewound, wound on, or spoiled. Swapping one is how
+  a protocol changes what its events mean, and it is resolved when the
+  simulator is constructed -- what a protocol produces is an ordinary
+  description, and nothing consults a trigger during a run.
+
+  `AbstractSimulator.from_description` takes a stream someone else assembled,
+  which is the path a description arriving from a scanner takes.
+
+- **`torchsim.simulators`**, replacing `torchsim.models`. Each shipped
+  sequence names its protocol at construction (`MRFSimulator(flip=..., TR=...)`)
+  and its tissue at the call (`.simulate(T1=..., T2=...)`), so parameter
+  inference, sequence optimization and a reconstruction pipeline take all of
+  them the same way. A protocol argument may still be overridden per call.
 
 - **`torchsim.sequence` operators.** `Operator`, `compose`, `module` and the
   factories `excitation`, `refocusing`, `inversion`, `saturation`, `readout`
@@ -21,6 +37,12 @@
 
 - **`torchsim.sequence.ideal_rf_definition`**, the hard-pulse RF definition a
   description built by hand needs.
+
+- **`dephase()` and `spoil()`**, and the composite readouts `bssfp_readout`,
+  `ssfp_fid_readout` and `spgr_readout` built from them. An unbalanced
+  gradient was previously spelled as a keyword on the sample; it is now an
+  operator of its own, and each composite is held to the keyword it replaces
+  with `torch.equal`.
 
 ### Changed
 
@@ -42,6 +64,18 @@
   maps and compiled the ungated kernel.
 
 ### Removed
+
+- **`EpgSimulator` is now `EpgEngine`**, and its five subclasses -- `FSE`,
+  `SPGR`, `SSFPFID`, `SSFPEcho`, `BSSFP` -- are gone with `make_simulator`.
+  Once the crusher and the spoiler moved onto the events they are played
+  around, the five overrode nothing but a name string no code read: running an
+  SSFP-FID train under `BSSFP` gave a bit-identical answer. What they were
+  reaching for is `Triggers`, where it decides something. `simulate_subspace`
+  loses its simulator argument for the same reason.
+
+- **`torchsim.models` and the seven `*Model` classes.** Use
+  `torchsim.simulators` and the `*Simulator` classes, which take the protocol
+  at construction. The seven `*_sim` functional wrappers are unchanged.
 
 - **`torchsim.epg`.** The package held the state-machine operators the
   simulator's torch loop was written from. That loop is gone: every sequence

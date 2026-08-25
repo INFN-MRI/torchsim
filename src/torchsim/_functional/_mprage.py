@@ -5,7 +5,7 @@ __all__ = ["mprage_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.mprage import MPRAGEModel
+from ..simulators.mprage import MPRAGESimulator
 from ._run import evaluated
 
 
@@ -64,7 +64,7 @@ def mprage_sim(
 
     """
     return evaluated(
-        MPRAGEModel(),
+        MPRAGESimulator(),
         diff,
         device,
         T1=T1,

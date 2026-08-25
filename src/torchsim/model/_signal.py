@@ -46,7 +46,8 @@ class SignalModel(ABC):
     properties:
         What the model exposes, as names. A mapping is read for its keys, so a
         subclass that also needs to say where each property goes -- as
-        :class:`~torchsim.model.EpgModel` does -- declares both at once.
+        :class:`~torchsim.model.StateMachineModel` does, naming the tissue
+        field each fills -- declares both at once.
     """
 
     properties: Mapping[str, str] | Sequence[str] = ()
