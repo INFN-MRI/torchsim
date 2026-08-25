@@ -11,6 +11,7 @@ import numpy.typing as npt
 import torch
 
 from ..model import AbstractSimulator, StateMachineModel
+from ..sequence._array import arrays, as_torch
 
 
 class MP2RAGESimulator(AbstractSimulator):
@@ -49,8 +50,7 @@ class MP2RAGESimulator(AbstractSimulator):
         self, properties: Mapping[str, Any], **sequence: Any
     ) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
-        played = {**self.protocol, **sequence}
-        return self._signal(properties, **played)
+        return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
         self,
@@ -83,11 +83,11 @@ class MP2RAGESimulator(AbstractSimulator):
             or ``(before, after)`` the sampled shot.
         """
         radians = torch.pi / 180.0
-        angle = _shared_or_two(radians * torch.as_tensor(flip))
+        angle = _shared_or_two(radians * flip)
         before, after = _shots_either_side(nshots)
-        inversion_s = torch.as_tensor(TI).flatten() * 1e-3
-        readout_s = torch.as_tensor(TRspgr) * 1e-3
-        block_s = torch.as_tensor(TRmp2rage) * 1e-3
+        inversion_s = TI.flatten() * 1e-3
+        readout_s = TRspgr * 1e-3
+        block_s = TRmp2rage * 1e-3
 
         efficiency = properties.get("inv_efficiency", 1.0)
         rate = 1e3 / properties["T1"]
@@ -166,7 +166,7 @@ def _shared_or_two(value: torch.Tensor) -> torch.Tensor:
 
 def _shots_either_side(nshots: int | npt.ArrayLike) -> tuple[Any, Any]:
     """Split the readouts into those before and after the sampled one."""
-    counts = torch.as_tensor(nshots).flatten()
+    counts = as_torch(nshots).flatten()
     if counts.numel() == 1:
         half = counts[0] // 2
         return half, half

@@ -10,6 +10,7 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
+from ..sequence._array import as_torch, matched
 from ..model import SPOILED, AbstractSimulator, StateMachineModel
 from ..sequence import AdcRole
 
@@ -80,18 +81,14 @@ class MPRAGESimulator(AbstractSimulator):
         """
         before, after = _shots_either_side(nshots)
         shots = before + after + 1
-        angles = torch.deg2rad(torch.atleast_1d(torch.as_tensor(flip)))
+        angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)))
         if angles.numel() == 1:
             angles = angles.expand(shots)
         elif angles.numel() != shots:
             raise ValueError("flip must be scalar or contain one value per shot")
-        turns = torch.deg2rad(torch.as_tensor(phases, dtype=angles.dtype))
-        turns = turns.expand_as(angles) if turns.numel() == 1 else turns
-        readout_s = torch.as_tensor(TRspgr, dtype=angles.dtype) * 1e-3
-        readout_s = (
-            readout_s.expand_as(angles) if readout_s.numel() == 1 else readout_s
-        )
-        inversion_s = torch.as_tensor(TI) * 1e-3
+        turns = torch.deg2rad(matched(phases, angles))
+        readout_s = matched(TRspgr, angles) * 1e-3
+        inversion_s = TI * 1e-3
         if bool(inversion_s < readout_s[:before].sum()):
             raise ValueError("TI must not precede the first MPRAGE excitation")
 
@@ -127,7 +124,7 @@ class MPRAGESimulator(AbstractSimulator):
 
 def _shots_either_side(nshots: int | npt.ArrayLike) -> tuple[int, int]:
     """Split the readouts into those before and after the sampled one."""
-    counts = torch.as_tensor(nshots).flatten()
+    counts = as_torch(nshots).flatten()
     if counts.numel() == 1:
         total = int(counts.item())
         if total < 1:

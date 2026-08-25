@@ -22,6 +22,7 @@ def _fse(t1, t2, diff):
     return torchsim.fse_sim(flip=FLIP, ESP=5.0, T1=t1, T2=t2, diff=diff)
 
 
+
 VECTOR_T1 = torch.tensor([800.0, 1000.0, 1200.0])
 VECTOR_T2 = torch.tensor([50.0, 70.0, 90.0])
 
@@ -44,6 +45,7 @@ def test_jacobian_shapes(t1, t2, diff, signal_shape, jacobian_shape) -> None:
 
 
 def test_jacobian_matches_finite_differences() -> None:
+    """Forward mode is exact where central differences are only close."""
     step = 1e-2
     _, jacobian = _fse(VECTOR_T1, VECTOR_T2, "T2")
     forward = torchsim.fse_sim(flip=FLIP, ESP=5.0, T1=VECTOR_T1, T2=VECTOR_T2 + step)
@@ -57,6 +59,24 @@ def test_signal_matches_undifferentiated_call() -> None:
     signal, _ = _fse(VECTOR_T1, VECTOR_T2, "T2")
     plain = torchsim.fse_sim(flip=FLIP, ESP=5.0, T1=VECTOR_T1, T2=VECTOR_T2)
     assert torch.equal(signal, plain)
+
+
+def test_the_answer_comes_back_in_the_array_library_it_was_asked_in() -> None:
+    """NumPy in, NumPy out -- and the same numbers either way.
+
+    The tissue decides, since the signal is per voxel. A caller who works in
+    NumPy never sees a torch tensor, and never converts one.
+    """
+    numpy_t1 = VECTOR_T1.numpy()
+    numpy_t2 = VECTOR_T2.numpy()
+    signal, jacobian = torchsim.fse_sim(
+        flip=FLIP, ESP=5.0, T1=numpy_t1, T2=numpy_t2, diff="T2"
+    )
+    assert isinstance(signal, np.ndarray)
+    assert isinstance(jacobian, np.ndarray)
+
+    same, _ = _fse(VECTOR_T1, VECTOR_T2, "T2")
+    assert np.array_equal(signal, same.numpy())
 
 
 class _DecayModel(SignalModel):

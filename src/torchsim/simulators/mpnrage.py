@@ -10,6 +10,7 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
+from ..sequence._array import as_torch, matched
 from ..model import SPOILED, AbstractSimulator, StateMachineModel
 
 
@@ -65,22 +66,18 @@ class MPnRAGESimulator(AbstractSimulator):
         phases:
             Excitation phases in degrees.
         """
-        shots = int(torch.as_tensor(nshots).reshape(()).item())
+        shots = int(as_torch(nshots).reshape(()).item())
         if shots < 1:
             raise ValueError("nshots must be positive")
-        angles = torch.deg2rad(torch.atleast_1d(torch.as_tensor(flip)))
+        angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)))
         if angles.numel() == 1:
             angles = angles.expand(shots)
         elif angles.numel() != shots:
             raise ValueError("flip must be scalar or contain nshots values")
-        turns = torch.deg2rad(torch.as_tensor(phases, dtype=angles.dtype))
-        turns = turns.expand_as(angles) if turns.numel() == 1 else turns
-        spacing_s = torch.as_tensor(TR, dtype=angles.dtype) * 1e-3
-        spacing_s = (
-            spacing_s.expand_as(angles) if spacing_s.numel() == 1 else spacing_s
-        )
+        turns = torch.deg2rad(matched(phases, angles))
+        spacing_s = matched(TR, angles) * 1e-3
 
-        parts = [self.triggers.inversion(duration_s=torch.as_tensor(TI) * 1e-3)]
+        parts = [self.triggers.inversion(duration_s=TI * 1e-3)]
         for index in range(shots):
             parts.append(self.triggers.excitation(angles[index], turns[index]))
             parts.append(

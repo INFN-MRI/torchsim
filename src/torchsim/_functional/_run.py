@@ -21,8 +21,8 @@ def evaluated(
     """Return the signal, and its Jacobian where one was asked for.
 
     Property and sequence arguments are given together; the simulator tells
-    them apart. Array-like arguments are placed on ``device``, while a plain
-    count -- a number of states or of shots -- stays what it is.
+    them apart, reads them in whatever array library they were written in, and
+    gives the answer back in the same one.
 
     Parameters
     ----------
@@ -41,13 +41,9 @@ def evaluated(
     torch.Tensor or tuple
         The signal, or the signal and its Jacobian.
     """
-    placed = {
-        name: value if isinstance(value, (int, bool)) else torch.as_tensor(
-            value, device=device
-        )
-        for name, value in values.items()
-        if value is not None
-    }
+    given = {name: value for name, value in values.items() if value is not None}
+    if device is not None:
+        given["device"] = device
     if diff is None:
-        return model.simulate(**placed)
-    return model.jacobian(diff, **placed)
+        return model.simulate(**given)
+    return model.jacobian(diff, **given)

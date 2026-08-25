@@ -46,24 +46,30 @@ from ..sequence import (
     RfDefinition,
     SequenceDescription,
     TissueProperties,
-    bssfp_readout,
+    Delay,
+    Excitation,
+    FSEReadout,
+    Inversion,
+    Readout,
+    Refocusing,
+    SPGRReadout,
+    SSFPFidReadout,
+    Saturation,
+    bSSFPReadout,
     compose,
-    delay,
-    excitation,
     execution,
     ideal_rf_definition,
-    inversion,
-    readout,
-    refocusing,
-    saturation,
-    spgr_readout,
-    ssfp_fid_readout,
 )
+from ..sequence._array import brought, is_array, read
 from ..sequence._parameters import TISSUE_NAMES
 from ..sequence._simulation import RecordMode
 from ._signal import SignalModel
 
 _EMPTY: Mapping[str, Any] = MappingProxyType({})
+
+# What a caller may name that describes the run rather than the sequence. Each
+# has an attribute of the same name, set once at construction.
+RUN_SETTINGS = ("nstates", "repetitions", "record", "device", "execution")
 
 
 @dataclass(frozen=True)
@@ -76,25 +82,27 @@ class Triggers:
     ideal rotation.
     """
 
-    excitation: Callable[..., Operator] = excitation
-    refocusing: Callable[..., Operator] = refocusing
-    inversion: Callable[..., Operator] = inversion
-    saturation: Callable[..., Operator] = saturation
-    readout: Callable[..., Operator] = readout
-    delay: Callable[..., Operator] = delay
+    excitation: Callable[..., Operator] = Excitation
+    refocusing: Callable[..., Operator] = Refocusing
+    inversion: Callable[..., Operator] = Inversion
+    saturation: Callable[..., Operator] = Saturation
+    readout: Callable[..., Operator] = Readout
+    delay: Callable[..., Operator] = Delay
+
+
+def _uncrushed(*args: Any, **kwargs: Any) -> Operator:
+    """Return a refocusing pulse with no crushers, as a balanced sequence plays."""
+    return Refocusing(*args, crushed=False, **kwargs)
 
 
 #: A readout the repetition rewinds after, and refocusing pulses left uncrushed.
-BALANCED = Triggers(
-    readout=bssfp_readout,
-    refocusing=lambda *args, **kwargs: refocusing(*args, crushed=False, **kwargs),
-)
+BALANCED = Triggers(readout=bSSFPReadout, refocusing=_uncrushed)
 #: A readout followed by one unbalanced gradient.
-UNBALANCED = Triggers(readout=ssfp_fid_readout)
+UNBALANCED = Triggers(readout=SSFPFidReadout)
 #: A readout followed by ideal transverse spoiling.
-SPOILED = Triggers(readout=spgr_readout)
-#: A refocusing pulse between its crushers, and a plain sample at the echo.
-REFOCUSED = Triggers()
+SPOILED = Triggers(readout=SPGRReadout)
+#: A refocusing pulse between its crushers, and the sample at the echo centre.
+REFOCUSED = Triggers(readout=FSEReadout)
 
 
 @dataclass(frozen=True)
@@ -236,8 +244,28 @@ class AbstractSimulator(SignalModel):
         self.execution = execution
         self.crusher_dephasing_rad = crusher_dephasing_rad
         self.voxel_size_m = voxel_size_m
-        self.protocol = protocol
+        # Read once, so a layout can be written in torch whatever the caller
+        # brought, and so the answer knows where to go back to.
+        self._brought = brought(protocol.values())
+        self.protocol = read(
+            {
+                name: value
+                for name, value in protocol.items()
+                if name not in RUN_SETTINGS
+            }
+        )
         self._described: SequenceDescription | None = None
+
+    def _backend(self, values: Mapping[str, Any]) -> Any:
+        """Return the caller's array library, from the call or the constructor.
+
+        A call carrying arrays of its own decides, even when they are torch --
+        the tissue is what the answer is about. Only a call with no arrays at
+        all falls back to what the protocol was written in.
+        """
+        if any(is_array(value) for value in values.values()):
+            return super()._backend(values)
+        return self._brought
 
     # -- what a protocol says -----------------------------------------------
 
@@ -267,6 +295,21 @@ class AbstractSimulator(SignalModel):
         """
         del protocol
         return played_s
+
+    def played(self, **sequence: Any) -> dict[str, Any]:
+        """Return the protocol as it will be laid out.
+
+        The constructor's arguments, with anything given at the call
+        overriding them, every array read as torch. Anything naming a run
+        setting is left out: those describe the run, and a layout has no use
+        for them.
+        """
+        given = {
+            name: value
+            for name, value in sequence.items()
+            if name not in RUN_SETTINGS
+        }
+        return {**self.protocol, **read(given)}
 
     def describe(self, **protocol: Any) -> SequenceDescription:
         """Return the description this protocol plays."""
@@ -318,7 +361,7 @@ class AbstractSimulator(SignalModel):
             "device": given.pop("device", None),
         }
         target = given.pop("execution", self.execution)
-        described = self.describe(**{**self.protocol, **given})
+        described = self.describe(**self.played(**given))
         tissue = self.model.tissue(properties)
         block = nullcontext() if target is None else execution(target)
         with block:

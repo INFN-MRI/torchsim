@@ -172,24 +172,6 @@ def test_real_jvp_reproduces_the_complex_one():
     assert ((expected - actual).abs().max() / scale) < 1e-6
 
 
-@pytest.fixture
-def always_worth_detecting(monkeypatch):
-    """Reach for the subspace verdict however small the problem looks.
-
-    ``detection`` is measured against the machine rather than fixed, so what
-    counts as enough work depends on what else the card has been doing. A test
-    that wants the fast path taken has to say so: left to the threshold it
-    silently gets the complex kernel under load, which computes the four
-    gradients the real one leaves at zero -- and then fails for asserting
-    exactly that.
-    """
-    from torchsim.sequence import _accelerators, EpgEngine
-
-    monkeypatch.setattr(
-        _accelerators, "detection", lambda kind, device, state_count: 0.0
-    )
-
-
 @pytest.mark.parametrize("phase", [0.0, torch.pi / 4, torch.pi / 2])
 def test_real_adjoint_reproduces_the_complex_one(phase, always_worth_detecting):
     """The first-order adjoint through the real subspace, against the kernel it

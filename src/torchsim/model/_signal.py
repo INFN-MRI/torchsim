@@ -14,6 +14,13 @@ run pays for off-resonance, diffusion or flow it does not have. Nothing is
 broadcast here except a property being differentiated, which has to be wide
 enough for one directional derivative to cover every voxel.
 
+**The caller's array library is the caller's.** Properties and sequence
+arguments arrive in whatever they were written in -- NumPy, CuPy, torch -- and
+are read through DLPack, over the same memory rather than a copy. The signal
+goes back the same way. Everything between is torch, which is what the kernels
+and the autograd graph are written against; see :mod:`torchsim.sequence._array`
+for what that costs, and for the one thing it cannot carry back.
+
 **Derivatives are taken in the mode that suits what is differentiated.** A
 Bloch simulation records far more samples than it takes parameters, so a
 derivative with respect to tissue is cheapest forward: :meth:`jacobian` issues
@@ -34,6 +41,8 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import torch
+
+from ..sequence._array import as_torch, brought, like
 
 
 class SignalModel(ABC):
@@ -74,8 +83,10 @@ class SignalModel(ABC):
         :meth:`torch.Tensor.backward` reaches the engine's adjoint, which is
         the mode that suits a sequence parameter.
         """
+        backend = self._backend(values)
         held, sequence = self._split(values)
-        return self._shaped(self.evaluate(held, **sequence), self._batch(held))
+        signal = self._shaped(self.evaluate(held, **sequence), self._batch(held))
+        return like(signal, backend)
 
     def jacobian(
         self, diff: str | Sequence[str], **values: Any
@@ -106,6 +117,7 @@ class SignalModel(ABC):
             something that carries no derivative.
         """
         names = (diff,) if isinstance(diff, str) else tuple(diff)
+        backend = self._backend(values)
         held, sequence = self._split(values)
         for name in names:
             if name not in held:
@@ -140,11 +152,20 @@ class SignalModel(ABC):
             )
             signal, column = torch.func.jvp(along, primals, tangents)
             columns.append(column)
-        if isinstance(diff, str):
-            return signal, columns[0]
-        return signal, torch.stack(columns, dim=-2)
+        jacobian = columns[0] if isinstance(diff, str) else torch.stack(
+            columns, dim=-2
+        )
+        return like(signal, backend), like(jacobian, backend)
 
     # -- what a subclass does not have to write -----------------------------
+
+    def _backend(self, values: Mapping[str, Any]) -> Any:
+        """Return the array namespace the caller's own arrays belong to.
+
+        The first argument carrying a buffer decides; ``None`` -- a torch
+        tensor, or nothing but plain numbers -- asks for no conversion.
+        """
+        return brought(values.values())
 
     def _names(self) -> tuple[str, ...]:
         """Return the property names, however :attr:`properties` declares them."""
@@ -154,9 +175,7 @@ class SignalModel(ABC):
         """Tell the declared property arguments from the sequence ones."""
         declared = self._names()
         held = {
-            name: torch.as_tensor(values[name])
-            for name in declared
-            if name in values
+            name: as_torch(values[name]) for name in declared if name in values
         }
         sequence = {
             name: value for name, value in values.items() if name not in declared

@@ -2,7 +2,7 @@
 
 The kernels read one action word per event: a winding before it, a winding
 after it, or ideal spoiling. Writing that winding as an operator of its own,
-so a readout followed by a crusher is a composite rather than a keyword, is a
+so a Readout followed by a crusher is a composite rather than a keyword, is a
 change of spelling and nothing else -- which is checkable to the bit, and is
 checked that way here. ``allclose`` would pass for two different sequences
 that happen to agree; only the same events give the same bits.
@@ -19,18 +19,18 @@ from torchsim.sequence import (
     EventAction,
     SequenceDescription,
     TissueProperties,
-    bssfp_readout,
+    bSSFPReadout,
     compose,
-    delay,
-    dephase,
-    excitation,
+    Delay,
+    Dephase,
+    Excitation,
     ideal_rf_definition,
     operator,
-    readout,
-    refocusing,
-    spgr_readout,
-    spoil,
-    ssfp_fid_readout,
+    Readout,
+    Refocusing,
+    SPGRReadout,
+    Spoil,
+    SSFPFidReadout,
 )
 
 TISSUE = TissueProperties(
@@ -64,9 +64,9 @@ def _run(modules, nstates=10):
 @pytest.mark.parametrize(
     ("action", "composite"),
     [
-        (EventAction.SHIFT_AFTER, ssfp_fid_readout),
-        (EventAction.SPOIL_AFTER, spgr_readout),
-        (EventAction.NONE, bssfp_readout),
+        (EventAction.SHIFT_AFTER, SSFPFidReadout),
+        (EventAction.SPOIL_AFTER, SPGRReadout),
+        (EventAction.NONE, bSSFPReadout),
     ],
     ids=["ssfp-fid", "spgr", "bssfp"],
 )
@@ -75,29 +75,29 @@ def test_a_composite_readout_is_its_action_word(action, composite) -> None:
     keyword = [
         part
         for _ in range(SHOTS)
-        for part in (excitation(FLIP), readout(action=action, duration_s=TR))
+        for part in (Excitation(FLIP), Readout(action=action, duration_s=TR))
     ]
     composed = [
         part
         for _ in range(SHOTS)
-        for part in (excitation(FLIP), composite(duration_s=TR))
+        for part in (Excitation(FLIP), composite(duration_s=TR))
     ]
     assert torch.equal(_run(keyword), _run(composed))
 
 
 def test_a_crusher_pair_is_the_refocusing_keyword() -> None:
     """``crushed=True`` is the pulse between two windings, written short."""
-    keyword = [excitation(FLIP, torch.pi / 2)]
-    composed = [excitation(FLIP, torch.pi / 2)]
+    keyword = [Excitation(FLIP, torch.pi / 2)]
+    composed = [Excitation(FLIP, torch.pi / 2)]
     for _ in range(SHOTS):
-        keyword += [delay(TR / 2), refocusing(REFOCUS), delay(TR / 2), readout()]
+        keyword += [Delay(TR / 2), Refocusing(REFOCUS), Delay(TR / 2), Readout()]
         composed += [
-            delay(TR / 2),
-            dephase(),
-            refocusing(REFOCUS, crushed=False),
-            dephase(),
-            delay(TR / 2),
-            readout(),
+            Delay(TR / 2),
+            Dephase(),
+            Refocusing(REFOCUS, crushed=False),
+            Dephase(),
+            Delay(TR / 2),
+            Readout(),
         ]
     assert torch.equal(_run(keyword), _run(composed))
 
@@ -112,10 +112,10 @@ def test_the_spelling_is_a_choice_and_not_a_coincidence() -> None:
             [
                 part
                 for _ in range(SHOTS)
-                for part in (excitation(FLIP), composite(duration_s=TR))
+                for part in (Excitation(FLIP), composite(duration_s=TR))
             ]
         )
-        for composite in (bssfp_readout, ssfp_fid_readout, spgr_readout)
+        for composite in (bSSFPReadout, SSFPFidReadout, SPGRReadout)
     ]
     scale = max(float(answer.abs().max()) for answer in answers)
     for first in range(len(answers)):
@@ -126,8 +126,8 @@ def test_the_spelling_is_a_choice_and_not_a_coincidence() -> None:
 
 def test_spoiling_and_winding_are_different_things() -> None:
     """One discards the transverse orders, the other moves them along."""
-    wound = dephase().emit(0.0)[0]
-    spoiled = spoil().emit(0.0)[0]
+    wound = Dephase().emit(0.0)[0]
+    spoiled = Spoil().emit(0.0)[0]
     assert wound.action is EventAction.CRUSH_AFTER
     assert spoiled.action is EventAction.SPOIL_AFTER
 
@@ -143,7 +143,7 @@ def test_every_new_operator_is_reachable_by_name(name) -> None:
 
 def test_a_composite_holds_the_repetition_it_is_given() -> None:
     """The sample is at the start of the module and the rest is the wait."""
-    played = ssfp_fid_readout(duration_s=TR)
+    played = SSFPFidReadout(duration_s=TR)
     assert played.duration_s == TR
     events = played.emit(0.0)
     assert [event.type.name for event in events] == ["ADC", "WAIT", "WAIT"]

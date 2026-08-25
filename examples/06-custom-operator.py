@@ -3,7 +3,7 @@
 Writing a new operator
 ======================
 
-An operator is one module of a sequence -- a pulse, a readout, a delay, a whole
+An operator is one module of a sequence -- a pulse, a Readout, a Delay, a whole
 preparation -- that knows what it plays and how long it holds the timeline.
 Writing a new one is writing a Python function that returns events, and it
 reaches the fused kernels with no change to them: no Triton, no C++.
@@ -28,15 +28,15 @@ import torch
 
 from torchsim.sequence import (
     compose,
-    delay,
+    Delay,
     EpgEngine,
     EventAction,
-    excitation,
+    Excitation,
     ideal_rf_definition,
     module,
     operator,
-    readout,
-    refocusing,
+    Readout,
+    Refocusing,
     register_operator,
     SequenceDescription,
     TissueProperties,
@@ -46,7 +46,7 @@ from torchsim.sequence import (
 # Composing one out of the ones that exist
 # ----------------------------------------
 # A T2 preparation tips the magnetization into the transverse plane, lets it
-# decay for a chosen time about a refocusing pulse, tips what is left back
+# decay for a chosen time about a Refocusing pulse, tips what is left back
 # along z, and spoils whatever did not come back.
 #
 # All of those are operators already, so the preparation is
@@ -54,9 +54,9 @@ from torchsim.sequence import (
 # the kernels -- what is new is the *arrangement*, and that is exactly what an
 # operator is.
 #
-# The refocusing pulse is asked for uncrushed: a T2 preparation refocuses
+# The Refocusing pulse is asked for uncrushed: a T2 preparation refocuses
 # rather than dephases, and the crusher pair
-# :func:`~torchsim.sequence.refocusing` adds by default would spoil the echo it
+# :func:`~torchsim.sequence.refocusing` adds by default would Spoil the echo it
 # exists to form.
 
 
@@ -72,12 +72,12 @@ def t2_preparation(echo_time_s, *, spoil_s=2e-3):
     """
     half = 0.5 * echo_time_s
     return module(
-        excitation(0.5 * torch.pi),
-        delay(half),
-        refocusing(torch.pi, 0.5 * torch.pi, crushed=False),
-        delay(half),
-        excitation(-0.5 * torch.pi),
-        delay(spoil_s, action=EventAction.SPOIL_AFTER),
+        Excitation(0.5 * torch.pi),
+        Delay(half),
+        Refocusing(torch.pi, 0.5 * torch.pi, crushed=False),
+        Delay(half),
+        Excitation(-0.5 * torch.pi),
+        Delay(spoil_s, action=EventAction.SPOIL_AFTER),
         duration_s=echo_time_s + spoil_s,
     )
 
@@ -93,12 +93,12 @@ def t2_preparation(echo_time_s, *, spoil_s=2e-3):
 
 def prepared_train(prep_s, echo_spacing_s, echoes):
     """Return a T2-prepared spin-echo train."""
-    modules = [t2_preparation(prep_s), excitation(0.5 * torch.pi, 0.5 * torch.pi)]
+    modules = [t2_preparation(prep_s), Excitation(0.5 * torch.pi, 0.5 * torch.pi)]
     for _ in range(echoes):
-        modules.append(delay(0.5 * echo_spacing_s))
-        modules.append(refocusing(torch.pi, 0.5 * torch.pi))
-        modules.append(delay(0.5 * echo_spacing_s))
-        modules.append(readout(0.5 * torch.pi))
+        modules.append(Delay(0.5 * echo_spacing_s))
+        modules.append(Refocusing(torch.pi, 0.5 * torch.pi))
+        modules.append(Delay(0.5 * echo_spacing_s))
+        modules.append(Readout(0.5 * torch.pi))
     events, duration_s = compose(*modules)
     return SequenceDescription(
         subsequence_index=0,
@@ -164,7 +164,7 @@ print("registered:", built.duration_s, "s,", len(built.emit(0.0)), "events")
 # What an operator cannot say
 # ---------------------------
 # The vocabulary is the three event types, the four dephasing actions and the
-# RF and ADC roles -- so a preparation, a readout, a shaped or per-channel
+# RF and ADC roles -- so a preparation, a Readout, a shaped or per-channel
 # pulse is written here and reaches the kernels unchanged.
 #
 # What a description cannot express is *how much* a gradient dephases. It

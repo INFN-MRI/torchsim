@@ -14,7 +14,6 @@ import pytest
 import torch
 
 from torchsim.model import REFOCUSED, AbstractSimulator, StateMachineModel
-from torchsim.sequence import AdcRole
 from torchsim.sequence import _simulation
 
 
@@ -38,10 +37,7 @@ class Relaxation(AbstractSimulator):
                 echo_s - 0.5 * spacing_s,
                 self.triggers.refocusing(angles[index], turns[index]),
             ))
-            parts.append((
-                echo_s,
-                self.triggers.readout(turns[index], role=AdcRole.ECHO_CENTER),
-            ))
+            parts.append((echo_s, self.triggers.readout(turns[index])))
         return parts
 
 

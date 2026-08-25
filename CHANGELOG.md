@@ -38,13 +38,31 @@
 - **`torchsim.sequence.ideal_rf_definition`**, the hard-pulse RF definition a
   description built by hand needs.
 
-- **`dephase()` and `spoil()`**, and the composite readouts `bssfp_readout`,
-  `ssfp_fid_readout` and `spgr_readout` built from them. An unbalanced
-  gradient was previously spelled as a keyword on the sample; it is now an
-  operator of its own, and each composite is held to the keyword it replaces
-  with `torch.equal`.
+- **`Dephase()` and `Spoil()`**, and the composite readouts `bSSFPReadout`,
+  `SSFPFidReadout`, `SPGRReadout` and `FSEReadout` built from them. An
+  unbalanced gradient was previously spelled as a keyword on the sample; it is
+  now an operator of its own, and each composite is held to the keyword it
+  replaces with `torch.equal`.
+
+- **Any array library, in and out.** Properties and sequence arguments may be
+  NumPy, CuPy or torch, and the signal comes back in whichever the caller
+  passed. The conversion is DLPack in both directions, so no element is
+  copied: a NumPy array becomes a tensor over the same host memory and a CuPy
+  array one over the same device memory. The first array a call carries
+  decides; a torch caller is never handed something else.
+
+  What the round trip cannot carry is the autograd graph. A cost
+  differentiated with `backward()` must be built on torch inputs. Forward-mode
+  derivatives are unaffected: `jacobian` takes them internally and hands back
+  arrays in the caller's own library.
 
 ### Changed
+
+- **Operators are named for the thing they are, not the act of making one:**
+  `Excitation`, `Refocusing`, `Inversion`, `Saturation`, `Readout`, `Delay`,
+  `Dephase`, `Spoil`. `bSSFPReadout` keeps the lowercase `b` the sequence is
+  written with everywhere else. The slots on a `Triggers` table stay lowercase
+  -- they are fields, and a field is not a constructor.
 
 - **Models are called rather than configured.** `set_properties` /
   `set_sequence` / `__call__` are replaced by `simulate(**values)` and

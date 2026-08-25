@@ -10,6 +10,7 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
+from ..sequence._array import as_torch, matched
 from ..model import UNBALANCED, AbstractSimulator, StateMachineModel
 
 
@@ -63,15 +64,11 @@ class MRFSimulator(AbstractSimulator):
         phases:
             Excitation phases in degrees.
         """
-        angles = torch.deg2rad(torch.atleast_1d(torch.as_tensor(flip)))
-        turns = torch.deg2rad(torch.as_tensor(phases, dtype=angles.dtype))
-        turns = turns.expand_as(angles) if turns.numel() == 1 else turns
-        spacing_s = torch.as_tensor(TR, dtype=angles.dtype) * 1e-3
-        spacing_s = (
-            spacing_s.expand_as(angles) if spacing_s.numel() == 1 else spacing_s
-        )
+        angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)))
+        turns = torch.deg2rad(matched(phases, angles))
+        spacing_s = matched(TR, angles) * 1e-3
 
-        parts = [self.triggers.inversion(duration_s=torch.as_tensor(TI) * 1e-3)]
+        parts = [self.triggers.inversion(duration_s=TI * 1e-3)]
         for index in range(angles.numel()):
             parts.append(self.triggers.excitation(angles[index], turns[index]))
             parts.append(
@@ -84,6 +81,6 @@ class MRFSimulator(AbstractSimulator):
     ) -> torch.Tensor:
         """Return the last playing of the train, which is the one measured."""
         signal = super().evaluate(properties, **sequence)
-        played = {**self.protocol, **sequence}
-        echoes = torch.atleast_1d(torch.as_tensor(played["flip"])).shape[-1]
+        played = self.played(**sequence)
+        echoes = torch.atleast_1d(played["flip"]).shape[-1]
         return 1j * signal[..., -echoes:]

@@ -51,7 +51,7 @@ from torchsim.model import (
 # winding. Name ``b0_hz`` and the off-resonance term comes back.
 #
 # ``triggers`` is what each kind of event is realized as. ``UNBALANCED`` says
-# a readout is followed by one unbalanced gradient, which is what makes this
+# a Readout is followed by one unbalanced gradient, which is what makes this
 # an SSFP-FID rather than a balanced or a spoiled train. Swapping it is how
 # you change that, and it is the only thing you change.
 
@@ -75,7 +75,7 @@ physics = StateMachineModel(
 
 
 class SSFPMRF(AbstractSimulator):
-    """An inversion, then one excitation and one sample per repetition."""
+    """An Inversion, then one Excitation and one sample per repetition."""
 
     model = physics
     states = 10

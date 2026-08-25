@@ -20,7 +20,7 @@ from ._description import (
     SequenceDescription,
     ideal_rf_definition,
 )
-from ._operators import compose, excitation, inversion, module, readout, refocusing
+from ._operators import Excitation, Inversion, Readout, Refocusing, compose, module
 
 
 def fse_description(
@@ -51,19 +51,19 @@ def fse_description(
     echo_train_length = flip.shape[-1]
     # An FSE train times itself from each echo rather than by accumulating, so
     # the modules are placed at the times it computes.
-    modules = [(0.0, excitation(excitation_flip_rad, excitation_phase_rad))]
+    modules = [(0.0, Excitation(excitation_flip_rad, excitation_phase_rad))]
     for index in range(echo_train_length):
         echo_time_s = (index + 1) * echo_spacing_s
         modules.append(
             (
                 echo_time_s - 0.5 * echo_spacing_s,
-                refocusing(flip[..., index], phases[..., index]),
+                Refocusing(flip[..., index], phases[..., index]),
             )
         )
         modules.append(
             (
                 echo_time_s,
-                readout(phases[..., index], role=AdcRole.ECHO_CENTER),
+                Readout(phases[..., index], role=AdcRole.ECHO_CENTER),
             )
         )
     events, _ = compose(*modules)
@@ -104,11 +104,11 @@ def mrf_description(
     if repetition_time.shape != flip.shape or phases.shape != flip.shape:
         raise ValueError("TR and phase must be scalar or match flip angles")
 
-    modules = [inversion(duration_s=inversion_time_s)]
+    modules = [Inversion(duration_s=inversion_time_s)]
     for index in range(flip.numel()):
-        modules.append(excitation(flip[index], phases[index]))
+        modules.append(Excitation(flip[index], phases[index]))
         modules.append(
-            readout(
+            Readout(
                 phases[index],
                 action=EventAction.SHIFT_AFTER,
                 duration_s=repetition_time[index],
@@ -209,10 +209,10 @@ def spgr_description(
     # shot is one module with the readout offset inside it.
     shots = [
         module(
-            excitation(flip[index], phases[index]),
+            Excitation(flip[index], phases[index]),
             (
                 echo_time[index],
-                readout(phases[index], action=EventAction.SPOIL_AFTER),
+                Readout(phases[index], action=EventAction.SPOIL_AFTER),
             ),
             duration_s=repetition_time[index],
         )
@@ -246,12 +246,12 @@ def _inversion_prepared_gre_description(
 ) -> SequenceDescription:
     repetition_time = _expand_like(repetition_time_s, flip, "TR")
     phases = _expand_like(phases_rad, flip, "phase")
-    modules = [inversion(duration_s=inversion_time_s)]
+    modules = [Inversion(duration_s=inversion_time_s)]
     for index in range(flip.numel()):
         acquired = center_index is None or index == center_index
-        modules.append(excitation(flip[index], phases[index]))
+        modules.append(Excitation(flip[index], phases[index]))
         modules.append(
-            readout(
+            Readout(
                 phases[index],
                 role=AdcRole.SINGLE if acquired else AdcRole.NON_ACQUIRED,
                 is_echo=acquired,

@@ -9,6 +9,8 @@ from typing import Any
 
 import torch
 
+from ..sequence._array import as_torch
+
 
 def across_contrasts(
     properties: Mapping[str, Any], *sequence: Any
@@ -34,11 +36,11 @@ def across_contrasts(
         The properties, ready to broadcast against the sequence.
     """
     contrasts = torch.broadcast_shapes(
-        *(torch.as_tensor(value).shape for value in sequence)
+        *(as_torch(value).shape for value in sequence)
     )
     if not contrasts:
         return dict(properties)
     return {
-        name: torch.as_tensor(value)[..., None]
+        name: value[..., None]
         for name, value in properties.items()
     }

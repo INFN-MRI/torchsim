@@ -52,7 +52,7 @@ POOLED = {"bound_fraction": BOUND, "bound_exchange": 30.0, "T1_bound": 1000.0}
 
 
 def _by_hand(**pool) -> torch.Tensor:
-    """The same run, with the tissue and the description written out."""
+    """Run the same sequence with the tissue and description written out."""
     described = mrf_description(torch.deg2rad(FLIP), 10e-3)
     tissue = TissueProperties(t1_ms=T1, t2_ms=T2, **pool)
     return EpgEngine().simulate(described, tissue, nstates=8).signal

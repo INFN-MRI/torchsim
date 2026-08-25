@@ -11,6 +11,7 @@ import numpy.typing as npt
 import torch
 
 from ..model import AbstractSimulator, StateMachineModel
+from ..sequence._array import arrays
 from ._contrast import across_contrasts
 
 
@@ -46,8 +47,7 @@ class bSSFPSimulator(AbstractSimulator):
         self, properties: Mapping[str, Any], **sequence: Any
     ) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
-        played = {**self.protocol, **sequence}
-        return self._signal(properties, **played)
+        return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
         self,
@@ -76,13 +76,13 @@ class bSSFPSimulator(AbstractSimulator):
             Linear phase-cycling increment in degrees.
         """
         if TE is None:
-            TE = torch.as_tensor(TR) / 2
+            TE = TR / 2
         held = across_contrasts(properties, flip, TR, TE, phase_inc)
         radians = torch.pi / 180.0
-        angle = radians * torch.as_tensor(flip)
-        cycling = radians * torch.as_tensor(phase_inc)
-        repetition_s = torch.as_tensor(TR) * 1e-3
-        echo_s = torch.as_tensor(TE) * 1e-3
+        angle = radians * flip
+        cycling = radians * phase_inc
+        repetition_s = TR * 1e-3
+        echo_s = TE * 1e-3
 
         density = held.get("M0", 1.0)
         # The off-resonance map follows the Freeman-Hill convention and this

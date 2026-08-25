@@ -1,4 +1,9 @@
-"""A batch of echo trains must behave exactly like the trains run one by one."""
+"""A batch of echo trains must behave exactly like the trains run one by one.
+
+The comparisons here are bitwise, so both arms have to take the same kernel.
+A batch is several times the work of one train and the subspace verdict is
+reached for by size, so the threshold is pinned rather than relied on.
+"""
 
 import pytest
 import torch
@@ -45,7 +50,7 @@ def _buffers(packed):
     return packed.buffers
 
 
-def test_packing_matches_stacked_single_trains():
+def test_packing_matches_stacked_single_trains(always_worth_detecting):
     flip = _schedules(5, 12)
     batched = _pack(flip)
     singles = [_pack(flip[train]) for train in range(flip.shape[0])]
@@ -60,7 +65,7 @@ def test_packing_matches_stacked_single_trains():
         assert torch.equal(getattr(batched, name), getattr(singles[0], name))
 
 
-def test_forward_matches_single_trains():
+def test_forward_matches_single_trains(always_worth_detecting):
     flip = _schedules(6, 12)
     tissue = _tissue()
     expected = torch.stack(
@@ -71,7 +76,7 @@ def test_forward_matches_single_trains():
     assert torch.equal(actual, expected)
 
 
-def test_event_gradients_stay_per_train():
+def test_event_gradients_stay_per_train(always_worth_detecting):
     """Each train's gradient must depend only on that train's flip angles."""
     flip = _schedules(4, 12)
     tissue = _tissue()
@@ -90,7 +95,7 @@ def test_event_gradients_stay_per_train():
     assert not torch.equal(first.grad[2], second.grad[2])
 
 
-def test_tissue_gradients_sum_over_trains():
+def test_tissue_gradients_sum_over_trains(always_worth_detecting):
     """Tissue parameters are shared, so their gradient accumulates over trains."""
     flip = _schedules(4, 12)
     prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
@@ -122,7 +127,9 @@ def _vjp(prepared, events, seed, outputs, threads):
 
 
 @pytest.mark.parametrize("threads", [1, 2, 4, 0])
-def test_batched_reduction_is_scheduling_independent(threads):
+def test_batched_reduction_is_scheduling_independent(
+    threads, always_worth_detecting
+):
     """At a fixed thread count the result must not depend on scheduling.
 
     Workers accumulate into private buffers that are summed in ascending thread
@@ -143,7 +150,7 @@ def test_batched_reduction_is_scheduling_independent(threads):
 
 
 @pytest.mark.parametrize("threads", [2, 4, 8, 0])
-def test_thread_count_only_reassociates(threads):
+def test_thread_count_only_reassociates(threads, always_worth_detecting):
     """Changing the thread count regroups the sum, so it may move by an ulp."""
     flip = _schedules(8, 12)
     prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
@@ -158,7 +165,7 @@ def test_thread_count_only_reassociates(threads):
         assert ((expected - got).abs().max() / scale) < 1e-6
 
 
-def test_mismatched_train_widths_are_rejected():
+def test_mismatched_train_widths_are_rejected(always_worth_detecting):
     """A width mismatch would stride out of bounds inside the kernel."""
     flip = _schedules(3, 12)
     prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
@@ -218,7 +225,9 @@ def _second_order(threads):
 # Odd counts force a partition that does not divide the trains evenly, which is
 # where a boundary would fall inside a train.
 @pytest.mark.parametrize("threads", [2, 3, 5, 0])
-def test_event_gradients_do_not_depend_on_the_worker_count(threads):
+def test_event_gradients_do_not_depend_on_the_worker_count(
+    threads, always_worth_detecting
+):
     """Every slot of an event gradient has exactly one writer.
 
     Workers take whole trains, and an event gradient belongs to one train, so
@@ -233,7 +242,7 @@ def test_event_gradients_do_not_depend_on_the_worker_count(threads):
 
 
 @pytest.mark.parametrize("threads", [2, 3, 5, 0])
-def test_tissue_gradients_survive_the_worker_count(threads):
+def test_tissue_gradients_survive_the_worker_count(threads, always_worth_detecting):
     """Every train contributes to these, so workers sum private copies.
 
     Reassociating that sum moves the last bits, so the agreement here is to
@@ -249,7 +258,7 @@ def test_tissue_gradients_survive_the_worker_count(threads):
         assert ((expected[index] - actual[index]).abs().max() / scale) < 1e-5, index
 
 
-def test_workers_are_reusable_across_concurrent_callers():
+def test_workers_are_reusable_across_concurrent_callers(always_worth_detecting):
     """The pool serves one job at a time, and callers may arrive together.
 
     The kernels release the GIL, so several Python threads really can submit at

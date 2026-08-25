@@ -10,8 +10,8 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
+from ..sequence._array import as_torch, matched
 from ..model import REFOCUSED, AbstractSimulator, StateMachineModel
-from ..sequence import AdcRole
 
 
 class FSESimulator(AbstractSimulator):
@@ -61,9 +61,8 @@ class FSESimulator(AbstractSimulator):
             Repetition time in milliseconds, which sets how far the
             longitudinal magnetization recovers before the next train.
         """
-        angles = torch.deg2rad(torch.atleast_1d(torch.as_tensor(flip)))
-        turns = torch.deg2rad(torch.as_tensor(phases, dtype=angles.dtype))
-        turns = turns.expand_as(angles) if turns.numel() == 1 else turns
+        angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)))
+        turns = torch.deg2rad(matched(phases, angles))
         # Not tensorized: a scalar spacing keeps the precision the caller
         # gave it, and the echo times are what the whole train is placed by.
         spacing_s = ESP * 1e-3
@@ -77,24 +76,21 @@ class FSESimulator(AbstractSimulator):
                 echo_s - 0.5 * spacing_s,
                 self.triggers.refocusing(angles[..., index], turns[..., index]),
             ))
-            parts.append((
-                echo_s,
-                self.triggers.readout(turns[..., index], role=AdcRole.ECHO_CENTER),
-            ))
+            parts.append((echo_s, self.triggers.readout(turns[..., index])))
         return parts
 
     def repetition_s(self, played_s: Any, **protocol: Any) -> Any:
         """Return the TR, which the train waits out before the next one."""
         del played_s
-        return torch.as_tensor(protocol.get("TR", 1e6)) * 1e-3
+        return protocol.get("TR", 1e6) * 1e-3
 
     def evaluate(
         self, properties: Mapping[str, Any], **sequence: Any
     ) -> torch.Tensor:
         """Simulate one train, then let it recover for what is left of the TR."""
-        played = {**self.protocol, **sequence}
+        played = self.played(**sequence)
         signal = super().evaluate(properties, **sequence)
-        echoes = torch.atleast_1d(torch.as_tensor(played["flip"])).shape[-1]
+        echoes = torch.atleast_1d(played["flip"]).shape[-1]
         left_ms = played.get("TR", 1e6) - played["ESP"] * echoes
         recovered = torch.exp(-1e3 / properties["T1"] * left_ms * 1e-3)
         # Both carry the tissue shape and the signal is (..., tissue, echo), so

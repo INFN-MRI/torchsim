@@ -33,12 +33,13 @@ TISSUE = {"T1": T1, "T2": T2}
 
 
 class Train(AbstractSimulator):
-    """One excitation and one sample per repetition, however it is realized."""
+    """One Excitation and one sample per repetition, however it is realized."""
 
     model = StateMachineModel(properties={"T1": "t1_ms", "T2": "t2_ms"})
     states = 8
 
     def layout(self, *, flip, TR):
+        """Return one excitation and one sample per repetition."""
         angles = torch.deg2rad(torch.as_tensor(flip))
         parts = []
         for index in range(angles.numel()):
@@ -48,7 +49,7 @@ class Train(AbstractSimulator):
 
 
 def _with(triggers):
-    """The same protocol, realized by a different trigger table."""
+    """Return the same protocol, realized by a different trigger table."""
     return Train(
         model=replace(Train.model, triggers=triggers),
         flip=FLIP,
@@ -163,12 +164,24 @@ def test_the_protocol_may_be_overridden_per_call() -> None:
 
 def test_a_trigger_table_defaults_to_the_bare_operators() -> None:
     """An unassigned slot is the plain event, not a surprise."""
-    from torchsim.sequence import excitation, readout
+    from torchsim.sequence import Excitation, Readout
 
     table = Triggers()
-    assert table.excitation is excitation
-    assert table.readout is readout
-    assert REFOCUSED == Triggers()
+    assert table.excitation is Excitation
+    assert table.readout is Readout
+
+
+def test_every_shipped_table_says_something() -> None:
+    """A preset that equalled the default would be a name and nothing else.
+
+    That is what the retired policy classes were, so each table here has to
+    differ from the bare one and from its siblings.
+    """
+    tables = {"balanced": BALANCED, "unbalanced": UNBALANCED,
+              "spoiled": SPOILED, "refocused": REFOCUSED}
+    for name, table in tables.items():
+        assert table != Triggers(), f"{name} decides nothing"
+    assert len({table.readout for table in tables.values()}) == len(tables)
 
 
 def test_the_definitions_come_from_the_model() -> None:

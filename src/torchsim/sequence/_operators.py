@@ -7,6 +7,11 @@ description carries, which is the accumulator a builder would otherwise keep
 for itself. A sequence whose timing is computed rather than accumulated calls
 :meth:`Operator.emit` at the time it wants instead.
 
+An operator names a thing rather than an action -- ``Readout``, ``Dephase``,
+``SSFPFidReadout`` -- and is capitalized to say so, even where it is a function
+rather than a class. ``bSSFPReadout`` keeps the lowercase ``b`` the sequence is
+written with everywhere else.
+
 Operators speak only the vocabulary the fused kernels already implement: the
 three event types, the four dephasing actions, and the RF and ADC roles. A
 module that needs nothing beyond that -- a T2 preparation, a
@@ -22,23 +27,24 @@ crusher of twice its neighbour's area have no representation here.
 from __future__ import annotations
 
 __all__ = [
+    "Delay",
+    "Dephase",
+    "Excitation",
+    "FSEReadout",
+    "Inversion",
     "Operator",
-    "bssfp_readout",
+    "Readout",
+    "Refocusing",
+    "SPGRReadout",
+    "SSFPFidReadout",
+    "Saturation",
+    "Spoil",
+    "bSSFPReadout",
     "compose",
-    "delay",
-    "dephase",
-    "excitation",
-    "inversion",
     "module",
     "operator",
     "operator_names",
-    "readout",
-    "refocusing",
     "register_operator",
-    "saturation",
-    "spgr_readout",
-    "spoil",
-    "ssfp_fid_readout",
 ]
 
 from collections.abc import Callable
@@ -125,7 +131,7 @@ def module(*parts: Operator | tuple[Any, Operator], duration_s: Any) -> Operator
     return Operator(emit, duration_s)
 
 
-def excitation(
+def Excitation(
     flip_rad: Any,
     phase_rad: Any = 0.0,
     *,
@@ -154,7 +160,7 @@ def excitation(
     return Operator(emit, duration_s)
 
 
-def refocusing(
+def Refocusing(
     flip_rad: Any,
     phase_rad: Any = 0.0,
     *,
@@ -193,7 +199,7 @@ def refocusing(
     return Operator(emit, duration_s)
 
 
-def inversion(
+def Inversion(
     *,
     duration_s: Any = 0.0,
     flip_rad: Any = torch.pi,
@@ -222,7 +228,7 @@ def inversion(
     return Operator(emit, duration_s)
 
 
-def saturation(
+def Saturation(
     definition_id: int,
     flip_rad: Any,
     *,
@@ -255,7 +261,7 @@ def saturation(
     return Operator(emit, duration_s)
 
 
-def readout(
+def Readout(
     phase_rad: Any = 0.0,
     *,
     role: AdcRole = AdcRole.SINGLE,
@@ -284,7 +290,7 @@ def readout(
     return Operator(emit, duration_s)
 
 
-def delay(
+def Delay(
     duration_s: Any, *, action: EventAction = EventAction.NONE
 ) -> Operator:
     """Return time passing, and whatever the sequence plays across it.
@@ -304,7 +310,7 @@ def delay(
     return Operator(emit, duration_s)
 
 
-def dephase() -> Operator:
+def Dephase() -> Operator:
     """Return an unbalanced gradient, taking no time to play.
 
     Every configuration order winds on by one: this is the crusher a
@@ -322,7 +328,7 @@ def dephase() -> Operator:
     )
 
 
-def spoil() -> Operator:
+def Spoil() -> Operator:
     """Return ideal transverse spoiling, taking no time to play.
 
     Every transverse order is discarded rather than wound on, which is what a
@@ -338,7 +344,7 @@ def spoil() -> Operator:
     )
 
 
-def bssfp_readout(
+def bSSFPReadout(
     phase_rad: Any = 0.0,
     *,
     duration_s: Any = 0.0,
@@ -352,13 +358,13 @@ def bssfp_readout(
     sample.
     """
     return module(
-        readout(phase_rad, role=role, is_echo=is_echo),
-        delay(duration_s),
+        Readout(phase_rad, role=role, is_echo=is_echo),
+        Delay(duration_s),
         duration_s=duration_s,
     )
 
 
-def ssfp_fid_readout(
+def SSFPFidReadout(
     phase_rad: Any = 0.0,
     *,
     duration_s: Any = 0.0,
@@ -370,14 +376,14 @@ def ssfp_fid_readout(
     ``duration_s`` is what is left of the repetition after the sample.
     """
     return module(
-        readout(phase_rad, role=role, is_echo=is_echo),
-        dephase(),
-        delay(duration_s),
+        Readout(phase_rad, role=role, is_echo=is_echo),
+        Dephase(),
+        Delay(duration_s),
         duration_s=duration_s,
     )
 
 
-def spgr_readout(
+def SPGRReadout(
     phase_rad: Any = 0.0,
     *,
     duration_s: Any = 0.0,
@@ -389,25 +395,46 @@ def spgr_readout(
     ``duration_s`` is what is left of the repetition after the sample.
     """
     return module(
-        readout(phase_rad, role=role, is_echo=is_echo),
-        spoil(),
-        delay(duration_s),
+        Readout(phase_rad, role=role, is_echo=is_echo),
+        Spoil(),
+        Delay(duration_s),
+        duration_s=duration_s,
+    )
+
+
+def FSEReadout(
+    phase_rad: Any = 0.0,
+    *,
+    duration_s: Any = 0.0,
+    is_echo: bool = True,
+) -> Operator:
+    """Return the sample at a spin echo, marked as the echo centre.
+
+    A refocused train dephases around its pulses rather than after its
+    samples, so nothing is played here -- what distinguishes this readout is
+    that the sample is the centre of an echo, which is what a reconstruction
+    reads it as. ``duration_s`` is what is left of the echo spacing after it.
+    """
+    return module(
+        Readout(phase_rad, role=AdcRole.ECHO_CENTER, is_echo=is_echo),
+        Delay(duration_s),
         duration_s=duration_s,
     )
 
 
 _REGISTRY: dict[str, Callable[..., Operator]] = {
-    "excitation": excitation,
-    "refocusing": refocusing,
-    "inversion": inversion,
-    "saturation": saturation,
-    "readout": readout,
-    "delay": delay,
-    "dephase": dephase,
-    "spoil": spoil,
-    "bssfp-readout": bssfp_readout,
-    "ssfp-fid-readout": ssfp_fid_readout,
-    "spgr-readout": spgr_readout,
+    "excitation": Excitation,
+    "refocusing": Refocusing,
+    "inversion": Inversion,
+    "saturation": Saturation,
+    "readout": Readout,
+    "delay": Delay,
+    "dephase": Dephase,
+    "spoil": Spoil,
+    "bssfp-readout": bSSFPReadout,
+    "ssfp-fid-readout": SSFPFidReadout,
+    "spgr-readout": SPGRReadout,
+    "fse-readout": FSEReadout,
 }
 
 

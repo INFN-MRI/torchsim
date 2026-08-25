@@ -23,13 +23,13 @@ from torchsim.sequence._builders import (
 from torchsim.sequence._description import AdcRole, EventAction, EventType
 from torchsim.sequence._operators import (
     compose,
-    delay,
-    excitation,
+    Delay,
+    Excitation,
     module,
     operator,
     operator_names,
-    readout,
-    refocusing,
+    Readout,
+    Refocusing,
     register_operator,
 )
 
@@ -75,7 +75,7 @@ def test_the_operator_registry_answers_for_every_shipped_operator() -> None:
 def test_an_operator_can_be_added_and_not_replaced() -> None:
     """Registration is how a caller extends the vocabulary, once per name."""
     def spin_lock(duration_s):
-        return excitation(0.0, duration_s=duration_s)
+        return Excitation(0.0, duration_s=duration_s)
 
     register_operator("spin-lock", spin_lock)
     assert operator("spin-lock") is spin_lock
@@ -86,8 +86,8 @@ def test_an_operator_can_be_added_and_not_replaced() -> None:
 def test_a_bare_operator_follows_the_one_before_it() -> None:
     """Composition is a running sum, which is the accumulator it replaces."""
     events, span = compose(
-        excitation(1.0, duration_s=2e-3),
-        readout(duration_s=3e-3),
+        Excitation(1.0, duration_s=2e-3),
+        Readout(duration_s=3e-3),
     )
     assert [event.timestamp_us for event in events] == [0.0, 2e3]
     assert span == pytest.approx(5e-3)
@@ -96,7 +96,7 @@ def test_a_bare_operator_follows_the_one_before_it() -> None:
 def test_an_offset_is_measured_from_where_the_composition_starts() -> None:
     """A sequence timed from its echo places modules rather than stacking them."""
     events, _ = compose(
-        (4e-3, readout()), (1e-3, readout()), start_s=10e-3
+        (4e-3, Readout()), (1e-3, Readout()), start_s=10e-3
     )
     assert [event.timestamp_us for event in events] == [14e3, 11e3]
 
@@ -104,7 +104,7 @@ def test_an_offset_is_measured_from_where_the_composition_starts() -> None:
 def test_a_module_carries_its_own_offsets_wherever_it_is_placed() -> None:
     """A shot is one thing a caller lays down, not three it has to align."""
     shot = module(
-        excitation(1.0), (2e-3, readout()), duration_s=10e-3
+        Excitation(1.0), (2e-3, Readout()), duration_s=10e-3
     )
     events, span = compose(shot, shot)
     assert [event.timestamp_us for event in events] == [0.0, 2e3, 10e3, 12e3]
@@ -113,20 +113,20 @@ def test_a_module_carries_its_own_offsets_wherever_it_is_placed() -> None:
 
 def test_a_delay_can_carry_what_the_sequence_plays_across_it() -> None:
     """``SequenceEvent.wait`` takes no action, so the operator supplies one."""
-    plain, _ = compose(delay(5e-3))
+    plain, _ = compose(Delay(5e-3))
     assert plain[0].type is EventType.WAIT
     assert plain[0].action is EventAction.NONE
-    spoiled, _ = compose(delay(5e-3, action=EventAction.SPOIL_AFTER))
+    spoiled, _ = compose(Delay(5e-3, action=EventAction.SPOIL_AFTER))
     assert spoiled[0].action is EventAction.SPOIL_AFTER
 
 
 def test_a_refocusing_pulse_brings_its_crushers() -> None:
     """The unbalanced pair belongs to the pulse, not to the caller's memory."""
-    crushed, _ = compose(refocusing(torch.pi))
+    crushed, _ = compose(Refocusing(torch.pi))
     assert crushed[0].action == (
         EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER
     )
-    bare, _ = compose(refocusing(torch.pi, crushed=False))
+    bare, _ = compose(Refocusing(torch.pi, crushed=False))
     assert bare[0].action is EventAction.NONE
 
 
@@ -188,8 +188,8 @@ BUILDERS = [
 # What each builder packs for a small instance, written out rather than
 # captured. Every number is checkable by hand against the sequence it
 # describes, which a golden buffer taken from a previous run would not be:
-# 64 is an excitation, 131 a refocusing pulse between crushers, 4 an ideal
-# inversion, 32 a recorded sample, 48 one followed by a shift and 40 one
+# 64 is an Excitation, 131 a Refocusing pulse between crushers, 4 an ideal
+# Inversion, 32 a recorded sample, 48 one followed by a shift and 40 one
 # followed by an ideal spoil.
 GOLDEN = [
     (
@@ -197,7 +197,7 @@ GOLDEN = [
         lambda: fse_description(torch.tensor([2.0, 2.5]), 8e-3),
         [1, 1, 2, 1, 2],
         [64, 131, 32, 131, 32],
-        # Excitation at 0, refocusing half an echo spacing in, echo at 8 ms.
+        # Excitation at 0, Refocusing half an echo spacing in, echo at 8 ms.
         [0.0, 4e-3, 4e-3, 4e-3, 4e-3],
     ),
     (
@@ -207,7 +207,7 @@ GOLDEN = [
         ),
         [1, 1, 2, 1, 2],
         [4, 64, 48, 64, 48],
-        # The inversion time is the gap before the first shot; TR the gaps after.
+        # The Inversion time is the gap before the first shot; TR the gaps after.
         [0.0, 1.0, 0.0, 10e-3, 0.0],
     ),
     (
@@ -225,7 +225,7 @@ GOLDEN = [
         ),
         [1, 1, 2, 1, 2, 1, 2],
         [4, 64, 40, 64, 40, 64, 40],
-        # The inversion time is measured to the centre shot, so the gap before
+        # The Inversion time is measured to the centre shot, so the gap before
         # the first is TI less the one repetition that precedes the centre.
         [0.0, 1.0 - 8e-3, 0.0, 8e-3, 0.0, 8e-3, 0.0],
     ),

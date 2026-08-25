@@ -97,18 +97,19 @@ by name.
    torchsim.Operator
    torchsim.compose
    torchsim.module
-   torchsim.excitation
-   torchsim.refocusing
-   torchsim.inversion
-   torchsim.saturation
-   torchsim.readout
-   torchsim.delay
+   torchsim.Excitation
+   torchsim.Refocusing
+   torchsim.Inversion
+   torchsim.Saturation
+   torchsim.Readout
+   torchsim.Delay
+   torchsim.Dephase
+   torchsim.Spoil
+   torchsim.bSSFPReadout
+   torchsim.SSFPFidReadout
+   torchsim.SPGRReadout
+   torchsim.FSEReadout
    torchsim.ideal_rf_definition
-   torchsim.dephase
-   torchsim.spoil
-   torchsim.bssfp_readout
-   torchsim.ssfp_fid_readout
-   torchsim.spgr_readout
    torchsim.register_operator
    torchsim.operator
    torchsim.operator_names
