@@ -7,11 +7,12 @@ This is a collection of examples showing how to use TorchSim to create MR
 simulators for different applications.
 
 The gallery progresses from writing a signal model, to generating synthetic
-data, to mapping T1 and T2 together from an MR fingerprinting train -- with
-dictionary matching and with a kernel regression, both compressed onto the
-low-rank basis the train actually spans -- and then to the shared
-linear-subspace and nonlinear-model workflow. One example goes the other way
-and extends the sequence vocabulary itself, by writing a new operator.
+data, to mapping T1, T2 and proton density together from an MR fingerprinting
+train -- by exhaustive matching, by matching a clustered dictionary, and by a
+kernel regression, all three working in the low-rank basis the train actually
+spans -- and then to the shared linear-subspace and nonlinear-model workflow.
+One example goes the other way and extends the sequence vocabulary itself, by
+writing a new operator.
 
 Two of them design a sequence rather than simulate one, and they are the same
 three pieces with a different cost in the middle: one chooses the flip angles

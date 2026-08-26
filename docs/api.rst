@@ -168,6 +168,15 @@ a space, and :class:`~torchsim.LookupTable` reads the answer off that curve by
 interpolating between them -- which is how an MP2RAGE T1 map is made, and what
 removes the grid spacing from the estimate.
 
+A dictionary is already clustered before anything is done to it -- neighbouring
+tissues make nearly parallel signals -- so :class:`~torchsim.DictionaryMatcher`
+can be given a ``groups=`` count and match against one representative signal
+per group first, ruling out whole groups before any atom in them is scored.
+Compression comes first and is global, so the clustering happens inside the one
+basis the signals are in and the two savings multiply.
+:class:`~torchsim.Grouping` reports the condition number that says whether
+there are too many groups to prune with.
+
 :class:`~torchsim.NonlinearLeastSquares` fits the model itself rather than a
 sampling of it, so a third parameter costs a third column of the Jacobian
 instead of multiplying a grid. Every voxel steps together and carries its own
@@ -184,6 +193,7 @@ freedom it removes.
    torchsim.Estimator
    torchsim.DictionaryMatcher
    torchsim.DictionaryMatch
+   torchsim.Grouping
    torchsim.LookupTable
    torchsim.NonlinearLeastSquares
    torchsim.PERK

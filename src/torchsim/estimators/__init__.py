@@ -10,6 +10,7 @@ __all__ = [
     "DictionaryMatch",
     "DictionaryMatcher",
     "Estimator",
+    "Grouping",
     "LookupTable",
     "NonlinearLeastSquares",
     "PERK",
@@ -17,6 +18,7 @@ __all__ = [
 ]
 
 from ._dictionary import DictionaryMatch, DictionaryMatcher
+from ._grouped import Grouping
 from ._lookup import LookupTable
 from ._mapping import Estimator, ParameterMapping
 from ._nlls import NonlinearLeastSquares

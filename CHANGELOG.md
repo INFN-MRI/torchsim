@@ -23,9 +23,49 @@
   those signals through the basis and back. At rank 16 out of 500 contrasts a
   dictionary match does about thirty times fewer operations.
 
-  `examples/03` maps a brain slice from a four-hundred-contrast fingerprinting
-  train both ways and sweeps the rank, so what the compression costs in
-  accuracy is read off a curve rather than asserted.
+  `examples/03` maps a BrainWeb slice from a four-hundred-contrast
+  fingerprinting train three ways -- exhaustive matching, matching a clustered
+  dictionary, and kernel regression -- and sweeps the rank first, so what the
+  compression costs is read off a table rather than asserted. Rank four leaves
+  5e-4 of the energy outside the basis, which is already under what the noise
+  puts in.
+
+  The phantom is BrainWeb's fuzzy tissue memberships rather than a handful of
+  labelled classes, so a third of the brain voxels are mixtures and the truth
+  is a continuum. Proton density is mapped alongside the relaxation times, for
+  every method and at no extra cost: both answer with relaxation times, a
+  fingerprint at those times is a shape the measurement is some multiple of,
+  and the multiple is one inner product per voxel.
+
+- **Group matching for `DictionaryMatcher`**, after Cauley et al., Magn Reson
+  Med 74:523 (2015). Bloch simulations over a parameter grid are not spread
+  evenly through signal space -- neighbouring tissues make nearly parallel
+  signals -- so a dictionary is already clustered before anything is done to
+  it. Passing `groups=` clusters it and gives each group one representative
+  signal; a voxel is matched against those first, and only the groups it could
+  still be in are opened. Inside a group the atoms are written in that group's
+  own truncated basis, so the inner products are short as well as few.
+
+  On a 20000-atom, 500-contrast dictionary and twenty thousand voxels, 64
+  groups run **24x** faster than direct matching, with 6.7 groups surviving per
+  voxel and mean relative errors of 0.02% in T1 and 0.11% in T2. Too many
+  groups costs more than it saves -- at 256 the per-group work outweighs the
+  pruning -- and `Grouping.condition`, the condition number of the
+  representative signals, is what says so before any data is matched.
+
+  Compression comes first and is global: one temporal basis for the whole
+  dictionary, which the signals are in too, whether projected on the way in or
+  solved for there by a subspace reconstruction. Clustering then happens
+  inside that basis, so a group is entered without leaving the space the
+  measurement is in. The two savings multiply -- the basis shortens every
+  inner product, the grouping cuts how many are taken. On the same dictionary
+  at rank 16, compression alone runs 2.4x and compression with 32 groups runs
+  **22.5x**, for 0.03% in T1 and 0.15% in T2.
+
+  `prune` is the accuracy-for-time knob and its default is the one Cauley et
+  al. tuned on 280 groups of 700 atoms. On a smaller dictionary or a coarser
+  grid it can rule out the group holding the match; widening it recovers the
+  voxel, and a test pins both halves of that.
 
 - **`torchsim.NonlinearLeastSquares`**, Levenberg-Marquardt stepping every
   voxel at once. Where a dictionary spans a grid whose size is the product of

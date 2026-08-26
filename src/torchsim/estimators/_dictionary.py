@@ -11,6 +11,7 @@ import torch
 
 from .._execution import per_voxel
 from ._calibrate import crossover
+from ._grouped import Grouping, match_in_groups
 
 
 @dataclass(frozen=True)
@@ -43,9 +44,30 @@ class DictionaryMatcher(torch.nn.Module):
     top_k : int, optional
         Number of candidates retained by :meth:`match`. The first is the
         conventional dictionary-matching estimate.
+    groups : int, optional
+        Cluster the dictionary into this many groups and match against their
+        representative signals first, ruling out whole groups before any atom
+        in them is scored. Read :attr:`grouping` afterwards: its ``condition``
+        says whether the representatives are still distinct enough to prune
+        with, and its ``compression`` says how much shorter an inner product
+        inside a group is.
+    prune : float, optional
+        How far below its best group score a voxel still considers a group,
+        as a fraction of that score. Larger keeps more groups and costs more.
+        The default is the value Cauley et al. tuned on 280 groups of 700
+        atoms; on a smaller dictionary or a coarser parameter grid it can rule
+        out the group actually holding the match, which shows up as a handful
+        of voxels landing several grid steps away. Widening it is the fix.
 
     Notes
     -----
+    Compression comes first and is global: one temporal basis for the whole
+    dictionary, which the signals are in too. Grouping then clusters within
+    that basis, so the two savings multiply -- the basis shortens every inner
+    product, the grouping cuts how many are taken. State a ``rank`` on
+    :class:`~torchsim.ParameterMapping` and it hands over an
+    ``(atoms, rank)`` dictionary, already compressed.
+
     The expensive operation is a matrix product. Torch therefore dispatches
     directly to the installed CPU BLAS or cuBLAS implementation; a separate
     C++ or Triton matrix-multiplication kernel would duplicate a faster
@@ -60,15 +82,24 @@ class DictionaryMatcher(torch.nn.Module):
         query_chunk_size: int = 4096,
         dictionary_chunk_size: int = 16384,
         top_k: int = 1,
+        groups: int | None = None,
+        prune: float = 5e-3,
     ) -> None:
         super().__init__()
         if query_chunk_size < 1 or dictionary_chunk_size < 1:
             raise ValueError("chunk sizes must be positive")
         if top_k < 1:
             raise ValueError("top_k must be at least one")
+        if groups is not None and groups < 1:
+            raise ValueError(f"groups must be positive, got {groups}")
+        if not 0.0 <= prune < 1.0:
+            raise ValueError(f"prune must be in [0, 1), got {prune}")
         self.query_chunk_size = int(query_chunk_size)
         self.dictionary_chunk_size = int(dictionary_chunk_size)
         self.top_k = int(top_k)
+        self.groups = None if groups is None else int(groups)
+        self.prune = float(prune)
+        self._grouping: Grouping | None = None
         self.register_buffer("dictionary", torch.empty(0))
         self.register_buffer("normalized_dictionary", torch.empty(0))
         self.register_buffer("dictionary_power", torch.empty(0))
@@ -82,6 +113,22 @@ class DictionaryMatcher(torch.nn.Module):
     def fitted(self) -> bool:
         """Whether the matcher holds a dictionary."""
         return self.dictionary.numel() != 0
+
+    @property
+    def grouping(self) -> Grouping | None:
+        """How the dictionary was clustered, or ``None`` if it was not."""
+        return self._grouping
+
+    def _apply(self, *args: Any, **kwargs: Any) -> DictionaryMatcher:
+        """Keep the grouping beside the dictionary when the module moves.
+
+        The clusters are ordinary attributes rather than buffers, because a
+        grouping is ragged: each group keeps a basis of its own length.
+        """
+        moved = super()._apply(*args, **kwargs)
+        if moved._grouping is not None:
+            moved._grouping = moved._grouping.to(moved.dictionary.device)
+        return moved
 
     def fit(
         self,
@@ -191,7 +238,13 @@ class DictionaryMatcher(torch.nn.Module):
                     query_chunk_size=self.query_chunk_size,
                     dictionary_chunk_size=self.dictionary_chunk_size,
                     top_k=self.top_k,
+                    groups=self.groups,
+                    prune=self.prune,
                 )
+                # Clustering is a property of the dictionary, not of where it
+                # sits, so the replica moves it rather than repeating it.
+                if self._grouping is not None:
+                    replica._grouping = self._grouping.to(device)
                 replica.dictionary = self.dictionary.to(device)
                 replica.normalized_dictionary = self.normalized_dictionary.to(device)
                 replica.dictionary_power = self.dictionary_power.to(device)
@@ -217,6 +270,13 @@ class DictionaryMatcher(torch.nn.Module):
         self.normalized_dictionary = dictionary / norm[:, None]
         self.dictionary_power = norm.square()
         self.parameter_values = _prepare_parameters(parameters, dictionary)
+        self._grouping = (
+            None
+            if self.groups is None
+            else Grouping.fit(
+                dictionary, min(self.groups, dictionary.shape[0])
+            )
+        )
         self._replicas = {}
 
     @torch.no_grad()
@@ -250,6 +310,11 @@ class DictionaryMatcher(torch.nn.Module):
             torch.finfo(signals.real.dtype).eps
         )
         normalized_signals = signals / signal_norm[:, None]
+        if self._grouping is not None:
+            indices, scores = match_in_groups(
+                normalized_signals, self._grouping, self.top_k, self.prune
+            )
+            return (indices, scores, *self._scaled(signals, indices))
 
         score_chunks = []
         index_chunks = []
@@ -286,6 +351,16 @@ class DictionaryMatcher(torch.nn.Module):
 
         scores = torch.cat(score_chunks, dim=0)
         indices = torch.cat(index_chunks, dim=0)
+        return (indices, scores, *self._scaled(signals, indices))
+
+    def _scaled(
+        self, signals: torch.Tensor, indices: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """The complex least-squares scale of each matched atom, and what it means.
+
+        The score says which atom, in a normalization that threw the size of
+        the signal away; this puts it back, which is the proton density.
+        """
         atoms = self.dictionary[indices]
         scales = (
             torch.sum(atoms.conj() * signals[:, None, :], dim=-1)
@@ -300,7 +375,7 @@ class DictionaryMatcher(torch.nn.Module):
             if self.parameter_values.numel() == 0
             else self.parameter_values[indices]
         )
-        return indices, scores, scales, matched
+        return scales, matched
 
     def _shaped(
         self,
