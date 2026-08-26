@@ -27,6 +27,39 @@
   train both ways and sweeps the rank, so what the compression costs in
   accuracy is read off a curve rather than asserted.
 
+- **`torchsim.NonlinearLeastSquares`**, Levenberg-Marquardt stepping every
+  voxel at once. Where a dictionary spans a grid whose size is the product of
+  the parameter ranges, a nonlinear fit pays for a third parameter with a third
+  column of the Jacobian. Voxels do not take turns: each carries its own
+  damping and accepts or rejects on its own, and one that has converged drops
+  out so the rest close up. On twenty thousand voxels of a ten-echo decay this
+  lands where `scipy.optimize.least_squares` lands to 6e-3 ms, at least
+  twenty-six times faster than calling it per voxel.
+
+  The Jacobian is the model's own, from `SignalModel.jacobian` -- forward mode,
+  one pass per property, every voxel at once -- rather than a finite
+  difference.
+
+  **Inequality constraints** are given as `bounds={"T2": (1.0, 500.0)}` and are
+  kept by fitting a transformed variable, so no iterate ever leaves the
+  interval and a bound cannot end up sitting exactly on the answer. The
+  transform also puts every parameter on the same scale whatever its units,
+  which is what a single damping term assumes. A starting value *on* a bound
+  is refused rather than nudged: the transformed variable is infinite there.
+
+  **Equality constraints** belong in the model. A constraint that fixes one
+  parameter in terms of the others removes a degree of freedom, so the way to
+  impose it is to not have that freedom -- in a fat-water fit, make the fat
+  fraction the only unknown and write water as `1 - f`. The constraint then
+  holds at every iterate rather than being restored after each one.
+
+- **Three relaxometry contrasts**: `InversionRecoverySimulator`,
+  `MultiEchoSimulator` and `DoubleAngleSimulator`, the models an inversion
+  recovery, a multi-echo decay and a double-angle transmit map are read
+  through. All three are closed forms, so a fit reaches them at the cost of the
+  expression. The inversion recovery carries the repetition time as well, which
+  the usual fully-relaxed expression drops.
+
 - **`torchsim.LookupTable`**, for a model with a single unknown. Its atoms lie
   on a curve rather than filling a space, so the nearest one is found by
   looking along it, and interpolating between the two nearest removes the grid

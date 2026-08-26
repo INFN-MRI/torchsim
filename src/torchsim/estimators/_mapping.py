@@ -268,6 +268,16 @@ class ParameterMapping:
         if self.rank is not None:
             self._subspace = Subspace.fit(signals, self.rank)
             signals = self._subspace.project(signals)
+        # A method that learns wants the training set; one that fits the model
+        # directly wants the model. Both are offered what they ask for.
+        binder = getattr(method, "bind", None)
+        if callable(binder):
+            binder(
+                self.acquisition,
+                tuple(self._unknown),
+                tuple(self._known),
+                self._subspace,
+            )
         method.fit(signals, parameters, known, noise_std=self.noise_std)
         self._method = method
         return self

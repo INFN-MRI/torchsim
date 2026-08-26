@@ -63,8 +63,13 @@ class Acquisition:
         return tuple(self.simulator.properties)
 
     def simulate(self, **design: Any) -> torch.Tensor:
-        """Return what this acquisition records for ``design``."""
-        return self.simulator.simulate(**self.properties, **design)
+        """Return what this acquisition records for ``design``.
+
+        A name the acquisition already holds may be given again, and the value
+        given wins. That is what a fitting loop does: one sequence, a different
+        tissue on every iteration.
+        """
+        return self.simulator.simulate(**{**self.properties, **design})
 
     def jacobian(
         self, diff: str | Sequence[str], **design: Any
@@ -73,5 +78,7 @@ class Acquisition:
 
         Forward mode, one directional derivative per property named -- so the
         cost of a Fisher matrix is one pass per parameter, not one per voxel.
+        A property the acquisition holds may be overridden here, as in
+        :meth:`simulate`.
         """
-        return self.simulator.jacobian(diff, **self.properties, **design)
+        return self.simulator.jacobian(diff, **{**self.properties, **design})

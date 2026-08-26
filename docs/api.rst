@@ -31,6 +31,9 @@ Closed form
    torchsim.simulators.bSSFPSimulator
    torchsim.simulators.SPGRSimulator
    torchsim.simulators.MP2RAGESimulator
+   torchsim.simulators.InversionRecoverySimulator
+   torchsim.simulators.MultiEchoSimulator
+   torchsim.simulators.DoubleAngleSimulator
 
 State machine
 ~~~~~~~~~~~~~
@@ -165,6 +168,14 @@ a space, and :class:`~torchsim.LookupTable` reads the answer off that curve by
 interpolating between them -- which is how an MP2RAGE T1 map is made, and what
 removes the grid spacing from the estimate.
 
+:class:`~torchsim.NonlinearLeastSquares` fits the model itself rather than a
+sampling of it, so a third parameter costs a third column of the Jacobian
+instead of multiplying a grid. Every voxel steps together and carries its own
+damping. Bounds are given as ``{name: (low, high)}`` and kept by fitting a
+transformed variable, so no iterate ever leaves the interval; an equality
+constraint is written into the model instead, by leaving out the degree of
+freedom it removes.
+
 .. autosummary::
    :toctree: generated
    :nosignatures:
@@ -174,6 +185,7 @@ removes the grid spacing from the estimate.
    torchsim.DictionaryMatcher
    torchsim.DictionaryMatch
    torchsim.LookupTable
+   torchsim.NonlinearLeastSquares
    torchsim.PERK
 
 Sequence design
