@@ -156,8 +156,14 @@ Estimating tissue properties from a measured volume. A
 measured separately, how noisy -- and any :class:`~torchsim.Estimator` fills it
 in, returning one named map per unknown.
 
-Both shipped methods honour :func:`~torchsim.execution`, so a volume larger
-than a card is streamed through it and a second card halves the work.
+:class:`~torchsim.DictionaryMatcher` and :class:`~torchsim.PERK` honour
+:func:`~torchsim.execution`, so a volume larger than a card is streamed through
+it and a second card halves the work.
+
+Where a model has a single unknown its atoms lie on a curve rather than filling
+a space, and :class:`~torchsim.LookupTable` reads the answer off that curve by
+interpolating between them -- which is how an MP2RAGE T1 map is made, and what
+removes the grid spacing from the estimate.
 
 .. autosummary::
    :toctree: generated
@@ -167,6 +173,7 @@ than a card is streamed through it and a second card halves the work.
    torchsim.Estimator
    torchsim.DictionaryMatcher
    torchsim.DictionaryMatch
+   torchsim.LookupTable
    torchsim.PERK
 
 Sequence design

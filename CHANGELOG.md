@@ -27,6 +27,36 @@
   train both ways and sweeps the rank, so what the compression costs in
   accuracy is read off a curve rather than asserted.
 
+- **`torchsim.LookupTable`**, for a model with a single unknown. Its atoms lie
+  on a curve rather than filling a space, so the nearest one is found by
+  looking along it, and interpolating between the two nearest removes the grid
+  spacing from the answer -- which is otherwise what a matched estimate is
+  limited by. On a 50 ms T1 grid the interpolated estimate is out by 0.9 ms on
+  average where a match could not beat 25 ms.
+
+  A signal curve is invertible only where it is monotonic, so the table keeps
+  the longest run over which its curve does not turn back, and reads a
+  measurement past either end as the endpoint rather than as a NaN. The
+  combination that makes a curve monotonic belongs to the sequence, not to the
+  table, so it is given as `combine=` -- for MP2RAGE, the unified image.
+
+- **MP2RAGE plays as its train as well as in closed form.**
+  `MP2RAGESimulator` lays out every readout and flags the one reaching the
+  k-space centre of each block, so `describe` writes the sequence out and
+  `from_description` plays a stream a scanner assembled. Which shot carries the
+  contrast is read rather than assumed, and with it the encoding order and the
+  real timing -- an MP2RAGE contrast is a subset of its readouts, and `is_echo`
+  is what separates that case from an echo-resolved train. The closed form is
+  what a lookup table is built from, because it costs one expression per T1,
+  and the two agree to float32 round-off wherever the closed form's
+  assumptions hold.
+
+  Both are held to the two-block signal equation over T1 in [0.05, 5] s, at
+  three positions of the k-space centre, and the unified image they combine
+  into is held to it separately -- that ratio spans ±0.5 and a T1 map
+  interpolates along it, so an error there limits the map however well the
+  individual readouts agree.
+
 - **Fused kernels for PERK**, forward and adjoint, in Triton on CUDA and in a
   new `torchsim._perk_cpu` extension on the host. The feature matrix is never
   written: a tile of features is formed and consumed into the output

@@ -1,4 +1,4 @@
-"""MP2RAGE, in closed form."""
+"""MP2RAGE, in closed form and as the train it stands for."""
 
 from __future__ import annotations
 
@@ -10,8 +10,9 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import AbstractSimulator, StateMachineModel
-from ..sequence._array import arrays, as_torch
+from ..model import SPOILED, AbstractSimulator, StateMachineModel
+from ..sequence import AdcRole
+from ..sequence._array import arrays, as_torch, matched
 
 
 class MP2RAGESimulator(AbstractSimulator):
@@ -40,17 +41,108 @@ class MP2RAGESimulator(AbstractSimulator):
 
     model = StateMachineModel(
         properties={
-            "T1": None,
-            "M0": None,
-            "inv_efficiency": None,
+            "T1": "t1_ms",
+            "M0": "m0",
+            "inv_efficiency": "inversion_efficiency",
         },
+        # Both blocks spoil after each readout, so nothing transverse survives
+        # an interval and no T2 is asked for.
+        fixed={"t2_ms": 100.0},
+        triggers=SPOILED,
     )
+    states = 1
+    record = "acquired"
+
+    def __init__(self, **settings: Any) -> None:
+        """Record only the shot that samples the k-space centre of each block."""
+        settings.setdefault("record", type(self).record)
+        super().__init__(**settings)
 
     def evaluate(
         self, properties: Mapping[str, Any], **sequence: Any
     ) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
         return self._signal(properties, **arrays(self.played(**sequence)))
+
+    def layout(
+        self,
+        *,
+        TI: npt.ArrayLike,
+        flip: float | npt.ArrayLike,
+        TRspgr: float | npt.ArrayLike,
+        TRmp2rage: float | npt.ArrayLike,
+        nshots: int | npt.ArrayLike,
+        phases: float | npt.ArrayLike = 0.0,
+    ) -> list:
+        """Return the whole train: one inversion, then two blocks of readouts.
+
+        The closed form of :meth:`evaluate` is what a lookup table is built
+        from, because it costs one expression per T1. This is the same
+        sequence written out event by event, which is what a description
+        arriving from a scanner is compared against and what carries a train
+        the closed form has no parameter for.
+
+        Parameters
+        ----------
+        TI:
+            The two inversion times in milliseconds, each measured to the
+            sampled shot of its block.
+        flip:
+            Excitation flip angle in degrees, one per block or one shared.
+        TRspgr:
+            Repetition time in milliseconds of one readout.
+        TRmp2rage:
+            Repetition time in milliseconds of the whole inversion block.
+        nshots:
+            Readouts per block, either the total -- halved for each block --
+            or ``(before, after)`` the sampled shot.
+        phases:
+            Excitation phases in degrees, one per block or one shared.
+
+        Raises
+        ------
+        ValueError
+            If either inversion time falls before its block's first
+            excitation, or if the second block does not fit inside the
+            repetition time.
+        """
+        angle = torch.deg2rad(_shared_or_two(as_torch(flip)))
+        turn = torch.deg2rad(_shared_or_two(matched(phases, angle)))
+        before, after = _shots_either_side(nshots)
+        before, after = int(before), int(after)
+        shots = before + after
+        readout_s = as_torch(TRspgr).flatten()[0] * 1e-3
+        inversion_s = as_torch(TI).flatten() * 1e-3
+        block_s = as_torch(TRmp2rage).flatten()[0] * 1e-3
+
+        # The same three free-recovery waits the closed form takes: to the
+        # first block's sampled shot, between the blocks, and to the end.
+        waits = (
+            inversion_s[0] - before * readout_s,
+            inversion_s[1] - inversion_s[0] - (after + before) * readout_s,
+            block_s - inversion_s[1] - after * readout_s,
+        )
+        for wait, complaint in zip(waits, _COMPLAINTS):
+            if bool(wait < 0):
+                raise ValueError(complaint)
+
+        parts = [self.triggers.inversion(duration_s=waits[0])]
+        for block in (0, 1):
+            if block:
+                parts.append(self.triggers.delay(waits[1]))
+            for index in range(shots):
+                sampled = index == before
+                parts.append(self.triggers.excitation(angle[block], turn[block]))
+                parts.append(
+                    self.triggers.readout(
+                        turn[block],
+                        role=AdcRole.SINGLE if sampled else AdcRole.NON_ACQUIRED,
+                        is_echo=sampled,
+                        duration_s=readout_s,
+                    )
+                )
+        parts.append(self.triggers.delay(waits[2]))
+        return parts
 
     def _signal(
         self,
@@ -106,9 +198,9 @@ class MP2RAGESimulator(AbstractSimulator):
 
         # The steady state one whole block leaves behind, which is what the
         # inversion of the next block acts on.
-        settled = (1 - held[0]) * _through_shots(1.0, turn[0], shot, shots)
+        settled = _through_shots(1 - held[0], turn[0], shot, shots)
         settled = settled * held[1] + (1 - held[1])
-        settled = settled * _through_shots(1.0, turn[1], shot, shots)
+        settled = _through_shots(settled, turn[1], shot, shots)
         settled = settled * held[2] + (1 - held[2])
         settled = settled / (
             1
@@ -128,7 +220,7 @@ class MP2RAGESimulator(AbstractSimulator):
 
         # The second reads what the rest of the first block, the wait between
         # them and its own leading readouts leave.
-        driven = driven * _through_shots(1.0, turn[1], shot, after)
+        driven = _through_shots(driven, turn[0], shot, after)
         driven = _through_shots(
             driven * held[1] + (1 - held[1]), turn[1], shot, before
         )
@@ -171,3 +263,11 @@ def _shots_either_side(nshots: int | npt.ArrayLike) -> tuple[Any, Any]:
         half = counts[0] // 2
         return half, half
     return counts[0], counts[1]
+
+
+#: What each of the three free-recovery waits means when it comes out negative.
+_COMPLAINTS = (
+    "TI[0] must not precede the first MP2RAGE excitation",
+    "TI[1] must leave room for both blocks' readouts between the inversion times",
+    "TRmp2rage must leave room for the second block's readouts",
+)

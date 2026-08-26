@@ -10,10 +10,12 @@ __all__ = [
     "DictionaryMatch",
     "DictionaryMatcher",
     "Estimator",
+    "LookupTable",
     "PERK",
     "ParameterMapping",
 ]
 
 from ._dictionary import DictionaryMatch, DictionaryMatcher
+from ._lookup import LookupTable
 from ._mapping import Estimator, ParameterMapping
 from ._perk import PERK

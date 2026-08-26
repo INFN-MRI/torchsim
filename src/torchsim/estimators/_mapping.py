@@ -29,6 +29,8 @@ from ..model import Acquisition
 
 #: How many samples are simulated at once while a training set is drawn.
 _CHUNK = 4096
+#: Training draws, where nothing states a grid of its own.
+_SAMPLES = 10_000
 
 
 @runtime_checkable
@@ -161,6 +163,28 @@ class ParameterMapping:
         """Whether a method has been fitted."""
         return self._method is not None
 
+    def _stated_samples(self) -> int | None:
+        """How many samples the given value arrays already fix, if any.
+
+        Grids stated outright -- which is how a lookup table is built -- carry
+        their own length, and repeating it as ``samples`` would be one more
+        place for it to disagree. ``None`` where everything is a range to draw
+        from, which fixes nothing.
+        """
+        lengths = {
+            torch.as_tensor(spec).reshape(-1).numel()
+            for spec in (*self._unknown.values(), *self._known.values())
+            if not (isinstance(spec, (tuple, list)) and len(spec) == 2)
+        }
+        lengths.discard(1)
+        if len(lengths) > 1:
+            raise ValueError(
+                f"properties given as values disagree on length: {sorted(lengths)}"
+            )
+        if not lengths:
+            return None
+        return int(lengths.pop())
+
     def training_set(
         self, samples: int, *, chunk: int = _CHUNK
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
@@ -218,7 +242,7 @@ class ParameterMapping:
         return signals, parameters, known
 
     def train(
-        self, method: Estimator, *, samples: int = 10_000, chunk: int = _CHUNK
+        self, method: Estimator, *, samples: int | None = None, chunk: int = _CHUNK
     ) -> ParameterMapping:
         """Draw a training set and fit ``method`` to it.
 
@@ -227,7 +251,9 @@ class ParameterMapping:
         method:
             Anything satisfying :class:`Estimator`.
         samples:
-            How many tissues to train over.
+            How many tissues to train over. Stating a property as an array of
+            values fixes this, so it may be left out; where everything is a
+            range to draw from, it defaults to ten thousand.
         chunk:
             How many to simulate at a time.
 
@@ -236,6 +262,8 @@ class ParameterMapping:
         ParameterMapping
             This mapping, trained.
         """
+        if samples is None:
+            samples = self._stated_samples() or _SAMPLES
         signals, parameters, known = self.training_set(samples, chunk=chunk)
         if self.rank is not None:
             self._subspace = Subspace.fit(signals, self.rank)
