@@ -8,6 +8,7 @@ matplotlib
 brainweb-dl
 sigpy
 torchio
+SimpleITK
 deepinv
 mri-nufft
 finufft

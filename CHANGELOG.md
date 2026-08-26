@@ -4,6 +4,27 @@
 
 ### Added
 
+- **`examples/02` is a synthetic-data pipeline rather than a tour of calls.**
+  A subject is segmented into tissue classes with SimpleITK's multi-level
+  Otsu threshold; each class is given an M0 and a T2 from its own median and a
+  T1 from a table; **one voxel is simulated per class**, so four extended
+  phase graph runs stand in for sixty-five thousand; every voxel of a class is
+  handed its class's evolution; and the volume is weighted by SigPy birdcage
+  sensitivities and pushed through a frame-wise mri-nufft transform and back.
+  The undersampled coil-combined series and the fully sampled one it came from
+  are the pair, exported with the voxelised M0, T1 and T2, the segmentation
+  and the schedule.
+
+  The example measures the thing the method rests on. At one spiral arm per
+  frame -- twenty-one-fold undersampled, which is how fingerprinting is
+  actually run -- a single frame is 49% wrong inside the brain while the time
+  courses still agree with the truth above 0.86 for nine voxels in ten. It
+  also names the assumption a hard segmentation makes: every voxel of a tissue
+  carries the same curve, and a fuzzy segmentation would have to mix the
+  *signals*, never the averaged relaxation times.
+
+  Nothing was added to the library for it.
+
 - **`torchsim.recon`: the signal model as an operator.** A physics-based
   reconstruction writes its forward operator as `P F C M` -- sampling, Fourier
   encoding, coil sensitivities, signal model -- and solves for the parameter
