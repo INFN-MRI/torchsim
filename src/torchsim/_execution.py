@@ -420,6 +420,39 @@ def per_voxel(
     return tuple(value.to(home) for value in gathered)
 
 
+def one_device(
+    *,
+    work: int,
+    voxels: int,
+    bytes_per_voxel: int,
+    crossover: Callable[[torch.device], float],
+) -> torch.device | None:
+    """Where a chunked reduction should run, under the policy in force.
+
+    A reduction keeps small accumulators in one place and feeds them a chunk
+    at a time, so unlike a per-voxel map it wants a device rather than a plan:
+    the chunking is already the caller's, and what crosses is the chunk. The
+    arguments mean what they mean for :func:`per_voxel`.
+
+    Returns
+    -------
+    torch.device or None
+        ``None`` means no policy is in force and the caller should run where
+        its tensors already are.
+    """
+    choice = choose(
+        work=work,
+        voxels=voxels,
+        bytes_per_voxel=bytes_per_voxel,
+        crossover=crossover,
+    )
+    if choice is None:
+        return None
+    if choice.where == "cpu":
+        return torch.device("cpu")
+    return choice.devices[0]
+
+
 def _spread(
     inputs: Sequence[torch.Tensor],
     voxels: int,

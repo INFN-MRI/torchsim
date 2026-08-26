@@ -1,20 +1,23 @@
 """
-=================
-Parameter Fitting
-=================
+===============================================
+MR fingerprinting, and the subspace it lives in
+===============================================
 
-This example shows how to use TorchSim to perform parameter inference.
+MR fingerprinting drives the sequence hard on purpose. The flip angle changes
+every repetition, so a voxel never reaches a steady state and its signal over
+the train is a trajectory rather than a contrast -- one that depends on T1 and
+T2 differently enough that both can be read from it at once.
 
-We will build on the previous example: we synthesize an FSE echo series from
-realistic maps, then recover T2 from it with two complementary estimators
-shipped with TorchSim:
+Reading them back is where the cost is. A dictionary has to span every
+combination of the parameters, so its size is the *product* of the grids, and
+each atom is as long as the train. This example maps a brain slice from a
+four-hundred-contrast train two ways -- exhaustive matching and kernel
+regression -- and compresses both onto a low-rank temporal basis first.
 
-* :class:`torchsim.DictionaryMatcher`, the familiar exhaustive search;
-* :class:`torchsim.PERK`, a kernel-regression estimator whose inference cost
-  and memory footprint do not grow with the size of the parameter grid.
-
-Both consume signals produced by the very same simulator, so the forward model
-is written once and reused for training, matching, and validation.
+The compression is the interesting part. Four hundred contrasts of a
+relaxation-driven train do not span four hundred directions; they span about a
+dozen. What that costs is a number the basis reports before anything is
+projected through it.
 
 """
 
@@ -22,318 +25,372 @@ is written once and reused for training, matching, and validation.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install torchsim torchio sigpy
+#    !pip install torchsim torchio
 
 # %%
 #
-# We'll generate an FSE dataset from IXI database.
-# We will neglect encoding and assume single coil for this case.
+# The imports:
 #
 import warnings
 
 warnings.filterwarnings("ignore")
 
 import os
+import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torchio as tio
-import torchsim
-from torchsim.simulators import FSESimulator
 
-path = os.path.realpath("data")
-ixi_dataset = tio.datasets.IXI(
-    path,
-    modalities=("PD", "T2"),
-    download=False,
+import torchsim
+from torchsim import (
+    Acquisition,
+    DictionaryMatcher,
+    PERK,
+    ParameterMapping,
+    Subspace,
+)
+from torchsim.simulators import MRFSimulator
+
+# %%
+#
+# A brain to map
+# --------------
+#
+# The anatomy is a slice from the IXI database; the relaxation times are not.
+# A proton-density and a T2-weighted image give the shape of the head and a
+# rough T2, and the voxels are sorted by it into three classes that then carry
+# literature relaxation times at 3 T. That makes a digital phantom with real
+# anatomy and known answers, which is what a mapping example needs: the truth
+# has to come from somewhere other than the estimator being tested.
+#
+sample = tio.datasets.IXI(
+    os.path.realpath("data"), modalities=("PD", "T2"), download=False
+)[0]
+proton_density = sample.PD.numpy().astype(np.float32).squeeze()[:, :, 60].T
+t2_weighted = sample.T2.numpy().astype(np.float32).squeeze()[:, :, 60].T
+
+with np.errstate(divide="ignore", invalid="ignore"):
+    rough_t2 = np.nan_to_num(
+        -92.0 / np.log(t2_weighted / proton_density), neginf=0.0, posinf=0.0
+    ).clip(0.0, None)
+
+proton_density = np.flip(proton_density)
+rough_t2 = np.flip(rough_t2)
+
+#                    T1 [ms]  T2 [ms]
+TISSUE_CLASSES = {
+    "white matter": (830.0, 80.0),
+    "grey matter": (1330.0, 110.0),
+    "CSF": (4000.0, 500.0),
+}
+EDGES = (1.0, 70.0, 150.0, np.inf)
+
+T1_true = np.zeros_like(rough_t2)
+T2_true = np.zeros_like(rough_t2)
+for (name, (t1, t2)), low, high in zip(
+    TISSUE_CLASSES.items(), EDGES[:-1], EDGES[1:], strict=True
+):
+    inside = (rough_t2 >= low) & (rough_t2 < high)
+    T1_true[inside], T2_true[inside] = t1, t2
+    print(f"{name:>13}: {100 * inside.mean():4.1f}% of the slice")
+
+mask = T1_true > 0
+M0_true = np.where(mask, proton_density / proton_density.max(), 0.0)
+
+# %%
+#
+# The train
+# ---------
+#
+# Four hundred repetitions after an inversion, at a fixed repetition time and a
+# flip angle that varies smoothly along the train. Smooth is the point: a
+# schedule that jumped about would give trajectories that differ by noise
+# rather than by physics.
+#
+CONTRASTS = 400
+TR_MS = 10.0
+TI_MS = 20.0
+
+repetition = torch.arange(CONTRASTS, dtype=torch.float32)
+flip = 10.0 + 50.0 * torch.sin(torch.pi * repetition / CONTRASTS) ** 2
+
+acquisition = Acquisition(
+    MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20), M0=1.0
 )
 
-# get subject 0
-sample_subject = ixi_dataset[0]
+# %%
+#
+# What the classes look like through it. Three trajectories, three tissues, and
+# the separation between them is what any estimator has to live on.
+#
+fingerprints = acquisition.simulate(
+    T1=torch.tensor([t1 for t1, _ in TISSUE_CLASSES.values()]),
+    T2=torch.tensor([t2 for _, t2 in TISSUE_CLASSES.values()]),
+).abs()
 
-M0 = sample_subject.PD.numpy().astype(np.float32).squeeze()[:, :, 60].T
-T2w = sample_subject.T2.numpy().astype(np.float32).squeeze()[:, :, 60].T
-
-T2 = -92.0 / np.log(T2w / M0)
-T2 = np.nan_to_num(T2, neginf=0.0, posinf=0.0)
-T2 = np.clip(T2, a_min=0.0, a_max=np.inf)
-
-M0 = np.flip(M0)
-T2 = np.flip(T2)
+figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
+axes[0].plot(repetition.numpy(), flip.numpy())
+axes[0].set(xlabel="Repetition", ylabel="Flip angle [deg]", title="the schedule")
+axes[0].grid(alpha=0.3)
+for row, name in enumerate(TISSUE_CLASSES):
+    axes[1].plot(repetition.numpy(), fingerprints[row].numpy(force=True), label=name)
+axes[1].set(xlabel="Repetition", ylabel="|signal|", title="fingerprints")
+axes[1].legend(fontsize=8), axes[1].grid(alpha=0.3)
+figure.tight_layout()
 
 # %%
 #
-# The maps contain air voxels with ``T2 == 0``. TorchSim maps a non-positive
-# relaxation time to a fully dephased signal, so those voxels simply produce
-# zero rather than a NaN that would spread through the reconstruction.
+# The measurement, with noise at 2% of the peak fingerprint. One number sets
+# it, and the same number is what the estimators are told to expect -- an
+# estimator trained for more noise than the scan has learns to distrust the
+# data and answers with the prior instead.
 #
-device = "cuda" if torch.cuda.is_available() else "cpu"
-flip = 180.0 * np.ones(32, dtype=np.float32)
-ESP = 5.0
-T1 = 1000.0
+NOISE_STD = float(0.02 * fingerprints.max())
 
+truth = {
+    "T1": torch.as_tensor(T1_true[mask].copy()),
+    "T2": torch.as_tensor(T2_true[mask].copy()),
+}
+clean = acquisition.simulate(**truth)
+generator = torch.Generator().manual_seed(42)
+measured = clean + NOISE_STD * torch.randn(
+    clean.shape, generator=generator, dtype=clean.dtype
+)
+measured = measured * torch.as_tensor(M0_true[mask].copy())[:, None]
 
-def simulate(T2, flip, ESP, device="cpu"):
-    ishape = T2.shape
-    output = torchsim.fse_sim(
-        flip=flip, ESP=ESP, T1=T1, T2=T2.flatten(), device=device
-    )
-
-    # T2 arrived as a NumPy array, so the signal comes back as one -- even
-    # when the simulation itself ran on the GPU.
-    return abs(output.T.reshape(-1, *ishape))
-
-
-# simulate acquisition
-echo_series = M0 * simulate(T2, flip.copy(), ESP, device=device)
+print(f"\n{measured.shape[0]} voxels of {CONTRASTS} contrasts")
+print(f"noise standard deviation {NOISE_STD:.5f}")
 
 # %%
 #
-# Measured data are noisy, and an estimator is only interesting insofar as it
-# tolerates that noise. We add Gaussian noise at roughly 2% of the peak signal:
-#
-rng = np.random.default_rng(42)
-noise_level = 0.02 * echo_series.max()
-echo_series = echo_series + noise_level * rng.standard_normal(echo_series.shape)
-echo_series = echo_series.astype(np.float32)
-
-# display
-img = np.concatenate((echo_series[0], echo_series[16], echo_series[-1]), axis=1)
-
-import matplotlib.pyplot as plt
-
-plt.figure()
-plt.imshow(abs(img), cmap="gray"), plt.axis("image"), plt.axis("off")
-plt.title("echoes 1, 17 and 32")
-
-# %%
-#
-# One problem, stated once
+# The problem, stated once
 # ------------------------
 #
-# What is being estimated, from what acquisition, at what noise level is one
-# statement -- a :class:`torchsim.ParameterMapping` over an
-# :class:`torchsim.Acquisition`. The method that fills it in is a separate
-# choice, and swapping one for another is a word.
+# What is unknown, over what range, from what acquisition, at what noise level.
+# The method that fills it in is a separate choice, and the only thing that
+# changes between the three answers below.
 #
-import time
+T1_RANGE = (200.0, 5000.0)
+T2_RANGE = (20.0, 600.0)
 
-acquisition = torchsim.Acquisition(
-    FSESimulator(ESP=ESP, flip=flip), T1=T1
-)
+# Both relaxation times span more than a decade, so the prior is sampled
+# logarithmically. Sampling uniformly would spend most of the budget on long
+# T1, where the trajectories are nearly parallel and carry little information,
+# and leave the short end underdetermined. A mapping takes values as readily as
+# a range, which is how a prior like this one is given.
+SAMPLES = 20_000
+prior = torch.Generator().manual_seed(11)
+
+
+def log_uniform(low, high, count):
+    """``count`` draws spread evenly in the logarithm."""
+    span = torch.rand(count, generator=prior)
+    return torch.exp(np.log(low) + span * (np.log(high) - np.log(low)))
+
+
+def mapping(**extra):
+    """The same problem every time, with only the method left to choose."""
+    return ParameterMapping(
+        acquisition,
+        T1=log_uniform(*T1_RANGE, SAMPLES),
+        T2=log_uniform(*T2_RANGE, SAMPLES),
+        noise_std=NOISE_STD,
+        seed=0,
+        **extra,
+    )
+
 
 # %%
+#
+# How many directions does the train actually span?
+# -------------------------------------------------
+#
+# Fit a basis to a set of simulated trajectories and read off how much of their
+# energy each rank keeps. This is not an estimate: one minus the fraction is
+# the relative squared error of projecting those trajectories through the basis
+# and back.
+#
+training_signals, _, _ = mapping().training_set(SAMPLES)
+
+print("\n rank   retained energy")
+for rank in (2, 4, 8, 16, 32):
+    print(f"{rank:>5}   {Subspace.fit(training_signals, rank).retained:.9f}")
+
+RANK = 16
+
+# %%
+#
+# Sixteen directions out of four hundred, and what is left outside them is well
+# under the noise the measurement already carries. Every contrast dropped is
+# arithmetic that neither matching nor training has to do.
 #
 # Dictionary matching
 # -------------------
 #
-# The reference approach evaluates every atom and keeps the best normalized
-# inner product. A dictionary wants a *grid*, so that is what this mapping is
-# trained over. :class:`torchsim.DictionaryMatcher` chunks the score matrix so
-# memory stays bounded, while each chunk is a BLAS/cuBLAS matrix product.
+# A dictionary must span the parameters jointly, so its size is the product of
+# the grids. Here that is a modest two-dimensional grid; a third parameter --
+# transmit, say, or a diffusion coefficient -- would multiply it again, which
+# is the pressure the compression relieves.
 #
-t2_grid = torch.linspace(1.0, 350.0, 1000)
+T1_GRID = torch.logspace(np.log10(T1_RANGE[0]), np.log10(T1_RANGE[1]), 60)
+T2_GRID = torch.logspace(np.log10(T2_RANGE[0]), np.log10(T2_RANGE[1]), 40)
+grid_t1, grid_t2 = torch.meshgrid(T1_GRID, T2_GRID, indexing="ij")
+ATOMS = grid_t1.numel()
 
-by_dictionary = torchsim.ParameterMapping(
-    acquisition, T2=t2_grid, seed=0
-).train(torchsim.DictionaryMatcher(), samples=t2_grid.numel())
-matcher = by_dictionary.method
+print(f"\ndictionary: {T1_GRID.numel()} T1 x {T2_GRID.numel()} T2 = {ATOMS} atoms")
 
-# %%
-#
-# The measured series is shaped ``(nechoes, ny, nx)``; a mapping expects the
-# contrast axis last, and returns one map per unknown, under its own name.
-#
-signals = torch.as_tensor(echo_series, device=device).permute(1, 2, 0)
 
-start = time.perf_counter()
-T2_dict = by_dictionary(signals)["T2"].numpy(force=True)
-dictionary_time = time.perf_counter() - start
+def matched(rank):
+    """Fit a matcher over the grid, then map the slice."""
+    problem = ParameterMapping(
+        acquisition,
+        T1=grid_t1.reshape(-1),
+        T2=grid_t2.reshape(-1),
+        seed=0,
+        **({"rank": rank} if rank else {}),
+    )
+    start = time.perf_counter()
+    problem.train(DictionaryMatcher(), samples=ATOMS)
+    training = time.perf_counter() - start
+    start = time.perf_counter()
+    with torchsim.execution():
+        maps = problem(measured)
+    return maps, training, time.perf_counter() - start
 
-# The scale is the complex least-squares fit between the measured signal and
-# the matched atom, i.e. the proton density.
-M0_dict = abs(matcher.match(signals).scales[..., 0]).numpy(force=True)
+
+full_maps, full_training, full_matching = matched(None)
+low_maps, low_training, low_matching = matched(RANK)
 
 # %%
 #
 # PERK
 # ----
 #
-# PERK regresses the parameter directly from a random Fourier feature map of
-# the signal. It wants a *prior* rather than a grid: training draws T2 from
-# it, simulates the corresponding signals, and adds noise so that the
-# estimator learns the *noisy* inverse mapping. ``normalize=True`` makes the
-# estimate invariant to the unknown proton density.
+# A kernel regression trained over the same ranges, drawn from a prior rather
+# than a grid. It never sees a candidate parameter pair at inference: it maps
+# the signal onto a fixed set of random Fourier features and reads the answer
+# off a linear combination of them, so its cost per voxel is the same whatever
+# the parameter space looks like.
 #
-# The prior is sampled *log*-uniformly. Sampling it uniformly spends most of
-# the training budget on long T2, where the echo train is nearly flat and
-# carries little information, and leaves the short-T2 end underdetermined.
+# What that cost buys is set by how many features there are, and unlike the
+# grid it is paid once, during training. Worth showing rather than asserting:
 #
-import math
 
-generator = torch.Generator().manual_seed(11)
-log_low, log_high = math.log(5.0), math.log(400.0)
-t2_train = torch.exp(
-    log_low + (log_high - log_low) * torch.rand(20000, generator=generator)
-)
 
-start = time.perf_counter()
-by_regression = torchsim.ParameterMapping(
-    acquisition, T2=t2_train, noise_std=0.02, seed=4
-).train(
-    torchsim.PERK(
-        n_features=1000,
-        regularization=1e-6,
-        complex_mode="magnitude",
-        normalize=True,
-        seed=4,
-    ),
-    samples=t2_train.numel(),
-)
-estimator = by_regression.method
-training_time = time.perf_counter() - start
+def regressed(features):
+    """Train a regression of this size, then map the slice."""
+    start = time.perf_counter()
+    problem = mapping(rank=RANK).train(
+        PERK(
+            n_features=features, regularization=1e-6, normalize=True, seed=4
+        ),
+        samples=SAMPLES,
+    )
+    training = time.perf_counter() - start
+    start = time.perf_counter()
+    with torchsim.execution():
+        maps = problem(measured)
+    return maps, training, time.perf_counter() - start
+
+
+regressions = {features: regressed(features) for features in (500, 1000, 4000)}
+perk_maps, perk_training, perk_mapping = regressions[4000]
 
 # %%
 #
-# Inference is a fixed-cost feed-forward pass, independent of how finely the
-# training prior was sampled.
+# What it cost, and what it got
+# -----------------------------
 #
-# PERK is an unconstrained regression, so nothing stops it from returning a
-# negative T2 in voxels where the parameter is not identifiable. Clamping to a
-# strictly positive range is not cosmetic: the proton density below divides by
-# the atom energy, which collapses to zero as T2 does.
-#
-start = time.perf_counter()
-T2_estimate = by_regression(signals)["T2"].clamp(5.0, 350.0)
 
-# %%
-#
-# PERK returns T2 only, but the proton density costs nothing extra. Since the
-# atom for a given T2 is already tabulated in the dictionary above, we gather
-# it by index and take the same least-squares scale that dictionary matching
-# reports. This is a lookup plus one dot product per voxel, so no part of the
-# forward model is simulated a second time.
-#
-index = torch.searchsorted(
-    t2_grid.contiguous().to(T2_estimate.device),
-    T2_estimate.reshape(-1).contiguous(),
-).clamp(0, t2_grid.numel() - 1)
-atoms = matcher.dictionary.to(T2_estimate.device)
-atom = atoms[index]
-measured = signals.reshape(-1, len(flip)).to(atom.device).to(atom.dtype)
-M0_perk = (
-    ((atom.conj() * measured).sum(-1) / atom.abs().square().sum(-1))
-    .abs()
-    .reshape(T2_estimate.shape)
-    .numpy(force=True)
+
+def error(maps):
+    """Median absolute percentage error against the phantom, per parameter."""
+    return {
+        name: float(((maps[name] - truth[name]).abs() / truth[name] * 100).median())
+        for name in truth
+    }
+
+
+rows = [
+    (f"matching, {CONTRASTS} contrasts", full_maps, full_training, full_matching),
+    (f"matching, rank {RANK}", low_maps, low_training, low_matching),
+]
+rows += [
+    (f"PERK, rank {RANK}, {features} features", *result)
+    for features, result in regressions.items()
+]
+
+print(f"\n{'method':<34} {'train':>8} {'map':>8}   median error")
+for label, maps, training, inference in rows:
+    wrong = error(maps)
+    print(
+        f"{label:<34} {training:7.2f}s {inference:7.2f}s   "
+        f"T1 {wrong['T1']:5.1f}%   T2 {wrong['T2']:5.1f}%"
+    )
+
+print(
+    f"\ncompressing the match: {full_matching / low_matching:.1f}x faster, "
+    f"on {CONTRASTS // RANK}x fewer numbers per atom"
 )
-perk_time = time.perf_counter() - start
-T2_perk = T2_estimate.numpy(force=True)
-
-print(f"dictionary : {dictionary_time:.3f} s inference")
-print(f"PERK       : {training_time:.3f} s training, {perk_time:.3f} s inference")
 
 # %%
 #
-# Comparison
-# ----------
+# The maps
+# --------
 #
-# We restrict the display to voxels with signal, since T2 is not identifiable
-# in air:
-#
-mask = M0 > 0.05 * M0.max()
 
 
-def masked(x):
-    return np.where(mask, x, np.nan)
+def unpack(values):
+    """One flat map back into the slice it came from."""
+    out = np.zeros(mask.shape, dtype=np.float32)
+    out[mask] = values.numpy(force=True)
+    return out
 
 
-# The reference T2 comes from a two-point log ratio, which is itself unstable:
-# a few voxels (mostly CSF and partial-volume edges) land far outside the
-# 1-350 ms range the estimators can represent. Quantitative comparison is only
-# meaningful where the reference is inside that range.
-valid = mask & (T2 > 1.0) & (T2 < 350.0)
-
-
-figure, axes = plt.subplots(2, 3, figsize=(9.5, 6))
-for ax, (data, title) in zip(
-    axes[0],
-    [(T2, "true T2 [ms]"), (T2_dict, "dictionary T2"), (T2_perk, "PERK T2")],
-):
-    handle = ax.imshow(masked(data), vmin=0.0, vmax=350.0, cmap="viridis")
-    ax.set_title(title), ax.axis("off")
-    figure.colorbar(handle, ax=ax, fraction=0.046)
-
-# a shared scale, so the three proton-density panels are actually comparable
-m0_max = np.nanpercentile(masked(M0), 99.5)
-for ax, (data, title) in zip(
-    axes[1],
-    [(M0, "true M0"), (M0_dict, "dictionary M0"), (M0_perk, "PERK M0")],
-):
-    handle = ax.imshow(masked(data), cmap="gray", vmin=0.0, vmax=m0_max)
-    ax.set_title(title), ax.axis("off")
-    figure.colorbar(handle, ax=ax, fraction=0.046)
+figure, axes = plt.subplots(2, 4, figsize=(13, 6.2))
+panels = (
+    ("truth", truth),
+    (f"matching, {CONTRASTS}", full_maps),
+    (f"matching, rank {RANK}", low_maps),
+    (f"PERK, rank {RANK}", perk_maps),
+)
+for column, (title, maps) in enumerate(panels):
+    for row, (name, limit) in enumerate((("T1", 4500.0), ("T2", 600.0))):
+        drawn = axes[row, column].imshow(
+            unpack(maps[name]), cmap="magma", vmin=0.0, vmax=limit
+        )
+        axes[row, column].set_title(f"{name}, {title}", fontsize=9)
+        axes[row, column].axis("off")
+        figure.colorbar(drawn, ax=axes[row, column], fraction=0.046)
 figure.tight_layout()
 
 # %%
 #
-# Both estimators recover the same structure. Quantitatively, we compare them
-# against the ground truth over the masked region:
+# Reading the result honestly
+# ---------------------------
 #
-for name, t2_estimate, m0_estimate in [
-    ("dictionary", T2_dict, M0_dict),
-    ("PERK", T2_perk, M0_perk),
-]:
-    t2_error = t2_estimate[valid] - T2[valid]
-    m0_error = m0_estimate[mask] - M0[mask]
-    print(
-        f"{name:>10}:  T2 bias {t2_error.mean():+6.2f} ms "
-        f"RMSE {np.sqrt((t2_error**2).mean()):5.2f} ms  |  "
-        f"M0 bias {m0_error.mean():+6.2f} RMSE {np.sqrt((m0_error**2).mean()):6.2f}"
-    )
-relative = np.abs(M0_perk[mask] - M0_dict[mask]).mean() / np.abs(M0_dict[mask]).mean()
-print(f"PERK vs dictionary M0: {100 * relative:.2f}% mean relative difference")
-
-# %%
+# The compressed match is not an approximation of the full one that happens to
+# come close. It is the same match taken in a basis that keeps essentially all
+# of the signal, and the errors above say so.
 #
-# Exhaustive matching is the more accurate of the two here, and on a
-# thousand-atom grid it is also the faster one. Its cost, however, grows with
-# the size of the grid, while PERK's does not: the cost of a finer or
-# higher-dimensional parameter space is paid once, during training.
+# What it is *not* is free of the phantom's own structure. Three tissue classes
+# make an easy problem, because every voxel's answer is one of three points and
+# the dictionary contains all three almost exactly. A phantom with a continuum
+# of relaxation times would separate the two methods further, and the grid
+# spacing would be what limited matching.
 #
-reference = T2[valid]
-plt.figure(figsize=(5, 4))
-plt.plot(reference[::37], T2_dict[valid][::37], ".", markersize=2, label="dictionary")
-plt.plot(reference[::37], T2_perk[valid][::37], ".", markersize=2, label="PERK")
-plt.plot([0, 350], [0, 350], "k--", linewidth=1, label="identity")
-plt.xlabel("true T2 [ms]"), plt.ylabel("estimated T2 [ms]")
-plt.xlim([0, 350]), plt.ylim([0, 350])
-plt.legend(), plt.tight_layout()
-
-# %%
+# The regression is the less accurate of the two here, and the table says what
+# buys that back: its error falls with the number of features while its cost
+# per voxel barely moves, and every one of those features is paid for once,
+# during training. Matching has no such knob -- its accuracy is the grid
+# spacing, and the grid is also its cost.
 #
-# That trade-off is worth measuring rather than asserting. Matching the same
-# image against progressively finer grids, against PERK's constant cost:
+# That is the durable part. Matching costs one inner product per atom per
+# voxel, so it grows with the product of the parameter grids *and* with the
+# length of the train. The subspace removes the second factor once and for
+# all; nothing removes the first. Add a third parameter and the grid is
+# multiplied again while the regression is not, which is why the argument for
+# it strengthens with every parameter rather than weakening.
 #
-print(f"{'atoms':>8} {'matching':>10} {'vs PERK':>9}")
-for n_atoms in [1000, 4000, 16000, 64000]:
-    grid = torch.linspace(1.0, 350.0, n_atoms)
-    scaling_matcher = torchsim.ParameterMapping(
-        acquisition, T2=grid, seed=0
-    ).train(torchsim.DictionaryMatcher(), samples=n_atoms).method
-    scaling_matcher.match(signals[:1])  # warm up
-    start = time.perf_counter()
-    scaling_matcher.match(signals)
-    elapsed = time.perf_counter() - start
-    print(f"{n_atoms:>8} {elapsed:9.3f}s {elapsed / perk_time:8.2f}x")
-
-# %%
-#
-# Matching stays flat while the score matrix still fits in cache and only then
-# starts to scale with the grid, so where exactly the two cross depends on the
-# machine and its BLAS. The shape of the two curves is the durable part: one
-# grows with the parameter grid, the other does not.
-#
-# A single relaxation time is the case least favourable to PERK, since a
-# thousand atoms is a small matrix product. The argument strengthens for joint
-# T1/T2/B1 dictionaries, where the grid grows multiplicatively and exhaustive
-# search stops being affordable at all.

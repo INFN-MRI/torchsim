@@ -23,6 +23,10 @@
   those signals through the basis and back. At rank 16 out of 500 contrasts a
   dictionary match does about thirty times fewer operations.
 
+  `examples/03` maps a brain slice from a four-hundred-contrast fingerprinting
+  train both ways and sweeps the rank, so what the compression costs in
+  accuracy is read off a curve rather than asserted.
+
 - **Fused kernels for PERK**, forward and adjoint, in Triton on CUDA and in a
   new `torchsim._perk_cpu` extension on the host. The feature matrix is never
   written: a tile of features is formed and consumed into the output
@@ -44,6 +48,18 @@
   cannot carry is a gradient -- a streamed chunk goes through a pinned buffer
   that the next chunk overwrites -- so a call that wants one keeps the
   ordinary path.
+
+- **`PERK.fit` runs under `execution()` too.** Fitting is a reduction -- the
+  covariance of a thousand features is eight megabytes however many samples
+  built it -- so it stays in one place and the training set is fed to it a
+  chunk at a time; the policy chooses the place. The random Fourier features
+  are drawn on the host whatever that choice is, because Torch's generators do
+  not agree between devices at the same seed and where a fit ran must not
+  decide which estimator comes out of it.
+
+  On a consumer card this measures out in favour of the host, because the
+  covariance accumulates in float64 and consumer fp64 is a sixty-fourth of
+  fp32; `execution()` discovers that rather than assuming either way.
 
 - **`scripts/build_docs.sh`**, which builds the HTML documentation with every
   example executed. `docs/requirements.txt` now lists what that actually needs

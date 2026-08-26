@@ -2422,9 +2422,6 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
     // the power a pulse deposits; see ``simulate_range``.
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
-    // The tabulated case keeps the name it had; the per-voxel one is
-    // reached where this is false and the mode says so.
-    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const Buffers& primal = buffers.primal;
     const bool flowing = primal.moving;
     const std::size_t states = static_cast<std::size_t>(state_count);
@@ -2596,9 +2593,6 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
             const Complex off_resonance = e2 * phase;
             const Complex off_resonance_tangent =
                 e2_tangent * phase + e2 * phase_tangent;
-            const Complex conjugate_off_resonance = std::conj(off_resonance);
-            const Complex conjugate_off_tangent =
-                std::conj(off_resonance_tangent);
             // The exchange operator belongs to the interval, not to a dephasing
             // order, so it is formed once and carries its own tangent; the
             // per-order damping multiplies both.
@@ -2955,6 +2949,12 @@ __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 inline void shift_real(
     std::vector<float>& plus, std::vector<float>& minus, const std::size_t states
 ) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     for (std::size_t state = 0; state + 1 < states; ++state) {
         minus[state] = minus[state + 1];
     }
@@ -3256,6 +3256,13 @@ inline bool lane_kernels_enabled() {
 // declines to re-form the pieces into packed arithmetic. Spelling the width out
 // as a vector type settles it, and costs nothing where the extension is absent.
 #if defined(__GNUC__) || defined(__clang__)
+// A 32-byte vector crosses a function boundary differently depending on
+// whether the caller was built with AVX, and GCC says so. Every function that
+// returns one here is inline and internal to this file, so no call ever spans
+// two translation units and the two conventions never meet.
+// The inline bodies are emitted at the end of the translation unit, which is
+// where the diagnostic lands, so this stays open rather than being popped.
+#pragma GCC diagnostic ignored "-Wpsabi"
 using LaneVector = float __attribute__((vector_size(sizeof(float) * REAL_LANES)));
 #else
 struct LaneVector {
@@ -3358,6 +3365,12 @@ inline void gather_lanes(
 }
 
 inline void shift_real_lanes(float* plus, float* minus, const std::size_t states) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     for (std::size_t state = 0; state + 1 < states; ++state) {
         lane_store(
             minus + state * REAL_LANES, lane_load(minus + (state + 1) * REAL_LANES)
@@ -3595,6 +3608,12 @@ inline void shift_lanes(
     float* fminus_imag,
     const std::size_t states
 ) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     for (std::size_t state = 0; state + 1 < states; ++state) {
         const std::size_t destination = state * LANES;
         const std::size_t source = (state + 1) * LANES;
@@ -3907,9 +3926,6 @@ void simulate_range(
     // the power a pulse deposits.
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
-    // The tabulated case keeps the name it had; the per-voxel one is
-    // reached where this is false and the mode says so.
-    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     // Hoisted out of every loop below. ``turning`` is whether anything puts a
     // phase on the transverse states at all -- off-resonance and flow reach
     // them through one rotation -- and ``flowing`` is the velocity terms
@@ -4297,6 +4313,12 @@ using State = std::vector<Complex>;
 
 inline void shift_adjoint(State& fplus_bar, State& fminus_bar) {
     const std::size_t count = fplus_bar.size();
+    // An empty state plane is impossible -- every entry point rejects a state
+    // count below one -- but not provable here, and the loops below count down
+    // from ``count - 1``.
+    if (count == 0) {
+        return;
+    }
     // fplus[0] = conj(fminus[1]) couples the two branches; capture it before
     // the in-place shifts overwrite the source.
     const Complex carry = std::conj(fplus_bar[0]);
@@ -4479,6 +4501,12 @@ using DualState = std::vector<DualComplex>;
 
 inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
     const std::size_t count = fplus_bar.size();
+    // An empty state plane is impossible -- every entry point rejects a state
+    // count below one -- but not provable here, and the loops below count down
+    // from ``count - 1``.
+    if (count == 0) {
+        return;
+    }
     const DualComplex carry = conjugate(fplus_bar[0]);
     for (std::size_t state = 0; state + 1 < count; ++state) {
         fplus_bar[state] = fplus_bar[state + 1];
@@ -4518,9 +4546,6 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
     constexpr bool TWO_POOL = MT || BM;
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
-    // The tabulated case keeps the name it had; the per-voxel one is
-    // reached where this is false and the mode says so.
-    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;
@@ -4924,8 +4949,6 @@ __attribute__((always_inline)) inline void simulate_vjp_range(
                 : TwoPoolTransverse<Complex>{};
             const float angle = -2.0F * PI * b0 * dt;
             const Complex phase = turned(1.0F, angle, primal.off_axis);
-            const Complex off_resonance = e2 * phase;
-            const Complex conjugate_off = std::conj(off_resonance);
             const std::uint8_t action = primal.action[event];
 
             // replay this event to recover the intra-event states
@@ -5612,6 +5635,12 @@ inline void shift_real_adjoint(
     std::vector<float>& plus_bar, std::vector<float>& minus_bar,
     const std::size_t states
 ) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     // ``shift_real`` ends with plus[0] = -minus[0], reading the minus vector
     // after its own shift -- so the entry it couples to is minus[1] as it
     // stood before, and the cotangent lands there.
@@ -6254,6 +6283,12 @@ inline void shift_real_dual(
     std::vector<DualFloat>& minus,
     const std::size_t states
 ) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     for (std::size_t state = 0; state + 1 < states; ++state) {
         minus[state] = minus[state + 1];
     }
@@ -6271,6 +6306,12 @@ inline void shift_real_dual_adjoint(
     std::vector<DualFloat>& minus_bar,
     const std::size_t states
 ) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     const DualFloat carry = DualFloat{0.0F, 0.0F} - plus_bar[0];
     for (std::size_t state = 0; state + 1 < states; ++state) {
         plus_bar[state] = plus_bar[state + 1];
@@ -6666,6 +6707,12 @@ inline float lane_sum(const LaneVector value, const std::int64_t active) {
 inline void shift_real_dual_lanes(
     DualLane* plus, DualLane* minus, const std::size_t states
 ) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     for (std::size_t state = 0; state + 1 < states; ++state) {
         minus[state] = minus[state + 1];
     }
@@ -6679,6 +6726,12 @@ inline void shift_real_dual_lanes(
 inline void shift_real_dual_lanes_adjoint(
     DualLane* plus_bar, DualLane* minus_bar, const std::size_t states
 ) {
+    // No states is impossible -- every entry point rejects a state count
+    // below one -- but not provable here, and the loops below count down
+    // from ``states - 1``.
+    if (states == 0) {
+        return;
+    }
     const DualLane carry = -plus_bar[0];
     for (std::size_t state = 0; state + 1 < states; ++state) {
         plus_bar[state] = plus_bar[state + 1];
@@ -7036,9 +7089,6 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
     constexpr bool TWO_POOL = MT || BM;
     constexpr bool PAIRED = BM || THREE;
     constexpr bool SATURATED = MT || THREE;
-    // The tabulated case keeps the name it had; the per-voxel one is
-    // reached where this is false and the mode says so.
-    constexpr bool PROFILED = MODE == RfMode::PROFILED;
     const Buffers& primal = buffers.primal;
     const TissueLayout layout(primal.shim_count);
     const std::int64_t atoms = primal.atom_count;

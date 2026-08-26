@@ -202,3 +202,47 @@ def test_a_whole_mapping_runs_under_a_policy() -> None:
     for name in truth:
         assert got[name].device.type == "cpu"
         assert torch.allclose(got[name], expected[name], rtol=2e-4, atol=1e-3)
+
+
+@CUDA
+def test_a_fit_gives_the_same_estimator_wherever_it_runs() -> None:
+    """Fitting is a reduction, and the policy may put it on a card.
+
+    Torch's random generators do not agree between devices at the same seed,
+    so the random Fourier features are drawn in one place whatever the policy
+    says -- otherwise where a fit ran would decide which estimator came out
+    of it, and that is not a decision about speed.
+    """
+    generator = torch.Generator().manual_seed(8)
+    signals = torch.randn(4000, CONTRASTS, generator=generator)
+    targets = torch.stack((signals.sum(-1), signals.square().mean(-1)), dim=-1)
+
+    here = PERK(n_features=256, seed=6).fit(signals, targets)
+    with execution(target="cuda"):
+        there = PERK(n_features=256, seed=6).fit(signals, targets)
+
+    assert there.weight.device.type == "cpu", "the estimator comes home"
+    scale = here.weight.abs().max()
+    assert float((there.weight - here.weight).abs().max() / scale) < 5e-6
+
+
+@CUDA
+def test_a_fit_on_a_card_reaches_it(monkeypatch) -> None:
+    """The other half: assert the accumulation really moved."""
+    generator = torch.Generator().manual_seed(8)
+    signals = torch.randn(2000, CONTRASTS, generator=generator)
+    targets = signals.sum(-1, keepdim=True)
+    seen: list[str] = []
+    original = _perk._rff
+    monkeypatch.setattr(
+        _perk,
+        "_rff",
+        lambda inputs, frequency, phase: (
+            seen.append(inputs.device.type), original(inputs, frequency, phase)
+        )[1],
+    )
+
+    with execution(target="cuda"):
+        PERK(n_features=128, seed=6).fit(signals, targets)
+
+    assert seen and set(seen) == {"cuda"}

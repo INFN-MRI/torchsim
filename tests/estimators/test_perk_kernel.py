@@ -15,6 +15,22 @@ import torch
 from torchsim.estimators import PERK
 import torchsim.estimators._perk as _perk
 
+
+def assert_agrees(got: torch.Tensor, want: torch.Tensor, tolerance: float = 5e-6) -> None:
+    """Assert two float32 paths computed the same thing.
+
+    Against the scale of the answer, not entry by entry: a gradient has
+    entries near zero, and a relative error taken there says nothing about
+    whether the kernel is right. What float32 promises is that the largest
+    error is small compared with the largest value.
+    """
+    error = (got - want).abs().max()
+    scale = want.abs().max().clamp_min(1e-12)
+    assert float(error / scale) < tolerance, (
+        f"{float(error):.3e} against a scale of {float(scale):.3e}"
+    )
+
+
 CUDA = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA is unavailable"
 )
@@ -71,7 +87,7 @@ def test_the_fused_answer_is_the_composed_answer(
     composed()
     plain = estimator(measured)
 
-    assert torch.allclose(fused, plain, rtol=2e-5, atol=1e-5)
+    assert_agrees(fused, plain)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -106,7 +122,7 @@ def test_a_known_parameter_block_goes_through_the_kernel(device, composed) -> No
     composed()
     plain = estimator(signals[:64], known[:64])
 
-    assert torch.allclose(fused, plain, rtol=2e-5, atol=1e-5)
+    assert_agrees(fused, plain)
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -123,7 +139,7 @@ def test_the_adjoint_is_the_composed_gradient(device, monkeypatch) -> None:
     plain_input = measured.clone().requires_grad_()
     estimator(plain_input).backward(cotangent)
 
-    assert torch.allclose(fused_input.grad, plain_input.grad, rtol=2e-4, atol=1e-6)
+    assert_agrees(fused_input.grad, plain_input.grad)
 
 
 @pytest.mark.parametrize("device", DEVICES)

@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**01:06.982** total execution time for 7 files **from all galleries**:
+**02:28.244** total execution time for 7 files **from all galleries**:
 
 .. container::
 
@@ -32,24 +32,24 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
+   * - :ref:`sphx_glr_generated_autoexamples_05-subspace.py` (``../examples/05-subspace.py``)
+     - 01:15.065
+     - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_03-fitting.py` (``../examples/03-fitting.py``)
-     - 00:37.114
+     - 00:45.901
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_02-synth-data.py` (``../examples/02-synth-data.py``)
-     - 00:12.668
+     - 00:11.953
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_04-derivatives.py` (``../examples/04-derivatives.py``)
-     - 00:08.071
+     - 00:07.969
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_07-echo-train-design.py` (``../examples/07-echo-train-design.py``)
-     - 00:04.994
+     - 00:04.815
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_01-simple-simulator.py` (``../examples/01-simple-simulator.py``)
-     - 00:02.711
-     - 0.0
-   * - :ref:`sphx_glr_generated_autoexamples_05-subspace.py` (``../examples/05-subspace.py``)
-     - 00:01.317
+     - 00:02.404
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_06-custom-operator.py` (``../examples/06-custom-operator.py``)
-     - 00:00.106
+     - 00:00.137
      - 0.0

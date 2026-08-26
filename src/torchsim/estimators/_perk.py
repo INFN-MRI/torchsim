@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import torch
 
-from .._execution import per_voxel
+from .._execution import one_device, per_voxel
 from ._calibrate import crossover
 
 
@@ -417,6 +417,8 @@ class PERK(torch.nn.Module):
         if self._requested_length_scale is None:
             length_scale = self._estimated_length_scale(batches, sample_count)
 
+        home: torch.device | None = None
+        where: torch.device | None = None
         frequency: torch.Tensor | None = None
         phase: torch.Tensor | None = None
         feature_sum = None
@@ -425,13 +427,17 @@ class PERK(torch.nn.Module):
         parameter_sum = None
         observed = 0
         for inputs, targets in batches():
-            inputs = inputs.to(torch.float32)
-            targets = targets.to(torch.float32)
+            if where is None:
+                home = inputs.device
+                where = self._fitting_device(inputs, sample_count) or home
+            inputs = inputs.to(where, torch.float32)
+            targets = targets.to(where, torch.float32)
             if frequency is None:
-                if length_scale is None:
-                    length_scale = self._given_length_scale(
-                        inputs.shape[-1], inputs.device
-                    )
+                length_scale = (
+                    self._given_length_scale(inputs.shape[-1], inputs.device)
+                    if length_scale is None
+                    else length_scale.to(inputs.device)
+                )
                 frequency, phase = self._random_features(length_scale)
                 feature_sum = torch.zeros(
                     self.n_features, dtype=torch.float64, device=inputs.device
@@ -476,34 +482,82 @@ class PERK(torch.nn.Module):
         covariance.diagonal().add_(self.regularization)
         weight = torch.linalg.solve(covariance, cross_covariance.mT).mT
 
+        # Where the fit ran was a speed decision; where the estimator lives
+        # is the caller's, so it comes back beside the data it was given.
         self._replicas = {}
-        self.frequency = frequency
-        self.frequency_t = frequency.mT.contiguous()
-        self.phase = phase
-        self.feature_mean = feature_mean.to(torch.float32)
-        self.parameter_mean = parameter_mean.to(torch.float32)
-        self.weight = weight.to(torch.float32)
-        self.length_scale = length_scale
+        self.frequency = frequency.to(home)
+        self.frequency_t = self.frequency.mT.contiguous()
+        self.phase = phase.to(home)
+        self.feature_mean = feature_mean.to(torch.float32).to(home)
+        self.parameter_mean = parameter_mean.to(torch.float32).to(home)
+        self.weight = weight.to(torch.float32).to(home)
+        self.length_scale = length_scale.to(home)
         return self
+
+    def _fitting_device(
+        self, inputs: torch.Tensor, sample_count: int
+    ) -> torch.device | None:
+        """Where to accumulate this fit, under the policy in force.
+
+        Fitting is a reduction: the covariance of a thousand features is eight
+        megabytes however many samples it was built from, so it stays in one
+        place and the training set is fed to it a chunk at a time. What the
+        policy decides is which place.
+        """
+        contrasts = int(inputs.shape[-1])
+        return one_device(
+            work=sample_count * contrasts * self.n_features,
+            voxels=sample_count,
+            bytes_per_voxel=(contrasts + self.n_features) * 4,
+            crossover=lambda device: crossover(
+                (contrasts, self.n_features, "fit"),
+                device,
+                self._fit_probe(contrasts),
+                contrasts * self.n_features,
+            ),
+        )
+
+    def _fit_probe(self, contrasts: int) -> Any:
+        """A closure the calibrator can time, accumulating one covariance."""
+
+        def build(device: torch.device, voxels: int) -> Any:
+            generator = torch.Generator(device=device).manual_seed(0)
+            inputs = torch.randn(
+                voxels, contrasts, generator=generator, device=device
+            )
+            frequency = torch.randn(
+                self.n_features, contrasts, generator=generator, device=device
+            )
+            phase = torch.zeros(self.n_features, device=device)
+
+            def once() -> torch.Tensor:
+                features = _rff(inputs, frequency, phase).to(torch.float64)
+                return features.mT @ features
+
+            return once
+
+        return build
 
     def _random_features(
         self, length_scale: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """The fixed frequency and phase of the random Fourier feature map."""
-        generator = _generator(length_scale.device, _random_seed(self.seed))
+        """The fixed frequency and phase of the random Fourier feature map.
+
+        Drawn on the host whatever device the fit runs on. Torch's generators
+        do not agree between devices at the same seed, and where a fit ran is
+        supposed to be a decision about speed rather than about which
+        estimator comes out of it.
+        """
+        generator = _generator(torch.device("cpu"), _random_seed(self.seed))
         frequency = torch.randn(
             self.n_features,
             length_scale.numel(),
             dtype=torch.float32,
-            device=length_scale.device,
             generator=generator,
-        ) / length_scale[None, :]
+        ).to(length_scale.device) / length_scale[None, :]
         phase = 2.0 * math.pi * torch.rand(
-            self.n_features,
-            dtype=torch.float32,
-            device=length_scale.device,
-            generator=generator,
-        )
+            self.n_features, dtype=torch.float32, generator=generator
+        ).to(length_scale.device)
         return frequency, phase
 
     def _estimated_length_scale(
