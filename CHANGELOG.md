@@ -24,21 +24,40 @@
 
   `GaussNewton` inverts the chain by repeated linearization. **The damping is
   a policy and the inner solve is a callable**, which is what makes the same
-  loop both methods: `Schedule` plus `cg` is an iteratively regularized
-  Gauss-Newton, `TrustRegion` plus `direct` is Levenberg-Marquardt, and a
-  closure around a proximal solver from elsewhere is how a regularizer enters.
-  `NonlinearLeastSquares` is now that loop under a trust region, and lands on
-  the same answer to the bit.
+  loop both methods: `Schedule` is an iteratively regularized Gauss-Newton,
+  `TrustRegion` is Levenberg-Marquardt, and a closure around a proximal solver
+  from elsewhere is how a regularizer enters.
+
+  **No linear solver is written here.** `iterative()` hands the linearized
+  problem to deepinv, whose `least_squares` minimizes exactly what a
+  Gauss-Newton step leaves, by conjugate gradients, LSQR, BiCGStab or MINRES.
+  `direct` is the one exception and is not a general solver: where the
+  operator is voxel-diagonal it is a batched `torch.linalg.lstsq` over the
+  augmented damped system, which *is* the Levenberg-Marquardt step -- and
+  because that system has full column rank for any positive damping, there is
+  no singular case to detect and none to work around. The default follows the
+  problem: `direct` where the model stands alone, `iterative()` where an
+  encoding operator has left no independent voxels.
+
+  `NonlinearLeastSquares` is an `Estimator` face on that loop and holds no
+  algorithm of its own -- every knob a Levenberg-Marquardt has lives on the
+  `loop=` it is given, so there is one place to set it. Its answer matches the
+  loop's to the bit.
 
   `examples/08` reconstructs a T2 map from ninefold-undersampled radial
-  k-space three ways on one BrainWeb slice -- gridding then fitting, a linear
-  subspace, and the nonlinear model -- and prints what each costs and gets
-  wrong. On that data the model-based route errs by 12.5% of T2 against the
-  subspace route's 14.2% and gridding's 20.2%, and is the slowest of the three
-  by a wide margin -- which is the ordering the review reports. The example
-  times itself where it runs rather than quoting a number from here. Per
-  conjugate-gradient step the model and the encoding cost about the same, so
-  the model is not what a faster reconstruction would optimize.
+  k-space four ways on one BrainWeb slice -- the adjoint per echo, an
+  iterative least squares per echo, an iterative subspace reconstruction, and
+  the nonlinear model -- each timed end to end and each given the best of a
+  short regularization sweep. The two routes that constrain the echoes against
+  one another err by about 12.5% of T2 against 20% for either route that
+  reconstructs each contrast on its own, and iterating per echo gains nothing
+  over gridding: sixteen spokes leave that problem underdetermined, so there
+  is nothing to converge to. The subspace and the nonlinear model land
+  together, which is *not* the ordering the review reports -- on eight echoes
+  of one exponential a rank-three basis leaves a nonlinear model almost
+  nothing to add, and the example says so. Per conjugate-gradient step the
+  model and the encoding cost about the same, so the model is not what a
+  faster reconstruction would optimize.
 
 - **`ParameterMapping.from_coefficients`**, which reads maps from coefficients
   that are already in the mapping's basis. A subspace reconstruction never

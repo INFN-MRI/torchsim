@@ -214,9 +214,14 @@ Which damping it carries decides which method it is --
 :class:`~torchsim.Schedule` for an iteratively regularized Gauss-Newton,
 :class:`~torchsim.TrustRegion` for Levenberg-Marquardt, which is what
 :class:`~torchsim.NonlinearLeastSquares` runs. How the linearized problem is
-solved is a callable: :func:`~torchsim.cg`, :func:`~torchsim.direct`, or a
-closure around a proximal solver from elsewhere, which is how a regularizer
-enters.
+solved is a callable, and mostly it is somebody else's:
+:func:`~torchsim.iterative` hands the linearized problem to deepinv's
+``least_squares``, which minimizes exactly what a Gauss-Newton step leaves.
+There is no conjugate gradient written here. :func:`~torchsim.direct` is the
+exception and is not a general solver -- it is the batched damped
+least-squares over a voxel-diagonal Jacobian that *is* the
+Levenberg-Marquardt step. A closure around a proximal solver from elsewhere is
+how a regularizer enters.
 
 The Fourier encoding is not here and never will be. Anything exposing ``A``
 and ``A_adjoint`` composes -- an mri-nufft operator through its deepinv bridge,
@@ -233,8 +238,8 @@ subspace operator in the layout it reads.
    torchsim.TrustRegion
    torchsim.Linearization
    torchsim.Solution
-   torchsim.cg
    torchsim.direct
+   torchsim.iterative
 
 Sequence design
 ---------------

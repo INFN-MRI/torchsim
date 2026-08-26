@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-import pytest
 import torch
 
 from torchsim import Acquisition
@@ -15,7 +14,7 @@ from torchsim.recon import (
     ModelOperator,
     Schedule,
     TrustRegion,
-    cg,
+    iterative,
     direct,
 )
 from torchsim.simulators import MultiEchoSimulator
@@ -97,7 +96,7 @@ def test_a_bound_holds_at_every_iterate_under_an_encoding() -> None:
     kspace = encoding.A(images.movedim(-1, 1))
 
     GaussNewton(
-        Schedule(initial=1e-3, minimum=1e-6), solve=cg, max_iterations=10
+        Schedule(initial=1e-3, minimum=1e-6), solve=iterative(), max_iterations=10
     ).minimize(
         watched,
         kspace,

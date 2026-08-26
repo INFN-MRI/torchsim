@@ -241,7 +241,7 @@ def test_converged_voxels_stop_being_solved() -> None:
     mapping(acquisition.simulate(T2=torch.full((64,), 50.0)))
 
     assert method.unconverged == 0
-    assert 0 < method.iterations <= method.max_iterations
+    assert 0 < method.iterations <= method.loop.max_iterations
 
 
 def test_the_map_is_shaped_like_the_volume() -> None:
@@ -350,14 +350,34 @@ def test_fitting_without_a_model_says_so() -> None:
         method(torch.zeros(4, 6))
 
 
+def test_the_solve_is_a_gauss_newton_and_nothing_else_is_here() -> None:
+    """The estimator adapts a loop to a protocol; it holds no algorithm.
+
+    Every knob a Levenberg-Marquardt has -- how many steps, how the damping
+    moves, what stops a voxel -- lives on the loop, so there is one place to
+    set it and one place for it to be wrong.
+    """
+    from torchsim.recon import GaussNewton, TrustRegion, direct
+
+    default = NonlinearLeastSquares()
+
+    assert isinstance(default.loop, GaussNewton)
+    assert isinstance(default.loop.damping, TrustRegion)
+    assert default.loop.solve is direct
+
+    given = GaussNewton(TrustRegion(tau=1e-3), solve=direct, max_iterations=60)
+    assert NonlinearLeastSquares(loop=given).loop is given
+
+
 @pytest.mark.parametrize(
     "settings,complaint",
     [
         (dict(max_iterations=0), "max_iterations"),
-        (dict(tau=0.0), "tau"),
     ],
 )
-def test_settings_that_make_no_sense(settings, complaint) -> None:
+def test_loop_settings_that_make_no_sense(settings, complaint) -> None:
     """Caught where they are written, not where they misbehave."""
+    from torchsim.recon import GaussNewton
+
     with pytest.raises(ValueError, match=complaint):
-        NonlinearLeastSquares(**settings)
+        GaussNewton(**settings)

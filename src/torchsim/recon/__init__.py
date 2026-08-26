@@ -20,8 +20,8 @@ __all__ = [
     "Schedule",
     "Solution",
     "TrustRegion",
-    "cg",
     "direct",
+    "iterative",
 ]
 
 from ._gauss_newton import (
@@ -30,7 +30,7 @@ from ._gauss_newton import (
     Schedule,
     Solution,
     TrustRegion,
-    cg,
     direct,
+    iterative,
 )
 from ._operator import ModelOperator

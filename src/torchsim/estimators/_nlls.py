@@ -22,10 +22,17 @@ class NonlinearLeastSquares(torch.nn.Module):
     it gives up is the guarantee: it finds a local minimum of the residual,
     and which one depends on where it started.
 
-    Voxels are independent, so they are not solved one after another. Every
-    voxel takes its step in the same pass, carries its own damping, and
-    accepts or rejects on its own; a voxel that has converged drops out and
-    the remaining ones close up, so late iterations cost only what is left.
+    This is an :class:`~torchsim.Estimator` face on
+    :class:`~torchsim.recon.GaussNewton`, and holds no algorithm of its own.
+    Fitting images voxel by voxel and reconstructing maps from k-space are the
+    same loop over the same :class:`~torchsim.recon.ModelOperator` with
+    nothing encoding the voxels together, so what is here is only the
+    adaptation: where the fit starts, and what the training set is for.
+
+    The loop it runs by default carries a per-voxel trust region, so every
+    voxel takes its step in the same pass, carries its own damping, accepts or
+    rejects on its own, and drops out when it has converged -- and the
+    remaining ones close up, so late iterations cost only what is left.
 
     Parameters
     ----------
@@ -39,14 +46,11 @@ class NonlinearLeastSquares(torch.nn.Module):
         ``{name: value}`` to start from, which must be strictly inside that
         property's bound. Without one, :meth:`fit` takes the median of the
         parameters the training set drew.
-    max_iterations : int, optional
-        Most steps any voxel takes.
-    tau : float, optional
-        Sets the first damping, as ``tau`` times the largest curvature the
-        starting point shows. Small where the guess is good.
-    gradient_tolerance, step_tolerance : float, optional
-        A voxel is done when its gradient is flat or its step is short
-        relative to where it stands.
+    loop : GaussNewton, optional
+        The solve to run, and where every knob it has lives -- how many steps,
+        how the damping moves, which tolerance stops a voxel. The default is
+        Levenberg-Marquardt: a :class:`~torchsim.recon.TrustRegion` over
+        :func:`~torchsim.recon.direct`, twenty steps.
 
     Notes
     -----
@@ -73,6 +77,16 @@ class NonlinearLeastSquares(torch.nn.Module):
         )
         mapping.train(NonlinearLeastSquares(bounds={"T2": (1.0, 500.0)}))
         maps = mapping(volume)
+
+    A solve that needs more room, or a different one entirely:
+
+    .. code-block:: python
+
+        NonlinearLeastSquares(
+            bounds={"T2": (1.0, 500.0)},
+            loop=GaussNewton(TrustRegion(tau=1e-3), solve=direct,
+                             max_iterations=60),
+        )
     """
 
     def __init__(
@@ -80,22 +94,14 @@ class NonlinearLeastSquares(torch.nn.Module):
         *,
         bounds: Mapping[str, tuple[float | None, float | None]] | None = None,
         initial: Mapping[str, float] | None = None,
-        max_iterations: int = 20,
-        tau: float = 1e-2,
-        gradient_tolerance: float = 1e-8,
-        step_tolerance: float = 1e-8,
+        loop: GaussNewton | None = None,
     ) -> None:
         super().__init__()
-        if max_iterations < 1:
-            raise ValueError(f"max_iterations must be positive, got {max_iterations}")
-        if tau <= 0.0:
-            raise ValueError(f"tau must be positive, got {tau}")
         self.bounds = dict(bounds or {})
         self.initial = dict(initial or {})
-        self.max_iterations = int(max_iterations)
-        self.tau = float(tau)
-        self.gradient_tolerance = float(gradient_tolerance)
-        self.step_tolerance = float(step_tolerance)
+        self.loop = loop if loop is not None else GaussNewton(
+            TrustRegion(), solve=direct, max_iterations=20
+        )
         self.unknown: tuple[str, ...] = ()
         self.known: tuple[str, ...] = ()
         self._acquisition: Any = None
@@ -276,13 +282,9 @@ class NonlinearLeastSquares(torch.nn.Module):
         voxels together.
         """
         operator = self._operator(measured.shape[0], known)
-        found = GaussNewton(
-            TrustRegion(tau=self.tau),
-            solve=direct,
-            max_iterations=self.max_iterations,
-            gradient_tolerance=self.gradient_tolerance,
-            step_tolerance=self.step_tolerance,
-        ).minimize(operator, measured, self._at(operator, measured))
+        found = self.loop.minimize(
+            operator, measured, self._at(operator, measured)
+        )
         self.iterations = found.iterations
         self.unconverged = found.unconverged
         maps = operator.split(found.x)

@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:10.050** total execution time for 8 files **from all galleries**:
+**00:12.904** total execution time for 8 files **from all galleries**:
 
 .. container::
 
@@ -33,7 +33,7 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_generated_autoexamples_08-model-based.py` (``../examples/08-model-based.py``)
-     - 00:10.050
+     - 00:12.904
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_01-simple-simulator.py` (``../examples/01-simple-simulator.py``)
      - 00:00.000

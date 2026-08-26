@@ -8,11 +8,12 @@ import torch
 from torchsim import Acquisition, ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
 from torchsim.recon import (
+    Linearization,
     GaussNewton,
     ModelOperator,
     Schedule,
     TrustRegion,
-    cg,
+    iterative,
     direct,
 )
 from torchsim.simulators import MultiEchoSimulator
@@ -61,11 +62,19 @@ def problem():
     [
         (TrustRegion(), direct),
         (Schedule(minimum=1e-8), direct),
-        (Schedule(minimum=1e-8), cg),
+        (Schedule(minimum=1e-8), iterative()),
     ],
 )
 def test_every_pairing_finds_the_answer(problem, damping, solve) -> None:
-    """Which inner solve and which damping is a choice, not a different problem."""
+    """Which inner solve and which damping is a choice, not a different problem.
+
+    The tolerance is a tenth of a percent rather than round-off because an
+    iterative inner solve stops on one: deepinv's conjugate gradients works on
+    the normal equations, whose condition number is the square of the
+    system's, so it declares itself done while the direct solve is still
+    tightening. That is a property of the solver the caller chose, not a
+    disagreement about where the minimum is.
+    """
     operator, measured, start = problem
 
     found = GaussNewton(damping, solve=solve, max_iterations=40).minimize(
@@ -73,8 +82,10 @@ def test_every_pairing_finds_the_answer(problem, damping, solve) -> None:
     )
 
     maps = operator.split(found.x)
-    torch.testing.assert_close(maps["T2"], TRUTH, atol=1e-3, rtol=1e-4)
-    torch.testing.assert_close(maps["amplitude"], AMPLITUDE, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(maps["T2"], TRUTH, rtol=1e-3, atol=1e-3)
+    torch.testing.assert_close(
+        maps["amplitude"], AMPLITUDE, rtol=1e-3, atol=1e-4
+    )
 
 
 def test_the_two_policies_land_in_the_same_place(problem) -> None:
@@ -85,14 +96,14 @@ def test_the_two_policies_land_in_the_same_place(problem) -> None:
         operator, measured, start
     )
     schedule = GaussNewton(
-        Schedule(minimum=1e-8), solve=cg, max_iterations=40
+        Schedule(minimum=1e-8), solve=iterative(), max_iterations=40
     ).minimize(operator, measured, start)
 
     torch.testing.assert_close(
         operator.split(region.x)["T2"],
         operator.split(schedule.x)["T2"],
+        rtol=1e-3,
         atol=1e-3,
-        rtol=1e-4,
     )
 
 
@@ -148,7 +159,7 @@ def test_the_damping_of_a_schedule_falls_to_its_floor(problem) -> None:
 
     found = GaussNewton(
         Schedule(initial=1.0, factor=0.5, minimum=0.05),
-        solve=cg,
+        solve=iterative(),
         max_iterations=10,
     ).minimize(operator, measured, start)
 
@@ -201,7 +212,7 @@ def test_solving_through_an_encoding_beats_reconstructing_first(
 
     found = GaussNewton(
         Schedule(initial=1e-2, factor=0.5, minimum=1e-5),
-        solve=cg,
+        solve=iterative(),
         max_iterations=12,
     ).minimize(operator, kspace, start, encoding=encoding)
 
@@ -223,7 +234,7 @@ def test_the_encoded_loop_lowers_its_residual(phantom) -> None:
 
     found = GaussNewton(
         Schedule(initial=1e-2, factor=0.5, minimum=1e-5),
-        solve=cg,
+        solve=iterative(),
         max_iterations=8,
     ).minimize(operator, kspace, start, encoding=encoding)
 
@@ -239,7 +250,7 @@ def test_a_per_voxel_damping_is_refused_under_an_encoding(phantom) -> None:
     operator, encoding, kspace, _, _ = phantom
 
     with pytest.raises(ValueError, match="each voxel on its own"):
-        GaussNewton(TrustRegion(), solve=cg).minimize(
+        GaussNewton(TrustRegion(), solve=iterative()).minimize(
             operator,
             kspace,
             operator.initial((1, 32, 32), T2=100.0),
@@ -264,3 +275,79 @@ def test_a_loop_needs_a_step_to_take() -> None:
     """Caught where it is written."""
     with pytest.raises(ValueError, match="max_iterations"):
         GaussNewton(max_iterations=0)
+
+
+# %% who solves the linearized problem
+
+
+def test_the_direct_solve_is_exact(problem) -> None:
+    """The damping goes in as extra rows, not as a ridge on normal equations.
+
+    Same minimizer, without squaring the condition number -- and against a
+    dense solve of the augmented system built here, which shares no code with
+    it.
+    """
+    operator, measured, start = problem
+    blocks = operator.jacobian(start)
+    residual = operator.A(start) - measured
+    damping = torch.full((start.shape[0], 1), 0.3)
+    reference = torch.zeros_like(start)
+
+    step = direct(
+        Linearization(matvec=None, rmatvec=None, blocks=blocks),
+        -residual,
+        damping,
+        reference,
+    )
+
+    rows = torch.cat((blocks.real, blocks.imag), dim=-1).mT
+    target = torch.cat((-residual.real, -residual.imag), dim=-1)
+    eye = torch.eye(start.shape[-1]).expand(start.shape[0], -1, -1)
+    system = torch.cat((rows, damping.sqrt()[..., None] * eye), dim=-2)
+    padded = torch.cat((target, torch.zeros_like(reference)), dim=-1)
+    dense = torch.linalg.solve(
+        system.mT @ system, (system.mT @ padded[..., None])
+    ).squeeze(-1)
+    torch.testing.assert_close(step, dense, atol=1e-4, rtol=1e-4)
+
+
+def test_the_inner_solve_defaults_to_what_the_problem_needs(problem) -> None:
+    """Direct where the voxels are separate, deepinv's where they are not.
+
+    Naming a solver is a choice worth having and not one worth making every
+    time.
+    """
+    operator, measured, start = problem
+
+    found = GaussNewton(TrustRegion(), max_iterations=40).minimize(
+        operator, measured, start
+    )
+
+    torch.testing.assert_close(
+        operator.split(found.x)["T2"], TRUTH, rtol=1e-3, atol=1e-3
+    )
+
+
+def test_the_inner_solve_defaults_under_an_encoding(phantom) -> None:
+    """The same, with an encoding operator: nothing to name, and it runs."""
+    operator, encoding, kspace, _, _ = phantom
+
+    found = GaussNewton(
+        Schedule(initial=1e-2, factor=0.5, minimum=1e-5), max_iterations=6
+    ).minimize(
+        operator, kspace, operator.initial((1, 32, 32), T2=100.0), encoding=encoding
+    )
+
+    assert float(found.cost[-1]) < 0.3 * float(found.cost[0])
+
+
+@pytest.mark.parametrize("solver", ["CG", "lsqr", "BiCGStab", "minres"])
+def test_every_deepinv_solver_can_be_named(problem, solver) -> None:
+    """Which one suits is the caller's to measure, so all of them must run."""
+    operator, measured, start = problem
+
+    found = GaussNewton(
+        Schedule(minimum=1e-8), solve=iterative(solver), max_iterations=25
+    ).minimize(operator, measured, start)
+
+    assert float(found.cost[-1]) < 1e-3 * float(found.cost[0])

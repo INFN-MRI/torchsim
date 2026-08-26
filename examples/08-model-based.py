@@ -54,13 +54,14 @@ import mrinufft
 import numpy as np
 import torch
 from brainweb_dl import get_mri
+from deepinv.optim.linear import least_squares
 from deepinv.physics import LinearPhysics
 from mrinufft.operators.subspace import MRISubspace
 from mrinufft.trajectories import initialize_2D_radial
 
 from torchsim import Acquisition, ParameterMapping
 from torchsim.estimators import DictionaryMatcher
-from torchsim.recon import GaussNewton, ModelOperator, Schedule, cg
+from torchsim.recon import GaussNewton, ModelOperator, Schedule, iterative
 from torchsim.simulators import MultiEchoSimulator
 
 SIZE = 96
@@ -68,6 +69,13 @@ ECHOES = 8
 SPOKES = 16
 SAMPLES = 192
 RANK = 3
+
+# deepinv's ``gamma`` is the *inverse* regularization weight: it minimizes
+# ``||Ax - y||^2 + (1/gamma)||x||^2``, so a smaller number regularizes harder.
+# Each route below was given the best of a short sweep -- a few lines, not
+# shown -- so what the table compares is routes rather than tuning effort.
+CONTRAST_GAMMA = 0.01
+SUBSPACE_GAMMA = 10.0
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 backend = "cufinufft" if device == "cuda" else "finufft"
@@ -199,8 +207,20 @@ mapping = ParameterMapping(
 print(f"rank {RANK} of {ECHOES} contrasts keeps {mapping.subspace.retained:.6f}")
 
 
+def clock():
+    """Wall clock, with the card caught up first."""
+    if device == "cuda":
+        torch.cuda.synchronize()
+    return time.perf_counter()
+
+
 def report(name, seconds, found):
-    """One route's cost and its error over the brain."""
+    """One route's cost and its error over the brain.
+
+    Every route is timed the same way -- reconstruction *and* fit -- because
+    that is what a pipeline costs. A route that reconstructs quickly and then
+    fits eight images is not a quick route.
+    """
     error = (found[brain] - T2_true[brain]).abs()
     print(
         f"{name:<26} {seconds:5.1f}s   "
@@ -212,31 +232,59 @@ def report(name, seconds, found):
 
 # %%
 #
-# Route one: reconstruct, then fit
-# --------------------------------
+# Route one: reconstruct each contrast, then fit
+# ----------------------------------------------
 #
-# The conventional pipeline. Each echo is gridded on its own and the maps come
-# from matching the images that result. Nothing is wrong with either step; the
-# problem is that the undersampling artefact in the images has nowhere to go
-# but into the maps.
+# The conventional pipeline, in its two usual forms. Gridding is the adjoint
+# operator with a density weighting -- one pass, smooth, and biased. Iterating
+# instead solves each echo's own least-squares problem, which is what a
+# CG-SENSE reconstruction does.
 #
-start = time.perf_counter()
-naive = mapping(gridded)["T2"]
-naive = report("grid each echo, then fit", time.perf_counter() - start, naive)
+# Both are given the same estimator afterwards, so what is being compared is
+# the reconstruction and not the fit.
+#
+started = clock()
+adjoint = report("adjoint per echo", clock() - started, mapping(gridded)["T2"])
 
+started = clock()
+images = least_squares(
+    A=encoding.A,
+    AT=encoding.A_adjoint,
+    y=kspace,
+    gamma=CONTRAST_GAMMA,
+    solver="CG",
+    max_iter=40,
+)
+separate = report(
+    "iterative per echo",
+    clock() - started,
+    mapping(images[0].movedim(0, -1))["T2"],
+)
+
+# %%
+#
+# Iterating gains nothing here, and the reason is worth stating: sixteen
+# spokes of 192 samples is 3072 measurements against 9216 unknowns, so each
+# echo on its own is an underdetermined problem and there is nothing to
+# converge *to* that the density-weighted adjoint has not already found. What
+# buys accuracy is a constraint that reaches across the echoes -- which is
+# what both remaining routes are.
+#
 # %%
 #
 # Route two: a linear subspace
 # ----------------------------
 #
 # The signal is written in the basis fitted above and the *coefficients* are
-# reconstructed, three of them instead of eight images. The problem stays
-# linear, so it has no local minima and no starting guess.
+# reconstructed, three of them instead of eight images. Now the echoes
+# constrain one another, and the problem is 3072 measurements against 3456
+# unknowns rather than eight separate underdetermined ones. It stays linear,
+# so it has no local minima and no starting guess.
 #
 # ``mapping.subspace.modes`` hands the basis over in the layout mri-nufft's
 # subspace operator reads -- rank first, plain transpose -- and
 # ``from_coefficients`` takes what comes back without projecting it a second
-# time. Solving is deepinv's; nothing about the reconstruction is TorchSim's.
+# time. The solver is the same one route one used, on a different operator.
 #
 # One operator serves every echo here, which the subspace structure is what
 # allows: a single coefficient image is transformed once against all the
@@ -248,21 +296,20 @@ flat = build(
 projected = MRISubspace(flat, mapping.subspace.modes.to(device))
 projected.n_batchs, projected.n_coils = 1, 1
 
-
-class SubspaceEncoding(LinearPhysics):
-    """``(batch, rank, x, y)`` coefficients to k-space."""
-
-    def A(self, x, **kwargs):
-        return projected.op(x)
-
-    def A_adjoint(self, y, **kwargs):
-        return projected.adj_op(y)
-
-
-start = time.perf_counter()
-coefficients = SubspaceEncoding().A_dagger(kspace[:, :, None, :])
-linear = mapping.from_coefficients(coefficients[0][:, 0].movedim(0, -1))["T2"]
-linear = report("subspace, then fit", time.perf_counter() - start, linear)
+started = clock()
+coefficients = least_squares(
+    A=projected.op,
+    AT=projected.adj_op,
+    y=kspace[:, :, None, :],
+    gamma=SUBSPACE_GAMMA,
+    solver="CG",
+    max_iter=40,
+)
+linear = report(
+    "iterative subspace",
+    clock() - started,
+    mapping.from_coefficients(coefficients[0][:, 0].movedim(0, -1))["T2"],
+)
 
 # %%
 #
@@ -295,19 +342,20 @@ initial[0, ..., 2] = gridded[..., 0].imag
 #
 # The loop is an iteratively regularized Gauss-Newton: linearize, solve the
 # linear problem that leaves, step, and lower the damping. TorchSim supplies
-# the loop and the derivative; *how* the linearized problem is solved is a
-# callable, and here it is plain conjugate gradients. Swapping in a proximal
-# solver from deepinv -- FISTA under a wavelet prior, say -- is a change to
-# that one argument and nothing else.
+# the loop and the derivative, and **not the linear solver** --
+# :func:`~torchsim.recon.iterative` hands the linearized problem to the same
+# deepinv routine the two routes above called directly. Swapping in a proximal
+# solver under a wavelet prior is a change to that one argument.
 #
-start = time.perf_counter()
+started = clock()
 found = GaussNewton(
-    Schedule(initial=1e-2, factor=0.5, minimum=1e-6),
-    solve=lambda *arguments, **kwargs: cg(*arguments, iterations=20),
+    Schedule(initial=1e-3, factor=0.5, minimum=1e-7),
+    solve=iterative("CG", max_iter=20),
     max_iterations=8,
 ).minimize(operator, kspace, initial, encoding=encoding)
+# No fit afterwards: the maps are what was solved for.
 modelled = report(
-    "model-based", time.perf_counter() - start, operator.split(found.x)["T2"][0]
+    "model-based", clock() - started, operator.split(found.x)["T2"][0]
 )
 
 print(f"\nresidual {float(found.cost[0]):.3e} -> {float(found.cost[-1]):.3e}")
@@ -365,18 +413,26 @@ print(
 # The maps
 # --------
 #
-# The nonlinear route is the closest to the truth and the slowest; the
-# subspace is close behind for a fraction of the time; gridding first puts the
-# undersampling straight into the map. That ordering is the one the review
-# reports, and the numbers above are this machine's rather than theirs.
+# The two routes that constrain the echoes against one another land in the
+# same place, at about half the error of either route that reconstructs each
+# contrast on its own -- and the subspace gets there in a fraction of the
+# time. That is not the ordering the review reports, which had the nonlinear
+# route slightly ahead; on eight echoes of a single exponential a rank-three
+# basis leaves almost nothing for a nonlinear model to add, and the numbers
+# here say so.
+#
+# Where the nonlinear route earns its cost is where a subspace stops being
+# cheap: a phase-modulated signal needs tens of components rather than three,
+# and a model with several parameters has no small basis at all.
 #
 shown = (
     ("truth", T2_true),
-    ("grid, then fit", naive),
-    ("subspace", linear),
+    ("adjoint per echo", adjoint),
+    ("iterative per echo", separate),
+    ("iterative subspace", linear),
     ("model-based", modelled),
 )
-figure, axes = plt.subplots(2, 4, figsize=(13, 6.5))
+figure, axes = plt.subplots(2, 5, figsize=(16, 6.5))
 for column, (title, values) in enumerate(shown):
     picture = torch.where(brain, values, torch.tensor(0.0, device=device))
     handle = axes[0, column].imshow(
