@@ -10,8 +10,8 @@ from typing import Any
 import torch
 
 from .._execution import per_voxel
-from ._calibrate import crossover
-from ._grouped import Grouping, match_in_groups
+from .._calibrate import crossover
+from ._grouped import Grouping, correlate, match_in_groups
 
 
 @dataclass(frozen=True)
@@ -288,7 +288,11 @@ class DictionaryMatcher(torch.nn.Module):
         if signals.shape[-1] != self.dictionary.shape[-1]:
             raise ValueError("signal and dictionary contrast counts differ")
         sample_shape = signals.shape[:-1]
-        signals = signals.reshape(-1, signals.shape[-1]).to(self.dictionary.dtype)
+        # Promoted, never narrowed: a complex measurement of a real-valued
+        # model keeps both its parts, and correlate() reads them.
+        signals = signals.reshape(-1, signals.shape[-1]).to(
+            torch.promote_types(signals.dtype, self.dictionary.dtype)
+        )
         placed = self._placed(signals)
         found = (
             placed
@@ -331,8 +335,8 @@ class DictionaryMatcher(torch.nn.Module):
                 stop = min(
                     start + self.dictionary_chunk_size, self.dictionary.shape[0]
                 )
-                scores = torch.abs(
-                    query @ self.normalized_dictionary[start:stop].mH
+                scores = correlate(
+                    query, self.normalized_dictionary[start:stop]
                 )
                 local_count = min(self.top_k, scores.shape[-1])
                 local_scores, local_indices = torch.topk(

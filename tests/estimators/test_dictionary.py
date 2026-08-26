@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 import torch
 
+from torchsim import Acquisition
 from torchsim.estimators import DictionaryMatcher
+from torchsim.simulators import MultiEchoSimulator
 
 
 @pytest.mark.parametrize(
@@ -51,3 +53,39 @@ def test_dictionary_matcher_forward_returns_indices_without_parameters() -> None
     actual = matcher(dictionary[[2, 0]])
 
     torch.testing.assert_close(actual, torch.tensor([2, 0]))
+
+
+def test_a_complex_measurement_of_a_real_model_keeps_both_its_parts() -> None:
+    """The phase a voxel carries must not decide whether it matches.
+
+    A model that is real is stored real, and half the arithmetic of a complex
+    one. The measurement of it is not: proton density and receive phase put a
+    complex scale on every voxel. Reading only the real part leaves
+    ``Re(rho)`` times the signal, and normalizing puts the size back -- so on
+    noiseless data it matches anyway, and the mistake does not show. What it
+    also multiplies by ``Re(rho)`` is the signal-to-noise ratio, and a voxel
+    whose phase approaches a quarter turn is then matching noise.
+    """
+    grid = torch.linspace(20.0, 300.0, 128)
+    acquisition = Acquisition(
+        MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 16))
+    )
+    atoms = torch.as_tensor(acquisition.simulate(T2=grid))
+    assert not torch.is_complex(atoms)
+    matcher = DictionaryMatcher(atoms, grid[:, None])
+    truth = grid[::7]
+    generator = torch.Generator().manual_seed(0)
+    clean = torch.as_tensor(acquisition.simulate(T2=truth)).to(torch.complex64)
+    noise = 0.01 * torch.complex(
+        torch.randn(clean.shape, generator=generator),
+        torch.randn(clean.shape, generator=generator),
+    )
+    step = float(torch.diff(grid).max())
+
+    for turn in (0.0, 0.15, 0.25, 0.5):
+        phase = torch.exp(2j * torch.pi * torch.tensor(turn))
+
+        found = matcher(clean * phase + noise)[:, 0]
+
+        error = float((found - truth).abs().mean())
+        assert error < step, f"at {turn} turns the match drifted {error:.1f} ms"

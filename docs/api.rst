@@ -198,6 +198,44 @@ freedom it removes.
    torchsim.NonlinearLeastSquares
    torchsim.PERK
 
+Model-based reconstruction
+--------------------------
+Solving for parameter maps straight from k-space, with the signal model inside
+the forward operator rather than applied to images someone else reconstructed.
+
+:class:`~torchsim.ModelOperator` is that model as an operator: parameter maps
+in, one image per contrast out, with an analytic derivative that never builds a
+Jacobian, a complex amplitude for proton density and receive phase, and the
+same box bounds :class:`~torchsim.NonlinearLeastSquares` takes. It honours
+:func:`~torchsim.execution`, and ``physics()`` hands it to deepinv.
+
+:class:`~torchsim.GaussNewton` inverts the chain by repeated linearization.
+Which damping it carries decides which method it is --
+:class:`~torchsim.Schedule` for an iteratively regularized Gauss-Newton,
+:class:`~torchsim.TrustRegion` for Levenberg-Marquardt, which is what
+:class:`~torchsim.NonlinearLeastSquares` runs. How the linearized problem is
+solved is a callable: :func:`~torchsim.cg`, :func:`~torchsim.direct`, or a
+closure around a proximal solver from elsewhere, which is how a regularizer
+enters.
+
+The Fourier encoding is not here and never will be. Anything exposing ``A``
+and ``A_adjoint`` composes -- an mri-nufft operator through its deepinv bridge,
+say -- and :attr:`~torchsim.Subspace.modes` hands the temporal basis to a
+subspace operator in the layout it reads.
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   torchsim.ModelOperator
+   torchsim.GaussNewton
+   torchsim.Schedule
+   torchsim.TrustRegion
+   torchsim.Linearization
+   torchsim.Solution
+   torchsim.cg
+   torchsim.direct
+
 Sequence design
 ---------------
 Choosing a sequence's parameters by minimizing a cost you write. An

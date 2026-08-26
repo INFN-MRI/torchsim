@@ -21,7 +21,7 @@ MR fingerprinting reconstruction*, Magn Reson Med 74:523 (2015).
 
 from __future__ import annotations
 
-__all__ = ["Grouping"]
+__all__ = ["Grouping", "correlate"]
 
 from dataclasses import dataclass
 
@@ -146,7 +146,7 @@ class Grouping:
         torch.Tensor
             ``(voxels, groups)`` of bool.
         """
-        scores = (signals @ self.representative.mH).abs()
+        scores = correlate(signals, self.representative)
         best = scores.amax(-1, keepdim=True)
         return scores >= best * (1.0 - prune)
 
@@ -200,7 +200,7 @@ def match_in_groups(
     for group in keep.any(0).nonzero(as_tuple=True)[0].tolist():
         rows = keep[:, group].nonzero(as_tuple=True)[0]
         atoms = grouping.atoms[group]
-        local = (signals[rows] @ atoms.mH).abs()
+        local = correlate(signals[rows], atoms)
         take = min(top_k, int(atoms.shape[0]))
         found, where = torch.topk(local, take, dim=-1)
         candidates = torch.cat((scores[rows], found), dim=-1)
@@ -209,6 +209,37 @@ def match_in_groups(
         scores[rows] = kept
         indices[rows] = torch.gather(named, -1, choice)
     return indices, scores
+
+
+def correlate(signals: torch.Tensor, atoms: torch.Tensor) -> torch.Tensor:
+    """The match score of every signal against every atom.
+
+    ``|<s, d>|``, which is what makes matching blind to the complex scale a
+    voxel's proton density and receive phase put on the signal.
+
+    A dictionary simulated from a model that is real -- an SSFP fingerprint,
+    an exponential decay -- is stored real, and half the arithmetic of a
+    complex one. A measurement of it is still complex, and the two parts
+    correlate against the real atoms separately: taking only the real part
+    would score ``Re(rho)`` times the true correlation, which ranks the atoms
+    correctly right up until a voxel whose phase is near a quarter turn, where
+    it collapses to noise.
+
+    Parameters
+    ----------
+    signals:
+        ``(voxels, contrasts)``, normalized.
+    atoms:
+        ``(atoms, contrasts)``, normalized.
+
+    Returns
+    -------
+    torch.Tensor
+        ``(voxels, atoms)``, real.
+    """
+    if torch.is_complex(signals) and not torch.is_complex(atoms):
+        return torch.hypot(signals.real @ atoms.mT, signals.imag @ atoms.mT)
+    return (signals @ atoms.mH).abs()
 
 
 # %% private module subroutines

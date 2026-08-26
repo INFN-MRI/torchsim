@@ -309,6 +309,57 @@ class ParameterMapping:
         ValueError
             If a measured map is missing, or has the wrong voxel count.
         """
+        return self._estimate(volume, known, project=True)
+
+    def from_coefficients(
+        self, coefficients: Any, known: Mapping[str, Any] | None = None
+    ) -> dict[str, torch.Tensor]:
+        """Map coefficients that are already in this mapping's basis.
+
+        A subspace reconstruction solves for the coefficients directly and
+        never forms the contrast images, so what it returns is already
+        projected. :meth:`__call__` would project it a second time; this does
+        not. The basis it is in is :attr:`subspace`, which is also what the
+        reconstruction was given.
+
+        Parameters
+        ----------
+        coefficients:
+            ``(..., rank)``. Every leading axis is a voxel axis.
+        known:
+            The measured maps, as for :meth:`__call__`.
+
+        Returns
+        -------
+        dict
+            ``{name: map}``, shaped like ``coefficients`` without its last
+            axis.
+
+        Raises
+        ------
+        RuntimeError
+            If the mapping has not been trained, or was trained without a
+            rank, in which case there is no basis for these to be in.
+        ValueError
+            If the last axis is not the rank of that basis.
+        """
+        if self._subspace is None:
+            raise RuntimeError(
+                "this mapping has no subspace, so there are no coefficients "
+                "to read; state a rank when the mapping is made"
+            )
+        values = torch.as_tensor(coefficients)
+        if values.shape[-1] != self._subspace.rank:
+            raise ValueError(
+                f"the basis has rank {self._subspace.rank}, "
+                f"got {values.shape[-1]} coefficients"
+            )
+        return self._estimate(values, known, project=False)
+
+    def _estimate(
+        self, volume: Any, known: Mapping[str, Any] | None, *, project: bool
+    ) -> dict[str, torch.Tensor]:
+        """Fill in the maps, from contrasts or from coefficients."""
         if self._method is None:
             raise RuntimeError("a mapping must be trained before it maps")
         signals = torch.as_tensor(volume)
@@ -318,7 +369,7 @@ class ParameterMapping:
         shape = signals.shape[:-1]
         voxels = int(torch.tensor(shape).prod()) if shape else 1
         signals = signals.reshape(voxels, signals.shape[-1])
-        if self._subspace is not None:
+        if project and self._subspace is not None:
             signals = self._subspace.project(signals)
         values = self._method(signals, _known_matrix(known, self._known, voxels))
         return {

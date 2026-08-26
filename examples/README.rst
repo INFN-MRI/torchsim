@@ -14,6 +14,12 @@ spans -- and then to the shared linear-subspace and nonlinear-model workflow.
 One example goes the other way and extends the sequence vocabulary itself, by
 writing a new operator.
 
+The last one goes further and never forms the contrast images at all: it
+reconstructs a T2 map straight from undersampled radial k-space, with the
+signal model inside the forward operator and the Fourier encoding supplied by
+mri-nufft. Gridding, a linear subspace and the nonlinear model are run on the
+same data so what each route costs and gets wrong can be read off a table.
+
 Two of them design a sequence rather than simulate one, and they are the same
 three pieces with a different cost in the middle: one chooses the flip angles
 of a joint relaxometry experiment so that T1 and T2 are estimated as precisely

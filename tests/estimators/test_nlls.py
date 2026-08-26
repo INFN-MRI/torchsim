@@ -9,7 +9,7 @@ from scipy.optimize import least_squares
 
 from torchsim import Acquisition, ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
-import torchsim.estimators._nlls as _nlls
+import torchsim.recon._operator as _operator
 from torchsim.simulators import (
     FSESimulator,
     InversionRecoverySimulator,
@@ -91,10 +91,10 @@ def test_no_iterate_ever_leaves_the_bounds(monkeypatch) -> None:
         samples=256,
     )
     seen: list[torch.Tensor] = []
-    natural = _nlls._to_natural
+    natural = _operator.to_natural
     monkeypatch.setattr(
-        _nlls,
-        "_to_natural",
+        _operator,
+        "to_natural",
         lambda free, bounds, names: seen.append(
             (out := natural(free, bounds, names))
         )

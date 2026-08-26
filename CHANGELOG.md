@@ -4,6 +4,54 @@
 
 ### Added
 
+- **`torchsim.recon`: the signal model as an operator.** A physics-based
+  reconstruction writes its forward operator as `P F C M` -- sampling, Fourier
+  encoding, coil sensitivities, signal model -- and solves for the parameter
+  maps against k-space directly. Only `M` changes with the sequence, and only
+  `M` is here. The encoding is composed with, never reimplemented: anything
+  exposing `A` and `A_adjoint` works, and `Subspace.modes` hands the temporal
+  basis to a subspace operator in the layout it reads.
+
+  `ModelOperator` turns any `Acquisition` into `M`. It carries a **complex
+  amplitude** so the model stays real-valued and physical -- its two Jacobian
+  columns are the model output itself, so it costs no extra pass -- and takes
+  the same `bounds=` mapping `NonlinearLeastSquares` takes, kept by solving for
+  a transformed variable. That matters more under an encoding operator than in
+  a fit: the model is evaluated at every voxel to predict every k-space sample,
+  so one unphysical voxel corrupts the whole residual. `A_jvp` and `A_vjp` are
+  one forward and one reverse pass and never build the Jacobian; `physics()`
+  hands the operator to deepinv. Everything runs under `execution()`.
+
+  `GaussNewton` inverts the chain by repeated linearization. **The damping is
+  a policy and the inner solve is a callable**, which is what makes the same
+  loop both methods: `Schedule` plus `cg` is an iteratively regularized
+  Gauss-Newton, `TrustRegion` plus `direct` is Levenberg-Marquardt, and a
+  closure around a proximal solver from elsewhere is how a regularizer enters.
+  `NonlinearLeastSquares` is now that loop under a trust region, and lands on
+  the same answer to the bit.
+
+  `examples/08` reconstructs a T2 map from ninefold-undersampled radial
+  k-space three ways on one BrainWeb slice -- gridding then fitting, a linear
+  subspace, and the nonlinear model -- and prints what each costs and gets
+  wrong. On that data the model-based route errs by 12.5% of T2 against the
+  subspace route's 14.2% and gridding's 20.2%, and is the slowest of the three
+  by a wide margin -- which is the ordering the review reports. The example
+  times itself where it runs rather than quoting a number from here. Per
+  conjugate-gradient step the model and the encoding cost about the same, so
+  the model is not what a faster reconstruction would optimize.
+
+- **`ParameterMapping.from_coefficients`**, which reads maps from coefficients
+  that are already in the mapping's basis. A subspace reconstruction never
+  forms the contrast images, so what it returns must not be projected a second
+  time. One mapping then supplies the basis the reconstruction is given and
+  consumes what it produces.
+
+- **`Acquisition.to()` and `Acquisition.bound()`.** A simulator carries its
+  protocol and an acquisition carries its tissue, and the two have to arrive on
+  a card together -- properties moved on their own would be multiplied against
+  echo times still on the host. `bound()` adds or replaces tissue, which is
+  what a fit does with a property measured separately.
+
 - **`torchsim.ParameterMapping`**, with `Estimator` and `Subspace`. A mapping
   problem is stated the way a design problem is: an `Acquisition`, the
   properties that are unknown and the range to train each over, the ones
@@ -247,6 +295,17 @@
   differentiated with `backward()` must be built on torch inputs. Forward-mode
   derivatives are unaffected: `jacobian` takes them internally and hands back
   arrays in the caller's own library.
+
+### Fixed
+
+- **A complex measurement of a real-valued model kept only its real part.**
+  `Subspace.project` and `DictionaryMatcher` both narrowed the signal to the
+  basis's or the dictionary's dtype. Normalizing put the size back, so
+  noiseless data still matched and the mistake did not show; what it also
+  scaled was the signal-to-noise ratio, by `Re(rho)`, leaving a voxel whose
+  phase approached a quarter turn matching noise. Both now promote, and
+  matching correlates the two parts against a real dictionary separately
+  rather than paying for a complex one.
 
 ### Changed
 

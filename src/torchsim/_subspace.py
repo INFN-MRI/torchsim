@@ -57,13 +57,36 @@ class Subspace:
         total = float(energy.sum())
         return 1.0 if total == 0.0 else float(energy[: self.rank].sum()) / total
 
+    @property
+    def modes(self) -> torch.Tensor:
+        """The basis with the rank axis first: ``(rank, contrasts)``.
+
+        A reconstruction library's subspace operator takes the basis this way
+        round -- mri-nufft's ``MRISubspace``, BART's ``pics -B``. It is a
+        plain transpose and not a conjugate one: expanding coefficients back
+        into contrasts is ``image_t = sum_k conj(modes[k, t]) c_k``, which is
+        what :meth:`expand` does and what those operators do.
+        """
+        return self.basis.mT
+
     def project(self, signals: torch.Tensor) -> torch.Tensor:
-        """Return ``signals`` in the subspace: ``(..., contrasts)`` to ``(..., rank)``."""
-        return signals.to(self.basis.dtype) @ self.basis
+        """Return ``signals`` in the subspace: ``(..., contrasts)`` to ``(..., rank)``.
+
+        A basis fitted to real signals is real, and a complex signal projected
+        onto it keeps both its parts -- the arithmetic is promoted to whichever
+        of the two is wider, never narrowed to the basis. The basis follows the
+        signals to whichever device they are on, rather than the other way
+        round: a volume is large and a basis is not.
+        """
+        dtype = torch.promote_types(signals.dtype, self.basis.dtype)
+        return signals.to(dtype) @ self.basis.to(dtype).to(signals.device)
 
     def expand(self, coefficients: torch.Tensor) -> torch.Tensor:
         """Return subspace coefficients as contrasts again."""
-        return coefficients.to(self.basis.dtype) @ self.basis.mH
+        dtype = torch.promote_types(coefficients.dtype, self.basis.dtype)
+        return coefficients.to(dtype) @ self.basis.mH.to(dtype).to(
+            coefficients.device
+        )
 
     @classmethod
     def fit(cls, signals: torch.Tensor, rank: int) -> Subspace:

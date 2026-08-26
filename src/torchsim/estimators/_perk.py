@@ -11,7 +11,7 @@ from typing import Any, Literal
 import torch
 
 from .._execution import one_device, per_voxel
-from ._calibrate import crossover
+from .._calibrate import crossover
 
 
 class PERK(torch.nn.Module):

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 __all__ = ["Acquisition"]
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from copy import copy as shallow_copy
 from typing import Any
 
 import torch
@@ -62,6 +63,61 @@ class Acquisition:
         """The property names the simulator declares, in its own order."""
         return tuple(self.simulator.properties)
 
+    def to(self, device: torch.device | str) -> Acquisition:
+        """This acquisition, with everything it holds on ``device``.
+
+        A simulator carries its protocol -- echo times, a flip train -- and an
+        acquisition carries the tissue bound to it, and the two have to arrive
+        on a card together: properties moved on their own would be multiplied
+        against echo times still on the host.
+
+        Parameters
+        ----------
+        device:
+            Where to put it.
+
+        Returns
+        -------
+        Acquisition
+            A copy. This one is left where it was.
+        """
+        where = torch.device(device)
+        moved = shallow_copy(self)
+        moved.properties = _moved(self.properties, where)
+        simulator = shallow_copy(self.simulator)
+        if hasattr(simulator, "protocol"):
+            simulator.protocol = _moved(simulator.protocol, where)
+            # Whatever was resolved was resolved somewhere else, and holds
+            # tensors that live there.
+            simulator._described = None
+            simulator._packing = None
+        moved.simulator = simulator
+        return moved
+
+    def bound(self, **values: Any) -> Acquisition:
+        """This acquisition with more tissue bound to it, or some of it changed.
+
+        What a fit does with a property measured separately: the same sequence,
+        with one more map held fixed on it.
+
+        Parameters
+        ----------
+        values:
+            Properties to add or replace, under the names the simulator
+            exposes.
+
+        Returns
+        -------
+        Acquisition
+            A copy. This one is left as it was.
+        """
+        moved = shallow_copy(self)
+        moved.properties = {
+            **self.properties,
+            **{name: as_torch(value) for name, value in values.items()},
+        }
+        return moved
+
     def simulate(self, **design: Any) -> torch.Tensor:
         """Return what this acquisition records for ``design``.
 
@@ -82,3 +138,14 @@ class Acquisition:
         :meth:`simulate`.
         """
         return self.simulator.jacobian(diff, **{**self.properties, **design})
+
+
+# %% private module subroutines
+
+
+def _moved(values: Mapping[str, Any], device: torch.device) -> dict[str, Any]:
+    """The mapping with every tensor in it on ``device``, the rest untouched."""
+    return {
+        name: value.to(device) if torch.is_tensor(value) else value
+        for name, value in values.items()
+    }

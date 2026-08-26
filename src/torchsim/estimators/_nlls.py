@@ -9,6 +9,9 @@ from typing import Any
 
 import torch
 
+from .._bounds import bound_of
+from ..recon import GaussNewton, ModelOperator, TrustRegion, direct
+
 
 class NonlinearLeastSquares(torch.nn.Module):
     """Levenberg-Marquardt, stepping every voxel together.
@@ -205,7 +208,7 @@ class NonlinearLeastSquares(torch.nn.Module):
         for index, name in enumerate(self.unknown):
             stated = name in self.initial
             value = float(self.initial[name]) if stated else float(median[index])
-            low, high = _bound_of(self.bounds, name)
+            low, high = bound_of(self.bounds, name)
             # The transformed variable is infinite at a bound, so a fit that
             # started there would have no direction to move in.
             if (low is not None and value <= low) or (
@@ -261,264 +264,59 @@ class NonlinearLeastSquares(torch.nn.Module):
         found = self._solve(measured, given)
         return found.reshape(*shape, len(self.unknown))
 
-    # -- the solve ----------------------------------------------------------
-
-    @torch.no_grad()
     def _solve(
         self, measured: torch.Tensor, known: torch.Tensor | None
     ) -> torch.Tensor:
-        """Levenberg-Marquardt over every voxel, compacting as they finish."""
-        voxels = measured.shape[0]
-        device = measured.device
-        start = self._start.to(device)
-        answer = start.expand(voxels, -1).clone()
-        # Which of the original voxels each row still being solved belongs to.
-        live = torch.arange(voxels, device=device)
-        free = _to_free(answer, self.bounds, self.unknown, device)
+        """Levenberg-Marquardt over every voxel, compacting as they finish.
 
-        residual, jacobian = self._residual(free, measured, known)
-        curvature = jacobian @ jacobian.mT
-        gradient = (jacobian @ residual[..., None]).squeeze(-1)
-        damping = self.tau * curvature.diagonal(dim1=-2, dim2=-1).amax(-1)
-        rising = torch.full_like(damping, 2.0)
-        cost = residual.square().sum(-1)
-
-        self.iterations = 0
-        for _ in range(self.max_iterations):
-            flat = gradient.abs().amax(-1) < self.gradient_tolerance
-            free, live, measured, known, residual, jacobian, curvature, \
-                gradient, damping, rising, cost, answer = _retire(
-                    ~flat, answer, live, free,
-                    (measured, known, residual, jacobian, curvature,
-                     gradient, damping, rising, cost),
-                    self.bounds, self.unknown,
-                )
-            if free.shape[0] == 0:
-                break
-            self.iterations += 1
-
-            step, singular = _step(curvature, gradient, damping)
-            short = step.norm(dim=-1) < self.step_tolerance * (
-                free.norm(dim=-1) + self.step_tolerance
-            )
-            # A singular normal-equation system is not a converged voxel; it
-            # is one whose damping is too small to make the system definite.
-            done = short & ~singular
-
-            candidate = free + step
-            trial, trial_jacobian = self._residual(candidate, measured, known)
-            trial_cost = trial.square().sum(-1)
-            predicted = (
-                step * (damping[:, None] * step - gradient)
-            ).sum(-1)
-            gain = torch.where(
-                predicted > 0, (cost - trial_cost) / predicted.clamp_min(_TINY),
-                torch.zeros_like(predicted),
-            )
-            better = (gain > 0) & ~singular
-
-            free = torch.where(better[:, None], candidate, free)
-            residual = torch.where(better[:, None], trial, residual)
-            jacobian = torch.where(better[:, None, None], trial_jacobian, jacobian)
-            cost = torch.where(better, trial_cost, cost)
-            curvature = jacobian @ jacobian.mT
-            gradient = (jacobian @ residual[..., None]).squeeze(-1)
-            damping = torch.where(
-                better,
-                damping * (1.0 - (2.0 * gain - 1.0).pow(3)).clamp_min(1.0 / 3.0),
-                damping * rising,
-            )
-            rising = torch.where(better, torch.full_like(rising, 2.0), rising * 2.0)
-
-            free, live, measured, known, residual, jacobian, curvature, \
-                gradient, damping, rising, cost, answer = _retire(
-                    ~done, answer, live, free,
-                    (measured, known, residual, jacobian, curvature,
-                     gradient, damping, rising, cost),
-                    self.bounds, self.unknown,
-                )
-            if free.shape[0] == 0:
-                break
-
-        self.unconverged = int(free.shape[0])
-        if self.unconverged:
-            answer[live] = _to_natural(free, self.bounds, self.unknown)
-        return answer
-
-    def _residual(
-        self,
-        free: torch.Tensor,
-        measured: torch.Tensor,
-        known: torch.Tensor | None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return ``predicted - measured`` and its derivative, both real.
-
-        A complex contrast is two real residuals, because what is minimized is
-        the squared modulus. The chain rule through the bound transformation
-        rides on the Jacobian, so the solve never sees the natural parameter.
+        The loop is :class:`~torchsim.recon.GaussNewton` under a per-voxel
+        trust region, and the model, its bounds and its derivative are a
+        :class:`~torchsim.recon.ModelOperator` -- the same two pieces a
+        model-based reconstruction is built from, with nothing encoding the
+        voxels together.
         """
-        natural = _to_natural(free, self.bounds, self.unknown)
-        given: dict[str, Any] = {
-            name: natural[:, index] for index, name in enumerate(self.unknown)
-        }
+        operator = self._operator(measured.shape[0], known)
+        found = GaussNewton(
+            TrustRegion(tau=self.tau),
+            solve=direct,
+            max_iterations=self.max_iterations,
+            gradient_tolerance=self.gradient_tolerance,
+            step_tolerance=self.step_tolerance,
+        ).minimize(operator, measured, self._at(operator, measured))
+        self.iterations = found.iterations
+        self.unconverged = found.unconverged
+        maps = operator.split(found.x)
+        return torch.stack([maps[name] for name in self.unknown], dim=-1)
+
+    def _operator(
+        self, voxels: int, known: torch.Tensor | None
+    ) -> ModelOperator:
+        """The model to fit, with anything measured separately held on it."""
+        acquisition = self._acquisition
         if known is not None:
-            given |= {
-                name: known[:, index] for index, name in enumerate(self.known)
-            }
-        # A sequence of names keeps the parameter axis whatever its length,
-        # which a single name would collapse.
-        predicted, derivative = self._acquisition.jacobian(self.unknown, **given)
-        if self._subspace is not None:
-            predicted = self._subspace.project(predicted)
-            derivative = self._subspace.project(derivative)
+            acquisition = acquisition.bound(
+                **{
+                    name: known[:, index]
+                    for index, name in enumerate(self.known)
+                }
+            )
+        return ModelOperator(
+            acquisition,
+            *self.unknown,
+            bounds=self.bounds,
+            amplitude=False,
+            subspace=self._subspace,
+        )
 
-        residual = predicted - measured.to(predicted.dtype)
-        slope = derivative * _widen(self.bounds, self.unknown, free)[..., None]
-        if torch.is_complex(residual):
-            residual = torch.cat((residual.real, residual.imag), dim=-1)
-            slope = torch.cat((slope.real, slope.imag), dim=-1)
-        return residual.to(torch.float32), slope.to(torch.float32)
-
-
-# %% private module subroutines
-
-#: Guards a division whose denominator the algorithm has already tested.
-_TINY = torch.finfo(torch.float32).tiny
-
-
-def _step(
-    curvature: torch.Tensor, gradient: torch.Tensor, damping: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Solve ``(JJ' + mu I) d = -g`` per voxel, flagging the ones that cannot.
-
-    A Cholesky reports failure per voxel rather than raising, so one flat
-    voxel in a volume does not stop the others.
-    """
-    size = curvature.shape[-1]
-    eye = torch.eye(size, dtype=curvature.dtype, device=curvature.device)
-    system = curvature + damping[:, None, None] * eye
-    factor, info = torch.linalg.cholesky_ex(system)
-    singular = info != 0
-    safe = torch.where(singular[:, None, None], eye.expand_as(factor), factor)
-    step = torch.cholesky_solve((-gradient)[..., None], safe).squeeze(-1)
-    return torch.where(singular[:, None], torch.zeros_like(step), step), singular
-
-
-def _retire(
-    keep: torch.Tensor,
-    answer: torch.Tensor,
-    live: torch.Tensor,
-    free: torch.Tensor,
-    carried: tuple[Any, ...],
-    bounds: Mapping[str, Any],
-    names: Sequence[str],
-) -> tuple[Any, ...]:
-    """Write finished voxels out and close the rest up.
-
-    Late iterations then cost what is left rather than what was started with,
-    which is most of the saving on a volume where the background converges at
-    once.
-    """
-    finished = ~keep
-    if bool(finished.any()):
-        answer[live[finished]] = _to_natural(free[finished], bounds, names)
-    if bool(keep.all()):
-        return (free, live, *carried, answer)
-    return (
-        free[keep],
-        live[keep],
-        *(None if value is None else value[keep] for value in carried),
-        answer,
-    )
-
-
-def _bound_of(
-    bounds: Mapping[str, Any], name: str
-) -> tuple[float | None, float | None]:
-    """The pair for one property, absent meaning unbounded either way."""
-    low, high = bounds.get(name, (None, None))
-    if low is not None and high is not None and not high > low:
-        raise ValueError(f"{name}: the bound ({low}, {high}) is not increasing")
-    return low, high
-
-
-def _to_natural(
-    free: torch.Tensor, bounds: Mapping[str, Any], names: Sequence[str]
-) -> torch.Tensor:
-    """Map the unconstrained variables back to the properties they stand for."""
-    if not bounds:
-        return free
-    columns = []
-    for index, name in enumerate(names):
-        low, high = _bound_of(bounds, name)
-        value = free[:, index]
-        if low is not None and high is not None:
-            columns.append(low + (high - low) * torch.sigmoid(value))
-        elif low is not None:
-            columns.append(low + torch.nn.functional.softplus(value))
-        elif high is not None:
-            columns.append(high - torch.nn.functional.softplus(-value))
-        else:
-            columns.append(value)
-    return torch.stack(columns, dim=-1)
-
-
-def _to_free(
-    natural: torch.Tensor,
-    bounds: Mapping[str, Any],
-    names: Sequence[str],
-    device: torch.device,
-) -> torch.Tensor:
-    """Map properties to the unconstrained variables that stand for them.
-
-    The clamp guards the arithmetic at the very edge of the interval; a
-    starting value actually sitting on a bound is refused where it is stated.
-    """
-    if not bounds:
-        return natural.to(device)
-    columns = []
-    for index, name in enumerate(names):
-        low, high = _bound_of(bounds, name)
-        value = natural[:, index]
-        if low is not None and high is not None:
-            span = high - low
-            inside = ((value - low) / span).clamp(_EDGE, 1.0 - _EDGE)
-            columns.append(torch.log(inside) - torch.log1p(-inside))
-        elif low is not None:
-            columns.append(_softplus_inverse((value - low).clamp_min(_EDGE)))
-        elif high is not None:
-            columns.append(-_softplus_inverse((high - value).clamp_min(_EDGE)))
-        else:
-            columns.append(value)
-    return torch.stack(columns, dim=-1).to(device)
-
-
-def _widen(
-    bounds: Mapping[str, Any], names: Sequence[str], free: torch.Tensor
-) -> torch.Tensor:
-    """The derivative of each property with respect to its free variable."""
-    if not bounds:
-        return torch.ones_like(free)
-    columns = []
-    for index, name in enumerate(names):
-        low, high = _bound_of(bounds, name)
-        value = free[:, index]
-        if low is not None and high is not None:
-            opened = torch.sigmoid(value)
-            columns.append((high - low) * opened * (1.0 - opened))
-        elif low is not None:
-            columns.append(torch.sigmoid(value))
-        elif high is not None:
-            columns.append(torch.sigmoid(-value))
-        else:
-            columns.append(torch.ones_like(value))
-    return torch.stack(columns, dim=-1)
-
-
-def _softplus_inverse(value: torch.Tensor) -> torch.Tensor:
-    """``log(exp(x) - 1)``, written so a large ``x`` does not overflow."""
-    return value + torch.log(-torch.expm1(-value))
-
-
-#: Keeps the transform's argument finite at the very edge of an interval.
-_EDGE = 1e-6
+    def _at(
+        self, operator: ModelOperator, measured: torch.Tensor
+    ) -> torch.Tensor:
+        """Every voxel started from the same point, as variables to solve for."""
+        start = operator.initial(
+            measured.shape[:1],
+            **{
+                name: float(self._start[index])
+                for index, name in enumerate(self.unknown)
+            },
+        )
+        return start.to(measured.device)
