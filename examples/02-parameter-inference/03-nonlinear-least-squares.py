@@ -28,32 +28,43 @@ and in peak memory.
 
 # %%
 #
-# The phantom is BrainWeb's, reached through ``brainweb-dl``: ``get_mri``
-# fetches the fuzzy tissue memberships, and the package ships the table of
-# relaxation times that goes with them -- which is what the two standard
-# library imports read.
-#
-
-# sphinx_gallery_start_ignore
-import warnings
-
-warnings.filterwarnings("ignore")
-
-import matplotlib.pyplot as plt
-
-# sphinx_gallery_end_ignore
-import csv
-from pathlib import Path
-
-import brainweb_dl
-from brainweb_dl import get_mri
-
-# %%
-#
 # The problem is stated over a simulator carrying the sequence and filled in
 # by an estimator. :func:`~torchsim.execution` decides where that work runs,
 # and the timings below are taken inside it.
 #
+
+# sphinx_gallery_start_ignore
+import csv
+import warnings
+from pathlib import Path
+
+import brainweb_dl
+import matplotlib.pyplot as plt
+from brainweb_dl import get_mri
+
+warnings.filterwarnings("ignore")
+
+
+
+def panel(axis, values, cmap, limits, label=None):
+    """One map, with a colorbar every panel loses the same width to.
+
+    A figure where only some panels carry a colorbar has panels of different
+    sizes. Giving every one a colorbar and hiding the ones that would repeat a
+    scale keeps the images comparable.
+    """
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    if label is None:
+        bar.ax.set_visible(False)
+    else:
+        bar.set_label(label, fontsize=8)
+        bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([])
+    axis.set_yticks([])
+
+
+# sphinx_gallery_end_ignore
 import time
 
 import numpy as np
@@ -69,11 +80,20 @@ from torchsim.simulators import MultiEchoSimulator
 # A brain to map
 # --------------
 #
-# BrainWeb publishes its phantom as *fuzzy* tissue memberships: every voxel
-# carries a fraction of each tissue rather than a label. Those fractions,
-# weighted by the relaxation times BrainWeb tabulates for each tissue, give
-# maps with the structure of a brain and answers that are known.
+# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
+# through the lateral ventricles, carrying CSF, grey matter, white matter and
+# the glial matter between them. BrainWeb publishes it as *fuzzy* memberships:
+# every voxel holds a fraction of each tissue rather than a label, and
+# weighting the relaxation times BrainWeb tabulates by those fractions gives
+# the maps below.
 #
+# The fractions matter more than the anatomy. A third of these brain voxels
+# are mixtures of two tissues or more, so the truth is a continuum rather than
+# four values, and an estimator cannot do well merely by having seen the right
+# four answers.
+#
+
+# sphinx_gallery_start_ignore
 BRAIN_TISSUES = (1, 2, 3, 8)  # CSF, grey matter, white matter, glial matter
 SLICE = 90
 
@@ -98,8 +118,12 @@ M0_true = np.where(mask, fractions @ tissue_PD, 0.0).astype(np.float32)
 truth = torch.as_tensor(T2_true[mask].copy())
 density = torch.as_tensor(M0_true[mask].copy())
 
-print(f"slice {fractions.shape[:2]}: {mask.sum()} brain voxels")
-print(f"T2 {float(truth.min()):.0f}-{float(truth.max()):.0f} ms")
+figure, axes = plt.subplots(1, 2, figsize=(7.6, 3.6))
+panel(axes[0], T2_true, "magma", (0, 350), label="T2 [ms]")
+panel(axes[1], M0_true, "magma", (0, 1.1), label="M0")
+figure.suptitle("BrainWeb subject 0, slice 90 -- what the map should come out as")
+figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -122,10 +146,6 @@ clean = acquisition.simulate(T2=truth, M0=density, offset=FLOOR)
 generator = torch.Generator().manual_seed(42)
 measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 
-print(f"\n{measured.shape[0]} voxels of {ECHOES} echoes")
-print(f"noise {NOISE_STD}, floor {FLOOR} -- "
-      f"{FLOOR / NOISE_STD:.0f} times the noise, and it does not decay")
-
 # %%
 #
 # Three decays and what the floor does to them. The short-T2 voxel is on the
@@ -145,19 +165,7 @@ axis.legend(fontsize=8), axis.grid(alpha=0.3)
 figure.tight_layout()
 # sphinx_gallery_end_ignore
 
-# %%
-#
-# What a route costs
-# ------------------
-#
-# Timings are the best of three passes and exclude the one-off measurement
-# :func:`~torchsim.execution` makes the first time it meets a workload. The
-# **model** is what the fitted estimator holds and carries between volumes; the
-# **peak** is the high-water mark of what the card held while the slice was
-# being mapped.
-#
-
-
+# sphinx_gallery_start_ignore
 def footprint(problem):
     """MiB the fitted estimator itself holds."""
     held = sum(t.numel() * t.element_size() for t in problem.method.buffers())
@@ -185,6 +193,8 @@ def error(estimate, reference):
     return float(100 * ((estimate - reference).abs() / reference).median())
 
 
+# sphinx_gallery_end_ignore
+
 # %%
 #
 # The fit
@@ -203,7 +213,13 @@ def error(estimate, reference):
 BOUNDS = {"T2": (10.0, 500.0), "M0": (0.1, 2.0), "offset": (0.0, 0.2)}
 START = {"T2": 100.0, "M0": 1.0, "offset": 0.02}
 
+fit = ParameterMapping(
+    acquisition, noise_std=NOISE_STD, seed=0, **BOUNDS
+).train(NonlinearLeastSquares(bounds=BOUNDS, initial=START))
 
+maps = fit(measured)  # {"T2": ..., "M0": ..., "offset": ...}
+
+# sphinx_gallery_start_ignore
 def fitted(unknown):
     """Fit these parameters, holding the rest of the model at the truth."""
     held = {name: START[name] for name in START if name not in unknown}
@@ -223,8 +239,8 @@ def fitted(unknown):
         )
     )
     training = time.perf_counter() - start
-    maps, timing, peak = mapped(problem)
-    return maps, training, timing, footprint(problem), peak
+    found, timing, peak = mapped(problem)
+    return found, training, timing, footprint(problem), peak
 
 
 two_maps, two_training, two_time, two_model, two_peak = fitted(("T2", "M0"))
@@ -232,8 +248,9 @@ three_maps, three_training, three_time, three_model, three_peak = fitted(
     ("T2", "M0", "offset")
 )
 
-print(f"\nfitted floor, median {float(three_maps['offset'].median()):.4f} "
+print(f"fitted floor, median {float(three_maps['offset'].median()):.4f} "
       f"against {FLOOR}")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -249,7 +266,27 @@ print(f"\nfitted floor, median {float(three_maps['offset'].median()):.4f} "
 #
 T2_GRID = torch.logspace(1.0, np.log10(500.0), 400)
 
+match = ParameterMapping(
+    acquisition.bind(M0=1.0, offset=0.0), T2=T2_GRID, seed=0
+).train(DictionaryMatcher())
 
+# %%
+#
+# To model the floor the match has to put it on the grid, and the grid is then
+# the product of the two.
+#
+offsets = torch.linspace(0.0, 0.15, 40)
+grid_t2, grid_offset = torch.meshgrid(T2_GRID, offsets, indexing="ij")
+
+wide = ParameterMapping(
+    acquisition.bind(M0=1.0),
+    T2=grid_t2.reshape(-1),
+    offset=grid_offset.reshape(-1),
+    seed=0,
+).train(DictionaryMatcher())
+
+
+# sphinx_gallery_start_ignore
 def matched(floors):
     """Fit a matcher over T2, and over this many values of the offset."""
     if floors == 1:
@@ -276,28 +313,37 @@ def matched(floors):
 
 FLOOR_VALUES = (1, 10, 20, 40, 80)
 matches = {floors: matched(floors) for floors in FLOOR_VALUES}
+# sphinx_gallery_end_ignore
 
 # %%
 #
 # What it cost, and what it got
 # -----------------------------
 #
+# Best of three passes each, after one warm-up that leaves out the measurement
+# :func:`~torchsim.execution` makes the first time it meets a workload. The
+# **model** is what the fitted estimator carries between volumes; the **peak**
+# is the high-water mark on the card while the slice was mapped.
+#
+
+# sphinx_gallery_start_ignore
 print(f"\n{'method':<30}{'atoms':>8}{'train':>8}{'map':>8}{'model':>10}"
       f"{'peak':>10}{'T2':>8}")
 print("-" * 82)
 for floors in FLOOR_VALUES:
-    atoms, maps, training, timing, model, peak = matches[floors]
+    atoms, found, training, timing, model, peak = matches[floors]
     name = "match, T2 only" if floors == 1 else f"match, T2 x {floors} offsets"
     print(f"{name:<30}{atoms:>8}{training:7.1f}s{timing:7.2f}s"
-          f"{model:6.1f} MiB{peak:6.0f} MiB{error(maps['T2'], truth):7.1f}%")
-for name, training, timing, model, peak, maps in (
+          f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%")
+for name, training, timing, model, peak, found in (
     ("fit, T2 + M0, floor known", two_training, two_time, two_model, two_peak,
      two_maps),
     ("fit, T2 + M0 + offset", three_training, three_time, three_model, three_peak,
      three_maps),
 ):
     print(f"{name:<30}{'--':>8}{training:7.1f}s{timing:7.2f}s"
-          f"{model:6.1f} MiB{peak:6.0f} MiB{error(maps['T2'], truth):7.1f}%")
+          f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -356,7 +402,7 @@ figure.tight_layout()
 # --------
 #
 
-
+# sphinx_gallery_start_ignore
 def painted(values):
     """A flat vector of brain voxels, back in the shape of the slice."""
     canvas = np.zeros(mask.shape, dtype=np.float32)
@@ -369,25 +415,6 @@ shown = {
     "match, T2 x 40 offsets": matches[40][1]["T2"],
     "fit, T2 + M0 + offset": three_maps["T2"],
 }
-
-# sphinx_gallery_start_ignore
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to.
-
-    A figure where only some panels carry a colorbar has panels of different
-    sizes. Giving every one a colorbar and hiding the ones that would repeat a
-    scale keeps the images comparable.
-    """
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
-
 
 columns = 1 + len(shown)
 figure, axes = plt.subplots(2, columns, figsize=(3.4 * columns, 6.8))

@@ -75,6 +75,8 @@ for name, field in MRFSimulator.model.properties.items():
 # pool that RF saturates are all terms the state machine already knows how to
 # evaluate, waiting for a model to ask.
 #
+
+# sphinx_gallery_start_ignore
 declared = set(MRFSimulator.model.properties.values())
 available = [
     "b0_hz",
@@ -86,8 +88,9 @@ available = [
     "pool_b_fraction",
     "pool_b_shift_hz",
 ]
-print("\ncarried by the kernels, not asked for here:")
+print("carried by the kernels, not asked for here:")
 print("  " + ", ".join(name for name in available if name not in declared))
+# sphinx_gallery_end_ignore
 
 # %%
 #

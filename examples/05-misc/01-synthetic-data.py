@@ -25,7 +25,7 @@ of handing each of them the right array.
 # .. colab-link::
 #    :needs_gpu: 1
 #
-#    !pip install torchsim torchio deepmriprep sigpy mri-nufft[finufft]
+#    !pip install torchsim torchio deepmriprep sigpy mri-nufft[finufft,cufinufft]
 
 # %%
 #
@@ -83,8 +83,11 @@ SAMPLES = 768
 COILS = 8
 SLICE = 60
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-backend = "cufinufft" if device == "cuda" else "finufft"
+# The GPU transform is used when it is both installed and usable; the
+# simulation follows it, so the images and the operator meet on one device.
+on_gpu = torch.cuda.is_available() and mrinufft.check_backend("cufinufft")
+device = "cuda" if on_gpu else "cpu"
+backend = "cufinufft" if on_gpu else "finufft"
 
 # %%
 #
@@ -98,11 +101,16 @@ backend = "cufinufft" if device == "cuda" else "finufft"
 # times are tabulated, which is the split a digital twin usually lives with:
 # what the data says, and what a table says.
 #
+# ``download=True`` fetches the two modalities the first time and skips them
+# afterwards. They are several GB, so the first run of this notebook on a
+# fresh machine spends its time here rather than in anything below.
+#
 subject = tio.datasets.IXI(
-    str(Path("data").resolve()), modalities=("PD", "T2"), download=False
+    str(Path("data").resolve()), modalities=("PD", "T2"), download=True
 )[0]
 
 
+# sphinx_gallery_start_ignore
 def slab(volume):
     """One axial slice of a volume, at the matrix this example works in."""
     values = np.asarray(volume, dtype=np.float32).squeeze()[:, :, SLICE].T
@@ -111,6 +119,8 @@ def slab(volume):
         grid, size=(SIZE, SIZE), mode="bilinear", align_corners=False
     )[0, 0]
 
+
+# sphinx_gallery_end_ignore
 
 density, weighted = slab(subject.PD.numpy()), slab(subject.T2.numpy())
 
@@ -144,10 +154,11 @@ fractions = torch.stack(
 occupancy = fractions.sum(-1)
 brain = occupancy > 0.5
 
+# sphinx_gallery_start_ignore
 mixed = int(((fractions.max(-1).values < 0.99) & brain).sum())
-print(f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels")
-print(f"{100 * mixed / int(brain.sum()):.0f}% of them are a mixture of two "
-      f"tissues or more")
+print(f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels; "
+      f"{100 * mixed / int(brain.sum()):.0f}% are a mixture of two tissues or more")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -208,10 +219,12 @@ class_M0 = torch.tensor(
     [float(normalized[dominant[..., k]].median()) for k in range(len(NAMES))]
 )
 
+# sphinx_gallery_start_ignore
 print(f"\n{'tissue':<14} {'voxels':>8}   {'M0':>4} {'T1 (ms)':>8} {'T2 (ms)':>8}")
 for k, name in enumerate(NAMES):
     print(f"{name:<14} {int(dominant[..., k].sum()):8d}   "
           f"{class_M0[k]:4.2f} {class_T1[k]:8.0f} {class_T2[k]:8.1f}")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -228,12 +241,17 @@ for k, name in enumerate(NAMES):
 schedule = 5.0 + 55.0 * torch.sin(torch.linspace(0.0, 4 * torch.pi, FRAMES)).abs()
 acquisition = MRFSimulator(TR=12.0, TI=20.0, T1=class_T1, T2=class_T2)
 
+# sphinx_gallery_start_ignore
 started = time.perf_counter()
+# sphinx_gallery_end_ignore
 per_class = torch.as_tensor(acquisition.simulate(flip=schedule))
+
+# sphinx_gallery_start_ignore
 print(
     f"{len(NAMES)} classes x {FRAMES} frames in "
     f"{time.perf_counter() - started:.1f}s -> {tuple(per_class.shape)}"
 )
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -252,7 +270,6 @@ print(
 #
 weights = (fractions * class_M0).to(per_class.dtype)
 series = (weights @ per_class) * brain[..., None]
-print(f"whole-brain series {tuple(series.shape)} {series.dtype}")
 
 # The maps that go out as ground truth are the mixture averages, which is what
 # a single-compartment fit of this data could return at best.
@@ -279,24 +296,32 @@ trajectory = initialize_2D_spiral(
 ).astype(np.float32)
 
 build = mrinufft.get_operator(backend)
+# sphinx_gallery_start_ignore
 started = time.perf_counter()
+# sphinx_gallery_end_ignore
 arms = [
     build(trajectory[frame], (SIZE, SIZE), n_coils=COILS, squeeze_dims=False, density=True)
     for frame in range(FRAMES)
 ]
+# sphinx_gallery_start_ignore
 print(f"{FRAMES} arms built in {time.perf_counter() - started:.1f}s")
+# sphinx_gallery_end_ignore
 
 coil_series = (
     sensitivities[:, None] * series.movedim(-1, 0)[None]
 ).to(device)
 
+# sphinx_gallery_start_ignore
 started = time.perf_counter()
+# sphinx_gallery_end_ignore
 kspace = torch.stack(
     [arms[frame].op(coil_series[:, frame][None])[0] for frame in range(FRAMES)]
 )
+# sphinx_gallery_start_ignore
 print(
     f"forward NUFFT {time.perf_counter() - started:.1f}s -> {tuple(kspace.shape)}"
 )
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -348,7 +373,10 @@ figure.tight_layout()
 # available here because the maps are known, this being a phantom. A real
 # pipeline would estimate them.
 #
+
+# sphinx_gallery_start_ignore
 started = time.perf_counter()
+# sphinx_gallery_end_ignore
 folded = torch.stack(
     [arms[frame].adj_op(kspace[frame][None])[0] for frame in range(FRAMES)]
 )
@@ -356,7 +384,9 @@ weights = sensitivities.to(device)
 combined = (folded * weights.conj()[None]).sum(1) / (
     weights.abs().square().sum(0)[None] + 1e-6
 )
+# sphinx_gallery_start_ignore
 print(f"adjoint and combine {time.perf_counter() - started:.1f}s")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -367,6 +397,8 @@ print(f"adjoint and combine {time.perf_counter() - started:.1f}s")
 # spiral arm, so the aliasing is worse than the signal; what survives is the
 # **time course**, and that is what a fingerprinting reconstruction reads.
 #
+
+# sphinx_gallery_start_ignore
 reference = (series.movedim(-1, 0) * brain).to(device)
 reference = reference / reference.abs().max()
 undersampled = combined / combined.abs().max()
@@ -387,6 +419,7 @@ print(
     f"time-course agreement            : median {float(agreement.median()):.3f}, "
     f"tenth percentile {float(agreement.quantile(0.1)):.3f}"
 )
+# sphinx_gallery_end_ignore
 
 # %%
 #

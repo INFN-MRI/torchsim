@@ -27,32 +27,42 @@ in memory, and what each gets wrong, is read off the same slice.
 
 # %%
 #
-# The phantom is BrainWeb's, reached through ``brainweb-dl``: ``get_mri``
-# fetches the fuzzy tissue memberships, and the package ships the table of
-# relaxation times that goes with them -- which is what the two standard
-# library imports read.
-#
-
-# sphinx_gallery_start_ignore
-import warnings
-
-warnings.filterwarnings("ignore")
-
-import matplotlib.pyplot as plt
-
-# sphinx_gallery_end_ignore
-import csv
-from pathlib import Path
-
-import brainweb_dl
-from brainweb_dl import get_mri
-
-# %%
-#
 # The problem is stated over a simulator carrying the sequence and filled in
 # by an estimator. :func:`~torchsim.execution` decides where that work runs,
 # and the timings below are taken inside it.
 #
+
+# sphinx_gallery_start_ignore
+import csv
+import warnings
+from pathlib import Path
+
+import brainweb_dl
+import matplotlib.pyplot as plt
+from brainweb_dl import get_mri
+
+warnings.filterwarnings("ignore")
+
+
+def panel(axis, values, cmap, limits, label=None):
+    """One map, with a colorbar every panel loses the same width to.
+
+    A figure where only some panels carry a colorbar has panels of different
+    sizes. Giving every one a colorbar and hiding the ones that would repeat a
+    scale keeps the images comparable.
+    """
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    if label is None:
+        bar.ax.set_visible(False)
+    else:
+        bar.set_label(label, fontsize=8)
+        bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([])
+    axis.set_yticks([])
+
+
+# sphinx_gallery_end_ignore
 import time
 
 import numpy as np
@@ -68,16 +78,20 @@ from torchsim.simulators import MRFSimulator
 # A brain to map
 # --------------
 #
-# BrainWeb publishes its phantom as *fuzzy* tissue memberships: every voxel
-# carries a fraction of each tissue rather than a label. Those fractions,
-# weighted by the relaxation times BrainWeb tabulates for each tissue, give
-# maps with the structure of a brain and answers that are known.
+# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
+# through the lateral ventricles, carrying CSF, grey matter, white matter and
+# the glial matter between them. BrainWeb publishes it as *fuzzy* memberships:
+# every voxel holds a fraction of each tissue rather than a label, and
+# weighting the relaxation times BrainWeb tabulates by those fractions gives
+# the maps below.
 #
-# The fractions matter more than the anatomy. Roughly a third of the brain
-# voxels in this slice are mixtures of two tissues or more, so the truth is a
-# continuum rather than a handful of values, and an estimator cannot do well
-# merely by having seen the right three answers.
+# The fractions matter more than the anatomy. A third of these brain voxels
+# are mixtures of two tissues or more, so the truth is a continuum rather than
+# four values, and an estimator cannot do well merely by having seen the right
+# four answers.
 #
+
+# sphinx_gallery_start_ignore
 BRAIN_TISSUES = (1, 2, 3, 8)  # CSF, grey matter, white matter, glial matter
 SLICE = 90
 
@@ -105,11 +119,16 @@ T1_true = np.where(mask, fractions @ tissue_T1 / share, 0.0).astype(np.float32)
 T2_true = np.where(mask, fractions @ tissue_T2 / share, 0.0).astype(np.float32)
 M0_true = np.where(mask, fractions @ tissue_PD, 0.0).astype(np.float32)
 
-mixed = ((fractions.max(-1) < 0.99) & mask).sum()
-print(f"slice {fractions.shape[:2]}: {mask.sum()} brain voxels")
-print(f"{100 * mixed / mask.sum():.0f}% of them are mixtures of two tissues or more")
-print(f"T1 {T1_true[mask].min():.0f}-{T1_true[mask].max():.0f} ms, "
-      f"T2 {T2_true[mask].min():.0f}-{T2_true[mask].max():.0f} ms")
+figure, axes = plt.subplots(1, 3, figsize=(11, 3.6))
+for axis, values, label, limits in (
+    (axes[0], T1_true, "T1 [ms]", (0, 3000)),
+    (axes[1], T2_true, "T2 [ms]", (0, 350)),
+    (axes[2], M0_true, "M0", (0, 1.1)),
+):
+    panel(axis, values, "magma", limits, label=label)
+figure.suptitle("BrainWeb subject 0, slice 90 -- what the maps should come out as")
+figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -133,17 +152,13 @@ acquisition = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
 # %%
 #
 # The readouts wind the states on rather than rewinding them, so nothing
-# returns transverse magnetization to the imaginary axis and the trajectory is
-# real. That is worth checking rather than assuming, because it halves both
-# the dictionary and the arithmetic that searches it.
+# returns transverse magnetization to the imaginary axis: the trajectory comes
+# back real to within 3e-8, which halves both the dictionary and the
+# arithmetic that searches it.
 #
-probe = acquisition.simulate(
+fingerprints = acquisition.simulate(
     T1=torch.tensor([500.0, 833.0, 2569.0]), T2=torch.tensor([70.0, 83.0, 329.0])
-)
-print(f"\nsimulated dtype {probe.dtype}")
-print(f"largest imaginary part: {float(probe.imag.abs().max()):.3g}")
-
-fingerprints = probe.real
+).real
 
 # sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
@@ -175,29 +190,7 @@ clean = acquisition.simulate(**truth).real * density[:, None]
 generator = torch.Generator().manual_seed(42)
 measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 
-print(f"\n{measured.shape[0]} voxels of {CONTRASTS} contrasts, "
-      f"{measured.dtype}")
-print(f"noise standard deviation {NOISE_STD:.5f}")
-
-# %%
-#
-# What a route costs
-# ------------------
-#
-# Timings below are the best of three passes, and exclude the one-off
-# measurement :func:`~torchsim.execution` makes the first time it meets a
-# workload -- that is amortized over every volume a protocol is ever used on,
-# rather than paid per slice.
-#
-# Two memory numbers are worth separating. The **model** is what the fitted
-# estimator holds and carries between volumes. The **peak** is the high-water
-# mark of what the card held while the slice was being mapped, which is what
-# decides whether a whole volume fits or has to be streamed -- and a route that
-# :func:`~torchsim.execution` judged not worth a launch never crosses to the
-# card at all, so its peak is near zero and its cost is on the host.
-#
-
-
+# sphinx_gallery_start_ignore
 def footprint(problem):
     """MiB the fitted estimator itself holds -- a dictionary, or a regression."""
     held = sum(t.numel() * t.element_size() for t in problem.method.buffers())
@@ -220,6 +213,14 @@ def mapped(problem, passes=3):
     return maps, best, peak
 
 
+def log_uniform(low, high, count):
+    """``count`` draws spread evenly in the logarithm."""
+    span = torch.rand(count, generator=prior)
+    return torch.exp(np.log(low) + span * (np.log(high) - np.log(low)))
+
+
+# sphinx_gallery_end_ignore
+
 # %%
 #
 # The problem, stated once
@@ -229,22 +230,14 @@ def mapped(problem, passes=3):
 # The method that fills it in is a separate choice, and the only thing that
 # changes between the answers below.
 #
+# Both relaxation times span more than a decade, so the prior is drawn
+# logarithmically: sampling uniformly would spend most of the budget on long
+# T1, where the trajectories are nearly parallel and carry little information.
+#
 T1_RANGE = (200.0, 5000.0)
 T2_RANGE = (20.0, 600.0)
-
-# Both relaxation times span more than a decade, so the prior is sampled
-# logarithmically. Sampling uniformly would spend most of the budget on long
-# T1, where the trajectories are nearly parallel and carry little information,
-# and leave the short end underdetermined.
 SAMPLES = 20_000
 prior = torch.Generator().manual_seed(11)
-
-
-def log_uniform(low, high, count):
-    """``count`` draws spread evenly in the logarithm."""
-    span = torch.rand(count, generator=prior)
-    return torch.exp(np.log(low) + span * (np.log(high) - np.log(low)))
-
 
 # %%
 #
@@ -289,33 +282,46 @@ RANK = 4
 T1_GRID = torch.logspace(np.log10(T1_RANGE[0]), np.log10(T1_RANGE[1]), 200)
 T2_GRID = torch.logspace(np.log10(T2_RANGE[0]), np.log10(T2_RANGE[1]), 100)
 grid_t1, grid_t2 = torch.meshgrid(T1_GRID, T2_GRID, indexing="ij")
+
+# sphinx_gallery_start_ignore
 ATOMS = grid_t1.numel()
+start = time.perf_counter()
+# sphinx_gallery_end_ignore
+full = ParameterMapping(
+    acquisition, T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), seed=0
+).train(DictionaryMatcher())
 
-print(f"\ndictionary: {T1_GRID.numel()} T1 x {T2_GRID.numel()} T2 = {ATOMS} atoms")
-print(f"stored at full length: {ATOMS * CONTRASTS * 4 / 2**20:7.2f} MiB")
-print(f"stored at rank {RANK}:      {ATOMS * RANK * 4 / 2**20:7.2f} MiB")
+maps = full(measured)  # {"T1": ..., "T2": ...}, one value per voxel
 
+# sphinx_gallery_start_ignore
+full_training = time.perf_counter() - start
+full_maps, full_matching, full_peak = mapped(full)
+full_model = footprint(full)
+# sphinx_gallery_end_ignore
 
-def matched(rank=None, groups=None):
-    """Fit a matcher over the grid, then map the slice."""
-    problem = ParameterMapping(
-        acquisition,
-        T1=grid_t1.reshape(-1),
-        T2=grid_t2.reshape(-1),
-        seed=0,
-        **({"rank": rank} if rank else {}),
-    )
-    start = time.perf_counter()
-    problem.train(DictionaryMatcher(groups=groups))
-    training = time.perf_counter() - start
-    maps, timing, peak = mapped(problem)
-    return problem, maps, training, timing, footprint(problem), peak
+# %%
+#
+# Matching in the basis
+# ---------------------
+#
+# ``rank`` is the whole change: the dictionary is fitted, projected and stored
+# in four directions instead of four hundred, and the measurement is projected
+# the same way before it is scored. Everything else about the problem is
+# identical.
+#
 
+# sphinx_gallery_start_ignore
+start = time.perf_counter()
+# sphinx_gallery_end_ignore
+low = ParameterMapping(
+    acquisition, T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), seed=0, rank=RANK
+).train(DictionaryMatcher())
 
-_, full_maps, full_training, full_matching, full_model, full_peak = matched()
-low_problem, low_maps, low_training, low_matching, low_model, low_peak = matched(
-    rank=RANK
-)
+# sphinx_gallery_start_ignore
+low_training = time.perf_counter() - start
+low_maps, low_matching, low_peak = mapped(low)
+low_model = footprint(low)
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -332,24 +338,26 @@ low_problem, low_maps, low_training, low_matching, low_model, low_peak = matched
 # already in. The two savings are independent and multiply.
 #
 GROUPS = 32
-(
-    group_problem,
-    group_maps,
-    group_training,
-    group_matching,
-    group_model,
-    group_peak,
-) = matched(rank=RANK, groups=GROUPS)
 
-matcher = group_problem.method
-grouping = matcher.grouping
-normalized = low_problem.subspace.project(measured)
+# sphinx_gallery_start_ignore
+start = time.perf_counter()
+# sphinx_gallery_end_ignore
+grouped = ParameterMapping(
+    acquisition, T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), seed=0, rank=RANK
+).train(DictionaryMatcher(groups=GROUPS))
+
+# sphinx_gallery_start_ignore
+group_training = time.perf_counter() - start
+group_maps, group_matching, group_peak = mapped(grouped)
+group_model = footprint(grouped)
+
+grouping = grouped.method.grouping
+normalized = low.subspace.project(measured)
 normalized = normalized / normalized.norm(dim=-1, keepdim=True)
-survivors = grouping.survivors(normalized, matcher.prune)
-print(f"\n{GROUPS} groups of {grouping.sizes[0]} atoms")
-print(f"condition number of the representatives: {grouping.condition:.1f}")
-print(f"groups still open per voxel: {float(survivors.sum(-1).float().mean()):.1f}"
-      f" of {GROUPS}")
+survivors = grouping.survivors(normalized, grouped.method.prune)
+print(f"{GROUPS} groups of {grouping.sizes[0]} atoms; "
+      f"{float(survivors.sum(-1).float().mean()):.1f} still open per voxel")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -369,19 +377,29 @@ def proton_density(maps):
     return (predicted * measured).sum(-1) / predicted.square().sum(-1).clamp_min(1e-12)
 
 
+M0_map = proton_density(maps)
+
+# sphinx_gallery_start_ignore
 estimates = {
     "match, 400 contrasts": (full_maps, proton_density(full_maps)),
     f"match, rank {RANK}": (low_maps, proton_density(low_maps)),
     f"match, rank {RANK} + groups": (group_maps, proton_density(group_maps)),
 }
+# sphinx_gallery_end_ignore
 
 # %%
 #
 # What it cost, and what it got
 # -----------------------------
 #
+# Best of three passes each, after one warm-up that leaves out the measurement
+# :func:`~torchsim.execution` makes the first time it meets a workload. The
+# **model** is what the fitted estimator carries between volumes; the **peak**
+# is the high-water mark on the card while the slice was mapped, which is what
+# decides whether a whole volume fits or has to be streamed.
+#
 
-
+# sphinx_gallery_start_ignore
 def error(estimate, reference):
     """Median relative error, in percent."""
     return float(100 * ((estimate - reference).abs() / reference).median())
@@ -397,12 +415,13 @@ rows = [
      group_model, group_peak),
 ]
 for name, training, timing, model, peak in rows:
-    maps, m0 = estimates[name]
+    found, m0 = estimates[name]
     print(f"{name:<28}{training:7.1f}s{timing:7.2f}s"
           f"{model:6.1f} MiB{peak:6.0f} MiB"
-          f"{error(maps['T1'], truth['T1']):7.1f}%"
-          f"{error(maps['T2'], truth['T2']):7.1f}%"
+          f"{error(found['T1'], truth['T1']):7.1f}%"
+          f"{error(found['T2'], truth['T2']):7.1f}%"
           f"{error(m0, density):7.1f}%")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -410,7 +429,7 @@ for name, training, timing, model, peak in rows:
 # --------
 #
 
-
+# sphinx_gallery_start_ignore
 def painted(values):
     """A flat vector of brain voxels, back in the shape of the slice."""
     canvas = np.zeros(mask.shape, dtype=np.float32)
@@ -425,25 +444,6 @@ panels = [
      (0, 350)),
     ("M0", M0_true, {name: m0 for name, (_, m0) in estimates.items()}, (0, 1.1)),
 ]
-
-# sphinx_gallery_start_ignore
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to.
-
-    A figure where only some panels carry a colorbar has panels of different
-    sizes. Giving every one a colorbar and hiding the ones that would repeat a
-    scale keeps the images comparable.
-    """
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
-
 
 columns = 1 + len(estimates)
 rows = len(panels)

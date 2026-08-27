@@ -170,21 +170,58 @@ def _skip_undocumented_specials(app, what, name, obj, skip, options):
     return True if holder is not None and dataclasses.is_dataclass(holder) else None
 
 
-def _hide_empty_code_blocks() -> None:
-    """Render nothing for a code block whose every line is hidden.
+def _hide_ignored_code_from_the_page_only() -> None:
+    """Keep the page free of the blocks an example hides, and nothing else.
 
-    An ignore block that covers a whole cell leaves an empty one, and an empty
-    ``code-block`` directive renders as a blank box. The block's *output* --
-    the figures it drew -- is emitted separately and is kept.
+    sphinx-gallery strips its ignore blocks once, before it writes either the
+    page or the notebook, so a downloaded notebook is missing whatever the page
+    hides and raises on the first cell that needed it. Stripping them as the
+    page is written instead leaves the downloadable script and notebook whole,
+    which is what the Binder and Colab links open.
+
+    A cell that is hidden in full renders as nothing rather than as an empty
+    ``code-block`` directive. Its *output* -- the figures it drew, what it
+    printed -- is emitted separately and is kept either way.
     """
-    from sphinx_gallery import gen_rst
+    from sphinx_gallery import gen_rst, py_source_parser
+
+    strip = py_source_parser.remove_ignore_blocks
+
+    def keep(code):
+        strip(code)  # for its check that every flag has its partner
+        return code
+
+    py_source_parser.remove_ignore_blocks = keep
 
     original = gen_rst.codestr2rst
 
     def codestr2rst(code, *args, **kwargs):
-        return "" if not code.strip() else original(code, *args, **kwargs)
+        shown = strip(code)
+        return original(shown, *args, **kwargs) if shown.strip() else ""
 
     gen_rst.codestr2rst = codestr2rst
+
+    write_notebook = gen_rst.jupyter_notebook
+
+    def jupyter_notebook(script_blocks, *args, **kwargs):
+        """The notebook keeps the code, but not the flags that hid it."""
+        return write_notebook(
+            [block._replace(content=_unflagged(block.content)) for block in script_blocks],
+            *args,
+            **kwargs,
+        )
+
+    gen_rst.jupyter_notebook = jupyter_notebook
+
+
+def _unflagged(content: str) -> str:
+    """The block without the comment lines that mark a hidden region."""
+    return "\n".join(
+        line
+        for line in content.splitlines()
+        if line.strip()
+        not in ("# sphinx_gallery_start_ignore", "# sphinx_gallery_end_ignore")
+    )
 
 
 def setup(app):
@@ -194,7 +231,7 @@ def setup(app):
     distributions package ``dbm`` separately from the interpreter. The links
     it would add are the only thing lost.
     """
-    _hide_empty_code_blocks()
+    _hide_ignored_code_from_the_page_only()
     app.connect("autodoc-skip-member", _skip_undocumented_specials)
     try:
         import dbm  # noqa: F401

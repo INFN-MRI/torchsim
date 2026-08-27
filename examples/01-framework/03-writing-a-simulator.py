@@ -217,4 +217,4 @@ def ssfp_mrf_sim(flip, TR, T1, T2, TI=0.0, diff=None):
 
 
 signal, jacobian = ssfp_mrf_sim(flip, 10.0, 1000.0, 100.0, diff=("T1", "T2"))
-print(signal.shape, jacobian.shape)
+# signal is (repetitions,); jacobian is (2, repetitions), one row per property

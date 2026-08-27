@@ -33,7 +33,7 @@ methods for magnetic resonance imaging.* Phil Trans R Soc A 379:20200196
 # .. colab-link::
 #    :needs_gpu: 1
 #
-#    !pip install torchsim brainweb-dl mri-nufft[finufft] deepinv
+#    !pip install torchsim brainweb-dl mri-nufft[finufft,cufinufft] deepinv
 
 # %%
 #
@@ -101,20 +101,27 @@ SPOKES = 16
 SAMPLES = 192
 RANK = 3
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-backend = "cufinufft" if device == "cuda" else "finufft"
+# The GPU transform is used when it is both installed and usable; the
+# simulation follows it, so the images and the operator meet on one device.
+on_gpu = torch.cuda.is_available() and mrinufft.check_backend("cufinufft")
+device = "cuda" if on_gpu else "cpu"
+backend = "cufinufft" if on_gpu else "finufft"
 
 # %%
 #
 # A brain with a known answer
 # ---------------------------
 #
-# BrainWeb publishes its phantom as *fuzzy* tissue memberships, so a voxel
-# carries a fraction of each tissue rather than a label. Weighting the
-# tabulated relaxation times by those fractions gives a T2 map with the
-# structure of a brain and an answer that is known everywhere, mixtures
-# included.
+# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
+# through the lateral ventricles, resampled to the matrix reconstructed here.
+# BrainWeb publishes it as *fuzzy* memberships, so a voxel carries a fraction
+# of CSF, grey matter, white matter and glial matter rather than a label, and
+# weighting the tabulated relaxation times by those fractions gives a T2 map
+# whose mixed voxels sit between the pure ones -- an answer that is known
+# everywhere, mixtures included.
 #
+
+# sphinx_gallery_start_ignore
 BRAIN_TISSUES = (1, 2, 3, 8)  # CSF, grey matter, white matter, glial matter
 SLICE = 90
 
@@ -146,11 +153,7 @@ M0_true = resampled(np.where(occupancy > 0.5, fractions @ tissue_PD, 0.0))
 brain = resampled((occupancy > 0.5).astype(np.float32)) > 0.5
 T2_true = torch.where(brain, T2_true.clamp(20.0, 400.0), torch.tensor(20.0, device=device))
 
-print(f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels")
-print(
-    f"T2 {T2_true[brain].min():.0f}-{T2_true[brain].max():.0f} ms, "
-    f"M0 {M0_true[brain].min():.2f}-{M0_true[brain].max():.2f}"
-)
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -211,8 +214,11 @@ kspace = encoding.A(images.movedim(-1, 0)[None])
 gridded = encoding.A_adjoint(kspace)[0].movedim(0, -1)
 scale = float(gridded.abs().max())
 kspace, gridded = kspace / scale, gridded / scale
+
+# sphinx_gallery_start_ignore
 undersampling = (0.5 * np.pi * SIZE) / SPOKES
 print(f"{SPOKES} spokes per echo: {undersampling:.0f}x undersampled")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -280,6 +286,8 @@ grid = torch.linspace(20.0, 400.0, 500)
 mapping = ParameterMapping(
     acquisition, T2=grid, M0=1.0, rank=RANK, seed=0
 ).train(DictionaryMatcher())
+
+# sphinx_gallery_start_ignore
 print(f"rank {RANK} of {ECHOES} contrasts keeps {mapping.subspace.retained:.6f}")
 
 
@@ -306,6 +314,8 @@ def report(name, seconds, found):
     return found
 
 
+# sphinx_gallery_end_ignore
+
 # %%
 #
 # The baseline: reconstruct each contrast, then fit
@@ -321,8 +331,15 @@ def report(name, seconds, found):
 # not already found. What buys accuracy is a constraint that reaches across the
 # echoes, which is what the model below is.
 #
+
+# sphinx_gallery_start_ignore
 started = clock()
-adjoint = report("adjoint per echo", clock() - started, mapping(gridded)["T2"])
+# sphinx_gallery_end_ignore
+adjoint = mapping(gridded)["T2"]
+
+# sphinx_gallery_start_ignore
+report("adjoint per echo", clock() - started, adjoint)
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -360,19 +377,24 @@ initial[0, ..., 2] = gridded[..., 0].imag
 # deepinv routine the two routes above called directly. Swapping in a proximal
 # solver under a wavelet prior is a change to that one argument.
 #
+
+# sphinx_gallery_start_ignore
 started = clock()
+# sphinx_gallery_end_ignore
 found = GaussNewton(
     Schedule(initial=1e-3, factor=0.5, minimum=1e-7),
     solve=iterative("CG", max_iter=20),
     max_iterations=8,
 ).minimize(operator, kspace, initial, encoding=encoding)
-# No fit afterwards: the maps are what was solved for.
-modelled = report(
-    "model-based", clock() - started, operator.split(found.x)["T2"][0]
-)
 
-print(f"\nresidual {float(found.cost[0]):.3e} -> {float(found.cost[-1]):.3e}")
-print(f"damping  {float(found.damping[0]):.0e} -> {float(found.damping[-1]):.0e}")
+# No fit afterwards: the maps are what was solved for.
+modelled = operator.split(found.x)["T2"][0]
+
+# sphinx_gallery_start_ignore
+report("model-based", clock() - started, modelled)
+print(f"residual {float(found.cost[0]):.3e} -> {float(found.cost[-1]):.3e}, "
+      f"damping {float(found.damping[0]):.0e} -> {float(found.damping[-1]):.0e}")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -394,7 +416,7 @@ tangent = torch.randn_like(initial)
 predicted = operator.A_jvp(initial, tangent)
 adjoint_image = encoding.A_adjoint(kspace).movedim(1, -1)
 
-
+# sphinx_gallery_start_ignore
 def timed(call, repeats=5):
     """Wall clock, after a warm-up, because the first call plans transforms."""
     call()
@@ -416,22 +438,25 @@ print(f"  encoding A^H    {timed(lambda: encoding.A_adjoint(kspace)):6.1f} ms")
 
 blocks = operator.jacobian(initial)
 print(
-    f"\nthe Jacobian this avoids holding: "
+    f"the Jacobian this avoids holding: "
     f"{blocks.numel() * 8 / 2**20:.1f} MiB, against "
     f"{predicted.numel() * 8 / 2**20:.1f} MiB for a signal"
 )
+# sphinx_gallery_end_ignore
 
 # %%
 #
 # The maps
 # --------
 #
+
+# sphinx_gallery_start_ignore
 shown = (
     ("truth", T2_true),
     ("adjoint per echo", adjoint),
     ("model-based", modelled),
 )
-# sphinx_gallery_start_ignore
+
 def panel(axis, values, cmap, limits, label=None):
     """One map, with a colorbar every panel loses the same width to.
 

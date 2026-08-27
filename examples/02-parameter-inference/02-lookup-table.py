@@ -27,32 +27,43 @@ of the two is limited by it.
 
 # %%
 #
-# The phantom is BrainWeb's, reached through ``brainweb-dl``: ``get_mri``
-# fetches the fuzzy tissue memberships, and the package ships the table of
-# relaxation times that goes with them -- which is what the two standard
-# library imports read.
-#
-
-# sphinx_gallery_start_ignore
-import warnings
-
-warnings.filterwarnings("ignore")
-
-import matplotlib.pyplot as plt
-
-# sphinx_gallery_end_ignore
-import csv
-from pathlib import Path
-
-import brainweb_dl
-from brainweb_dl import get_mri
-
-# %%
-#
 # The problem is stated over a simulator carrying the sequence and filled in
 # by an estimator. :func:`~torchsim.execution` decides where that work runs,
 # and the timings below are taken inside it.
 #
+
+# sphinx_gallery_start_ignore
+import csv
+import warnings
+from pathlib import Path
+
+import brainweb_dl
+import matplotlib.pyplot as plt
+from brainweb_dl import get_mri
+
+warnings.filterwarnings("ignore")
+
+
+
+def panel(axis, values, cmap, limits, label=None):
+    """One map, with a colorbar every panel loses the same width to.
+
+    A figure where only some panels carry a colorbar has panels of different
+    sizes. Giving every one a colorbar and hiding the ones that would repeat a
+    scale keeps the images comparable.
+    """
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    if label is None:
+        bar.ax.set_visible(False)
+    else:
+        bar.set_label(label, fontsize=8)
+        bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([])
+    axis.set_yticks([])
+
+
+# sphinx_gallery_end_ignore
 import time
 
 import numpy as np
@@ -68,11 +79,20 @@ from torchsim.simulators import MP2RAGESimulator
 # A brain to map
 # --------------
 #
-# BrainWeb publishes its phantom as *fuzzy* tissue memberships: every voxel
-# carries a fraction of each tissue rather than a label. Those fractions,
-# weighted by the relaxation times BrainWeb tabulates for each tissue, give
-# maps with the structure of a brain and answers that are known.
+# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
+# through the lateral ventricles, carrying CSF, grey matter, white matter and
+# the glial matter between them. BrainWeb publishes it as *fuzzy* memberships:
+# every voxel holds a fraction of each tissue rather than a label, and
+# weighting the relaxation times BrainWeb tabulates by those fractions gives
+# the maps below.
 #
+# The fractions matter more than the anatomy. A third of these brain voxels
+# are mixtures of two tissues or more, so the truth is a continuum rather than
+# four values, and an estimator cannot do well merely by having seen the right
+# four answers.
+#
+
+# sphinx_gallery_start_ignore
 BRAIN_TISSUES = (1, 2, 3, 8)  # CSF, grey matter, white matter, glial matter
 SLICE = 90
 
@@ -100,8 +120,12 @@ M0_true = np.where(mask, fractions @ tissue_PD, 0.0).astype(np.float32)
 truth = torch.as_tensor(T1_true[mask].copy())
 density = torch.as_tensor(M0_true[mask].copy())
 
-print(f"slice {fractions.shape[:2]}: {mask.sum()} brain voxels")
-print(f"T1 {float(truth.min()):.0f}-{float(truth.max()):.0f} ms")
+figure, axes = plt.subplots(1, 2, figsize=(7.6, 3.6))
+panel(axes[0], T1_true, "magma", (0, 3000), label="T1 [ms]")
+panel(axes[1], M0_true, "magma", (0, 1.1), label="M0")
+figure.suptitle("BrainWeb subject 0, slice 90 -- what the map should come out as")
+figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -154,9 +178,9 @@ def unified(blocks):
 sweep = torch.arange(50.0, 6000.0, 10.0)
 curve = unified(acquisition.simulate(T1=sweep, M0=1.0))
 
+# sphinx_gallery_start_ignore
 turning = int(curve.argmin()) if curve[0] > curve[-1] else int(curve.argmax())
 
-# sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
 blocks = acquisition.simulate(T1=sweep, M0=1.0)
 axes[0].plot(sweep.numpy(), blocks[:, 0].numpy(), label=f"TI = {PROTOCOL['TI'][0]:.0f} ms")
@@ -190,22 +214,8 @@ NOISE_STD = float(0.005 * clean.abs().max())
 generator = torch.Generator().manual_seed(42)
 measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 
-print(f"\n{measured.shape[0]} voxels of {measured.shape[1]} blocks")
-print(f"noise standard deviation {NOISE_STD:.5f}")
 
-# %%
-#
-# What a route costs
-# ------------------
-#
-# Two memory numbers are worth separating. The **model** is what the fitted
-# estimator holds and carries between volumes: a curve, or a dictionary. The
-# **peak** is the high-water mark of what the card held while the slice was
-# being mapped, and it is dominated by the scores a match materializes -- one
-# per atom per voxel -- which a lookup never forms at all.
-#
-
-
+# sphinx_gallery_start_ignore
 def footprint(problem):
     """MiB the fitted estimator itself holds."""
     held = sum(t.numel() * t.element_size() for t in problem.method.buffers())
@@ -228,21 +238,6 @@ def mapped(problem, passes=3):
     return maps, best, peak
 
 
-# %%
-#
-# Two estimators over the same points
-# -----------------------------------
-#
-# The problem is stated once, and both methods are given the same T1 grid. The
-# match compares the two-block signal against every atom and takes the nearest;
-# the table reduces both to the unified number and interpolates along the
-# curve.
-#
-# Neither is told the range in advance -- what the table can invert falls out
-# of the curve, and where the match saturates falls out of the grid.
-#
-
-
 def estimated(method, points):
     """Fit this method over a grid of this many points, then map the slice."""
     grid = torch.linspace(50.0, 6000.0, points)
@@ -250,11 +245,8 @@ def estimated(method, points):
     start = time.perf_counter()
     problem.train(method)
     training = time.perf_counter() - start
-    maps, timing, peak = mapped(problem)
-    return problem, maps, training, timing, footprint(problem), peak
-
-
-POINTS = (30, 60, 120, 250, 500, 1000, 2000)
+    found, timing, peak = mapped(problem)
+    return problem, found, training, timing, footprint(problem), peak
 
 
 def error(estimate, reference):
@@ -262,13 +254,49 @@ def error(estimate, reference):
     return float(100 * ((estimate - reference).abs() / reference).median())
 
 
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# Two estimators over the same points
+# -----------------------------------
+#
+# Both methods are given the same T1 grid. The match compares the two-block
+# signal against every atom and takes the nearest; the table reduces both
+# blocks to the unified number and interpolates along the curve, so ``combine``
+# is the whole of what it needs to be told.
+#
+# Neither is told the range in advance -- what the table can invert falls out
+# of the curve, and where the match saturates falls out of the grid.
+#
+grid = torch.linspace(50.0, 6000.0, 60)
+
+table = ParameterMapping(acquisition.bind(M0=1.0), T1=grid, seed=0).train(
+    LookupTable(combine=unified)
+)
+
+maps = table(measured)  # {"T1": ...}, one value per voxel
+
+match = ParameterMapping(acquisition.bind(M0=1.0), T1=grid, seed=0).train(
+    DictionaryMatcher()
+)
+
+# %%
+#
+# Sweeping the grid the two are given says how much of the difference is the
+# method and how much is the sampling. Times are the best of three passes over
+# the slice.
+#
+
+# sphinx_gallery_start_ignore
+POINTS = (30, 60, 120, 250, 500, 1000, 2000)
 matched = {}
 looked_up = {}
 for points in POINTS:
-    _, maps, _, timing, _, _ = estimated(DictionaryMatcher(), points)
-    matched[points] = (error(maps["T1"], truth), timing)
-    problem, maps, _, timing, _, _ = estimated(LookupTable(combine=unified), points)
-    looked_up[points] = (error(maps["T1"], truth), timing)
+    _, found, _, timing, _, _ = estimated(DictionaryMatcher(), points)
+    matched[points] = (error(found["T1"], truth), timing)
+    problem, found, _, timing, _, _ = estimated(LookupTable(combine=unified), points)
+    looked_up[points] = (error(found["T1"], truth), timing)
 
 print(f"\n{'points':>7}{'match':>10}{'table':>10}{'match':>10}{'table':>10}")
 print(f"{'':>7}{'error':>10}{'error':>10}{'time':>10}{'time':>10}")
@@ -276,6 +304,7 @@ print("-" * 47)
 for points in POINTS:
     print(f"{points:>7}{matched[points][0]:9.2f}%{looked_up[points][0]:9.2f}%"
           f"{1e3 * matched[points][1]:8.1f}ms{1e3 * looked_up[points][1]:8.1f}ms")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -324,6 +353,8 @@ figure.tight_layout()
 # At the point count each method needs: the table at sixty, the match at a grid
 # fine enough that the grid is no longer what limits it.
 #
+
+# sphinx_gallery_start_ignore
 TABLE_POINTS = 60
 MATCH_POINTS = 2000
 
@@ -333,9 +364,10 @@ problem, table_maps, table_training, table_time, table_model, table_peak = estim
 _, match_maps, match_training, match_time, match_model, match_peak = estimated(
     DictionaryMatcher(), MATCH_POINTS
 )
-print(f"\nthe table keeps {problem.method.rank} of {TABLE_POINTS} points -- "
-      f"the monotonic run")
-print(f"and spans unified {problem.method.span[0]:.2f} to {problem.method.span[1]:.2f}")
+print(f"the table keeps {problem.method.rank} of {TABLE_POINTS} points -- the "
+      f"monotonic run -- and spans unified "
+      f"{problem.method.span[0]:.2f} to {problem.method.span[1]:.2f}")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -351,6 +383,9 @@ def proton_density(maps):
     return (predicted * measured).sum(-1) / predicted.square().sum(-1).clamp_min(1e-12)
 
 
+M0_map = proton_density(maps)
+
+# sphinx_gallery_start_ignore
 estimates = {
     f"lookup, {TABLE_POINTS} points": (table_maps, proton_density(table_maps)),
     f"match, {MATCH_POINTS} atoms": (match_maps, proton_density(match_maps)),
@@ -365,14 +400,15 @@ for name, training, timing, model, peak in (
     (f"match, {MATCH_POINTS} atoms", match_training, match_time, match_model,
      match_peak),
 ):
-    maps, m0 = estimates[name]
+    found, m0 = estimates[name]
     print(f"{name:<24}{training:8.2f}s{1e3 * timing:7.1f}ms"
           f"{model:6.2f} MiB{peak:6.0f} MiB"
-          f"{error(maps['T1'], truth):7.2f}%{error(m0, density):7.2f}%")
+          f"{error(found['T1'], truth):7.2f}%{error(m0, density):7.2f}%")
+# sphinx_gallery_end_ignore
 
 # %%
 
-
+# sphinx_gallery_start_ignore
 def painted(values):
     """A flat vector of brain voxels, back in the shape of the slice."""
     canvas = np.zeros(mask.shape, dtype=np.float32)
@@ -381,29 +417,10 @@ def painted(values):
 
 
 panels = [
-    ("T1 [ms]", T1_true, {name: maps["T1"] for name, (maps, _) in estimates.items()},
+    ("T1 [ms]", T1_true, {name: found["T1"] for name, (found, _) in estimates.items()},
      (0, 3000)),
     ("M0", M0_true, {name: m0 for name, (_, m0) in estimates.items()}, (0, 1.1)),
 ]
-
-# sphinx_gallery_start_ignore
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to.
-
-    A figure where only some panels carry a colorbar has panels of different
-    sizes. Giving every one a colorbar and hiding the ones that would repeat a
-    scale keeps the images comparable.
-    """
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
-
 
 columns = 1 + len(estimates)
 rows = len(panels)

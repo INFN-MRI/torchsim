@@ -67,10 +67,7 @@ T2_MS = torch.tensor([80.0, 110.0, 2000.0])
 acquisition = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, M0=1.0)
 
 flip = torch.full((ECHOES,), 60.0)
-signal = acquisition.simulate(flip=flip)
-
-print(f"{tuple(signal.shape)} -- one row per tissue, one column per echo")
-print(f"first echo: {signal[:, 0].abs().numpy().round(3)}")
+signal = acquisition.simulate(flip=flip)  # (3, 48): one row per tissue
 
 # %%
 #
@@ -81,8 +78,6 @@ print(f"first echo: {signal[:, 0].abs().numpy().round(3)}")
 # needed to predict it and a mono-exponential fit of the train would be wrong.
 #
 refocused = acquisition.simulate(flip=torch.full((ECHOES,), 180.0))
-
-# sphinx_gallery_start_ignore
 
 # sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
@@ -97,7 +92,6 @@ for axis, values, title in (
 axes[0].legend(fontsize=8)
 figure.tight_layout()
 # sphinx_gallery_end_ignore
-# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -109,8 +103,7 @@ figure.tight_layout()
 # derivative per property, so a Fisher matrix over four parameters costs four
 # passes however many voxels are being simulated.
 #
-signal, dT2 = acquisition.jacobian("T2", flip=flip)
-print(f"derivative shape {tuple(dT2.shape)}")
+signal, dT2 = acquisition.jacobian("T2", flip=flip)  # dT2 is (3, 48) too
 
 # %%
 #
@@ -142,9 +135,12 @@ print(f"largest disagreement with a {STEP_MS} ms step: {float(discrepancy):.2e}"
 NOISE = 0.005  # standard deviation, relative to the fully relaxed magnetization
 
 bound = torchsim.crlb(dT2[:, None, :], noise_variance=NOISE**2)
+
+# sphinx_gallery_start_ignore
 for row, name in enumerate(NAMES):
     sigma = 100.0 * float(bound[row, 0].sqrt()) / float(T2_MS[row])
     print(f"{name:<14} sigma(T2)/T2 >= {sigma:5.2f}%")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -174,9 +170,15 @@ def analytic_gradient(shots, angles):
 
 # %%
 #
-# As a reference, the same gradient by finite differences: one extra simulation
-# per flip angle, which is the cost that grows with the length of the train.
+# The reference it is measured against is the same gradient by finite
+# differences -- one extra simulation per flip angle -- over a range of train
+# lengths. One reverse pass answers for the whole schedule whatever its
+# length; the difference needs one simulation per angle, and each of those
+# simulations is itself longer.
 #
+
+# sphinx_gallery_start_ignore
+LENGTHS = (24, 48, 96, 192)
 
 
 def finite_gradient(shots, angles):
@@ -189,16 +191,6 @@ def finite_gradient(shots, angles):
             nudged[index] += 1.0
             moved[index] = precision(shots, nudged)
     return cost, moved - cost
-
-
-# %%
-#
-# Run both, over a range of train lengths, and time them. One reverse pass
-# answers for the whole schedule whatever its length; the finite difference
-# needs one simulation per angle, and each of those simulations is itself
-# longer.
-#
-LENGTHS = (24, 48, 96, 192)
 
 
 def timed(call):
@@ -220,6 +212,7 @@ for echoes in LENGTHS:
     print(f"{echoes:>4} echoes   reverse {reverse_seconds[-1]:6.3f} s   "
           f"finite {difference_seconds[-1]:6.3f} s   "
           f"({difference_seconds[-1] / reverse_seconds[-1]:5.1f}x)")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -228,8 +221,6 @@ for echoes in LENGTHS:
 # large one on a curve this bent, and the discrepancy is the finite
 # difference's rather than the derivative's.
 #
-
-# sphinx_gallery_start_ignore
 
 # sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 3, figsize=(14, 3.6))
@@ -262,9 +253,34 @@ for axis in axes:
     axis.grid(alpha=0.3), axis.legend(fontsize=8)
 figure.tight_layout()
 # sphinx_gallery_end_ignore
+
+# %%
+#
+# The same thing in one call
+# --------------------------
+#
+# Every sequence that ships also has a function, for the case where there is
+# nothing to reuse: it takes the protocol and the tissue together, returns the
+# signal, and returns the derivative too if ``diff`` names a property. It is
+# the object above with the construction folded in, so the answer is the same
+# to the bit.
+#
+signal, dT2 = torchsim.fse_sim(
+    flip=flip, ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, diff="T2"
+)
+
+# sphinx_gallery_start_ignore
+reference, reference_dT2 = acquisition.jacobian("T2", flip=flip)
+print(f"agrees with the simulator to "
+      f"{float((torch.as_tensor(dT2) - reference_dT2).abs().max()):.1e}")
 # sphinx_gallery_end_ignore
 
 # %%
+#
+# Reach for it when a sequence is simulated once and nothing about it is being
+# varied. The object is what a loop wants: it resolves the event stream on its
+# first call and rebinds only the numbers that change afterwards, which is
+# worth about eight times the whole call to a design or a dictionary sweep.
 #
 # Where this goes
 # ---------------

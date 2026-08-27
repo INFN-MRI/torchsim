@@ -239,16 +239,19 @@ design = SequenceDesign(
     single_train, control=Bounded(PRESCRIBED, LOWEST, HIGHEST)
 )
 
+# sphinx_gallery_start_ignore
 # One call resolves the protocol's structure, which is then held; the clock
 # below measures the design itself.
 design.minimize(iterations=1)
-
 start = time.perf_counter()
+# sphinx_gallery_end_ignore
 one = design.minimize(iterations=25, learning_rate=0.3)
-one_elapsed = time.perf_counter() - start
 
-print(f"one train of {ECHOES} echoes designed in {one_elapsed:.2f} s")
-print(f"  {1000 * one_elapsed / 25:.1f} ms per iteration, 25 iterations")
+# sphinx_gallery_start_ignore
+one_elapsed = time.perf_counter() - start
+print(f"one train of {ECHOES} echoes designed in {one_elapsed:.2f} s, "
+      f"{1000 * one_elapsed / 25:.1f} ms per iteration")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -260,6 +263,7 @@ designed_flip = shape(echo, one.parameters["control"], LENGTH, CENTRE_ECHO)
 prescribed_signal = one_train.simulate(flip=prescribed_flip, TR=1800.0).abs()
 designed_signal = one_train.simulate(flip=designed_flip, TR=1800.0).abs()
 
+# sphinx_gallery_start_ignore
 for label, angles, signal in (
     ("prescribed", PRESCRIBED, prescribed_signal),
     ("designed", one.parameters["control"], designed_signal),
@@ -274,7 +278,6 @@ for label, angles, signal in (
         f"{float(at_centre[0, FLUID] - at_centre[0, CARTILAGE]):>5.3f}"
     )
 
-# sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 3, figsize=(13, 3.4))
 echo_index = np.arange(1, ECHOES + 1)
 pixel = np.arange(ECHOES) - ECHOES // 2
@@ -337,6 +340,8 @@ figure.tight_layout()
 # thick. No noise is added, so nothing below is a noise realization -- what
 # differs between the two images is the train and only the train.
 #
+
+# sphinx_gallery_start_ignore
 SIZE = ECHOES
 
 rows, columns = torch.meshgrid(
@@ -363,6 +368,7 @@ muscle_map = inside & ~cartilage_map & ~fluid_map
 PHANTOM = torch.stack(
     [cartilage_map, muscle_map, fluid_map]
 ).to(torch.complex64)
+# sphinx_gallery_end_ignore
 
 
 def imaged(signal):
@@ -600,14 +606,18 @@ PRESCRIPTION = {
 }
 
 design = SequenceDesign(image_quality, **PRESCRIPTION)
+
+# sphinx_gallery_start_ignore
 design.minimize(iterations=1)
-
 start = time.perf_counter()
+# sphinx_gallery_end_ignore
 many = design.minimize(iterations=40, learning_rate=0.2)
-many_elapsed = time.perf_counter() - start
 
-print(f"a whole protocol designed in {many_elapsed:.2f} s")
-print(f"  {1000 * many_elapsed / 40:.1f} ms per iteration, 40 iterations")
+# sphinx_gallery_start_ignore
+many_elapsed = time.perf_counter() - start
+print(f"a whole protocol designed in {many_elapsed:.2f} s, "
+      f"{1000 * many_elapsed / 40:.1f} ms per iteration")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -615,6 +625,8 @@ print(f"  {1000 * many_elapsed / 40:.1f} ms per iteration, 40 iterations")
 # the trains it asks for takes a number of shots the design never chose --
 # it falls out of the arithmetic above -- and the abstract reports 586.
 #
+
+# sphinx_gallery_start_ignore
 prescribed = {name: value.initial for name, value in PRESCRIPTION.items()}
 print("\n                centre of k-space          periphery")
 print("                ETL     TR         ETL     TR       shots    scan")
@@ -663,6 +675,7 @@ print(
     f" -> {float(deposited(flip, acquired, TR)):.2f}"
     f"  (budget {float(SPACE_POWER_BUDGET):.2f})"
 )
+# sphinx_gallery_end_ignore
 
 # %%
 #

@@ -154,6 +154,8 @@ ssfp_designed = result.parameters["ssfp_flip"]
 # What it buys, as the number a spectroscopist would quote: the standard
 # deviation of each estimate as a percentage of the value itself.
 #
+
+# sphinx_gallery_start_ignore
 for label, angles_pair in (
     ("published spread", (spgr_start, ssfp_start)),
     ("designed", (spgr_designed, ssfp_designed)),
@@ -167,6 +169,7 @@ for label, angles_pair in (
         f"sigma(T2)/T2 = {sigma_t2[0]:.1f}%, {sigma_t2[1]:.1f}%"
     )
 print(f"designed in {design_time:.1f} s")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -218,8 +221,9 @@ figure.tight_layout()
 # raising the limit would move it; that limit is a real one, being what the
 # deposited RF power allows.
 #
-sweep = torch.linspace(1.0, 70.0, 200)
+
 # sphinx_gallery_start_ignore
+sweep = torch.linspace(1.0, 70.0, 200)
 figure, axes = plt.subplots(1, 3, figsize=(13, 3.6))
 
 for axis, acquisition, start_angles, designed, title in (
@@ -250,12 +254,15 @@ figure.tight_layout()
 # What that means for the maps
 # ----------------------------
 #
-# A bound is a promise about variance, and the place to cash it is a brain. The
-# same BrainWeb phantom the parameter-inference examples map gives a T1, a T2
-# and a proton density that are known at every voxel, so both protocols can be
-# played on it and the answers compared against something rather than against
-# each other.
+# A bound is a promise about variance, and the place to cash it is a brain.
+# The phantom is the one the parameter-inference examples map -- BrainWeb
+# subject 0, slice 90, whose fuzzy tissue memberships give a T1, a T2 and a
+# proton density that are known at every voxel, mixtures included -- so both
+# protocols can be played on it and the answers compared against something
+# rather than against each other.
 #
+
+# sphinx_gallery_start_ignore
 import csv
 from pathlib import Path
 
@@ -290,9 +297,20 @@ truth = {
     "T2": torch.as_tensor(T2_true[mask].copy()),
     "M0": torch.as_tensor(M0_true[mask].copy()),
 }
-print(f"\n{int(mask.sum())} brain voxels, "
-      f"T1 {float(truth['T1'].min()):.0f}-{float(truth['T1'].max()):.0f} ms, "
-      f"T2 {float(truth['T2'].min()):.0f}-{float(truth['T2'].max()):.0f} ms")
+figure, axes = plt.subplots(1, 3, figsize=(11, 3.6))
+for axis, values, label, limits in (
+    (axes[0], T1_true, "T1 [ms]", (0, 3000)),
+    (axes[1], T2_true, "T2 [ms]", (0, 350)),
+    (axes[2], M0_true, "M0", (0, 1.1)),
+):
+    handle = axis.imshow(values, cmap="magma", vmin=limits[0], vmax=limits[1])
+    bar = figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    bar.set_label(label, fontsize=8)
+    bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([]), axis.set_yticks([])
+figure.suptitle("BrainWeb subject 0, slice 90 -- what the maps should come out as")
+figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -345,28 +363,48 @@ UNKNOWN = {
 generator = torch.Generator().manual_seed(7)
 
 
+joint = JointRelaxometry(spgr_designed, ssfp_designed)
+
+# sphinx_gallery_start_ignore
+clean = joint.simulate(B0=0.0, **truth)
+noise = torch.randn((2, *clean.shape), generator=generator, dtype=torch.float32)
+# sphinx_gallery_end_ignore
+measured = clean + NOISE * torch.complex(noise[0], noise[1])
+
+problem = ParameterMapping(joint, noise_std=NOISE, seed=0, **UNKNOWN).train(
+    NonlinearLeastSquares(
+        bounds=UNKNOWN,
+        initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
+    )
+)
+
+maps = problem(measured)  # {"T1": ..., "T2": ..., "M0": ..., "B0": ...}
+
+
+# sphinx_gallery_start_ignore
 def mapped(spgr_flip, ssfp_flip):
     """Play both blocks over the slice, then fit every voxel."""
-    joint = JointRelaxometry(spgr_flip, ssfp_flip)
-    clean = joint.simulate(B0=0.0, **truth)
-    noise = torch.randn((2, *clean.shape), generator=generator, dtype=torch.float32)
-    measured = clean + NOISE * torch.complex(noise[0], noise[1])
+    block = JointRelaxometry(spgr_flip, ssfp_flip)
+    exact = block.simulate(B0=0.0, **truth)
+    draw = torch.randn((2, *exact.shape), generator=generator, dtype=torch.float32)
+    seen = exact + NOISE * torch.complex(draw[0], draw[1])
 
-    problem = ParameterMapping(joint, noise_std=NOISE, seed=0, **UNKNOWN).train(
+    fit = ParameterMapping(block, noise_std=NOISE, seed=0, **UNKNOWN).train(
         NonlinearLeastSquares(
             bounds=UNKNOWN,
             initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
         )
     )
     start = time.time()
-    maps = problem(measured)
-    return maps, time.time() - start
+    found = fit(seen)
+    return found, time.time() - start
 
 
 before, before_seconds = mapped(spgr_start, ssfp_start)
 after, after_seconds = mapped(spgr_designed, ssfp_designed)
 print(f"{2 * int(mask.sum())} joint fits in "
       f"{before_seconds + after_seconds:.1f} s")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -396,10 +434,12 @@ def predicted_sigma(spgr_flip, ssfp_flip):
     }
 
 
+# sphinx_gallery_start_ignore
 expected = {
     "published spread": predicted_sigma(spgr_start, ssfp_start),
     "designed": predicted_sigma(spgr_designed, ssfp_designed),
 }
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -412,6 +452,8 @@ expected = {
 # deviation: the median of an absolute error is about two thirds of one, and
 # comparing the two would flatter the estimator by exactly that factor.
 #
+
+# sphinx_gallery_start_ignore
 found = {"published spread": before, "designed": after}
 
 
@@ -428,6 +470,7 @@ for label, maps in found.items():
         error = (maps[name] - truth[name]) / truth[name]
         line += f"{rms(error):12.1f}%{rms(expected[label][name]):12.1f}%"
     print(line)
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -436,7 +479,7 @@ for label, maps in found.items():
 # what a precision design buys and all it buys.
 #
 
-
+# sphinx_gallery_start_ignore
 def painted(values):
     """A flat vector of brain voxels, back in the shape of the slice."""
     canvas = np.zeros(mask.shape, dtype=np.float32)
@@ -444,7 +487,6 @@ def painted(values):
     return canvas
 
 
-# sphinx_gallery_start_ignore
 def panel(axis, values, cmap, limits, label=None):
     """One map, with a colorbar every panel loses the same width to."""
     handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
