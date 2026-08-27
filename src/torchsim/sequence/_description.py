@@ -448,7 +448,7 @@ class RfDefinition:
         The saturation an RF pulse applies to a pool with no transverse
         magnetization is ``-pi gamma**2 int B1**2 dt * G(df)``. Writing the
         pulse as a normalized envelope ``w`` driven to a flip angle,
-        ``B1 = w / (gamma int w dt)`` per radian, so
+        ``B1 = w / (gamma int w dt)`` per radian, so::
 
             -pi gamma**2 int B1**2 dt  ==  -pi int |w|**2 dt / |int w dt|**2
 

@@ -16,6 +16,8 @@ https://www.sphinx-doc.org/en/master/usage/configuration.html
 import os
 import sys
 
+from sphinx_gallery.sorting import ExplicitOrder
+
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("../.."))  # Source code dir relative to this file
 
@@ -72,6 +74,15 @@ highlight_language = "python"
 
 # -- Options for Sphinx Gallery ----------------------------------------------
 
+#: The gallery's sections, in the order a reader should meet them.
+GALLERY_SECTIONS = [
+    "../examples/01-framework",
+    "../examples/02-parameter-inference",
+    "../examples/03-sequence-optimization",
+    "../examples/04-model-based-imaging",
+    "../examples/05-misc",
+]
+
 sphinx_gallery_conf = {
     "doc_module": "torchsim",
     "backreferences_dir": "generated/gallery_backreferences",
@@ -81,6 +92,7 @@ sphinx_gallery_conf = {
     "filename_pattern": "/0",
     "ignore_pattern": r"(__init__|conftest|utils).py",
     "nested_sections": True,
+    "subsection_order": ExplicitOrder(GALLERY_SECTIONS),
     "within_subsection_order": "FileNameSortKey",
     "binder": {
         "org": "infn-mri",

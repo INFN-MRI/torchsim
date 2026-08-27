@@ -1,0 +1,65 @@
+Simulators
+==========
+
+The sequences that ship with TorchSim. Each names its protocol at construction
+and its tissue at the call, so one instance is a protocol and calling it is
+running the experiment.
+
+Closed form
+-----------
+
+Steady states that have an analytic expression, evaluated in one pass.
+
+.. autosummary::
+   :toctree: ../generated
+   :nosignatures:
+
+   torchsim.simulators.bSSFPSimulator
+   torchsim.simulators.SPGRSimulator
+   torchsim.simulators.MP2RAGESimulator
+   torchsim.simulators.InversionRecoverySimulator
+   torchsim.simulators.MultiEchoSimulator
+   torchsim.simulators.DoubleAngleSimulator
+
+State machine
+-------------
+
+Trains that have to be played out, run on the extended phase graph engine.
+
+.. autosummary::
+   :toctree: ../generated
+   :nosignatures:
+
+   torchsim.simulators.FSESimulator
+   torchsim.simulators.MPRAGESimulator
+   torchsim.simulators.MPnRAGESimulator
+   torchsim.simulators.MRFSimulator
+
+Functional wrappers
+-------------------
+
+One call, protocol and tissue together, for a signal and optionally its
+derivative. What the classes above do, without holding one.
+
+Analytical
+~~~~~~~~~~
+
+.. autosummary::
+   :toctree: ../generated
+   :nosignatures:
+
+   torchsim.bssfp_sim
+   torchsim.spgr_sim
+
+Iterative
+~~~~~~~~~
+
+.. autosummary::
+   :toctree: ../generated
+   :nosignatures:
+
+   torchsim.fse_sim
+   torchsim.mprage_sim
+   torchsim.mp2rage_sim
+   torchsim.mpnrage_sim
+   torchsim.mrf_sim

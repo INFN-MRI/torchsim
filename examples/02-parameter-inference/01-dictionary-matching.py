@@ -1,7 +1,7 @@
 """
-===============================================
-MR fingerprinting, and the subspace it lives in
-===============================================
+=====================================================
+Dictionary matching, compressed and clustered
+=====================================================
 
 MR fingerprinting drives the sequence hard on purpose. The flip angle changes
 every repetition, so a voxel never reaches a steady state and its signal over
@@ -11,15 +11,12 @@ T2 differently enough that both can be read from it at once.
 Reading them back is where the cost is. A dictionary has to span every
 combination of the parameters, so its size is the *product* of the grids, and
 each atom is as long as the train. This example maps a brain slice from a
-four-hundred-contrast train three ways -- exhaustive matching, matching with
-the dictionary clustered, and kernel regression -- and gives all three the same
-low-rank temporal basis to work in.
+four-hundred-contrast train by exhaustive matching, and then relieves that cost
+twice over: once by working in the low-rank basis the train actually spans, and
+once by clustering the dictionary so that most atoms are never scored.
 
-The compression is where to start. Four hundred contrasts of a
-relaxation-driven train do not span four hundred directions; they span a
-handful. What that costs is a number the basis reports before anything is
-projected through it.
-
+The two savings are independent and they multiply. What each costs in time and
+in memory, and what each gets wrong, is read off the same slice.
 """
 
 # %%
@@ -48,7 +45,7 @@ from brainweb_dl import get_mri
 
 import torchsim
 from torchsim import Acquisition, ParameterMapping, Subspace
-from torchsim.estimators import PERK, DictionaryMatcher
+from torchsim.estimators import DictionaryMatcher
 from torchsim.simulators import MRFSimulator
 
 # %%
@@ -165,10 +162,46 @@ print(f"noise standard deviation {NOISE_STD:.5f}")
 
 # %%
 #
+# What a route costs
+# ------------------
+#
 # Timings below are the best of three passes, and exclude the one-off
 # measurement :func:`~torchsim.execution` makes the first time it meets a
 # workload -- that is amortized over every volume a protocol is ever used on,
 # rather than paid per slice.
+#
+# Two memory numbers are worth separating. The **model** is what the fitted
+# estimator holds and carries between volumes. The **peak** is the high-water
+# mark of what the card held while the slice was being mapped, which is what
+# decides whether a whole volume fits or has to be streamed -- and a route that
+# :func:`~torchsim.execution` judged not worth a launch never crosses to the
+# card at all, so its peak is near zero and its cost is on the host.
+#
+
+
+def footprint(problem):
+    """MiB the fitted estimator itself holds -- a dictionary, or a regression."""
+    held = sum(t.numel() * t.element_size() for t in problem.method.buffers())
+    return held / 2**20
+
+
+def mapped(problem, passes=3):
+    """Map the slice a few times: the quickest pass, and what it held."""
+    on_device = torch.cuda.is_available()
+    with torchsim.execution():
+        problem(measured[:64])
+        if on_device:
+            torch.cuda.reset_peak_memory_stats()
+        best = float("inf")
+        for _ in range(passes):
+            start = time.perf_counter()
+            maps = problem(measured)
+            best = min(best, time.perf_counter() - start)
+        peak = torch.cuda.max_memory_allocated() / 2**20 if on_device else float("nan")
+    return maps, best, peak
+
+
+# %%
 #
 # The problem, stated once
 # ------------------------
@@ -188,34 +221,10 @@ SAMPLES = 20_000
 prior = torch.Generator().manual_seed(11)
 
 
-def fastest(problem, passes=3):
-    """Map the slice a few times and keep the quickest, with the maps."""
-    with torchsim.execution():
-        problem(measured[:64])
-        best = float("inf")
-        for _ in range(passes):
-            start = time.perf_counter()
-            maps = problem(measured)
-            best = min(best, time.perf_counter() - start)
-    return maps, best
-
-
 def log_uniform(low, high, count):
     """``count`` draws spread evenly in the logarithm."""
     span = torch.rand(count, generator=prior)
     return torch.exp(np.log(low) + span * (np.log(high) - np.log(low)))
-
-
-def mapping(**extra):
-    """The same problem every time, with only the method left to choose."""
-    return ParameterMapping(
-        acquisition,
-        T1=log_uniform(*T1_RANGE, SAMPLES),
-        T2=log_uniform(*T2_RANGE, SAMPLES),
-        noise_std=NOISE_STD,
-        seed=0,
-        **extra,
-    )
 
 
 # %%
@@ -228,7 +237,13 @@ def mapping(**extra):
 # the relative squared error of projecting those trajectories through the basis
 # and back.
 #
-training_signals, _, _ = mapping().training_set(SAMPLES)
+training_signals, _, _ = ParameterMapping(
+    acquisition,
+    T1=log_uniform(*T1_RANGE, SAMPLES),
+    T2=log_uniform(*T2_RANGE, SAMPLES),
+    noise_std=NOISE_STD,
+    seed=0,
+).training_set(SAMPLES)
 training_signals = training_signals.real
 
 print("\n rank   retained energy   left outside")
@@ -244,8 +259,8 @@ RANK = 4
 # the noise puts in. There is nothing to be gained by keeping more, and every
 # contrast dropped is arithmetic that neither training nor matching has to do.
 #
-# Dictionary matching
-# -------------------
+# The dictionary
+# --------------
 #
 # A dictionary must span the parameters jointly, so its size is the product of
 # the grids -- twenty thousand atoms for two parameters on a grid fine enough
@@ -274,12 +289,14 @@ def matched(rank=None, groups=None):
     start = time.perf_counter()
     problem.train(DictionaryMatcher(groups=groups))
     training = time.perf_counter() - start
-    maps, timing = fastest(problem)
-    return problem, maps, training, timing
+    maps, timing, peak = mapped(problem)
+    return problem, maps, training, timing, footprint(problem), peak
 
 
-_, full_maps, full_training, full_matching = matched()
-low_problem, low_maps, low_training, low_matching = matched(rank=RANK)
+_, full_maps, full_training, full_matching, full_model, full_peak = matched()
+low_problem, low_maps, low_training, low_matching, low_model, low_peak = matched(
+    rank=RANK
+)
 
 # %%
 #
@@ -296,9 +313,14 @@ low_problem, low_maps, low_training, low_matching = matched(rank=RANK)
 # already in. The two savings are independent and multiply.
 #
 GROUPS = 32
-group_problem, group_maps, group_training, group_matching = matched(
-    rank=RANK, groups=GROUPS
-)
+(
+    group_problem,
+    group_maps,
+    group_training,
+    group_matching,
+    group_model,
+    group_peak,
+) = matched(rank=RANK, groups=GROUPS)
 
 matcher = group_problem.method
 grouping = matcher.grouping
@@ -312,45 +334,13 @@ print(f"groups still open per voxel: {float(survivors.sum(-1).float().mean()):.1
 
 # %%
 #
-# PERK
-# ----
-#
-# A kernel regression trained over the same ranges, drawn from a prior rather
-# than a grid. It never sees a candidate parameter pair at inference: it maps
-# the signal onto a fixed set of random Fourier features and reads the answer
-# off a linear combination of them, so its cost per voxel is the same whatever
-# the parameter space looks like.
-#
-# What that cost buys is set by how many features there are, and unlike the
-# grid it is paid once, during training.
-#
-
-
-def regressed(features):
-    """Train a regression of this size, then map the slice."""
-    start = time.perf_counter()
-    problem = mapping(rank=RANK).train(
-        PERK(n_features=features, regularization=1e-6, normalize=True, seed=4),
-        samples=SAMPLES,
-    )
-    training = time.perf_counter() - start
-    maps, timing = fastest(problem)
-    return maps, training, timing
-
-
-regressions = {features: regressed(features) for features in (500, 1000, 4000)}
-FEATURES = 1000
-perk_maps, perk_training, perk_mapping = regressions[FEATURES]
-
-# %%
-#
 # Proton density, for nothing extra
 # ---------------------------------
 #
-# Neither method estimates M0, and neither has to. Both answer with relaxation
-# times, and a fingerprint at those times is a shape the measurement is some
-# multiple of -- so the multiple is a projection, one inner product per voxel.
-# It is the same step that turns an MP2RAGE T1 map into an M0 map.
+# The match answers with relaxation times, and a fingerprint at those times is
+# a shape the measurement is some multiple of -- so the multiple is a
+# projection, one inner product per voxel. It is the same step that turns an
+# MP2RAGE T1 map into an M0 map.
 #
 
 
@@ -361,9 +351,9 @@ def proton_density(maps):
 
 
 estimates = {
-    "matched": (low_maps, proton_density(low_maps)),
-    "grouped": (group_maps, proton_density(group_maps)),
-    "PERK": (perk_maps, proton_density(perk_maps)),
+    "match, 400 contrasts": (full_maps, proton_density(full_maps)),
+    f"match, rank {RANK}": (low_maps, proton_density(low_maps)),
+    f"match, rank {RANK} + groups": (group_maps, proton_density(group_maps)),
 }
 
 # %%
@@ -378,23 +368,22 @@ def error(estimate, reference):
     return float(100 * ((estimate - reference).abs() / reference).median())
 
 
-print(f"\n{'method':<22}{'train':>8}{'map':>8}{'T1':>8}{'T2':>8}{'M0':>8}")
-print("-" * 62)
+print(f"\n{'method':<28}{'train':>8}{'map':>8}{'model':>10}{'peak':>10}"
+      f"{'T1':>8}{'T2':>8}{'M0':>8}")
+print("-" * 88)
 rows = [
-    ("match, 400 contrasts", full_training, full_matching, full_maps, None),
-    (f"match, rank {RANK}", low_training, low_matching, low_maps, estimates["matched"][1]),
-    (f"match, rank {RANK} + groups", group_training, group_matching, group_maps,
-     estimates["grouped"][1]),
+    ("match, 400 contrasts", full_training, full_matching, full_model, full_peak),
+    (f"match, rank {RANK}", low_training, low_matching, low_model, low_peak),
+    (f"match, rank {RANK} + groups", group_training, group_matching,
+     group_model, group_peak),
 ]
-for features, (maps, training, timing) in regressions.items():
-    rows.append((f"PERK, {features} features", training, timing, maps,
-                 proton_density(maps) if features == FEATURES else None))
-
-for name, training, timing, maps, m0 in rows:
-    line = (f"{name:<22}{training:7.1f}s{timing:7.2f}s"
-            f"{error(maps['T1'], truth['T1']):7.1f}%"
-            f"{error(maps['T2'], truth['T2']):7.1f}%")
-    print(line + (f"{error(m0, density):7.1f}%" if m0 is not None else f"{'--':>8}"))
+for name, training, timing, model, peak in rows:
+    maps, m0 = estimates[name]
+    print(f"{name:<28}{training:7.1f}s{timing:7.2f}s"
+          f"{model:6.1f} MiB{peak:6.0f} MiB"
+          f"{error(maps['T1'], truth['T1']):7.1f}%"
+          f"{error(maps['T2'], truth['T2']):7.1f}%"
+          f"{error(m0, density):7.1f}%")
 
 # %%
 #
@@ -428,7 +417,7 @@ for row, (label, reference, found, limits) in enumerate(panels):
             painted(values).T, cmap="magma", vmin=limits[0], vmax=limits[1]
         )
         if row == 0:
-            axes[row, column].set_title(name, fontsize=10)
+            axes[row, column].set_title(name, fontsize=9)
 for axis in axes.ravel():
     axis.set_xticks([]), axis.set_yticks([])
 figure.tight_layout()
@@ -447,33 +436,22 @@ figure.tight_layout()
 # ``prune`` is what buys it back, and costs time.
 #
 # T2 is the harder of the two here, and the reason is the phantom rather than
-# the estimators. A third of these voxels are tissue mixtures, and a mixture's
+# the estimator. A third of these voxels are tissue mixtures, and a mixture's
 # averaged T2 sits between two values that the train separates well, in a part
 # of the range where the trajectories are close together. That is a real
 # feature of partial volume, not an artefact of the method: no fit of a
 # single-compartment model returns the average of a mixture exactly.
 #
-# The regression is the less accurate of the two families here, and on two
-# parameters it has no speed to offer in exchange: a compressed, clustered
-# match is both quicker and closer. Its cost per voxel is, though, almost
-# unmoved by the size of the model -- eight times the features changes the
-# mapping time by less than the measurement is worth -- and that cost is paid
-# once, during training.
+# The memory column is not simply the dictionary's size. Streaming sizes its
+# chunk against a budget, so a shorter atom mostly buys a larger chunk rather
+# than a smaller high-water mark; what does move the mark is the grouping,
+# because a pruned voxel never materializes the scores of the atoms it ruled
+# out.
 #
-# The feature sweep also shows where a regression stops improving. From five
-# hundred features to a thousand the error roughly halves; from a thousand to
-# four thousand it does not fall at all. Twenty thousand training samples are
-# being asked to determine a four-thousand-by-four-thousand covariance, which
-# is about five samples per direction, and no amount of regularization makes
-# that a well-posed estimate. More features want more training, and training
-# is simulation.
-#
-# That is the durable part. Matching costs one inner product per atom per
-# voxel, so it grows with the product of the parameter grids *and* with the
+# The durable part is the scaling. Matching costs one inner product per atom
+# per voxel, so it grows with the product of the parameter grids *and* with the
 # length of the train. The subspace removes the second factor once and for all
 # and the grouping removes most of the first; nothing removes the grid itself.
-# Add a third parameter and it is multiplied again while the regression is not,
-# which is why the argument for regression strengthens with every parameter
-# rather than weakening -- and why the comparison above, on two, is the case
-# least favourable to it.
+# Add a third parameter and it is multiplied again -- which is the argument for
+# the methods that never build a grid at all.
 #

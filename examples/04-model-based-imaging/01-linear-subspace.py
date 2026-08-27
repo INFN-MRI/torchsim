@@ -1,33 +1,24 @@
 """
-=======================
-Model-based imaging
-=======================
+==============================================
+Reconstructing in a linear subspace
+==============================================
 
 A quantitative scan is usually reconstructed twice: once to make one image per
 contrast, and again -- voxel by voxel -- to turn those images into parameter
 maps. The first step has no idea what the second one is for, so it spends its
-effort recovering eight images when the answer is two numbers per voxel.
+effort recovering eight images when the answer is two numbers per voxel, and it
+recovers each of them from its own undersampled data with no help from the
+others.
 
-Physics-based reconstruction removes the intermediate step. The forward
-operator is written as a chain
-
-.. math::
-
-   F = P \\, \\mathcal{F} \\, C \\, M
-
--- sampling, Fourier encoding, coil sensitivities, and the **signal model** --
-and the parameter maps are solved for directly against the k-space that was
-measured. Only the last factor changes with the sequence, and it is the only
-one TorchSim supplies: :class:`~torchsim.recon.ModelOperator` turns any
-:class:`~torchsim.Acquisition` into it, and the encoding comes from mri-nufft.
+A **linear subspace** removes both problems without leaving linear algebra. The
+signals a train can produce span far fewer directions than it has contrasts, so
+writing the series in that basis and reconstructing the *coefficients* both
+shortens the unknown and ties the echoes together. There are no local minima and
+no starting guess: it is a least-squares problem like any other.
 
 This example reconstructs one undersampled radial multi-echo spin echo three
-ways -- gridding, a linear subspace, and the nonlinear model -- and reports
+ways -- gridding, conjugate gradients per echo, and a subspace -- and reports
 what each costs and what each gets wrong.
-
-Wang X, Tan Z, Scholand N, Roeloffs V, Uecker M. *Physics-based reconstruction
-methods for magnetic resonance imaging.* Phil Trans R Soc A 379:20200196
-(2021).
 """
 
 # %%
@@ -61,7 +52,6 @@ from mrinufft.trajectories import initialize_2D_radial
 
 from torchsim import Acquisition, ParameterMapping
 from torchsim.estimators import DictionaryMatcher
-from torchsim.recon import GaussNewton, ModelOperator, Schedule, iterative
 from torchsim.simulators import MultiEchoSimulator
 
 SIZE = 96
@@ -134,9 +124,6 @@ print(
 # roughly ninefold undersampled, which is where the three routes start to
 # disagree.
 #
-# The protocol stays on the host. :class:`~torchsim.recon.ModelOperator` takes
-# it wherever the maps are, so nothing here has to be moved by hand.
-#
 TE = torch.linspace(10.0, 150.0, ECHOES)
 acquisition = Acquisition(MultiEchoSimulator(TE=TE))
 
@@ -192,10 +179,9 @@ print(f"{SPOKES} spokes per echo: {undersampling:.0f}x undersampled")
 # ----------------------------
 #
 # One :class:`~torchsim.ParameterMapping` states the problem, and it serves
-# both of the first two routes. Asking it for a rank fits a temporal basis to
-# the training signals: that basis is what the subspace reconstruction is
-# given, and the coefficients it returns come straight back to the same
-# mapping.
+# every route below. Asking it for a rank fits a temporal basis to the training
+# signals: that basis is what the subspace reconstruction is given, and the
+# coefficients it returns come straight back to the same mapping.
 #
 # Three directions hold essentially all of an eight-echo exponential, which is
 # read off the basis rather than assumed.
@@ -232,8 +218,8 @@ def report(name, seconds, found):
 
 # %%
 #
-# Route one: reconstruct each contrast, then fit
-# ----------------------------------------------
+# Reconstruct each contrast, then fit
+# -----------------------------------
 #
 # The conventional pipeline, in its two usual forms. Gridding is the adjoint
 # operator with a density weighting -- one pass, smooth, and biased. Iterating
@@ -272,8 +258,8 @@ separate = report(
 #
 # %%
 #
-# Route two: a linear subspace
-# ----------------------------
+# Reconstruct the coefficients instead
+# ------------------------------------
 #
 # The signal is written in the basis fitted above and the *coefficients* are
 # reconstructed, three of them instead of eight images. Now the echoes
@@ -313,126 +299,21 @@ linear = report(
 
 # %%
 #
-# Route three: the nonlinear model
-# --------------------------------
-#
-# The signal model stays inside the forward operator and the maps are solved
-# for against k-space directly. Two things are declared and nothing else:
-#
-# * **what is unknown** -- ``T2``, plus the complex amplitude the operator
-#   carries for it, which is proton density and receive phase together;
-# * **what T2 may be** -- a box bound, kept by solving for a transformed
-#   variable so no iterate is ever outside it. Under an encoding operator that
-#   matters more than in a fit: the model is evaluated at every voxel to
-#   predict every k-space sample, so one unphysical voxel corrupts the whole
-#   residual.
-#
-# An equality constraint, were there one, would be written into the model
-# instead -- see :class:`~torchsim.recon.ModelOperator`.
-#
-operator = ModelOperator(acquisition, "T2", bounds={"T2": (20.0, 400.0)})
-
-# The amplitude starts from the first gridded echo, which is nearly free and
-# is most of what makes the first Newton step sensible.
-initial = operator.initial((1, SIZE, SIZE), T2=100.0).to(device)
-initial[0, ..., 1] = gridded[..., 0].real
-initial[0, ..., 2] = gridded[..., 0].imag
-
-# %%
-#
-# The loop is an iteratively regularized Gauss-Newton: linearize, solve the
-# linear problem that leaves, step, and lower the damping. TorchSim supplies
-# the loop and the derivative, and **not the linear solver** --
-# :func:`~torchsim.recon.iterative` hands the linearized problem to the same
-# deepinv routine the two routes above called directly. Swapping in a proximal
-# solver under a wavelet prior is a change to that one argument.
-#
-started = clock()
-found = GaussNewton(
-    Schedule(initial=1e-3, factor=0.5, minimum=1e-7),
-    solve=iterative("CG", max_iter=20),
-    max_iterations=8,
-).minimize(operator, kspace, initial, encoding=encoding)
-# No fit afterwards: the maps are what was solved for.
-modelled = report(
-    "model-based", clock() - started, operator.split(found.x)["T2"][0]
-)
-
-print(f"\nresidual {float(found.cost[0]):.3e} -> {float(found.cost[-1]):.3e}")
-print(f"damping  {float(found.damping[0]):.0e} -> {float(found.damping[-1]):.0e}")
-
-# %%
-#
-# Where the time goes
-# -------------------
-#
-# Each conjugate-gradient step costs one product with the Jacobian and one
-# with its adjoint, and each of those is the encoding operator once and the
-# model once. Timing the four separately says which half a faster
-# reconstruction would have to come from -- and on this problem they are
-# comparable, so the model is not something to optimize around.
-#
-# Neither product builds the Jacobian. That is a memory argument rather than a
-# speed one: the blocks are ``voxels x channels x contrasts`` where a signal
-# is ``voxels x contrasts``, so what is not held is the channel count times
-# the signal, every iteration.
-#
-tangent = torch.randn_like(initial)
-predicted = operator.A_jvp(initial, tangent)
-adjoint_image = encoding.A_adjoint(kspace).movedim(1, -1)
-
-
-def timed(call, repeats=5):
-    """Wall clock, after a warm-up, because the first call plans transforms."""
-    call()
-    if device == "cuda":
-        torch.cuda.synchronize()
-    start = time.perf_counter()
-    for _ in range(repeats):
-        call()
-    if device == "cuda":
-        torch.cuda.synchronize()
-    return 1e3 * (time.perf_counter() - start) / repeats
-
-
-print(f"per conjugate-gradient step, {operator.channels} channels solved for:")
-print(f"  model    J  v   {timed(lambda: operator.A_jvp(initial, tangent)):6.1f} ms")
-print(f"  model    J^H v  {timed(lambda: operator.A_vjp(initial, adjoint_image)):6.1f} ms")
-print(f"  encoding A      {timed(lambda: encoding.A(predicted.movedim(-1, 1))):6.1f} ms")
-print(f"  encoding A^H    {timed(lambda: encoding.A_adjoint(kspace)):6.1f} ms")
-
-blocks = operator.jacobian(initial)
-print(
-    f"\nthe Jacobian this avoids holding: "
-    f"{blocks.numel() * 8 / 2**20:.1f} MiB, against "
-    f"{predicted.numel() * 8 / 2**20:.1f} MiB for a signal"
-)
-
-# %%
-#
 # The maps
 # --------
 #
-# The two routes that constrain the echoes against one another land in the
-# same place, at about half the error of either route that reconstructs each
-# contrast on its own -- and the subspace gets there in a fraction of the
-# time. That is not the ordering the review reports, which had the nonlinear
-# route slightly ahead; on eight echoes of a single exponential a rank-three
-# basis leaves almost nothing for a nonlinear model to add, and the numbers
-# here say so.
-#
-# Where the nonlinear route earns its cost is where a subspace stops being
-# cheap: a phase-modulated signal needs tens of components rather than three,
-# and a model with several parameters has no small basis at all.
+# The subspace is the only one of the three that constrains the echoes against
+# one another, and it lands at about half the error of either route that
+# reconstructs each contrast on its own -- in a fraction of the time, because
+# one operator serves every echo.
 #
 shown = (
     ("truth", T2_true),
     ("adjoint per echo", adjoint),
     ("iterative per echo", separate),
     ("iterative subspace", linear),
-    ("model-based", modelled),
 )
-figure, axes = plt.subplots(2, 5, figsize=(16, 6.5))
+figure, axes = plt.subplots(2, 4, figsize=(13, 6.5))
 for column, (title, values) in enumerate(shown):
     picture = torch.where(brain, values, torch.tensor(0.0, device=device))
     handle = axes[0, column].imshow(
@@ -452,16 +333,22 @@ plt.show()
 
 # %%
 #
-# Writing a different one
-# -----------------------
+# Where a subspace stops being cheap
+# ----------------------------------
 #
-# Nothing above is about T2. The model is the only thing that names a
-# relaxation time, and it is an ordinary
-# :class:`~torchsim.model.SignalModel` -- the same object the fitting and
-# sequence-design examples use. Water-fat separation, T2* with a field map,
-# a Look-Locker inversion recovery: each is a different ``evaluate``, and the
-# operator, the loop and the encoding are unchanged.
+# Eight echoes of a single exponential are the case a subspace is best at:
+# three directions hold essentially all of the signal, and what is left for
+# anything more elaborate to recover is close to nothing.
 #
-# That is the contribution. A reconstruction library has to be told the
-# physics; here the physics is the part you write, and everything that
-# surrounds it already exists.
+# Two things break that. A phase-modulated signal -- a balanced steady state
+# through a field map, a fingerprinting train with a varying RF phase -- needs
+# tens of components rather than three, and the coefficient problem stops being
+# smaller than the image problem. And a model with several parameters has no
+# small basis at all, because the basis has to span the *product* of the
+# ranges. In both cases the model itself has to go inside the operator, which
+# is the nonlinear route.
+#
+# The rank is not a guess either way. :attr:`~torchsim.Subspace.retained` says
+# what a basis keeps before anything is projected through it, so how well a
+# subspace can possibly do is known before the reconstruction is run.
+#

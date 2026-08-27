@@ -3,13 +3,11 @@
 Designing echo trains for image quality
 =======================================
 
-The previous example designed a sequence for **precision**: the cost was a
-Cramer-Rao bound and the answer was a set of flip angles that estimate T1 and
-T2 as tightly as possible. Most sequences are not measuring anything. A 3D
-turbo spin echo of a knee has to produce a *picture*, and what it is designed
-for is sharpness and contrast.
-
-The cost changes; nothing else does.
+Most sequences are not measuring anything. A 3D turbo spin echo of a knee has
+to produce a *picture*, and what it is designed for is sharpness and contrast
+rather than for how tightly a relaxation time can be pinned down. The cost
+says which of the two it is; the acquisition, the bounded parameters and the
+loop are the same either way.
 
 Long echo trains are efficient and blurry. T2 decay across the train modulates
 k-space, and that modulation is a point spread function -- so the refocusing

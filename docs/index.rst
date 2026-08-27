@@ -19,7 +19,7 @@
    :hidden:
    :caption: API References
 
-   api
+   api/index
 
 .. toctree::
    :hidden:
