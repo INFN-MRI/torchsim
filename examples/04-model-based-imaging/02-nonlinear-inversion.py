@@ -14,7 +14,7 @@ forward operator is written as a chain
 and the parameter maps are solved for directly against the k-space that was
 measured. Only the last factor changes with the sequence, and it is the only
 one TorchSim supplies: :class:`~torchsim.recon.ModelOperator` turns any
-:class:`~torchsim.Acquisition` into it, and the encoding comes from mri-nufft.
+simulator into it, and the encoding comes from mri-nufft.
 
 Unlike a subspace this stays nonlinear, so it needs a starting guess and a loop
 around it -- and it pays for that with a model of any number of parameters,
@@ -37,37 +37,69 @@ methods for magnetic resonance imaging.* Phil Trans R Soc A 379:20200196
 
 # %%
 #
-# The imports:
+# The phantom is BrainWeb's, reached through ``brainweb-dl``: ``get_mri``
+# fetches the fuzzy tissue memberships, and the package ships the table of
+# relaxation times that goes with them -- which is what the two standard
+# library imports read.
 #
+
+# sphinx_gallery_start_ignore
 import warnings
 
 warnings.filterwarnings("ignore")
 
+import matplotlib.pyplot as plt
+
+# sphinx_gallery_end_ignore
 import csv
-import time
 from pathlib import Path
 
 import brainweb_dl
-import matplotlib.pyplot as plt
-import mrinufft
-import numpy as np
-import torch
 from brainweb_dl import get_mri
-from deepinv.optim.linear import least_squares
+
+# %%
+#
+# The Fourier encoding is not TorchSim's and never will be. ``mri-nufft``
+# supplies the radial trajectory and the non-uniform transform that plays it;
+# ``deepinv`` supplies the :class:`~deepinv.physics.LinearPhysics` base class
+# the encoding operator below is written against, and the linear solver a
+# Gauss-Newton step hands its linearized problem to.
+#
+# That base class is the whole of the adapter: anything exposing ``A`` and
+# ``A_adjoint`` composes with what TorchSim supplies, so the operator built a
+# few cells down is the only glue this integration needs.
+#
+import mrinufft
 from deepinv.physics import LinearPhysics
 from mrinufft.trajectories import initialize_2D_radial
 
-from torchsim import Acquisition, ParameterMapping
+# %%
+#
+# From TorchSim: the sequence, the estimator the contrast-then-fit routes
+# need, and :class:`~torchsim.recon.ModelOperator`, which is the signal
+# model as a factor of the forward operator.
+#
+import time
+
+import numpy as np
+import torch
+
+from torchsim import ParameterMapping
 from torchsim.estimators import DictionaryMatcher
 from torchsim.recon import GaussNewton, ModelOperator, Schedule, iterative
 from torchsim.simulators import MultiEchoSimulator
 
+
+# %%
+#
+# What the experiment is: a 96 matrix read as 16 radial spokes per echo, eight
+# echoes, and the rank the baseline's estimator compresses to.
+#
 SIZE = 96
 ECHOES = 8
 SPOKES = 16
 SAMPLES = 192
 RANK = 3
-
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 backend = "cufinufft" if device == "cuda" else "finufft"
@@ -93,6 +125,10 @@ tissue_PD = np.array([float(r["PD (ms)"]) for r in rows])[list(BRAIN_TISSUES)]
 
 fractions = get_mri(sub_id=0, contrast="fuzzy")[SLICE].astype(np.float32)
 fractions = fractions[..., list(BRAIN_TISSUES)]
+# BrainWeb's first in-plane axis runs posterior to anterior, and an image is
+# drawn from its first row down. Flipping here puts anterior at the top of
+# every figure below rather than in each one of them.
+fractions = np.flipud(fractions).copy()
 occupancy = fractions.sum(-1)
 share = np.maximum(occupancy, 1e-6)
 
@@ -130,7 +166,7 @@ print(
 # it wherever the maps are, so nothing here has to be moved by hand.
 #
 TE = torch.linspace(10.0, 150.0, ECHOES)
-acquisition = Acquisition(MultiEchoSimulator(TE=TE))
+acquisition = MultiEchoSimulator(TE=TE)
 
 images = torch.as_tensor(acquisition.to(device).simulate(T2=T2_true)).to(
     torch.complex64
@@ -177,6 +213,55 @@ scale = float(gridded.abs().max())
 kspace, gridded = kspace / scale, gridded / scale
 undersampling = (0.5 * np.pi * SIZE) / SPOKES
 print(f"{SPOKES} spokes per echo: {undersampling:.0f}x undersampled")
+
+# %%
+#
+# The object, and how it is sampled. The maps on the left are what every route
+# below is trying to recover; the spokes on the right are all that is measured
+# of them -- one echo's worth, rotated by the golden angle from the echo before
+# it, so the echoes together cover k-space more evenly than any one of them
+# does.
+#
+
+# sphinx_gallery_start_ignore
+figure, axes = plt.subplots(1, 3, figsize=(12, 3.8))
+for axis, values, cmap, limits, label in (
+    (axes[0], T2_true, "viridis", (0, 350), "T2 [ms]"),
+    (axes[1], M0_true, "gray", (0, 1.1), "M0"),
+):
+    handle = axis.imshow(
+        values.cpu().numpy(), cmap=cmap, vmin=limits[0], vmax=limits[1]
+    )
+    bar = figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    bar.set_label(label, fontsize=8)
+    bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([])
+    axis.set_yticks([])
+    axis.set_box_aspect(1)
+axes[0].set_title("ground truth", fontsize=10)
+axes[1].set_title("proton density", fontsize=10)
+
+for echo in (0, ECHOES // 2, ECHOES - 1):
+    arm = trajectory[echo].reshape(SPOKES, SAMPLES, 2)
+    for spoke in range(SPOKES):
+        axes[2].plot(
+            arm[spoke, :, 0], arm[spoke, :, 1], lw=0.4,
+            color=plt.cm.plasma(echo / (ECHOES - 1)),
+        )
+axes[2].set(
+    xlabel="$k_x$",
+    ylabel="$k_y$",
+    title=f"{SPOKES} spokes per echo, 3 of {ECHOES} shown",
+)
+# An image keeps its own aspect and a line plot fills whatever it is given, so
+# the box each panel is drawn into has to be fixed for the row to line up.
+axes[2].set_box_aspect(1)
+# A colorbar on the trajectory would have nothing to scale, but the panel has
+# to lose the same width as the two beside it or the images shrink.
+bar = figure.colorbar(handle, ax=axes[2], fraction=0.046, pad=0.03)
+bar.ax.set_visible(False)
+figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -346,23 +431,53 @@ shown = (
     ("adjoint per echo", adjoint),
     ("model-based", modelled),
 )
-figure, axes = plt.subplots(2, 3, figsize=(10, 6.5))
+# sphinx_gallery_start_ignore
+def panel(axis, values, cmap, limits, label=None):
+    """One map, with a colorbar every panel loses the same width to.
+
+    A figure where only some panels carry a colorbar has panels of different
+    sizes. Giving every one a colorbar and hiding the ones that would repeat a
+    scale keeps the images comparable.
+    """
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    if label is None:
+        bar.ax.set_visible(False)
+    else:
+        bar.set_label(label, fontsize=8)
+        bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([])
+    axis.set_yticks([])
+
+
+columns = len(shown)
+figure, axes = plt.subplots(2, columns, figsize=(3.4 * columns, 6.8))
 for column, (title, values) in enumerate(shown):
     picture = torch.where(brain, values, torch.tensor(0.0, device=device))
-    handle = axes[0, column].imshow(
-        picture.cpu(), cmap="viridis", vmin=0, vmax=250
+    panel(
+        axes[0, column],
+        picture.cpu().numpy(),
+        "viridis",
+        (0, 250),
+        label="T2 [ms]" if column == columns - 1 else None,
     )
     axes[0, column].set_title(title)
-    axes[0, column].axis("off")
+    if column == 0:
+        axes[1, column].set_visible(False)
+        continue
     difference = torch.where(
         brain, (values - T2_true).abs(), torch.tensor(0.0, device=device)
     )
-    axes[1, column].imshow(difference.cpu(), cmap="magma", vmin=0, vmax=80)
-    axes[1, column].axis("off")
-    axes[1, column].set_title("|error|" if column else "")
-axes[1, 0].set_visible(False)
-figure.colorbar(handle, ax=axes[0, :], shrink=0.8, label="T2 (ms)")
-plt.show()
+    panel(
+        axes[1, column],
+        difference.cpu().numpy(),
+        "inferno",
+        (0, 80),
+        label="|error| [ms]" if column == columns - 1 else None,
+    )
+    axes[1, column].set_title("|error|")
+figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #

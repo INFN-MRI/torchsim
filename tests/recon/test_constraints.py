@@ -6,8 +6,6 @@ from collections.abc import Mapping
 from typing import Any
 
 import torch
-
-from torchsim import Acquisition
 from torchsim.model import SignalModel
 from torchsim.recon import (
     GaussNewton,
@@ -61,7 +59,7 @@ def test_a_bound_holds_at_every_iterate_of_a_fit() -> None:
     on the answer.
     """
     low, high = 20.0, 60.0
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     operator = ModelOperator(acquisition, "T2", bounds={"T2": (low, high)})
     seen: list[torch.Tensor] = []
     watched = _watching(operator, seen)
@@ -86,7 +84,7 @@ def test_a_bound_holds_at_every_iterate_under_an_encoding() -> None:
     unphysical voxel corrupts the whole residual.
     """
     low, high = 20.0, 120.0
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     operator = ModelOperator(acquisition, "T2", bounds={"T2": (low, high)})
     seen: list[torch.Tensor] = []
     watched = _watching(operator, seen)
@@ -120,7 +118,7 @@ def test_an_equality_constraint_is_the_model_written_on_what_is_free() -> None:
     model has no way to violate it, which is the point.
     """
     model = FatWater()
-    acquisition = Acquisition(model, TE=TE_MS)
+    acquisition = model.bind(TE=TE_MS)
     operator = ModelOperator(
         acquisition,
         "fat_fraction",
@@ -155,7 +153,7 @@ def test_the_constraint_is_what_makes_the_pair_identifiable() -> None:
     """
     model = FatWater()
     operator = ModelOperator(
-        Acquisition(model, TE=TE_MS),
+        model.bind(TE=TE_MS),
         "fat_fraction",
         "R2s",
         bounds={"fat_fraction": (0.0, 1.0), "R2s": (0.0, 200.0)},

@@ -65,9 +65,16 @@ doc = [
 "sphinx-exec-directive>=0.6",
 "sphinx_copybutton>=0.5",
 "matplotlib>=3.8",
+"ipywidgets>=8.0",
+# What the gallery examples reach for. None of it is needed to simulate: the
+# phantoms, the segmentation, the coils, the Fourier encoding and the linear
+# solvers all come from elsewhere, which is the point several examples make.
+"brainweb-dl>=0.3",
+"deepinv>=0.2",
+"deepmriprep>=0.3",
+"mri-nufft[finufft]>=1.0",
 "sigpy>=0.1.26",
 "torchio>=0.19",
-"ipywidgets>=8.0",
 ]
 
 # List URLs that are relevant to your project

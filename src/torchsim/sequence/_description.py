@@ -103,6 +103,19 @@ class SequenceEvent:
     ``params`` deliberately accepts tensors. This lets a hard-coded sequence
     description carry differentiable flip angles, phases, and timings without
     introducing a second representation for sequence optimization.
+
+    Attributes
+    ----------
+    type : EventType
+        Whether this is a wait, an RF pulse or an ADC.
+    timestamp_us : float or torch.Tensor
+        When it happens, in microseconds from the start of the stream.
+    params : tuple
+        The payload its type defines, read through the named properties rather
+        than by position.
+    action : EventAction
+        What the sequence does around it -- the crushers a refocusing pulse
+        sits between, the gradient or the ideal spoiling after a readout.
     """
 
     type: EventType
@@ -219,7 +232,15 @@ class SequenceEvent:
 
 @dataclass(frozen=True)
 class RfShape:
-    """One Pulseq derivative/run-length encoded shape."""
+    """One Pulseq derivative/run-length encoded shape.
+
+    Attributes
+    ----------
+    num_uncompressed : int
+        How many samples the shape decodes to.
+    samples : array-like
+        The encoded samples, decoded by :meth:`decompress`.
+    """
 
     num_uncompressed: int
     samples: Any = field(repr=False, compare=False)
@@ -231,7 +252,36 @@ class RfShape:
 
 @dataclass(frozen=True)
 class RfDefinition:
-    """RF definition referenced by RF events."""
+    """RF definition referenced by RF events.
+
+    Attributes
+    ----------
+    id : int
+        What an RF event names this pulse by.
+    bandwidth_hz : float
+        The pulse's bandwidth, which is the gradient the slice select is
+        quoted against.
+    num_bands : int
+        How many slices the pulse excites at once.
+    band_frequency_offsets_hz : tuple of float
+        Where each band sits, in Hz off the centre frequency.
+    band_bandwidth_hz : float
+        The bandwidth of one band.
+    total_b1sq_power : float
+        The pulse's integrated squared amplitude, which is what a power limit
+        is read against.
+    magnitude : RfShape or tuple of RfShape
+        The envelope, or one envelope per transmit channel.
+    phase : RfShape or tuple of RfShape, optional
+        The phase, matching ``magnitude``. ``None`` for a pulse of constant
+        phase.
+    time : RfShape, optional
+        Sample times, for a pulse on a non-uniform raster. ``None`` for a
+        uniform one.
+    gradient : RfShape, optional
+        The slice-select gradient per sample, in units ``bandwidth_hz`` is
+        quoted at. ``None`` where the gradient holds.
+    """
 
     id: int
     bandwidth_hz: float
@@ -514,6 +564,15 @@ class ShimDefinition:
     The weights hold for the whole pulse, and every channel plays the same
     waveform -- static parallel transmit. :mod:`._transmit` combines them with
     the per-channel sensitivities into the field a voxel sees.
+
+    Attributes
+    ----------
+    id : int
+        What an RF event names this shim by.
+    magnitudes : tuple of float
+        One weight per transmit channel.
+    phases_rad : tuple of float
+        One phase per transmit channel, in radians.
     """
 
     id: int
@@ -536,6 +595,26 @@ class SequenceDescription:
     washes the voxel out and replaces it with unexcited magnetization. Leaving
     it ``None`` declares no voxel, and a spin velocity then has nothing to
     cross.
+
+    Attributes
+    ----------
+    subsequence_index : int
+        Which subsequence of a multi-part acquisition this is.
+    tr_duration_us : float or torch.Tensor
+        How long one playing of this stream holds the timeline, in
+        microseconds.
+    events : tuple of SequenceEvent
+        The stream itself, in the order it is played.
+    rf_definitions : dict
+        ``{id: RfDefinition}`` -- the pulses the RF events name.
+    shim_definitions : dict
+        ``{id: ShimDefinition}`` -- the transmit shims the RF events drive.
+    crusher_dephasing_rad : float
+        Dephasing wound across one voxel by the sequence's unbalanced
+        gradient.
+    voxel_size_m : float, optional
+        The voxel a spin crosses, and the length the dephasing is wound
+        across. ``None`` declares no voxel.
     """
 
     subsequence_index: int
@@ -608,7 +687,7 @@ def ideal_rf_definition(definition_id: int = 0) -> RfDefinition:
 
     Parameters
     ----------
-    definition_id:
+    definition_id : int, optional
         The identifier events name this pulse by.
 
     Returns

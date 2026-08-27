@@ -3,9 +3,9 @@ Sequence design
 
 .. currentmodule:: torchsim
 
-Choosing a sequence's parameters by minimizing a cost you write. An
-:class:`Acquisition` is a simulator with the tissue it is designed for already
-in place; the cost is a plain function of what it records; a
+Choosing a sequence's parameters by minimizing a cost you write. The
+acquisition is a simulator with the tissue it is designed for already fixed on
+it; the cost is a plain function of what it records; a
 :class:`SequenceDesign` holds the parameters and runs the loop.
 
 :class:`Bounded` holds a parameter inside the limits the scanner will play, by
@@ -18,7 +18,6 @@ precision-driven design minimizes.
    :toctree: ../generated
    :nosignatures:
 
-   Acquisition
    Bounded
    SequenceDesign
    SequenceOptimization

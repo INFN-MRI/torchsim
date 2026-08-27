@@ -1,9 +1,10 @@
 Simulators
 ==========
 
-The sequences that ship with TorchSim. Each names its protocol at construction
-and its tissue at the call, so one instance is a protocol and calling it is
-running the experiment.
+The sequences that ship with TorchSim. A constructor takes the keywords
+:meth:`~torchsim.model.SignalModel.simulate` takes and fixes them, so a
+sequence and the tissue it is being asked about are written down together and
+what is left to give at the call is whatever is actually varying.
 
 Closed form
 -----------

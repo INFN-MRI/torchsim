@@ -173,9 +173,9 @@ def test_a_resolved_simulator_stops_packing(packings) -> None:
     assert packings == []
 
 
-def test_a_plain_simulator_keeps_packing(packings) -> None:
-    """The companion: nothing is bound unless it was asked for."""
-    simulator = FSESimulator(ESP=5.0, TR=3000.0, states=10)
+def test_a_simulator_that_refuses_to_resolve_keeps_packing(packings) -> None:
+    """The companion: turning resolution off really turns it off."""
+    simulator = FSESimulator(ESP=5.0, TR=3000.0, states=10, resolve=False)
     flip = torch.full((16,), 120.0)
     simulator.simulate(flip=flip, **TISSUE)
     packings.clear()

@@ -25,23 +25,28 @@ signal curve the scan time is spent.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install torchsim
+#    !pip install torchsim brainweb-dl
 
 # %%
 #
-# The imports:
+# The two closed-form sequences being designed, the three pieces a design is
+# stated in, and :func:`~torchsim.crlb`, which is the cost.
 #
+
+# sphinx_gallery_start_ignore
 import warnings
 
 warnings.filterwarnings("ignore")
 
+import matplotlib.pyplot as plt
+
+# sphinx_gallery_end_ignore
 import time
 
-import matplotlib.pyplot as plt
 import torch
 
 import torchsim
-from torchsim.optim import Acquisition, Bounded, SequenceDesign
+from torchsim.optim import Bounded, SequenceDesign
 from torchsim.simulators import SPGRSimulator, bSSFPSimulator
 
 # %%
@@ -49,11 +54,11 @@ from torchsim.simulators import SPGRSimulator, bSSFPSimulator
 # The two sequences
 # -----------------
 #
-# A design problem is stated in three pieces. An
-# :class:`~torchsim.Acquisition` is a simulator with the tissue it is being
-# designed for already in place, so only the parameters under design are left
-# to give. Both sequences here are closed forms, and they are constructed and
-# asked exactly as a state-machine sequence would be.
+# A design problem is stated in three pieces. The acquisition is a simulator
+# with the tissue it is being designed for already fixed on it, so only the
+# parameters under design are left to give. Both sequences here are closed
+# forms, and they are constructed and asked exactly as a state-machine
+# sequence would be.
 #
 
 # White and grey matter at 3 T -- the design is for both at once.
@@ -62,12 +67,8 @@ T2_MS = torch.tensor([80.0, 110.0])
 # Noise standard deviation, as a fraction of the fully relaxed magnetization.
 NOISE = 0.005
 
-spgr = Acquisition(
-    SPGRSimulator(TE=2.0, TR=6.0), T1=T1_MS, T2star=T2_MS, M0=1.0, B0=0.0
-)
-ssfp = Acquisition(
-    bSSFPSimulator(TE=2.5, TR=5.0), T1=T1_MS, T2=T2_MS, M0=1.0, B0=0.0
-)
+spgr = SPGRSimulator(TE=2.0, TR=6.0, T1=T1_MS, T2star=T2_MS, M0=1.0, B0=0.0)
+ssfp = bSSFPSimulator(TE=2.5, TR=5.0, T1=T1_MS, T2=T2_MS, M0=1.0, B0=0.0)
 
 # %%
 #
@@ -169,6 +170,37 @@ print(f"designed in {design_time:.1f} s")
 
 # %%
 #
+# The schedule
+# ------------
+#
+# What a scanner is actually handed: eight acquisitions, four spoiled and four
+# balanced, each with a flip angle and nothing else changing between them. This
+# is the protocol table a radiographer would read, before and after.
+#
+
+# sphinx_gallery_start_ignore
+figure, axes = plt.subplots(1, 2, figsize=(11, 3.4), sharey=True)
+for axis, start_angles, designed, title in (
+    (axes[0], spgr_start, spgr_designed, "SPGR block"),
+    (axes[1], ssfp_start, ssfp_designed, "bSSFP block"),
+):
+    index = torch.arange(1, start_angles.numel() + 1)
+    axis.bar(index - 0.19, start_angles, width=0.36, color="grey",
+             label="published spread")
+    axis.bar(index + 0.19, designed.detach(), width=0.36, color="crimson",
+             label="designed")
+    for position, angle in zip(index, designed.detach()):
+        axis.annotate(f"{float(angle):.0f}", (float(position) + 0.19, float(angle)),
+                      ha="center", va="bottom", fontsize=7)
+    axis.set(xlabel="Acquisition", title=title, xticks=index.tolist())
+    axis.grid(alpha=0.3, axis="y")
+axes[0].set_ylabel("Flip angle [deg]")
+axes[0].legend(fontsize=8)
+figure.tight_layout()
+# sphinx_gallery_end_ignore
+
+# %%
+#
 # Where the angles went
 # ---------------------
 #
@@ -187,6 +219,7 @@ print(f"designed in {design_time:.1f} s")
 # deposited RF power allows.
 #
 sweep = torch.linspace(1.0, 70.0, 200)
+# sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 3, figsize=(13, 3.6))
 
 for axis, acquisition, start_angles, designed, title in (
@@ -210,21 +243,64 @@ axes[2].set(
 )
 axes[2].grid(alpha=0.3)
 figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
-# What that means for the answers
-# -------------------------------
+# What that means for the maps
+# ----------------------------
 #
-# A bound is a promise about variance, and it is worth cashing. Both protocols
-# are played on the same tissue with the same noise, fitted the same way, and
-# repeated enough times that the spread of the answers is itself well measured.
+# A bound is a promise about variance, and the place to cash it is a brain. The
+# same BrainWeb phantom the parameter-inference examples map gives a T1, a T2
+# and a proton density that are known at every voxel, so both protocols can be
+# played on it and the answers compared against something rather than against
+# each other.
 #
-# The fit has to be the one thing that does not differ between the two, so it
-# is the same nonlinear least squares over the same four unknowns, started from
-# the same guess. Both blocks are one experiment, so they are fitted as one:
-# a :class:`~torchsim.model.SignalModel` that plays each and concatenates what
-# they record.
+import csv
+from pathlib import Path
+
+import brainweb_dl
+import numpy as np
+from brainweb_dl import get_mri
+
+BRAIN_TISSUES = (1, 2, 3, 8)  # CSF, grey matter, white matter, glial matter
+SLICE = 90
+
+table = Path(brainweb_dl.__file__).parent / "data" / "brainweb1_tissues.csv"
+tissues = list(csv.DictReader(table.open()))
+tissue_T1 = np.array([float(row["T1 (ms)"]) for row in tissues])[list(BRAIN_TISSUES)]
+tissue_T2 = np.array([float(row["T2 (ms)"]) for row in tissues])[list(BRAIN_TISSUES)]
+tissue_PD = np.array([float(row["PD (ms)"]) for row in tissues])[list(BRAIN_TISSUES)]
+
+fractions = get_mri(sub_id=0, contrast="fuzzy")[SLICE].astype(np.float32)
+fractions = fractions[..., list(BRAIN_TISSUES)]
+# BrainWeb's first in-plane axis runs posterior to anterior, and an image is
+# drawn from its first row down.
+fractions = np.flipud(fractions).copy()
+occupancy = fractions.sum(-1)
+mask = occupancy > 0.5
+share = np.maximum(occupancy, 1e-6)
+
+T1_true = np.where(mask, fractions @ tissue_T1 / share, 0.0).astype(np.float32)
+T2_true = np.where(mask, fractions @ tissue_T2 / share, 0.0).astype(np.float32)
+M0_true = np.where(mask, fractions @ tissue_PD, 0.0).astype(np.float32)
+
+truth = {
+    "T1": torch.as_tensor(T1_true[mask].copy()),
+    "T2": torch.as_tensor(T2_true[mask].copy()),
+    "M0": torch.as_tensor(M0_true[mask].copy()),
+}
+print(f"\n{int(mask.sum())} brain voxels, "
+      f"T1 {float(truth['T1'].min()):.0f}-{float(truth['T1'].max()):.0f} ms, "
+      f"T2 {float(truth['T2'].min()):.0f}-{float(truth['T2'].max()):.0f} ms")
+
+# %%
+#
+# The two blocks are one experiment, so they are fitted as one: a
+# :class:`~torchsim.model.SignalModel` that plays each and concatenates what
+# they record. The fit has to be the one thing that does not differ between the
+# protocols, so it is the same nonlinear least squares over the same four
+# unknowns, started from the same guess.
 #
 from torchsim import ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
@@ -258,95 +334,150 @@ class JointRelaxometry(SignalModel):
 #
 # The noise is independent on the real and the imaginary channel, each at the
 # standard deviation the bound was computed with -- which is what makes the two
-# numbers comparable at all.
+# comparable at all.
 #
-REPEATS = 4000
 UNKNOWN = {
     "T1": (200.0, 5000.0),
     "T2": (20.0, 600.0),
-    "M0": (0.5, 1.5),
+    "M0": (0.1, 2.0),
     "B0": (-50.0, 50.0),
 }
 generator = torch.Generator().manual_seed(7)
 
 
-def fitted(spgr_flip, ssfp_flip):
-    """Map a few thousand noisy realizations of both design tissues."""
-    joint = Acquisition(
-        JointRelaxometry(spgr_flip, ssfp_flip), resolve=False
-    )
-    problem = ParameterMapping(
-        joint, noise_std=NOISE, seed=0, **UNKNOWN
-    ).train(
+def mapped(spgr_flip, ssfp_flip):
+    """Play both blocks over the slice, then fit every voxel."""
+    joint = JointRelaxometry(spgr_flip, ssfp_flip)
+    clean = joint.simulate(B0=0.0, **truth)
+    noise = torch.randn((2, *clean.shape), generator=generator, dtype=torch.float32)
+    measured = clean + NOISE * torch.complex(noise[0], noise[1])
+
+    problem = ParameterMapping(joint, noise_std=NOISE, seed=0, **UNKNOWN).train(
         NonlinearLeastSquares(
             bounds=UNKNOWN,
             initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
         )
     )
-
-    clean = joint.simulate(T1=T1_MS, T2=T2_MS, M0=1.0, B0=0.0)
-    repeated = clean.expand(REPEATS, *clean.shape).reshape(-1, clean.shape[-1])
-    noise = torch.randn(
-        (2, *repeated.shape), generator=generator, dtype=torch.float32
-    )
-    maps = problem(repeated + NOISE * torch.complex(noise[0], noise[1]))
-    return {name: maps[name].reshape(REPEATS, -1) for name in ("T1", "T2")}
+    start = time.time()
+    maps = problem(measured)
+    return maps, time.time() - start
 
 
-start = time.time()
-before = fitted(spgr_start, ssfp_start)
-after = fitted(spgr_designed, ssfp_designed)
-print(f"{2 * REPEATS * len(T1_MS)} fits in {time.time() - start:.1f} s")
+before, before_seconds = mapped(spgr_start, ssfp_start)
+after, after_seconds = mapped(spgr_designed, ssfp_designed)
+print(f"{2 * int(mask.sum())} joint fits in "
+      f"{before_seconds + after_seconds:.1f} s")
 
 # %%
 #
-# The spread of the fitted values, against the bound that predicted it. No
-# unbiased estimator can beat the bound and a good one comes close to it, so
-# the two agreeing is the check that the design was optimizing the right thing.
+# The bound was computed for two tissues; the slice has thousands. Evaluating
+# it at every voxel's own relaxation times turns it from a number about white
+# and grey matter into a *predicted* precision map, which is what the measured
+# error is then read against.
 #
-print(f"\n{'':20}{'sigma(T1)/T1':>26}{'sigma(T2)/T2':>26}")
-print(f"{'':20}{'measured':>13}{'bound':>13}{'measured':>13}{'bound':>13}")
-for label, angles_pair, maps in (
-    ("published spread", (spgr_start, ssfp_start), before),
-    ("designed", (spgr_designed, ssfp_designed), after),
-):
-    bound = bounds(*angles_pair)
-    line = f"{label:20}"
-    for index, (name, truth) in enumerate((("T1", T1_MS), ("T2", T2_MS))):
-        spread = 100.0 * maps[name].std(0) / truth
-        predicted = 100.0 * bound[..., index].sqrt() / truth
-        line += f"{float(spread.mean()):12.1f}%{float(predicted.mean()):12.1f}%"
+
+
+def predicted_sigma(spgr_flip, ssfp_flip):
+    """Relative standard deviation the bound allows, voxel by voxel."""
+    at_voxel = tuple(
+        sequence.bind(T1=truth["T1"], M0=1.0, B0=0.0, **{name: truth["T2"]})
+        for sequence, name in (
+            (SPGRSimulator(TE=2.0, TR=6.0), "T2star"),
+            (bSSFPSimulator(TE=2.5, TR=5.0), "T2"),
+        )
+    )
+    together = torch.cat(
+        (rows(at_voxel[0], flip=spgr_flip), rows(at_voxel[1], flip=ssfp_flip)), dim=-1
+    )
+    bound = torchsim.crlb(together, noise_variance=NOISE**2)
+    return {
+        "T1": bound[..., 0].sqrt() / truth["T1"],
+        "T2": bound[..., 1].sqrt() / truth["T2"],
+    }
+
+
+expected = {
+    "published spread": predicted_sigma(spgr_start, ssfp_start),
+    "designed": predicted_sigma(spgr_designed, ssfp_designed),
+}
+
+# %%
+#
+# What the design bought, over the brain rather than over two tissues. No
+# unbiased estimator can beat the bound and a good one comes close to it, so
+# the two columns agreeing is the check that the design optimized the right
+# thing.
+#
+# Both are root-mean-square over the brain, because a bound is a standard
+# deviation: the median of an absolute error is about two thirds of one, and
+# comparing the two would flatter the estimator by exactly that factor.
+#
+found = {"published spread": before, "designed": after}
+
+
+def rms(values):
+    """The second moment, which is what a standard deviation is."""
+    return 100.0 * float(values.square().mean().sqrt())
+
+
+print(f"\n{'':18}{'T1':>26}{'T2':>26}")
+print(f"{'':18}{'measured':>13}{'bound':>13}{'measured':>13}{'bound':>13}")
+for label, maps in found.items():
+    line = f"{label:18}"
+    for name in ("T1", "T2"):
+        error = (maps[name] - truth[name]) / truth[name]
+        line += f"{rms(error):12.1f}%{rms(expected[label][name]):12.1f}%"
     print(line)
 
 # %%
 #
-# The same result as a histogram, one design tissue per column. The designed
-# protocol is the narrower distribution, and it is narrower without being
-# displaced: what the design bought is precision and not bias.
+# The maps, and the error each protocol leaves. The designed protocol is not a
+# different picture -- it is the same picture with less noise in it, which is
+# what a precision design buys and all it buys.
 #
-figure, axes = plt.subplots(2, 2, figsize=(11, 6))
-for column in range(len(T1_MS)):
-    for row, (name, truth) in enumerate((("T1", T1_MS), ("T2", T2_MS))):
-        axis = axes[row, column]
-        centre = float(truth[column])
-        span = (0.6 * centre, 1.4 * centre)
-        for label, maps, colour in (
-            ("published spread", before, "grey"),
-            ("designed", after, "crimson"),
-        ):
-            axis.hist(
-                maps[name][:, column].clamp(*span).numpy(),
-                bins=60,
-                range=span,
-                histtype="step",
-                color=colour,
-                label=label,
-            )
-        axis.axvline(centre, color="k", lw=1, ls="--")
-        axis.set(xlabel=f"fitted {name} [ms]", yticks=[])
-        axis.set_title(f"{name}, truth {centre:.0f} ms", fontsize=10)
-axes[0, 0].legend(fontsize=8)
-figure.tight_layout()
+
+
+def painted(values):
+    """A flat vector of brain voxels, back in the shape of the slice."""
+    canvas = np.zeros(mask.shape, dtype=np.float32)
+    canvas[mask] = values.numpy(force=True)
+    return canvas
+
+
+# sphinx_gallery_start_ignore
+def panel(axis, values, cmap, limits, label=None):
+    """One map, with a colorbar every panel loses the same width to."""
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    if label is None:
+        bar.ax.set_visible(False)
+    else:
+        bar.set_label(label, fontsize=8)
+        bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([])
+    axis.set_yticks([])
+
+
+for name, reference, limits in (("T1", T1_true, (0, 3000)), ("T2", T2_true, (0, 350))):
+    residuals = {
+        label: np.abs(painted(maps[name]) - reference) for label, maps in found.items()
+    }
+    top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
+
+    figure, axes = plt.subplots(2, 3, figsize=(10, 6.8))
+    panel(axes[0, 0], reference, "magma", limits)
+    axes[0, 0].set_title("truth", fontsize=10)
+    axes[0, 0].set_ylabel(f"{name} [ms]", fontsize=11)
+    axes[1, 0].set_visible(False)
+    for column, label in enumerate(found, start=1):
+        panel(axes[0, column], painted(found[label][name]), "magma", limits,
+              label=f"{name} [ms]" if column == 2 else None)
+        axes[0, column].set_title(label, fontsize=10)
+        panel(axes[1, column], residuals[label], "inferno", (0.0, top or 1.0),
+              label=f"|error| {name} [ms]" if column == 2 else None)
+    axes[1, 1].set_ylabel("|error|", fontsize=11)
+    figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -354,11 +485,17 @@ figure.tight_layout()
 # ---------------------------
 #
 # The bound is a bound, not a prediction: an estimator can be worse than it and
-# none can be better. The measured spread sits close to it here because the
-# noise is small enough that the fit is nearly linear over the region it
-# explores. Raise the noise and the fit becomes biased near the ends of its
-# bounds, the histogram grows a tail, and the design's advantage shrinks --
-# which is the honest limit of designing against a Cramer-Rao bound.
+# none can be better. The measured error sits about a fifth above it, and the
+# gap is the fit rather than the design -- a Cramer-Rao bound describes a
+# linearization, and over a slice that runs from white matter to CSF the fit
+# is not linear everywhere. What carries over is the *ratio*: the design lowers
+# the bound by about a third and lowers the measured error by about a third,
+# which is the claim being made.
+#
+# Raise the noise and that stops holding. The fit becomes biased near the ends
+# of its bounds, the long-T1 voxels lose their conditioning first, and the
+# design's advantage shrinks -- which is the honest limit of designing against
+# a bound rather than against an estimator.
 #
 # Nothing above is specific to DESPOT except the cost. The acquisition, the
 # bounded parameters and the loop are the same three pieces that design a

@@ -1,8 +1,8 @@
 """Stating a parameter-mapping problem, and filling it in.
 
 A mapping problem is the inverse of a design problem and is stated the same
-way. :class:`~torchsim.Acquisition` says what the scanner plays and what it is
-being asked about; the mapping says which tissue properties are unknown and
+way. The **acquisition** -- a simulator with everything but the unknowns fixed on
+it -- says what the scanner plays and what it is being asked about; the mapping says which tissue properties are unknown and
 over what range, which are measured separately, and how noisy the measurement
 is. A **method** -- a kernel regression, a dictionary match -- fills it in.
 
@@ -25,7 +25,7 @@ from typing import Any, Protocol, runtime_checkable
 import torch
 
 from .._subspace import Subspace
-from ..model import Acquisition
+from ..model import SignalModel
 
 #: How many samples are simulated at once while a training set is drawn.
 _CHUNK = 4096
@@ -64,27 +64,27 @@ class ParameterMapping:
 
     Parameters
     ----------
-    acquisition:
+    acquisition : SignalModel
         The sequence being inverted, with any tissue property that is neither
         unknown nor measured already fixed on it.
-    known:
+    known : mapping, optional
         Properties measured separately, as ``{name: range}`` or
         ``{name: values}``. They are drawn over during training and reach the
         simulator, so the training signals carry their effect, and the
         measured maps are given again at :meth:`__call__`.
-    noise_std:
+    noise_std : float or torch.Tensor, optional
         Standard deviation of the noise added to the training signals, in the
         units the signal is in -- a fully relaxed voxel is 1. This is what
         teaches a method how far to trust a measurement, so it should be the
         noise the scan actually has.
-    rank:
+    rank : int, optional
         Fit a temporal :class:`~torchsim.Subspace` of this rank to the
         training signals and work in it. Every contrast dropped is arithmetic
         neither training nor mapping has to do; :attr:`subspace` reports what
         the compression kept.
-    seed:
+    seed : int, optional
         Seed for the training draw.
-    unknown:
+    unknown : tuple or array-like, optional
         The properties being estimated, as ``{name: (low, high)}`` to draw
         uniformly over, or an array of values to use as given. The order is
         the order of the maps that come back.
@@ -94,7 +94,7 @@ class ParameterMapping:
     .. code-block:: python
 
         mapping = ParameterMapping(
-            Acquisition(MRFSimulator(TR=10.0, TI=20.0), flip=schedule),
+            MRFSimulator(TR=10.0, TI=20.0, flip=schedule),
             T1=(200.0, 3000.0),
             T2=(10.0, 300.0),
             noise_std=0.01,
@@ -112,7 +112,7 @@ class ParameterMapping:
 
     def __init__(
         self,
-        acquisition: Acquisition,
+        acquisition: SignalModel,
         *,
         known: Mapping[str, Any] | None = None,
         noise_std: float | torch.Tensor = 0.0,
@@ -195,9 +195,9 @@ class ParameterMapping:
 
         Parameters
         ----------
-        samples:
+        samples : int
             How many tissues to draw.
-        chunk:
+        chunk : int, optional
             How many to simulate at a time.
 
         Returns
@@ -248,13 +248,13 @@ class ParameterMapping:
 
         Parameters
         ----------
-        method:
+        method : Estimator
             Anything satisfying :class:`Estimator`.
-        samples:
+        samples : int, optional
             How many tissues to train over. Stating a property as an array of
             values fixes this, so it may be left out; where everything is a
             range to draw from, it defaults to ten thousand.
-        chunk:
+        chunk : int, optional
             How many to simulate at a time.
 
         Returns
@@ -289,10 +289,10 @@ class ParameterMapping:
 
         Parameters
         ----------
-        volume:
+        volume : array-like
             ``(..., contrasts)``. Every leading axis is the voxel axis and
             comes back on the maps unchanged.
-        known:
+        known : mapping, optional
             The measured maps, under the names the mapping was given. Each is
             broadcast to the voxel shape.
 
@@ -324,9 +324,9 @@ class ParameterMapping:
 
         Parameters
         ----------
-        coefficients:
+        coefficients : array-like
             ``(..., rank)``. Every leading axis is a voxel axis.
-        known:
+        known : mapping, optional
             The measured maps, as for :meth:`__call__`.
 
         Returns

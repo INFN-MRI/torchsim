@@ -4,7 +4,7 @@ Parameter estimation
 .. currentmodule:: torchsim
 
 Estimating tissue properties from a measured volume. A :class:`ParameterMapping`
-states the problem over an :class:`Acquisition` -- what is unknown and over what
+states the problem over a simulator -- what is unknown and over what
 range, what is measured separately, how noisy -- and any :class:`Estimator`
 fills it in, returning one named map per unknown.
 

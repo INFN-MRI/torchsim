@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Acquisition
 from torchsim.estimators import DictionaryMatcher
 from torchsim.simulators import MultiEchoSimulator
 
@@ -67,9 +66,7 @@ def test_a_complex_measurement_of_a_real_model_keeps_both_its_parts() -> None:
     whose phase approaches a quarter turn is then matching noise.
     """
     grid = torch.linspace(20.0, 300.0, 128)
-    acquisition = Acquisition(
-        MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 16))
-    )
+    acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 16))
     atoms = torch.as_tensor(acquisition.simulate(T2=grid))
     assert not torch.is_complex(atoms)
     matcher = DictionaryMatcher(atoms, grid[:, None])

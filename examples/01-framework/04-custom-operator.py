@@ -21,9 +21,18 @@ already labelled can ask for it.
 
 # %%
 #
-# We begin with the necessary imports:
+# An operator is written against the event vocabulary and registered by
+# name, so everything it needs comes from :mod:`torchsim.sequence`.
 #
+
+# sphinx_gallery_start_ignore
+import warnings
+
+warnings.filterwarnings("ignore")
+
 import matplotlib.pyplot as plt
+
+# sphinx_gallery_end_ignore
 import torch
 
 from torchsim.sequence import (
@@ -130,6 +139,7 @@ prepared = torch.stack(prepared, dim=-1)
 weighting = prepared / prepared[:, :1]
 expected = torch.exp(-prep_times_ms / T2_MS[:, None])
 
+# sphinx_gallery_start_ignore
 plt.figure()
 plt.plot(prep_times_ms, weighting.T, "o")
 plt.plot(prep_times_ms, expected.T, "-")
@@ -141,6 +151,7 @@ print(
     "worst departure from exp(-TE/T2):",
     float((weighting - expected).abs().max()),
 )
+# sphinx_gallery_end_ignore
 
 # %%
 # The two follow each other to about 0.2%, and the residual is physics rather

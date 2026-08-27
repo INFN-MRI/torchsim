@@ -13,6 +13,7 @@ https://www.sphinx-doc.org/en/master/usage/configuration.html
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 
+import dataclasses
 import os
 import sys
 
@@ -62,9 +63,18 @@ autosummary_generate = True
 # autosummary_imported_members = True
 autodoc_inherit_docstrings = True
 autodoc_member_order = "bysource"
-autodoc_typehints = "description"
+# Types belong in the docstring, where they are prose a reader can qualify
+# ("array-like, one per echo") rather than a signature they have to decode.
+# The annotations stay for editors and for mypy.
+autodoc_typehints = "none"
+# A dataclass default reads as ``triggers=Triggers(excitation=<function ...>)``
+# in a class heading, which is neither the type nor anything a caller writes.
+autodoc_class_signature = "separated"
+# Render a default as the source wrote it, so a dataclass field shows
+# ``Triggers()`` rather than the repr of what that call returned.
+autodoc_preserve_defaults = True
 
-napoleon_include_private_with_doc = True
+napoleon_include_private_with_doc = False
 napolon_numpy_docstring = True
 napoleon_use_admonition_for_references = True
 
@@ -140,6 +150,43 @@ html_theme_options = {
 html_title = "TorchSim Documentation"
 
 
+def _skip_undocumented_specials(app, what, name, obj, skip, options):
+    """Leave out members that render as a heading with nothing under it.
+
+    A dataclass's synthesized ``__init__`` has no source for
+    :confval:`autodoc_preserve_defaults` to read, so its defaults come out as
+    reprs -- a whole ``Triggers(excitation=<function Excitation>, ...)`` where
+    a reader wants the word ``Triggers``. Every field is documented as an
+    attribute, which is where its type is stated anyway. An enum's ``__new__``
+    carries no docstring at all.
+    """
+    if name == "__new__":
+        return True  # an enum's, which says nothing a reader wants
+    if name != "__init__" or skip:
+        return None
+    owner = getattr(obj, "__qualname__", "").rsplit(".", 1)[0]
+    defined_in = sys.modules.get(getattr(obj, "__module__", ""))
+    holder = getattr(defined_in, owner, None)
+    return True if holder is not None and dataclasses.is_dataclass(holder) else None
+
+
+def _hide_empty_code_blocks() -> None:
+    """Render nothing for a code block whose every line is hidden.
+
+    An ignore block that covers a whole cell leaves an empty one, and an empty
+    ``code-block`` directive renders as a blank box. The block's *output* --
+    the figures it drew -- is emitted separately and is kept.
+    """
+    from sphinx_gallery import gen_rst
+
+    original = gen_rst.codestr2rst
+
+    def codestr2rst(code, *args, **kwargs):
+        return "" if not code.strip() else original(code, *args, **kwargs)
+
+    gen_rst.codestr2rst = codestr2rst
+
+
 def setup(app):
     """Drop sphinx-gallery's code-link pass when :mod:`dbm` is missing.
 
@@ -147,6 +194,8 @@ def setup(app):
     distributions package ``dbm`` separately from the interpreter. The links
     it would add are the only thing lost.
     """
+    _hide_empty_code_blocks()
+    app.connect("autodoc-skip-member", _skip_undocumented_specials)
     try:
         import dbm  # noqa: F401
     except ImportError:

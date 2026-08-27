@@ -616,6 +616,18 @@ class ExactSliceProfile:
     ``points`` are the slice positions sampled, in units of the slice
     thickness, so the passband is ``[-0.5, 0.5]``. An integer asks for that
     many evenly spaced across ``extent`` thicknesses; a tensor names them.
+
+    Attributes
+    ----------
+    points : int or torch.Tensor
+        Slice positions, or how many to space evenly across ``extent``.
+    extent : float
+        How many slice thicknesses the sampled positions span.
+    bins : int
+        Knots along the flip-angle axis. 64 carries a sinc to about 1e-8.
+    theta_max : float
+        Largest effective flip the table covers, in radians. A sequence that
+        drives a pulse past this is refused rather than saturated.
     """
 
     points: int | torch.Tensor = 21
@@ -657,17 +669,19 @@ def exact_slice_profile(
 
     Parameters
     ----------
-    points
+    points : int or torch.Tensor, optional
         Slice positions, or how many to space evenly across ``extent``.
-    extent
+    extent : float, optional
         How many slice thicknesses the sampled positions span.
-    bins
+    bins : int, optional
         Knots along the flip-angle axis. 64 carries a sinc to about 1e-8.
-    theta_max
+    theta_max : float, optional
         Largest effective flip the table covers, in radians. A sequence that
         drives a pulse past this is refused rather than saturated.
 
-    Returns:
+    Returns
+    -------
+    ExactSliceProfile
         The request, resolved against the sequence's RF definition at
         simulation time.
     """

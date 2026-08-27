@@ -27,24 +27,39 @@ in memory, and what each gets wrong, is read off the same slice.
 
 # %%
 #
-# The imports:
+# The phantom is BrainWeb's, reached through ``brainweb-dl``: ``get_mri``
+# fetches the fuzzy tissue memberships, and the package ships the table of
+# relaxation times that goes with them -- which is what the two standard
+# library imports read.
 #
+
+# sphinx_gallery_start_ignore
 import warnings
 
 warnings.filterwarnings("ignore")
 
+import matplotlib.pyplot as plt
+
+# sphinx_gallery_end_ignore
 import csv
-import time
 from pathlib import Path
 
 import brainweb_dl
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
 from brainweb_dl import get_mri
 
+# %%
+#
+# The problem is stated over a simulator carrying the sequence and filled in
+# by an estimator. :func:`~torchsim.execution` decides where that work runs,
+# and the timings below are taken inside it.
+#
+import time
+
+import numpy as np
+import torch
+
 import torchsim
-from torchsim import Acquisition, ParameterMapping, Subspace
+from torchsim import ParameterMapping, Subspace
 from torchsim.estimators import DictionaryMatcher
 from torchsim.simulators import MRFSimulator
 
@@ -74,6 +89,10 @@ tissue_PD = np.array([float(row["PD (ms)"]) for row in tissues])[list(BRAIN_TISS
 
 fractions = get_mri(sub_id=0, contrast="fuzzy")[SLICE].astype(np.float32)
 fractions = fractions[..., list(BRAIN_TISSUES)]
+# BrainWeb's first in-plane axis runs posterior to anterior, and an image is
+# drawn from its first row down. Flipping here puts anterior at the top of
+# every figure below rather than in each one of them.
+fractions = np.flipud(fractions).copy()
 occupancy = fractions.sum(-1)
 mask = occupancy > 0.5
 
@@ -109,9 +128,7 @@ TI_MS = 20.0
 repetition = torch.arange(CONTRASTS, dtype=torch.float32)
 flip = 10.0 + 50.0 * torch.sin(torch.pi * repetition / CONTRASTS) ** 2
 
-acquisition = Acquisition(
-    MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20), M0=1.0
-)
+acquisition = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
 
 # %%
 #
@@ -128,6 +145,7 @@ print(f"largest imaginary part: {float(probe.imag.abs().max()):.3g}")
 
 fingerprints = probe.real
 
+# sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
 axes[0].plot(repetition.numpy(), flip.numpy())
 axes[0].set(xlabel="Repetition", ylabel="Flip angle [deg]", title="the schedule")
@@ -137,6 +155,7 @@ for row, name in enumerate(("white matter", "grey matter", "CSF")):
 axes[1].set(xlabel="Repetition", ylabel="signal", title="fingerprints")
 axes[1].legend(fontsize=8), axes[1].grid(alpha=0.3)
 figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -407,20 +426,66 @@ panels = [
     ("M0", M0_true, {name: m0 for name, (_, m0) in estimates.items()}, (0, 1.1)),
 ]
 
-figure, axes = plt.subplots(3, 4, figsize=(12, 9.5))
+# sphinx_gallery_start_ignore
+def panel(axis, values, cmap, limits, label=None):
+    """One map, with a colorbar every panel loses the same width to.
+
+    A figure where only some panels carry a colorbar has panels of different
+    sizes. Giving every one a colorbar and hiding the ones that would repeat a
+    scale keeps the images comparable.
+    """
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
+    if label is None:
+        bar.ax.set_visible(False)
+    else:
+        bar.set_label(label, fontsize=8)
+        bar.ax.tick_params(labelsize=7)
+    axis.set_xticks([])
+    axis.set_yticks([])
+
+
+columns = 1 + len(estimates)
+rows = len(panels)
+figure, axes = plt.subplots(rows, columns, figsize=(3.3 * columns, 3.3 * rows))
 for row, (label, reference, found, limits) in enumerate(panels):
-    axes[row, 0].imshow(reference.T, cmap="magma", vmin=limits[0], vmax=limits[1])
+    panel(axes[row, 0], reference, "magma", limits)
     axes[row, 0].set_ylabel(label, fontsize=11)
     axes[row, 0].set_title("truth" if row == 0 else "", fontsize=10)
     for column, (name, values) in enumerate(found.items(), start=1):
-        axes[row, column].imshow(
-            painted(values).T, cmap="magma", vmin=limits[0], vmax=limits[1]
+        panel(
+            axes[row, column],
+            painted(values),
+            "magma",
+            limits,
+            label=label if column == columns - 1 else None,
         )
         if row == 0:
             axes[row, column].set_title(name, fontsize=9)
-for axis in axes.ravel():
-    axis.set_xticks([]), axis.set_yticks([])
 figure.tight_layout()
+
+# The errors, each parameter on a scale of its own: an error map read at the
+# scale of the map it came from is a black rectangle.
+figure, axes = plt.subplots(
+    rows, len(estimates), figsize=(3.3 * len(estimates), 3.3 * rows), squeeze=False
+)
+for row, (label, reference, found, limits) in enumerate(panels):
+    residuals = {
+        name: np.abs(painted(values) - reference) for name, values in found.items()
+    }
+    top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
+    for column, (name, values) in enumerate(residuals.items()):
+        panel(
+            axes[row, column],
+            values,
+            "inferno",
+            (0.0, top or 1.0),
+            label=f"|error|, {label}" if column == len(residuals) - 1 else None,
+        )
+        if row == 0:
+            axes[row, column].set_title(name, fontsize=9)
+figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #

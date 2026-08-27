@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Acquisition
 from torchsim.estimators import DictionaryMatcher
 from torchsim.estimators._grouped import Grouping
 from torchsim.simulators import MRFSimulator
@@ -19,8 +18,8 @@ def fingerprints():
     grid = torch.cartesian_prod(
         torch.linspace(200.0, 3000.0, 60), torch.linspace(20.0, 300.0, 30)
     )
-    atoms = Acquisition(
-        MRFSimulator(TR=10.0, TI=20.0), T1=grid[:, 0], T2=grid[:, 1]
+    atoms = MRFSimulator(
+        TR=10.0, TI=20.0, T1=grid[:, 0], T2=grid[:, 1]
     ).simulate(flip=flip)
     return atoms.reshape(grid.shape[0], -1), grid
 
@@ -272,12 +271,12 @@ def test_a_mapping_with_a_rank_reaches_a_grouped_matcher(fingerprints) -> None:
     training signals into it, and hands the matcher a compressed dictionary --
     then projects the volume the same way when it is called.
     """
-    from torchsim import Acquisition, ParameterMapping
+    from torchsim import ParameterMapping
 
     atoms, grid = fingerprints
     generator = torch.Generator().manual_seed(1)
     flip = 10.0 + 50.0 * torch.rand(200, generator=generator)
-    acquisition = Acquisition(MRFSimulator(TR=10.0, TI=20.0), flip=flip)
+    acquisition = MRFSimulator(TR=10.0, TI=20.0, flip=flip)
     mapping = ParameterMapping(
         acquisition,
         T1=grid[:, 0],
@@ -287,8 +286,8 @@ def test_a_mapping_with_a_rank_reaches_a_grouped_matcher(fingerprints) -> None:
     ).train(DictionaryMatcher(groups=24))
 
     truth = grid[::53]
-    volume = Acquisition(
-        MRFSimulator(TR=10.0, TI=20.0), T1=truth[:, 0], T2=truth[:, 1]
+    volume = MRFSimulator(
+        TR=10.0, TI=20.0, T1=truth[:, 0], T2=truth[:, 1]
     ).simulate(flip=flip)
     maps = mapping(volume.reshape(truth.shape[0], -1))
 
@@ -312,7 +311,7 @@ def test_a_tighter_threshold_can_prune_away_the_right_group() -> None:
 
     Widening it recovers the voxel, which is the trade the knob exists for.
     """
-    from torchsim import Acquisition, ParameterMapping
+    from torchsim import ParameterMapping
 
     grid = torch.cartesian_prod(
         torch.linspace(200.0, 3000.0, 60), torch.linspace(20.0, 300.0, 30)
@@ -321,13 +320,15 @@ def test_a_tighter_threshold_can_prune_away_the_right_group() -> None:
     flip = 10.0 + 50.0 * torch.rand(200, generator=generator)
     simulator = MRFSimulator(TR=10.0, TI=20.0)
     truth = grid[::53]
-    volume = Acquisition(
-        simulator, T1=truth[:, 0], T2=truth[:, 1]
-    ).simulate(flip=flip).reshape(truth.shape[0], -1)
+    volume = (
+        simulator.bind(T1=truth[:, 0], T2=truth[:, 1])
+        .simulate(flip=flip)
+        .reshape(truth.shape[0], -1)
+    )
 
     def misses(prune):
         mapping = ParameterMapping(
-            Acquisition(simulator, flip=flip),
+            simulator.bind(flip=flip),
             T1=grid[:, 0],
             T2=grid[:, 1],
             rank=8,

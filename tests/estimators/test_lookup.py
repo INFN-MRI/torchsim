@@ -182,12 +182,10 @@ def test_a_t1_map_is_read_from_the_two_blocks() -> None:
     The mapping states the sequence and what is unknown; the table states the
     combination that makes the curve monotonic. Neither knows about the other.
     """
-    from torchsim import Acquisition, ParameterMapping
+    from torchsim import ParameterMapping
 
     protocol = dict(PROTOCOL, nshots=(26, 102))
-    acquisition = Acquisition(
-        MP2RAGESimulator(**protocol), **protocol, inv_efficiency=0.96
-    )
+    acquisition = MP2RAGESimulator(**protocol, inv_efficiency=0.96)
     grid = torch.arange(50.0, 5000.0, 25.0)
     mapping = ParameterMapping(acquisition, T1=grid, seed=0)
 
@@ -202,12 +200,10 @@ def test_a_t1_map_is_read_from_the_two_blocks() -> None:
 
 def test_the_map_is_shaped_like_the_volume() -> None:
     """A volume in, a map out, and nothing flattened on the way."""
-    from torchsim import Acquisition, ParameterMapping
+    from torchsim import ParameterMapping
 
     protocol = dict(PROTOCOL, nshots=128)
-    acquisition = Acquisition(
-        MP2RAGESimulator(**protocol), **protocol, inv_efficiency=0.96
-    )
+    acquisition = MP2RAGESimulator(**protocol, inv_efficiency=0.96)
     grid = torch.arange(50.0, 5000.0, 25.0)
     mapping = ParameterMapping(acquisition, T1=grid, seed=0).train(
         LookupTable(combine=_unified_of)

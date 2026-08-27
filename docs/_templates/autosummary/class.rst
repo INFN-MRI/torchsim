@@ -4,7 +4,6 @@
 
 .. autoclass:: {{ objname }}
    :members:
-   :private-members:
    :show-inheritance:
    :special-members: __call__, __add__, __mul__, __matmul__
 
@@ -14,18 +13,7 @@
 
    .. autosummary::
       :nosignatures:
-   {% for item in methods %}
-      ~{{ name }}.{{ item }}
-   {%- endfor %}
-   {% endif %}
-   {% endblock %}
-
-   {% block attributes %}
-   {% if attributes %}
-   .. rubric:: {{ _('Attributes') }}
-
-   .. autosummary::
-   {% for item in attributes %}
+   {% for item in methods if item != "__init__" %}
       ~{{ name }}.{{ item }}
    {%- endfor %}
    {% endif %}

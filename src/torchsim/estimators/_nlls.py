@@ -71,7 +71,7 @@ class NonlinearLeastSquares(torch.nn.Module):
     .. code-block:: python
 
         mapping = ParameterMapping(
-            Acquisition(FSESimulator(ESP=5.0, TR=1800.0), flip=train),
+            FSESimulator(ESP=5.0, TR=1800.0, flip=train),
             T1=(200.0, 3000.0),
             T2=(10.0, 300.0),
         )
@@ -131,16 +131,16 @@ class NonlinearLeastSquares(torch.nn.Module):
 
         Parameters
         ----------
-        acquisition:
-            The sequence being inverted, as an
-            :class:`~torchsim.Acquisition`.
-        unknown:
+        acquisition : SignalModel
+            The sequence being inverted, with everything but the unknowns
+            fixed on it.
+        unknown : sequence of str
             The property names being estimated, in the order the maps come
             back in.
-        known:
+        known : sequence of str, optional
             The property names measured separately, in the order their columns
             arrive in.
-        subspace:
+        subspace : Subspace, optional
             The compression the measurements have already been through, if
             any. Predictions go through it too, so the residual is taken where
             the measurement lives.
@@ -179,14 +179,14 @@ class NonlinearLeastSquares(torch.nn.Module):
 
         Parameters
         ----------
-        signals:
+        signals : torch.Tensor
             Ignored. Accepted so that a fit and a learned method are called
             the same way.
-        parameters:
+        parameters : torch.Tensor
             ``(samples, parameters)``, in the order given to :meth:`bind`.
-        known:
+        known : torch.Tensor, optional
             Ignored, for the same reason.
-        noise_std:
+        noise_std : float or torch.Tensor, optional
             Accepted and unused. A least-squares fit weights every contrast
             alike, which is what uniform noise implies.
 
@@ -206,7 +206,7 @@ class NonlinearLeastSquares(torch.nn.Module):
         if self._acquisition is None:
             raise RuntimeError(
                 "no model to fit; give this estimator to a ParameterMapping, "
-                "or call bind() with an Acquisition"
+                "or call bind() with a simulator"
             )
         drawn = torch.as_tensor(parameters).reshape(-1, len(self.unknown))
         median = drawn.to(torch.float32).median(dim=0).values
@@ -240,9 +240,9 @@ class NonlinearLeastSquares(torch.nn.Module):
 
         Parameters
         ----------
-        signals:
+        signals : torch.Tensor
             ``(..., contrasts)``.
-        known:
+        known : torch.Tensor, optional
             ``(..., knowns)``, the properties measured separately.
 
         Returns
@@ -296,7 +296,7 @@ class NonlinearLeastSquares(torch.nn.Module):
         """The model to fit, with anything measured separately held on it."""
         acquisition = self._acquisition
         if known is not None:
-            acquisition = acquisition.bound(
+            acquisition = acquisition.bind(
                 **{
                     name: known[:, index]
                     for index, name in enumerate(self.known)

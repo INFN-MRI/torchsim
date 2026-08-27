@@ -118,6 +118,42 @@ class TissueProperties:
     The two second pools are alternatives, not layers: a tissue declaring both
     is a three-pool system, which the kernels do not carry, and asking for one
     is refused rather than answered with either half.
+
+    Attributes
+    ----------
+    t1_ms, t2_ms : float or array-like
+        Longitudinal and transverse relaxation times, in milliseconds.
+    m0 : float or array-like, optional
+        Equilibrium magnetization, as a scaling on the signal.
+    b1 : float or array-like, optional
+        Transmit efficiency, as a fraction of the prescribed flip angle.
+    b1_phase_rad : float or array-like, optional
+        Transmit phase, in radians.
+    b0_hz : float or array-like, optional
+        Off-resonance, in Hz.
+    inversion_efficiency : float or array-like, optional
+        How much of a perfect inversion an inversion pulse achieves.
+    diffusion_um2_per_ms : float or array-like, optional
+        Apparent diffusion coefficient. Free water at body temperature is
+        about 3.
+    velocity_m_per_s : float or array-like, optional
+        Spin velocity, in m/s.
+    bound_fraction : float or array-like, optional
+        Share of the magnetization held by the macromolecule-bound pool, and
+        the gate on that whole pool.
+    bound_exchange_hz : float or array-like, optional
+        Exchange rate between the bound pool and the free water, in Hz.
+    t1_bound_ms : float or array-like, optional
+        Longitudinal relaxation time of the bound pool, in milliseconds.
+    pool_b_fraction : float or array-like, optional
+        Share of the magnetization held by a chemically exchanging second
+        pool, and the gate on it.
+    pool_b_exchange_hz : float or array-like, optional
+        Exchange rate between that pool and the free water, in Hz.
+    t1_pool_b_ms, t2_pool_b_ms : float or array-like, optional
+        Its relaxation times, in milliseconds.
+    pool_b_shift_hz : float or array-like, optional
+        How far it sits off the free water, in Hz.
     """
 
     t1_ms: Any
@@ -141,7 +177,21 @@ class TissueProperties:
 
 @dataclass(frozen=True)
 class SimulationResult:
-    """Signals and labels recorded by one state-machine simulation."""
+    """Signals and labels recorded by one state-machine simulation.
+
+    Attributes
+    ----------
+    signal : torch.Tensor
+        ``(..., samples)`` -- what was recorded, complex.
+    time_us : torch.Tensor
+        When each sample was taken, in microseconds.
+    event_index : torch.Tensor
+        Which event of the stream produced each sample.
+    repetition : torch.Tensor
+        Which playing of the stream each sample belongs to.
+    echo : torch.Tensor
+        Which echo within its repetition each sample is.
+    """
 
     signal: torch.Tensor
     time_us: torch.Tensor
@@ -152,7 +202,18 @@ class SimulationResult:
 
 @dataclass(frozen=True)
 class SubspaceBasis:
-    """Low-rank temporal basis and the dictionary it was fitted to."""
+    """Low-rank temporal basis and the dictionary it was fitted to.
+
+    Attributes
+    ----------
+    subspace : Subspace
+        The basis itself, and what it reports about the energy it keeps.
+    dictionary : torch.Tensor
+        ``(atoms, contrasts)`` -- the simulated signals it was fitted to.
+    simulation : SimulationResult
+        What the simulation recorded, with the labels that say which sample is
+        which.
+    """
 
     subspace: Subspace
     dictionary: torch.Tensor

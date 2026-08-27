@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Acquisition, ParameterMapping
+from torchsim import ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
 from torchsim.recon import (
     Linearization,
@@ -46,7 +46,7 @@ class MaskedFourier:
 @pytest.fixture
 def problem():
     """A multi-echo decay, its operator, and data with a known answer."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     operator = ModelOperator(acquisition, "T2", bounds=BOUND)
     measured = torch.as_tensor(acquisition.simulate(T2=TRUTH)).to(
         torch.complex64
@@ -113,7 +113,7 @@ def test_a_trust_region_is_the_fit_that_ships(problem) -> None:
     :class:`~torchsim.NonlinearLeastSquares` is this loop under a per-voxel
     trust region with the voxel-diagonal solve, and nothing else.
     """
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     bounds = {"T2": (10.0, 300.0), "M0": (0.0, 5.0)}
     mapping = ParameterMapping(
         acquisition, T2=(10.0, 300.0), M0=(0.2, 2.0), seed=0
@@ -180,7 +180,7 @@ def phantom():
     t2[8:24, 8:24] = 150.0
     amplitude = torch.zeros(size, size, dtype=torch.complex64)
     amplitude[4:28, 4:28] = 1.0
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     operator = ModelOperator(acquisition, "T2", bounds=BOUND)
     images = torch.as_tensor(acquisition.simulate(T2=t2)).to(
         torch.complex64

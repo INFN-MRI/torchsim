@@ -16,7 +16,25 @@ from ._grouped import Grouping, correlate, match_in_groups
 
 @dataclass(frozen=True)
 class DictionaryMatch:
-    """Best dictionary atoms and their complex least-squares scales."""
+    """Best dictionary atoms and their complex least-squares scales.
+
+    Attributes
+    ----------
+    parameters : torch.Tensor, optional
+        ``(..., candidates, parameters)`` -- the parameter values of the atoms
+        that matched. ``None`` where the dictionary carries no parameter
+        values, which is what a matcher fitted to signals alone has.
+    indices : torch.Tensor
+        ``(..., candidates)`` -- which atom each candidate is, into the
+        dictionary as it was fitted.
+    scores : torch.Tensor
+        ``(..., candidates)`` -- how well each candidate matched, as the
+        normalized inner product the search maximized.
+    scales : torch.Tensor
+        ``(..., candidates)`` -- the complex amplitude the measurement is of
+        the atom, which is the least-squares scale and carries the proton
+        density and the receive phase.
+    """
 
     parameters: torch.Tensor | None
     indices: torch.Tensor
@@ -142,16 +160,16 @@ class DictionaryMatcher(torch.nn.Module):
 
         Parameters
         ----------
-        signals:
+        signals : torch.Tensor
             ``(samples, contrasts)`` -- the atoms.
-        parameters:
+        parameters : torch.Tensor
             ``(samples, parameters)`` -- what each atom stands for.
-        known:
+        known : torch.Tensor, optional
             Not supported. A dictionary spans one grid of parameters, and a
             property measured per voxel would need a different sub-dictionary
             for every voxel. Estimate it instead, or use a method that takes
             it as a feature.
-        noise_std:
+        noise_std : float or torch.Tensor, optional
             Accepted and unused. A matched estimate comes from a normalized
             inner product, which noise on the atoms would only degrade -- the
             dictionary is the clean model the measurement is compared to.

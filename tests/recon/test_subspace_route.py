@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import Acquisition, ParameterMapping, Subspace
+from torchsim import ParameterMapping, Subspace
 from torchsim.estimators import DictionaryMatcher
 from torchsim.simulators import MultiEchoSimulator
 
@@ -20,7 +20,7 @@ RANK = 3
 @pytest.fixture(scope="module")
 def basis():
     """A temporal basis for a multi-echo decay, from the model itself."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     signals = torch.as_tensor(
         acquisition.simulate(T2=torch.linspace(20.0, 300.0, 64))
     ).to(torch.complex64)
@@ -107,7 +107,7 @@ def test_one_mapping_supplies_the_basis_and_reads_what_comes_back() -> None:
     coefficients it returns go straight back to the mapping -- which must not
     project them a second time.
     """
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     grid = torch.linspace(20.0, 300.0, 128)
     mapping = ParameterMapping(
         acquisition, T2=grid, M0=1.0, rank=RANK, seed=0
@@ -125,7 +125,7 @@ def test_one_mapping_supplies_the_basis_and_reads_what_comes_back() -> None:
 
 def test_coefficients_of_the_wrong_rank_are_refused() -> None:
     """A silent mismatch would reconstruct the wrong tissue, not fail."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(
         acquisition, T2=torch.linspace(20.0, 300.0, 64), rank=RANK, seed=0
     ).train(DictionaryMatcher())
@@ -137,7 +137,7 @@ def test_coefficients_of_the_wrong_rank_are_refused() -> None:
 def test_a_mapping_with_no_basis_has_no_coefficients_to_read() -> None:
     """Asking for them is a mistake about the mapping, not about the data."""
     mapping = ParameterMapping(
-        Acquisition(MultiEchoSimulator(TE=TE_MS)),
+        MultiEchoSimulator(TE=TE_MS),
         T2=torch.linspace(20.0, 300.0, 64),
         seed=0,
     ).train(DictionaryMatcher())

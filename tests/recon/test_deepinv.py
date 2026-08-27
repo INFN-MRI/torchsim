@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Acquisition, execution
+from torchsim import execution
 from torchsim.recon import ModelOperator
 from torchsim.simulators import MultiEchoSimulator
 
@@ -17,7 +17,7 @@ TE_MS = torch.tensor([10.0, 20.0, 40.0, 80.0, 160.0])
 @pytest.fixture
 def operator():
     return ModelOperator(
-        Acquisition(MultiEchoSimulator(TE=TE_MS)),
+        MultiEchoSimulator(TE=TE_MS),
         "T2",
         bounds={"T2": (10.0, 300.0)},
     )

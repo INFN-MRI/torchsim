@@ -55,13 +55,13 @@ class MRFSimulator(AbstractSimulator):
 
         Parameters
         ----------
-        flip:
+        flip : float or array-like
             Excitation flip angles in degrees, one per repetition.
-        TR:
+        TR : float or array-like
             Repetition time in milliseconds, scalar or one per repetition.
-        TI:
+        TI : float or array-like, optional
             Inversion time in milliseconds.
-        phases:
+        phases : float or array-like, optional
             Excitation phases in degrees.
         """
         angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)))

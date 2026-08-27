@@ -6,8 +6,9 @@ Examples
 Worked examples, grouped by what you are trying to do.
 
 **Framework** is the vocabulary: run a sequence that ships with TorchSim, take
-its derivatives, then write one of your own -- a signal model, and the
-operators a sequence is assembled from.
+its derivatives, then extend it -- give a simulator physics it does not carry,
+assemble one from operators that exist, write a signal model, write an
+operator.
 
 **Parameter inference** turns a measured volume into maps. The same problem is
 stated once and handed to a different estimator each time, always on the same

@@ -65,7 +65,7 @@ from ..sequence._array import brought, is_array, read
 from ..sequence._parameters import TISSUE_NAMES
 from ..sequence._simulation import RecordMode, target_device
 from ._binding import Packing, bind, run_key
-from ._signal import SignalModel
+from ._signal import SignalModel, _moved
 
 _EMPTY: Mapping[str, Any] = MappingProxyType({})
 
@@ -89,11 +89,19 @@ class Triggers:
     ideal rotation.
     """
 
+    #: What a pulse that tips magnetization into the transverse plane plays.
     excitation: Callable[..., Operator] = Excitation
+    #: What a refocusing pulse plays, including the gradients it sits between.
     refocusing: Callable[..., Operator] = Refocusing
+    #: What an inversion plays, and the recovery it holds the timeline for.
     inversion: Callable[..., Operator] = Inversion
+    #: What a saturation pulse plays.
     saturation: Callable[..., Operator] = Saturation
+    #: What a sample and the rest of its repetition play -- which is where a
+    #: sequence says whether it winds the states on, spoils them, or rewinds
+    #: them.
     readout: Callable[..., Operator] = Readout
+    #: What a wait plays, which is nothing but time.
     delay: Callable[..., Operator] = Delay
 
 
@@ -118,18 +126,18 @@ class StateMachineModel:
 
     Attributes
     ----------
-    properties:
+    properties : mapping
         ``{public name: tissue field}``. A field left unnamed is never given to
         the tissue, and the kernels leave its term out -- so this is how a
         model asks for off-resonance, diffusion, flow or a second pool. A name
         mapped to ``None`` is the model's own and reaches the signal without
         reaching the tissue.
-    triggers:
+    triggers : Triggers
         What each kind of event plays.
-    fixed:
+    fixed : mapping
         Tissue fields the model pins rather than exposes, as
         ``{field: value}``.
-    definitions:
+    definitions : mapping
         The RF resources the events name. The default is one ideal hard pulse
         at id 0; a model whose excitation is slice-selective supplies a shaped
         definition here instead.
@@ -181,8 +189,14 @@ class AbstractSimulator(SignalModel):
     """A protocol: what a sequence plays, and the physics behind it.
 
     Subclasses set :attr:`model` and implement :meth:`layout`, which returns
-    the operators of one repetition in the order they are played. The protocol
-    arguments are given to the constructor and may be overridden per call.
+    the operators of one repetition in the order they are played.
+
+    **The constructor takes the keywords**
+    :meth:`~torchsim.model.SignalModel.simulate` **takes, and fixes them; a
+    call overrides.** So a sequence is written once with the tissue it
+    is being asked about already on it, and what is left to give per call is
+    whatever is actually varying -- the design under optimization, the map
+    being fitted.
 
     A protocol with a closed form -- a steady state that needs no state
     machine -- overrides :meth:`evaluate` instead and never reaches
@@ -193,9 +207,9 @@ class AbstractSimulator(SignalModel):
 
     Attributes
     ----------
-    model:
+    model : StateMachineModel, optional
         The physics behind the protocol.
-    states:
+    states : int, optional
         Configuration orders to carry, or ``None`` to size them from the
         winding the description asks for.
     """
@@ -211,11 +225,12 @@ class AbstractSimulator(SignalModel):
         repetitions: int = 1,
         record: RecordMode = "all",
         execution: str | torch.device | Sequence[Any] | None = None,
+        resolve: bool = True,
         crusher_dephasing_rad: float = 0.0,
         voxel_size_m: float | None = None,
         **protocol: Any,
     ) -> None:
-        """Bind the physics and the protocol this simulator plays.
+        """Bind the physics, the protocol and any tissue this simulator plays.
 
         Parameters
         ----------
@@ -232,12 +247,20 @@ class AbstractSimulator(SignalModel):
             devices have free, ``"cpu"``, or a device or list of devices.
             ``None`` follows whatever :func:`~torchsim.sequence.execution`
             block is in scope, which is what lets a caller decide instead.
+        resolve:
+            Whether to hold the protocol's structure fixed across calls; see
+            :meth:`resolved`. A loop that plays the same sequence with
+            different numbers -- a design, a dictionary sweep -- is worth
+            roughly eight times the whole call this way. Turning it off
+            rebuilds the event stream every call, which is slower and agrees
+            to the last bit rather than to float32 round-off.
         crusher_dephasing_rad, voxel_size_m:
             The unbalanced gradient the sequence plays, and the voxel it winds
             across. Their ratio is what diffusion is damped by and what flow
             turns each dephasing order through.
         protocol:
-            The sequence arguments :meth:`layout` reads.
+            The sequence arguments :meth:`layout` reads, and any tissue
+            property to fix, under the names :attr:`properties` declares.
         """
         self.model = model if model is not None else type(self).model
         # Bound here rather than looked up per event: after this, what the
@@ -251,17 +274,23 @@ class AbstractSimulator(SignalModel):
         self.execution = execution
         self.crusher_dephasing_rad = crusher_dephasing_rad
         self.voxel_size_m = voxel_size_m
-        self._resolving = False
+        self._resolving = bool(resolve)
         self._packing: Packing | None = None
         self._refused: list[Any] = []
         # Read once, so a layout can be written in torch whatever the caller
         # brought, and so the answer knows where to go back to.
         self._brought = brought(protocol.values())
+        # Split the way a call is split, so the constructor takes exactly what
+        # simulate() takes and fixes it.
+        declared = set(self.exposes)
+        self.bound = self._fix(
+            {name: value for name, value in protocol.items() if name in declared}
+        )
         self.protocol = read(
             {
                 name: value
                 for name, value in protocol.items()
-                if name not in RUN_SETTINGS
+                if name not in declared and name not in RUN_SETTINGS
             }
         )
         self._described: SequenceDescription | None = None
@@ -286,6 +315,32 @@ class AbstractSimulator(SignalModel):
         copy._packing = None
         copy._refused = []
         return copy
+
+    def to(self, device: torch.device | str) -> AbstractSimulator:
+        """This simulator, with everything it holds on ``device``.
+
+        A simulator carries its protocol -- echo times, a flip train -- and
+        whatever tissue is fixed on it, and the two have to arrive on a card
+        together: properties moved on their own would be multiplied against
+        echo times still on the host.
+
+        Parameters
+        ----------
+        device : torch.device or str
+            Where to put it.
+
+        Returns
+        -------
+        AbstractSimulator
+            A copy. This one is left where it was.
+        """
+        moved = super().to(device)
+        moved.protocol = _moved(moved.protocol, torch.device(device))
+        # Whatever was resolved was resolved somewhere else, and holds tensors
+        # that live there.
+        moved._packing = None
+        moved._refused = []
+        return moved
 
     def _structure(
         self,
@@ -322,7 +377,7 @@ class AbstractSimulator(SignalModel):
 
         A call carrying arrays of its own decides, even when they are torch --
         the tissue is what the answer is about. Only a call with no arrays at
-        all falls back to what the protocol was written in.
+        all falls back to what the simulator was built from.
         """
         if any(is_array(value) for value in values.values()):
             return super()._backend(values)

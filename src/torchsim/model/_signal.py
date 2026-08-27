@@ -38,11 +38,15 @@ __all__ = ["SignalModel"]
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
+from copy import copy as shallow_copy
+from types import MappingProxyType
 from typing import Any
 
 import torch
 
-from ..sequence._array import as_torch, brought, like
+from ..sequence._array import as_torch, brought, is_array, like
+
+_NOTHING: Mapping[str, Any] = MappingProxyType({})
 
 
 class SignalModel(ABC):
@@ -50,16 +54,35 @@ class SignalModel(ABC):
 
     Subclasses set :attr:`properties` and implement :meth:`evaluate`.
 
+    **The constructor takes the keywords** :meth:`simulate` **takes, and fixes
+    them; a call overrides.** :meth:`bind` fixes more on a copy, so what a
+    caller is left to give per call is whatever is actually varying.
+
     Attributes
     ----------
-    properties:
+    properties : mapping or sequence of str
         What the model exposes, as names. A mapping is read for its keys, so a
         subclass that also needs to say where each property goes -- as
         :class:`~torchsim.model.StateMachineModel` does, naming the tissue
         field each fills -- declares both at once.
+    bound : mapping
+        The arguments fixed on this model, under the names :meth:`simulate`
+        takes them by. A call may name any of them again, and the call wins.
     """
 
     properties: Mapping[str, str] | Sequence[str] = ()
+    bound: Mapping[str, Any] = _NOTHING
+
+    def __init__(self, **values: Any) -> None:
+        """Fix the arguments this model is asked about.
+
+        Parameters
+        ----------
+        values : float or array-like, optional
+            Properties or sequence arguments, under the names
+            :meth:`simulate` takes them by.
+        """
+        self.bound = self._fix(values)
 
     @abstractmethod
     def evaluate(
@@ -73,18 +96,64 @@ class SignalModel(ABC):
         degrees -- and converting them belongs here, with the sequence.
         """
 
+    # -- what is fixed on the model -----------------------------------------
+
+    @property
+    def exposes(self) -> tuple[str, ...]:
+        """The property names this model declares, in its own order."""
+        return tuple(self.properties)
+
+    def bind(self, **values: Any) -> Any:
+        """This model with more arguments fixed on it, or some of them changed.
+
+        What a fit does with a property measured separately: the same sequence,
+        with one more map held on it.
+
+        Parameters
+        ----------
+        values : float or array-like, optional
+            Properties or sequence arguments, under the names
+            :meth:`simulate` takes them by.
+
+        Returns
+        -------
+        SignalModel
+            A copy. This one is left as it was.
+        """
+        held = shallow_copy(self)
+        held.bound = {**self.bound, **self._fix(values)}
+        return held
+
+    def to(self, device: torch.device | str) -> Any:
+        """This model, with everything fixed on it on ``device``.
+
+        Parameters
+        ----------
+        device : torch.device or str
+            Where to put it.
+
+        Returns
+        -------
+        SignalModel
+            A copy. This one is left where it was.
+        """
+        moved = shallow_copy(self)
+        moved.bound = _moved(self.bound, torch.device(device))
+        return moved
+
     # -- the two derivative modes -------------------------------------------
 
     def simulate(self, **values: Any) -> torch.Tensor:
         """Return the recorded signal.
 
         Property and sequence arguments are given together and told apart by
-        :attr:`properties`. A cost built on this and differentiated with
+        :attr:`properties`, and join whatever :attr:`bound` already holds. A
+        cost built on this and differentiated with
         :meth:`torch.Tensor.backward` reaches the engine's adjoint, which is
         the mode that suits a sequence parameter.
         """
         backend = self._backend(values)
-        held, sequence = self._split(values)
+        held, sequence = self._split({**self.bound, **values})
         signal = self._shaped(self.evaluate(held, **sequence), self._batch(held))
         return like(signal, backend)
 
@@ -99,10 +168,10 @@ class SignalModel(ABC):
 
         Parameters
         ----------
-        diff:
+        diff : str or sequence of str
             One property name, or several. A single name collapses the
             parameter axis; a sequence keeps it, stacked before the samples.
-        values:
+        values : float or array-like, optional
             The property and sequence arguments, as for :meth:`simulate`.
 
         Returns
@@ -118,7 +187,7 @@ class SignalModel(ABC):
         """
         names = (diff,) if isinstance(diff, str) else tuple(diff)
         backend = self._backend(values)
-        held, sequence = self._split(values)
+        held, sequence = self._split({**self.bound, **values})
         for name in names:
             if name not in held:
                 raise ValueError(
@@ -167,13 +236,27 @@ class SignalModel(ABC):
         """
         return brought(values.values())
 
-    def _names(self) -> tuple[str, ...]:
-        """Return the property names, however :attr:`properties` declares them."""
-        return tuple(self.properties)
+    def _fix(self, values: Mapping[str, Any]) -> dict[str, Any]:
+        """Read values to hold on the model, as a call would read them.
+
+        A declared property is read as torch here rather than at the call: one
+        left as NumPy would decide the answer's array library, and the gradient
+        a design loop needs does not survive the trip out of torch and back. A
+        sequence argument keeps whatever it was given as, since a plain number
+        carries more precision than a default-dtype tensor and a sequence's
+        event times are accumulated from exactly these.
+        """
+        declared = set(self.exposes)
+        return {
+            name: as_torch(value)
+            if name in declared or is_array(value)
+            else value
+            for name, value in values.items()
+        }
 
     def _split(self, values: Mapping[str, Any]) -> tuple[dict, dict]:
         """Tell the declared property arguments from the sequence ones."""
-        declared = self._names()
+        declared = self.exposes
         held = {
             name: as_torch(values[name]) for name in declared if name in values
         }
@@ -204,3 +287,14 @@ class SignalModel(ABC):
         if signal.ndim and signal.shape[0] == voxels:
             return signal.reshape(*batch, *signal.shape[1:])
         return signal
+
+
+# %% private module subroutines
+
+
+def _moved(values: Mapping[str, Any], device: torch.device) -> dict[str, Any]:
+    """The mapping with every tensor in it on ``device``, the rest untouched."""
+    return {
+        name: value.to(device) if torch.is_tensor(value) else value
+        for name, value in values.items()
+    }

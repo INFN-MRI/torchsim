@@ -7,7 +7,7 @@ import pytest
 import torch
 from scipy.optimize import least_squares
 
-from torchsim import Acquisition, ParameterMapping
+from torchsim import ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
 import torchsim.recon._operator as _operator
 from torchsim.simulators import (
@@ -22,7 +22,7 @@ TI_MS = torch.tensor([50.0, 200.0, 600.0, 1200.0, 2500.0])
 
 def multiecho_mapping(**settings):
     """A T2/M0 fit from a multi-echo decay, trained and ready."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), M0=(0.2, 2.0), seed=0)
     mapping.train(NonlinearLeastSquares(**settings), samples=256)
     return acquisition, mapping
@@ -82,7 +82,7 @@ def test_no_iterate_ever_leaves_the_bounds(monkeypatch) -> None:
     the answer. Every parameter the model is evaluated at is recorded instead.
     """
     low, high = 20.0, 60.0
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(
         acquisition, T2=(low, high), M0=(0.2, 2.0), seed=0
     )
@@ -118,7 +118,7 @@ def test_a_starting_point_on_a_bound_is_refused() -> None:
     the first step is unbounded -- the fit would walk to the far bound and
     stay. Saying so where the value is written beats converging on nonsense.
     """
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
 
     with pytest.raises(ValueError, match="strictly inside"):
@@ -132,7 +132,7 @@ def test_a_starting_point_on_a_bound_is_refused() -> None:
 
 def test_a_starting_point_just_inside_a_bound_converges() -> None:
     """Close to a bound is fine; on it is not."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
     mapping.train(
         NonlinearLeastSquares(bounds={"T2": (10.0, 200.0)}, initial={"T2": 12.0}),
@@ -167,7 +167,7 @@ def test_an_unbounded_fit_is_the_same_fit() -> None:
 def test_a_complex_contrast_is_two_real_residuals() -> None:
     """What is minimized is the squared modulus, so both parts count."""
     flip = torch.full((16,), 150.0)
-    acquisition = Acquisition(FSESimulator(ESP=8.0, TR=2000.0), flip=flip)
+    acquisition = FSESimulator(ESP=8.0, TR=2000.0, flip=flip)
     mapping = ParameterMapping(
         acquisition, T1=(300.0, 2500.0), T2=(20.0, 200.0), seed=0
     )
@@ -189,7 +189,7 @@ def test_a_complex_contrast_is_two_real_residuals() -> None:
 
 def test_a_property_measured_separately_reaches_the_model() -> None:
     """A known map varies per voxel and is not fitted, but is not ignored."""
-    acquisition = Acquisition(InversionRecoverySimulator(TI=TI_MS))
+    acquisition = InversionRecoverySimulator(TI=TI_MS)
     mapping = ParameterMapping(
         acquisition,
         T1=(200.0, 3000.0),
@@ -212,7 +212,7 @@ def test_a_subspace_is_applied_to_the_prediction_too() -> None:
     A mapping with a rank projects the measurements, so a model that answered
     in full contrasts would be subtracting two different things.
     """
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(
         acquisition, T2=(5.0, 300.0), M0=(0.2, 2.0), rank=3, seed=0
     )
@@ -233,7 +233,7 @@ def test_a_subspace_is_applied_to_the_prediction_too() -> None:
 
 def test_converged_voxels_stop_being_solved() -> None:
     """Late iterations cost what is left, not what was started with."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
     method = NonlinearLeastSquares(bounds={"T2": (1.0, 1000.0)})
     mapping.train(method, samples=128)
@@ -294,7 +294,7 @@ def test_an_equality_constraint_is_written_into_the_model() -> None:
             )
 
     echoes = torch.tensor([1.2, 2.4, 3.6, 4.8, 6.0, 7.2])
-    acquisition = Acquisition(FatWater(), TE=echoes)
+    acquisition = FatWater(TE=echoes)
     mapping = ParameterMapping(
         acquisition, fat_fraction=(0.0, 1.0), M0=(0.5, 1.5), seed=0
     )
@@ -319,7 +319,7 @@ def test_an_equality_constraint_is_written_into_the_model() -> None:
 
 def test_a_bound_on_something_not_being_estimated_is_a_mistake() -> None:
     """A misspelt name would otherwise be silently ignored."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
 
     with pytest.raises(ValueError, match="T3"):
@@ -330,7 +330,7 @@ def test_a_bound_on_something_not_being_estimated_is_a_mistake() -> None:
 
 def test_a_bound_that_does_not_increase_is_a_mistake() -> None:
     """An empty interval has no inside to fit in."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=TE_MS))
+    acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
 
     with pytest.raises(ValueError, match="not increasing"):

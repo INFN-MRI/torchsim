@@ -38,19 +38,25 @@ k-space that shot samples [2]_.
 
 # %%
 #
-# The imports:
+# A design is a simulator with its tissue fixed on it, a cost written on what
+# it records, and the bounded parameters :class:`~torchsim.SequenceDesign`
+# drives.
 #
+
+# sphinx_gallery_start_ignore
 import warnings
 
 warnings.filterwarnings("ignore")
 
-import time
-
 import matplotlib.pyplot as plt
 import numpy as np
+
+# sphinx_gallery_end_ignore
+import time
+
 import torch
 
-from torchsim.optim import Acquisition, Bounded, SequenceDesign
+from torchsim.optim import Bounded, SequenceDesign
 from torchsim.simulators import FSESimulator
 
 # %%
@@ -137,7 +143,7 @@ ESP_MS = 5.0
 ECHOES = 120
 CENTRE_ECHO = 24
 
-one_train = Acquisition(FSESimulator(ESP=ESP_MS, states=12), **TISSUES)
+one_train = FSESimulator(ESP=ESP_MS, states=12, **TISSUES)
 echo = torch.arange(1, ECHOES + 1, dtype=torch.float32)
 
 
@@ -268,6 +274,7 @@ for label, angles, signal in (
         f"{float(at_centre[0, FLUID] - at_centre[0, CARTILAGE]):>5.3f}"
     )
 
+# sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 3, figsize=(13, 3.4))
 echo_index = np.arange(1, ECHOES + 1)
 pixel = np.arange(ECHOES) - ECHOES // 2
@@ -306,7 +313,151 @@ axes[2].set(
     ylim=(1e-5, 2.0),
 )
 axes[2].legend(fontsize=8), axes[2].grid(alpha=0.3)
+# An image keeps its own aspect and a line plot fills whatever it is given, so
+# the box each panel is drawn into has to be fixed for the row to line up.
+axes[2].set_box_aspect(1)
 figure.tight_layout()
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# What that looks like
+# --------------------
+#
+# A blur measured in pixels is a number, and the thing it is a number about is
+# an image. Since the echo index runs along one k-space direction, forming that
+# image is a multiplication: take each tissue's contribution to the object,
+# transform it along the phase-encode axis, weight every line by what the train
+# was at the echo that sampled it, and transform back. A tissue with a
+# fast-decaying train has its lines weighted down at the edges of k-space and
+# comes back smeared; one that holds up does not.
+#
+# The phantom is a knee in cartoon: a cartilage band with a two-pixel joint
+# line through it, and four bars of fluid five, three, two and one pixels
+# thick. No noise is added, so nothing below is a noise realization -- what
+# differs between the two images is the train and only the train.
+#
+SIZE = ECHOES
+
+rows, columns = torch.meshgrid(
+    torch.arange(SIZE, dtype=torch.float32),
+    torch.arange(SIZE, dtype=torch.float32),
+    indexing="ij",
+)
+middle = SIZE / 2 - 0.5
+inside = ((rows - middle) / 54.0) ** 2 + ((columns - middle) / 44.0) ** 2 < 1.0
+
+
+def band(low, high):
+    """The rows of the phantom between two heights."""
+    return inside & (rows >= low) & (rows < high)
+
+
+fluid_map = band(39, 41)
+for top, thickness in ((70, 5), (81, 3), (90, 2), (97, 1)):
+    fluid_map = fluid_map | band(top, top + thickness)
+cartilage_map = band(26, 54) & ~fluid_map
+muscle_map = inside & ~cartilage_map & ~fluid_map
+
+#: One mask per tissue, in the order the simulator returns them.
+PHANTOM = torch.stack(
+    [cartilage_map, muscle_map, fluid_map]
+).to(torch.complex64)
+
+
+def imaged(signal):
+    """The image a train produces, one tissue's modulation at a time.
+
+    Parameters
+    ----------
+    signal:
+        ``(1, tissues, echoes)`` echo train magnitudes.
+
+    Returns
+    -------
+    torch.Tensor
+        ``(SIZE, SIZE)``, phase encoding down the rows.
+    """
+    spectrum = torch.zeros(SIZE, SIZE, dtype=torch.complex64)
+    for tissue, component in enumerate(PHANTOM):
+        # The echo that samples the centre of k-space belongs at ky = 0.
+        along_ky = torch.roll(
+            signal[0, tissue].to(torch.complex64), -(CENTRE_ECHO - 1)
+        )
+        spectrum = spectrum + torch.fft.fft(component, dim=0) * along_ky[:, None]
+    return torch.fft.ifft(spectrum, dim=0).abs()
+
+
+prescribed_image = imaged(prescribed_signal)
+designed_image = imaged(designed_signal)
+scale = float(prescribed_image.max())
+
+# %%
+#
+# The joint line and the thin bars are where a point spread of a pixel or two
+# is decided. The ringing either side of every edge is the finite matrix rather
+# than the train -- a step edge sampled at 120 lines rings whatever weights
+# them -- and it is the *depth of the troughs between the bars* that the design
+# moves.
+#
+VIEW = (slice(6, 114), slice(12, 108))
+
+# sphinx_gallery_start_ignore
+figure, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+for axis, picture, title in (
+    (axes[0], prescribed_image, "prescribed"),
+    (axes[1], designed_image, "designed"),
+):
+    axis.imshow(
+        (picture[VIEW] / scale).numpy(force=True),
+        cmap="gray",
+        vmin=0.0,
+        vmax=0.85,
+    )
+    axis.set_title(title)
+    axis.set_xticks([])
+    axis.set_yticks([])
+    axis.set_box_aspect(1)
+
+profile = slice(64, 104)
+column = SIZE // 2
+axes[2].plot(
+    np.arange(profile.start, profile.stop),
+    (prescribed_image[profile, column] / scale).numpy(force=True),
+    "k--",
+    label="prescribed",
+)
+axes[2].plot(
+    np.arange(profile.start, profile.stop),
+    (designed_image[profile, column] / scale).numpy(force=True),
+    label="designed",
+)
+axes[2].set(
+    xlabel="Row",
+    ylabel="signal (normalized)",
+    title="through the fluid bars",
+)
+axes[2].legend(fontsize=8), axes[2].grid(alpha=0.3)
+# An image keeps its own aspect and a line plot fills whatever it is given, so
+# the box each panel is drawn into has to be fixed for the row to line up.
+axes[2].set_box_aspect(1)
+figure.tight_layout()
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# What moved is sharpness, and the contrast the cost also asked for did not
+# have to be given up for it: the fluid-to-cartilage difference at the centre
+# of k-space is within a percent of where it started while the point spread
+# narrowed by nearly a fifth. That is what the power term is doing in the cost --
+# without it the design would buy sharpness by driving the whole train harder,
+# and the answer would be a train the scanner refuses.
+#
+# The one-pixel bar is the honest limit. A point spread narrower than a pixel
+# is not a thing a design can buy, so what the last bar shows is how much of
+# its amplitude survives -- and a bar that is flattened in both images is
+# flattened by the matrix rather than by the train.
+#
 
 # %%
 #
@@ -334,7 +485,7 @@ LINES = round(320 * 240 / 4 * torch.pi / 4)
 BUDGET_S = 300.0
 
 SAMPLES = 16
-protocol_shots = Acquisition(FSESimulator(ESP=ESP_SPACE_MS, states=12), **TISSUES)
+protocol_shots = FSESimulator(ESP=ESP_SPACE_MS, states=12, **TISSUES)
 grid_echo = torch.arange(1, GRID + 1, dtype=torch.float32)
 
 # Each sampled radius stands for the shots at that distance from the centre of
@@ -520,6 +671,8 @@ print(
 # them are the same curve read at their own radius, which is what keeps
 # k-space free of the discontinuities that a shot-by-shot design would leave.
 #
+
+# sphinx_gallery_start_ignore
 figure, axes = plt.subplots(2, 3, figsize=(13, 6.5))
 colours = plt.cm.viridis(np.linspace(0.0, 0.85, SAMPLES))
 grid_index = np.arange(1, GRID + 1)
@@ -579,6 +732,7 @@ axes[1, 2].set(xlabel="k-space radius", ylabel="fluid - cartilage",
                title="contrast across k-space")
 axes[1, 2].legend(fontsize=8), axes[1, 2].grid(alpha=0.3)
 figure.tight_layout()
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -607,8 +761,8 @@ figure.tight_layout()
 # exists that can play them.
 #
 # The cost the whole thing ran at is the reason the structure is resolved
-# once. An :class:`~torchsim.Acquisition` walks the layout, builds the event
-# stream and packs it on its first call, and afterwards rebinds only the
+# once. A simulator walks the layout, builds the event stream and packs it on
+# its first call, and afterwards rebinds only the
 # numbers that changed -- so an iteration costs about what the kernels cost
 # rather than several times more. That is what puts a design of this size
 # inside the time a scanner has between the prescription and the first

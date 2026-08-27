@@ -34,12 +34,12 @@ class Grouping:
 
     Attributes
     ----------
-    members:
+    members : tuple of torch.Tensor
         One tensor of atom indices per group.
-    representative:
+    representative : torch.Tensor
         ``(groups, contrasts)``, the normalized mean signal of each group.
         Matching against these is what prunes.
-    atoms:
+    atoms : tuple of torch.Tensor
         Each group's atoms, normalized, in the basis the dictionary arrived
         in. No group carries a basis of its own -- see the module docstring.
     """
@@ -135,9 +135,9 @@ class Grouping:
 
         Parameters
         ----------
-        signals:
+        signals : torch.Tensor
             ``(voxels, contrasts)``, already normalized.
-        prune:
+        prune : float
             How far below its best group score a voxel still considers a
             group, as a fraction of that best score.
 

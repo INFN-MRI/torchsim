@@ -114,16 +114,16 @@ class LookupTable(torch.nn.Module):
 
         Parameters
         ----------
-        signals:
+        signals : torch.Tensor
             ``(samples, contrasts)``. Several contrasts are reduced to one by
             the ``combine`` given to the constructor; without one, a single
             column is expected.
-        parameters:
+        parameters : torch.Tensor
             ``(samples, 1)`` or ``(samples,)`` -- the single unknown.
-        known:
+        known : torch.Tensor, optional
             Not supported. A table is one curve, and a property measured per
             voxel would need a curve for every voxel.
-        noise_std:
+        noise_std : float or torch.Tensor, optional
             Accepted and unused. The table is the clean model a measurement is
             read against.
 
@@ -173,10 +173,10 @@ class LookupTable(torch.nn.Module):
 
         Parameters
         ----------
-        signals:
+        signals : torch.Tensor
             ``(..., contrasts)``, reduced by ``combine`` as in :meth:`fit`.
             Values outside the table's span are read as the nearer endpoint.
-        known:
+        known : torch.Tensor, optional
             Not supported.
 
         Returns

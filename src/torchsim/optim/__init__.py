@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "Acquisition",
     "Bounded",
     "SequenceDesign",
     "SequenceOptimization",
@@ -11,7 +10,6 @@ __all__ = [
 ]
 
 from ._design import (
-    Acquisition,
     Bounded,
     SequenceDesign,
     SequenceOptimization,

@@ -23,16 +23,24 @@ cost with respect to the sequence.
 
 # %%
 #
-# We begin with the necessary imports:
+# The two pieces a signal model is written from, and the trigger set that
+# says what an unbalanced readout plays.
 #
-from dataclasses import replace
+
+# sphinx_gallery_start_ignore
+import warnings
+
+warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
+
+# sphinx_gallery_end_ignore
+from dataclasses import replace
+
 import numpy as np
 import torch
 
 from torchsim.model import (
-    SPOILED,
     UNBALANCED,
     AbstractSimulator,
     StateMachineModel,
@@ -104,10 +112,12 @@ flip = np.concatenate(
 sequence = SSFPMRF(flip=flip, TR=10.0, TI=20.0)
 signal = sequence.simulate(T1=1000.0, T2=100.0)
 
+# sphinx_gallery_start_ignore
 plt.figure()
 plt.plot(abs(signal))
 plt.xlabel("TR index")
 plt.ylabel("signal magnitude [a.u.]")
+# sphinx_gallery_end_ignore
 
 # %%
 # The same call over a parameter map returns one row per voxel:
@@ -117,10 +127,12 @@ signals = sequence.simulate(
     T2=torch.tensor([50.0, 100.0, 150.0]),
 )
 
+# sphinx_gallery_start_ignore
 plt.figure()
 plt.plot(abs(signals.T))
 plt.xlabel("TR index")
 plt.ylabel("signal magnitude [a.u.]")
+# sphinx_gallery_end_ignore
 
 # %%
 # Derivatives with respect to tissue: forward mode
@@ -135,10 +147,12 @@ plt.ylabel("signal magnitude [a.u.]")
 #
 signal, jacobian = sequence.jacobian(("T1", "T2"), T1=1000.0, T2=100.0)
 
+# sphinx_gallery_start_ignore
 plt.figure()
 plt.plot(abs(jacobian.T))
 plt.xlabel("TR index")
 plt.ylabel("signal jacobian [a.u.]")
+# sphinx_gallery_end_ignore
 
 # %%
 # Derivatives with respect to the sequence: reverse mode
@@ -154,10 +168,12 @@ recorded = sequence.simulate(T1=1000.0, T2=100.0, flip=schedule)
 loss = -recorded.abs().square().sum()
 loss.backward()
 
+# sphinx_gallery_start_ignore
 plt.figure()
 plt.plot(schedule.grad)
 plt.xlabel("TR index")
 plt.ylabel("d(loss) / d(flip) [1/deg]")
+# sphinx_gallery_end_ignore
 
 # %%
 # Asking for more physics
@@ -174,10 +190,12 @@ detuned = SSFPMRF(
     TI=20.0,
 ).simulate(T1=1000.0, T2=100.0, B0=torch.tensor([0.0, 30.0, 60.0]))
 
+# sphinx_gallery_start_ignore
 plt.figure()
 plt.plot(abs(detuned.T))
 plt.xlabel("TR index")
 plt.ylabel("signal magnitude [a.u.]")
+# sphinx_gallery_end_ignore
 
 # %%
 # Note that ``B0`` is a *map* here. Had it been left at its scalar default the

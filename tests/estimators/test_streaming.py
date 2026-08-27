@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Acquisition, DictionaryMatcher, PERK, ParameterMapping
+from torchsim import DictionaryMatcher, PERK, ParameterMapping
 from torchsim.estimators import _perk
 from torchsim.sequence import execution
 from torchsim.simulators import MRFSimulator
@@ -187,7 +187,7 @@ def test_a_whole_mapping_runs_under_a_policy() -> None:
     generator = torch.Generator().manual_seed(5)
     flip = 5.0 + 55.0 * torch.rand(CONTRASTS, generator=generator)
     mapping = ParameterMapping(
-        Acquisition(MRFSimulator(TR=10.0, TI=20.0, states=10), flip=flip),
+        MRFSimulator(TR=10.0, TI=20.0, states=10, flip=flip),
         T1=(300.0, 2000.0),
         T2=(20.0, 200.0),
         seed=0,

@@ -10,7 +10,6 @@ form needs.
 from __future__ import annotations
 
 __all__ = [
-    "Acquisition",
     "BALANCED",
     "REFOCUSED",
     "SPOILED",
@@ -21,7 +20,6 @@ __all__ = [
     "Triggers",
 ]
 
-from ._acquisition import Acquisition
 from ._signal import SignalModel
 from ._state_machine import (
     BALANCED,

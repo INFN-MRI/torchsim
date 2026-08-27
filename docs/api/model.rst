@@ -12,7 +12,9 @@ are taken all follow from those two.
 
 :class:`SignalModel` is the interface everything downstream reads: the
 estimators, the model-based operator and the sequence optimizer take one and
-never ask which of the two kinds it is.
+never ask which of the two kinds it is. It is also what fixes arguments on a
+model: a constructor takes the keywords :meth:`~SignalModel.simulate` takes,
+:meth:`~SignalModel.bind` adds more to a copy, and a call overrides either.
 
 .. autosummary::
    :toctree: ../generated

@@ -71,11 +71,11 @@ class Linearization:
 
     Attributes
     ----------
-    matvec:
+    matvec : callable
         ``d -> J d``, from map space to measurement space.
-    rmatvec:
+    rmatvec : callable
         ``v -> J^H v``, back again, real because the maps are.
-    blocks:
+    blocks : torch.Tensor, optional
         ``(voxels, channels, contrasts)`` where the operator is voxel-diagonal,
         ``None`` where an encoding has mixed the voxels together.
     """
@@ -91,18 +91,18 @@ class Solution:
 
     Attributes
     ----------
-    x:
+    x : torch.Tensor
         The maps, as the variables that were solved for. Pass them through
         :meth:`~torchsim.recon.ModelOperator.split` for the properties.
-    cost:
+    cost : torch.Tensor
         The squared residual after each step, so convergence is read rather
         than assumed.
-    damping:
+    damping : torch.Tensor
         The damping each step ran at, averaged over the voxels where each
         carries its own.
-    iterations:
+    iterations : int
         How many steps were taken.
-    unconverged:
+    unconverged : int
         How many voxels were still moving when the loop stopped. Zero for a
         solve that ran to its tolerance.
     """
@@ -130,7 +130,7 @@ def iterative(
 
     Parameters
     ----------
-    solver:
+    solver : str, optional
         Which of deepinv's solvers to use: ``"CG"``, ``"lsqr"``,
         ``"BiCGStab"`` or ``"minres"``. Which one suits depends on the
         problem and is worth measuring: conjugate gradients works on the
@@ -138,9 +138,9 @@ def iterative(
         tolerance the squared condition number has already spoiled, while
         LSQR and MINRES reach what a direct solve reaches -- and on a large
         encoded problem inside a fixed iteration budget the ordering reverses.
-    max_iter:
+    max_iter : int, optional
         Most inner iterations per Gauss-Newton step.
-    tol:
+    tol : float, optional
         Stop when the residual has fallen this far relative to the data.
 
     Returns
@@ -221,13 +221,13 @@ def direct(
 
     Parameters
     ----------
-    linearization:
+    linearization : Linearization
         The derivative, which must carry its blocks.
-    rhs:
+    rhs : torch.Tensor
         ``(voxels, contrasts)``, ``y - F(x)``.
-    damping:
+    damping : torch.Tensor
         ``(voxels, 1)`` or one number.
-    reference:
+    reference : torch.Tensor
         ``(voxels, channels)``, what the damping pulls towards.
 
     Returns
@@ -269,11 +269,11 @@ class Schedule:
 
     Attributes
     ----------
-    initial:
+    initial : float
         The first weight.
-    factor:
+    factor : float
         What it is multiplied by after each step.
-    minimum:
+    minimum : float
         The floor, so late steps stay regularized rather than becoming a bare
         Gauss-Newton on an ill-posed problem.
     """
@@ -323,7 +323,7 @@ class TrustRegion:
 
     Attributes
     ----------
-    tau:
+    tau : float
         Sets the first damping, as this times the largest curvature the
         starting point shows. Small where the guess is good.
     """
@@ -373,19 +373,19 @@ class GaussNewton:
 
     Parameters
     ----------
-    damping:
+    damping : Schedule or TrustRegion, optional
         :class:`Schedule` for an iteratively regularized Gauss-Newton,
         :class:`TrustRegion` for Levenberg-Marquardt.
-    solve:
+    solve : callable, optional
         The inner solve, called as
         ``solve(linearization, rhs, damping, reference)``. Left out, it is
         :func:`direct` where the model stands alone and ``iterative()`` --
         deepinv's conjugate gradients -- where an encoding operator does not
         leave independent voxels. A closure around anything else is how a
         regularizer enters.
-    max_iterations:
+    max_iterations : int, optional
         Most outer steps to take.
-    gradient_tolerance, step_tolerance:
+    gradient_tolerance, step_tolerance : float, optional
         A voxel is done when its gradient is flat or its step is short
         relative to where it stands.
 

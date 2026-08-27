@@ -21,19 +21,25 @@ written by hand: the simulator, the derivative and the bound are all calls.
 
 # %%
 #
-# The imports:
+# Everything below is torch and TorchSim: a simulator, which carries both the
+# sequence and the tissue it is being asked about, and
+# :func:`~torchsim.crlb`, which turns a derivative into the precision it
+# allows.
 #
+
+# sphinx_gallery_start_ignore
 import warnings
 
 warnings.filterwarnings("ignore")
 
+import matplotlib.pyplot as plt
+
+# sphinx_gallery_end_ignore
 import time
 
-import matplotlib.pyplot as plt
 import torch
 
 import torchsim
-from torchsim import Acquisition
 from torchsim.simulators import FSESimulator
 
 # %%
@@ -42,9 +48,11 @@ from torchsim.simulators import FSESimulator
 # ------------------------------------------
 #
 # A simulator names what the scanner does: here a 48-echo refocused train at a
-# 5 ms echo spacing. An :class:`~torchsim.Acquisition` is that simulator with
-# the tissue already bound to it, so what is left to give at the call is the
-# part still under discussion -- in this case the refocusing angles.
+# 5 ms echo spacing. Its constructor takes whatever
+# :meth:`~torchsim.model.SignalModel.simulate` takes and fixes it, so the
+# tissue is written down once with the sequence and what is
+# left to give at the call is the part still under discussion -- in this case
+# the refocusing angles.
 #
 # Three tissues at 3 T, given as arrays, are simulated together. Every property
 # broadcasts, so a whole slice is the same call with longer arrays.
@@ -56,9 +64,7 @@ NAMES = ("white matter", "grey matter", "CSF")
 T1_MS = torch.tensor([830.0, 1330.0, 4000.0])
 T2_MS = torch.tensor([80.0, 110.0, 2000.0])
 
-acquisition = Acquisition(
-    FSESimulator(ESP=ESP_MS, TR=3000.0), T1=T1_MS, T2=T2_MS, M0=1.0
-)
+acquisition = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, M0=1.0)
 
 flip = torch.full((ECHOES,), 60.0)
 signal = acquisition.simulate(flip=flip)
@@ -74,26 +80,31 @@ print(f"first echo: {signal[:, 0].abs().numpy().round(3)}")
 # than a single exponential -- which is exactly why an extended phase graph is
 # needed to predict it and a mono-exponential fit of the train would be wrong.
 #
-figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
-for row, name in enumerate(NAMES):
-    axes[0].plot(signal[row].abs().numpy(), label=name)
-axes[0].set(xlabel="Echo", ylabel="|signal|", title="a 60 degree train")
+refocused = acquisition.simulate(flip=torch.full((ECHOES,), 180.0))
 
-reference = acquisition.simulate(flip=torch.full((ECHOES,), 180.0))
-for row, name in enumerate(NAMES):
-    axes[1].plot(reference[row].abs().numpy(), label=name)
-axes[1].set(xlabel="Echo", ylabel="|signal|", title="a 180 degree train")
-for axis in axes:
+# sphinx_gallery_start_ignore
+
+# sphinx_gallery_start_ignore
+figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
+for axis, values, title in (
+    (axes[0], signal, "a 60 degree train"),
+    (axes[1], refocused, "a 180 degree train"),
+):
+    for row, name in enumerate(NAMES):
+        axis.plot(values[row].abs().numpy(), label=name)
+    axis.set(xlabel="Echo", ylabel="|signal|", title=title)
     axis.grid(alpha=0.3)
 axes[0].legend(fontsize=8)
 figure.tight_layout()
+# sphinx_gallery_end_ignore
+# sphinx_gallery_end_ignore
 
 # %%
 #
 # Derivative with respect to tissue
 # ---------------------------------
 #
-# :meth:`~torchsim.Acquisition.jacobian` returns the signal and its derivative
+# :meth:`~torchsim.model.SignalModel.jacobian` returns the signal and its derivative
 # with respect to the properties named. It is forward mode, one directional
 # derivative per property, so a Fisher matrix over four parameters costs four
 # passes however many voxels are being simulated.
@@ -200,9 +211,7 @@ def timed(call):
 
 reverse_seconds, difference_seconds = [], []
 for echoes in LENGTHS:
-    shots = Acquisition(
-        FSESimulator(ESP=ESP_MS, TR=3000.0), T1=T1_MS, T2=T2_MS, M0=1.0
-    )
+    shots = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, M0=1.0)
     angles = torch.full((echoes,), 60.0)
     (cost, analytic), seconds = timed(lambda: analytic_gradient(shots, angles))
     reverse_seconds.append(seconds)
@@ -219,6 +228,10 @@ for echoes in LENGTHS:
 # large one on a curve this bent, and the discrepancy is the finite
 # difference's rather than the derivative's.
 #
+
+# sphinx_gallery_start_ignore
+
+# sphinx_gallery_start_ignore
 figure, axes = plt.subplots(1, 3, figsize=(14, 3.6))
 axes[0].plot(dT2[0].abs().numpy(), "-k", label="forward mode")
 axes[0].plot(finite[0].abs().numpy(), "*r", ms=4, label="finite difference")
@@ -248,6 +261,8 @@ axes[2].set(
 for axis in axes:
     axis.grid(alpha=0.3), axis.legend(fontsize=8)
 figure.tight_layout()
+# sphinx_gallery_end_ignore
+# sphinx_gallery_end_ignore
 
 # %%
 #

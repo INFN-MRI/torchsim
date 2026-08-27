@@ -12,7 +12,7 @@ this module composes with it rather than reimplementing it.
 
 ``M`` is the part that changes with the sequence, and it is the part a user
 should have to write. :class:`ModelOperator` turns any
-:class:`~torchsim.Acquisition` into it: parameter maps in, one image per
+simulator into it: parameter maps in, one image per
 contrast out, with derivatives, bounds and the complex amplitude a
 reconstruction needs, and nothing about Fourier encoding anywhere in it.
 
@@ -60,14 +60,14 @@ class ModelOperator(torch.nn.Module):
 
     Parameters
     ----------
-    acquisition:
+    acquisition : SignalModel
         The sequence being inverted, with every property that is not being
-        solved for already bound on it. A property bound as a map -- a
+        solved for already fixed on it. A property bound as a map -- a
         measured B1, a known T1 -- is one value per voxel and rides along.
-    unknown:
+    unknown : str, optional
         The property names being solved for, in the order their channels
         appear. At least one.
-    bounds:
+    bounds : mapping, optional
         ``{name: (low, high)}``, either end ``None`` for unbounded. A bound is
         kept by solving for a transformed variable, so no iterate is ever
         outside it -- which matters more here than in a fit, because the model
@@ -75,14 +75,14 @@ class ModelOperator(torch.nn.Module):
         voxel out of range corrupts the whole residual. A two-sided bound also
         puts the parameter on a scale of order one whatever its units, which
         is the preconditioning a mixed parameter set needs.
-    scale:
+    scale : mapping, optional
         ``{name: value}``, the size of a step in a parameter left unbounded.
         Bounded parameters are already scaled by their interval.
-    amplitude:
+    amplitude : bool, optional
         Whether to carry a complex amplitude multiplying the model output.
         On, which is what a reconstruction wants; off for a fit whose model
         already exposes its own proton density.
-    subspace:
+    subspace : Subspace, optional
         A :class:`~torchsim.Subspace` the prediction is projected through, for
         a reconstruction that solves in the temporal basis rather than in the
         contrasts.
@@ -92,7 +92,7 @@ class ModelOperator(torch.nn.Module):
     .. code-block:: python
 
         operator = ModelOperator(
-            Acquisition(MultiEchoSimulator(TE=echo_times), T1=1000.0),
+            MultiEchoSimulator(TE=echo_times, T1=1000.0),
             "T2",
             bounds={"T2": (10.0, 300.0)},
         )
@@ -171,7 +171,7 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        x:
+        x : torch.Tensor
             ``(..., channels)``, the variables being solved for.
 
         Returns
@@ -190,9 +190,9 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        shape:
+        shape : sequence of int, optional
             The voxel shape. Empty gives one voxel.
-        values:
+        values : float or array-like, optional
             ``{name: value}`` in the property's own units. An unknown left out
             starts at the middle of its bound, and a one-sided or absent bound
             has no middle, so it must be given. The amplitude starts at one
@@ -254,7 +254,7 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        keep:
+        keep : torch.Tensor
             An index or a boolean mask over the voxel axis.
 
         Returns
@@ -265,13 +265,13 @@ class ModelOperator(torch.nn.Module):
         declared = set(self.acquisition.exposes)
         narrowed = {
             name: value[keep]
-            for name, value in self.acquisition.properties.items()
+            for name, value in self.acquisition.bound.items()
             if name in declared and torch.is_tensor(value) and value.ndim
         }
         if not narrowed:
             return self
         chosen = shallow_copy(self)
-        chosen.acquisition = self.acquisition.bound(**narrowed)
+        chosen.acquisition = self.acquisition.bind(**narrowed)
         chosen._elsewhere = {}
         return chosen
 
@@ -280,7 +280,7 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        x:
+        x : torch.Tensor
             ``(..., channels)``.
 
         Returns
@@ -301,7 +301,7 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        x, d:
+        x, d : torch.Tensor
             ``(..., channels)``, the point and the direction.
 
         Returns
@@ -327,9 +327,9 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        x:
+        x : torch.Tensor
             ``(..., channels)``, the point.
-        v:
+        v : torch.Tensor
             ``(..., contrasts)``, the cotangent.
 
         Returns
@@ -354,7 +354,7 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        x:
+        x : torch.Tensor
             ``(..., channels)``.
 
         Returns
@@ -377,7 +377,7 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        kwargs:
+        kwargs : dict, optional
             Passed to :class:`deepinv.physics.Physics`, so a noise model can
             be given.
 

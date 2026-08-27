@@ -55,15 +55,15 @@ class MPnRAGESimulator(AbstractSimulator):
 
         Parameters
         ----------
-        nshots:
+        nshots : int
             Readouts per inversion block.
-        flip:
+        flip : float or array-like
             Excitation flip angle in degrees, scalar or one per shot.
-        TR:
+        TR : float or array-like
             Repetition time in milliseconds.
-        TI:
+        TI : float or array-like, optional
             Inversion time in milliseconds.
-        phases:
+        phases : float or array-like, optional
             Excitation phases in degrees.
         """
         shots = int(as_torch(nshots).reshape(()).item())

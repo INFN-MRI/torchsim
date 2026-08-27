@@ -61,17 +61,17 @@ class MPRAGESimulator(AbstractSimulator):
 
         Parameters
         ----------
-        TI:
+        TI : float or array-like
             Inversion time in milliseconds, measured to the sampled shot.
-        flip:
+        flip : float or array-like
             Excitation flip angle in degrees, scalar or one per shot.
-        TRspgr:
+        TRspgr : float or array-like
             Repetition time in milliseconds of one readout.
-        nshots:
+        nshots : int or array-like
             Readouts in the inversion block, either the total -- split as
             evenly as an odd centre allows -- or ``(before, after)`` the shot
             that samples the k-space centre.
-        phases:
+        phases : float or array-like, optional
             Excitation phases in degrees.
 
         Raises

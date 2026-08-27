@@ -12,7 +12,7 @@ import time
 import pytest
 import torch
 
-from torchsim.optim import Acquisition, Bounded, SequenceDesign, crlb
+from torchsim.optim import Bounded, SequenceDesign, crlb
 from torchsim.simulators import FSESimulator, SPGRSimulator, bSSFPSimulator
 
 TISSUE = {"T1": [800.0, 1400.0], "T2": [45.0, 120.0]}
@@ -75,7 +75,7 @@ def test_an_acquisition_answers_what_the_simulator_does() -> None:
     sequence = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     flip = torch.full((16,), 120.0)
 
-    bound = Acquisition(sequence, **TISSUE).simulate(flip=flip)
+    bound = sequence.bind(**TISSUE).simulate(flip=flip)
 
     torch.testing.assert_close(
         bound, sequence.simulate(flip=flip, **TISSUE), rtol=1e-6, atol=1e-7
@@ -90,8 +90,10 @@ def test_an_acquisition_keeps_a_numpy_design_tissue_in_torch() -> None:
     nothing to differentiate.
     """
     numpy = pytest.importorskip("numpy")
-    shots = Acquisition(
-        FSESimulator(ESP=5.0, TR=3000.0, states=10),
+    shots = FSESimulator(
+        ESP=5.0,
+        TR=3000.0,
+        states=10,
         T1=numpy.asarray([800.0, 1400.0]),
         T2=numpy.asarray([45.0, 120.0]),
     )
@@ -106,7 +108,7 @@ def test_an_acquisition_keeps_a_numpy_design_tissue_in_torch() -> None:
 
 def test_an_acquisition_reports_what_its_simulator_exposes() -> None:
     """Which is what a joint design reads to know which block is blind."""
-    spgr = Acquisition(SPGRSimulator(TE=2.0, TR=10.0), T1=1000.0, T2star=40.0)
+    spgr = SPGRSimulator(TE=2.0, TR=10.0, T1=1000.0, T2star=40.0)
     assert "T2star" in spgr.exposes and "T2" not in spgr.exposes
 
 
@@ -115,12 +117,12 @@ def test_an_acquisition_reports_what_its_simulator_exposes() -> None:
 
 def _precision():
     """A relative-T2-precision cost over a refocused train and two tissues."""
-    shots = Acquisition(FSESimulator(ESP=5.0, TR=3000.0, states=10), **TISSUE)
+    shots = FSESimulator(ESP=5.0, TR=3000.0, states=10, **TISSUE)
 
     def cost(flip: torch.Tensor) -> torch.Tensor:
         _, derivative = shots.jacobian("T2", flip=flip)
         variance = crlb(derivative.unsqueeze(-2)).squeeze(-1)
-        return (variance / shots.properties["T2"].square()).mean().log()
+        return (variance / shots.bound["T2"].square()).mean().log()
 
     return cost
 
@@ -177,8 +179,8 @@ def test_a_design_with_nothing_to_design_says_so() -> None:
 
 def test_several_parameters_are_designed_together() -> None:
     """Each reaches the cost by name, with its own limits."""
-    spgr = Acquisition(SPGRSimulator(TE=2.0), T1=1000.0, T2star=40.0)
-    ssfp = Acquisition(bSSFPSimulator(TE=2.5), T1=1000.0, T2=80.0)
+    spgr = SPGRSimulator(TE=2.0, T1=1000.0, T2star=40.0)
+    ssfp = bSSFPSimulator(TE=2.5, T1=1000.0, T2=80.0)
 
     def contrast(spgr_flip, ssfp_flip):
         return -(
@@ -218,7 +220,7 @@ def _modulation_spread(signal: torch.Tensor) -> torch.Tensor:
 
 def test_a_batch_of_trains_is_designed_in_one_simulation() -> None:
     """The shots of one acquisition, each with its own train, at once."""
-    shots = Acquisition(FSESimulator(ESP=5.0, TR=1800.0, states=10), **TISSUE)
+    shots = FSESimulator(ESP=5.0, TR=1800.0, states=10, **TISSUE)
 
     def sharpness(flip):
         return _modulation_spread(shots.simulate(flip=flip)).mean()
@@ -243,7 +245,7 @@ def test_an_image_quality_design_fits_in_its_budget() -> None:
     of magnitude, not the millisecond. Unresolved, the same loop takes about
     eight times as long and would not fit.
     """
-    shots = Acquisition(FSESimulator(ESP=5.0, TR=1800.0, states=10), **TISSUE)
+    shots = FSESimulator(ESP=5.0, TR=1800.0, states=10, **TISSUE)
 
     def sharpness(flip):
         return _modulation_spread(shots.simulate(flip=flip)).mean()

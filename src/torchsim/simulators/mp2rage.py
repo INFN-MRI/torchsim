@@ -84,19 +84,19 @@ class MP2RAGESimulator(AbstractSimulator):
 
         Parameters
         ----------
-        TI:
+        TI : array-like
             The two inversion times in milliseconds, each measured to the
             sampled shot of its block.
-        flip:
+        flip : float or array-like
             Excitation flip angle in degrees, one per block or one shared.
-        TRspgr:
+        TRspgr : float or array-like
             Repetition time in milliseconds of one readout.
-        TRmp2rage:
+        TRmp2rage : float or array-like
             Repetition time in milliseconds of the whole inversion block.
-        nshots:
+        nshots : int or array-like
             Readouts per block, either the total -- halved for each block --
             or ``(before, after)`` the sampled shot.
-        phases:
+        phases : float or array-like, optional
             Excitation phases in degrees, one per block or one shared.
 
         Raises

@@ -25,9 +25,9 @@ class Subspace:
 
     Attributes
     ----------
-    basis:
+    basis : torch.Tensor
         ``(contrasts, rank)``, orthonormal. Complex when the signals are.
-    singular_values:
+    singular_values : torch.Tensor
         Every singular value of the signals it was fitted from, not only the
         ones kept, so :attr:`retained` can be read and another rank costed.
     """

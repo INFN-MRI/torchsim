@@ -71,10 +71,10 @@ class Operator:
 
     Parameters
     ----------
-    emit:
+    emit : callable
         Given the absolute time the module starts, in seconds, the events it
         plays.
-    duration_s:
+    duration_s : float or torch.Tensor, optional
         What the module holds the timeline for. Zero for a module that plays
         instantaneously and leaves the next one to start where it did.
     """
@@ -95,9 +95,9 @@ def compose(
 
     Parameters
     ----------
-    parts:
+    parts : Operator or tuple, optional
         The operators, in the order they play.
-    start_s:
+    start_s : float or torch.Tensor, optional
         When the first one starts.
 
     Returns

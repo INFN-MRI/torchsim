@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Acquisition, Subspace, execution
+from torchsim import Subspace, execution
 from torchsim.recon import ModelOperator
 from torchsim.simulators import FSESimulator, MultiEchoSimulator
 
@@ -17,7 +17,7 @@ BOUND = {"T2": (10.0, 300.0)}
 def operator():
     """A multi-echo decay over one bounded unknown, with an amplitude."""
     return ModelOperator(
-        Acquisition(MultiEchoSimulator(TE=TE_MS)), "T2", bounds=BOUND
+        MultiEchoSimulator(TE=TE_MS), "T2", bounds=BOUND
     )
 
 
@@ -70,7 +70,7 @@ def test_a_starting_point_is_the_value_it_was_asked_for(operator) -> None:
 def test_a_starting_point_with_no_middle_must_be_given() -> None:
     """Half a bound has no midpoint to fall back to, so it says so."""
     operator = ModelOperator(
-        Acquisition(MultiEchoSimulator(TE=TE_MS)),
+        MultiEchoSimulator(TE=TE_MS),
         "T2",
         bounds={"T2": (0.0, None)},
     )
@@ -161,8 +161,11 @@ def test_the_amplitude_costs_no_pass(operator, point) -> None:
 
 def test_a_state_machine_model_differentiates_both_ways() -> None:
     """Forward and reverse both reach the fused engine, not only forward."""
-    acquisition = Acquisition(
-        FSESimulator(ESP=5.0, TR=1800.0), T1=1000.0, flip=torch.full((24,), 150.0)
+    acquisition = FSESimulator(
+        ESP=5.0,
+        TR=1800.0,
+        T1=1000.0,
+        flip=torch.full((24,), 150.0),
     )
     operator = ModelOperator(acquisition, "T2", bounds={"T2": (20.0, 300.0)})
     x = operator.initial((5,), T2=90.0)
@@ -200,7 +203,7 @@ def test_a_bound_holds_however_far_the_variable_goes(operator) -> None:
 def test_a_scale_sets_the_size_of_a_step_in_an_unbounded_parameter() -> None:
     """Without a bound to normalize it, the caller says what a step is worth."""
     operator = ModelOperator(
-        Acquisition(MultiEchoSimulator(TE=TE_MS)),
+        MultiEchoSimulator(TE=TE_MS),
         "T2",
         scale={"T2": 100.0},
         amplitude=False,
@@ -224,14 +227,14 @@ def test_settings_that_make_no_sense(settings, complaint) -> None:
     """Caught where they are written, not at the first iterate."""
     with pytest.raises(ValueError, match=complaint):
         ModelOperator(
-            Acquisition(MultiEchoSimulator(TE=TE_MS)), "T2", **settings
+            MultiEchoSimulator(TE=TE_MS), "T2", **settings
         )
 
 
 def test_an_operator_needs_something_to_solve_for() -> None:
     """An operator over no unknowns is a simulator, and there is one already."""
     with pytest.raises(ValueError, match="at least one"):
-        ModelOperator(Acquisition(MultiEchoSimulator(TE=TE_MS)))
+        ModelOperator(MultiEchoSimulator(TE=TE_MS))
 
 
 # %% a subspace, and where the work runs
@@ -239,7 +242,7 @@ def test_an_operator_needs_something_to_solve_for() -> None:
 
 def test_a_subspace_shortens_what_comes_out() -> None:
     """A reconstruction that solves in the basis gets its prediction there."""
-    acquisition = Acquisition(MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 32)))
+    acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 32))
     grid = torch.linspace(20.0, 300.0, 64)
     subspace = Subspace.fit(torch.as_tensor(acquisition.simulate(T2=grid)), 4)
     operator = ModelOperator(

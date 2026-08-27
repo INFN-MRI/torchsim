@@ -2,9 +2,9 @@
 
 A design problem is three things, and this module is one object for each.
 
-:class:`Acquisition` is a simulator with the tissue it is being designed for
-already in place, so only the parameters under design are left to give. It
-answers the same two questions a simulator does -- what is recorded, and how
+The **acquisition** is a simulator with the tissue it is being designed for
+already fixed on it, so only the parameters under design are left to give. It
+answers the same two questions any simulator does -- what is recorded, and how
 that changes with the tissue -- which is what lets a cost be written against
 the simulator's own vocabulary.
 
@@ -29,7 +29,6 @@ signal alone. Both are the same object with a different function in it.
 from __future__ import annotations
 
 __all__ = [
-    "Acquisition",
     "Bounded",
     "SequenceDesign",
     "SequenceOptimization",
@@ -42,7 +41,6 @@ from typing import Any, TypeAlias
 
 import torch
 
-from ..model import Acquisition
 from ..sequence._array import as_torch
 
 Limits: TypeAlias = tuple[Any, Any] | None
@@ -54,9 +52,9 @@ class Bounded:
 
     Attributes
     ----------
-    initial:
+    initial : array-like
         Where the design starts.
-    lower, upper:
+    lower, upper : float or array-like
         The limits, either scalars or values per element. They are enforced
         exactly, by optimizing a variable the limits are a sigmoid of, so no
         iterate is ever outside them -- which matters when the bound is what
@@ -70,7 +68,15 @@ class Bounded:
 
 @dataclass(frozen=True)
 class SequenceOptimization:
-    """The designed parameters and the loss at every step that reached them."""
+    """The designed parameters and the loss at every step that reached them.
+
+    Attributes
+    ----------
+    parameters : dict
+        ``{name: value}`` at the last step, inside the limits each was given.
+    loss : torch.Tensor
+        The cost after every step, so convergence is read rather than assumed.
+    """
 
     parameters: dict[str, torch.Tensor]
     loss: torch.Tensor
@@ -81,11 +87,11 @@ class SequenceDesign(torch.nn.Module):
 
     Parameters
     ----------
-    cost:
+    cost : callable
         Called with the designed parameters by keyword, returning one number.
         Everything sequence-specific lives here: what is simulated, what is
         measured about it, and what is penalized.
-    parameters:
+    parameters : Bounded or torch.Tensor, optional
         One entry per designed parameter. A :class:`Bounded` carries its own
         limits; a bare array is left free.
 
@@ -153,14 +159,14 @@ class SequenceDesign(torch.nn.Module):
 
         Parameters
         ----------
-        iterations:
+        iterations : int, optional
             How many updates to take.
-        learning_rate:
+        learning_rate : float, optional
             Adam step size, used when ``optimizer_factory`` is omitted.
-        optimizer_factory:
+        optimizer_factory : callable, optional
             Called with the unconstrained variables, returning the optimizer
             to drive them.
-        callback:
+        callback : callable, optional
             Called after each update with the step number, the parameters and
             the loss, both detached. Returning ``True`` stops early.
 
@@ -198,12 +204,12 @@ def crlb(jacobian: torch.Tensor, *, noise_variance: float = 1.0) -> torch.Tensor
 
     Parameters
     ----------
-    jacobian:
+    jacobian : torch.Tensor
         ``(..., parameters, samples)`` -- the derivative of the signal with
         respect to each parameter being estimated. Real and imaginary parts
         are counted as separate measurements, which is what independent
         Gaussian noise on the two channels means.
-    noise_variance:
+    noise_variance : float, optional
         The variance of that noise, in the units the signal is in.
 
     Returns

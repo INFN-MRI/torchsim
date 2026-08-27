@@ -11,7 +11,6 @@ import pytest
 import torch
 
 from torchsim import (
-    Acquisition,
     DictionaryMatcher,
     Estimator,
     PERK,
@@ -22,11 +21,11 @@ from torchsim.simulators import FSESimulator, MRFSimulator
 ECHOES = 32
 
 
-def _acquisition() -> Acquisition:
+def _acquisition() -> MRFSimulator:
     """An MRF train, which separates T1 from T2 well enough to be mapped."""
     generator = torch.Generator().manual_seed(7)
     flip = 5.0 + 55.0 * torch.rand(ECHOES, generator=generator)
-    return Acquisition(MRFSimulator(TR=10.0, TI=20.0, states=10), flip=flip)
+    return MRFSimulator(TR=10.0, TI=20.0, states=10, flip=flip)
 
 
 def _mapping(**extra) -> ParameterMapping:
@@ -108,8 +107,10 @@ def test_a_known_property_reaches_the_simulator_and_is_asked_for_again() -> None
     """A transmit map changes the signals trained on, so it has to be given
     again when a volume is mapped."""
     mapping = ParameterMapping(
-        Acquisition(
-            FSESimulator(ESP=5.0, TR=3000.0, states=10),
+        FSESimulator(
+            ESP=5.0,
+            TR=3000.0,
+            states=10,
             T1=1000.0,
             flip=torch.full((ECHOES,), 150.0),
         ),
@@ -130,8 +131,10 @@ def test_a_known_property_reaches_the_simulator_and_is_asked_for_again() -> None
 def test_a_matcher_refuses_a_separately_measured_property() -> None:
     """One dictionary spans one grid, so a per-voxel property would need a
     dictionary per voxel. Saying so beats quietly ignoring it."""
-    acquisition = Acquisition(
-        MRFSimulator(TR=10.0, TI=20.0, states=10),
+    acquisition = MRFSimulator(
+        TR=10.0,
+        TI=20.0,
+        states=10,
         T2=80.0,
         flip=torch.full((ECHOES,), 30.0),
     )

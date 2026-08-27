@@ -49,15 +49,15 @@ class FSESimulator(AbstractSimulator):
 
         Parameters
         ----------
-        flip:
+        flip : float or array-like
             Refocusing flip angles in degrees, one per echo.
-        ESP:
+        ESP : float or array-like
             Echo spacing in milliseconds.
-        phases:
+        phases : float or array-like, optional
             Refocusing phases in degrees.
-        exc_flip, exc_phase:
+        exc_flip, exc_phase : float, optional
             The excitation, in degrees.
-        TR:
+        TR : float or array-like, optional
             Repetition time in milliseconds, which sets how far the
             longitudinal magnetization recovers before the next train.
         """
