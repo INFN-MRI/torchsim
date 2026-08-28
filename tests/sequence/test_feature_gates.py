@@ -13,14 +13,20 @@ import pytest
 import torch
 
 from torchsim import EpgEngine, TissueProperties, fse_description
-from torchsim.sequence import _epg_triton
-from torchsim.sequence._epg_triton import _feature_flags
 from torchsim.sequence._parameters import (
     TISSUE_NAMES,
     TISSUE_PARAMETERS,
     Geometry,
     at_identity,
 )
+
+# The kernel module imports Triton at its top, and Triton is a dependency of
+# the CUDA build of PyTorch rather than of TorchSim. Everything below the guard
+# reaches it, so the two imports stay here rather than moving up with the rest.
+pytest.importorskip("triton")
+
+from torchsim.sequence import _epg_triton  # noqa: E402
+from torchsim.sequence._epg_triton import _feature_flags  # noqa: E402
 
 ECHOES = 8
 STATES = 8

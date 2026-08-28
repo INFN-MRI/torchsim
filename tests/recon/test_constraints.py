@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.util
 from collections.abc import Mapping
 from typing import Any
 
+import pytest
 import torch
 
 from torchsim.model import SignalModel
@@ -17,6 +19,13 @@ from torchsim.recon import (
     iterative,
 )
 from torchsim.simulators import MultiEchoSimulator
+
+#: ``iterative()`` with nothing named falls back to deepinv's ``least_squares``,
+#: which TorchSim does not depend on.
+needs_deepinv = pytest.mark.skipif(
+    importlib.util.find_spec("deepinv") is None,
+    reason="deepinv supplies the fallback inner solve",
+)
 
 TE_MS = torch.linspace(1.2, 12.0, 10)
 #: Where the main fat peak sits at 3 T, in hertz.
@@ -75,6 +84,7 @@ def test_a_bound_holds_at_every_iterate_of_a_fit() -> None:
         assert float(values.max()) <= high
 
 
+@needs_deepinv
 def test_a_bound_holds_at_every_iterate_under_an_encoding() -> None:
     """Where it matters more: one voxel out of range spoils every sample.
 
