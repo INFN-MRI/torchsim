@@ -8,15 +8,15 @@ flip angles for every train, which is a wrong answer rather than an error.
 import pytest
 import torch
 
-from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._accelerators import (
-    geometry_of,
     _pack_events,
     _run_packed,
     _run_packed_jvp,
     _run_packed_vjp_jvp,
+    geometry_of,
 )
 from torchsim.sequence._builders import fse_description
+from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
 
 pytestmark = pytest.mark.skipif(
@@ -25,6 +25,7 @@ pytestmark = pytest.mark.skipif(
 
 ECHOES = 20
 STATES = 10
+
 
 def _probed_atoms(kind="forward", trains=64, share=8):
     """Atoms enough to carry ``share`` of the work the probe repays itself at.
@@ -42,9 +43,7 @@ def _probed_atoms(kind="forward", trains=64, share=8):
 
 def _case(trains, device):
     generator = torch.Generator().manual_seed(0)
-    flip = torch.deg2rad(
-        80.0 + 80.0 * torch.rand(trains, ECHOES, generator=generator)
-    )
+    flip = torch.deg2rad(80.0 + 80.0 * torch.rand(trains, ECHOES, generator=generator))
     description = fse_description(
         flip,
         echo_spacing_s=5e-3,
@@ -52,7 +51,7 @@ def _case(trains, device):
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=torch.device(device),
@@ -74,9 +73,7 @@ def _case(trains, device):
 def _real_case(trains, device, atoms=2):
     """The same sequence over tissue that keeps the states in a real subspace."""
     generator = torch.Generator().manual_seed(0)
-    flip = torch.deg2rad(
-        80.0 + 80.0 * torch.rand(trains, ECHOES, generator=generator)
-    )
+    flip = torch.deg2rad(80.0 + 80.0 * torch.rand(trains, ECHOES, generator=generator))
     description = fse_description(
         flip,
         echo_spacing_s=5e-3,
@@ -84,7 +81,7 @@ def _real_case(trains, device, atoms=2):
         excitation_phase_rad=torch.pi / 2,
     )
     packed = _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=torch.device(device),
@@ -162,9 +159,7 @@ def test_each_train_gets_its_own_flip_angles():
     events, prepared, count = _case(8, "cuda")
     signal = _run_packed(prepared, events, STATES, count, 1)
     first = signal[0]
-    assert all(
-        not torch.allclose(signal[index], first) for index in range(1, 8)
-    )
+    assert all(not torch.allclose(signal[index], first) for index in range(1, 8))
 
 
 @pytest.mark.parametrize("trains", [1, 4, 17, 64])
@@ -219,9 +214,7 @@ def test_a_subspace_sequence_reaches_the_real_kernel_unasked():
 
 def test_an_off_resonance_seed_keeps_the_complex_kernel_on_cuda():
     """The real kernel has no derivative along b0 and would return zeros."""
-    events, prepared, count = _real_case(
-        64, "cuda", atoms=_probed_atoms("jvp")
-    )
+    events, prepared, count = _real_case(64, "cuda", atoms=_probed_atoms("jvp"))
     tissue_seed, event_seed = _seeds(events, prepared, tissue_index=5)
     automatic = _run_packed_jvp(
         prepared, events, tissue_seed, event_seed, STATES, count, 1
@@ -408,7 +401,7 @@ def _spgr_case(device, trains, atoms):
     generator = torch.Generator().manual_seed(0)
     packed = [
         _pack_events(
-                        _spgr_description(
+            _spgr_description(
                 torch.deg2rad(5.0 + 20.0 * torch.rand(12, generator=generator)),
             ),
             repetitions=1,

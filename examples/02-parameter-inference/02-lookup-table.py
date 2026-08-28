@@ -45,7 +45,6 @@ from brainweb_dl import get_mri
 warnings.filterwarnings("ignore")
 
 
-
 # Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
 # colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
 LIPARI = Colormap("crameri:lipari").to_matplotlib()
@@ -104,7 +103,6 @@ def canvas(rows, columns, shape, *, bars=1, extra=0.6):
     )
 
 
-
 # Figures are read at gallery scale, so the type sizes are set once here.
 plt.rcParams.update(
     {
@@ -134,15 +132,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -273,8 +283,12 @@ turning = int(curve.argmin()) if curve[0] > curve[-1] else int(curve.argmax())
 
 figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3))
 blocks = acquisition.simulate(T1=sweep, M0=1.0)
-axes[0].plot(sweep.numpy(), blocks[:, 0].numpy(), label=f"TI = {PROTOCOL['TI'][0]:.0f} ms")
-axes[0].plot(sweep.numpy(), blocks[:, 1].numpy(), label=f"TI = {PROTOCOL['TI'][1]:.0f} ms")
+axes[0].plot(
+    sweep.numpy(), blocks[:, 0].numpy(), label=f"TI = {PROTOCOL['TI'][0]:.0f} ms"
+)
+axes[0].plot(
+    sweep.numpy(), blocks[:, 1].numpy(), label=f"TI = {PROTOCOL['TI'][1]:.0f} ms"
+)
 axes[0].set(xlabel="T1 [ms]", ylabel="magnetization", title="the two blocks")
 
 axes[1].plot(sweep.numpy(), curve.numpy(), color="crimson")
@@ -360,9 +374,7 @@ def error(estimate, reference):
 #
 grid = torch.linspace(50.0, 6000.0, 60)
 
-table = LookupTable(acquisition.bind(M0=1.0), combine=unified).fit(
-    T1=grid, seed=0
-)
+table = LookupTable(acquisition.bind(M0=1.0), combine=unified).fit(T1=grid, seed=0)
 
 maps = table.map(measured)  # {"T1": ...}, one value per voxel
 
@@ -391,8 +403,10 @@ print(f"\n{'points':>7}{'match':>10}{'table':>10}{'match':>10}{'table':>10}")
 print(f"{'':>7}{'error':>10}{'error':>10}{'time':>10}{'time':>10}")
 print("-" * 47)
 for points in POINTS:
-    print(f"{points:>7}{matched[points][0]:9.2f}%{looked_up[points][0]:9.2f}%"
-          f"{1e3 * matched[points][1]:8.1f}ms{1e3 * looked_up[points][1]:8.1f}ms")
+    print(
+        f"{points:>7}{matched[points][0]:9.2f}%{looked_up[points][0]:9.2f}%"
+        f"{1e3 * matched[points][1]:8.1f}ms{1e3 * looked_up[points][1]:8.1f}ms"
+    )
 # sphinx_gallery_end_ignore
 
 # %%
@@ -421,7 +435,9 @@ axes[0].set(
     title="what the grid costs",
 )
 axes[1].plot(POINTS, [1e3 * matched[n][1] for n in POINTS], "-o", label="match")
-axes[1].plot(POINTS, [1e3 * looked_up[n][1] for n in POINTS], "-*", label="lookup table")
+axes[1].plot(
+    POINTS, [1e3 * looked_up[n][1] for n in POINTS], "-*", label="lookup table"
+)
 axes[1].set(
     xlabel="Points on the curve",
     ylabel="Time to map the slice [ms]",
@@ -453,9 +469,11 @@ problem, table_maps, table_training, table_time, table_model, table_peak = estim
 _, match_maps, match_training, match_time, match_model, match_peak = estimated(
     DictionaryMatcher, MATCH_POINTS
 )
-print(f"the table keeps {problem.points} of {TABLE_POINTS} points -- the "
-      f"monotonic run -- and spans unified "
-      f"{problem.span[0]:.2f} to {problem.span[1]:.2f}")
+print(
+    f"the table keeps {problem.points} of {TABLE_POINTS} points -- the "
+    f"monotonic run -- and spans unified "
+    f"{problem.span[0]:.2f} to {problem.span[1]:.2f}"
+)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -480,22 +498,38 @@ estimates = {
     "match": (match_maps, proton_density(match_maps)),
 }
 
-print(f"\n{'method':<24}{'train':>9}{'map':>9}{'model':>10}{'peak':>10}"
-      f"{'T1':>8}{'M0':>8}")
+print(
+    f"\n{'method':<24}{'train':>9}{'map':>9}{'model':>10}{'peak':>10}{'T1':>8}{'M0':>8}"
+)
 print("-" * 78)
 for short, name, training, timing, model, peak in (
-    ("lookup", f"lookup, {TABLE_POINTS} points", table_training, table_time,
-     table_model, table_peak),
-    ("match", f"match, {MATCH_POINTS} atoms", match_training, match_time,
-     match_model, match_peak),
+    (
+        "lookup",
+        f"lookup, {TABLE_POINTS} points",
+        table_training,
+        table_time,
+        table_model,
+        table_peak,
+    ),
+    (
+        "match",
+        f"match, {MATCH_POINTS} atoms",
+        match_training,
+        match_time,
+        match_model,
+        match_peak,
+    ),
 ):
     found, m0 = estimates[short]
-    print(f"{name:<24}{training:8.2f}s{1e3 * timing:7.1f}ms"
-          f"{model:6.2f} MiB{peak:6.0f} MiB"
-          f"{error(found['T1'], truth):7.2f}%{error(m0, density):7.2f}%")
+    print(
+        f"{name:<24}{training:8.2f}s{1e3 * timing:7.1f}ms"
+        f"{model:6.2f} MiB{peak:6.0f} MiB"
+        f"{error(found['T1'], truth):7.2f}%{error(m0, density):7.2f}%"
+    )
 # sphinx_gallery_end_ignore
 
 # %%
+
 
 # sphinx_gallery_start_ignore
 def painted(values):
@@ -513,11 +547,22 @@ panels = [
 figure, axes = canvas(len(panels), 1 + len(estimates), mask.shape)
 for row, (name, reference, found) in enumerate(panels):
     cmap, limits, label = STYLE[name]
-    panel(axes[row, 0], reference, cmap, limits, ylabel=label,
-          title="truth" if row == 0 else None)
+    panel(
+        axes[row, 0],
+        reference,
+        cmap,
+        limits,
+        ylabel=label,
+        title="truth" if row == 0 else None,
+    )
     for column, (method, values) in enumerate(found.items(), start=1):
-        handle = panel(axes[row, column], painted(values), cmap, limits,
-                       title=method if row == 0 else None)
+        handle = panel(
+            axes[row, column],
+            painted(values),
+            cmap,
+            limits,
+            title=method if row == 0 else None,
+        )
     scalebar(handle, axes[row], "")
 
 # The errors, each parameter on a scale of its own: an error map read at the
@@ -526,12 +571,16 @@ figure, axes = canvas(len(panels), len(estimates), mask.shape)
 for row, (name, reference, found) in enumerate(panels):
     label = STYLE[name][2]
     residuals = {
-        method: np.abs(painted(values) - reference)
-        for method, values in found.items()
+        method: np.abs(painted(values) - reference) for method, values in found.items()
     }
     top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
     for column, (method, values) in enumerate(residuals.items()):
-        handle = panel(axes[row, column], values, "inferno", (0.0, top or 1.0),
-                       title=f"\u0394 {method}" if row == 0 else None)
+        handle = panel(
+            axes[row, column],
+            values,
+            "inferno",
+            (0.0, top or 1.0),
+            title=f"\u0394 {method}" if row == 0 else None,
+        )
     scalebar(handle, axes[row], f"|error|, {label}")
 # sphinx_gallery_end_ignore

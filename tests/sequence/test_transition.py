@@ -177,9 +177,7 @@ def test_a_flip_past_the_grid_reads_the_last_knot(table) -> None:
     beyond = table.at(
         torch.tensor(4), torch.tensor(2.0 * table.theta_max, dtype=torch.float32)
     )
-    edge = table.at(
-        torch.tensor(4), torch.tensor(table.theta_max, dtype=torch.float32)
-    )
+    edge = table.at(torch.tensor(4), torch.tensor(table.theta_max, dtype=torch.float32))
     assert abs(complex(beyond[0]) - complex(edge[0])) < 1e-6
     assert abs(complex(beyond[1]) - complex(edge[1])) < 1e-6
 
@@ -298,9 +296,7 @@ def _timed(times: np.ndarray, *, samples: int = SAMPLES) -> RfDefinition:
     """
     from dataclasses import replace
 
-    return replace(
-        _definition(), time=RfShape(samples, times.astype(np.float32))
-    )
+    return replace(_definition(), time=RfShape(samples, times.astype(np.float32)))
 
 
 def test_a_declared_raster_is_the_raster_it_declares() -> None:
@@ -337,9 +333,7 @@ def test_a_pulse_that_says_it_is_longer_cuts_a_thinner_slice() -> None:
     )
 
     assert float(equivalent.b.abs().max()) > 0.1
-    worst = float(
-        (declared.b - equivalent.b).abs().max() / equivalent.b.abs().max()
-    )
+    worst = float((declared.b - equivalent.b).abs().max() / equivalent.b.abs().max())
     assert worst < 1e-5, worst
 
 

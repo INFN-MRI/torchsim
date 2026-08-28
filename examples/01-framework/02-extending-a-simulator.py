@@ -75,15 +75,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -103,6 +115,7 @@ import torch
 from torchsim.model import SPOILED, Simulator, SpinPhysics
 from torchsim.sequence import Delay, Excitation, Spoil, module
 from torchsim.simulators import MRFSimulator
+
 # %%
 #
 # What a simulator declares
@@ -327,8 +340,10 @@ expected = torch.sin(torch.deg2rad(torch.tensor(FLIP_DEG))) * (
     1 - torch.exp(-SATURATION_TIMES / 830.0)
 )
 # sphinx_gallery_start_ignore
-print(f"\nlargest disagreement with the closed form: "
-      f"{float((simulated - expected).abs().max()):.2e}")
+print(
+    f"\nlargest disagreement with the closed form: "
+    f"{float((simulated - expected).abs().max()):.2e}"
+)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -345,8 +360,10 @@ print(f"\nlargest disagreement with the closed form: "
 description = sequence.describe(TS=SATURATION_TIMES, flip=FLIP_DEG)
 
 # sphinx_gallery_start_ignore
-print(f"\n{len(description.events)} events, "
-      f"{description.tr_duration_us * 1e-3:.0f} ms long")
+print(
+    f"\n{len(description.events)} events, "
+    f"{description.tr_duration_us * 1e-3:.0f} ms long"
+)
 # sphinx_gallery_end_ignore
 
 # sphinx_gallery_start_ignore
@@ -384,8 +401,7 @@ moved = sequence.simulate(T1=830.0 + STEP_MS, T2=80.0, M0=1.0)
 difference = (moved - signal) / STEP_MS
 
 # sphinx_gallery_start_ignore
-print(f"agrees with a finite difference to "
-      f"{float((dT1 - difference).abs().max()):.1e}")
+print(f"agrees with a finite difference to {float((dT1 - difference).abs().max()):.1e}")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -403,7 +419,7 @@ curves = dense.simulate(T1=T1_MS, T2=torch.tensor([80.0, 110.0, 2000.0]), M0=1.0
 # sphinx_gallery_start_ignore
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.76))
 for row, name in enumerate(NAMES):
-    line, = axis.plot(times.numpy(), curves[row].abs().numpy(), label=name)
+    (line,) = axis.plot(times.numpy(), curves[row].abs().numpy(), label=name)
     analytic = torch.sin(torch.deg2rad(torch.tensor(FLIP_DEG))) * (
         1 - torch.exp(-times / T1_MS[row])
     )

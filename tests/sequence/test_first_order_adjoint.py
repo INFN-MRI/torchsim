@@ -42,7 +42,7 @@ def _events(phases):
         _flip(), echo_spacing_s=ECHO_SPACING_S, phases_rad=phases
     )
     packed = _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=torch.device("cuda"),
@@ -156,9 +156,7 @@ def test_every_term_the_kernel_carries_agrees(extra, geometry) -> None:
         device="cuda",
         generator=torch.Generator(device="cuda").manual_seed(5),
     )
-    actual, expected = _both(
-        prepared, events, seed, output_count, 12, geometry
-    )
+    actual, expected = _both(prepared, events, seed, output_count, 12, geometry)
     assert _agree(actual, expected) > 6
 
 
@@ -195,9 +193,8 @@ def test_the_adjoint_stops_short_of_the_forward_over_reverse_pass() -> None:
     )
     reached = []
     original = _accelerators._run_packed_vjp_jvp
-    _accelerators._run_packed_vjp_jvp = (
-        lambda *arguments, **keywords: reached.append(True)
-        or original(*arguments, **keywords)
+    _accelerators._run_packed_vjp_jvp = lambda *arguments, **keywords: (
+        reached.append(True) or original(*arguments, **keywords)
     )
     try:
         _run_packed_vjp(

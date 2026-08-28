@@ -143,7 +143,8 @@ def offload(
     Whatever ``lanes`` is set to, it changes only throughput: what makes a
     volume larger than the card runnable at all is the chunking.
 
-    Raises:
+    Raises
+    ------
         ValueError: if ``devices`` is empty, names a device that is not CUDA,
             or if ``budget_bytes`` or ``lanes`` is not positive.
     """
@@ -191,7 +192,8 @@ def execution(
 
     Outside a block, work runs wherever its tensors already are.
 
-    Raises:
+    Raises
+    ------
         ValueError: for an empty device list, a non-CUDA device, or a
             non-positive ``budget_bytes`` or ``lanes``.
     """
@@ -301,9 +303,7 @@ def choose(
             return _Choice("upfront", devices)
 
     budget = plan.budget_bytes or max(1, min(free) if free else 0)
-    return _Choice(
-        "stream", devices, _Offload(devices, max(1, budget), plan.lanes)
-    )
+    return _Choice("stream", devices, _Offload(devices, max(1, budget), plan.lanes))
 
 
 def chunk_voxels(plan: _Offload, bytes_per_voxel: int) -> int:
@@ -334,9 +334,7 @@ class Lane:
             return piece
         if piece.device.type != "cpu":
             return piece.to(self.device)
-        landed = torch.empty(
-            piece.shape, dtype=piece.dtype, device=self.device
-        )
+        landed = torch.empty(piece.shape, dtype=piece.dtype, device=self.device)
         return self.stage(piece, landed)
 
     def stage(self, piece: torch.Tensor, landed: torch.Tensor) -> torch.Tensor:
@@ -414,9 +412,7 @@ def per_voxel(
     elif choice.where == "upfront":
         gathered = _spread(inputs, voxels, choice.devices, body)
     else:
-        gathered = _streamed(
-            inputs, voxels, choice.offload, bytes_per_voxel, body
-        )
+        gathered = _streamed(inputs, voxels, choice.offload, bytes_per_voxel, body)
     return tuple(value.to(home) for value in gathered)
 
 
@@ -493,13 +489,9 @@ def _streamed(
     return _joined([piece for piece in pieces if piece is not None])
 
 
-def _joined(
-    pieces: Sequence[tuple[torch.Tensor, ...]]
-) -> tuple[torch.Tensor, ...]:
+def _joined(pieces: Sequence[tuple[torch.Tensor, ...]]) -> tuple[torch.Tensor, ...]:
     """Each chunk's answers, concatenated along the voxel axis."""
-    return tuple(
-        torch.cat(column, dim=0) for column in zip(*pieces, strict=True)
-    )
+    return tuple(torch.cat(column, dim=0) for column in zip(*pieces, strict=True))
 
 
 def stream_chunks(

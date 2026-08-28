@@ -6,14 +6,15 @@ from collections.abc import Mapping
 from typing import Any
 
 import torch
+
 from torchsim.model import SignalModel
 from torchsim.recon import (
     GaussNewton,
     ModelOperator,
     Schedule,
     TrustRegion,
-    iterative,
     direct,
+    iterative,
 )
 from torchsim.simulators import MultiEchoSimulator
 
@@ -36,9 +37,7 @@ class FatWater(SignalModel):
     def __init__(self) -> None:
         self.seen: list[tuple[torch.Tensor, torch.Tensor]] = []
 
-    def evaluate(
-        self, properties: Mapping[str, Any], *, TE: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], *, TE: Any) -> torch.Tensor:
         echo = torch.as_tensor(TE) * 1e-3
         fat = properties["fat_fraction"][..., None]
         water = 1.0 - fat

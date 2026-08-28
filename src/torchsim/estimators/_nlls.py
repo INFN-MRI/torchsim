@@ -4,7 +4,7 @@ from __future__ import annotations
 
 __all__ = ["NonlinearLeastSquares"]
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 import torch
@@ -106,8 +106,10 @@ class NonlinearLeastSquares(Estimator):
         super().__init__(acquisition)
         self.bounds = dict(bounds or {})
         self.initial = dict(initial or {})
-        self.loop = loop if loop is not None else GaussNewton(
-            TrustRegion(), solve=direct, max_iterations=20
+        self.loop = (
+            loop
+            if loop is not None
+            else GaussNewton(TrustRegion(), solve=direct, max_iterations=20)
         )
         self._start: torch.Tensor | None = None
         #: Steps the last solve took, and how many voxels ran out of them.
@@ -159,9 +161,9 @@ class NonlinearLeastSquares(Estimator):
             If no model has been bound.
         """
         del signals, known, noise_std
-        stray = {
-            name for given in (self.bounds, self.initial) for name in given
-        } - set(self.unknown)
+        stray = {name for given in (self.bounds, self.initial) for name in given} - set(
+            self.unknown
+        )
         if stray:
             raise ValueError(
                 f"bounds or initial name {sorted(stray)}, which "
@@ -246,25 +248,18 @@ class NonlinearLeastSquares(Estimator):
         voxels together.
         """
         operator = self._operator(measured.shape[0], known)
-        found = self.loop.minimize(
-            operator, measured, self._at(operator, measured)
-        )
+        found = self.loop.minimize(operator, measured, self._at(operator, measured))
         self.iterations = found.iterations
         self.unconverged = found.unconverged
         maps = operator.split(found.x)
         return torch.stack([maps[name] for name in self.unknown], dim=-1)
 
-    def _operator(
-        self, voxels: int, known: torch.Tensor | None
-    ) -> ModelOperator:
+    def _operator(self, voxels: int, known: torch.Tensor | None) -> ModelOperator:
         """The model to fit, with anything measured separately held on it."""
         acquisition = self.acquisition
         if known is not None:
             acquisition = acquisition.bind(
-                **{
-                    name: known[:, index]
-                    for index, name in enumerate(self.known)
-                }
+                **{name: known[:, index] for index, name in enumerate(self.known)}
             )
         return ModelOperator(
             acquisition,
@@ -274,9 +269,7 @@ class NonlinearLeastSquares(Estimator):
             subspace=self.subspace,
         )
 
-    def _at(
-        self, operator: ModelOperator, measured: torch.Tensor
-    ) -> torch.Tensor:
+    def _at(self, operator: ModelOperator, measured: torch.Tensor) -> torch.Tensor:
         """Every voxel started from the same point, as variables to solve for."""
         start = operator.initial(
             measured.shape[:1],

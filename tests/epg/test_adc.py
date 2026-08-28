@@ -1,10 +1,11 @@
 """Test ADC operations."""
 
-import pytest
-import torch
 from types import SimpleNamespace
 
-from utils.epg import get_signal, get_demodulated_signal
+import pytest
+import torch
+
+from utils.epg import get_demodulated_signal, get_signal
 
 
 @pytest.fixture
@@ -67,9 +68,9 @@ def test_get_demodulated_signal_single_order(sample_states, phi, expected_phase)
         + (7 + 7j) * expected_phase
         + (11 + 11j) * expected_phase
     ) / 3
-    assert result == pytest.approx(
-        expected
-    ), f"Demodulated signal mismatch for phi={phi}"
+    assert result == pytest.approx(expected), (
+        f"Demodulated signal mismatch for phi={phi}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -97,9 +98,9 @@ def test_get_demodulated_signal_multiple_orders(sample_states, phi, expected_pha
     ) / 3
 
     expected = expected_order_0 + expected_order_1
-    assert result == pytest.approx(
-        expected
-    ), "Demodulated signal mismatch for multiple orders"
+    assert result == pytest.approx(expected), (
+        "Demodulated signal mismatch for multiple orders"
+    )
 
 
 def test_get_demodulated_signal_invalid_order(sample_states):

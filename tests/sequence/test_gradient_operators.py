@@ -15,22 +15,22 @@ import torch
 
 from torchsim.sequence import (
     AdcRole,
-    EpgEngine,
-    EventAction,
-    SequenceDescription,
-    TissueProperties,
-    bSSFPReadout,
-    compose,
     Delay,
     Dephase,
+    EpgEngine,
+    EventAction,
     Excitation,
-    ideal_rf_definition,
-    operator,
     Readout,
     Refocusing,
+    SequenceDescription,
     SPGRReadout,
     Spoil,
     SSFPFidReadout,
+    TissueProperties,
+    bSSFPReadout,
+    compose,
+    ideal_rf_definition,
+    operator,
 )
 
 TISSUE = TissueProperties(

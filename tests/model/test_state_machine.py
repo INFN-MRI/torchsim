@@ -19,9 +19,9 @@ from torchsim.model import (
     REFOCUSED,
     SPOILED,
     UNBALANCED,
+    EventOperators,
     Simulator,
     SpinPhysics,
-    EventOperators,
 )
 from torchsim.sequence import EpgEngine, EventAction, EventType, ideal_rf_definition
 from torchsim.simulators import MRFSimulator
@@ -66,8 +66,7 @@ def test_a_trigger_is_a_choice() -> None:
     sequence without deciding anything about it.
     """
     answers = [
-        _with(table).simulate(**TISSUE)
-        for table in (BALANCED, UNBALANCED, SPOILED)
+        _with(table).simulate(**TISSUE) for table in (BALANCED, UNBALANCED, SPOILED)
     ]
     scale = max(float(answer.abs().max()) for answer in answers)
     assert scale > 0.0
@@ -95,8 +94,7 @@ def test_the_trigger_leaves_the_description_ordinary() -> None:
     kinds = {event.type for event in described.events}
     assert kinds <= {EventType.RF, EventType.ADC, EventType.WAIT}
     wound = [
-        event for event in described.events
-        if event.action & EventAction.CRUSH_AFTER
+        event for event in described.events if event.action & EventAction.CRUSH_AFTER
     ]
     assert len(wound) == FLIP.numel()
 
@@ -147,9 +145,11 @@ def test_a_handed_over_description_agrees_with_the_engine_directly() -> None:
 
     from torchsim.sequence import TissueProperties
 
-    direct = EpgEngine().simulate(
-        described, TissueProperties(t1_ms=T1, t2_ms=T2), nstates=8
-    ).signal
+    direct = (
+        EpgEngine()
+        .simulate(described, TissueProperties(t1_ms=T1, t2_ms=T2), nstates=8)
+        .signal
+    )
     assert torch.equal(handed.simulate(**TISSUE), direct)
 
 
@@ -177,8 +177,12 @@ def test_every_shipped_table_says_something() -> None:
     That is what the retired policy classes were, so each table here has to
     differ from the bare one and from its siblings.
     """
-    tables = {"balanced": BALANCED, "unbalanced": UNBALANCED,
-              "spoiled": SPOILED, "refocused": REFOCUSED}
+    tables = {
+        "balanced": BALANCED,
+        "unbalanced": UNBALANCED,
+        "spoiled": SPOILED,
+        "refocused": REFOCUSED,
+    }
     for name, table in tables.items():
         assert table != EventOperators(), f"{name} decides nothing"
     assert len({table.readout for table in tables.values()}) == len(tables)

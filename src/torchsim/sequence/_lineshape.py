@@ -45,7 +45,6 @@ __all__ = ["LineshapeTable", "lineshape_reaching", "lineshape_table"]
 
 import functools
 import math
-
 from dataclasses import dataclass
 
 import numpy as np
@@ -199,11 +198,13 @@ def lineshape_table(
     does and depends on nothing a caller varies between runs, and the table it
     returns is read-only, so every simulation of a given bound pool shares one.
 
-    Returns:
+    Returns
+    -------
         The table, with slopes taken by differentiating the same integration
         rather than by differencing it.
 
-    Raises:
+    Raises
+    ------
         ValueError: if ``bins`` is below two, the cutoff does not sit inside
             the offset range, or too few knots fall in the band the fill is
             interpolated from.
@@ -270,7 +271,8 @@ def lineshape_reaching(
         The largest ``|pulse frequency - voxel off-resonance|`` the run can
         read the lineshape at.
 
-    Returns:
+    Returns
+    -------
         The table, memoized with every other of its size.
     """
     blocks = max(1, math.ceil(abs(offset_hz) / OFFSET_MAX_HZ))

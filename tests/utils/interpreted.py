@@ -109,8 +109,14 @@ def _events(description: Any) -> tuple[tuple[torch.Tensor, ...], int]:
         rf_raster_time_s=1e-6,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     return events, int(packed.output_index.max()) + 1
@@ -129,15 +135,23 @@ def _both(run: Any, force_narrow: bool) -> tuple[Any, Any]:
     built: list[bool] = []
 
     def patched(
-        tissue, duration, *, pools, narrow, problems=None,
+        tissue,
+        duration,
+        *,
+        pools,
+        narrow,
+        problems=None,
         tangents=None,
     ):
         if not built_wanted[0]:
             return None, None, None
         rows, table, lengths = original(
-            tissue, duration, pools=pools,
+            tissue,
+            duration,
+            pools=pools,
             narrow=False if force_narrow else narrow,
-            problems=problems, tangents=tangents,
+            problems=problems,
+            tangents=tangents,
         )
         built.append(table is not None)
         return rows, table, lengths
@@ -158,9 +172,7 @@ def _both(run: Any, force_narrow: bool) -> tuple[Any, Any]:
 
 
 def _worst(without: tuple[Any, ...], with_table: tuple[Any, ...]) -> float:
-    scale = max(
-        float(value.abs().max()) for value in without if value.numel()
-    )
+    scale = max(float(value.abs().max()) for value in without if value.numel())
     return max(
         float((a - b).abs().max()) / max(scale, 1e-30)
         for a, b in zip(without, with_table, strict=True)
@@ -196,22 +208,19 @@ def _unread(voxels: int, states: int) -> None:
     is what says so rather than reading the branches and believing it.
     """
     install(poison=True)
-    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _builders, _epg_triton
     from torchsim.sequence._lineshape import lineshape_table
     from torchsim.sequence._parameters import narrow_three_pool
-    from torchsim.sequence import _builders
 
     echoes = 6
     tissue = _tissue(voxels)
-    events, outputs = _events(_builders.fse_description(
-        torch.full((echoes,), math.radians(150.0)), 8e-3
-    ))
+    events, outputs = _events(
+        _builders.fse_description(torch.full((echoes,), math.radians(150.0)), 8e-3)
+    )
     assert narrow_three_pool(tissue, events[0].reshape(-1), pools=3), (
         "this train has to be narrow for the check to mean anything"
     )
-    options: dict[str, Any] = dict(
-        lineshape=lineshape_table(), exchanging=True
-    )
+    options: dict[str, Any] = dict(lineshape=lineshape_table(), exchanging=True)
     signal = _epg_triton.simulate(
         tissue, events, state_count=states, output_count=outputs, **options
     )
@@ -219,14 +228,19 @@ def _unread(voxels: int, states: int) -> None:
         "the forward read the roots"
     )
     seed = (
-        torch.rand(
-            voxels, outputs, generator=torch.Generator().manual_seed(7)
-        ) * 2.0 - 1.0
+        torch.rand(voxels, outputs, generator=torch.Generator().manual_seed(7)) * 2.0
+        - 1.0
     ).to(torch.complex64)
-    for index, gradient in enumerate(_epg_triton.simulate_vjp(
-        tissue, events, seed, state_count=states, output_count=outputs,
-        **options,
-    )):
+    for index, gradient in enumerate(
+        _epg_triton.simulate_vjp(
+            tissue,
+            events,
+            seed,
+            state_count=states,
+            output_count=outputs,
+            **options,
+        )
+    ):
         assert not gradient.numel() or bool(torch.isfinite(gradient).all()), (
             f"gradient {index} read the roots"
         )
@@ -241,18 +255,16 @@ def _streamed(voxels: int, states: int) -> None:
     and nothing else here reaches it.
     """
     install()
-    from torchsim.sequence import _epg_triton
-    from torchsim.sequence import _builders
+    from torchsim.sequence import _builders, _epg_triton
 
     echoes = 6
     tissue = _tissue(voxels)
-    events, outputs = _events(_builders.fse_description(
-        torch.full((echoes,), math.radians(150.0)), 8e-3
-    ))
+    events, outputs = _events(
+        _builders.fse_description(torch.full((echoes,), math.radians(150.0)), 8e-3)
+    )
     seed = (
-        torch.rand(
-            voxels, outputs, generator=torch.Generator().manual_seed(3)
-        ) * 2.0 - 1.0
+        torch.rand(voxels, outputs, generator=torch.Generator().manual_seed(3)) * 2.0
+        - 1.0
     ).to(torch.complex64)
     whole = _epg_triton.simulate_vjp(
         tissue, events, seed, state_count=states, output_count=outputs
@@ -261,8 +273,13 @@ def _streamed(voxels: int, states: int) -> None:
         events, voxels, state_count=states, output_count=outputs
     )
     chunked = _epg_triton.simulate_vjp_into(
-        tissue, events, seed, buffers, state_count=states,
-        output_count=outputs, atom_count=voxels,
+        tissue,
+        events,
+        seed,
+        buffers,
+        state_count=states,
+        output_count=outputs,
+        atom_count=voxels,
     )
     scale = max(float(v.abs().max()) for v in whole if v.numel())
     worst = max(
@@ -282,35 +299,38 @@ def _washed(voxels: int, states: int) -> None:
     than one, because the gradients it pools are scaled by it.
     """
     install()
-    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _builders, _epg_triton
     from torchsim.sequence._lineshape import lineshape_table
-    from torchsim.sequence._parameters import Geometry, TISSUE_NAMES
-    from torchsim.sequence import _builders
+    from torchsim.sequence._parameters import TISSUE_NAMES, Geometry
 
     echoes = 6
     tissue = list(_tissue(voxels))
     # A velocity, so the washout the geometry declares is genuinely live.
-    tissue[TISSUE_NAMES.index("velocity_m_per_s")] = torch.linspace(
-        0.02, 0.09, voxels
-    )
+    tissue[TISSUE_NAMES.index("velocity_m_per_s")] = torch.linspace(0.02, 0.09, voxels)
     tissue = tuple(tissue)
-    events, outputs = _events(_builders.mrf_description(
-        torch.full((echoes,), math.radians(50.0)),
-        torch.tensor([(6 + (i % 2)) * 1e-3 for i in range(echoes)]),
-        inversion_time_s=1.0,
-    ))
+    events, outputs = _events(
+        _builders.mrf_description(
+            torch.full((echoes,), math.radians(50.0)),
+            torch.tensor([(6 + (i % 2)) * 1e-3 for i in range(echoes)]),
+            inversion_time_s=1.0,
+        )
+    )
     options: dict[str, Any] = dict(
-        lineshape=lineshape_table(), exchanging=True,
+        lineshape=lineshape_table(),
+        exchanging=True,
         geometry=Geometry(flow_scale=0.0, washout_scale=12.0),
     )
     seed = (
-        torch.rand(
-            voxels, outputs, generator=torch.Generator().manual_seed(11)
-        ) * 2.0 - 1.0
+        torch.rand(voxels, outputs, generator=torch.Generator().manual_seed(11)) * 2.0
+        - 1.0
     ).to(torch.complex64)
     without, with_table = _both(
         lambda: _epg_triton.simulate_vjp(
-            tissue, events, seed, state_count=states, output_count=outputs,
+            tissue,
+            events,
+            seed,
+            state_count=states,
+            output_count=outputs,
             **options,
         ),
         False,
@@ -331,11 +351,9 @@ def _real(voxels: int, states: int, shims: int = 1) -> None:
     of it is reached by the other cases here, which are all complex.
     """
     install()
-    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _builders, _epg_triton
     from torchsim.sequence._accelerators import real_subspace_axis
     from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
-    from torchsim.sequence import _builders
-
     from utils.packed_reference import simulate_packed
 
     echoes = 6
@@ -344,10 +362,12 @@ def _real(voxels: int, states: int, shims: int = 1) -> None:
         # A transmit row per shim, each a different field. The last row is
         # driven by no pulse, so a kernel that read the layout as merely wide
         # rather than reading the index would not leave it at zero.
-        tissue[3] = torch.cat([
-            torch.linspace(0.7 + 0.2 * shim, 1.1 + 0.2 * shim, voxels)
-            for shim in range(shims)
-        ]).contiguous()
+        tissue[3] = torch.cat(
+            [
+                torch.linspace(0.7 + 0.2 * shim, 1.1 + 0.2 * shim, voxels)
+                for shim in range(shims)
+            ]
+        ).contiguous()
         # Both transmit maps carry a row per shim, or a pulse reading the row
         # its event names would run off the end of the shorter one. The phase
         # stays at zero, which is what keeps the train inside the subspace.
@@ -355,10 +375,14 @@ def _real(voxels: int, states: int, shims: int = 1) -> None:
     tissue = tuple(tissue)
     # The subspace is the CPMG arrangement: refocusing a quarter turn from the
     # excitation, which is what holds the states on one axis.
-    events, outputs = _events(_builders.fse_description(
-        torch.full((echoes,), math.radians(150.0)), 8e-3,
-        phases_rad=math.pi / 2, excitation_phase_rad=math.pi / 2,
-    ))
+    events, outputs = _events(
+        _builders.fse_description(
+            torch.full((echoes,), math.radians(150.0)),
+            8e-3,
+            phases_rad=math.pi / 2,
+            excitation_phase_rad=math.pi / 2,
+        )
+    )
     driven = max(1, shims - 1)
     if shims > 1:
         events = list(events)
@@ -366,7 +390,9 @@ def _real(voxels: int, states: int, shims: int = 1) -> None:
             torch.arange(events[6].numel(), dtype=torch.int32) % driven
         ).contiguous()
         events = tuple(events)
-    assert _epg_triton._shim_count(tissue) == shims, "the array did not reach the kernel"
+    assert _epg_triton._shim_count(tissue) == shims, (
+        "the array did not reach the kernel"
+    )
     # Forcing the verdict rather than earning it would compare the real kernel
     # against a train it was never contracted for.
     assert real_subspace_axis(events, tissue) == 1, "this train is not in the subspace"
@@ -435,17 +461,15 @@ def _pooled(voxels: int, states: int, pools: int) -> None:
     and neither is exercised at one or two pools without a card.
     """
     install()
-    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _builders, _epg_triton
     from torchsim.sequence._lineshape import lineshape_table
-    from torchsim.sequence import _builders
-
     from utils.packed_reference import simulate_packed
 
     echoes = 6
     tissue = _tissue(voxels)
-    events, outputs = _events(_builders.fse_description(
-        torch.full((echoes,), math.radians(150.0)), 8e-3
-    ))
+    events, outputs = _events(
+        _builders.fse_description(torch.full((echoes,), math.radians(150.0)), 8e-3)
+    )
     options: dict[str, Any] = dict(
         lineshape=lineshape_table() if pools in (1, 3) else None,
         exchanging=pools in (2, 3),
@@ -467,16 +491,14 @@ def _pooled(voxels: int, states: int, pools: int) -> None:
     assert moved > 1e-3, f"the {pools}-pool model changed nothing: {moved:.2e}"
 
     seed = (
-        torch.rand(
-            voxels, outputs, generator=torch.Generator().manual_seed(13)
-        ) * 2.0 - 1.0
+        torch.rand(voxels, outputs, generator=torch.Generator().manual_seed(13)) * 2.0
+        - 1.0
     ).to(torch.complex64)
     first = _epg_triton.simulate_vjp(tissue, events, seed, **shape, **options)
     # The pass the first-order kernel specializes: zero directions in, the
     # adjoint out as the gradient with respect to the tangent inputs.
     still = tuple(
-        torch.zeros_like(value)
-        for value in (*tissue, events[0], events[2], events[3])
+        torch.zeros_like(value) for value in (*tissue, events[0], events[2], events[3])
     )
     _curve, adjoint = _epg_triton.simulate_vjp_jvp(
         tissue, events, still, seed, **shape, **options
@@ -503,29 +525,34 @@ def _shimmed(voxels: int, states: int) -> None:
     case that would show one standing in for the other.
     """
     install()
-    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _builders, _epg_triton
     from torchsim.sequence._lineshape import lineshape_table
-    from torchsim.sequence import _builders
 
     shims, echoes = 2, 6
     held = _tissue(voxels)
     tissue = list(held)
     # A transmit row per shim, each row a different field, so a pulse reading
     # the wrong row cannot agree with one reading the right one.
-    tissue[3] = torch.cat([
-        torch.linspace(0.7 + 0.3 * shim, 1.1 + 0.3 * shim, voxels)
-        for shim in range(shims)
-    ]).contiguous()
-    tissue[4] = torch.cat([
-        torch.linspace(-0.4 + 0.8 * shim, 0.4 + 0.8 * shim, voxels)
-        for shim in range(shims)
-    ]).contiguous()
+    tissue[3] = torch.cat(
+        [
+            torch.linspace(0.7 + 0.3 * shim, 1.1 + 0.3 * shim, voxels)
+            for shim in range(shims)
+        ]
+    ).contiguous()
+    tissue[4] = torch.cat(
+        [
+            torch.linspace(-0.4 + 0.8 * shim, 0.4 + 0.8 * shim, voxels)
+            for shim in range(shims)
+        ]
+    ).contiguous()
     tissue = tuple(tissue)
-    events, outputs = _events(_builders.mrf_description(
-        torch.full((echoes,), math.radians(50.0)),
-        torch.tensor([(6 + (i % 3)) * 1e-3 for i in range(echoes)]),
-        inversion_time_s=1.0,
-    ))
+    events, outputs = _events(
+        _builders.mrf_description(
+            torch.full((echoes,), math.radians(50.0)),
+            torch.tensor([(6 + (i % 3)) * 1e-3 for i in range(echoes)]),
+            inversion_time_s=1.0,
+        )
+    )
     events = list(events)
     events[6] = (
         torch.arange(events[6].numel(), dtype=torch.int32) % shims
@@ -535,17 +562,18 @@ def _shimmed(voxels: int, states: int) -> None:
         "the transmit array did not reach the kernel"
     )
 
-    options: dict[str, Any] = dict(
-        lineshape=lineshape_table(), exchanging=True
-    )
+    options: dict[str, Any] = dict(lineshape=lineshape_table(), exchanging=True)
     seed = (
-        torch.rand(
-            voxels, outputs, generator=torch.Generator().manual_seed(5)
-        ) * 2.0 - 1.0
+        torch.rand(voxels, outputs, generator=torch.Generator().manual_seed(5)) * 2.0
+        - 1.0
     ).to(torch.complex64)
     without, with_table = _both(
         lambda: _epg_triton.simulate_vjp(
-            tissue, events, seed, state_count=states, output_count=outputs,
+            tissue,
+            events,
+            seed,
+            state_count=states,
+            output_count=outputs,
             **options,
         ),
         False,
@@ -556,11 +584,13 @@ def _shimmed(voxels: int, states: int) -> None:
 
     without, with_table = _both(
         lambda: _epg_triton.simulate_vjp_jvp(
-            tissue, events,
+            tissue,
+            events,
             (
                 *(
                     torch.linspace(0.01, 0.03, value.numel()).reshape(value.shape)
-                    if value.numel() else value.clone()
+                    if value.numel()
+                    else value.clone()
                     for value in tissue
                 ),
                 torch.linspace(0.5e-4, 2e-4, events[0].numel()).reshape(
@@ -569,7 +599,10 @@ def _shimmed(voxels: int, states: int) -> None:
                 torch.zeros_like(events[2]),
                 torch.zeros_like(events[3]),
             ),
-            seed, state_count=states, output_count=outputs, **options,
+            seed,
+            state_count=states,
+            output_count=outputs,
+            **options,
         )[1],
         False,
     )
@@ -604,9 +637,8 @@ def _case(name: str) -> None:
         _unread(3, 4)
         return
     install()
-    from torchsim.sequence import _epg_triton
+    from torchsim.sequence import _builders, _epg_triton
     from torchsim.sequence._lineshape import lineshape_table
-    from torchsim.sequence import _builders
 
     voxels, states = 3, 4
     if name == "narrow":
@@ -629,9 +661,7 @@ def _case(name: str) -> None:
     cut = _chunked(voxels) if name == "chunked" else None
     tissue = _tissue(voxels)
     events, outputs = _events(description)
-    options: dict[str, Any] = dict(
-        lineshape=lineshape_table(), exchanging=True
-    )
+    options: dict[str, Any] = dict(lineshape=lineshape_table(), exchanging=True)
     lengths = torch.unique(events[0].reshape(-1)).numel()
     print(f"{name}: {events[0].numel()} events over {lengths} lengths")
 
@@ -641,20 +671,21 @@ def _case(name: str) -> None:
         ),
         force_narrow,
     )
-    forward = float(
-        (with_table - without).abs().max() / without.abs().max()
-    )
+    forward = float((with_table - without).abs().max() / without.abs().max())
     print(f"  forward             {forward:.2e}")
     assert forward <= tolerance, f"forward drifted: {forward:.2e}"
 
     seed = (
-        torch.rand(
-            voxels, outputs, generator=torch.Generator().manual_seed(7)
-        ) * 2.0 - 1.0
+        torch.rand(voxels, outputs, generator=torch.Generator().manual_seed(7)) * 2.0
+        - 1.0
     ).to(torch.complex64)
     without, with_table = _both(
         lambda: _epg_triton.simulate_vjp(
-            tissue, events, seed, state_count=states, output_count=outputs,
+            tissue,
+            events,
+            seed,
+            state_count=states,
+            output_count=outputs,
             **options,
         ),
         force_narrow,
@@ -664,7 +695,8 @@ def _case(name: str) -> None:
     assert adjoint <= tolerance, f"adjoint drifted: {adjoint:.2e}"
     directions = tuple(
         torch.linspace(0.01, 0.03, value.numel()).reshape(value.shape)
-        if value.numel() else value.clone()
+        if value.numel()
+        else value.clone()
         for value in tissue
     )
     event_directions = (
@@ -672,22 +704,23 @@ def _case(name: str) -> None:
         # directions: a pooled second-order adjoint that weighed the whole row
         # by one direction would agree with the per-event arm under a uniform
         # one and only differ under this.
-        torch.linspace(0.5e-4, 2e-4, events[0].numel()).reshape(
-            events[0].shape
-        ),
+        torch.linspace(0.5e-4, 2e-4, events[0].numel()).reshape(events[0].shape),
         torch.zeros_like(events[2]),
         torch.zeros_like(events[3]),
     )
     without, with_table = _both(
         lambda: _epg_triton.simulate_jvp(
-            tissue, events, directions, event_directions,
-            state_count=states, output_count=outputs, **options,
+            tissue,
+            events,
+            directions,
+            event_directions,
+            state_count=states,
+            output_count=outputs,
+            **options,
         ),
         force_narrow,
     )
-    forward_mode = float(
-        (with_table - without).abs().max() / without.abs().max()
-    )
+    forward_mode = float((with_table - without).abs().max() / without.abs().max())
     print(f"  forward mode        {forward_mode:.2e}")
     assert forward_mode <= tolerance, f"forward mode drifted: {forward_mode:.2e}"
 
@@ -696,8 +729,13 @@ def _case(name: str) -> None:
     for half, label in ((0, "curvature"), (1, "gradient")):
         without, with_table = _both(
             lambda h=half: _epg_triton.simulate_vjp_jvp(
-                tissue, events, seeded, seed,
-                state_count=states, output_count=outputs, **options,
+                tissue,
+                events,
+                seeded,
+                seed,
+                state_count=states,
+                output_count=outputs,
+                **options,
             )[h],
             force_narrow,
         )

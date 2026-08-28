@@ -1,0 +1,80 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # The two ends of the supported range. The kernels are built against
+        # the stable ABI, so what the ends prove holds for what is between.
+        python-version: ["3.10", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # setuptools-scm reads the version out of the tags.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # The default index serves the CUDA build on Linux, which is gigabytes
+      # of driver libraries a runner with no card cannot use. Elsewhere the
+      # default wheel is already the CPU one.
+      - name: Install PyTorch (CPU)
+        if: runner.os == 'Linux'
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      # Not editable and not from a wheel: the C++ kernels are compiled here,
+      # on this runner, with this compiler, which is the half of the package a
+      # pure-Python job would never exercise. CMake and Ninja arrive as
+      # build-time wheels through scikit-build-core.
+      - name: Build the extensions and install
+        run: python -m pip install ".[test]"
+
+      - name: Report what was built
+        shell: python
+        run: |
+          import importlib.util, pathlib
+          spec = importlib.util.find_spec("torchsim")
+          root = pathlib.Path(next(iter(spec.submodule_search_locations)))
+          for kernel in sorted(root.glob("_*_cpu*")):
+              print(kernel.name, kernel.stat().st_size, "bytes")
+
+      # What a runner with no card runs: the C++ kernels and every layer above
+      # them. The GPU tests skip themselves on ``torch.cuda.is_available()``,
+      # and the ones that reach for Triton's CPU interpreter carry the
+      # ``interpreted`` marker, which ``addopts`` deselects.
+      - name: Run the tests
+        run: pytest tests/ -n auto
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: INFN-MRI/torchsim
+          files: coverage.xml
+          fail_ci_if_error: false

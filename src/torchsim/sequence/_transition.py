@@ -168,10 +168,12 @@ def compose_spinor(
         iterable of per-sample tensors is one it moves, in the same form
         ``drive`` takes.
 
-    Returns:
+    Returns
+    -------
         ``(a, b)`` shaped like the turn.
 
-    Raises:
+    Raises
+    ------
         ValueError: if a moving gradient runs out before the pulse does, or
             the other way about.
     """
@@ -185,7 +187,7 @@ def compose_spinor(
         turns = chain((spins,), turns)
     a = torch.ones_like(spins, dtype=torch.complex128)
     b = torch.zeros_like(a)
-    steps = zip(drive, turns) if held else zip(drive, turns, strict=True)
+    steps = zip(drive, turns, strict=False) if held else zip(drive, turns, strict=True)
     for sample, turn in steps:
         turn_x = sample.real.expand_as(spins)
         turn_y = sample.imag.expand_as(spins)
@@ -257,8 +259,7 @@ class DynamicPairs:
             int(self.index.min()) < 0 or int(self.index.max()) >= self.rows
         ):
             raise ValueError(
-                f"the index reaches row {int(self.index.max())} of "
-                f"{self.rows}"
+                f"the index reaches row {int(self.index.max())} of {self.rows}"
             )
 
     @property
@@ -275,9 +276,7 @@ class DynamicPairs:
         """The pair one pulse performs, one entry per voxel."""
         return self.a[row], self.b[row]
 
-    def rows_per_event(
-        self, train_count: int, event_count: int
-    ) -> torch.Tensor:
+    def rows_per_event(self, train_count: int, event_count: int) -> torch.Tensor:
         """The row each event of each train reads, as the kernels index it.
 
         The kernels read this at ``train * event_count + event``, so it has to
@@ -286,7 +285,8 @@ class DynamicPairs:
         reads the same rows, which is what a set of pulses shared across a
         batch is; one given per train is flattened in place.
 
-        Raises:
+        Raises
+        ------
             ValueError: if the index fits neither shape.
         """
         flat = self.index.reshape(-1).to(torch.int32)
@@ -301,7 +301,7 @@ class DynamicPairs:
         )
 
     @classmethod
-    def from_packed(cls, values: torch.Tensor, index: torch.Tensor) -> "DynamicPairs":
+    def from_packed(cls, values: torch.Tensor, index: torch.Tensor) -> DynamicPairs:
         """The set a packed buffer describes, ``(rows, voxels, 4)``.
 
         The inverse of :meth:`packed`, which is what lets the pair cross a
@@ -320,9 +320,7 @@ class DynamicPairs:
         single read needs is four contiguous floats.
         """
         return (
-            torch.stack(
-                (self.a.real, self.a.imag, self.b.real, self.b.imag), dim=-1
-            )
+            torch.stack((self.a.real, self.a.imag, self.b.real, self.b.imag), dim=-1)
             .to(device=device, dtype=torch.float32)
             .contiguous()
         )
@@ -422,12 +420,14 @@ def dynamic_pair(
         definition's bandwidth the offset in Hz it adds. One location when not
         given.
 
-    Returns:
+    Returns
+    -------
         ``(a, b)`` in ``complex64``, one entry per voxel and location with
         **locations fastest** -- ``voxel * locations + location``, which is how
         the kernels index an atom across a slice.
 
-    Raises:
+    Raises
+    ------
         ValueError: if the pulse has no samples, if it integrates to nothing,
             or if the envelope, the weights and the sensitivities disagree on
             the channel count.
@@ -474,8 +474,7 @@ def dynamic_pair(
         )
     if weights.shape[1] not in (1, samples):
         raise ValueError(
-            f"the weights carry {weights.shape[1]} samples and the pulse "
-            f"{samples}"
+            f"the weights carry {weights.shape[1]} samples and the pulse {samples}"
         )
 
     voxels = int(sensitivities.shape[0])
@@ -483,9 +482,9 @@ def dynamic_pair(
         locations = 1
         across = None
     else:
-        across = torch.as_tensor(
-            positions, dtype=torch.float64, device=device
-        ).reshape(-1)
+        across = torch.as_tensor(positions, dtype=torch.float64, device=device).reshape(
+            -1
+        )
         locations = int(across.numel())
         across = 2.0 * torch.pi * float(definition.bandwidth_hz) * across
 
@@ -540,11 +539,13 @@ def transition_table(
         Largest effective flip the table covers, in radians. A pulse driven
         past this reads the last knot.
 
-    Returns:
+    Returns
+    -------
         The table, with slopes taken by forward-mode differentiation of the
         same integration rather than by differencing it.
 
-    Raises:
+    Raises
+    ------
         ValueError: if the pulse has no samples, or ``bins`` is below two.
     """
     if bins < 2:
@@ -593,9 +594,7 @@ def transition_table(
             turn_z = (turn.expand(wide) for turn in turn_z)
         return compose_spinor(weight[:, None, None] * flip, turn_z)
 
-    values, slopes = torch.func.jvp(
-        integrate, (theta,), (torch.ones_like(theta),)
-    )
+    values, slopes = torch.func.jvp(integrate, (theta,), (torch.ones_like(theta),))
     return TransitionTable(
         a=values[0].to(torch.complex64).contiguous(),
         b=values[1].to(torch.complex64).contiguous(),

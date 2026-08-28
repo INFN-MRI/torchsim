@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _pack_events,
@@ -32,12 +32,13 @@ STATES = 8
 FAT_SHIFT_HZ = -420.0
 
 # One tissue with every three-pool term live at once.
-SEMISOLID = dict(
-    bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0
-)
+SEMISOLID = dict(bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0)
 EXCHANGING = dict(
-    pool_b_fraction=0.2, pool_b_exchange_hz=40.0, t1_pool_b_ms=300.0,
-    t2_pool_b_ms=25.0, pool_b_shift_hz=FAT_SHIFT_HZ,
+    pool_b_fraction=0.2,
+    pool_b_exchange_hz=40.0,
+    t1_pool_b_ms=300.0,
+    t2_pool_b_ms=25.0,
+    pool_b_shift_hz=FAT_SHIFT_HZ,
 )
 LIVE = dict(t1_ms=1000.0, t2_ms=80.0, **SEMISOLID, **EXCHANGING)
 
@@ -52,13 +53,20 @@ def _description():
 
 def _signal(device="cpu", **properties):
     held = {"t1_ms": 1000.0, "t2_ms": 80.0, **properties}
-    return EpgEngine().simulate(
-        _description(),
-        TissueProperties(
-            **{name: torch.tensor([value], device=device) for name, value in held.items()}
-        ),
-        nstates=STATES,
-    ).signal
+    return (
+        EpgEngine()
+        .simulate(
+            _description(),
+            TissueProperties(
+                **{
+                    name: torch.tensor([value], device=device)
+                    for name, value in held.items()
+                }
+            ),
+            nstates=STATES,
+        )
+        .signal
+    )
 
 
 # --- each two-pool system is a limit of this one ---
@@ -121,9 +129,9 @@ def test_the_semisolid_pool_still_saturates_beside_the_exchanging_one():
 
     def held(fraction):
         return float(
-            _signal(
-                **{**SEMISOLID, "bound_fraction": fraction}, **EXCHANGING
-            ).abs().sum()
+            _signal(**{**SEMISOLID, "bound_fraction": fraction}, **EXCHANGING)
+            .abs()
+            .sum()
         )
 
     assert held(0.25) < held(0.1) < held(0.0)
@@ -131,9 +139,7 @@ def test_the_semisolid_pool_still_saturates_beside_the_exchanging_one():
 
 def test_the_chemical_shift_still_reaches_the_coil():
     """And the exchanging pool keeps its offset beside the semisolid one."""
-    on_resonance = _signal(
-        **SEMISOLID, **{**EXCHANGING, "pool_b_shift_hz": 0.0}
-    )
+    on_resonance = _signal(**SEMISOLID, **{**EXCHANGING, "pool_b_shift_hz": 0.0})
     shifted = _signal(**SEMISOLID, **EXCHANGING)
 
     scale = float(on_resonance.abs().max())
@@ -149,7 +155,7 @@ def _free_induction(times_s, **properties):
     from torchsim.sequence._accelerators import _EXCITATION, _RECORD
 
     intervals = [
-        after - before for before, after in zip((0.0, *times_s), times_s)
+        after - before for before, after in zip((0.0, *times_s), times_s, strict=False)
     ]
     count = len(times_s)
     events = (
@@ -168,8 +174,14 @@ def _free_induction(times_s, **properties):
     )
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
     return _run_packed(
-        prepared, events, STATES, count, 1, geometry=NO_GEOMETRY,
-        lineshape=lineshape_table(), exchanging=True,
+        prepared,
+        events,
+        STATES,
+        count,
+        1,
+        geometry=NO_GEOMETRY,
+        lineshape=lineshape_table(),
+        exchanging=True,
     ).flatten()
 
 
@@ -185,16 +197,21 @@ def test_the_semisolid_pool_slows_the_transverse_exchange():
     Taken against the package's own operator, given the free fraction the
     three-pool system actually leaves.
     """
-    from utils.exchange import build_two_pool_exchange_matrix
     from utils.epg import transverse_relaxation_exchange_op
+    from utils.exchange import build_two_pool_exchange_matrix
 
     delay = 6e-3
     fraction_b, fraction_c, rate = 0.2, 0.3, 60.0
     t2_a, t2_b = 80.0, 25.0
     tissue = dict(
-        t2_ms=t2_a, bound_fraction=fraction_c, bound_exchange_hz=0.0,
-        t1_bound_ms=1000.0, pool_b_fraction=fraction_b,
-        pool_b_exchange_hz=rate, t1_pool_b_ms=300.0, t2_pool_b_ms=t2_b,
+        t2_ms=t2_a,
+        bound_fraction=fraction_c,
+        bound_exchange_hz=0.0,
+        t1_bound_ms=1000.0,
+        pool_b_fraction=fraction_b,
+        pool_b_exchange_hz=rate,
+        t1_pool_b_ms=300.0,
+        t2_pool_b_ms=t2_b,
         pool_b_shift_hz=0.0,
     )
     measured = complex(_free_induction((delay,), **tissue)[0])
@@ -244,9 +261,7 @@ def _inversion_recovery(delays_s, **properties):
             torch.tensor([1, 0, 1, 2], dtype=torch.int32),
             torch.tensor([0.0, 0.0, 0.5 * torch.pi, 0.0], dtype=torch.float32),
             torch.tensor([0.0, 0.0, 0.5 * torch.pi, 0.0], dtype=torch.float32),
-            torch.tensor(
-                [_INVERSION, 0, _EXCITATION, _RECORD], dtype=torch.uint8
-            ),
+            torch.tensor([_INVERSION, 0, _EXCITATION, _RECORD], dtype=torch.uint8),
             torch.tensor([-1, -1, -1, 0], dtype=torch.int32),
             torch.zeros(4, dtype=torch.int32),
             torch.zeros(4, dtype=torch.float32),
@@ -343,12 +358,8 @@ def _live_events():
     return (
         torch.tensor([0.0, 0.35, 0.0, 0.0, 3e-3, 0.0], dtype=torch.float32),
         torch.tensor([1, 0, 1, 2, 0, 2], dtype=torch.int32),
-        torch.tensor(
-            [0.0, 0.0, 0.5 * torch.pi, 0.0, 0.0, 0.0], dtype=torch.float32
-        ),
-        torch.tensor(
-            [0.0, 0.0, 0.5 * torch.pi, 0.0, 0.0, 0.0], dtype=torch.float32
-        ),
+        torch.tensor([0.0, 0.0, 0.5 * torch.pi, 0.0, 0.0, 0.0], dtype=torch.float32),
+        torch.tensor([0.0, 0.0, 0.5 * torch.pi, 0.0, 0.0, 0.0], dtype=torch.float32),
         torch.tensor(
             [_INVERSION, 0, _EXCITATION, _RECORD, 0, _RECORD], dtype=torch.uint8
         ),
@@ -360,9 +371,7 @@ def _live_events():
 
 
 def _prepared(device="cpu", **properties):
-    prepared, _, _ = _prepare_tissue(
-        TissueProperties(**{**LIVE, **properties}), device
-    )
+    prepared, _, _ = _prepare_tissue(TissueProperties(**{**LIVE, **properties}), device)
     return tuple(value.to(torch.float32).contiguous() for value in prepared)
 
 
@@ -422,13 +431,17 @@ def test_forward_mode_leaves_the_two_pool_answers_untouched():
 
     def along(**extra):
         def run(value):
-            return EpgEngine().simulate(
-                _description(),
-                TissueProperties(
-                    t1_ms=torch.tensor([1000.0]), t2_ms=value, **extra
-                ),
-                nstates=STATES,
-            ).signal
+            return (
+                EpgEngine()
+                .simulate(
+                    _description(),
+                    TissueProperties(
+                        t1_ms=torch.tensor([1000.0]), t2_ms=value, **extra
+                    ),
+                    nstates=STATES,
+                )
+                .signal
+            )
 
         return torch.func.jvp(run, (t2,), (torch.ones_like(t2),))[1]
 
@@ -447,20 +460,22 @@ def test_forward_mode_reaches_three_pools_through_the_public_api():
     fraction = torch.tensor([0.2])
 
     def run(value):
-        return EpgEngine().simulate(
-            _description(),
-            TissueProperties(
-                t1_ms=torch.tensor([1000.0]),
-                t2_ms=torch.tensor([80.0]),
-                **SEMISOLID,
-                **{**EXCHANGING, "pool_b_fraction": value},
-            ),
-            nstates=STATES,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                _description(),
+                TissueProperties(
+                    t1_ms=torch.tensor([1000.0]),
+                    t2_ms=torch.tensor([80.0]),
+                    **SEMISOLID,
+                    **{**EXCHANGING, "pool_b_fraction": value},
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
 
-    reading, tangent = torch.func.jvp(
-        run, (fraction,), (torch.ones_like(fraction),)
-    )
+    reading, tangent = torch.func.jvp(run, (fraction,), (torch.ones_like(fraction),))
     step = 1e-3
     difference = (run(fraction + step) - run(fraction - step)) / (2.0 * step)
 
@@ -507,9 +522,7 @@ def test_the_adjoint_matches_finite_differences(name: str) -> None:
     seed = _cotangent()
 
     def reading(**properties):
-        return float(
-            (seed.conj() * _live_readout(_prepared(**properties))).real.sum()
-        )
+        return float((seed.conj() * _live_readout(_prepared(**properties))).real.sum())
 
     gradient = float(_live_adjoint(_prepared(), seed)[index].sum())
     step = abs(LIVE[name]) * 1e-3
@@ -529,8 +542,7 @@ def test_the_adjoint_transposes_the_forward_direction():
     prepared = _prepared()
     generator = torch.Generator().manual_seed(19)
     directions = tuple(
-        torch.rand(value.shape, generator=generator) * 2.0 - 1.0
-        for value in prepared
+        torch.rand(value.shape, generator=generator) * 2.0 - 1.0 for value in prepared
     )
     seed = _cotangent(23)
 
@@ -538,7 +550,9 @@ def test_the_adjoint_transposes_the_forward_direction():
     left = float((seed.conj() * forward).real.sum())
     terms = [
         float((gradient * direction).sum())
-        for gradient, direction in zip(_live_adjoint(prepared, seed), directions)
+        for gradient, direction in zip(
+            _live_adjoint(prepared, seed), directions, strict=False
+        )
     ]
     scale = sum(abs(term) for term in terms)
 
@@ -556,8 +570,11 @@ def test_the_second_order_pass_differentiates_the_adjoint():
     events = _live_events()
     seed = _cotangent()
     options = dict(
-        state_count=STATES, output_count=2, threads=1,
-        lineshape=lineshape_table(), exchanging=True,
+        state_count=STATES,
+        output_count=2,
+        threads=1,
+        lineshape=lineshape_table(),
+        exchanging=True,
     )
     still = tuple(torch.zeros_like(value) for value in prepared) + tuple(
         torch.zeros_like(events[0]) for _ in range(3)
@@ -583,13 +600,15 @@ def test_the_second_order_pass_differentiates_the_adjoint():
     curvature, _ = _run_packed_vjp_jvp(prepared, events, directions, seed, **options)
 
     step = 1e-3
+
     def moved(sign):
-        return _prepared(**{
-            name: LIVE[name] + sign * step * float(
-                directions[TISSUE_NAMES.index(name)][0]
-            )
-            for name in LIVE
-        })
+        return _prepared(
+            **{
+                name: LIVE[name]
+                + sign * step * float(directions[TISSUE_NAMES.index(name)][0])
+                for name in LIVE
+            }
+        )
 
     ahead = _live_adjoint(moved(+1), seed)
     behind = _live_adjoint(moved(-1), seed)
@@ -604,7 +623,6 @@ def test_the_second_order_pass_differentiates_the_adjoint():
     assert compared > 3
 
 
-
 def test_the_second_order_pass_saturates_the_pool_the_pulse_deposits_into():
     """A refocused train, where every pulse both turns the free pools and
     deposits power in the semisolid one.
@@ -614,7 +632,8 @@ def test_the_second_order_pass_saturates_the_pool_the_pulse_deposits_into():
     different code.
     """
     from torchsim.sequence._accelerators import (
-        _run_packed_vjp, _run_packed_vjp_jvp,
+        _run_packed_vjp,
+        _run_packed_vjp_jvp,
     )
 
     prepared = _prepared()
@@ -625,8 +644,11 @@ def test_the_second_order_pass_saturates_the_pool_the_pulse_deposits_into():
         torch.rand((1, ECHOES), generator=generator) * 2.0 - 1.0,
     )
     options = dict(
-        state_count=STATES, output_count=ECHOES, threads=1,
-        lineshape=lineshape_table(), exchanging=True,
+        state_count=STATES,
+        output_count=ECHOES,
+        threads=1,
+        lineshape=lineshape_table(),
+        exchanging=True,
     )
     still = tuple(
         torch.zeros_like(value)
@@ -645,10 +667,12 @@ def test_the_second_order_pass_saturates_the_pool_the_pulse_deposits_into():
         compared += 1
     assert compared > 8
 
+
 def test_the_adjoint_leaves_the_two_pool_answers_untouched():
     """A tissue at either default fraction takes the two-pool kernel in reverse
     mode too, so its gradients are bit for bit what they were.
     """
+
     def gradient(**extra):
         t2 = torch.tensor([80.0], requires_grad=True)
         EpgEngine().simulate(
@@ -709,9 +733,11 @@ def test_the_cuda_gradient_matches_the_cpu_gradient():
             name: value.to(device).clone().requires_grad_(True)
             for name, value in spread.items()
         }
-        signal = EpgEngine().simulate(
-            _description(), TissueProperties(**leaves), nstates=STATES
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(_description(), TissueProperties(**leaves), nstates=STATES)
+            .signal
+        )
         signal.abs().square().sum().backward()
         return {name: leaf.grad.cpu() for name, leaf in leaves.items()}
 
@@ -758,9 +784,11 @@ def test_the_cuda_second_order_pass_matches_the_cpu_one():
             name: value.to(device).clone().requires_grad_(True)
             for name, value in spread.items()
         }
-        signal = EpgEngine().simulate(
-            _description(), TissueProperties(**leaves), nstates=STATES
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(_description(), TissueProperties(**leaves), nstates=STATES)
+            .signal
+        )
         loss = signal.abs().square().sum()
         gradients = torch.autograd.grad(loss, list(leaves.values()), create_graph=True)
         along = sum(
@@ -792,15 +820,21 @@ def _train_events():
     spoil that a free-induction probe leaves alone.
     """
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
     return (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
 
@@ -810,8 +844,18 @@ def _routes(leaves, events):
     from torchsim.sequence._accelerators import _NativeEpg
 
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, None, None, None,
-        lineshape_table(), True, None,
+        *leaves,
+        *events,
+        STATES,
+        ECHOES,
+        1,
+        NO_GEOMETRY,
+        None,
+        None,
+        None,
+        lineshape_table(),
+        True,
+        None,
     )
     reference = simulate_packed(
         leaves,
@@ -825,9 +869,7 @@ def _routes(leaves, events):
 
 
 def _oracle_leaves():
-    return tuple(
-        value.detach().clone().requires_grad_(True) for value in _prepared()
-    )
+    return tuple(value.detach().clone().requires_grad_(True) for value in _prepared())
 
 
 def test_the_fused_forward_matches_the_oracle():
@@ -839,9 +881,9 @@ def test_the_fused_forward_matches_the_oracle():
 
     reference = reference.detach()
     assert float(reference.abs().max()) > 0.0
-    assert float(
-        (fused.detach() - reference).abs().max() / reference.abs().max()
-    ) < 1e-4
+    assert (
+        float((fused.detach() - reference).abs().max() / reference.abs().max()) < 1e-4
+    )
 
 
 def test_the_fused_adjoint_matches_the_oracle():
@@ -948,13 +990,17 @@ def test_the_cuda_kernel_matches_the_cpu_kernel():
     )
 
     def run(device):
-        return EpgEngine().simulate(
-            _description(),
-            TissueProperties(
-                **{name: value.to(device) for name, value in spread.items()}
-            ),
-            nstates=STATES,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                _description(),
+                TissueProperties(
+                    **{name: value.to(device) for name, value in spread.items()}
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
 
     host = run("cpu")
     card = run("cuda").cpu()
@@ -970,15 +1016,21 @@ def test_a_streamed_volume_matches_the_whole_one():
 
     voxels = 3000
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     prepared, _, _ = _prepare_tissue(
@@ -1018,15 +1070,21 @@ def test_a_streamed_adjoint_matches_the_whole_one():
 
     voxels = 3000
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     prepared, _, _ = _prepare_tissue(
@@ -1044,16 +1102,19 @@ def test_a_streamed_adjoint_matches_the_whole_one():
     )
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
     generator = torch.Generator().manual_seed(29)
-    seed = (
-        torch.rand(voxels, ECHOES, generator=generator) * 2.0 - 1.0
-    ).to(torch.complex64)
+    seed = (torch.rand(voxels, ECHOES, generator=generator) * 2.0 - 1.0).to(
+        torch.complex64
+    )
     still = tuple(
         torch.zeros_like(value)
         for value in (*prepared, events[0], events[2], events[3])
     )
     options = dict(
-        state_count=STATES, output_count=ECHOES, threads=1,
-        lineshape=lineshape_table(), exchanging=True,
+        state_count=STATES,
+        output_count=ECHOES,
+        threads=1,
+        lineshape=lineshape_table(),
+        exchanging=True,
     )
 
     # The whole volume runs on the card as well, so the only thing between the
@@ -1103,7 +1164,9 @@ def test_the_cuda_forward_mode_matches_the_cpu_kernel():
     )
 
     def run(device):
-        prepared = _prepared(device, **{name: value.to(device) for name, value in spread.items()})
+        prepared = _prepared(
+            device, **{name: value.to(device) for name, value in spread.items()}
+        )
         return _live_readout(
             prepared,
             tuple(torch.ones_like(value) for value in prepared),
@@ -1184,8 +1247,18 @@ def test_a_tabulated_rotation_reaches_both_pools() -> None:
     profile = _instantaneous_table()
 
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, ECHOES, 1, NO_GEOMETRY, profile, None, None,
-        lineshape_table(), True, None,
+        *leaves,
+        *events,
+        STATES,
+        ECHOES,
+        1,
+        NO_GEOMETRY,
+        profile,
+        None,
+        None,
+        lineshape_table(),
+        True,
+        None,
     )
     reference = simulate_packed(
         leaves,
@@ -1213,7 +1286,7 @@ def test_three_pools_take_the_first_order_kernel_on_the_card(
     forward-over-reverse pass on the same card: two arms of one wrong kernel
     agree with each other, and the backends share no code.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import _run_packed_vjp
     from torchsim.sequence._parameters import TISSUE_NAMES
 
@@ -1242,9 +1315,7 @@ def test_three_pools_take_the_first_order_kernel_on_the_card(
 
     def side(device):
         prepared, _, _ = _prepare_tissue(tissue, device)
-        prepared = tuple(
-            value.to(torch.float32).contiguous() for value in prepared
-        )
+        prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
         return prepared, tuple(value.to(device) for value in packed.buffers)
 
     host_tissue, host_events = side("cpu")
@@ -1330,19 +1401,20 @@ def _matrix_exp_oracle(columns):
     Shares no code with the closed form under test: the generator is assembled
     and exponentiated by :func:`torch.linalg.matrix_exp` in double.
     """
-    r1a, r1b, r1c, exb, exc, fb, fc, dt, att = (
-        value.double() for value in columns
-    )
+    r1a, r1b, r1c, exb, exc, fb, fc, dt, att = (value.double() for value in columns)
     free = 1.0 - fb - fc
     zero = torch.zeros_like(free)
-    generator = torch.stack(
-        [
-            torch.stack([-exb * fb - exc * fc - r1a, exb * free, exc * free], -1),
-            torch.stack([exb * fb, -exb * free - r1b, zero], -1),
-            torch.stack([exc * fc, zero, -exc * free - r1c], -1),
-        ],
-        dim=-2,
-    ) * dt[..., None, None]
+    generator = (
+        torch.stack(
+            [
+                torch.stack([-exb * fb - exc * fc - r1a, exb * free, exc * free], -1),
+                torch.stack([exb * fb, -exb * free - r1b, zero], -1),
+                torch.stack([exc * fc, zero, -exc * free - r1c], -1),
+            ],
+            dim=-2,
+        )
+        * dt[..., None, None]
+    )
     step = att[..., None, None] * torch.linalg.matrix_exp(generator)
     start = torch.stack([free, fb, fc], dim=-1)
     grow = start - (step @ start[..., None]).squeeze(-1)
@@ -1351,9 +1423,7 @@ def _matrix_exp_oracle(columns):
 
 def _spread_over(columns):
     """The bound :func:`narrow_three_pool` tests, computed the long way."""
-    r1a, r1b, r1c, exb, exc, fb, fc, dt, _att = (
-        value.double() for value in columns
-    )
+    r1a, r1b, r1c, exb, exc, fb, fc, dt, _att = (value.double() for value in columns)
     free = 1.0 - fb - fc
     a00 = (-exb * fb - exc * fc - r1a) * dt
     a11 = (-exb * free - r1b) * dt
@@ -1361,8 +1431,10 @@ def _spread_over(columns):
     third = (a00 + a11 + a22) / 3.0
     s00, s11, s22 = a00 - third, a11 - third, a22 - third
     minors = (
-        s00 * s11 - (exb * free * dt) * (exb * fb * dt)
-        + s00 * s22 - (exc * free * dt) * (exc * fc * dt)
+        s00 * s11
+        - (exb * free * dt) * (exb * fb * dt)
+        + s00 * s22
+        - (exc * free * dt) * (exc * fc * dt)
         + s11 * s22
     )
     return torch.sqrt(torch.clamp(-2.0 * minors, min=0.0))
@@ -1384,8 +1456,19 @@ def test_the_series_carries_the_answer_up_to_the_spread_it_is_trusted_to() -> No
 
     @triton.jit
     def only_the_series(
-        a, b, c, d, e, f, g, h, i, out, n,
-        NARROW: tl.constexpr, BLOCK: tl.constexpr,
+        a,
+        b,
+        c,
+        d,
+        e,
+        f,
+        g,
+        h,
+        i,
+        out,
+        n,
+        NARROW: tl.constexpr,
+        BLOCK: tl.constexpr,
     ):
         j = tl.arange(0, BLOCK)
         mask = j < n
@@ -1411,20 +1494,22 @@ def test_the_series_carries_the_answer_up_to_the_spread_it_is_trusted_to() -> No
         if seconds is None:
             # Stretch the interval until the widest voxel sits on the bound.
             rate = float(_spread_over(columns).max())
-            columns = _three_pool_columns(
-                voxels, seconds=NARROW_SPREAD / rate, seed=5
-            )
+            columns = _three_pool_columns(voxels, seconds=NARROW_SPREAD / rate, seed=5)
         reached = float(_spread_over(columns).max())
         expected = _matrix_exp_oracle(columns)
         scale = expected.abs().amax(dim=1, keepdim=True).clamp_min(1e-12)
         out = torch.zeros(12 * voxels, device="cuda", dtype=torch.float32)
         only_the_series[(1,)](
             *[value.to("cuda", torch.float32) for value in columns],
-            out, voxels, NARROW=True, BLOCK=triton.next_power_of_2(voxels),
+            out,
+            voxels,
+            NARROW=True,
+            BLOCK=triton.next_power_of_2(voxels),
         )
         got = out.reshape(12, voxels).T.double().cpu()
         worst[label] = (
-            reached, float(((got - expected).abs() / scale).amax(dim=1).max())
+            reached,
+            float(((got - expected).abs() / scale).amax(dim=1).max()),
         )
 
     inside_spread, inside = worst["inside"]
@@ -1490,8 +1575,7 @@ def test_the_series_branch_gives_the_answer_the_roots_give(state_count) -> None:
     The gate cannot be measured against the host: that comparison moves for
     reasons of its own. What it has to be held to is the branch it replaces.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
-    from torchsim.sequence import _epg_triton, EpgEngine
+    from torchsim.sequence import _accelerators, _epg_triton
 
     voxels = 256
     tissue, _, _ = _prepare_tissue(
@@ -1523,21 +1607,21 @@ def test_the_series_branch_gives_the_answer_the_roots_give(state_count) -> None:
         generator=torch.Generator().manual_seed(3),
     ).cuda()
     still = tuple(
-        torch.zeros_like(value)
-        for value in (*tissue, events[0], events[2], events[3])
+        torch.zeros_like(value) for value in (*tissue, events[0], events[2], events[3])
     )
     options = dict(
-        state_count=state_count, output_count=outputs, threads=1,
-        exchanging=True, lineshape=table,
+        state_count=state_count,
+        output_count=outputs,
+        threads=1,
+        exchanging=True,
+        lineshape=table,
     )
 
     def both_ways(run):
         settled = _epg_triton.narrow_three_pool
         sides = []
         for forced in (True, False):
-            _epg_triton.narrow_three_pool = (
-                lambda *a, taken=forced, **k: taken
-            )
+            _epg_triton.narrow_three_pool = lambda *a, taken=forced, **k: taken
             try:
                 sides.append(run())
             finally:
@@ -1551,17 +1635,26 @@ def test_the_series_branch_gives_the_answer_the_roots_give(state_count) -> None:
 
     runs = {
         "forward": lambda: _accelerators._run_packed(
-            tissue, events, state_count, outputs, 1,
-            exchanging=True, lineshape=table,
+            tissue,
+            events,
+            state_count,
+            outputs,
+            1,
+            exchanging=True,
+            lineshape=table,
         ),
         "forward mode": lambda: _accelerators._run_packed_jvp(
-            tissue, events,
+            tissue,
+            events,
             tuple(torch.full_like(value, 1e-2) for value in tissue),
             tuple(
-                torch.zeros_like(value)
-                for value in (events[0], events[2], events[3])
+                torch.zeros_like(value) for value in (events[0], events[2], events[3])
             ),
-            state_count, outputs, 1, exchanging=True, lineshape=table,
+            state_count,
+            outputs,
+            1,
+            exchanging=True,
+            lineshape=table,
         ),
         "adjoint": lambda: _accelerators._run_packed_vjp(
             tissue, events, seed, **options

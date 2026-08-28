@@ -39,14 +39,10 @@ def test_the_wrapper_moves_the_map_axis_and_nothing_else(operator, maps) -> None
     recorded = physics.A(maps)
 
     assert recorded.shape == (1, TE_MS.numel(), 16, 16)
-    torch.testing.assert_close(
-        recorded, operator.A(maps.movedim(1, -1)).movedim(-1, 1)
-    )
+    torch.testing.assert_close(recorded, operator.A(maps.movedim(1, -1)).movedim(-1, 1))
 
 
-def test_our_adjoint_is_the_one_autograd_would_have_found(
-    operator, maps
-) -> None:
+def test_our_adjoint_is_the_one_autograd_would_have_found(operator, maps) -> None:
     """The analytic derivative is the derivative, not an approximation of it."""
     physics = operator.physics()
     cotangent = torch.randn(
@@ -101,9 +97,7 @@ def test_it_composes_with_a_linear_encoding_operator(operator, maps) -> None:
 
     measured = chain.A(maps)
     assert measured.shape == (1, TE_MS.numel(), 16, 16)
-    torch.testing.assert_close(
-        measured, encoding.A(operator.physics().A(maps))
-    )
+    torch.testing.assert_close(measured, encoding.A(operator.physics().A(maps)))
 
 
 def test_a_deepinv_optimizer_drives_the_composed_operator(operator) -> None:

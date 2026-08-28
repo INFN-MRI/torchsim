@@ -17,7 +17,6 @@ import pytest
 import torch
 
 from torchsim import TissueProperties, fse_description
-from utils.epg import washout_op
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     Geometry,
@@ -30,6 +29,7 @@ from torchsim.sequence._accelerators import (
 )
 from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_NAMES
 from torchsim.sequence._simulation import _prepare_tissue
+from utils.epg import washout_op
 from utils.packed_reference import simulate_packed
 
 ECHOES = 6
@@ -73,7 +73,7 @@ def _packed(velocity: float = VELOCITY):
     """Prepared tissue and packed events, as the kernels take them."""
     prepared, _, resolved = _prepare_tissue(_tissue(velocity), "cpu")
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=resolved,

@@ -1,9 +1,9 @@
 """Test flow dephasing and washout operators."""
 
-import pytest
-
-import torch
 from types import SimpleNamespace
+
+import pytest
+import torch
 
 from utils import epg
 
@@ -34,12 +34,12 @@ def test_flow_op():
     assert J2.shape == (nstates, 1, 1)
 
     # Assert values (complex exponentials)
-    assert torch.allclose(
-        torch.abs(J1), torch.ones_like(J1).real
-    ), "J1 magnitude should be 1"
-    assert torch.allclose(
-        torch.abs(J2), torch.ones_like(J2).real
-    ), "J2 magnitude should be 1"
+    assert torch.allclose(torch.abs(J1), torch.ones_like(J1).real), (
+        "J1 magnitude should be 1"
+    )
+    assert torch.allclose(torch.abs(J2), torch.ones_like(J2).real), (
+        "J2 magnitude should be 1"
+    )
 
 
 # Test for flow
@@ -67,9 +67,9 @@ def test_flow(flow_fixture):
 
     # Assert correct dephasing
     assert torch.allclose(output_states.Fplus, Fplus * J2), "Fplus dephasing incorrect"
-    assert torch.allclose(
-        output_states.Fminus, Fminus * J2.conj()
-    ), "Fminus dephasing incorrect"
+    assert torch.allclose(output_states.Fminus, Fminus * J2.conj()), (
+        "Fminus dephasing incorrect"
+    )
     assert torch.allclose(output_states.Z, Z * J1), "Z dephasing incorrect"
 
 
@@ -87,19 +87,19 @@ def test_washout_op():
 
     # Assert values
     assert torch.all(Win >= 0) and torch.all(Win <= 1), "Win should be between 0 and 1"
-    assert torch.all(Wout >= 0) and torch.all(
-        Wout <= 1
-    ), "Wout should be between 0 and 1"
+    assert torch.all(Wout >= 0) and torch.all(Wout <= 1), (
+        "Wout should be between 0 and 1"
+    )
     assert torch.allclose(Win + Wout, torch.ones_like(Win)), "Win + Wout should equal 1"
 
     # Check boundary case: v=0 should produce Wout=1 and Win=0
     Win_zero, Wout_zero = epg.washout_op(torch.tensor(0.0), time, voxelsize)
-    assert torch.allclose(
-        Win_zero, torch.zeros_like(Win_zero)
-    ), "Win should be 0 for v=0"
-    assert torch.allclose(
-        Wout_zero, torch.ones_like(Wout_zero)
-    ), "Wout should be 1 for v=0"
+    assert torch.allclose(Win_zero, torch.zeros_like(Win_zero)), (
+        "Win should be 0 for v=0"
+    )
+    assert torch.allclose(Wout_zero, torch.ones_like(Wout_zero)), (
+        "Wout should be 1 for v=0"
+    )
 
 
 # Test for washout
@@ -132,6 +132,6 @@ def test_washout(flow_fixture):
     assert torch.allclose(
         output_states.Fminus, Wout * Fminus + Win * moving_states.Fminus
     ), "Fminus washout/inflow incorrect"
-    assert torch.allclose(
-        output_states.Z, Wout * Z + Win * moving_states.Z
-    ), "Z washout/inflow incorrect"
+    assert torch.allclose(output_states.Z, Wout * Z + Win * moving_states.Z), (
+        "Z washout/inflow incorrect"
+    )

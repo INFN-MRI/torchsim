@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import DictionaryMatcher, Estimator, PERK
+from torchsim import PERK, DictionaryMatcher, Estimator
 from torchsim.simulators import FSESimulator, MRFSimulator
 
 ECHOES = 32
@@ -140,8 +140,7 @@ def test_a_matcher_refuses_a_separately_measured_property() -> None:
     )
     mapping = DictionaryMatcher(acquisition)
     with pytest.raises(ValueError, match="cannot take a separately measured"):
-        mapping.fit(T1=(300.0, 2000.0), known={"B1": (0.8, 1.2)}, seed=0, samples=64
-        )
+        mapping.fit(T1=(300.0, 2000.0), known={"B1": (0.8, 1.2)}, seed=0, samples=64)
 
 
 def test_mapping_before_fitting_says_so() -> None:
@@ -153,7 +152,8 @@ def test_mapping_before_fitting_says_so() -> None:
 
 def test_a_property_cannot_be_both_unknown_and_known() -> None:
     with pytest.raises(ValueError, match="both unknown and known"):
-        DictionaryMatcher(_acquisition()).fit(T1=(300.0, 2000.0), known={"T1": (1.0, 2.0)}
+        DictionaryMatcher(_acquisition()).fit(
+            T1=(300.0, 2000.0), known={"T1": (1.0, 2.0)}
         )
 
 
@@ -171,9 +171,7 @@ def test_values_given_for_a_property_are_used_as_given() -> None:
     """A user with their own sampling -- log-spaced, or from a cohort -- hands
     it over instead of a range."""
     values = torch.linspace(400.0, 1800.0, 16)
-    mapping = DictionaryMatcher(_acquisition()).fit(
-        T1=values, T2=(20.0, 200.0), seed=0
-    )
+    mapping = DictionaryMatcher(_acquisition()).fit(T1=values, T2=(20.0, 200.0), seed=0)
 
     _, parameters, _ = mapping.training_set(16)
 

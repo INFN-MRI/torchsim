@@ -77,15 +77,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -274,9 +286,7 @@ def single_train(control):
 # what the scanner will play, and :class:`~torchsim.Bounded` holds them
 # exactly, so no iterate is ever outside them.
 #
-design = SequenceDesign(
-    single_train, control=Bounded(PRESCRIBED, LOWEST, HIGHEST)
-)
+design = SequenceDesign(single_train, control=Bounded(PRESCRIBED, LOWEST, HIGHEST))
 
 # sphinx_gallery_start_ignore
 # One call resolves the protocol's structure, which is then held; the clock
@@ -288,8 +298,10 @@ one = design.minimize(iterations=25, learning_rate=0.3)
 
 # sphinx_gallery_start_ignore
 one_elapsed = time.perf_counter() - start
-print(f"one train of {ECHOES} echoes designed in {one_elapsed:.2f} s, "
-      f"{1000 * one_elapsed / 25:.1f} ms per iteration")
+print(
+    f"one train of {ECHOES} echoes designed in {one_elapsed:.2f} s, "
+    f"{1000 * one_elapsed / 25:.1f} ms per iteration"
+)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -335,34 +347,40 @@ for tissue, name, colour in (
     (FLUID, "synovial fluid", "tab:orange"),
 ):
     axes[1].plot(
-        echo_index, prescribed_signal[0, tissue].numpy(force=True), "--",
-        color=colour, alpha=0.6,
+        echo_index,
+        prescribed_signal[0, tissue].numpy(force=True),
+        "--",
+        color=colour,
+        alpha=0.6,
     )
     axes[1].plot(
-        echo_index, designed_signal[0, tissue].numpy(force=True), "-",
-        color=colour, label=name,
+        echo_index,
+        designed_signal[0, tissue].numpy(force=True),
+        "-",
+        color=colour,
+        label=name,
     )
 axes[1].set(xlabel="Echo #", ylabel="|signal|", title="k-space modulation")
 axes[1].grid(alpha=0.3)
 
 
-
 def spread(modulation):
     """The point spread function itself, for drawing."""
-    return torch.fft.fftshift(
-        torch.fft.fft(modulation, dim=-1).abs().square(), dim=-1
-    )
+    return torch.fft.fftshift(torch.fft.fft(modulation, dim=-1).abs().square(), dim=-1)
 
 
 for label, signal in (("prescribed", prescribed_signal), ("designed", designed_signal)):
     psf = spread(signal[0, CARTILAGE])
     axes[2].semilogy(
-        pixel, (psf / psf.max()).numpy(force=True),
+        pixel,
+        (psf / psf.max()).numpy(force=True),
         "k--" if label == "prescribed" else "-",
         label=f"{label}, {float(blur(signal, ALWAYS)[0, CARTILAGE]):.2f} px",
     )
 axes[2].set(
-    xlabel="Pixel", ylabel="PSF (normalized)", title="point spread",
+    xlabel="Pixel",
+    ylabel="PSF (normalized)",
+    title="point spread",
     ylim=(1e-5, 2.0),
 )
 axes[2].grid(alpha=0.3)
@@ -415,9 +433,7 @@ cartilage_map = band(26, 54) & ~fluid_map
 muscle_map = inside & ~cartilage_map & ~fluid_map
 
 #: One mask per tissue, in the order the simulator returns them.
-PHANTOM = torch.stack(
-    [cartilage_map, muscle_map, fluid_map]
-).to(torch.complex64)
+PHANTOM = torch.stack([cartilage_map, muscle_map, fluid_map]).to(torch.complex64)
 
 
 def imaged(signal):
@@ -436,9 +452,7 @@ def imaged(signal):
     spectrum = torch.zeros(SIZE, SIZE, dtype=torch.complex64)
     for tissue, component in enumerate(PHANTOM):
         # The echo that samples the centre of k-space belongs at ky = 0.
-        along_ky = torch.roll(
-            signal[0, tissue].to(torch.complex64), -(CENTRE_ECHO - 1)
-        )
+        along_ky = torch.roll(signal[0, tissue].to(torch.complex64), -(CENTRE_ECHO - 1))
         spectrum = spectrum + torch.fft.fft(component, dim=0) * along_ky[:, None]
     return torch.fft.ifft(spectrum, dim=0).abs()
 
@@ -573,8 +587,9 @@ def transition(centre, periphery):
 FLOOR = 1e-6
 
 
-def protocol(centre_control, edge_control, centre_length, edge_length,
-             centre_TR, edge_TR):
+def protocol(
+    centre_control, edge_control, centre_length, edge_length, centre_TR, edge_TR
+):
     """Every shot of the exam, from the two prescribed ends."""
     control = transition(centre_control, edge_control)
     length = transition(centre_length, edge_length)
@@ -610,9 +625,12 @@ def deposited(flip, acquired, TR):
 
 #: The power the prescription deposits, which is what the exam may spend.
 PRESCRIBED_PROTOCOL = protocol(
-    PRESCRIBED, PRESCRIBED,
-    torch.tensor([[45.0]]), torch.tensor([[20.0]]),
-    torch.tensor([[1800.0]]), torch.tensor([[150.0]]),
+    PRESCRIBED,
+    PRESCRIBED,
+    torch.tensor([[45.0]]),
+    torch.tensor([[20.0]]),
+    torch.tensor([[1800.0]]),
+    torch.tensor([[150.0]]),
 )
 SPACE_POWER_BUDGET = deposited(
     PRESCRIBED_PROTOCOL[0], PRESCRIBED_PROTOCOL[3], PRESCRIBED_PROTOCOL[1]
@@ -635,9 +653,7 @@ def image_quality(**design):
         - 12.0 * (inner * contrast).sum() / inner.sum()
         + 20.0 * torch.relu(scan_s - BUDGET_S) / BUDGET_S
         + 10.0 * infeasible / 60.0
-        + 20.0 * torch.relu(
-            deposited(flip, acquired, TR) / SPACE_POWER_BUDGET - 1.0
-        )
+        + 20.0 * torch.relu(deposited(flip, acquired, TR) / SPACE_POWER_BUDGET - 1.0)
     )
 
 
@@ -666,8 +682,10 @@ many = design.minimize(iterations=40, learning_rate=0.2)
 
 # sphinx_gallery_start_ignore
 many_elapsed = time.perf_counter() - start
-print(f"a whole protocol designed in {many_elapsed:.2f} s, "
-      f"{1000 * many_elapsed / 40:.1f} ms per iteration")
+print(
+    f"a whole protocol designed in {many_elapsed:.2f} s, "
+    f"{1000 * many_elapsed / 40:.1f} ms per iteration"
+)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -755,20 +773,32 @@ axes[0, 0].set(
 )
 axes[0, 0].grid(alpha=0.3)
 
-axes[0, 1].plot(radius.numpy(force=True), start_length[:, 0].numpy(force=True),
-                "k--", label="prescribed")
-axes[0, 1].plot(radius.numpy(force=True), length[:, 0].numpy(force=True),
-                label="designed")
-axes[0, 1].set(xlabel="k-space radius", ylabel="Echo train length",
-               title="train length")
+axes[0, 1].plot(
+    radius.numpy(force=True),
+    start_length[:, 0].numpy(force=True),
+    "k--",
+    label="prescribed",
+)
+axes[0, 1].plot(
+    radius.numpy(force=True), length[:, 0].numpy(force=True), label="designed"
+)
+axes[0, 1].set(
+    xlabel="k-space radius", ylabel="Echo train length", title="train length"
+)
 axes[0, 1].grid(alpha=0.3)
 
-axes[0, 2].plot(radius.numpy(force=True), start_TR[:, 0].numpy(force=True),
-                "k--", label="prescribed")
-axes[0, 2].plot(radius.numpy(force=True), TR[:, 0].numpy(force=True),
-                label="designed")
-axes[0, 2].set(xlabel="k-space radius", ylabel="TR [ms]",
-               title=f"scan {float(scan_s) / 60:.1f}/{BUDGET_S / 60:.0f} min")
+axes[0, 2].plot(
+    radius.numpy(force=True),
+    start_TR[:, 0].numpy(force=True),
+    "k--",
+    label="prescribed",
+)
+axes[0, 2].plot(radius.numpy(force=True), TR[:, 0].numpy(force=True), label="designed")
+axes[0, 2].set(
+    xlabel="k-space radius",
+    ylabel="TR [ms]",
+    title=f"scan {float(scan_s) / 60:.1f}/{BUDGET_S / 60:.0f} min",
+)
 axes[0, 2].grid(alpha=0.3)
 
 for axis, tissue, name in (
@@ -787,13 +817,18 @@ for axis, tissue, name in (
     axis.grid(alpha=0.3)
 
 start_contrast = start_at_centre[:, FLUID] - start_at_centre[:, CARTILAGE]
-axes[1, 2].plot(radius.numpy(force=True), start_contrast.numpy(force=True),
-                "k--", label="prescribed")
-axes[1, 2].plot(radius.numpy(force=True),
-                (at_centre[:, FLUID] - at_centre[:, CARTILAGE]).numpy(force=True),
-                label="designed")
-axes[1, 2].set(xlabel="k-space radius", ylabel="fluid - cartilage",
-               title="contrast")
+axes[1, 2].plot(
+    radius.numpy(force=True),
+    start_contrast.numpy(force=True),
+    "k--",
+    label="prescribed",
+)
+axes[1, 2].plot(
+    radius.numpy(force=True),
+    (at_centre[:, FLUID] - at_centre[:, CARTILAGE]).numpy(force=True),
+    label="designed",
+)
+axes[1, 2].set(xlabel="k-space radius", ylabel="fluid - cartilage", title="contrast")
 axes[1, 2].grid(alpha=0.3)
 # A legend wider than its panel makes the layout give the panel up for it, so
 # each is columned to stay inside: four short entries in two, two long in one.

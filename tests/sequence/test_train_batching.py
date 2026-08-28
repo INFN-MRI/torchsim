@@ -8,7 +8,7 @@ reached for by size, so the threshold is pinned rather than relied on.
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence._accelerators import _pack_events, _run_packed, _run_packed_vjp
 from torchsim.sequence._parameters import TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue
@@ -38,7 +38,7 @@ def _describe(flip: torch.Tensor):
 
 def _pack(flip: torch.Tensor):
     return _pack_events(
-                _describe(flip),
+        _describe(flip),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -102,11 +102,18 @@ def test_tissue_gradients_sum_over_trains(always_worth_detecting):
     singles = [_buffers(_pack(row)) for row in flip]
     batched = _buffers(_pack(flip))
     outputs = int(singles[0][5].max()) + 1
-    seed = torch.randn((flip.shape[0], prepared[0].numel(), outputs), dtype=torch.complex64)
+    seed = torch.randn(
+        (flip.shape[0], prepared[0].numel(), outputs), dtype=torch.complex64
+    )
 
     per_train = [
         _run_packed_vjp(
-            prepared, events, seed[train], state_count=10, output_count=outputs, threads=1
+            prepared,
+            events,
+            seed[train],
+            state_count=10,
+            output_count=outputs,
+            threads=1,
         )
         for train, events in enumerate(singles)
     ]
@@ -127,9 +134,7 @@ def _vjp(prepared, events, seed, outputs, threads):
 
 
 @pytest.mark.parametrize("threads", [1, 2, 4, 0])
-def test_batched_reduction_is_scheduling_independent(
-    threads, always_worth_detecting
-):
+def test_batched_reduction_is_scheduling_independent(threads, always_worth_detecting):
     """At a fixed thread count the result must not depend on scheduling.
 
     Workers accumulate into private buffers that are summed in ascending thread
@@ -170,12 +175,26 @@ def test_mismatched_train_widths_are_rejected(always_worth_detecting):
     flip = _schedules(3, 12)
     prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
     (
-        duration, kind, flips, phase, action, output_index, shim, saturation,
+        duration,
+        kind,
+        flips,
+        phase,
+        action,
+        output_index,
+        shim,
+        saturation,
         frequency,
     ) = _buffers(_pack(flip))
     broken = (
-        duration[0], kind, flips, phase, action, output_index, shim,
-        saturation, frequency,
+        duration[0],
+        kind,
+        flips,
+        phase,
+        action,
+        output_index,
+        shim,
+        saturation,
+        frequency,
     )
     with pytest.raises(ValueError, match="disagree on train count"):
         _run_packed(prepared, broken, 10, int(output_index.max()) + 1, 1)

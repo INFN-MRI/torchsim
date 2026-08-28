@@ -67,12 +67,16 @@ def _tissue(**overrides):
 
 
 def _signal(description, profile=None, tissue=None):
-    return EpgEngine().simulate(
-        description,
-        _tissue() if tissue is None else tissue,
-        slice_profile=profile,
-        nstates=STATES,
-    ).signal
+    return (
+        EpgEngine()
+        .simulate(
+            description,
+            _tissue() if tissue is None else tissue,
+            slice_profile=profile,
+            nstates=STATES,
+        )
+        .signal
+    )
 
 
 def test_a_pulse_with_no_gradient_across_it_is_no_profile_at_all() -> None:
@@ -117,9 +121,7 @@ def _two_shapes(second: RfDefinition):
         if event.type.name == "RF" and event.rf_use is not RfUse.INVERSION:
             seen_rf += 1
             if seen_rf > 1:
-                event = replace(
-                    event, params=(second.id, *event.params[1:])
-                )
+                event = replace(event, params=(second.id, *event.params[1:]))
         events.append(event)
     return replace(
         description,
@@ -166,12 +168,11 @@ def test_a_sequence_with_no_pulse_at_all_is_refused() -> None:
     description = _describe()
     description = replace(
         description,
-        events=tuple(
-            event for event in description.events if event.type.name != "RF"
-        ),
+        events=tuple(event for event in description.events if event.type.name != "RF"),
     )
     with pytest.raises(ValueError, match="no pulse to take it from"):
         _signal(description, exact_slice_profile(5))
+
 
 def test_a_slice_needs_at_least_one_position() -> None:
     with pytest.raises(ValueError, match="at least one position"):
@@ -184,13 +185,17 @@ def test_the_card_reads_each_shape_the_host_reads() -> None:
     profile = exact_slice_profile(9)
     tissue = _tissue(b1=torch.tensor([0.8, 1.2]))
     host = _signal(mixed, profile, tissue=tissue)
-    card = EpgEngine().simulate(
-        mixed,
-        tissue,
-        slice_profile=profile,
-        nstates=STATES,
-        device="cuda",
-    ).signal
+    card = (
+        EpgEngine()
+        .simulate(
+            mixed,
+            tissue,
+            slice_profile=profile,
+            nstates=STATES,
+            device="cuda",
+        )
+        .signal
+    )
 
     assert (host - card.cpu()).abs().max() < 1e-4 * host.abs().max()
 
@@ -224,7 +229,7 @@ def test_a_builder_pulse_stays_the_hard_pulse_to_the_bit() -> None:
     seen = {}
     signal = None
 
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
 
     original = _accelerators._run_packed
 
@@ -258,9 +263,7 @@ def test_the_table_lays_its_copies_out_voxel_major() -> None:
     """
     from torchsim.sequence._accelerators import _across_the_table
 
-    tissue = tuple(
-        torch.tensor([800.0, 1400.0], dtype=torch.float32) for _ in range(7)
-    )
+    tissue = tuple(torch.tensor([800.0, 1400.0], dtype=torch.float32) for _ in range(7))
     spread = _across_the_table(tissue, 3)
 
     assert spread[0].tolist() == [800.0, 800.0, 800.0, 1400.0, 1400.0, 1400.0]
@@ -274,9 +277,9 @@ def test_the_positions_are_counted_by_the_memory_policy() -> None:
     """Spreading happens before the launch, so a streamed run has to see the
     copies as the voxels rather than budget for the volume it started with.
     """
-    from torchsim.sequence import EpgEngine, offload
-
     from test_offload import _peak_over_baseline
+
+    from torchsim.sequence import offload
 
     voxels, points = 40_000, 5
     budget = 8 << 20
@@ -308,7 +311,7 @@ def test_a_table_takes_the_first_order_kernel_on_the_card(state_count) -> None:
     The flip gradient comes off the table's own slope here rather than off a
     differentiated rotation, which is the part a single width would not check.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import (
         _pack_events,
         _run_packed_vjp,
@@ -319,12 +322,21 @@ def test_a_table_takes_the_first_order_kernel_on_the_card(state_count) -> None:
 
     description = _describe(definition=_sinc(4.0e3))
     packed = _pack_events(
-        description, repetitions=1, record="all",
-        device=torch.device("cuda"), rf_raster_time_s=1e-6,
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cuda"),
+        rf_raster_time_s=1e-6,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     prepared, _, _ = _prepare_tissue(_tissue(), "cuda")
@@ -345,8 +357,11 @@ def test_a_table_takes_the_first_order_kernel_on_the_card(state_count) -> None:
         for value in (*prepared, events[0], events[2], events[3])
     )
     arguments = dict(
-        state_count=state_count, output_count=outputs, threads=1,
-        profile=table, geometry=geometry_of(description),
+        state_count=state_count,
+        output_count=outputs,
+        threads=1,
+        profile=table,
+        geometry=geometry_of(description),
     )
 
     reached = []

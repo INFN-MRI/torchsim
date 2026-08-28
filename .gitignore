@@ -1,27 +1,58 @@
-*.npy
+# Byte-compiled / cached
+__pycache__/
+*.py[cod]
+*_cache/
+.ipynb_checkpoints/
+
+# Build artifacts
 build/
 dist/
+_skbuild/
+wheelhouse/
+*.egg
 *.egg-info/
-**/.ipynb_checkpoints/
-examples/*.ipynb
-*.xml
+*.so
+*.pyd
+*.dylib
+
+# CMake, out of a stray in-source configure
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# Generated at build time
+src/torchsim/_version.py
+
+# Test and coverage output
 .coverage*
-.vscode
+coverage.xml
+htmlcov/
 
+# Documentation output
+docs/build/
+docs/generated/
+docs_build/
+# Written by sphinx-gallery on every build.
+docs/sg_execution_times.rst
 
-.idea
+# Sphinx-gallery writes notebooks beside the example scripts it executes
+examples/**/*.ipynb
+
+# Simulation and profiling scratch
+*.npy
+*.nbi
+*.nbc
 *.log
 tmp/
 private/
 
-*_cache/
-*.py[cod]
-*.egg
-*.so
-*.nbi
-*.nbc
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
-docs/generated/
-docs_build/
-
-src/torchsim/_version.py
+# Local environment
+.env
+.venv/
+venv/

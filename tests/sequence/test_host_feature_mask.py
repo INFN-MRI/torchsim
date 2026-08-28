@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence import _accelerators
 from torchsim.sequence._parameters import (
     FEATURE_BITS,
@@ -72,7 +72,9 @@ def test_each_bit_stands_for_the_flag_of_the_same_name():
             mask = feature_mask(features, geometry)
             for bit, name in enumerate(FEATURE_BITS):
                 assert bool(mask & (1 << bit)) is flags[name], (
-                    features, geometry, name
+                    features,
+                    geometry,
+                    name,
                 )
 
 
@@ -105,11 +107,15 @@ def _run(monkeypatch, extra, crusher_rad, mask, gradients):
             (("t1_ms", (600.0, 1800.0)), ("t2_ms", (30.0, 150.0))), start=10
         )
     }
-    signal = EpgEngine().simulate(
-        _description(crusher_rad),
-        TissueProperties(**leaves, **extra),
-        nstates=STATES,
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(crusher_rad),
+            TissueProperties(**leaves, **extra),
+            nstates=STATES,
+        )
+        .signal
+    )
     if not gradients:
         return (signal,)
     signal.abs().square().sum().backward()
@@ -167,18 +173,20 @@ def _without(name: str) -> int:
 
 
 def _signal(monkeypatch, mask, extra, crusher_rad):
-    monkeypatch.setattr(
-        _accelerators, "feature_mask", lambda features, geometry: mask
+    monkeypatch.setattr(_accelerators, "feature_mask", lambda features, geometry: mask)
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(crusher_rad),
+            TissueProperties(
+                t1_ms=torch.full((4,), 1000.0),
+                t2_ms=torch.full((4,), 80.0),
+                **{name: torch.full((4,), value) for name, value in extra.items()},
+            ),
+            nstates=STATES,
+        )
+        .signal
     )
-    signal = EpgEngine().simulate(
-        _description(crusher_rad),
-        TissueProperties(
-            t1_ms=torch.full((4,), 1000.0),
-            t2_ms=torch.full((4,), 80.0),
-            **{name: torch.full((4,), value) for name, value in extra.items()},
-        ),
-        nstates=STATES,
-    ).signal
     monkeypatch.undo()
     return signal
 
@@ -187,8 +195,12 @@ def _signal(monkeypatch, mask, extra, crusher_rad):
     ("name", "loud", "silent", "crusher_rad"),
     DROPPED,
     ids=[
-        "off-resonance", "transmit-phase", "flow", "diffusion",
-        "transmit", "density",
+        "off-resonance",
+        "transmit-phase",
+        "flow",
+        "diffusion",
+        "transmit",
+        "density",
     ],
 )
 def test_a_dropped_term_gives_the_answer_of_a_tissue_without_it(
@@ -223,15 +235,21 @@ def test_an_inversion_the_tissue_never_declared_is_left_out(monkeypatch) -> None
         monkeypatch.setattr(
             _accelerators, "feature_mask", lambda features, geometry: mask
         )
-        out = EpgEngine().simulate(
-            mprage_description(2, 4, torch.deg2rad(torch.tensor(12.0)), 5e-3, 20e-3),
-            TissueProperties(
-                t1_ms=torch.full((4,), 1000.0),
-                t2_ms=torch.full((4,), 80.0),
-                inversion_efficiency=torch.full((4,), efficiency),
-            ),
-            nstates=STATES,
-        ).signal
+        out = (
+            EpgEngine()
+            .simulate(
+                mprage_description(
+                    2, 4, torch.deg2rad(torch.tensor(12.0)), 5e-3, 20e-3
+                ),
+                TissueProperties(
+                    t1_ms=torch.full((4,), 1000.0),
+                    t2_ms=torch.full((4,), 80.0),
+                    inversion_efficiency=torch.full((4,), efficiency),
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
         monkeypatch.undo()
         return out
 

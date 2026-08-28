@@ -147,9 +147,7 @@ class ModelOperator(torch.nn.Module):
                 )
         for name in self.unknown:
             bound_of(self.bounds, name)
-        self.scale = tuple(
-            float((scale or {}).get(name, 1.0)) for name in self.unknown
-        )
+        self.scale = tuple(float((scale or {}).get(name, 1.0)) for name in self.unknown)
         if any(value <= 0.0 for value in self.scale):
             raise ValueError("every scale must be positive")
         self._elsewhere: dict[str, Any] = {}
@@ -183,9 +181,7 @@ class ModelOperator(torch.nn.Module):
         given, rho = self._named(x)
         return given if rho is None else {**given, "amplitude": rho}
 
-    def initial(
-        self, shape: Sequence[int] = (), **values: Any
-    ) -> torch.Tensor:
+    def initial(self, shape: Sequence[int] = (), **values: Any) -> torch.Tensor:
         """Maps to start from, as the variables actually solved for.
 
         Parameters
@@ -227,8 +223,7 @@ class ModelOperator(torch.nn.Module):
                 high is not None and start >= high
             ):
                 raise ValueError(
-                    f"{name}: {start} is not strictly inside its bound "
-                    f"({low}, {high})"
+                    f"{name}: {start} is not strictly inside its bound ({low}, {high})"
                 )
             columns.append(torch.full(tuple(shape), start))
         natural = torch.stack(columns, dim=-1)
@@ -238,9 +233,7 @@ class ModelOperator(torch.nn.Module):
             return free
         start = torch.as_tensor(values.get("amplitude", 1.0 + 0.0j))
         start = torch.broadcast_to(start, tuple(shape)).to(torch.complex64)
-        return torch.cat(
-            (free, start.real[..., None], start.imag[..., None]), dim=-1
-        )
+        return torch.cat((free, start.real[..., None], start.imag[..., None]), dim=-1)
 
     # -- the operator -------------------------------------------------------
 
@@ -312,9 +305,7 @@ class ModelOperator(torch.nn.Module):
         return self._voxelwise(
             "jvp",
             (x, d),
-            lambda chunk: (
-                torch.func.jvp(self._predict, (chunk[0],), (chunk[1],))[1],
-            ),
+            lambda chunk: (torch.func.jvp(self._predict, (chunk[0],), (chunk[1],))[1],),
         )
 
     def A_vjp(self, x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
@@ -340,9 +331,7 @@ class ModelOperator(torch.nn.Module):
         return self._voxelwise(
             "vjp",
             (x, v),
-            lambda chunk: (
-                torch.func.vjp(self._predict, chunk[0])[1](chunk[1])[0],
-            ),
+            lambda chunk: (torch.func.vjp(self._predict, chunk[0])[1](chunk[1])[0],),
         )
 
     def jacobian(self, x: torch.Tensor) -> torch.Tensor:
@@ -413,22 +402,17 @@ class ModelOperator(torch.nn.Module):
                 return _to_channels(operator.A(_to_trailing(x)))
 
             def A_vjp(self, x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-                return _to_channels(
-                    operator.A_vjp(_to_trailing(x), _to_trailing(v))
-                )
+                return _to_channels(operator.A_vjp(_to_trailing(x), _to_trailing(v)))
 
         return _ModelPhysics(**kwargs)
 
     # -- what a caller does not write ---------------------------------------
 
-    def _parts(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _parts(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """The free variables and the scale that turns them into properties."""
         if x.shape[-1] != self.channels:
             raise ValueError(
-                f"this operator has {self.channels} channels, "
-                f"got {x.shape[-1]}"
+                f"this operator has {self.channels} channels, got {x.shape[-1]}"
             )
         free = x[..., : len(self.unknown)]
         scale = torch.tensor(self.scale, dtype=free.dtype, device=free.device)
@@ -451,13 +435,8 @@ class ModelOperator(torch.nn.Module):
         """The properties to simulate at, and the amplitude to scale by."""
         free, scale = self._parts(x)
         natural = to_natural(free * scale, self.bounds, self.unknown)
-        given = {
-            name: natural[..., index]
-            for index, name in enumerate(self.unknown)
-        }
-        rho = (
-            torch.complex(x[..., -2], x[..., -1]) if self.amplitude else None
-        )
+        given = {name: natural[..., index] for index, name in enumerate(self.unknown)}
+        rho = torch.complex(x[..., -2], x[..., -1]) if self.amplitude else None
         return given, rho
 
     def _predict(self, x: torch.Tensor) -> torch.Tensor:
@@ -468,8 +447,8 @@ class ModelOperator(torch.nn.Module):
             signal = self.subspace.project(signal)
         if rho is None:
             return signal
-        return signal.to(torch.promote_types(signal.dtype, rho.dtype)) * (
-            rho[..., None]
+        return (
+            signal.to(torch.promote_types(signal.dtype, rho.dtype)) * (rho[..., None])
         )
 
     def _blocks(self, x: torch.Tensor) -> torch.Tensor:

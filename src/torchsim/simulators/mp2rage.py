@@ -68,9 +68,7 @@ class MP2RAGESimulator(Simulator):
         settings.setdefault("record", type(self).record)
         super().__init__(**settings)
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
@@ -132,7 +130,7 @@ class MP2RAGESimulator(Simulator):
             inversion_s[1] - inversion_s[0] - (after + before) * readout_s,
             block_s - inversion_s[1] - after * readout_s,
         )
-        for wait, complaint in zip(waits, _COMPLAINTS):
+        for wait, complaint in zip(waits, _COMPLAINTS, strict=False):
             if bool(wait < 0):
                 raise ValueError(complaint)
 
@@ -231,9 +229,7 @@ class MP2RAGESimulator(Simulator):
         # The second reads what the rest of the first block, the wait between
         # them and its own leading readouts leave.
         driven = _through_shots(driven, turn[0], shot, after)
-        driven = _through_shots(
-            driven * held[1] + (1 - held[1]), turn[1], shot, before
-        )
+        driven = _through_shots(driven * held[1] + (1 - held[1]), turn[1], shot, before)
         second = torch.sin(angle[1]) * driven
 
         # Both blocks carry the voxel shape and the signal is (..., voxel,

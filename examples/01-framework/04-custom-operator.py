@@ -66,15 +66,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -196,7 +208,7 @@ expected = torch.exp(-prep_times_ms / T2_MS[:, None])
 # sphinx_gallery_start_ignore
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.0))
 for column, name in enumerate(("T2 = 40 ms", "T2 = 80 ms", "T2 = 160 ms")):
-    line, = axis.plot(prep_times_ms, weighting[column], "o", label=name)
+    (line,) = axis.plot(prep_times_ms, weighting[column], "o", label=name)
     axis.plot(prep_times_ms, expected[column], "-", color=line.get_color())
 axis.set(
     xlabel="preparation time [ms]",

@@ -10,6 +10,7 @@ would land in an event duration.
 
 from __future__ import annotations
 
+import pytest
 import torch
 
 from torchsim.sequence._accelerators import _pack_events
@@ -22,18 +23,16 @@ from torchsim.sequence._builders import (
 )
 from torchsim.sequence._description import AdcRole, EventAction, EventType
 from torchsim.sequence._operators import (
-    compose,
     Delay,
     Excitation,
+    Readout,
+    Refocusing,
+    compose,
     module,
     operator,
     operator_names,
-    Readout,
-    Refocusing,
     register_operator,
 )
-
-import pytest
 
 
 def _packed(description):
@@ -74,6 +73,7 @@ def test_the_operator_registry_answers_for_every_shipped_operator() -> None:
 
 def test_an_operator_can_be_added_and_not_replaced() -> None:
     """Registration is how a caller extends the vocabulary, once per name."""
+
     def spin_lock(duration_s):
         return Excitation(0.0, duration_s=duration_s)
 
@@ -95,17 +95,13 @@ def test_a_bare_operator_follows_the_one_before_it() -> None:
 
 def test_an_offset_is_measured_from_where_the_composition_starts() -> None:
     """A sequence timed from its echo places modules rather than stacking them."""
-    events, _ = compose(
-        (4e-3, Readout()), (1e-3, Readout()), start_s=10e-3
-    )
+    events, _ = compose((4e-3, Readout()), (1e-3, Readout()), start_s=10e-3)
     assert [event.timestamp_us for event in events] == [14e3, 11e3]
 
 
 def test_a_module_carries_its_own_offsets_wherever_it_is_placed() -> None:
     """A shot is one thing a caller lays down, not three it has to align."""
-    shot = module(
-        Excitation(1.0), (2e-3, Readout()), duration_s=10e-3
-    )
+    shot = module(Excitation(1.0), (2e-3, Readout()), duration_s=10e-3)
     events, span = compose(shot, shot)
     assert [event.timestamp_us for event in events] == [0.0, 2e3, 10e3, 12e3]
     assert span == pytest.approx(20e-3)
@@ -123,9 +119,7 @@ def test_a_delay_can_carry_what_the_sequence_plays_across_it() -> None:
 def test_a_refocusing_pulse_brings_its_crushers() -> None:
     """The unbalanced pair belongs to the pulse, not to the caller's memory."""
     crushed, _ = compose(Refocusing(torch.pi))
-    assert crushed[0].action == (
-        EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER
-    )
+    assert crushed[0].action == (EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER)
     bare, _ = compose(Refocusing(torch.pi, crushed=False))
     assert bare[0].action is EventAction.NONE
 
@@ -202,9 +196,7 @@ GOLDEN = [
     ),
     (
         "mrf",
-        lambda: mrf_description(
-            torch.tensor([0.2, 0.3]), 10e-3, inversion_time_s=1.0
-        ),
+        lambda: mrf_description(torch.tensor([0.2, 0.3]), 10e-3, inversion_time_s=1.0),
         [1, 1, 2, 1, 2],
         [4, 64, 48, 64, 48],
         # The Inversion time is the gap before the first shot; TR the gaps after.
@@ -220,9 +212,7 @@ GOLDEN = [
     ),
     (
         "mprage",
-        lambda: mprage_description(
-            1, 1, torch.tensor([0.2, 0.3, 0.4]), 8e-3, 1.0
-        ),
+        lambda: mprage_description(1, 1, torch.tensor([0.2, 0.3, 0.4]), 8e-3, 1.0),
         [1, 1, 2, 1, 2, 1, 2],
         [4, 64, 40, 64, 40, 64, 40],
         # The Inversion time is measured to the centre shot, so the gap before
@@ -263,9 +253,7 @@ def test_a_builder_over_operators_is_differentiable_and_batched(
     # The builders differ in where the flip train sits: two of them lead with
     # shot counts.
     flip = next(
-        value
-        for value in arguments
-        if torch.is_tensor(value) and value.dim() >= 1
+        value for value in arguments if torch.is_tensor(value) and value.dim() >= 1
     )
     if flip.dim() == 2:
         # A batch of trains shares the event structure and differs in flips.
@@ -284,9 +272,7 @@ def test_the_shipped_builders_still_say_what_they_meant() -> None:
     assert fse.events[2].adc_role is AdcRole.ECHO_CENTER
 
     centred = mprage_description(2, 3, torch.full((6,), 0.2), 8e-3, 1.0)
-    roles = [
-        event.adc_role for event in centred.events if event.type is EventType.ADC
-    ]
+    roles = [event.adc_role for event in centred.events if event.type is EventType.ADC]
     assert roles == [
         AdcRole.NON_ACQUIRED,
         AdcRole.NON_ACQUIRED,

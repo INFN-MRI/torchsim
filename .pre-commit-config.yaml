@@ -1,0 +1,35 @@
+# What CI runs, so a push cannot fail a check the working tree already passed.
+#   pip install pre-commit && pre-commit install
+#   pre-commit run --all-files
+ci:
+  autoupdate_schedule: monthly
+
+exclude: ^src/torchsim/_version\.py$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+      - id: destroyed-symlinks
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
+  # The formatter and the linter, in that order: format first so the linter
+  # judges the code as it will be committed.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff-format
+      - id: ruff-check
+        args: [--fix]

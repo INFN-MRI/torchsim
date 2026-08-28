@@ -15,10 +15,10 @@ import torch
 from torchsim.model import UNBALANCED, Simulator, SpinPhysics
 from torchsim.sequence import (
     EpgEngine,
-    mrf_description,
     TissueProperties,
+    _accelerators,
+    mrf_description,
 )
-from torchsim.sequence import _accelerators
 from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_NAMES
 
 FLIP = torch.linspace(5.0, 60.0, 24)
@@ -107,9 +107,7 @@ def asked(monkeypatch):
 class Relaxation(Simulator):
     """T1 and T2 over an unbalanced train."""
 
-    model = SpinPhysics(
-        properties={"T1": "t1_ms", "T2": "t2_ms"}, operators=UNBALANCED
-    )
+    model = SpinPhysics(properties={"T1": "t1_ms", "T2": "t2_ms"}, operators=UNBALANCED)
     states = 8
 
     def describe(self, *, flip, TR):

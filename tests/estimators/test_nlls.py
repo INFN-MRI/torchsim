@@ -7,8 +7,8 @@ import pytest
 import torch
 from scipy.optimize import least_squares
 
-from torchsim.estimators import NonlinearLeastSquares
 import torchsim.recon._operator as _operator
+from torchsim.estimators import NonlinearLeastSquares
 from torchsim.simulators import (
     FSESimulator,
     InversionRecoverySimulator,
@@ -62,7 +62,7 @@ def test_it_finds_what_scipy_finds() -> None:
     for index in range(len(T2)):
         observed = measured[index].numpy().astype(np.float64)
         alone = least_squares(
-            lambda p: p[1] * np.exp(-echoes / p[0]) - observed,
+            lambda p, observed=observed: p[1] * np.exp(-echoes / p[0]) - observed,
             x0=[50.0, 1.0],
             bounds=([1.0, 0.0], [1000.0, 5.0]),
             xtol=1e-14,
@@ -90,10 +90,9 @@ def test_no_iterate_ever_leaves_the_bounds(monkeypatch) -> None:
     monkeypatch.setattr(
         _operator,
         "to_natural",
-        lambda free, bounds, names: seen.append(
-            (out := natural(free, bounds, names))
-        )
-        or out,
+        lambda free, bounds, names: (
+            seen.append(out := natural(free, bounds, names)) or out
+        ),
     )
 
     # A truth well outside the bound, so the fit pushes against it throughout.
@@ -174,9 +173,8 @@ def test_a_complex_contrast_is_two_real_residuals() -> None:
 def test_a_property_measured_separately_reaches_the_model() -> None:
     """A known map varies per voxel and is not fitted, but is not ignored."""
     acquisition = InversionRecoverySimulator(TI=TI_MS)
-    mapping = NonlinearLeastSquares(
-        acquisition, bounds={"T1": (1.0, 6000.0)}
-    ).fit(T1=(200.0, 3000.0),
+    mapping = NonlinearLeastSquares(acquisition, bounds={"T1": (1.0, 6000.0)}).fit(
+        T1=(200.0, 3000.0),
         known={"inv_efficiency": (0.7, 1.0)},
         seed=0,
         samples=256,
@@ -199,8 +197,7 @@ def test_a_subspace_is_applied_to_the_prediction_too() -> None:
     acquisition = MultiEchoSimulator(TE=TE_MS)
     mapping = NonlinearLeastSquares(
         acquisition, bounds={"T2": (1.0, 1000.0), "M0": (0.0, 5.0)}
-    ).fit(T2=(5.0, 300.0), M0=(0.2, 2.0), rank=3, seed=0, samples=256
-    )
+    ).fit(T2=(5.0, 300.0), M0=(0.2, 2.0), rank=3, seed=0, samples=256)
     T2 = torch.tensor([25.0, 80.0])
     M0 = torch.tensor([1.0, 1.3])
 
@@ -270,9 +267,7 @@ def test_an_equality_constraint_is_written_into_the_model() -> None:
             density = properties.get("M0", torch.ones(1)).reshape(-1, 1)
             turn = 2j * torch.pi * -420.0 * TE * 1e-3
             # Water is what fat is not: the sum is one by construction.
-            return density * (
-                (1.0 - fraction) + fraction * torch.exp(turn)
-            )
+            return density * ((1.0 - fraction) + fraction * torch.exp(turn))
 
     echoes = torch.tensor([1.2, 2.4, 3.6, 4.8, 6.0, 7.2])
     acquisition = FatWater(TE=echoes)
@@ -296,10 +291,12 @@ def test_a_bound_on_something_not_being_estimated_is_a_mistake() -> None:
     """A misspelt name would otherwise be silently ignored."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
     with pytest.raises(ValueError, match="T3"):
-        NonlinearLeastSquares(acquisition, bounds={"T3": (1.0, 2.0)}).fit(T2=(5.0, 300.0), seed=0, samples=8
+        NonlinearLeastSquares(acquisition, bounds={"T3": (1.0, 2.0)}).fit(
+            T2=(5.0, 300.0), seed=0, samples=8
         )
     with pytest.raises(ValueError, match="T3"):
-        NonlinearLeastSquares(acquisition, initial={"T3": 1.0}).fit(T2=(5.0, 300.0), seed=0, samples=8
+        NonlinearLeastSquares(acquisition, initial={"T3": 1.0}).fit(
+            T2=(5.0, 300.0), seed=0, samples=8
         )
 
 
@@ -307,7 +304,8 @@ def test_a_bound_that_does_not_increase_is_a_mistake() -> None:
     """An empty interval has no inside to fit in."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
     with pytest.raises(ValueError, match="not increasing"):
-        NonlinearLeastSquares(acquisition, bounds={"T2": (100.0, 10.0)}).fit(T2=(5.0, 300.0), seed=0, samples=8
+        NonlinearLeastSquares(acquisition, bounds={"T2": (100.0, 10.0)}).fit(
+            T2=(5.0, 300.0), seed=0, samples=8
         )
 
 

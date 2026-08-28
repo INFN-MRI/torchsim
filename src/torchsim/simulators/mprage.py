@@ -10,9 +10,9 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..sequence._array import as_torch, matched
 from ..model import SPOILED, Simulator, SpinPhysics
 from ..sequence import AdcRole
+from ..sequence._array import as_torch, matched
 
 
 class MPRAGESimulator(Simulator):
@@ -95,9 +95,7 @@ class MPRAGESimulator(Simulator):
         # The inversion time is measured to the sampled shot, so the wait after
         # the inversion is what is left once the shots before it have played.
         parts = [
-            self.operators.inversion(
-                duration_s=inversion_s - readout_s[:before].sum()
-            )
+            self.operators.inversion(duration_s=inversion_s - readout_s[:before].sum())
         ]
         for index in range(shots):
             acquired = index == before
@@ -112,9 +110,7 @@ class MPRAGESimulator(Simulator):
             )
         return parts
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Return the one sample the train acquires."""
         return 1j * super().evaluate(properties, **sequence)[..., 0]
 

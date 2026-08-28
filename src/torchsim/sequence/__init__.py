@@ -51,7 +51,6 @@ __all__ = [
 ]
 
 from ._accelerators import distribute, execution, offload
-from ._calibration import calibrate
 from ._builders import (
     fse_description,
     mpnrage_description,
@@ -59,31 +58,11 @@ from ._builders import (
     mrf_description,
     spgr_description,
 )
-from ._operators import (
-    FSEReadout,
-    Operator,
-    bSSFPReadout,
-    compose,
-    Delay,
-    Dephase,
-    Excitation,
-    Inversion,
-    module,
-    operator,
-    operator_names,
-    Readout,
-    Refocusing,
-    register_operator,
-    Saturation,
-    SPGRReadout,
-    Spoil,
-    SSFPFidReadout,
-)
+from ._calibration import calibrate
 from ._description import (
     AdcRole,
     EventAction,
     EventType,
-    ideal_rf_definition,
     RfDefinition,
     RfMode,
     RfShape,
@@ -92,11 +71,32 @@ from ._description import (
     SequenceEvent,
     ShimDefinition,
     decompress_shape,
+    ideal_rf_definition,
 )
-from ._transition import ExactSliceProfile, exact_slice_profile
+from ._operators import (
+    Delay,
+    Dephase,
+    Excitation,
+    FSEReadout,
+    Inversion,
+    Operator,
+    Readout,
+    Refocusing,
+    Saturation,
+    SPGRReadout,
+    Spoil,
+    SSFPFidReadout,
+    bSSFPReadout,
+    compose,
+    module,
+    operator,
+    operator_names,
+    register_operator,
+)
 from ._simulation import (
     EpgEngine,
     SimulationResult,
     TissueProperties,
     simulate_subspace,
 )
+from ._transition import ExactSliceProfile, exact_slice_profile

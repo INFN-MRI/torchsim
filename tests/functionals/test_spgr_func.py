@@ -1,8 +1,8 @@
 """SPGR tests."""
 
+import numpy as np
 from pytest import fixture
 
-import numpy as np
 from torchsim import spgr_sim
 
 

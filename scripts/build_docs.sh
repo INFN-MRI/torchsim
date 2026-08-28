@@ -36,7 +36,7 @@ if missing:
 sys.exit(1 if missing else 0)
 PY
 then
-    echo "install them with: $python_bin -m pip install -r docs/requirements.txt" >&2
+    echo "install them with: $python_bin -m pip install -e \".[doc]\"" >&2
     exit 1
 fi
 

@@ -1,8 +1,9 @@
 """Test RF operators."""
 
+from types import SimpleNamespace
+
 import pytest
 import torch
-from types import SimpleNamespace
 
 from utils import epg
 
@@ -74,8 +75,8 @@ def test_an_in_phase_array_drives_the_sum_of_its_channels():
     together = epg.multidrive_rf_pulse_op(fa, torch.tensor(1.0), B1)
     alone = epg.rf_pulse_op((B1 * fa).sum(), torch.tensor(1.0), 1.0)
 
-    for left, right in zip(together, alone):
-        for one, other in zip(left, right):
+    for left, right in zip(together, alone, strict=False):
+        for one, other in zip(left, right, strict=False):
             assert torch.allclose(one, other, atol=1e-6)
 
 
@@ -95,8 +96,8 @@ def test_channels_in_antiphase_leave_the_voxel_untouched():
     )
 
     identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-    for row, reference in zip(RF, identity):
-        for element, value in zip(row, reference):
+    for row, reference in zip(RF, identity, strict=False):
+        for element, value in zip(row, reference, strict=False):
             assert torch.allclose(
                 element, torch.as_tensor(value, dtype=element.dtype), atol=1e-6
             )
@@ -115,8 +116,8 @@ def test_a_transmit_phase_turns_the_axis_without_changing_the_flip():
         (B1 * fa).sum(), torch.tensor(turn), torch.tensor(1.0), 1.0
     )
 
-    for left, right in zip(RF, reference):
-        for one, other in zip(left, right):
+    for left, right in zip(RF, reference, strict=False):
+        for one, other in zip(left, right, strict=False):
             assert torch.allclose(one, other, atol=1e-6)
 
 
@@ -126,15 +127,11 @@ def test_a_single_channel_array_is_the_single_channel_pulse():
     B1 = torch.tensor([0.9])
     B1phase = torch.tensor([0.15])
 
-    RF, net = epg.phased_multidrive_rf_pulse_op(
-        fa, phi, torch.tensor(1.0), B1, B1phase
-    )
-    reference = epg.phased_rf_pulse_op(
-        B1 * fa, phi + B1phase, torch.tensor(1.0), 1.0
-    )
+    RF, net = epg.phased_multidrive_rf_pulse_op(fa, phi, torch.tensor(1.0), B1, B1phase)
+    reference = epg.phased_rf_pulse_op(B1 * fa, phi + B1phase, torch.tensor(1.0), 1.0)
 
-    for left, right in zip(RF, reference):
-        for one, other in zip(left, right):
+    for left, right in zip(RF, reference, strict=False):
+        for one, other in zip(left, right, strict=False):
             assert torch.allclose(one, other, atol=1e-6)
     # The demodulation reference is the phase that was asked for, which the
     # transmit field's own phase does not enter.
@@ -210,9 +207,7 @@ def test_the_spinor_operator_conserves_the_magnetization():
         turned = rotation @ state
 
         def length(value):
-            return (
-                value[0].abs() ** 2 + value[1].abs() ** 2 + 2.0 * value[2].abs() ** 2
-            )
+            return value[0].abs() ** 2 + value[1].abs() ** 2 + 2.0 * value[2].abs() ** 2
 
         assert torch.allclose(length(turned), length(state), atol=1e-4)
 

@@ -51,9 +51,7 @@ class bSSFPSimulator(Simulator):
         },
     )
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 

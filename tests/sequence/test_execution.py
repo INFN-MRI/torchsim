@@ -11,10 +11,10 @@ rather than trusting whatever else happens to be resident when they run.
 
 import pytest
 import torch
+from test_offload import _seeds, _volume  # noqa: E402
 
+import torchsim._execution as _policy
 from torchsim.sequence import execution
-from torchsim.sequence._calibration import crossover
-from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._accelerators import (
     _FLOAT_INPUTS,
     _bytes_per_voxel,
@@ -24,9 +24,8 @@ from torchsim.sequence._accelerators import (
     _run_packed_vjp,
     _run_packed_vjp_jvp,
 )
-import torchsim._execution as _policy
-
-from test_offload import _seeds, _volume  # noqa: E402
+from torchsim.sequence._calibration import crossover
+from torchsim.sequence._parameters import OUTSIDE_THE_SUBSPACE
 
 STATES = 10
 cuda_only = pytest.mark.skipif(
@@ -226,17 +225,18 @@ def test_every_route_gives_the_same_answer(arguments):
     # would read: leaving four out is what lets a device run take the reduced
     # kernel, and a host run computes them anyway.
     wanted_expected = tuple(
-        gradient for gradient, asked in zip(
-            expected[3], _INSIDE_THE_SUBSPACE, strict=True
-        ) if asked
+        gradient
+        for gradient, asked in zip(expected[3], _INSIDE_THE_SUBSPACE, strict=True)
+        if asked
     )
     wanted_actual = tuple(
-        gradient for gradient, asked in zip(
-            actual[3], _INSIDE_THE_SUBSPACE, strict=True
-        ) if asked
+        gradient
+        for gradient, asked in zip(actual[3], _INSIDE_THE_SUBSPACE, strict=True)
+        if asked
     )
-    for side, other in zip((*expected[2], wanted_expected),
-                           (*actual[2], wanted_actual), strict=True):
+    for side, other in zip(
+        (*expected[2], wanted_expected), (*actual[2], wanted_actual), strict=True
+    ):
         for reference, result in zip(side, other, strict=True):
             scale = reference.abs().max()
             if scale == 0:

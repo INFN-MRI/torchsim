@@ -46,7 +46,6 @@ from brainweb_dl import get_mri
 warnings.filterwarnings("ignore")
 
 
-
 # Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
 # colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
 LIPARI = Colormap("crameri:lipari").to_matplotlib()
@@ -105,7 +104,6 @@ def canvas(rows, columns, shape, *, bars=1, extra=0.6):
     )
 
 
-
 # Figures are read at gallery scale, so the type sizes are set once here.
 plt.rcParams.update(
     {
@@ -135,15 +133,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -247,13 +257,16 @@ measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.76))
 for value, name in ((70.0, "white matter"), (110.0, "grey matter"), (300.0, "CSF")):
     decay = acquisition.simulate(T2=value, M0=1.0, offset=FLOOR)
-    axis.semilogy(TE.numpy(), decay.numpy(), "-o", ms=3, label=f"{name}, T2 {value:.0f} ms")
+    axis.semilogy(
+        TE.numpy(), decay.numpy(), "-o", ms=3, label=f"{name}, T2 {value:.0f} ms"
+    )
 axis.axhline(FLOOR, color="k", ls="--", lw=1)
 axis.text(TE[-1], FLOOR * 1.15, "noise floor", ha="right")
 axis.set(xlabel="Echo time [ms]", ylabel="signal", title="what is measured")
 axis.grid(alpha=0.3)
 key(axis, ncols=3)
 # sphinx_gallery_end_ignore
+
 
 # sphinx_gallery_start_ignore
 def footprint(problem):
@@ -309,6 +322,7 @@ fit = NonlinearLeastSquares(acquisition, bounds=BOUNDS, initial=START).fit(
 
 maps = fit.map(measured)  # {"T2": ..., "M0": ..., "offset": ...}
 
+
 # sphinx_gallery_start_ignore
 def fitted(unknown):
     """Fit these parameters, holding the rest of the model at the truth."""
@@ -336,8 +350,9 @@ three_maps, three_training, three_time, three_model, three_peak = fitted(
     ("T2", "M0", "offset")
 )
 
-print(f"fitted floor, median {float(three_maps['offset'].median()):.4f} "
-      f"against {FLOOR}")
+print(
+    f"fitted floor, median {float(three_maps['offset'].median()):.4f} against {FLOOR}"
+)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -354,9 +369,7 @@ print(f"fitted floor, median {float(three_maps['offset'].median()):.4f} "
 #
 T2_GRID = torch.logspace(1.0, np.log10(500.0), 400)
 
-match = DictionaryMatcher(acquisition.bind(M0=1.0, offset=0.0)).fit(
-    T2=T2_GRID, seed=0
-)
+match = DictionaryMatcher(acquisition.bind(M0=1.0, offset=0.0)).fit(T2=T2_GRID, seed=0)
 
 # %%
 #
@@ -410,22 +423,40 @@ matches = {floors: matched(floors) for floors in FLOOR_VALUES}
 #
 
 # sphinx_gallery_start_ignore
-print(f"\n{'method':<30}{'atoms':>8}{'train':>8}{'map':>8}{'model':>10}"
-      f"{'peak':>10}{'T2':>8}")
+print(
+    f"\n{'method':<30}{'atoms':>8}{'train':>8}{'map':>8}{'model':>10}"
+    f"{'peak':>10}{'T2':>8}"
+)
 print("-" * 82)
 for floors in FLOOR_VALUES:
     atoms, found, training, timing, model, peak = matches[floors]
     name = "match, T2 only" if floors == 1 else f"match, T2 x {floors} offsets"
-    print(f"{name:<30}{atoms:>8}{training:7.1f}s{timing:7.2f}s"
-          f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%")
+    print(
+        f"{name:<30}{atoms:>8}{training:7.1f}s{timing:7.2f}s"
+        f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%"
+    )
 for name, training, timing, model, peak, found in (
-    ("fit, T2 + M0, floor known", two_training, two_time, two_model, two_peak,
-     two_maps),
-    ("fit, T2 + M0 + offset", three_training, three_time, three_model, three_peak,
-     three_maps),
+    (
+        "fit, T2 + M0, floor known",
+        two_training,
+        two_time,
+        two_model,
+        two_peak,
+        two_maps,
+    ),
+    (
+        "fit, T2 + M0 + offset",
+        three_training,
+        three_time,
+        three_model,
+        three_peak,
+        three_maps,
+    ),
 ):
-    print(f"{name:<30}{'--':>8}{training:7.1f}s{timing:7.2f}s"
-          f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%")
+    print(
+        f"{name:<30}{'--':>8}{training:7.1f}s{timing:7.2f}s"
+        f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%"
+    )
 # sphinx_gallery_end_ignore
 
 # %%
@@ -484,6 +515,7 @@ key(figure, ncols=2)
 # The maps
 # --------
 #
+
 
 # sphinx_gallery_start_ignore
 def painted(values):

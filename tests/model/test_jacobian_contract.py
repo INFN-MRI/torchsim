@@ -22,7 +22,6 @@ def _fse(t1, t2, diff):
     return torchsim.fse_sim(flip=FLIP, ESP=5.0, T1=t1, T2=t2, diff=diff)
 
 
-
 VECTOR_T1 = torch.tensor([800.0, 1000.0, 1200.0])
 VECTOR_T2 = torch.tensor([50.0, 70.0, 90.0])
 

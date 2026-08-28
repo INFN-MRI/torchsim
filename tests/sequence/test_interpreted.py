@@ -30,12 +30,13 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
     # Triton reads this at import, so it cannot be set from inside a test.
     environment["TRITON_INTERPRET"] = "1"
     environment["CUDA_VISIBLE_DEVICES"] = ""
-    environment["PYTHONPATH"] = os.pathsep.join(
-        [str(ROOT / "src"), str(TESTS)]
-    )
+    environment["PYTHONPATH"] = os.pathsep.join([str(ROOT / "src"), str(TESTS)])
     return subprocess.run(
         [sys.executable, "-m", "utils.interpreted", case],
-        capture_output=True, text=True, timeout=TIMEOUT_S, cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=TIMEOUT_S,
+        cwd=ROOT,
         env=environment,
     )
 
@@ -43,8 +44,19 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
 @pytest.mark.interpreted
 @pytest.mark.parametrize(
     "case",
-    ["narrow", "wide", "chunked", "unread", "streamed", "washed", "shimmed",
-     "one_pool", "two_pools", "real", "real_shimmed"],
+    [
+        "narrow",
+        "wide",
+        "chunked",
+        "unread",
+        "streamed",
+        "washed",
+        "shimmed",
+        "one_pool",
+        "two_pools",
+        "real",
+        "real_shimmed",
+    ],
 )
 def test_the_kernels_agree_with_what_they_specialize(case: str) -> None:
     """Each case runs one launch two ways and holds the two to each other.

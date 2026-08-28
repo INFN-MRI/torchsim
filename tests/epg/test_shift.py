@@ -1,8 +1,9 @@
 """Test EPG shift."""
 
+from types import SimpleNamespace
+
 import pytest
 import torch
-from types import SimpleNamespace
 
 from utils.epg import shift
 
@@ -82,12 +83,12 @@ def test_shift_no_delta(sample_states):
     shifted_states = shift(sample_states, delta)
 
     # No shift should occur
-    assert torch.allclose(
-        shifted_states.Fplus, original_states.Fplus
-    ), "Fplus should remain unchanged with delta=0"
-    assert torch.allclose(
-        shifted_states.Fminus, original_states.Fminus
-    ), "Fminus should remain unchanged with delta=0"
+    assert torch.allclose(shifted_states.Fplus, original_states.Fplus), (
+        "Fplus should remain unchanged with delta=0"
+    )
+    assert torch.allclose(shifted_states.Fminus, original_states.Fminus), (
+        "Fminus should remain unchanged with delta=0"
+    )
 
 
 def test_shift_boundary_conditions(sample_states):
@@ -98,16 +99,16 @@ def test_shift_boundary_conditions(sample_states):
     # Check Fplus is circularly shifted by delta (full cycle returns to original)
     expected_Fplus = torch.roll(original_states.Fplus, delta, -3)
     expected_Fplus[0] = original_states.Fminus[0].conj()
-    assert torch.allclose(
-        shifted_states.Fplus, expected_Fplus
-    ), "Fplus boundary shift mismatch"
+    assert torch.allclose(shifted_states.Fplus, expected_Fplus), (
+        "Fplus boundary shift mismatch"
+    )
 
     # Check Fminus is circularly shifted backward
     expected_Fminus = torch.roll(original_states.Fminus, -delta, -3)
     expected_Fminus[-1] = 0.0
-    assert torch.allclose(
-        shifted_states.Fminus, expected_Fminus
-    ), "Fminus boundary shift mismatch"
+    assert torch.allclose(shifted_states.Fminus, expected_Fminus), (
+        "Fminus boundary shift mismatch"
+    )
 
 
 def test_shift_shape_and_device_preservation(sample_states):
@@ -115,24 +116,24 @@ def test_shift_shape_and_device_preservation(sample_states):
     shifted_states = shift(sample_states)
 
     # Ensure shape and device are preserved
-    assert (
-        shifted_states.Fplus.shape == original_states.Fplus.shape
-    ), "Fplus shape mismatch after shift"
-    assert (
-        shifted_states.Fminus.shape == original_states.Fminus.shape
-    ), "Fminus shape mismatch after shift"
-    assert (
-        shifted_states.Fplus.device == original_states.Fplus.device
-    ), "Fplus device mismatch after shift"
-    assert (
-        shifted_states.Fminus.device == original_states.Fminus.device
-    ), "Fminus device mismatch after shift"
-    assert (
-        shifted_states.Z.shape == original_states.Z.shape
-    ), "Z shape should remain unchanged"
-    assert (
-        shifted_states.Z.device == original_states.Z.device
-    ), "Z device should remain unchanged"
+    assert shifted_states.Fplus.shape == original_states.Fplus.shape, (
+        "Fplus shape mismatch after shift"
+    )
+    assert shifted_states.Fminus.shape == original_states.Fminus.shape, (
+        "Fminus shape mismatch after shift"
+    )
+    assert shifted_states.Fplus.device == original_states.Fplus.device, (
+        "Fplus device mismatch after shift"
+    )
+    assert shifted_states.Fminus.device == original_states.Fminus.device, (
+        "Fminus device mismatch after shift"
+    )
+    assert shifted_states.Z.shape == original_states.Z.shape, (
+        "Z shape should remain unchanged"
+    )
+    assert shifted_states.Z.device == original_states.Z.device, (
+        "Z device should remain unchanged"
+    )
 
 
 def test_shift_in_place(sample_states):

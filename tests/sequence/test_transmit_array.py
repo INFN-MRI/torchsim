@@ -19,8 +19,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
-from torchsim.sequence._description import EventType, SequenceEvent, ShimDefinition
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence._accelerators import (
     _across_the_table,
     _pack_events,
@@ -30,6 +29,7 @@ from torchsim.sequence._accelerators import (
     _run_packed_vjp_jvp,
     offload,
 )
+from torchsim.sequence._description import EventType, ShimDefinition
 from torchsim.sequence._parameters import TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue, _resolve_transmit
 from torchsim.sequence._transmit import (
@@ -55,9 +55,7 @@ def _description(shim: ShimDefinition | None = None, shim_ids: tuple[int, ...] =
     events = description.events
     if shim_ids:
         pulses = [
-            index
-            for index, event in enumerate(events)
-            if event.type is EventType.RF
+            index for index, event in enumerate(events) if event.type is EventType.RF
         ]
         events = list(events)
         for position, identifier in zip(pulses, shim_ids, strict=False):
@@ -67,32 +65,24 @@ def _description(shim: ShimDefinition | None = None, shim_ids: tuple[int, ...] =
                 params=(*event.params[:5], identifier, *event.params[6:]),
             )
         events = tuple(events)
-    return replace(
-        description, events=events, shim_definitions={shim.id: shim}
-    )
+    return replace(description, events=events, shim_definitions={shim.id: shim})
 
 
 def _two_shim_description():
     """Excitation on one shim, every refocusing pulse on another."""
-    quadrature = ShimDefinition(
-        0, (1.0 / CHANNELS,) * CHANNELS, (0.0,) * CHANNELS
-    )
+    quadrature = ShimDefinition(0, (1.0 / CHANNELS,) * CHANNELS, (0.0,) * CHANNELS)
     shaped = ShimDefinition(
         1,
         tuple(0.05 * (index + 1) for index in range(CHANNELS)),
         tuple(0.3 * index for index in range(CHANNELS)),
     )
     description = _description(quadrature, shim_ids=(0, 1, 1, 1, 1, 1, 1))
-    return replace(
-        description, shim_definitions={0: quadrature, 1: shaped}
-    )
+    return replace(description, shim_definitions={0: quadrature, 1: shaped})
 
 
 def _uniform_shim(identifier: int = 0) -> ShimDefinition:
     """Every channel driven equally, which is circularly polarized drive."""
-    return ShimDefinition(
-        identifier, (1.0 / CHANNELS,) * CHANNELS, (0.0,) * CHANNELS
-    )
+    return ShimDefinition(identifier, (1.0 / CHANNELS,) * CHANNELS, (0.0,) * CHANNELS)
 
 
 def _sensitivity(voxels: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -153,9 +143,7 @@ def test_the_field_is_the_complex_sum_written_out() -> None:
         _description(shim), b1, b1_phase, torch.device("cpu")
     )
 
-    weights = torch.polar(
-        torch.tensor(shim.magnitudes), torch.tensor(shim.phases_rad)
-    )
+    weights = torch.polar(torch.tensor(shim.magnitudes), torch.tensor(shim.phases_rad))
     expected = (torch.polar(b1, b1_phase) * weights[:, None]).sum(dim=0)
     assert torch.allclose(magnitude, expected.abs(), atol=1e-6)
     assert torch.allclose(phase, expected.angle(), atol=1e-6)
@@ -198,9 +186,7 @@ def test_pulses_driving_different_shims_get_a_row_each() -> None:
     voxels = 3
     b1, b1_phase = _sensitivity(voxels)
     description = _two_shim_description()
-    magnitude, phase = transmit_field(
-        description, b1, b1_phase, torch.device("cpu")
-    )
+    magnitude, phase = transmit_field(description, b1, b1_phase, torch.device("cpu"))
 
     assert magnitude.shape == (2, voxels)
     assert phase.shape == (2, voxels)
@@ -228,7 +214,7 @@ def _packed(description, voxels: int = 3, device: str = "cpu"):
     )
     prepared, _, resolved = _prepare_tissue(tissue, device, shims)
     packed = _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=resolved,
@@ -247,11 +233,10 @@ def test_each_pulse_reads_the_shim_it_names() -> None:
     """Against the oracle, which indexes the rows independently."""
     tissue, events, output_count = _two_shim_packed()
     assert tissue[3].numel() == 2 * tissue[0].numel()
-    expected = simulate_packed(
-        tissue, events, state_count=8, output_count=output_count
+    expected = simulate_packed(tissue, events, state_count=8, output_count=output_count)
+    actual = _run_packed(
+        tissue, events, state_count=8, output_count=output_count, threads=1
     )
-    actual = _run_packed(tissue, events, state_count=8, output_count=output_count,
-                         threads=1)
     assert (expected - actual).abs().max() / expected.abs().max() < 1e-5
 
 
@@ -342,9 +327,7 @@ def _seed(tissue, output_count: int) -> torch.Tensor:
 def _oracle_adjoint(tissue, events, seed, output_count: int):
     """What autograd through the reference makes of the same pass."""
     leaves = tuple(value.clone().requires_grad_(True) for value in tissue)
-    signal = simulate_packed(
-        leaves, events, state_count=8, output_count=output_count
-    )
+    signal = simulate_packed(leaves, events, state_count=8, output_count=output_count)
     (signal.real * seed.real + signal.imag * seed.imag).sum().backward()
     return tuple(
         torch.zeros_like(value) if value.grad is None else value.grad
@@ -383,8 +366,11 @@ def test_forward_mode_follows_each_shim() -> None:
         return simulate_packed(
             values[:TISSUE_COUNT],
             (
-                values[TISSUE_COUNT], events[1], values[TISSUE_COUNT + 1],
-                values[TISSUE_COUNT + 2], *events[4:],
+                values[TISSUE_COUNT],
+                events[1],
+                values[TISSUE_COUNT + 1],
+                values[TISSUE_COUNT + 2],
+                *events[4:],
             ),
             state_count=8,
             output_count=output_count,
@@ -396,8 +382,13 @@ def test_forward_mode_follows_each_shim() -> None:
         (*tissue_dot, *event_dot),
     )
     actual = _run_packed_jvp(
-        tissue, events, tissue_dot, event_dot,
-        state_count=8, output_count=output_count, threads=1,
+        tissue,
+        events,
+        tissue_dot,
+        event_dot,
+        state_count=8,
+        output_count=output_count,
+        threads=1,
     )
     assert (expected - actual).abs().max() < 1e-5 * expected.abs().max()
 
@@ -416,8 +407,11 @@ def test_the_second_order_pass_follows_each_shim() -> None:
     signal = simulate_packed(
         leaves[:TISSUE_COUNT],
         (
-            leaves[TISSUE_COUNT], events[1], leaves[TISSUE_COUNT + 1],
-            leaves[TISSUE_COUNT + 2], *events[4:],
+            leaves[TISSUE_COUNT],
+            events[1],
+            leaves[TISSUE_COUNT + 1],
+            leaves[TISSUE_COUNT + 2],
+            *events[4:],
         ),
         state_count=8,
         output_count=output_count,
@@ -429,13 +423,18 @@ def test_the_second_order_pass_follows_each_shim() -> None:
         materialize_grads=True,
     )
     expected = torch.autograd.grad(
-        sum((grad * step).sum() for grad, step in zip(first, tangents)),
+        sum((grad * step).sum() for grad, step in zip(first, tangents, strict=False)),
         leaves,
         materialize_grads=True,
     )
     actual, _ = _run_packed_vjp_jvp(
-        tissue, events, tangents, seed,
-        state_count=8, output_count=output_count, threads=1,
+        tissue,
+        events,
+        tangents,
+        seed,
+        state_count=8,
+        output_count=output_count,
+        threads=1,
     )
     for index in (3, 4):
         reference = expected[index]
@@ -453,13 +452,15 @@ def test_a_shim_no_pulse_drives_gets_no_gradient() -> None:
         ).contiguous()
 
     gradients = _run_packed_vjp(
-        tuple(padded), events, _seed(tissue, output_count),
-        state_count=8, output_count=output_count, threads=1,
+        tuple(padded),
+        events,
+        _seed(tissue, output_count),
+        state_count=8,
+        output_count=output_count,
+        threads=1,
     )
     for index in (3, 4):
-        assert torch.equal(
-            gradients[index][2 * atoms :], torch.zeros(atoms)
-        )
+        assert torch.equal(gradients[index][2 * atoms :], torch.zeros(atoms))
         assert gradients[index][:atoms].abs().max() > 0
 
 
@@ -533,9 +534,11 @@ def test_a_gradient_reaches_the_weights_of_each_shim() -> None:
         shim_definitions=shims,
     )
 
-    signal = EpgEngine().simulate(
-        description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8)
+        .signal
+    )
     signal.abs().square().sum().backward()
 
     assert excitation.grad is not None and excitation.grad.abs().max() > 0
@@ -557,9 +560,13 @@ def test_the_weight_gradients_match_a_finite_difference_shim_by_shim() -> None:
             _description(shims[0], shim_ids=(0, 1, 1, 1, 1, 1, 1)),
             shim_definitions=shims,
         )
-        signal = EpgEngine().simulate(
-            description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                description, _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
+            )
+            .signal
+        )
         return signal.abs().square().sum()
 
     weights = (
@@ -590,11 +597,15 @@ def test_a_uniform_array_reproduces_the_single_channel_signal() -> None:
     """Bitwise: the array resolves to exactly the buffers it would have had."""
     voxels = 3
     plain = EpgEngine().simulate(_description(), _tissue(voxels), nstates=8).signal
-    array = EpgEngine().simulate(
-        _description(_uniform_shim()),
-        _tissue(voxels, b1=torch.full((CHANNELS, voxels), 1.0)),
-        nstates=8,
-    ).signal
+    array = (
+        EpgEngine()
+        .simulate(
+            _description(_uniform_shim()),
+            _tissue(voxels, b1=torch.full((CHANNELS, voxels), 1.0)),
+            nstates=8,
+        )
+        .signal
+    )
     assert torch.equal(plain, array)
 
 
@@ -603,14 +614,22 @@ def test_the_array_reaches_the_signal() -> None:
     voxels = 3
     b1, b1_phase = _sensitivity(voxels)
     shim = _uniform_shim()
-    uniform = EpgEngine().simulate(
-        _description(shim),
-        _tissue(voxels, b1=torch.full((CHANNELS, voxels), 1.0)),
-        nstates=8,
-    ).signal
-    shaped = EpgEngine().simulate(
-        _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
-    ).signal
+    uniform = (
+        EpgEngine()
+        .simulate(
+            _description(shim),
+            _tissue(voxels, b1=torch.full((CHANNELS, voxels), 1.0)),
+            nstates=8,
+        )
+        .signal
+    )
+    shaped = (
+        EpgEngine()
+        .simulate(
+            _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
+        )
+        .signal
+    )
     relative = (uniform - shaped).abs().max() / uniform.abs().max()
     assert relative > 0.01
 
@@ -624,19 +643,25 @@ def test_the_resolved_field_matches_a_hand_built_single_channel_run() -> None:
         tuple(0.1 * (index + 1) for index in range(CHANNELS)),
         tuple(0.4 * index for index in range(CHANNELS)),
     )
-    weights = torch.polar(
-        torch.tensor(shim.magnitudes), torch.tensor(shim.phases_rad)
-    )
+    weights = torch.polar(torch.tensor(shim.magnitudes), torch.tensor(shim.phases_rad))
     field = (torch.polar(b1, b1_phase) * weights[:, None]).sum(dim=0)
 
-    array = EpgEngine().simulate(
-        _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
-    ).signal
-    equivalent = EpgEngine().simulate(
-        _description(),
-        _tissue(voxels, b1=field.abs(), b1_phase_rad=field.angle()),
-        nstates=8,
-    ).signal
+    array = (
+        EpgEngine()
+        .simulate(
+            _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
+        )
+        .signal
+    )
+    equivalent = (
+        EpgEngine()
+        .simulate(
+            _description(),
+            _tissue(voxels, b1=field.abs(), b1_phase_rad=field.angle()),
+            nstates=8,
+        )
+        .signal
+    )
     assert torch.equal(array, equivalent)
 
 
@@ -706,11 +731,15 @@ def test_a_gradient_reaches_each_channel_of_the_array() -> None:
     b1 = b1.clone().requires_grad_(True)
     b1_phase = b1_phase.clone().requires_grad_(True)
 
-    signal = EpgEngine().simulate(
-        _description(_uniform_shim()),
-        _tissue(voxels, b1=b1, b1_phase_rad=b1_phase),
-        nstates=8,
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(_uniform_shim()),
+            _tissue(voxels, b1=b1, b1_phase_rad=b1_phase),
+            nstates=8,
+        )
+        .signal
+    )
     signal.abs().square().sum().backward()
 
     assert b1.grad is not None and b1.grad.shape == (CHANNELS, voxels)
@@ -725,9 +754,13 @@ def test_a_gradient_reaches_the_shim_weights() -> None:
     magnitudes = torch.full((CHANNELS,), 1.0 / CHANNELS, requires_grad=True)
     shim = ShimDefinition(0, magnitudes, (0.0,) * CHANNELS)
 
-    signal = EpgEngine().simulate(
-        _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(shim), _tissue(voxels, b1=b1, b1_phase_rad=b1_phase), nstates=8
+        )
+        .signal
+    )
     signal.abs().square().sum().backward()
 
     assert magnitudes.grad is not None
@@ -741,11 +774,15 @@ def test_the_channel_gradient_matches_a_finite_difference() -> None:
     shim = _uniform_shim()
 
     def loss(magnitude: torch.Tensor) -> torch.Tensor:
-        signal = EpgEngine().simulate(
-            _description(shim),
-            _tissue(voxels, b1=magnitude, b1_phase_rad=b1_phase),
-            nstates=8,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                _description(shim),
+                _tissue(voxels, b1=magnitude, b1_phase_rad=b1_phase),
+                nstates=8,
+            )
+            .signal
+        )
         return signal.abs().square().sum()
 
     leaf = b1.clone().requires_grad_(True)
@@ -766,13 +803,21 @@ def test_the_channel_gradient_matches_a_finite_difference() -> None:
 POOLS = {
     "semisolid": dict(bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0),
     "exchanging": dict(
-        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
-        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+        pool_b_fraction=0.15,
+        pool_b_exchange_hz=20.0,
+        t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0,
+        pool_b_shift_hz=420.0,
     ),
     "three": dict(
-        bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0,
-        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
-        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+        bound_fraction=0.1,
+        bound_exchange_hz=30.0,
+        t1_bound_ms=1000.0,
+        pool_b_fraction=0.15,
+        pool_b_exchange_hz=20.0,
+        t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0,
+        pool_b_shift_hz=420.0,
     ),
 }
 
@@ -793,7 +838,7 @@ def _pooled_shim_packed(voxels: int = 3, **properties):
     )
     prepared, _, resolved = _prepare_tissue(tissue, "cpu", shims)
     packed = _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=resolved,
@@ -818,7 +863,11 @@ def test_the_shim_rows_reach_every_pool_the_kernels_carry(pool: str) -> None:
         tissue, events, state_count=8, output_count=output_count, **carried
     )
     actual = _run_packed(
-        tissue, events, state_count=8, output_count=output_count, threads=1,
+        tissue,
+        events,
+        state_count=8,
+        output_count=output_count,
+        threads=1,
         **carried,
     )
 
@@ -863,7 +912,7 @@ def test_a_shimmed_gradient_takes_the_first_order_kernel(state_count) -> None:
     state count before, and the shim adds a per-event load the others do not
     make.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     tissue, events, output_count = _two_shim_packed(voxels=64, device="cuda")
@@ -873,12 +922,9 @@ def test_a_shimmed_gradient_takes_the_first_order_kernel(state_count) -> None:
         device="cuda",
         generator=torch.Generator(device="cuda").manual_seed(5),
     )
-    arguments = dict(
-        state_count=state_count, output_count=output_count, threads=1
-    )
+    arguments = dict(state_count=state_count, output_count=output_count, threads=1)
     still = tuple(
-        torch.zeros_like(value)
-        for value in (*tissue, events[0], events[2], events[3])
+        torch.zeros_like(value) for value in (*tissue, events[0], events[2], events[3])
     )
 
     reached = []
@@ -923,8 +969,12 @@ def test_a_row_no_pulse_drives_gets_no_gradient() -> None:
     seed = torch.ones(atoms, output_count, dtype=torch.complex64, device="cuda")
 
     gradients = _run_packed_vjp(
-        tuple(padded), events, seed, state_count=8,
-        output_count=output_count, threads=1,
+        tuple(padded),
+        events,
+        seed,
+        state_count=8,
+        output_count=output_count,
+        threads=1,
     )
 
     for index in (3, 4):

@@ -63,12 +63,18 @@ card runs it for real.
 git clone https://github.com/INFN-MRI/torchsim
 cd torchsim
 pip install -e ".[dev]"
+pre-commit install
 ```
 
-The `dev` extra is the whole toolchain in one command: formatters, linters,
-the test runner, the documentation build, and the phantom, coil,
+The `dev` extra is the whole toolchain in one command: the formatter and
+linter, the test runner, the documentation build, and the phantom, coil,
 reconstruction and NUFFT packages the gallery examples import while they
-execute.
+execute. It is `test`, `doc` and `examples` together, and any of those three
+installs on its own when that is all you want.
+
+`pre-commit install` is the second line for a reason: installing the package
+puts the hooks *available*, and this is what puts them *in effect*. See
+{ref}`dev-style` for what they check and how to step around one.
 
 An editable install puts the Python sources on the path, so an edit under
 `src/torchsim` takes effect on the next import with nothing to rebuild. The
@@ -118,21 +124,80 @@ python -c "import torchsim._epg_cpu as k; print(k.__file__)"
 {doc}`explanations/implementation` is the tour of how those pieces fit
 together; read it before changing any of them.
 
+(dev-style)=
+
 ## Style
 
-**Formatting is automated, so do not argue with it.** Run both before you
-commit, and CI checks the first:
+**Formatting is automated, so do not argue with it.** One tool does all of it:
+`ruff format` is the formatter and ruff's `I` rules are the import sorter, so
+the style is decided in one place. Ruff also runs pycodestyle, pyflakes,
+bugbear, quote, pydocstyle, pyupgrade and annotation rules, with the
+**numpydoc** docstring convention. Public functions and classes carry
+annotations; the settings are in `pyproject.toml` and are the authority.
+
+### Setting up pre-commit
+
+`pip install -e ".[dev]"` puts `pre-commit` on the path. Registering the hook
+is a second, separate step, and until you take it nothing runs on commit:
 
 ```sh
-black .
-isort .            # configured with the black profile
-ruff check src
+pre-commit install
 ```
 
-Ruff runs pycodestyle, pyflakes, bugbear, quote, pydocstyle, pyupgrade and
-annotation rules, with the **numpydoc** docstring convention. Public functions
-and classes carry annotations; the settings are in `pyproject.toml` and are
-the authority.
+From then on every `git commit` checks the files you staged. The first run
+downloads and builds the hook environments, so give it a minute; afterwards it
+is a second or two.
+
+```sh
+pre-commit run --all-files      # the whole tree, which is what CI does
+pre-commit run ruff-format      # one hook, on the staged files
+pre-commit run --files src/torchsim/model/_signal.py
+pre-commit autoupdate           # move the pinned hook versions forward
+```
+
+`.pre-commit-config.yaml` pins the ruff version, so the formatter that judges
+your commit and the one that judges the pull request are the same build. That
+matters: rules move between ruff releases, and `pyproject.toml` sets
+`required-version = ">=0.14"` so an older ruff refuses to run rather than
+report findings this configuration cannot express. Running the two steps by
+hand is the same thing as the hooks, at whatever ruff you happen to have:
+
+```sh
+ruff format .
+ruff check . --fix
+```
+
+**A hook that rewrites a file fails the commit.** `ruff format`, `ruff check
+--fix` and the whitespace hooks fix what they find rather than only complaining
+about it, and a run that changed something exits non-zero so you see what it
+did. Nothing is lost -- the fixes are in your working tree. Look at them,
+`git add` them, and commit again; the second attempt passes.
+
+### When you need to bypass it
+
+Skip one hook, which is the smallest hammer and usually the right one:
+
+```sh
+SKIP=ruff-check git commit -m "..."
+SKIP=ruff-check,ruff-format git commit -m "..."
+```
+
+Skip all of them -- a work-in-progress commit on a branch of your own, or a
+merge you did not write:
+
+```sh
+git commit --no-verify -m "..."
+```
+
+Both are local conveniences, not exemptions. CI runs
+`pre-commit run --all-files` over the whole tree on every branch, so a bypass
+defers the failure to the pull request rather than avoiding it. Clean it up in
+a follow-up commit before you ask for review.
+
+If a hook is wrong rather than inconvenient, the fix is the configuration and
+not the flag: a rule that fights the way this code is written belongs in
+`ignore` or `per-file-ignores` in `pyproject.toml`, with a comment saying why.
+Several are already there.
 
 **A docstring carries what a caller needs to call it**: one line of what it
 does, then Parameters, Returns, Raises. Types belong in the prose of the
@@ -247,8 +312,7 @@ docstring becomes the page's introduction.
 3. **Run what CI runs**, so you find out here rather than there:
 
    ```sh
-   black . --check --diff
-   ruff check src
+   pre-commit run --all-files
    pytest tests/
    bash scripts/build_docs.sh
    ```
@@ -256,8 +320,10 @@ docstring becomes the page's introduction.
 4. **Open the pull request.** A template asks for what the change does, how it
    was checked -- the command and what it printed, since "tests pass" does not
    say which ones -- and the checklist above.
-5. **CI runs** the style check, the test matrix on the supported Python
-   versions, and the documentation build. All three have to be green.
+5. **CI runs** the same pre-commit hooks, then the tests on Linux, macOS and
+   Windows at both ends of the supported Python range, compiling the kernels
+   fresh on each. Read the Docs builds the pages for the pull request. All of
+   it has to be green.
 6. **Review** is a conversation about the code, not about you; the same
    applies in the other direction when you review. Push follow-up commits
    rather than force-pushing over the discussion, so a reviewer can read what

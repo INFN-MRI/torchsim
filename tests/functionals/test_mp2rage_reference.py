@@ -68,10 +68,7 @@ def reference(
     sinalfa = np.sin(flip)[:, None]
 
     settled = 1.0 / (
-        1.0
-        + efficiency
-        * np.prod(cosalfaE1, axis=0) ** shots
-        * np.prod(ETD, axis=0)
+        1.0 + efficiency * np.prod(cosalfaE1, axis=0) ** shots * np.prod(ETD, axis=0)
     )
     numerator = 1 - ETD[0]
     for block_index in (0, 1):
@@ -81,15 +78,15 @@ def reference(
     settled = settled * numerator
 
     c0, c1 = cosalfaE1
-    temp = (-efficiency * settled * ETD[0] + (1 - ETD[0])) * c0**before + (
-        1 - E1
-    ) * (1 - c0**before) / (1 - c0)
+    temp = (-efficiency * settled * ETD[0] + (1 - ETD[0])) * c0**before + (1 - E1) * (
+        1 - c0**before
+    ) / (1 - c0)
     first = sinalfa[0] * temp
 
     temp = temp * c0**after + (1 - E1) * (1 - c0**after) / (1 - c0)
-    temp = (temp * ETD[1] + (1 - ETD[1])) * c1**before + (1 - E1) * (
-        1 - c1**before
-    ) / (1 - c1)
+    temp = (temp * ETD[1] + (1 - ETD[1])) * c1**before + (1 - E1) * (1 - c1**before) / (
+        1 - c1
+    )
     second = sinalfa[1] * temp
 
     return np.stack((first, second), axis=-1)
@@ -169,13 +166,17 @@ def test_a_shared_flip_angle_is_used_for_both_blocks() -> None:
         TI_MS, (5.0, 5.0), TRSPGR_MS, TRMP2RAGE_MS, 64, 64, T1_s, EFFICIENCY
     )
 
-    got = MP2RAGESimulator(
-        TI=TI_MS,
-        flip=5.0,
-        TRspgr=TRSPGR_MS,
-        TRmp2rage=TRMP2RAGE_MS,
-        nshots=128,
-    ).simulate(T1=tuple((T1_s * 1e3).tolist()), inv_efficiency=EFFICIENCY).numpy()
+    got = (
+        MP2RAGESimulator(
+            TI=TI_MS,
+            flip=5.0,
+            TRspgr=TRSPGR_MS,
+            TRmp2rage=TRMP2RAGE_MS,
+            nshots=128,
+        )
+        .simulate(T1=tuple((T1_s * 1e3).tolist()), inv_efficiency=EFFICIENCY)
+        .numpy()
+    )
 
     assert np.abs(got - want).max() / np.abs(want).max() < 1e-5
 
@@ -183,17 +184,19 @@ def test_a_shared_flip_angle_is_used_for_both_blocks() -> None:
 def test_a_perfect_inversion_is_carried() -> None:
     """The efficiency reaches the steady state and both readouts."""
     T1_s = np.array([0.8, 1.2, 2.5])
-    want = reference(
-        TI_MS, FLIP_DEG, TRSPGR_MS, TRMP2RAGE_MS, 64, 64, T1_s, 1.0
-    )
+    want = reference(TI_MS, FLIP_DEG, TRSPGR_MS, TRMP2RAGE_MS, 64, 64, T1_s, 1.0)
 
-    got = MP2RAGESimulator(
-        TI=TI_MS,
-        flip=FLIP_DEG,
-        TRspgr=TRSPGR_MS,
-        TRmp2rage=TRMP2RAGE_MS,
-        nshots=128,
-    ).simulate(T1=tuple((T1_s * 1e3).tolist()), inv_efficiency=1.0).numpy()
+    got = (
+        MP2RAGESimulator(
+            TI=TI_MS,
+            flip=FLIP_DEG,
+            TRspgr=TRSPGR_MS,
+            TRmp2rage=TRMP2RAGE_MS,
+            nshots=128,
+        )
+        .simulate(T1=tuple((T1_s * 1e3).tolist()), inv_efficiency=1.0)
+        .numpy()
+    )
 
     assert np.abs(got - want).max() / np.abs(want).max() < 1e-5
 
@@ -211,9 +214,7 @@ def test_the_density_scales_both_blocks() -> None:
     T1_ms = tuple((T1_s * 1e3).tolist())
 
     plain = simulator.simulate(T1=T1_ms, inv_efficiency=EFFICIENCY)
-    scaled = simulator.simulate(
-        T1=T1_ms, M0=(2.0, 2.0, 2.0), inv_efficiency=EFFICIENCY
-    )
+    scaled = simulator.simulate(T1=T1_ms, M0=(2.0, 2.0, 2.0), inv_efficiency=EFFICIENCY)
 
     torch.testing.assert_close(scaled, 2.0 * plain)
     torch.testing.assert_close(unified(scaled), unified(plain))
@@ -263,9 +264,7 @@ def test_a_description_played_back_is_the_closed_form(nshots) -> None:
     simulator = MP2RAGESimulator(**protocol)
 
     closed = simulator.simulate(T1=T1_MS, inv_efficiency=EFFICIENCY)
-    got = played(
-        simulator.describe(**protocol), T1=T1_MS, inv_efficiency=EFFICIENCY
-    )
+    got = played(simulator.describe(**protocol), T1=T1_MS, inv_efficiency=EFFICIENCY)
 
     error = (got - closed).abs().max() / closed.abs().max()
     assert float(error) < 1e-4, f"{float(error):.2e}"

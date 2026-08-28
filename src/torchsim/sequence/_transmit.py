@@ -63,7 +63,8 @@ def channel_count(description: SequenceDescription) -> int:
     One when the description declares no shim, which is the single-channel
     sequence every builder produces.
 
-    Raises:
+    Raises
+    ------
         ValueError: if the shim definitions disagree on their width.
     """
     widths = {
@@ -84,17 +85,14 @@ def shim_rows(description: SequenceDescription) -> dict[int, int]:
     Empty for a sequence that declares no shim, whose transmit buffers are the
     single row every pulse reads.
 
-    Raises:
+    Raises
+    ------
         KeyError: if a pulse names a shim the description does not define.
     """
     if not description.shim_definitions:
         return {}
     referenced = sorted(
-        {
-            event.rf_shim_id
-            for event in description.events
-            if event.type is EventType.RF
-        }
+        {event.rf_shim_id for event in description.events if event.type is EventType.RF}
         or set(description.shim_definitions)
     )
     missing = [
@@ -127,7 +125,8 @@ def transmit_field(
 
     Differentiable in both arguments and in the shim weights.
 
-    Raises:
+    Raises
+    ------
         ValueError: if the leading axis disagrees with the shim width.
         KeyError: if a pulse names a shim the description does not define.
     """
@@ -155,9 +154,9 @@ def _drive(sensitivity: torch.Tensor, shim: Any, device: torch.device) -> torch.
     weights = torch.polar(
         _as_tensor(shim.magnitudes, device), _as_tensor(shim.phases_rad, device)
     )
-    return (
-        sensitivity * weights.reshape(-1, *(1,) * (sensitivity.dim() - 1))
-    ).sum(dim=0)
+    return (sensitivity * weights.reshape(-1, *(1,) * (sensitivity.dim() - 1))).sum(
+        dim=0
+    )
 
 
 def _as_tensor(values: Any, device: torch.device) -> torch.Tensor:
@@ -182,9 +181,7 @@ def _aligned(
 def _padded(value: torch.Tensor, rank: int) -> torch.Tensor:
     if value.dim() == rank:
         return value
-    return value.reshape(
-        value.shape[0], *(1,) * (rank - value.dim()), *value.shape[1:]
-    )
+    return value.reshape(value.shape[0], *(1,) * (rank - value.dim()), *value.shape[1:])
 
 
 def _per_channel(

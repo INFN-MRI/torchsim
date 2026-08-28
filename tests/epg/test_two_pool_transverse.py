@@ -57,14 +57,18 @@ def _lambda(t2a_ms, t2b_ms, exchange, bound, shift_hz):
     zero = torch.zeros((), dtype=REAL)
     return torch.stack(
         (
-            torch.stack((
-                torch.complex(-kab - rates[0], zero),
-                torch.complex(kba, zero),
-            )),
-            torch.stack((
-                torch.complex(kab, zero),
-                torch.complex(-kba - rates[1], -turn),
-            )),
+            torch.stack(
+                (
+                    torch.complex(-kab - rates[0], zero),
+                    torch.complex(kba, zero),
+                )
+            ),
+            torch.stack(
+                (
+                    torch.complex(kab, zero),
+                    torch.complex(-kba - rates[1], -turn),
+                )
+            ),
         )
     )
 
@@ -151,8 +155,7 @@ def test_the_closed_form_is_the_matrix_exponential() -> None:
         scaled = _lambda(*values[:5]) * values[5]
         half_trace = 0.5 * (scaled[0, 0] + scaled[1, 1])
         root = torch.sqrt(
-            half_trace**2
-            - (scaled[0, 0] * scaled[1, 1] - scaled[0, 1] * scaled[1, 0])
+            half_trace**2 - (scaled[0, 0] * scaled[1, 1] - scaled[0, 1] * scaled[1, 0])
         )
         upper, lower = half_trace + root, half_trace - root
         expected = (
@@ -292,9 +295,7 @@ def test_the_eigenvalues_never_grow() -> None:
     for _ in range(2000):
 
         def uniform(low, high):
-            return low + (high - low) * torch.rand(
-                (), generator=generator, dtype=REAL
-            )
+            return low + (high - low) * torch.rand((), generator=generator, dtype=REAL)
 
         scaled = _lambda(
             uniform(0.5, 3000.0),
@@ -386,8 +387,12 @@ def test_a_shift_without_exchange_turns_one_pool_and_not_the_other() -> None:
     shift = torch.tensor(-420.0, dtype=REAL)
     huge = torch.tensor(1e12, dtype=REAL)
     operator = _transverse_step(
-        huge, huge, torch.zeros((), dtype=REAL), torch.tensor(0.3, dtype=REAL),
-        shift, dt,
+        huge,
+        huge,
+        torch.zeros((), dtype=REAL),
+        torch.tensor(0.3, dtype=REAL),
+        shift,
+        dt,
     )
     turned = torch.exp(-2j * torch.pi * shift.to(DOUBLE) * dt)
 

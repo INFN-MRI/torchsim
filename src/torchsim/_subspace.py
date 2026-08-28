@@ -95,9 +95,7 @@ class Subspace:
     def expand(self, coefficients: torch.Tensor) -> torch.Tensor:
         """Return subspace coefficients as contrasts again."""
         dtype = torch.promote_types(coefficients.dtype, self.basis.dtype)
-        return coefficients.to(dtype) @ self.basis.mH.to(dtype).to(
-            coefficients.device
-        )
+        return coefficients.to(dtype) @ self.basis.mH.to(dtype).to(coefficients.device)
 
     @classmethod
     def fit(cls, signals: torch.Tensor, rank: int) -> Subspace:

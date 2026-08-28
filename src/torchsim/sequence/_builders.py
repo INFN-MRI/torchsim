@@ -15,8 +15,8 @@ from typing import Any
 import torch
 
 from ._description import (
-    EventAction,
     AdcRole,
+    EventAction,
     SequenceDescription,
     ideal_rf_definition,
 )

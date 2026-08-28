@@ -10,8 +10,8 @@ from typing import Any, Literal
 
 import torch
 
-from .._execution import one_device, per_voxel
 from .._calibrate import crossover
+from .._execution import one_device, per_voxel
 from ._mapping import Estimator
 
 
@@ -197,9 +197,7 @@ class PERK(Estimator):
         was asked for, and it is discarded once the covariances are in.
         """
         if not self.stream:
-            super()._fit_simulated(
-                samples, chunk=chunk, rank=rank, noise_std=noise_std
-            )
+            super()._fit_simulated(samples, chunk=chunk, rank=rank, noise_std=noise_std)
             return
         if rank is not None:
             raise ValueError(
@@ -216,12 +214,8 @@ class PERK(Estimator):
         def batches() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
             for start in range(0, samples, chunk_size):
                 stop = min(start + chunk_size, samples)
-                known_chunk = (
-                    None if known_matrix is None else known_matrix[start:stop]
-                )
-                given = {
-                    name: value[start:stop] for name, value in drawn.items()
-                }
+                known_chunk = None if known_matrix is None else known_matrix[start:stop]
+                given = {name: value[start:stop] for name, value in drawn.items()}
                 signals = torch.as_tensor(
                     self.acquisition.simulate(**given), device=parameters.device
                 )
@@ -316,9 +310,7 @@ class PERK(Estimator):
 
         def build(device: torch.device, voxels: int) -> Any:
             generator = torch.Generator(device=device).manual_seed(0)
-            signals = torch.randn(
-                voxels, contrasts, generator=generator, device=device
-            )
+            signals = torch.randn(voxels, contrasts, generator=generator, device=device)
             held = self._fitted_on(device)
             return lambda: self._regress(signals, held)
 
@@ -356,11 +348,20 @@ class PERK(Estimator):
         if backend is not None:
             if inputs.device.type == "cuda":
                 return backend.regress(
-                    inputs, frequency, phase, feature_mean, weight,
+                    inputs,
+                    frequency,
+                    phase,
+                    feature_mean,
+                    weight,
                     parameter_mean,
                 )
             return backend.regress(
-                inputs, frequency, transposed, phase, feature_mean, weight,
+                inputs,
+                frequency,
+                transposed,
+                phase,
+                feature_mean,
+                weight,
                 parameter_mean,
             )
         outputs = []
@@ -464,12 +465,10 @@ class PERK(Estimator):
         feature_mean = feature_sum / sample_count
         parameter_mean = parameter_sum / sample_count
         covariance = (
-            second_moment
-            - sample_count * torch.outer(feature_mean, feature_mean)
+            second_moment - sample_count * torch.outer(feature_mean, feature_mean)
         ) / (sample_count - 1)
         cross_covariance = (
-            cross_moment
-            - sample_count * torch.outer(parameter_mean, feature_mean)
+            cross_moment - sample_count * torch.outer(parameter_mean, feature_mean)
         ) / (sample_count - 1)
         covariance.diagonal().add_(self.regularization)
         weight = torch.linalg.solve(covariance, cross_covariance.mT).mT
@@ -514,9 +513,7 @@ class PERK(Estimator):
 
         def build(device: torch.device, voxels: int) -> Any:
             generator = torch.Generator(device=device).manual_seed(0)
-            inputs = torch.randn(
-                voxels, contrasts, generator=generator, device=device
-            )
+            inputs = torch.randn(voxels, contrasts, generator=generator, device=device)
             frequency = torch.randn(
                 self.n_features, contrasts, generator=generator, device=device
             )
@@ -541,15 +538,22 @@ class PERK(Estimator):
         estimator comes out of it.
         """
         generator = _generator(torch.device("cpu"), _random_seed(self.feature_seed))
-        frequency = torch.randn(
-            self.n_features,
-            length_scale.numel(),
-            dtype=torch.float32,
-            generator=generator,
-        ).to(length_scale.device) / length_scale[None, :]
-        phase = 2.0 * math.pi * torch.rand(
-            self.n_features, dtype=torch.float32, generator=generator
-        ).to(length_scale.device)
+        frequency = (
+            torch.randn(
+                self.n_features,
+                length_scale.numel(),
+                dtype=torch.float32,
+                generator=generator,
+            ).to(length_scale.device)
+            / length_scale[None, :]
+        )
+        phase = (
+            2.0
+            * math.pi
+            * torch.rand(self.n_features, dtype=torch.float32, generator=generator).to(
+                length_scale.device
+            )
+        )
         return frequency, phase
 
     def _estimated_length_scale(
@@ -573,9 +577,9 @@ class PERK(Estimator):
             observed += inputs.shape[0]
         if observed != sample_count or input_sum is None:
             raise ValueError("batch source returned an inconsistent sample count")
-        variance = (
-            input_square_sum - input_sum.square() / sample_count
-        ) / (sample_count - 1)
+        variance = (input_square_sum - input_sum.square() / sample_count) / (
+            sample_count - 1
+        )
         floor = torch.finfo(torch.float32).eps
         scale = variance.clamp_min(0.0).sqrt().to(torch.float32)
         # Per-coordinate standard deviations make a high-dimensional Gaussian
@@ -585,9 +589,7 @@ class PERK(Estimator):
         scale *= math.sqrt(input_sum.numel())
         return scale.clamp_min(floor)
 
-    def _given_length_scale(
-        self, width: int, device: torch.device
-    ) -> torch.Tensor:
+    def _given_length_scale(self, width: int, device: torch.device) -> torch.Tensor:
         """The kernel width the caller asked for, checked against the inputs."""
         scale = torch.as_tensor(
             self._requested_length_scale, dtype=torch.float32, device=device
@@ -639,14 +641,17 @@ class _FusedRegression(torch.autograd.Function):
                 signals, frequency, phase, feature_mean, weight, parameter_mean
             )
         return _NATIVE.regress(
-            signals, frequency, transposed, phase, feature_mean, weight,
+            signals,
+            frequency,
+            transposed,
+            phase,
+            feature_mean,
+            weight,
             parameter_mean,
         )
 
     @staticmethod
-    def backward(
-        ctx: Any, cotangent: torch.Tensor
-    ) -> tuple[torch.Tensor | None, ...]:
+    def backward(ctx: Any, cotangent: torch.Tensor) -> tuple[torch.Tensor | None, ...]:
         signals, frequency, transposed, phase, weight = ctx.saved_tensors
         if not ctx.needs_input_grad[0]:
             return (None,) * 7
@@ -658,8 +663,6 @@ class _FusedRegression(torch.autograd.Function):
             )
         )
         return gradient, None, None, None, None, None, None
-
-
 
 
 def _feature_matrix(
@@ -711,8 +714,7 @@ def _sample_columns(
         counts.add(expected)
     if len(counts) > 1:
         raise ValueError(
-            f"the properties disagree on the training sample count: "
-            f"{sorted(counts)}"
+            f"the properties disagree on the training sample count: {sorted(counts)}"
         )
     return columns
 

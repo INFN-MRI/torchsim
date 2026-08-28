@@ -132,9 +132,7 @@ def run_key(
     because a plain number reaches the timestamps and the structure with them.
     """
     return (
-        tuple(
-            (name, _keyed(value)) for name, value in sorted(values.items())
-        ),
+        tuple((name, _keyed(value)) for name, value in sorted(values.items())),
         repetitions,
         record,
         rf_raster_time_s,
@@ -207,9 +205,7 @@ def bind(
         seeds = _seeds(primals, position)
         if seeds is None:
             continue
-        along = tuple(
-            torch.func.jvp(floats, primals, seed)[1] for seed in seeds
-        )
+        along = tuple(torch.func.jvp(floats, primals, seed)[1] for seed in seeds)
         for buffer, scale, ramp in zip(_VALUES, *along, strict=True):
             term = _term(scale, ramp, primals[position].numel())
             if term is None:

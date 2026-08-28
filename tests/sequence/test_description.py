@@ -80,9 +80,10 @@ def test_magnetization_prepared_builders_label_acquired_readouts() -> None:
     assert len(mpnrage.adc_events) == 5
     assert all(event.adc_role is AdcRole.SINGLE for event in mpnrage.adc_events)
     assert len(mprage.adc_events) == 5
-    assert sum(
-        event.adc_role is not AdcRole.NON_ACQUIRED for event in mprage.adc_events
-    ) == 1
+    assert (
+        sum(event.adc_role is not AdcRole.NON_ACQUIRED for event in mprage.adc_events)
+        == 1
+    )
 
 
 # --- what the waveform says about the pulse ---
@@ -194,8 +195,9 @@ def test_declared_times_have_to_match_the_pulse() -> None:
     envelope = _shape(_sinc(8))
 
     with pytest.raises(ValueError, match="sample times against"):
-        _definition(envelope, time=RfShape(3, np.arange(3, dtype=np.float32))
-                    ).sample_durations()
+        _definition(
+            envelope, time=RfShape(3, np.arange(3, dtype=np.float32))
+        ).sample_durations()
     with pytest.raises(ValueError, match="do not advance"):
         _definition(
             envelope, time=RfShape(8, np.zeros(8, dtype=np.float32))

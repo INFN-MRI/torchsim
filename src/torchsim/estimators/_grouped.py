@@ -70,9 +70,7 @@ class Grouping:
         flat, stop when it climbs.
         """
         values = torch.linalg.svdvals(self.representative.to(torch.complex64))
-        return float(
-            values[0] / values[-1].clamp_min(torch.finfo(torch.float32).tiny)
-        )
+        return float(values[0] / values[-1].clamp_min(torch.finfo(torch.float32).tiny))
 
     @classmethod
     def fit(cls, dictionary: torch.Tensor, count: int) -> Grouping:
@@ -192,9 +190,7 @@ def match_in_groups(
     scores = torch.full(
         (voxels, top_k), -1.0, dtype=signals.real.dtype, device=signals.device
     )
-    indices = torch.zeros(
-        (voxels, top_k), dtype=torch.int64, device=signals.device
-    )
+    indices = torch.zeros((voxels, top_k), dtype=torch.int64, device=signals.device)
     keep = grouping.survivors(signals, prune)
 
     # One pass to find the groups anybody kept, so a group nobody did costs a

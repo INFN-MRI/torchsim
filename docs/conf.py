@@ -18,7 +18,6 @@ import os
 import sys
 
 import torch
-
 from sphinx_gallery.sorting import ExplicitOrder
 
 sys.path.insert(0, os.path.abspath("."))
@@ -229,7 +228,10 @@ def _hide_ignored_code_from_the_page_only() -> None:
     def jupyter_notebook(script_blocks, *args, **kwargs):
         """The notebook keeps the code, but not the flags that hid it."""
         return write_notebook(
-            [block._replace(content=_unflagged(block.content)) for block in script_blocks],
+            [
+                block._replace(content=_unflagged(block.content))
+                for block in script_blocks
+            ],
             *args,
             **kwargs,
         )

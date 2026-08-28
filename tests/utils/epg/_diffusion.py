@@ -45,12 +45,12 @@ def diffusion_op(
     b_prime = k0_2 * time * 1e-3
 
     # calculate dephasing order
-    l = torch.arange(nstates, dtype=torch.float32, device=D.device)[:, None, None]
-    lsq = l**2
+    order = torch.arange(nstates, dtype=torch.float32, device=D.device)[:, None, None]
+    lsq = order**2
 
     # calculate b-factor
     b1 = b_prime * lsq
-    b2 = b_prime * (lsq + l + 1.0 / 3.0)
+    b2 = b_prime * (lsq + order + 1.0 / 3.0)
 
     # actual operator calculation
     D1 = torch.exp(-b1 * D * 1e-9)

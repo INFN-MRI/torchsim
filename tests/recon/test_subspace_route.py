@@ -53,9 +53,7 @@ def _operators(basis, cartesian):
     return MRISubspace(stacked, basis.modes.numpy()), single
 
 
-def test_the_basis_goes_out_in_the_layout_the_encoding_reads(
-    basis, cartesian
-) -> None:
+def test_the_basis_goes_out_in_the_layout_the_encoding_reads(basis, cartesian) -> None:
     """The rank axis first, and a plain transpose rather than a conjugate one.
 
     Getting the conjugate wrong here would not raise -- it would reconstruct
@@ -84,17 +82,16 @@ def test_the_basis_goes_out_in_the_layout_the_encoding_reads(
 def test_the_adjoint_is_our_projection(basis, cartesian) -> None:
     """Coming back, the encoding projects exactly the way the mapping does."""
     subspace_op, single = _operators(basis, cartesian)
-    kspace = np.random.default_rng(1).standard_normal(
-        (1, TE_MS.numel(), 1, cartesian.shape[0])
-    ).astype(np.complex64)
+    kspace = (
+        np.random.default_rng(1)
+        .standard_normal((1, TE_MS.numel(), 1, cartesian.shape[0]))
+        .astype(np.complex64)
+    )
 
     theirs = subspace_op.adj_op(kspace)[0][:, 0].transpose(1, 2, 0)
 
     each = np.stack(
-        [
-            single.adj_op(kspace[0, echo][None])[0, 0]
-            for echo in range(TE_MS.numel())
-        ]
+        [single.adj_op(kspace[0, echo][None])[0, 0] for echo in range(TE_MS.numel())]
     )
     ours = basis.project(torch.as_tensor(each).permute(1, 2, 0)).numpy()
     assert np.abs(theirs - ours).max() < 1e-5 * np.abs(ours).max()
@@ -109,9 +106,7 @@ def test_one_mapping_supplies_the_basis_and_reads_what_comes_back() -> None:
     """
     acquisition = MultiEchoSimulator(TE=TE_MS)
     grid = torch.linspace(20.0, 300.0, 128)
-    mapping = DictionaryMatcher(acquisition).fit(
-        T2=grid, M0=1.0, rank=RANK, seed=0
-    )
+    mapping = DictionaryMatcher(acquisition).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
     truth = torch.tensor([[40.0, 95.0], [180.0, 260.0]])
     images = torch.as_tensor(acquisition.simulate(T2=truth)).to(torch.complex64)
 

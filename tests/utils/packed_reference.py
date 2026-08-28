@@ -94,9 +94,23 @@ def simulate_packed(
         Complex signal of shape ``(voxels, recorded echoes)``.
     """
     (
-        t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, damping, velocity,
-        bound_fraction, exchange_rate, t1_bound,
-        pool_b_fraction, pool_b_exchange, t1_pool_b, t2_pool_b, pool_b_shift,
+        t1,
+        t2,
+        m0,
+        b1,
+        b1_phase,
+        b0,
+        inversion_efficiency,
+        damping,
+        velocity,
+        bound_fraction,
+        exchange_rate,
+        t1_bound,
+        pool_b_fraction,
+        pool_b_exchange,
+        t1_pool_b,
+        t2_pool_b,
+        pool_b_shift,
     ) = tissue
     # Free water is pool a, the chemically exchanging pool b and the semisolid
     # pool c. ``bound`` names whichever second pool the longitudinal step pairs
@@ -119,8 +133,15 @@ def simulate_packed(
     flow = velocity * geometry.flow_scale
     washout = velocity.abs() * geometry.washout_scale
     (
-        duration, kind, flip, phase, action, _output_index, shim_index,
-        saturation, rf_frequency,
+        duration,
+        kind,
+        flip,
+        phase,
+        action,
+        _output_index,
+        shim_index,
+        saturation,
+        rf_frequency,
     ) = events
     atom_count = t1.numel()
     shape = (atom_count, state_count)
@@ -143,7 +164,11 @@ def simulate_packed(
     semisolid = torch.zeros_like(fplus)
     across_generator = (
         _transverse_generator(
-            t2, t2_pool_b, exchange_rate, bound_fraction, free_fraction,
+            t2,
+            t2_pool_b,
+            exchange_rate,
+            bound_fraction,
+            free_fraction,
             pool_b_shift,
         )
         if exchanging
@@ -151,8 +176,13 @@ def simulate_packed(
     )
     triple = (
         _three_pool_generator(
-            t1, t1_pool_b, t1_semisolid, exchange_rate, semisolid_exchange,
-            bound_fraction, semisolid_fraction,
+            t1,
+            t1_pool_b,
+            t1_semisolid,
+            exchange_rate,
+            semisolid_exchange,
+            bound_fraction,
+            semisolid_fraction,
         )
         if three
         else None
@@ -167,9 +197,7 @@ def simulate_packed(
         bound = bound + _at_order_zero(bound, bound_fraction)
         if three:
             semisolid = semisolid + _at_order_zero(semisolid, semisolid_fraction)
-        generator = _exchange_generator(
-            t1, t1_bound, exchange_rate, bound_fraction
-        )
+        generator = _exchange_generator(t1, t1_bound, exchange_rate, bound_fraction)
     signals = []
     slice_index = (
         torch.arange(atom_count, device=t1.device) % locations
@@ -195,7 +223,9 @@ def simulate_packed(
         if across_generator is None:
             fplus = fplus * off[:, None] * transverse_damping * transverse_phase
             fminus = (
-                fminus * off.conj()[:, None] * transverse_damping
+                fminus
+                * off.conj()[:, None]
+                * transverse_damping
                 * transverse_phase.conj()
             )
         else:
@@ -205,7 +235,8 @@ def simulate_packed(
             across = torch.matrix_exp(across_generator * dt) * wout[:, None, None]
             shared = (
                 torch.exp(-2j * torch.pi * b0 * dt)[:, None]
-                * transverse_damping * transverse_phase
+                * transverse_damping
+                * transverse_phase
             )
             free_plus = (
                 across[:, 0, 0, None] * fplus + across[:, 0, 1, None] * bound_plus
@@ -266,12 +297,10 @@ def simulate_packed(
                 generator, bound_fraction, t1, t1_bound, dt, wout
             )
             free_row = (
-                operator[:, 0, 0, None] * longitudinal
-                + operator[:, 0, 1, None] * bound
+                operator[:, 0, 0, None] * longitudinal + operator[:, 0, 1, None] * bound
             )
             bound_row = (
-                operator[:, 1, 0, None] * longitudinal
-                + operator[:, 1, 1, None] * bound
+                operator[:, 1, 0, None] * longitudinal + operator[:, 1, 1, None] * bound
             )
             longitudinal = free_row * carried + _at_order_zero(
                 longitudinal, restored[:, 0]
@@ -300,7 +329,8 @@ def simulate_packed(
                     # it reads the bare flip the transmit field gives the
                     # voxel rather than the slice-shaped rotation below.
                     absorbed = torch.exp(
-                        saturation[event] * alpha.square()
+                        saturation[event]
+                        * alpha.square()
                         * lineshape.at(rf_frequency[event] - b0)
                     )
                     if three:

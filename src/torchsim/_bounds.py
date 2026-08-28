@@ -48,9 +48,7 @@ import torch
 EDGE = 1e-6
 
 
-def bound_of(
-    bounds: Mapping[str, Any], name: str
-) -> tuple[float | None, float | None]:
+def bound_of(bounds: Mapping[str, Any], name: str) -> tuple[float | None, float | None]:
     """The pair for one property, absent meaning unbounded either way.
 
     Parameters

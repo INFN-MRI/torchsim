@@ -111,9 +111,7 @@ class SequenceDesign(torch.nn.Module):
     belongs in :class:`Bounded`, where no iterate can cross it.
     """
 
-    def __init__(
-        self, cost: Callable[..., torch.Tensor], **parameters: Any
-    ) -> None:
+    def __init__(self, cost: Callable[..., torch.Tensor], **parameters: Any) -> None:
         super().__init__()
         if not parameters:
             raise ValueError("a design needs at least one parameter")
@@ -122,9 +120,7 @@ class SequenceDesign(torch.nn.Module):
         raw: dict[str, torch.nn.Parameter] = {}
         for name, entry in parameters.items():
             value = as_torch(entry.initial if isinstance(entry, Bounded) else entry)
-            limits = (
-                (entry.lower, entry.upper) if isinstance(entry, Bounded) else None
-            )
+            limits = (entry.lower, entry.upper) if isinstance(entry, Bounded) else None
             self._limits[name] = limits
             raw[name] = torch.nn.Parameter(_unconstrained(value, limits))
         self.raw = torch.nn.ParameterDict(raw)
@@ -148,9 +144,7 @@ class SequenceDesign(torch.nn.Module):
         *,
         iterations: int = 200,
         learning_rate: float = 0.05,
-        optimizer_factory: Callable[
-            [list[torch.nn.Parameter]], torch.optim.Optimizer
-        ]
+        optimizer_factory: Callable[[list[torch.nn.Parameter]], torch.optim.Optimizer]
         | None = None,
         callback: Callable[[int, dict[str, torch.Tensor], torch.Tensor], bool | None]
         | None = None,

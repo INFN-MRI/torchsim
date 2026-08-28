@@ -10,8 +10,8 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..sequence._array import as_torch, matched
 from ..model import REFOCUSED, Simulator, SpinPhysics
+from ..sequence._array import as_torch, matched
 
 
 class FSESimulator(Simulator):
@@ -67,15 +67,22 @@ class FSESimulator(Simulator):
         # gave it, and the echo times are what the whole train is placed by.
         spacing_s = ESP * 1e-3
 
-        parts = [(0.0, self.operators.excitation(
-            torch.pi / 180.0 * exc_flip, torch.pi / 180.0 * exc_phase
-        ))]
+        parts = [
+            (
+                0.0,
+                self.operators.excitation(
+                    torch.pi / 180.0 * exc_flip, torch.pi / 180.0 * exc_phase
+                ),
+            )
+        ]
         for index in range(angles.shape[-1]):
             echo_s = (index + 1) * spacing_s
-            parts.append((
-                echo_s - 0.5 * spacing_s,
-                self.operators.refocusing(angles[..., index], turns[..., index]),
-            ))
+            parts.append(
+                (
+                    echo_s - 0.5 * spacing_s,
+                    self.operators.refocusing(angles[..., index], turns[..., index]),
+                )
+            )
             parts.append((echo_s, self.operators.readout(turns[..., index])))
         return parts
 
@@ -84,9 +91,7 @@ class FSESimulator(Simulator):
         del played_s
         return protocol.get("TR", 1e6) * 1e-3
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Simulate one train, then let it recover for what is left of the TR."""
         played = self.played(**sequence)
         signal = super().evaluate(properties, **sequence)

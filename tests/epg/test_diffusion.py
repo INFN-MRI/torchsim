@@ -1,9 +1,9 @@
 """Test diffusion damping operators."""
 
-import pytest
-
-import torch
 from types import SimpleNamespace
+
+import pytest
+import torch
 
 from utils import epg
 
@@ -42,12 +42,12 @@ def test_diffusion_op():
     D1_zero, D2_zero = epg.diffusion_op(
         D_zero, time, nstates, total_dephasing, voxelsize
     )
-    assert torch.allclose(
-        D1_zero, torch.ones_like(D1_zero)
-    ), "D1 should be all ones for D=0"
-    assert torch.allclose(
-        D2_zero, torch.ones_like(D2_zero)
-    ), "D2 should be all ones for D=0"
+    assert torch.allclose(D1_zero, torch.ones_like(D1_zero)), (
+        "D1 should be all ones for D=0"
+    )
+    assert torch.allclose(D2_zero, torch.ones_like(D2_zero)), (
+        "D2 should be all ones for D=0"
+    )
 
 
 # Test for diffusion

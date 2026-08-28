@@ -5,7 +5,6 @@ __all__ = ["get_signal", "get_demodulated_signal"]
 from types import SimpleNamespace
 
 import numpy.typing as npt
-
 import torch
 
 

@@ -20,9 +20,7 @@ SPACING_MS = 50.0
 
 def unified(T1_ms):
     """The MP2RAGE ratio, which is what a T1 map is read from."""
-    blocks = MP2RAGESimulator(**PROTOCOL).simulate(
-        T1=T1_ms, inv_efficiency=0.96
-    )
+    blocks = MP2RAGESimulator(**PROTOCOL).simulate(T1=T1_ms, inv_efficiency=0.96)
     return (blocks[:, 0] * blocks[:, 1]) / blocks.square().sum(-1)
 
 
@@ -78,7 +76,9 @@ def test_keeping_the_whole_curve_is_a_choice() -> None:
     """``monotonic=False`` keeps every sample, turning points and all."""
     T1 = torch.arange(50.0, 5000.0, SPACING_MS)
 
-    table = LookupTable(monotonic=False).fit(signals=unified(T1)[:, None], parameters=T1[:, None])
+    table = LookupTable(monotonic=False).fit(
+        signals=unified(T1)[:, None], parameters=T1[:, None]
+    )
 
     assert table.points == len(T1)
 
@@ -166,7 +166,7 @@ def test_an_unfitted_table_says_so() -> None:
     with pytest.raises(RuntimeError, match="no curve"):
         table(torch.zeros(4, 1))
     with pytest.raises(RuntimeError, match="no curve"):
-        table.span
+        _ = table.span
 
 
 def test_the_shape_of_the_volume_survives(mp2rage_table) -> None:

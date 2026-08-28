@@ -3,12 +3,13 @@
 TorchSim is a pure Pytorch-based MR simulator, including analytical and EPG model.
 
 [![Coverage](https://codecov.io/gh/INFN-MRI/torchsim/graph/badge.svg?token=qtB53xANwI)](https://codecov.io/gh/INFN-MRI/torchsim)
-[![CI/CD](https://github.com/INFN-MRI/torchsim/workflows/CI-CD/badge.svg)](https://github.com/INFN-MRI/torchsim)
+[![Tests](https://github.com/INFN-MRI/torchsim/actions/workflows/test.yml/badge.svg)](https://github.com/INFN-MRI/torchsim/actions/workflows/test.yml)
+[![Lint](https://github.com/INFN-MRI/torchsim/actions/workflows/lint.yml/badge.svg)](https://github.com/INFN-MRI/torchsim/actions/workflows/lint.yml)
 [![License](https://img.shields.io/github/license/INFN-MRI/torchsim)](https://github.com/INFN-MRI/torchsim/blob/main/LICENSE.txt)
 [![Codefactor](https://www.codefactor.io/repository/github/INFN-MRI/torchsim/badge)](https://www.codefactor.io/repository/github/INFN-MRI/torchsim)
-[![Sphinx](https://img.shields.io/badge/docs-Sphinx-blue)](https://infn-mri.github.io/torchsim)
+[![Documentation](https://readthedocs.org/projects/torchsim/badge/?version=latest)](https://torchsim.readthedocs.io/en/latest/)
 [![PyPi](https://img.shields.io/pypi/v/torchsim)](https://pypi.org/project/torchsim)
-![Black](https://img.shields.io/badge/style-black-black)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![PythonVersion](https://img.shields.io/badge/Python-%3E=3.10-blue?logo=python&logoColor=white)](https://python.org)
 
 ## Features
@@ -53,8 +54,13 @@ If you are interested in improving this project, install TorchSim in editable mo
 ```bash
 git clone git@github.com:INFN-MRI/torchsim
 cd torchsim
-pip install -e .[dev]
+pip install -e ".[dev]"
+pre-commit install
 ```
+
+The install compiles the two C++ kernels, so it needs a C++17 compiler; CMake
+and Ninja arrive as build-time wheels. `pre-commit` runs the formatter and the
+linter -- both `ruff` -- on every commit, which is exactly what CI checks.
 
 ## Related projects
 

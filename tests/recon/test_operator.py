@@ -16,9 +16,7 @@ BOUND = {"T2": (10.0, 300.0)}
 @pytest.fixture
 def operator():
     """A multi-echo decay over one bounded unknown, with an amplitude."""
-    return ModelOperator(
-        MultiEchoSimulator(TE=TE_MS), "T2", bounds=BOUND
-    )
+    return ModelOperator(MultiEchoSimulator(TE=TE_MS), "T2", bounds=BOUND)
 
 
 @pytest.fixture
@@ -38,9 +36,10 @@ def test_the_operator_is_the_model(operator, point) -> None:
 
     recorded = operator.A(point)
 
-    expected = torch.as_tensor(
-        operator.acquisition.simulate(T2=maps["T2"])
-    ).to(recorded.dtype) * maps["amplitude"][:, None]
+    expected = (
+        torch.as_tensor(operator.acquisition.simulate(T2=maps["T2"])).to(recorded.dtype)
+        * maps["amplitude"][:, None]
+    )
     torch.testing.assert_close(recorded, expected)
 
 
@@ -88,9 +87,7 @@ def test_a_starting_point_on_a_bound_is_refused(operator) -> None:
 # %% the derivatives
 
 
-def test_the_directional_derivative_is_the_jacobian_contracted(
-    operator, point
-) -> None:
+def test_the_directional_derivative_is_the_jacobian_contracted(operator, point) -> None:
     """One forward pass gives what the built blocks give, at any width."""
     generator = torch.Generator().manual_seed(1)
     direction = torch.randn(point.shape, generator=generator)
@@ -106,9 +103,7 @@ def test_the_directional_derivative_is_the_jacobian_contracted(
     )
 
 
-def test_the_directional_derivative_is_the_slope_of_the_model(
-    operator, point
-) -> None:
+def test_the_directional_derivative_is_the_slope_of_the_model(operator, point) -> None:
     """Against a central difference, which knows nothing about our chain rule."""
     generator = torch.Generator().manual_seed(2)
     direction = torch.randn(point.shape, generator=generator)
@@ -151,9 +146,9 @@ def test_the_amplitude_costs_no_pass(operator, point) -> None:
     blocks = operator.jacobian(point)
     maps = operator.split(point)
 
-    signal = torch.as_tensor(
-        operator.acquisition.simulate(T2=maps["T2"])
-    ).to(blocks.dtype)
+    signal = torch.as_tensor(operator.acquisition.simulate(T2=maps["T2"])).to(
+        blocks.dtype
+    )
 
     assert bool((blocks[:, -2] == signal).all())
     assert bool((blocks[:, -1] == 1j * signal).all())
@@ -174,9 +169,7 @@ def test_a_state_machine_model_differentiates_both_ways() -> None:
 
     forward = operator.A_jvp(x, direction)
 
-    cotangent = torch.randn(
-        forward.shape, generator=generator, dtype=torch.complex64
-    )
+    cotangent = torch.randn(forward.shape, generator=generator, dtype=torch.complex64)
     backward = operator.A_vjp(x, cotangent)
     torch.testing.assert_close(
         (forward.conj() * cotangent).sum().real,
@@ -226,9 +219,7 @@ def test_a_scale_sets_the_size_of_a_step_in_an_unbounded_parameter() -> None:
 def test_settings_that_make_no_sense(settings, complaint) -> None:
     """Caught where they are written, not at the first iterate."""
     with pytest.raises(ValueError, match=complaint):
-        ModelOperator(
-            MultiEchoSimulator(TE=TE_MS), "T2", **settings
-        )
+        ModelOperator(MultiEchoSimulator(TE=TE_MS), "T2", **settings)
 
 
 def test_an_operator_needs_something_to_solve_for() -> None:
@@ -245,9 +236,7 @@ def test_a_subspace_shortens_what_comes_out() -> None:
     acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 32))
     grid = torch.linspace(20.0, 300.0, 64)
     subspace = Subspace.fit(torch.as_tensor(acquisition.simulate(T2=grid)), 4)
-    operator = ModelOperator(
-        acquisition, "T2", bounds=BOUND, subspace=subspace
-    )
+    operator = ModelOperator(acquisition, "T2", bounds=BOUND, subspace=subspace)
     x = operator.initial((6,), T2=80.0)
 
     coefficients = operator.A(x)

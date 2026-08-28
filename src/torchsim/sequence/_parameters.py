@@ -170,9 +170,7 @@ FLOAT_COUNT = len(FLOAT_INPUTS)
 # differentiable adjoint sees it at this position.
 SEED_INPUT = PACKED_COUNT
 
-TISSUE_NAMES: tuple[str, ...] = tuple(
-    parameter.name for parameter in TISSUE_PARAMETERS
-)
+TISSUE_NAMES: tuple[str, ...] = tuple(parameter.name for parameter in TISSUE_PARAMETERS)
 
 # Which tissue buffers hold a row per shim.
 TRANSMIT_INPUTS: tuple[int, ...] = tuple(
@@ -310,7 +308,12 @@ def feature_flags(features: Any, geometry: Geometry) -> dict[str, bool]:
 # The order is the C++ ABI: ``feature_mask`` packs these bits and
 # ``_epg_cpu.cpp`` unpacks them by the same names, so the two move together.
 FEATURE_BITS: tuple[str, ...] = (
-    "off_axis", "moving", "diffusing", "transmit", "density", "inverting",
+    "off_axis",
+    "moving",
+    "diffusing",
+    "transmit",
+    "density",
+    "inverting",
 )
 
 
@@ -322,9 +325,7 @@ def feature_mask(features: Any, geometry: Geometry) -> int:
     the same choice the pool count already makes on each side.
     """
     flags = feature_flags(features, geometry)
-    return sum(
-        1 << bit for bit, name in enumerate(FEATURE_BITS) if flags[name]
-    )
+    return sum(1 << bit for bit, name in enumerate(FEATURE_BITS) if flags[name])
 
 
 def wants_bound_pool(bound_fraction: Any) -> bool:
@@ -339,9 +340,7 @@ def wants_bound_pool(bound_fraction: Any) -> bool:
 
 def wants_exchange_pool(pool_b_fraction: Any) -> bool:
     """Whether this fraction gives the chemically exchanging pool anything to do."""
-    return not at_identity(
-        TISSUE_PARAMETERS[POOL_B_FRACTION_INPUT], pool_b_fraction
-    )
+    return not at_identity(TISSUE_PARAMETERS[POOL_B_FRACTION_INPUT], pool_b_fraction)
 
 
 def tissue_gradient_rows(shims: int) -> tuple[int, ...]:
@@ -350,9 +349,7 @@ def tissue_gradient_rows(shims: int) -> tuple[int, ...]:
     A pulse reaches only the shim it drives, so the transmit pair takes a row
     per shim; every other property belongs to the voxel alone and takes one.
     """
-    return tuple(
-        shims if parameter.transmit else 1 for parameter in TISSUE_PARAMETERS
-    )
+    return tuple(shims if parameter.transmit else 1 for parameter in TISSUE_PARAMETERS)
 
 
 def tissue_gradient_bases(shims: int) -> tuple[int, ...]:
@@ -382,9 +379,7 @@ def tissue_gradient_height(shims: int) -> int:
 NARROW_SPREAD = 4.0
 
 
-def narrow_three_pool(
-    tissue: tuple[Any, ...], duration: Any, *, pools: int
-) -> bool:
+def narrow_three_pool(tissue: tuple[Any, ...], duration: Any, *, pools: int) -> bool:
     """Whether every interval keeps the three pools' eigenvalues close together.
 
     The generator is proportional to the interval, so the spread is too: one

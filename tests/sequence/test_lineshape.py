@@ -28,9 +28,9 @@ def _integral(offset_hz, bound_t2_s: float = BOUND_T2_S, quadrature: int = 20000
     open_pole = np.abs(denominator) > 1e-12
     guarded = np.where(open_pole, denominator, 1.0)
     amplitude = np.sqrt(2.0 / np.pi) * bound_t2_s / np.abs(guarded)
-    exponent = -2.0 * (
-        2.0 * np.pi * offset[:, None] * bound_t2_s / guarded[None, :]
-    ) ** 2
+    exponent = (
+        -2.0 * (2.0 * np.pi * offset[:, None] * bound_t2_s / guarded[None, :]) ** 2
+    )
     integrand = np.where(open_pole[None, :], amplitude[None, :] * np.exp(exponent), 0.0)
     return spacing * integrand.sum(axis=-1)
 
@@ -108,9 +108,9 @@ def test_the_join_is_as_smooth_as_any_other_knot(table) -> None:
 
     across_join = abs(slope(edge + 0.5) - slope(edge - 0.5)) / abs(slope(edge - 0.5))
     ordinary = 40 * table.step
-    across_knot = abs(
-        slope(ordinary + 0.5) - slope(ordinary - 0.5)
-    ) / abs(slope(ordinary - 0.5))
+    across_knot = abs(slope(ordinary + 0.5) - slope(ordinary - 0.5)) / abs(
+        slope(ordinary - 0.5)
+    )
     assert across_join < 0.01
     assert across_join < 10.0 * max(across_knot, 1e-4)
 

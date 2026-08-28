@@ -1,7 +1,8 @@
 """Test relaxation operators."""
 
-import torch
 from types import SimpleNamespace
+
+import torch
 
 from utils import epg
 

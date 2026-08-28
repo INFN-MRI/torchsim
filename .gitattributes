@@ -1,0 +1,42 @@
+# Normalise line endings in the repository; check out native on Windows.
+* text=auto
+
+# Text, whatever the platform.
+*.py       text diff=python
+*.pyi      text diff=python
+*.cpp      text diff=cpp
+*.hpp      text diff=cpp
+*.md       text
+*.rst      text
+*.txt      text
+*.toml     text
+*.cfg      text
+*.yml      text
+*.yaml     text
+*.json     text
+*.ipynb    text
+CMakeLists.txt text
+*.cmake    text
+
+# Shell scripts must keep LF even when checked out on Windows, so a WSL or
+# Git Bash run of scripts/ does not fail on carriage returns.
+*.sh       text eol=lf
+
+# Binary, never diffed or line-ending converted.
+*.png      binary
+*.jpg      binary
+*.jpeg     binary
+*.gif      binary
+*.svg      binary
+*.pdf      binary
+*.npy      binary
+*.npz      binary
+*.so       binary
+*.pyd      binary
+*.dylib    binary
+*.dll      binary
+
+# What the repository's language bar reports: the package, not the pages that
+# describe it. Affects GitHub's statistics only, nothing that is built.
+docs/**        linguist-documentation
+examples/**    linguist-documentation

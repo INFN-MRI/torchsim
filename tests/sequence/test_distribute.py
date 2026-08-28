@@ -12,21 +12,20 @@ gradient reduction; it does not exercise a real transfer between two devices.
 
 import pytest
 import torch
+from test_cuda_parity import (  # noqa: E402
+    _real_case,
+    _seeds,
+    _spgr_case,
+    _worst_disagreement,
+)
 
+import torchsim.sequence._accelerators as accelerators
 from torchsim.sequence import distribute
 from torchsim.sequence._accelerators import (
     _run_packed,
     _run_packed_jvp,
     _run_packed_vjp_jvp,
     _shard_bounds,
-)
-import torchsim.sequence._accelerators as accelerators
-
-from test_cuda_parity import (  # noqa: E402
-    _real_case,
-    _seeds,
-    _spgr_case,
-    _worst_disagreement,
 )
 
 STATES = 10
@@ -56,9 +55,7 @@ def devices(monkeypatch):
         (17, 1, []),
     ],
 )
-def test_the_partition_covers_every_train_once(
-    devices, train_count, count, expected
-):
+def test_the_partition_covers_every_train_once(devices, train_count, count, expected):
     """More devices than trains must not produce empty spans."""
     devices(count)
     bounds = [(begin, end) for begin, end, _ in _shard_bounds(train_count)]
@@ -197,9 +194,7 @@ def test_a_sharded_first_order_adjoint_matches_the_whole_one(count):
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     events, prepared, outputs = _real_case(TRAINS, "cuda", atoms=ATOMS)
-    seed = torch.ones(
-        (TRAINS, ATOMS, outputs), dtype=torch.complex64, device="cuda"
-    )
+    seed = torch.ones((TRAINS, ATOMS, outputs), dtype=torch.complex64, device="cuda")
     arguments = dict(state_count=STATES, output_count=outputs, threads=1)
 
     expected = _run_packed_vjp(prepared, events, seed, **arguments)
@@ -223,9 +218,7 @@ def test_a_shard_reaches_the_first_order_kernel(monkeypatch):
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     events, prepared, outputs = _real_case(TRAINS, "cuda", atoms=ATOMS)
-    seed = torch.ones(
-        (TRAINS, ATOMS, outputs), dtype=torch.complex64, device="cuda"
-    )
+    seed = torch.ones((TRAINS, ATOMS, outputs), dtype=torch.complex64, device="cuda")
     reached = []
     original = _accelerators._run_packed_vjp_jvp
 
@@ -236,8 +229,12 @@ def test_a_shard_reaches_the_first_order_kernel(monkeypatch):
     monkeypatch.setattr(_accelerators, "_run_packed_vjp_jvp", record)
     with distribute(["cuda:0"] * 2):
         _run_packed_vjp(
-            prepared, events, seed, state_count=STATES,
-            output_count=outputs, threads=1,
+            prepared,
+            events,
+            seed,
+            state_count=STATES,
+            output_count=outputs,
+            threads=1,
         )
 
     assert not reached

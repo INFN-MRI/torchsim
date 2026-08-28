@@ -18,9 +18,9 @@ def fingerprints():
     grid = torch.cartesian_prod(
         torch.linspace(200.0, 3000.0, 60), torch.linspace(20.0, 300.0, 30)
     )
-    atoms = MRFSimulator(
-        TR=10.0, TI=20.0, T1=grid[:, 0], T2=grid[:, 1]
-    ).simulate(flip=flip)
+    atoms = MRFSimulator(TR=10.0, TI=20.0, T1=grid[:, 0], T2=grid[:, 1]).simulate(
+        flip=flip
+    )
     return atoms.reshape(grid.shape[0], -1), grid
 
 
@@ -30,9 +30,7 @@ def measured(fingerprints):
     atoms, _ = fingerprints
     generator = torch.Generator().manual_seed(7)
     picked = atoms[::37]
-    noise = torch.randn(
-        picked.shape, generator=generator, dtype=picked.dtype
-    )
+    noise = torch.randn(picked.shape, generator=generator, dtype=picked.dtype)
     return picked + 0.01 * float(atoms.abs().max()) * noise
 
 
@@ -98,9 +96,7 @@ def test_grouped_matching_finds_what_direct_matching_finds(
     agree = (direct == grouped).all(-1).float().mean()
     assert float(agree) > 0.8
     for column in range(grid.shape[-1]):
-        error = (
-            (grouped[:, column] - direct[:, column]) / direct[:, column]
-        ).abs()
+        error = ((grouped[:, column] - direct[:, column]) / direct[:, column]).abs()
         assert float(error.mean()) < 0.01
 
 
@@ -108,9 +104,7 @@ def test_most_of_the_dictionary_is_ruled_out(fingerprints, measured) -> None:
     """Pruning that kept every group would be a cost with no saving."""
     atoms, grid = fingerprints
     matcher = DictionaryMatcher(dictionary=atoms, parameters=grid, groups=24)
-    normalized = measured / torch.linalg.vector_norm(
-        measured, dim=-1, keepdim=True
-    )
+    normalized = measured / torch.linalg.vector_norm(measured, dim=-1, keepdim=True)
 
     survivors = matcher.grouping.survivors(normalized, matcher.prune)
 
@@ -120,9 +114,7 @@ def test_most_of_the_dictionary_is_ruled_out(fingerprints, measured) -> None:
 def test_a_wider_threshold_keeps_more_groups(fingerprints, measured) -> None:
     """The threshold is the accuracy-for-time knob, and it moves both ways."""
     atoms, grid = fingerprints
-    normalized = measured / torch.linalg.vector_norm(
-        measured, dim=-1, keepdim=True
-    )
+    normalized = measured / torch.linalg.vector_norm(measured, dim=-1, keepdim=True)
     grouping = DictionaryMatcher(dictionary=atoms, parameters=grid, groups=24).grouping
 
     tight = grouping.survivors(normalized, 0.0).sum(-1).float().mean()
@@ -236,13 +228,13 @@ def test_grouping_composes_with_a_temporal_subspace(fingerprints, measured) -> N
     projected = subspace.project(measured)
 
     direct = DictionaryMatcher(dictionary=compressed, parameters=grid)(projected)
-    grouped = DictionaryMatcher(dictionary=compressed, parameters=grid, groups=24)(projected)
+    grouped = DictionaryMatcher(dictionary=compressed, parameters=grid, groups=24)(
+        projected
+    )
 
     assert compressed.shape == (atoms.shape[0], 8)
     for column in range(grid.shape[-1]):
-        error = (
-            (grouped[:, column] - direct[:, column]) / direct[:, column]
-        ).abs()
+        error = ((grouped[:, column] - direct[:, column]) / direct[:, column]).abs()
         assert float(error.mean()) < 0.01
 
 
@@ -280,9 +272,9 @@ def test_a_mapping_with_a_rank_reaches_a_grouped_matcher(fingerprints) -> None:
     )
 
     truth = grid[::53]
-    volume = MRFSimulator(
-        TR=10.0, TI=20.0, T1=truth[:, 0], T2=truth[:, 1]
-    ).simulate(flip=flip)
+    volume = MRFSimulator(TR=10.0, TI=20.0, T1=truth[:, 0], T2=truth[:, 1]).simulate(
+        flip=flip
+    )
     maps = mapping(volume.reshape(truth.shape[0], -1))
 
     assert mapping.subspace.rank == 8

@@ -54,20 +54,20 @@ from typing import Any
 import torch
 
 from ..sequence import (
-    EpgEngine,
-    Operator,
-    RfDefinition,
-    SequenceDescription,
-    TissueProperties,
     Delay,
+    EpgEngine,
     Excitation,
     FSEReadout,
     Inversion,
+    Operator,
     Readout,
     Refocusing,
+    RfDefinition,
+    Saturation,
+    SequenceDescription,
     SPGRReadout,
     SSFPFidReadout,
-    Saturation,
+    TissueProperties,
     bSSFPReadout,
     compose,
     execution,
@@ -438,9 +438,7 @@ class Simulator(SignalModel):
         for them.
         """
         given = {
-            name: value
-            for name, value in sequence.items()
-            if name not in RUN_SETTINGS
+            name: value for name, value in sequence.items() if name not in RUN_SETTINGS
         }
         return {**self.protocol, **read(given)}
 
@@ -477,9 +475,7 @@ class Simulator(SignalModel):
 
     # -- what a signal model owes -------------------------------------------
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Run one simulation of the described protocol.
 
         ``nstates``, ``repetitions``, ``record``, ``device`` and ``execution``
@@ -505,9 +501,11 @@ class Simulator(SignalModel):
         )
         block = nullcontext() if target is None else execution(target)
         with block:
-            return EpgEngine().simulate(
-                described, tissue, nstates=states, events=events, **settings
-            ).signal
+            return (
+                EpgEngine()
+                .simulate(described, tissue, nstates=states, events=events, **settings)
+                .signal
+            )
 
 
 class _Described(Simulator):

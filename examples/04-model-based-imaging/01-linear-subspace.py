@@ -227,7 +227,9 @@ def resampled(values):
 T2_true = resampled(np.where(occupancy > 0.5, fractions @ tissue_T2 / share, 0.0))
 M0_true = resampled(np.where(occupancy > 0.5, fractions @ tissue_PD, 0.0))
 brain = resampled((occupancy > 0.5).astype(np.float32)) > 0.5
-T2_true = torch.where(brain, T2_true.clamp(20.0, 400.0), torch.tensor(20.0, device=device))
+T2_true = torch.where(
+    brain, T2_true.clamp(20.0, 400.0), torch.tensor(20.0, device=device)
+)
 
 # sphinx_gallery_end_ignore
 
@@ -244,13 +246,16 @@ T2_true = torch.where(brain, T2_true.clamp(20.0, 400.0), torch.tensor(20.0, devi
 TE = torch.linspace(10.0, 150.0, ECHOES)
 acquisition = MultiEchoSimulator(TE=TE)
 
-images = torch.as_tensor(acquisition.to(device).simulate(T2=T2_true)).to(
-    torch.complex64
-) * M0_true.to(torch.complex64)[..., None]
+images = (
+    torch.as_tensor(acquisition.to(device).simulate(T2=T2_true)).to(torch.complex64)
+    * M0_true.to(torch.complex64)[..., None]
+)
 
-trajectory = initialize_2D_radial(
-    SPOKES * ECHOES, SAMPLES, tilt="golden"
-).astype(np.float32).reshape(ECHOES, SPOKES * SAMPLES, 2)
+trajectory = (
+    initialize_2D_radial(SPOKES * ECHOES, SAMPLES, tilt="golden")
+    .astype(np.float32)
+    .reshape(ECHOES, SPOKES * SAMPLES, 2)
+)
 
 build = mrinufft.get_operator(backend)
 per_echo = [
@@ -317,7 +322,9 @@ for echo in (0, ECHOES // 2, ECHOES - 1):
     arm = trajectory[echo].reshape(SPOKES, SAMPLES, 2)
     for spoke in range(SPOKES):
         axes[2].plot(
-            arm[spoke, :, 0], arm[spoke, :, 1], lw=0.4,
+            arm[spoke, :, 0],
+            arm[spoke, :, 1],
+            lw=0.4,
             color=plt.cm.plasma(echo / (ECHOES - 1)),
         )
 axes[2].set(
@@ -348,9 +355,7 @@ bar.ax.set_visible(False)
 # read off the basis rather than assumed.
 #
 grid = torch.linspace(20.0, 400.0, 500)
-mapping = DictionaryMatcher(acquisition).fit(
-    T2=grid, M0=1.0, rank=RANK, seed=0
-)
+mapping = DictionaryMatcher(acquisition).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
 
 # sphinx_gallery_start_ignore
 print(f"rank {RANK} of {ECHOES} contrasts keeps {mapping.subspace.retained:.6f}")

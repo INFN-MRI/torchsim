@@ -52,9 +52,7 @@ class InversionRecoverySimulator(Simulator):
         },
     )
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
@@ -85,14 +83,8 @@ class InversionRecoverySimulator(Simulator):
 
         # The excitation leaves nothing longitudinal behind, so what the next
         # inversion finds is what recovers in the time left after the readout.
-        standing = (
-            1.0
-            if TR is None
-            else 1.0 - torch.exp(-rate * (TR - TI) * 1e-3)
-        )
-        recovered = 1.0 - (1.0 + efficiency * standing) * torch.exp(
-            -rate * TI * 1e-3
-        )
+        standing = 1.0 if TR is None else 1.0 - torch.exp(-rate * (TR - TI) * 1e-3)
+        recovered = 1.0 - (1.0 + efficiency * standing) * torch.exp(-rate * TI * 1e-3)
         return held.get("M0", 1.0) * recovered + held.get("offset", 0.0)
 
 
@@ -123,9 +115,7 @@ class MultiEchoSimulator(Simulator):
         },
     )
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
@@ -178,9 +168,7 @@ class DoubleAngleSimulator(Simulator):
         },
     )
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Evaluate the closed form, no state machine and no description."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 

@@ -10,8 +10,8 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..sequence._array import as_torch, matched
 from ..model import UNBALANCED, Simulator, SpinPhysics
+from ..sequence._array import as_torch, matched
 
 
 class MRFSimulator(Simulator):
@@ -76,9 +76,7 @@ class MRFSimulator(Simulator):
             )
         return parts
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Return the last playing of the train, which is the one measured."""
         signal = super().evaluate(properties, **sequence)
         played = self.played(**sequence)

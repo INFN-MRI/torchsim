@@ -12,11 +12,13 @@ import math
 import pytest
 import torch
 
-from torchsim.estimators import PERK
 import torchsim.estimators._perk as _perk
+from torchsim.estimators import PERK
 
 
-def assert_agrees(got: torch.Tensor, want: torch.Tensor, tolerance: float = 5e-6) -> None:
+def assert_agrees(
+    got: torch.Tensor, want: torch.Tensor, tolerance: float = 5e-6
+) -> None:
     """Assert two float32 paths computed the same thing.
 
     Against the scale of the answer, not entry by entry: a gradient has
@@ -31,9 +33,7 @@ def assert_agrees(got: torch.Tensor, want: torch.Tensor, tolerance: float = 5e-6
     )
 
 
-CUDA = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA is unavailable"
-)
+CUDA = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 DEVICES = ["cpu", pytest.param("cuda", marks=CUDA)]
 
 
@@ -48,8 +48,9 @@ def composed(monkeypatch):
     return only_composed
 
 
-def _fitted(device: str, *, contrasts: int = 24, complex_signals: bool = False,
-            **settings) -> tuple[PERK, torch.Tensor]:
+def _fitted(
+    device: str, *, contrasts: int = 24, complex_signals: bool = False, **settings
+) -> tuple[PERK, torch.Tensor]:
     generator = torch.Generator(device=device).manual_seed(11)
     signals = torch.randn(3000, contrasts, generator=generator, device=device)
     if complex_signals:
@@ -79,9 +80,7 @@ def test_the_fused_answer_is_the_composed_answer(
     device, settings, complex_signals, composed
 ) -> None:
     """Every combination of how a signal is turned into features."""
-    estimator, measured = _fitted(
-        device, complex_signals=complex_signals, **settings
-    )
+    estimator, measured = _fitted(device, complex_signals=complex_signals, **settings)
     fused = estimator(measured)
 
     composed()
@@ -149,9 +148,7 @@ def test_a_gradient_wanted_for_a_fitted_tensor_falls_back(device, monkeypatch) -
     estimator, measured = _fitted(device)
     estimator.weight.requires_grad_(True)
     backend = _perk._TRITON if device == "cuda" else _perk._NATIVE
-    monkeypatch.setattr(
-        backend, "regress", lambda *args: pytest.fail("the kernel ran")
-    )
+    monkeypatch.setattr(backend, "regress", lambda *args: pytest.fail("the kernel ran"))
 
     values = estimator(measured)
 
@@ -178,8 +175,10 @@ def test_the_polynomial_cosine_is_a_cosine() -> None:
     angles = torch.linspace(-20.0, 20.0, 200_001, dtype=torch.float32)[:, None]
 
     error = (
-        _through_the_polynomial(angles) - math.sqrt(2.0) * torch.cos(angles)
-    ).abs().max()
+        (_through_the_polynomial(angles) - math.sqrt(2.0) * torch.cos(angles))
+        .abs()
+        .max()
+    )
 
     assert error < 1e-6
 
@@ -192,8 +191,10 @@ def test_a_far_larger_angle_degrades_rather_than_breaks() -> None:
     angles = torch.linspace(-200.0, 200.0, 200_001, dtype=torch.float32)[:, None]
 
     error = (
-        _through_the_polynomial(angles) - math.sqrt(2.0) * torch.cos(angles)
-    ).abs().max()
+        (_through_the_polynomial(angles) - math.sqrt(2.0) * torch.cos(angles))
+        .abs()
+        .max()
+    )
 
     assert error < 1e-4
 

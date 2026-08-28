@@ -1,9 +1,10 @@
-name: mrtwin
+name: torchsim
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
-  - pip>=19.1.1
-  - jupyter>=1.0.0
+  - python=3.12
+  - pip
   - pip:
-      - mrtwin
+      # The gallery notebooks import the phantom, coil, Fourier-encoding and
+      # solver packages while they run, which is the ``examples`` extra.
+      - torchsim[examples]

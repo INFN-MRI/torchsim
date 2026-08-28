@@ -42,8 +42,8 @@ def flow_op(
     dk = total_dephasing / voxelsize
 
     # calculate dephasing order
-    l = torch.arange(nstates, dtype=torch.float32, device=v.device)[:, None, None]
-    k0 = dk * l
+    order = torch.arange(nstates, dtype=torch.float32, device=v.device)[:, None, None]
+    k0 = dk * order
 
     # actual operator calculation
     J1 = torch.exp(-1j * k0 * v * time)

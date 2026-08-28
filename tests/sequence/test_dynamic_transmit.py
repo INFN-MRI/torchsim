@@ -60,7 +60,7 @@ def _stepwise(drive, turn_z):
     pauli_z = torch.tensor([[1.0, 0.0], [0.0, -1.0]], dtype=torch.complex128)
     net = torch.eye(2, dtype=torch.complex128)
     turns = repeat(turn_z) if isinstance(turn_z, float) else iter(turn_z)
-    for sample, turn in zip(drive, turns):
+    for sample, turn in zip(drive, turns, strict=False):
         field = (
             complex(sample).real * pauli_x
             + complex(sample).imag * pauli_y
@@ -90,9 +90,7 @@ def test_weights_that_do_not_vary_reproduce_the_static_table():
         bins=512,
         rf_raster_time_s=RASTER,
     )
-    expected = table.at(
-        torch.zeros(3, dtype=torch.int64), scaling * flip
-    )
+    expected = table.at(torch.zeros(3, dtype=torch.int64), scaling * flip)
 
     measured = dynamic_pair(
         definition,
@@ -272,9 +270,9 @@ def test_the_pair_differentiates_back_to_the_array(name: str) -> None:
     ahead[index] = ahead[index] + step
     behind = probe.clone()
     behind[index] = behind[index] - step
-    difference = float(
-        (reading(**{name: ahead}) - reading(**{name: behind})).real
-    ) / (2.0 * step)
+    difference = float((reading(**{name: ahead}) - reading(**{name: behind})).real) / (
+        2.0 * step
+    )
 
     assert abs(difference) > 1e-9
     assert abs(float(gradient[index].real) - difference) / abs(difference) < 1e-4
@@ -304,7 +302,7 @@ def _train():
     definition = _pulse(samples=96)
     flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     packed = _pack_events(
-                fse_description(
+        fse_description(
             flips,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -316,8 +314,14 @@ def _train():
         rf_raster_time_s=RASTER,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     scaling = torch.linspace(0.7, 1.3, VOXELS, dtype=torch.float64)
@@ -349,7 +353,6 @@ def _train():
         index=torch.arange(count, dtype=torch.int32),
     )
     return definition, prepared, events, pairs
-
 
 
 def test_the_reference_reads_a_dynamic_pair_where_it_reads_a_table():
@@ -393,9 +396,7 @@ def test_the_host_kernel_reads_the_pair_the_reference_does():
     expected = simulate_packed(
         prepared, events, state_count=16, output_count=ECHOES, dynamic=pairs
     )
-    measured = _run_packed(
-        prepared, events, 16, ECHOES, 1, dynamic=pairs
-    )
+    measured = _run_packed(prepared, events, 16, ECHOES, 1, dynamic=pairs)
 
     assert float(expected.abs().max()) > 0.0
     worst = float((expected - measured).abs().max() / expected.abs().max())
@@ -422,7 +423,10 @@ def test_the_host_kernel_still_reads_a_table_where_one_is_given():
     )
 
     expected = simulate_packed(
-        prepared, events, state_count=16, output_count=ECHOES,
+        prepared,
+        events,
+        state_count=16,
+        output_count=ECHOES,
         profile=table.tables[0],
     )
     measured = _run_packed(prepared, events, 16, ECHOES, 1, profile=table)
@@ -455,8 +459,16 @@ def test_the_host_forward_mode_follows_a_direction_along_the_pair():
     )
 
     measured = _run_packed_jvp(
-        prepared, events, still, still_events, 16, ECHOES, 1, -1,
-        dynamic=pairs, dynamic_direction=direction,
+        prepared,
+        events,
+        still,
+        still_events,
+        16,
+        ECHOES,
+        1,
+        -1,
+        dynamic=pairs,
+        dynamic_direction=direction,
     )
 
     step = 1e-2
@@ -493,8 +505,16 @@ def test_a_direction_along_nothing_moves_nothing():
     quiet = torch.zeros(pairs.a.shape + (4,), dtype=torch.float32)
 
     measured = _run_packed_jvp(
-        prepared, events, still, still_events, 16, ECHOES, 1, -1,
-        dynamic=pairs, dynamic_direction=quiet,
+        prepared,
+        events,
+        still,
+        still_events,
+        16,
+        ECHOES,
+        1,
+        -1,
+        dynamic=pairs,
+        dynamic_direction=quiet,
     )
 
     assert float(measured.abs().max()) == 0.0
@@ -520,8 +540,13 @@ def test_the_host_adjoint_returns_the_cotangent_on_the_pair():
     )
 
     gradient = _run_packed_vjp(
-        prepared, events, seed, state_count=16, output_count=ECHOES,
-        threads=1, dynamic=pairs,
+        prepared,
+        events,
+        seed,
+        state_count=16,
+        output_count=ECHOES,
+        threads=1,
+        dynamic=pairs,
     )[-1]
 
     assert gradient.shape == pairs.a.shape + (4,)
@@ -578,7 +603,8 @@ def test_the_second_order_pass_returns_the_adjoint_given_no_direction():
     by different code.
     """
     from torchsim.sequence._accelerators import (
-        _run_packed_vjp, _run_packed_vjp_jvp,
+        _run_packed_vjp,
+        _run_packed_vjp_jvp,
     )
 
     _, prepared, events, pairs = _train()
@@ -594,15 +620,27 @@ def test_the_second_order_pass_returns_the_adjoint_given_no_direction():
     quiet = torch.zeros(pairs.a.shape + (4,), dtype=torch.float32)
 
     first = _run_packed_vjp(
-        prepared, events, seed, state_count=16, output_count=ECHOES,
-        threads=1, dynamic=pairs,
+        prepared,
+        events,
+        seed,
+        state_count=16,
+        output_count=ECHOES,
+        threads=1,
+        dynamic=pairs,
     )
     # A direction of zero and no direction at all are different arguments:
     # one is a buffer of zeros, the other a null the kernels must not read.
     for direction in (quiet, None):
         _, second = _run_packed_vjp_jvp(
-            prepared, events, still, seed, state_count=16, output_count=ECHOES,
-            threads=1, dynamic=pairs, dynamic_direction=direction,
+            prepared,
+            events,
+            still,
+            seed,
+            state_count=16,
+            output_count=ECHOES,
+            threads=1,
+            dynamic=pairs,
+            dynamic_direction=direction,
         )
 
         compared = 0
@@ -621,7 +659,8 @@ def test_the_second_order_pass_differentiates_the_pair_gradient():
     gradient's own derivative is.
     """
     from torchsim.sequence._accelerators import (
-        _run_packed_vjp, _run_packed_vjp_jvp,
+        _run_packed_vjp,
+        _run_packed_vjp_jvp,
     )
     from torchsim.sequence._transition import DynamicPairs
 
@@ -640,14 +679,26 @@ def test_the_second_order_pass_differentiates_the_pair_gradient():
     ).contiguous()
 
     curvature, _ = _run_packed_vjp_jvp(
-        prepared, events, still, seed, state_count=16, output_count=ECHOES,
-        threads=1, dynamic=pairs, dynamic_direction=direction,
+        prepared,
+        events,
+        still,
+        seed,
+        state_count=16,
+        output_count=ECHOES,
+        threads=1,
+        dynamic=pairs,
+        dynamic_direction=direction,
     )
 
     def adjoint(pair):
         return _run_packed_vjp(
-            prepared, events, seed, state_count=16, output_count=ECHOES,
-            threads=1, dynamic=pair,
+            prepared,
+            events,
+            seed,
+            state_count=16,
+            output_count=ECHOES,
+            threads=1,
+            dynamic=pair,
         )[-1]
 
     step = 3e-2
@@ -663,9 +714,7 @@ def test_the_second_order_pass_differentiates_the_pair_gradient():
     difference = (adjoint(moved(+1)) - adjoint(moved(-1))) / (2.0 * step)
 
     assert float(difference.abs().max()) > 0.0
-    worst = float(
-        (curvature[-1] - difference).abs().max() / difference.abs().max()
-    )
+    worst = float((curvature[-1] - difference).abs().max() / difference.abs().max())
     assert worst < 1e-3, worst
 
 
@@ -756,8 +805,15 @@ def test_the_cuda_second_order_agrees_at_every_width(state_count: int) -> None:
     ).contiguous()
 
     host = _run_packed_vjp_jvp(
-        prepared, events, tangents, seed, state_count, ECHOES, 1,
-        dynamic=pairs, dynamic_direction=direction,
+        prepared,
+        events,
+        tangents,
+        seed,
+        state_count,
+        ECHOES,
+        1,
+        dynamic=pairs,
+        dynamic_direction=direction,
     )
     card = _run_packed_vjp_jvp(
         tuple(value.cuda() for value in prepared),
@@ -802,8 +858,15 @@ def test_the_cuda_forward_mode_follows_the_direction_the_host_does():
     ).contiguous()
 
     host = _run_packed_jvp(
-        prepared, events, tissue, per_event, 16, ECHOES, 1,
-        dynamic=pairs, dynamic_direction=direction,
+        prepared,
+        events,
+        tissue,
+        per_event,
+        16,
+        ECHOES,
+        1,
+        dynamic=pairs,
+        dynamic_direction=direction,
     )
     card = _run_packed_jvp(
         tuple(value.cuda() for value in prepared),
@@ -845,7 +908,7 @@ def _real_subspace_train(trains: int = 1):
     if trains > 1:
         flips = flips[None, :] * torch.linspace(0.9, 1.1, trains)[:, None]
     packed = _pack_events(
-                fse_description(
+        fse_description(
             flips,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -857,8 +920,14 @@ def _real_subspace_train(trains: int = 1):
         rf_raster_time_s=RASTER,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     scaling = torch.linspace(0.7, 1.3, VOXELS, dtype=torch.float64)
@@ -911,7 +980,7 @@ def test_a_pair_survives_a_train_the_real_kernel_would_have_taken(monkeypatch):
     enough voxels is testing the machine. Forcing it to zero asks the question
     directly.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
 
     monkeypatch.setattr(
         _accelerators, "detection", lambda kind, device, state_count: 0.0
@@ -930,7 +999,7 @@ def test_the_lane_forward_leaves_a_pair_to_the_scalar_kernel(monkeypatch):
     """The lane kernel carries no rotation to read a pair into, so a run that
     would otherwise vectorize has to fall back rather than play a hard pulse.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
 
     monkeypatch.setenv("TORCHSIM_LANES", "1")
     prepared, events, pairs, output_count = _real_subspace_train(trains=4)
@@ -972,9 +1041,7 @@ def test_a_per_channel_envelope_drives_what_per_sample_weights_would():
     put in the weights.
     """
     definition = _per_channel(samples=64)
-    channels = torch.as_tensor(
-        definition.complex_envelope(), dtype=torch.complex128
-    )
+    channels = torch.as_tensor(definition.complex_envelope(), dtype=torch.complex128)
     sensitivities = torch.tensor([[0.8 + 0.2j, 0.5 - 0.3j]], dtype=torch.complex128)
 
     combined = definition.combined_envelope()
@@ -988,9 +1055,7 @@ def test_a_per_channel_envelope_drives_what_per_sample_weights_would():
         magnitude=RfShape(combined.size, np.ones(combined.size, dtype=np.float32)),
     )
 
-    own = dynamic_pair(
-        definition, sensitivities, flip=1.4, rf_raster_time_s=RASTER
-    )
+    own = dynamic_pair(definition, sensitivities, flip=1.4, rf_raster_time_s=RASTER)
     # The flat pulse normalizes by its own area, so scale the weights by the
     # area the per-channel one is read against to drive the same flip.
     weighted = dynamic_pair(
@@ -1116,9 +1181,7 @@ def test_a_pulse_reaches_its_rotation_one_way_or_the_other():
     )
 
     with pytest.raises(ValueError, match="not through both"):
-        _run_packed(
-            prepared, events, 16, ECHOES, 1, profile=table, dynamic=pairs
-        )
+        _run_packed(prepared, events, 16, ECHOES, 1, profile=table, dynamic=pairs)
 
 
 # --- end to end: the waveform picks the mode ---
@@ -1172,18 +1235,26 @@ def test_a_split_pulse_records_the_train_its_sum_records():
         t2_ms=torch.linspace(50.0, 110.0, VOXELS),
     )
 
-    integrated = EpgEngine().simulate(
-        split,
-        TissueProperties(**tissue, b1=magnitude, b1_phase_rad=phase),
-        nstates=16,
-    ).signal
-    turned = EpgEngine().simulate(
-        plain,
-        TissueProperties(
-            **tissue, b1=combined.abs(), b1_phase_rad=combined.angle()
-        ),
-        nstates=16,
-    ).signal
+    integrated = (
+        EpgEngine()
+        .simulate(
+            split,
+            TissueProperties(**tissue, b1=magnitude, b1_phase_rad=phase),
+            nstates=16,
+        )
+        .signal
+    )
+    turned = (
+        EpgEngine()
+        .simulate(
+            plain,
+            TissueProperties(
+                **tissue, b1=combined.abs(), b1_phase_rad=combined.angle()
+            ),
+            nstates=16,
+        )
+        .signal
+    )
 
     assert float(turned.abs().max()) > 0.0
     worst = float((integrated - turned).abs().max() / turned.abs().max())
@@ -1214,7 +1285,7 @@ def test_a_split_pulse_leaves_the_transmit_phase_to_the_rotation():
 
 
 def _tissue_properties(magnitude, phase):
-    from torchsim.sequence import EpgEngine, TissueProperties
+    from torchsim.sequence import TissueProperties
 
     return TissueProperties(
         t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
@@ -1238,10 +1309,11 @@ def test_a_single_channel_train_never_reaches_the_pair():
 
     assert sensitivities is None
 
+
 def test_a_static_shim_beside_a_dynamic_pulse_is_refused():
     from dataclasses import replace
 
-    from torchsim.sequence import EpgEngine, ShimDefinition
+    from torchsim.sequence import ShimDefinition
     from torchsim.sequence._simulation import _dynamic_transmit
 
     split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
@@ -1269,8 +1341,7 @@ def test_the_dispatch_hands_the_kernels_a_pair_and_no_table(monkeypatch):
     """Agreement with the flip-and-phase route is only evidence about the pair
     if the pair is what ran.
     """
-    from torchsim.sequence import EpgEngine
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import EpgEngine, _accelerators
 
     split, _ = _split_across_two_channels(torch.deg2rad(torch.full((ECHOES,), 140.0)))
     magnitude, phase = _sensitivities()
@@ -1282,9 +1353,7 @@ def test_the_dispatch_hands_the_kernels_a_pair_and_no_table(monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(_accelerators, "_run_packed", record)
-    EpgEngine().simulate(
-        split, _tissue_properties(magnitude, phase), nstates=8
-    )
+    EpgEngine().simulate(split, _tissue_properties(magnitude, phase), nstates=8)
 
     assert seen["profile"] is None
     pairs = seen["dynamic"]
@@ -1307,15 +1376,17 @@ def test_a_dynamic_pulse_is_integrated_across_the_slice():
     magnitude, phase = _sensitivities()
     tissue = _tissue_properties(magnitude, phase)
 
-    centred = EpgEngine().simulate(
-        split, tissue, nstates=8
-    ).signal
-    across = EpgEngine().simulate(
-        split,
-        tissue,
-        nstates=8,
-        slice_profile=exact_slice_profile(9, extent=2.0),
-    ).signal
+    centred = EpgEngine().simulate(split, tissue, nstates=8).signal
+    across = (
+        EpgEngine()
+        .simulate(
+            split,
+            tissue,
+            nstates=8,
+            slice_profile=exact_slice_profile(9, extent=2.0),
+        )
+        .signal
+    )
 
     assert centred.shape == across.shape
     assert float(centred.abs().max()) > 0.0
@@ -1340,11 +1411,15 @@ def test_a_relaxation_gradient_reaches_through_the_pair():
     def gradients(description, b1, b1_phase):
         t1 = torch.linspace(700.0, 1300.0, VOXELS).requires_grad_(True)
         t2 = torch.linspace(50.0, 110.0, VOXELS).requires_grad_(True)
-        signal = EpgEngine().simulate(
-            description,
-            TissueProperties(t1_ms=t1, t2_ms=t2, b1=b1, b1_phase_rad=b1_phase),
-            nstates=16,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                description,
+                TissueProperties(t1_ms=t1, t2_ms=t2, b1=b1, b1_phase_rad=b1_phase),
+                nstates=16,
+            )
+            .signal
+        )
         return torch.autograd.grad(signal.abs().square().sum(), (t1, t2))
 
     integrated = gradients(split, magnitude, phase)
@@ -1367,9 +1442,7 @@ def test_the_flip_gradient_comes_back_through_the_pulse_integral():
     combined = torch.polar(magnitude, phase).mean(dim=0)
 
     def gradient(splitting: bool):
-        flips = torch.deg2rad(
-            torch.linspace(100.0, 170.0, ECHOES)
-        ).requires_grad_(True)
+        flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES)).requires_grad_(True)
         split, plain = _split_across_two_channels(flips)
         tissue = (
             _tissue_properties(magnitude, phase)
@@ -1381,9 +1454,11 @@ def test_the_flip_gradient_comes_back_through_the_pulse_integral():
                 b1_phase_rad=combined.angle(),
             )
         )
-        signal = EpgEngine().simulate(
-            split if splitting else plain, tissue, nstates=16
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(split if splitting else plain, tissue, nstates=16)
+            .signal
+        )
         return torch.autograd.grad(signal.abs().square().sum(), flips)[0]
 
     integrated = gradient(True)
@@ -1406,16 +1481,20 @@ def test_a_transmit_gradient_comes_back_through_the_pulse_integral(name: str):
     )
 
     def loss(b1, b1_phase):
-        signal = EpgEngine().simulate(
-            split,
-            TissueProperties(
-                t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
-                t2_ms=torch.linspace(50.0, 110.0, VOXELS),
-                b1=b1,
-                b1_phase_rad=b1_phase,
-            ),
-            nstates=16,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                split,
+                TissueProperties(
+                    t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+                    t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+                    b1=b1,
+                    b1_phase_rad=b1_phase,
+                ),
+                nstates=16,
+            )
+            .signal
+        )
         return signal.abs().square().sum()
 
     leaves = {"b1": magnitude.clone(), "b1_phase_rad": phase.clone()}
@@ -1433,9 +1512,7 @@ def test_a_transmit_gradient_comes_back_through_the_pulse_integral(name: str):
         moved[name][cell] -= 2.0 * step
         backward = float(loss(moved["b1"], moved["b1_phase_rad"]))
         measured = (forward - backward) / (2.0 * step)
-        assert abs(measured - float(analytic[cell])) < 3e-3 * max(
-            abs(measured), 1.0
-        )
+        assert abs(measured - float(analytic[cell])) < 3e-3 * max(abs(measured), 1.0)
 
 
 def test_a_forward_direction_follows_the_pair():
@@ -1451,16 +1528,20 @@ def test_a_forward_direction_follows_the_pair():
     )
 
     def loss(b1):
-        signal = EpgEngine().simulate(
-            split,
-            TissueProperties(
-                t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
-                t2_ms=torch.linspace(50.0, 110.0, VOXELS),
-                b1=b1,
-                b1_phase_rad=phase,
-            ),
-            nstates=12,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                split,
+                TissueProperties(
+                    t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+                    t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+                    b1=b1,
+                    b1_phase_rad=phase,
+                ),
+                nstates=12,
+            )
+            .signal
+        )
         return signal.abs().square().sum()
 
     generator = torch.Generator().manual_seed(7)
@@ -1488,16 +1569,20 @@ def test_a_hessian_vector_product_reaches_through_the_pair():
 
     def loss(flips):
         split, _ = _split_across_two_channels(flips)
-        signal = EpgEngine().simulate(
-            split,
-            TissueProperties(
-                t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
-                t2_ms=torch.linspace(50.0, 110.0, VOXELS),
-                b1=magnitude,
-                b1_phase_rad=phase,
-            ),
-            nstates=12,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                split,
+                TissueProperties(
+                    t1_ms=torch.linspace(700.0, 1300.0, VOXELS),
+                    t2_ms=torch.linspace(50.0, 110.0, VOXELS),
+                    b1=magnitude,
+                    b1_phase_rad=phase,
+                ),
+                nstates=12,
+            )
+            .signal
+        )
         return signal.abs().square().sum()
 
     def gradient(flips):
@@ -1507,9 +1592,7 @@ def test_a_hessian_vector_product_reaches_through_the_pair():
     generator = torch.Generator().manual_seed(11)
     direction = torch.randn(ECHOES, generator=generator) * 0.1
     leaf = nominal.clone().requires_grad_(True)
-    (product,) = torch.autograd.grad(
-        (gradient(leaf) * direction).sum(), leaf
-    )
+    (product,) = torch.autograd.grad((gradient(leaf) * direction).sum(), leaf)
 
     step = 1e-3
     measured = (
@@ -1738,9 +1821,7 @@ def test_the_streamed_route_refuses_a_per_voxel_pair(monkeypatch, pass_name):
         if pass_name == "forward":
             _run_packed(prepared, events, 16, ECHOES, 1, dynamic=pairs)
         elif pass_name == "forward-mode":
-            _run_packed_jvp(
-                prepared, events, still, quiet, threads=1, **arguments
-            )
+            _run_packed_jvp(prepared, events, still, quiet, threads=1, **arguments)
         else:
             _run_packed_vjp(prepared, events, seed, threads=1, **arguments)
 
@@ -1765,9 +1846,7 @@ def test_the_sharded_route_refuses_a_per_voxel_pair():
     prepared, events, pairs, echoes = _real_subspace_train(trains=4)
     prepared = tuple(value.cuda() for value in prepared)
     events = tuple(value.cuda() for value in events)
-    moved = DynamicPairs(
-        a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
-    )
+    moved = DynamicPairs(a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda())
 
     with distribute(["cuda", "cuda"]):
         with pytest.raises(NotImplementedError, match="sharded route does not cut"):
@@ -1792,7 +1871,7 @@ def _pooled_train(**properties):
     definition = _pulse(samples=96)
     flips = torch.deg2rad(torch.linspace(100.0, 170.0, ECHOES))
     packed = _pack_events(
-                fse_description(
+        fse_description(
             flips,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -1804,8 +1883,14 @@ def _pooled_train(**properties):
         rf_raster_time_s=RASTER,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     scaling = torch.linspace(0.7, 1.3, VOXELS, dtype=torch.float64)
@@ -1843,13 +1928,21 @@ def _pooled_train(**properties):
 POOLS = {
     "semisolid": dict(bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0),
     "exchanging": dict(
-        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
-        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+        pool_b_fraction=0.15,
+        pool_b_exchange_hz=20.0,
+        t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0,
+        pool_b_shift_hz=420.0,
     ),
     "three": dict(
-        bound_fraction=0.1, bound_exchange_hz=30.0, t1_bound_ms=1000.0,
-        pool_b_fraction=0.15, pool_b_exchange_hz=20.0, t1_pool_b_ms=400.0,
-        t2_pool_b_ms=20.0, pool_b_shift_hz=420.0,
+        bound_fraction=0.1,
+        bound_exchange_hz=30.0,
+        t1_bound_ms=1000.0,
+        pool_b_fraction=0.15,
+        pool_b_exchange_hz=20.0,
+        t1_pool_b_ms=400.0,
+        t2_pool_b_ms=20.0,
+        pool_b_shift_hz=420.0,
     ),
 }
 
@@ -1869,8 +1962,12 @@ def test_a_pair_reaches_every_pool_the_kernels_carry(pool: str):
     )
 
     expected = simulate_packed(
-        prepared, events, state_count=STATES, output_count=echoes,
-        dynamic=pairs, **carried,
+        prepared,
+        events,
+        state_count=STATES,
+        output_count=echoes,
+        dynamic=pairs,
+        **carried,
     )
     measured = _run_packed(
         prepared, events, STATES, echoes, 1, dynamic=pairs, **carried
@@ -1893,7 +1990,12 @@ def test_a_pool_moves_the_answer_a_pair_gives(pool: str):
     bare, _, _, _ = _pooled_train()
 
     pooled = _run_packed(
-        prepared, events, STATES, echoes, 1, dynamic=pairs,
+        prepared,
+        events,
+        STATES,
+        echoes,
+        1,
+        dynamic=pairs,
         lineshape=lineshape_table() if pool in ("semisolid", "three") else None,
         exchanging=pool in ("exchanging", "three"),
     )
@@ -1912,19 +2014,15 @@ def test_a_pair_takes_the_first_order_kernel_on_the_card(state_count):
     state count before, and the pair adds a per-event load and an atomic the
     others do not make.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import _run_packed_vjp
     from torchsim.sequence._transition import DynamicPairs
 
     _, prepared, events, pairs = _train()
     prepared = tuple(value.cuda() for value in prepared)
     events = tuple(value.cuda() for value in events)
-    moved = DynamicPairs(
-        a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda()
-    )
-    seed = torch.ones(
-        prepared[0].numel(), ECHOES, dtype=torch.complex64, device="cuda"
-    )
+    moved = DynamicPairs(a=pairs.a.cuda(), b=pairs.b.cuda(), index=pairs.index.cuda())
+    seed = torch.ones(prepared[0].numel(), ECHOES, dtype=torch.complex64, device="cuda")
     still = tuple(
         torch.zeros_like(value)
         for value in (*prepared, events[0], events[2], events[3])

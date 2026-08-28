@@ -12,7 +12,7 @@ from torchsim import (
     mrf_description,
     spgr_description,
 )
-from torchsim.sequence import _accelerators, EpgEngine
+from torchsim.sequence import EpgEngine, _accelerators
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _NativeEpg,
@@ -43,9 +43,7 @@ def _tissue():
 def _descriptions():
     flip = torch.deg2rad(torch.full((ECHOES,), 140.0))
     return {
-        "fse": (
-            fse_description(flip, echo_spacing_s=5e-3, phases_rad=torch.pi / 2),
-        ),
+        "fse": (fse_description(flip, echo_spacing_s=5e-3, phases_rad=torch.pi / 2),),
         "spgr": (
             spgr_description(torch.deg2rad(torch.full((ECHOES,), 15.0)), 8e-3, 3e-3),
         ),
@@ -99,8 +97,18 @@ def _leaves(prepared, events):
 def _route(route: str, tissue, events, output_count: int, state_count: int):
     if route == "kernel":
         return _NativeEpg.apply(
-            *tissue, *events, state_count, output_count, 1, NO_GEOMETRY, None,
-            None, None, None, False, None
+            *tissue,
+            *events,
+            state_count,
+            output_count,
+            1,
+            NO_GEOMETRY,
+            None,
+            None,
+            None,
+            None,
+            False,
+            None,
         )
     return simulate_packed(
         tissue, events, state_count=state_count, output_count=output_count
@@ -208,9 +216,11 @@ def _gradients():
     )
     t1 = torch.full((64,), 1000.0, requires_grad=True)
     t2 = torch.linspace(40.0, 120.0, 64).requires_grad_(True)
-    signal = EpgEngine().simulate(
-        description, TissueProperties(t1_ms=t1, t2_ms=t2), nstates=10
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(description, TissueProperties(t1_ms=t1, t2_ms=t2), nstates=10)
+        .signal
+    )
     return torch.autograd.grad(signal.abs().square().sum(), (t1, t2))
 
 
@@ -357,8 +367,10 @@ def test_a_hessian_vector_product_matches_finite_differences() -> None:
         )[1]
 
     step = 1e-2 * prepared[1].abs().max()
-    expected = (adjoint(prepared[1] + step * direction)
-                - adjoint(prepared[1] - step * direction)) / (2.0 * step)
+    expected = (
+        adjoint(prepared[1] + step * direction)
+        - adjoint(prepared[1] - step * direction)
+    ) / (2.0 * step)
 
     leaves = tuple(value.detach().clone().requires_grad_(True) for value in prepared)
     signal = _route("kernel", leaves, events, output_count, state_count)

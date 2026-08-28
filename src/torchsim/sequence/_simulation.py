@@ -14,12 +14,11 @@ from typing import Any, Literal
 
 import torch
 
+from .._subspace import Subspace
 from ._accelerators import (
     largest_pulse_offset,
     simulate_native,
 )
-from ._transition import ExactSliceProfile
-from .._subspace import Subspace
 from ._description import (
     EventAction,
     RfMode,
@@ -32,6 +31,7 @@ from ._parameters import (
     wants_bound_pool,
     wants_exchange_pool,
 )
+from ._transition import ExactSliceProfile
 from ._transmit import shim_rows, transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
@@ -48,9 +48,7 @@ RecordMode = Literal["all", "acquired", "echo"]
 MINIMUM_RELAXATION_TIME_MS = 1e-6
 
 # The two tissue buffers a shim gives a row of its own.
-_TRANSMIT = frozenset(
-    (TISSUE_NAMES.index("b1"), TISSUE_NAMES.index("b1_phase_rad"))
-)
+_TRANSMIT = frozenset((TISSUE_NAMES.index("b1"), TISSUE_NAMES.index("b1_phase_rad")))
 
 # The tissue buffers the kernels invert into a rate.
 _RELAXATION_TIMES = tuple(
@@ -73,9 +71,7 @@ def _absorption_table(
     table's edge rather than by the far smaller one out where the pulse is.
     """
     voxel = float(b0_hz.abs().max()) if b0_hz.numel() else 0.0
-    return lineshape_reaching(
-        largest_pulse_offset(description) + voxel, device=device
-    )
+    return lineshape_reaching(largest_pulse_offset(description) + voxel, device=device)
 
 
 @dataclass(frozen=True)
@@ -231,8 +227,7 @@ class EpgEngine:
         winding = EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER
         winding |= EventAction.SHIFT_AFTER
         return sum(
-            bin(int(event.action & winding)).count("1")
-            for event in description.events
+            bin(int(event.action & winding)).count("1") for event in description.events
         )
 
     def simulate(
@@ -254,7 +249,8 @@ class EpgEngine:
         a caller that holds the structure fixed and rebuilds only what varies;
         see :mod:`torchsim.optim`. It must be the packing of ``description``.
 
-        Raises:
+        Raises
+        ------
             RuntimeError: if no fused kernel can take this tissue -- a device
                 that has none, or a build without the extension.
         """
@@ -266,13 +262,24 @@ class EpgEngine:
 
         tissue, sensitivities = _dynamic_transmit(tissue, description, device)
         tissue, shims = _resolve_transmit(tissue, description, device)
-        prepared, output_shape, target_device = _prepare_tissue(
-            tissue, device, shims
-        )
+        prepared, output_shape, target_device = _prepare_tissue(tissue, device, shims)
         (
-            t1, t2, m0, b1, b1_phase, b0, inversion_efficiency, diffusion,
-            velocity, _bound_fraction, _bound_exchange, _t1_bound,
-            _pool_b_fraction, _pool_b_exchange, _t1_pool_b, _t2_pool_b,
+            t1,
+            t2,
+            m0,
+            b1,
+            b1_phase,
+            b0,
+            inversion_efficiency,
+            diffusion,
+            velocity,
+            _bound_fraction,
+            _bound_exchange,
+            _t1_bound,
+            _pool_b_fraction,
+            _pool_b_exchange,
+            _t1_pool_b,
+            _t2_pool_b,
             _pool_b_shift,
         ) = prepared
         features = features_of(tissue)
@@ -317,8 +324,7 @@ class EpgEngine:
         )
         if accelerated is None:
             raise RuntimeError(
-                f"no fused EPG kernel is available for a tissue on "
-                f"{target_device}"
+                f"no fused EPG kernel is available for a tissue on {target_device}"
             )
         return SimulationResult(*accelerated)
 
@@ -371,7 +377,8 @@ def _dynamic_transmit(
     Returns the tissue and the sensitivities, or the tissue unchanged and
     ``None`` where no pulse asks for this.
 
-    Raises:
+    Raises
+    ------
         NotImplementedError: if the sequence also declares a transmit shim.
         ValueError: if the pulses disagree on how many channels they drive, or
             if the transmit maps do not lead with that many.
@@ -529,7 +536,8 @@ def _within_one_voxel(bound_fraction: Any, pool_b_fraction: Any) -> None:
     magnetization, which every pass afterwards would carry as though it meant
     something.
 
-    Raises:
+    Raises
+    ------
         ValueError: if the two fractions sum past one anywhere.
     """
     total = torch.as_tensor(bound_fraction) + torch.as_tensor(pool_b_fraction)
@@ -545,19 +553,3 @@ def _as_integer(value: Any, name: str) -> int:
     if tensor.numel() != 1:
         raise ValueError(f"{name} must be scalar")
     return int(tensor.item())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

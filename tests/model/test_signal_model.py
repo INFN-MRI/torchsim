@@ -20,9 +20,7 @@ from torchsim.sequence import _simulation
 class Relaxation(Simulator):
     """T1 and T2 alone -- the narrowest a model can be."""
 
-    model = SpinPhysics(
-        properties={"T1": "t1_ms", "T2": "t2_ms"}, operators=REFOCUSED
-    )
+    model = SpinPhysics(properties={"T1": "t1_ms", "T2": "t2_ms"}, operators=REFOCUSED)
 
     def layout(self, *, flip, ESP, phases=0.0):
         """Return a refocused train at the flip angles given."""
@@ -33,10 +31,12 @@ class Relaxation(Simulator):
         parts = [(0.0, self.operators.excitation(torch.pi / 2, torch.pi / 2))]
         for index in range(angles.numel()):
             echo_s = (index + 1) * spacing_s
-            parts.append((
-                echo_s - 0.5 * spacing_s,
-                self.operators.refocusing(angles[index], turns[index]),
-            ))
+            parts.append(
+                (
+                    echo_s - 0.5 * spacing_s,
+                    self.operators.refocusing(angles[index], turns[index]),
+                )
+            )
             parts.append((echo_s, self.operators.readout(turns[index])))
         return parts
 
@@ -106,10 +106,9 @@ def test_an_undeclared_property_cannot_change_the_answer() -> None:
 
 def test_a_model_declaring_unknown_tissue_says_so() -> None:
     """A typo in a tissue field is caught where it is written, not in a kernel."""
+
     class Wrong(Relaxation):
-        model = SpinPhysics(
-            properties={"T1": "t1_ms", "T2": "not_a_tissue_field"}
-        )
+        model = SpinPhysics(properties={"T1": "t1_ms", "T2": "not_a_tissue_field"})
 
     with pytest.raises(ValueError, match="unknown tissue"):
         Wrong(**SEQUENCE).simulate(T1=T1, T2=T2)

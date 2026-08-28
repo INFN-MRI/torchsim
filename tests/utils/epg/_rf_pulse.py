@@ -515,9 +515,7 @@ def mt_sat(
 
 
 # %% utils
-def spinor_rf_pulse_op(
-    a: torch.Tensor, b: torch.Tensor
-) -> tuple[tuple[torch.Tensor]]:
+def spinor_rf_pulse_op(a: torch.Tensor, b: torch.Tensor) -> tuple[tuple[torch.Tensor]]:
     """Build the RF rotation matrix from a pulse's Cayley-Klein pair.
 
     A pulse of any shape acts on a spin as one element of SU(2),

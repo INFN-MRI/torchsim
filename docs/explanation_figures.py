@@ -68,11 +68,11 @@ def dephasing_helix():
     """Isochromats fanning out under a gradient, and the signal that leaves."""
     figure, axes = plt.subplots(1, 4, figsize=(PAGE_WIDTH, 2.7))
     position = np.linspace(-0.5, 0.5, 24)
-    colors = plt.cm.viridis((position + 0.5))
+    colors = plt.cm.viridis(position + 0.5)
 
-    for axis, turns in zip(axes, (0.0, 0.25, 1.0, 3.0)):
+    for axis, turns in zip(axes, (0.0, 0.25, 1.0, 3.0), strict=False):
         phase = 2 * np.pi * turns * position
-        for angle, color in zip(phase, colors):
+        for angle, color in zip(phase, colors, strict=False):
             axis.plot([0, np.cos(angle)], [0, np.sin(angle)], color=color, lw=1.2)
         net = np.exp(1j * phase).mean()
         axis.arrow(
@@ -109,7 +109,8 @@ def configuration_states():
 
     position = np.linspace(-0.5, 0.5, 400)
     profile = sum(
-        c * np.exp(2j * np.pi * k * position) for k, c in zip(orders, coefficients)
+        c * np.exp(2j * np.pi * k * position)
+        for k, c in zip(orders, coefficients, strict=False)
     )
     axes[0].plot(position, profile.real, color=TRANSVERSE, label=r"$M_x(r)$")
     axes[0].plot(position, profile.imag, color=LONGITUDINAL, lw=1.2, label=r"$M_y(r)$")
@@ -216,7 +217,7 @@ def rf_operator():
     """What a pulse moves between the three families, at three flip angles."""
     figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 2.9))
     labels = [r"$\tilde F^{+}$", r"$\tilde F^{-}$", r"$\tilde Z$"]
-    for axis, degrees in zip(axes, (30.0, 90.0, 180.0)):
+    for axis, degrees in zip(axes, (30.0, 90.0, 180.0), strict=False):
         matrix = np.abs(_rotation_matrix(np.deg2rad(degrees)))
         axis.imshow(matrix, cmap="Blues", vmin=0.0, vmax=1.0)
         for row in range(3):
@@ -258,6 +259,7 @@ def shift_operator():
         axes,
         ((plus, minus), (shifted_plus, shifted_minus)),
         ("before", "after one shift"),
+        strict=False,
     ):
         axis.bar(orders - 0.16, p, width=0.3, color=TRANSVERSE, label=r"$\tilde F^{+}$")
         axis.bar(

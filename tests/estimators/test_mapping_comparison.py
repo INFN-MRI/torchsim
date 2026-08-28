@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from torchsim.estimators import DictionaryMatcher, PERK
+from torchsim.estimators import PERK, DictionaryMatcher
 from torchsim.simulators import FSESimulator
 
 

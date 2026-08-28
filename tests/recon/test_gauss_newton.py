@@ -2,30 +2,28 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import pytest
 import torch
 
 from torchsim.estimators import NonlinearLeastSquares
-from functools import partial
-
 from torchsim.recon import (
+    GaussNewton,
     LeastSquares,
     Linearization,
-    GaussNewton,
     ModelOperator,
     Schedule,
     TrustRegion,
-    iterative,
     direct,
+    iterative,
 )
 from torchsim.simulators import MultiEchoSimulator
 
 TE_MS = torch.linspace(10.0, 200.0, 12)
 BOUND = {"T2": (10.0, 300.0)}
 TRUTH = torch.tensor([30.0, 60.0, 90.0, 150.0, 250.0])
-AMPLITUDE = torch.tensor(
-    [1.0, 0.8 - 0.2j, 1.2 + 0.5j, 0.5, 1.0], dtype=torch.complex64
-)
+AMPLITUDE = torch.tensor([1.0, 0.8 - 0.2j, 1.2 + 0.5j, 0.5, 1.0], dtype=torch.complex64)
 
 
 class MaskedFourier:
@@ -50,9 +48,10 @@ def problem():
     """A multi-echo decay, its operator, and data with a known answer."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
     operator = ModelOperator(acquisition, "T2", bounds=BOUND)
-    measured = torch.as_tensor(acquisition.simulate(T2=TRUTH)).to(
-        torch.complex64
-    ) * AMPLITUDE[:, None]
+    measured = (
+        torch.as_tensor(acquisition.simulate(T2=TRUTH)).to(torch.complex64)
+        * AMPLITUDE[:, None]
+    )
     return operator, measured, operator.initial((5,), T2=100.0)
 
 
@@ -85,9 +84,7 @@ def test_every_pairing_finds_the_answer(problem, damping, solve) -> None:
 
     maps = operator.split(found.x)
     torch.testing.assert_close(maps["T2"], TRUTH, rtol=1e-3, atol=1e-3)
-    torch.testing.assert_close(
-        maps["amplitude"], AMPLITUDE, rtol=1e-3, atol=1e-4
-    )
+    torch.testing.assert_close(maps["amplitude"], AMPLITUDE, rtol=1e-3, atol=1e-4)
 
 
 def test_the_two_policies_land_in_the_same_place(problem) -> None:
@@ -125,9 +122,7 @@ def test_a_trust_region_is_the_fit_that_ships(problem) -> None:
 
     estimator = mapping(measured)
 
-    operator = ModelOperator(
-        acquisition, "T2", "M0", bounds=bounds, amplitude=False
-    )
+    operator = ModelOperator(acquisition, "T2", "M0", bounds=bounds, amplitude=False)
     found = GaussNewton(TrustRegion(), solve=direct, max_iterations=20).minimize(
         operator, measured, operator.initial((5,), T2=100.0, M0=1.0)
     )
@@ -179,15 +174,11 @@ def phantom():
     amplitude[4:28, 4:28] = 1.0
     acquisition = MultiEchoSimulator(TE=TE_MS)
     operator = ModelOperator(acquisition, "T2", bounds=BOUND)
-    images = torch.as_tensor(acquisition.simulate(T2=t2)).to(
-        torch.complex64
-    ) * amplitude[..., None]
-    mask = (
-        torch.rand(
-            (1, TE_MS.numel(), size, size), generator=generator
-        )
-        < 0.35
+    images = (
+        torch.as_tensor(acquisition.simulate(T2=t2)).to(torch.complex64)
+        * amplitude[..., None]
     )
+    mask = torch.rand((1, TE_MS.numel(), size, size), generator=generator) < 0.35
     mask[:, :, :, size // 2 - 3 : size // 2 + 3] = True
     encoding = MaskedFourier(mask)
     kspace = encoding.A(images.movedim(-1, 0)[None])
@@ -220,7 +211,9 @@ def test_solving_through_an_encoding_beats_reconstructing_first(
     )
     naive = operator.split(fitted.x)["T2"]
 
-    error = lambda found: float((found[inside] - t2[inside]).abs().mean())
+    def error(found):
+        return float((found[inside] - t2[inside]).abs().mean())
+
     assert error(modelled) < error(naive)
 
 
@@ -336,8 +329,6 @@ def test_the_inner_solve_defaults_under_an_encoding(phantom) -> None:
     )
 
     assert float(found.cost[-1]) < 0.3 * float(found.cost[0])
-
-
 
 
 @pytest.mark.parametrize("name", ["CG", "lsqr", "BiCGStab", "minres"])

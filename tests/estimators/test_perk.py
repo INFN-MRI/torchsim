@@ -7,15 +7,28 @@ import math
 import pytest
 import torch
 
-from torchsim.estimators import DictionaryMatcher, PERK
+from torchsim.estimators import PERK, DictionaryMatcher
 from torchsim.model import SignalModel
 from torchsim.simulators import MultiEchoSimulator
 
 
-@pytest.mark.parametrize("device", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable"))])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA is unavailable"
+            ),
+        ),
+    ],
+)
 def test_perk_learns_smooth_nonlinear_inverse(device: str) -> None:
     generator = torch.Generator(device=device).manual_seed(4)
-    train_parameter = 0.1 + 2.8 * torch.rand(2048, 1, generator=generator, device=device)
+    train_parameter = 0.1 + 2.8 * torch.rand(
+        2048, 1, generator=generator, device=device
+    )
     train_signal = torch.cat(
         (torch.sin(train_parameter), torch.cos(train_parameter)), dim=-1
     )
@@ -52,7 +65,9 @@ def test_perk_accepts_complex_signals_and_known_parameters() -> None:
 def test_perk_estimation_is_differentiable() -> None:
     parameter = torch.linspace(0.1, 1.0, 256)[:, None]
     signal = torch.cat((parameter, parameter.square()), dim=-1)
-    estimator = PERK(n_features=64, regularization=1e-4, feature_seed=1).fit(signals=signal, parameters=parameter)
+    estimator = PERK(n_features=64, regularization=1e-4, feature_seed=1).fit(
+        signals=signal, parameters=parameter
+    )
     measured = signal[:8].clone().requires_grad_()
 
     estimator(measured).sum().backward()
@@ -81,7 +96,8 @@ def test_a_streaming_fit_chunks_generation() -> None:
     parameter = torch.linspace(0.1, 1.0, 65)
     seen: list[int] = []
 
-    estimator = PERK(_Counted(seen), n_features=32, feature_seed=1, stream=True).fit(x=parameter, chunk=16
+    estimator = PERK(_Counted(seen), n_features=32, feature_seed=1, stream=True).fit(
+        x=parameter, chunk=16
     )
 
     assert estimator.fitted
@@ -118,10 +134,10 @@ def test_the_merged_pass_gives_the_covariance_it_would_have_centred() -> None:
     """
     generator = torch.Generator().manual_seed(0)
     signals = torch.randn(2000, 12, generator=generator)
-    parameters = torch.stack(
-        (signals.square().sum(-1), signals.abs().mean(-1)), dim=-1
+    parameters = torch.stack((signals.square().sum(-1), signals.abs().mean(-1)), dim=-1)
+    estimator = PERK(n_features=64, feature_seed=3).fit(
+        signals=signals, parameters=parameters
     )
-    estimator = PERK(n_features=64, feature_seed=3).fit(signals=signals, parameters=parameters)
 
     features = _reference_features(estimator, signals).to(torch.float64)
     targets = parameters.to(torch.float64)
@@ -151,9 +167,9 @@ def test_streaming_reaches_what_holding_the_dictionary_reaches() -> None:
     held = PERK(acquisition, n_features=256, feature_seed=3).fit(
         unknown, seed=0, samples=2048
     )
-    streamed = PERK(
-        acquisition, n_features=256, feature_seed=3, stream=True
-    ).fit(unknown, seed=0, samples=2048)
+    streamed = PERK(acquisition, n_features=256, feature_seed=3, stream=True).fit(
+        unknown, seed=0, samples=2048
+    )
 
     for name in unknown:
         assert torch.allclose(held.map(measured)[name], streamed.map(measured)[name])
@@ -164,7 +180,8 @@ def test_a_streaming_fit_cannot_be_asked_for_a_basis() -> None:
     acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 12))
 
     with pytest.raises(ValueError, match="streaming fit never holds"):
-        PERK(acquisition, n_features=32, stream=True).fit(T2=(10.0, 300.0), seed=0, rank=4, samples=64
+        PERK(acquisition, n_features=32, stream=True).fit(
+            T2=(10.0, 300.0), seed=0, rank=4, samples=64
         )
 
 
@@ -182,9 +199,7 @@ def test_the_basis_is_on_the_estimator_whichever_method_fitted_it() -> None:
     matcher = DictionaryMatcher(acquisition).fit(unknown, seed=0, rank=4, samples=2048)
 
     assert regression.subspace.rank == matcher.subspace.rank == 4
-    assert torch.allclose(
-        regression.subspace.basis, matcher.subspace.basis, atol=1e-5
-    )
+    assert torch.allclose(regression.subspace.basis, matcher.subspace.basis, atol=1e-5)
 
     # What a subspace reconstruction returns is already in the basis, so it is
     # read back without being projected a second time.
@@ -224,16 +239,18 @@ def test_a_borrowed_basis_streams() -> None:
     measured = acquisition.simulate(
         T2=torch.tensor([40.0, 90.0]), M0=torch.tensor([1.0, 1.2])
     )
-    basis = DictionaryMatcher(acquisition).fit(
-        **unknown, seed=0, rank=4, samples=2048
-    ).subspace
+    basis = (
+        DictionaryMatcher(acquisition)
+        .fit(**unknown, seed=0, rank=4, samples=2048)
+        .subspace
+    )
 
     held = PERK(acquisition, n_features=256, feature_seed=3).fit(
         **unknown, seed=0, subspace=basis, samples=2048
     )
-    streamed = PERK(
-        acquisition, n_features=256, feature_seed=3, stream=True
-    ).fit(**unknown, seed=0, subspace=basis, samples=2048)
+    streamed = PERK(acquisition, n_features=256, feature_seed=3, stream=True).fit(
+        **unknown, seed=0, subspace=basis, samples=2048
+    )
 
     for name in unknown:
         assert torch.allclose(
@@ -244,9 +261,11 @@ def test_a_borrowed_basis_streams() -> None:
 def test_a_rank_and_a_basis_are_alternatives() -> None:
     """One asks for a basis to be fitted, the other supplies one."""
     acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 12))
-    basis = DictionaryMatcher(acquisition).fit(
-        T2=(10.0, 300.0), seed=0, rank=3, samples=256
-    ).subspace
+    basis = (
+        DictionaryMatcher(acquisition)
+        .fit(T2=(10.0, 300.0), seed=0, rank=3, samples=256)
+        .subspace
+    )
 
     with pytest.raises(ValueError, match="not both"):
         PERK(acquisition, n_features=32).fit(

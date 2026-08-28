@@ -1,9 +1,9 @@
+import json
+import os
+
 from docutils import nodes
 from sphinx.util.docutils import SphinxDirective
 from sphinx_gallery.notebook import add_code_cell, add_markdown_cell
-
-import os
-import json
 
 
 class ColabLinkNode(nodes.General, nodes.Element):
@@ -50,7 +50,7 @@ class ColabLinkDirective(SphinxDirective):
         # Create the HTML button or link
         self.html = f"""<div class="colab-button">
             <a href="{self.colab_url}" target="_blank">
-                <img src="https://colab.research.google.com/assets/colab-badge.svg" 
+                <img src="https://colab.research.google.com/assets/colab-badge.svg"
                 alt="Open In Colab"/>
             </a>
         </div>

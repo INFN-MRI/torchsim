@@ -15,9 +15,9 @@ import torch
 
 from torchsim.sequence import calibrate
 from torchsim.sequence._calibration import (
+    _CROSSOVER,
     _FALLBACK_CROSSOVER,
     _FALLBACK_DETECTION,
-    _CROSSOVER,
     _RATES,
     _fit,
     crossover,
@@ -129,8 +129,9 @@ def test_a_probe_that_fails_does_not_break_the_simulation(monkeypatch):
         module, "_rates", lambda *arguments: (_ for _ in ()).throw(RuntimeError)
     )
 
-    assert crossover("forward", torch.device("cuda"), STATES) == (
-        _FALLBACK_CROSSOVER["forward"]
+    assert (
+        crossover("forward", torch.device("cuda"), STATES)
+        == (_FALLBACK_CROSSOVER["forward"])
     )
 
 
@@ -178,6 +179,7 @@ def test_the_measured_crossover_is_where_the_two_sides_meet():
     import time
 
     from test_offload import _volume
+
     from torchsim.sequence._accelerators import _run_packed
 
     card = torch.device("cuda", 0)

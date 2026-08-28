@@ -85,9 +85,7 @@ class SignalModel(ABC):
         self.bound = self._fix(values)
 
     @abstractmethod
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Return the signal these properties and this sequence record.
 
         ``properties`` holds the declared values the caller passed, under the
@@ -221,9 +219,7 @@ class SignalModel(ABC):
             )
             signal, column = torch.func.jvp(along, primals, tangents)
             columns.append(column)
-        jacobian = columns[0] if isinstance(diff, str) else torch.stack(
-            columns, dim=-2
-        )
+        jacobian = columns[0] if isinstance(diff, str) else torch.stack(columns, dim=-2)
         return like(signal, backend), like(jacobian, backend)
 
     # -- what a subclass does not have to write -----------------------------
@@ -248,18 +244,14 @@ class SignalModel(ABC):
         """
         declared = set(self.exposes)
         return {
-            name: as_torch(value)
-            if name in declared or is_array(value)
-            else value
+            name: as_torch(value) if name in declared or is_array(value) else value
             for name, value in values.items()
         }
 
     def _split(self, values: Mapping[str, Any]) -> tuple[dict, dict]:
         """Tell the declared property arguments from the sequence ones."""
         declared = self.exposes
-        held = {
-            name: as_torch(values[name]) for name in declared if name in values
-        }
+        held = {name: as_torch(values[name]) for name in declared if name in values}
         sequence = {
             name: value for name, value in values.items() if name not in declared
         }
@@ -273,13 +265,9 @@ class SignalModel(ABC):
         """
         if not held:
             return ()
-        return tuple(
-            torch.broadcast_shapes(*(value.shape for value in held.values()))
-        )
+        return tuple(torch.broadcast_shapes(*(value.shape for value in held.values())))
 
-    def _shaped(
-        self, signal: torch.Tensor, batch: tuple[int, ...]
-    ) -> torch.Tensor:
+    def _shaped(self, signal: torch.Tensor, batch: tuple[int, ...]) -> torch.Tensor:
         """Give the voxel axis the shape the caller's properties had."""
         voxels = 1
         for size in batch:

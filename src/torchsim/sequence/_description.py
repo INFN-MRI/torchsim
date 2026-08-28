@@ -173,9 +173,7 @@ class SequenceEvent:
         action: EventAction = EventAction.NONE,
     ) -> SequenceEvent:
         """Create an ADC event using the Pulserver SEQDESC field order."""
-        return cls(
-            EventType.ADC, timestamp_us, (role, phase_rad, int(is_echo)), action
-        )
+        return cls(EventType.ADC, timestamp_us, (role, phase_rad, int(is_echo)), action)
 
     @property
     def rf_definition_id(self) -> int:
@@ -335,7 +333,7 @@ class RfDefinition:
         else:
             phases = (self.phase,) * len(magnitudes)
         channels = []
-        for magnitude_shape, phase_shape in zip(magnitudes, phases):
+        for magnitude_shape, phase_shape in zip(magnitudes, phases, strict=False):
             magnitude = magnitude_shape.decompress()
             if phase_shape is None:
                 channels.append(magnitude.astype(np.complex64))
@@ -379,7 +377,8 @@ class RfDefinition:
         constant case exactly. What a spin at a normalized position accrues
         while sample ``s`` lasts is ``bandwidth_hz * position * g[s]`` in Hz.
 
-        Raises:
+        Raises
+        ------
             ValueError: if the gradient and the envelope disagree on how many
                 samples the pulse has.
         """
@@ -406,7 +405,8 @@ class RfDefinition:
         is held constant across a sample, so a longer sample turns further and
         lets a spin off the slice centre accrue more phase.
 
-        Raises:
+        Raises
+        ------
             ValueError: if the declared times and the envelope disagree on how
                 many samples the pulse has, or the times do not advance.
         """
@@ -679,7 +679,6 @@ def decompress_shape(
             f"Pulseq shape expanded to {target}, expected {num_uncompressed}"
         )
     return (np.cumsum(delta, dtype=np.float32) * scale).astype(np.float32)
-
 
 
 def ideal_rf_definition(definition_id: int = 0) -> RfDefinition:

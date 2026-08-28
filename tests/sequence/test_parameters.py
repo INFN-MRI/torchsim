@@ -11,7 +11,7 @@ import dataclasses
 
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence import _accelerators
 from torchsim.sequence._accelerators import _pack_events
 from torchsim.sequence._parameters import (
@@ -50,7 +50,7 @@ def test_every_tissue_parameter_is_prepared():
 def test_every_event_parameter_is_packed():
     """The packed events carry a field per event parameter the table names."""
     packed = _pack_events(
-                fse_description(
+        fse_description(
             torch.deg2rad(torch.full((4,), 140.0)),
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -82,13 +82,15 @@ def test_only_duration_flip_and_phase_carry_an_event_gradient():
     sequence solves for.
     """
     undifferentiated = {
-        parameter.name
-        for parameter in EVENT_PARAMETERS
-        if not parameter.differentiable
+        parameter.name for parameter in EVENT_PARAMETERS if not parameter.differentiable
     }
 
     assert undifferentiated == {
-        "kind", "action", "output_index", "shim_index", "saturation",
+        "kind",
+        "action",
+        "output_index",
+        "shim_index",
+        "saturation",
         "rf_frequency_hz",
     }
     assert all(parameter.differentiable for parameter in TISSUE_PARAMETERS)
@@ -108,11 +110,43 @@ def test_a_shim_only_widens_the_transmit_pair():
     """Every other property belongs to the voxel, whatever the array does."""
     assert tissue_gradient_rows(1) == (1,) * TISSUE_COUNT
     assert tissue_gradient_rows(4) == (
-        1, 1, 1, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1,
+        1,
+        1,
+        4,
+        4,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
     )
     assert tissue_gradient_bases(1) == tuple(range(TISSUE_COUNT))
     assert tissue_gradient_bases(4) == (
-        0, 1, 2, 3, 7, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+        0,
+        1,
+        2,
+        3,
+        7,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
     )
     assert tissue_gradient_height(1) == TISSUE_COUNT
     assert tissue_gradient_height(4) == TISSUE_COUNT + 6
@@ -142,15 +176,19 @@ def test_autograd_asks_for_exactly_the_differentiable_inputs():
     _accelerators._wanted = record
     try:
         t2 = torch.tensor([45.0, 120.0], requires_grad=True)
-        signal = EpgEngine().simulate(
-            fse_description(
-                torch.deg2rad(torch.full((4,), 140.0)),
-                echo_spacing_s=5e-3,
-                phases_rad=torch.pi / 2,
-            ),
-            TissueProperties(t1_ms=torch.tensor([800.0, 1400.0]), t2_ms=t2),
-            nstates=8,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                fse_description(
+                    torch.deg2rad(torch.full((4,), 140.0)),
+                    echo_spacing_s=5e-3,
+                    phases_rad=torch.pi / 2,
+                ),
+                TissueProperties(t1_ms=torch.tensor([800.0, 1400.0]), t2_ms=t2),
+                nstates=8,
+            )
+            .signal
+        )
         torch.autograd.grad(signal.abs().square().sum(), t2)
     finally:
         _accelerators._wanted = original

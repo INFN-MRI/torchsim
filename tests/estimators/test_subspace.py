@@ -37,9 +37,8 @@ def test_retained_is_the_error_it_will_cost(rank: int) -> None:
 
     through = subspace.expand(subspace.project(dictionary))
     measured = (
-        (dictionary - through).abs().square().sum()
-        / dictionary.abs().square().sum()
-    )
+        dictionary - through
+    ).abs().square().sum() / dictionary.abs().square().sum()
 
     assert subspace.retained == pytest.approx(1.0 - float(measured), abs=1e-6)
 

@@ -44,7 +44,6 @@ from brainweb_dl import get_mri
 warnings.filterwarnings("ignore")
 
 
-
 # Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
 # colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
 LIPARI = Colormap("crameri:lipari").to_matplotlib()
@@ -103,7 +102,6 @@ def canvas(rows, columns, shape, *, bars=1, extra=0.6):
     )
 
 
-
 # Figures are read at gallery scale, so the type sizes are set once here.
 plt.rcParams.update(
     {
@@ -133,15 +131,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -341,12 +351,16 @@ prior = torch.Generator().manual_seed(11)
 # span, and one minus the energy it keeps is the relative squared error of
 # projecting a trajectory through it and back -- a number, not an estimate.
 #
-training_signals, _, _ = PERK(acquisition).fit(
-    T1=log_uniform(*T1_RANGE, SAMPLES),
-    T2=log_uniform(*T2_RANGE, SAMPLES),
-    noise_std=NOISE_STD,
-    seed=0,
-).training_set(SAMPLES)
+training_signals, _, _ = (
+    PERK(acquisition)
+    .fit(
+        T1=log_uniform(*T1_RANGE, SAMPLES),
+        T2=log_uniform(*T2_RANGE, SAMPLES),
+        noise_std=NOISE_STD,
+        seed=0,
+    )
+    .training_set(SAMPLES)
+)
 training_signals = training_signals.real
 
 RANK = 4
@@ -354,14 +368,19 @@ RANK = 4
 # sphinx_gallery_start_ignore
 ranks = (1, 2, 3, 4, 6, 8, 12, 16, 24, 32)
 outside = [1 - Subspace.fit(training_signals, rank).retained for rank in ranks]
-noise_energy = NOISE_STD**2 * CONTRASTS / float(training_signals.square().sum(-1).mean())
+noise_energy = (
+    NOISE_STD**2 * CONTRASTS / float(training_signals.square().sum(-1).mean())
+)
 
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.59))
 axis.semilogy(ranks, outside, "o-", label="left outside the basis")
 axis.axhline(noise_energy, color="crimson", linestyle="--", label="added by the noise")
 axis.axvline(RANK, color="0.5", linewidth=1)
-axis.set(xlabel="rank", ylabel="relative energy",
-         title="what projecting through the basis loses")
+axis.set(
+    xlabel="rank",
+    ylabel="relative energy",
+    title="what projecting through the basis loses",
+)
 axis.grid(alpha=0.3)
 key(axis, ncols=2)
 # sphinx_gallery_end_ignore
@@ -384,9 +403,7 @@ key(axis, ncols=2)
 
 FEATURES = 1000
 
-perk = PERK(
-    acquisition, n_features=FEATURES, regularization=1e-6, normalize=True
-).fit(
+perk = PERK(acquisition, n_features=FEATURES, regularization=1e-6, normalize=True).fit(
     T1=log_uniform(*T1_RANGE, SAMPLES),
     T2=log_uniform(*T2_RANGE, SAMPLES),
     noise_std=NOISE_STD,
@@ -396,6 +413,7 @@ perk = PERK(
 )
 
 maps = perk(measured)  # {"T1": ..., "T2": ...}, one value per voxel
+
 
 # sphinx_gallery_start_ignore
 def regressed(features):
@@ -445,8 +463,10 @@ matched = DictionaryMatcher(acquisition).fit(
 match_training = time.perf_counter() - start
 match_maps, match_mapping, match_peak = mapped(matched)
 match_model = footprint(matched)
-print(f"dictionary: {grid_t1.numel()} atoms at rank {RANK}; "
-      f"regression: {FEATURES} features from {SAMPLES} training draws")
+print(
+    f"dictionary: {grid_t1.numel()} atoms at rank {RANK}; "
+    f"regression: {FEATURES} features from {SAMPLES} training draws"
+)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -486,25 +506,37 @@ estimates = {
 # is the high-water mark on the card while the slice was mapped.
 #
 
+
 # sphinx_gallery_start_ignore
 def error(estimate, reference):
     """Median relative error, in percent."""
     return float(100 * ((estimate - reference).abs() / reference).median())
 
 
-print(f"\n{'method':<26}{'train':>8}{'map':>8}{'model':>10}{'peak':>10}"
-      f"{'T1':>8}{'T2':>8}")
+print(
+    f"\n{'method':<26}{'train':>8}{'map':>8}{'model':>10}{'peak':>10}{'T1':>8}{'T2':>8}"
+)
 print("-" * 78)
-rows = [(f"match, rank {RANK}", match_training, match_mapping,
-         match_model, match_peak, match_maps)]
+rows = [
+    (
+        f"match, rank {RANK}",
+        match_training,
+        match_mapping,
+        match_model,
+        match_peak,
+        match_maps,
+    )
+]
 for features, (found, training, timing, model, peak) in regressions.items():
     rows.append((f"PERK, {features} features", training, timing, model, peak, found))
 
 for name, training, timing, model, peak, found in rows:
-    print(f"{name:<26}{training:7.1f}s{timing:7.2f}s"
-          f"{model:6.1f} MiB{peak:6.0f} MiB"
-          f"{error(found['T1'], truth['T1']):7.1f}%"
-          f"{error(found['T2'], truth['T2']):7.1f}%")
+    print(
+        f"{name:<26}{training:7.1f}s{timing:7.2f}s"
+        f"{model:6.1f} MiB{peak:6.0f} MiB"
+        f"{error(found['T1'], truth['T1']):7.1f}%"
+        f"{error(found['T2'], truth['T2']):7.1f}%"
+    )
 # sphinx_gallery_end_ignore
 
 # %%
@@ -512,6 +544,7 @@ for name, training, timing, model, peak, found in rows:
 # The maps
 # --------
 #
+
 
 # sphinx_gallery_start_ignore
 def painted(values):
@@ -530,11 +563,22 @@ panels = [
 figure, axes = canvas(len(panels), 1 + len(estimates), mask.shape)
 for row, (name, reference, found) in enumerate(panels):
     cmap, limits, label = STYLE[name]
-    panel(axes[row, 0], reference, cmap, limits, ylabel=label,
-          title="truth" if row == 0 else None)
+    panel(
+        axes[row, 0],
+        reference,
+        cmap,
+        limits,
+        ylabel=label,
+        title="truth" if row == 0 else None,
+    )
     for column, (method, values) in enumerate(found.items(), start=1):
-        handle = panel(axes[row, column], painted(values), cmap, limits,
-                       title=method if row == 0 else None)
+        handle = panel(
+            axes[row, column],
+            painted(values),
+            cmap,
+            limits,
+            title=method if row == 0 else None,
+        )
     scalebar(handle, axes[row], "")
 
 # Each parameter's errors on a scale of their own: an error map read at the
@@ -543,13 +587,17 @@ figure, axes = canvas(len(panels), len(estimates), mask.shape)
 for row, (name, reference, found) in enumerate(panels):
     label = STYLE[name][2]
     residuals = {
-        method: np.abs(painted(values) - reference)
-        for method, values in found.items()
+        method: np.abs(painted(values) - reference) for method, values in found.items()
     }
     top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
     for column, (method, values) in enumerate(residuals.items()):
-        error = panel(axes[row, column], values, "inferno", (0.0, top or 1.0),
-                      title=f"\u0394 {method}" if row == 0 else None)
-    unit = label[label.find(" ["):] if "[" in label else ""
+        error = panel(
+            axes[row, column],
+            values,
+            "inferno",
+            (0.0, top or 1.0),
+            title=f"\u0394 {method}" if row == 0 else None,
+        )
+    unit = label[label.find(" [") :] if "[" in label else ""
     scalebar(error, axes[row], f"|error|{unit}")
 # sphinx_gallery_end_ignore

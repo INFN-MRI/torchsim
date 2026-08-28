@@ -11,14 +11,12 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import DictionaryMatcher, PERK
+from torchsim import PERK, DictionaryMatcher
 from torchsim.estimators import _perk
 from torchsim.sequence import execution
 from torchsim.simulators import MRFSimulator
 
-CUDA = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA is unavailable"
-)
+CUDA = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 TWO_CARDS = pytest.mark.skipif(
     torch.cuda.device_count() < 2, reason="needs two CUDA devices"
 )
@@ -220,7 +218,9 @@ def test_a_fit_gives_the_same_estimator_wherever_it_runs() -> None:
 
     here = PERK(n_features=256, feature_seed=6).fit(signals=signals, parameters=targets)
     with execution(target="cuda"):
-        there = PERK(n_features=256, feature_seed=6).fit(signals=signals, parameters=targets)
+        there = PERK(n_features=256, feature_seed=6).fit(
+            signals=signals, parameters=targets
+        )
 
     assert there.weight.device.type == "cpu", "the estimator comes home"
     scale = here.weight.abs().max()
@@ -239,7 +239,8 @@ def test_a_fit_on_a_card_reaches_it(monkeypatch) -> None:
         _perk,
         "_rff",
         lambda inputs, frequency, phase: (
-            seen.append(inputs.device.type), original(inputs, frequency, phase)
+            seen.append(inputs.device.type),
+            original(inputs, frequency, phase),
         )[1],
     )
 

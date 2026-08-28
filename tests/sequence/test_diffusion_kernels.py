@@ -12,8 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
-from utils.epg import diffusion_op
+from torchsim import TissueProperties, fse_description
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _NativeEpg,
@@ -25,6 +24,7 @@ from torchsim.sequence._accelerators import (
 )
 from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_NAMES
 from torchsim.sequence._simulation import _prepare_tissue
+from utils.epg import diffusion_op
 from utils.packed_reference import simulate_packed
 
 ECHOES = 6
@@ -74,7 +74,7 @@ def _packed(device: str = "cpu", diffusion: float = FREE_WATER, rate: bool = Tru
             for index, value in enumerate(prepared)
         )
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=resolved,
@@ -326,7 +326,6 @@ def test_the_diffusion_gradient_survives_a_zero_coefficient() -> None:
     assert gradients[DIFFUSION_INDEX].abs().min() > 0
 
 
-
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_the_cuda_kernels_agree_with_the_cpu_ones() -> None:
     tissue, events, output_count = _packed()
@@ -356,8 +355,18 @@ def test_autograd_reaches_the_diffusion_coefficient() -> None:
         for index, value in enumerate(tissue)
     )
     signal = _NativeEpg.apply(
-        *inputs, *events, STATE_COUNT, output_count, 1, NO_GEOMETRY, None, None,
-        None, None, False, None
+        *inputs,
+        *events,
+        STATE_COUNT,
+        output_count,
+        1,
+        NO_GEOMETRY,
+        None,
+        None,
+        None,
+        None,
+        False,
+        None,
     )
     signal.abs().square().sum().backward()
     assert coefficient.grad is not None

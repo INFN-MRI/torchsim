@@ -12,11 +12,15 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence import _epg_triton
 from torchsim.sequence._epg_triton import _feature_flags
-from torchsim.sequence._parameters import Geometry, at_identity
-from torchsim.sequence._parameters import TISSUE_NAMES, TISSUE_PARAMETERS
+from torchsim.sequence._parameters import (
+    TISSUE_NAMES,
+    TISSUE_PARAMETERS,
+    Geometry,
+    at_identity,
+)
 
 ECHOES = 8
 STATES = 8
@@ -86,9 +90,7 @@ def test_the_attenuation_answers_to_itself_alone():
     sequence with no gradient geometry to speak of still attenuates.
     """
     assert _feature_flags(frozenset({"T1", "DIFFUSION"}), STILL)["diffusing"]
-    assert not _feature_flags(frozenset({"T1", "B0", "FLOW"}), WINDING)[
-        "diffusing"
-    ]
+    assert not _feature_flags(frozenset({"T1", "B0", "FLOW"}), WINDING)["diffusing"]
 
 
 @pytest.mark.parametrize("name", ["B0", "B1_PHASE"])
@@ -109,7 +111,9 @@ def test_a_moving_voxel_in_a_sequence_that_declares_no_geometry_stands_still():
     assert not _feature_flags(frozenset({"FLOW"}), STILL)["moving"]
 
 
-@pytest.mark.parametrize("geometry", [Geometry(flow_scale=120.0), Geometry(washout_scale=4.0)])
+@pytest.mark.parametrize(
+    "geometry", [Geometry(flow_scale=120.0), Geometry(washout_scale=4.0)]
+)
 def test_either_geometry_scale_is_enough_to_set_the_voxel_moving(geometry):
     """The two scales drive different terms but one switch carries both, so a
     sequence declaring either keeps the velocity arithmetic.
@@ -145,15 +149,19 @@ def test_the_transmit_phase_derivative_survives_at_zero_phase():
     from torch.autograd.forward_ad import dual_level, make_dual, unpack_dual
 
     def signal(phase):
-        return EpgEngine().simulate(
-            _description(),
-            TissueProperties(
-                t1_ms=torch.tensor([1000.0]),
-                t2_ms=torch.tensor([80.0]),
-                b1_phase_rad=phase,
-            ),
-            nstates=STATES,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                _description(),
+                TissueProperties(
+                    t1_ms=torch.tensor([1000.0]),
+                    t2_ms=torch.tensor([80.0]),
+                    b1_phase_rad=phase,
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
 
     with dual_level():
         held = make_dual(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -161,9 +169,9 @@ def test_the_transmit_phase_derivative_survives_at_zero_phase():
     assert derivative is not None
 
     step = 1e-3
-    difference = (
-        signal(torch.tensor([step])) - signal(torch.tensor([-step]))
-    ) / (2.0 * step)
+    difference = (signal(torch.tensor([step])) - signal(torch.tensor([-step]))) / (
+        2.0 * step
+    )
     assert float(derivative.abs().max()) > 0.0
     assert torch.allclose(derivative, difference, rtol=2e-3, atol=1e-5)
 
@@ -180,13 +188,17 @@ def _adjoint(crusher_rad=0.0, **properties):
         name: value.cuda() if isinstance(value, torch.Tensor) else value
         for name, value in properties.items()
     }
-    signal = EpgEngine().simulate(
-        _description(crusher_rad),
-        TissueProperties(
-            **{name: value.cuda() for name, value in leaves.items()}, **held
-        ),
-        nstates=STATES,
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(crusher_rad),
+            TissueProperties(
+                **{name: value.cuda() for name, value in leaves.items()}, **held
+            ),
+            nstates=STATES,
+        )
+        .signal
+    )
     signal.abs().square().sum().backward()
     return tuple(leaves[name].grad.clone() for name in leaves)
 
@@ -225,15 +237,19 @@ def test_an_off_resonance_asked_for_its_gradient_gets_a_real_one():
     that moves the answer when it is there.
     """
     b0 = torch.tensor([30.0], device="cuda", requires_grad=True)
-    signal = EpgEngine().simulate(
-        _description(),
-        TissueProperties(
-            t1_ms=torch.tensor([1000.0], device="cuda"),
-            t2_ms=torch.tensor([80.0], device="cuda"),
-            b0_hz=b0,
-        ),
-        nstates=STATES,
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0], device="cuda"),
+                t2_ms=torch.tensor([80.0], device="cuda"),
+                b0_hz=b0,
+            ),
+            nstates=STATES,
+        )
+        .signal
+    )
     signal.abs().square().sum().backward()
     assert float(b0.grad.abs().max()) > 0.0
 
@@ -255,7 +271,11 @@ GATE_CASES = [
     ({"diffusion_um2_per_ms": 2.0}, WINDING),
 ]
 GATE_IDS = [
-    "bare", "still-voxel", "off-resonance", "transmit-phase", "flow",
+    "bare",
+    "still-voxel",
+    "off-resonance",
+    "transmit-phase",
+    "flow",
     "diffusion",
 ]
 
@@ -276,7 +296,7 @@ def _gate_inputs(extra):
         "cuda",
     )
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=torch.device("cuda"),
@@ -394,14 +414,18 @@ def test_a_diffusion_coefficient_asked_for_its_gradient_gets_a_real_one():
     moves the answer when the tissue declares it.
     """
     coefficient = torch.tensor([2.0], device="cuda", requires_grad=True)
-    signal = EpgEngine().simulate(
-        _description(CRUSHED),
-        TissueProperties(
-            t1_ms=torch.tensor([1000.0], device="cuda"),
-            t2_ms=torch.tensor([80.0], device="cuda"),
-            diffusion_um2_per_ms=coefficient,
-        ),
-        nstates=STATES,
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(CRUSHED),
+            TissueProperties(
+                t1_ms=torch.tensor([1000.0], device="cuda"),
+                t2_ms=torch.tensor([80.0], device="cuda"),
+                diffusion_um2_per_ms=coefficient,
+            ),
+            nstates=STATES,
+        )
+        .signal
+    )
     signal.abs().square().sum().backward()
     assert float(coefficient.grad.abs().max()) > 0.0

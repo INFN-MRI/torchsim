@@ -229,7 +229,6 @@ class LookupTable(Estimator):
         found = _interpolate(flat.to(intensity.dtype), intensity, parameter)
         return found.reshape(*shape, 1)
 
-
     def _reduced(self, signals: Any) -> torch.Tensor:
         """Reduce the contrasts to the one number the curve is in."""
         signals = torch.as_tensor(signals)
@@ -288,7 +287,5 @@ def _interpolate(
     lower = upper - 1
     left, right = grid[lower], grid[upper]
     # Equal neighbours would divide by zero; the blend is then either endpoint.
-    weight = (query - left) / (right - left).clamp_min(
-        torch.finfo(grid.dtype).tiny
-    )
+    weight = (query - left) / (right - left).clamp_min(torch.finfo(grid.dtype).tiny)
     return torch.lerp(values[lower], values[upper], weight.clamp(0.0, 1.0))

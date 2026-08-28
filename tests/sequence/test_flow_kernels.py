@@ -13,21 +13,21 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
-from utils.epg import flow_op
+from torchsim import TissueProperties, fse_description
 from torchsim.sequence._accelerators import (
+    Geometry,
     _pack_events,
     _run_packed,
     _run_packed_jvp,
     _run_packed_vjp,
     _run_packed_vjp_jvp,
-    Geometry,
     dephasing_per_m,
     geometry_of,
     real_subspace_axis,
 )
 from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_NAMES
 from torchsim.sequence._simulation import _prepare_tissue
+from utils.epg import flow_op
 from utils.packed_reference import simulate_packed
 
 ECHOES = 6
@@ -70,7 +70,7 @@ def _packed(velocity: float = VELOCITY):
     """Prepared tissue and packed events, as the kernels take them."""
     prepared, _, resolved = _prepare_tissue(_tissue(velocity), "cpu")
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=resolved,
@@ -120,7 +120,10 @@ def test_flow_actually_moves_the_signal() -> None:
 def test_the_forward_kernel_matches_the_reference() -> None:
     tissue, events, output_count = _packed()
     expected = simulate_packed(
-        tissue, events, state_count=STATE_COUNT, output_count=output_count,
+        tissue,
+        events,
+        state_count=STATE_COUNT,
+        output_count=output_count,
         geometry=GEOMETRY,
     )
     actual = _run_packed(
@@ -171,7 +174,7 @@ def test_flow_takes_the_states_out_of_the_real_subspace() -> None:
         voxel_size_m=VOXEL_M,
     )
     packed = _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -282,7 +285,9 @@ def test_the_velocity_gradient_matches_a_finite_difference() -> None:
             rate if index == VELOCITY_INDEX else value
             for index, value in enumerate(tissue)
         )
-        return torch.real(torch.sum(_run_packed(shifted, events, **arguments).conj() * seed))
+        return torch.real(
+            torch.sum(_run_packed(shifted, events, **arguments).conj() * seed)
+        )
 
     rate = tissue[VELOCITY_INDEX]
     step = 1e-4 * rate.abs().max()
@@ -368,4 +373,3 @@ def test_the_cuda_adjoint_agrees_with_the_cpu_one() -> None:
         assert (want - got.cpu()).abs().max().item() / scale < 1e-4, name
         compared.append(name)
     assert "velocity_m_per_s" in compared
-

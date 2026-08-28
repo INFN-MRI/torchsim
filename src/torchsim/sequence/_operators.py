@@ -290,9 +290,7 @@ def Readout(
     return Operator(emit, duration_s)
 
 
-def Delay(
-    duration_s: Any, *, action: EventAction = EventAction.NONE
-) -> Operator:
+def Delay(duration_s: Any, *, action: EventAction = EventAction.NONE) -> Operator:
     """Return time passing, and whatever the sequence plays across it.
 
     :meth:`SequenceEvent.wait` takes no action, so a delay that spoils or
@@ -303,9 +301,7 @@ def Delay(
     def emit(start_s: Any) -> tuple[SequenceEvent, ...]:
         if action is EventAction.NONE:
             return (SequenceEvent.wait(_TO_US * start_s),)
-        return (
-            SequenceEvent(EventType.WAIT, _TO_US * start_s, (), action),
-        )
+        return (SequenceEvent(EventType.WAIT, _TO_US * start_s, (), action),)
 
     return Operator(emit, duration_s)
 

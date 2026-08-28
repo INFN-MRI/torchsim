@@ -9,8 +9,8 @@ from typing import Any
 
 import torch
 
-from .._execution import per_voxel
 from .._calibrate import crossover
+from .._execution import per_voxel
 from ._grouped import Grouping, correlate, match_in_groups
 from ._mapping import Estimator
 
@@ -218,9 +218,7 @@ class DictionaryMatcher(Estimator):
             return result.indices[..., 0]
         return result.parameters[..., 0, :]
 
-    def _placed(
-        self, signals: torch.Tensor
-    ) -> tuple[torch.Tensor, ...] | None:
+    def _placed(self, signals: torch.Tensor) -> tuple[torch.Tensor, ...] | None:
         """Match under the execution policy, or ``None`` if none applies.
 
         Every voxel is matched against the same dictionary, so a volume too
@@ -248,8 +246,11 @@ class DictionaryMatcher(Estimator):
         def build(device: torch.device, voxels: int) -> Any:
             generator = torch.Generator(device=device).manual_seed(0)
             signals = torch.randn(
-                voxels, contrasts, dtype=torch.float32,
-                generator=generator, device=device,
+                voxels,
+                contrasts,
+                dtype=torch.float32,
+                generator=generator,
+                device=device,
             ).to(self.dictionary.dtype)
             replica = self._beside(device)
             return lambda: replica._match_here(signals)
@@ -282,9 +283,7 @@ class DictionaryMatcher(Estimator):
             self._replicas[key] = replica
         return replica
 
-    def _adopt(
-        self, dictionary: torch.Tensor, parameters: torch.Tensor | None
-    ) -> None:
+    def _adopt(self, dictionary: torch.Tensor, parameters: torch.Tensor | None) -> None:
         """Keep these atoms, and what each of them stands for."""
         dictionary = torch.as_tensor(dictionary)
         if dictionary.ndim != 2 or dictionary.shape[0] < 1:
@@ -303,9 +302,7 @@ class DictionaryMatcher(Estimator):
         self._grouping = (
             None
             if self.groups is None
-            else Grouping.fit(
-                dictionary, min(self.groups, dictionary.shape[0])
-            )
+            else Grouping.fit(dictionary, min(self.groups, dictionary.shape[0]))
         )
         self._replicas = {}
 
@@ -359,24 +356,14 @@ class DictionaryMatcher(Estimator):
             best_indices = torch.empty(
                 (query.shape[0], 0), dtype=torch.int64, device=query.device
             )
-            for start in range(
-                0, self.dictionary.shape[0], self.dictionary_chunk_size
-            ):
-                stop = min(
-                    start + self.dictionary_chunk_size, self.dictionary.shape[0]
-                )
-                scores = correlate(
-                    query, self.normalized_dictionary[start:stop]
-                )
+            for start in range(0, self.dictionary.shape[0], self.dictionary_chunk_size):
+                stop = min(start + self.dictionary_chunk_size, self.dictionary.shape[0])
+                scores = correlate(query, self.normalized_dictionary[start:stop])
                 local_count = min(self.top_k, scores.shape[-1])
-                local_scores, local_indices = torch.topk(
-                    scores, local_count, dim=-1
-                )
+                local_scores, local_indices = torch.topk(scores, local_count, dim=-1)
                 local_indices += start
                 candidates = torch.cat((best_scores, local_scores), dim=-1)
-                candidate_indices = torch.cat(
-                    (best_indices, local_indices), dim=-1
-                )
+                candidate_indices = torch.cat((best_indices, local_indices), dim=-1)
                 keep = min(self.top_k, candidates.shape[-1])
                 best_scores, selection = torch.topk(candidates, keep, dim=-1)
                 best_indices = torch.gather(candidate_indices, -1, selection)

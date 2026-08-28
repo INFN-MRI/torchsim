@@ -21,9 +21,10 @@ __all__ = ["calibrate"]
 import math
 import os
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any
 
 import torch
 
@@ -163,7 +164,7 @@ def _problem(
 
     flip = torch.full((_PROBE_ECHOES,), math.radians(120.0))
     packed = _pack_events(
-                fse_description(
+        fse_description(
             flip,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -211,7 +212,13 @@ def _call(
     )
     if kind == "jvp":
         return lambda: _run_packed_jvp(
-            tissue, events, seeds, event_seeds, state_count, outputs, 0,
+            tissue,
+            events,
+            seeds,
+            event_seeds,
+            state_count,
+            outputs,
+            0,
             real_axis=real_axis,
         )
 
@@ -247,9 +254,7 @@ def _elapsed(call: Any, device: torch.device, samples: int = _SAMPLES) -> float:
     return best
 
 
-def _rates(
-    kind: str, device: torch.device, real_axis: int, state_count: int
-) -> _Rates:
+def _rates(kind: str, device: torch.device, real_axis: int, state_count: int) -> _Rates:
     """Fit ``seconds = fixed + rate x work`` through one voxel and many.
 
     The larger size grows until it costs enough more than a single voxel for

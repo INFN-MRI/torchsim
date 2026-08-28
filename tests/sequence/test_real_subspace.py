@@ -8,7 +8,9 @@ import pytest
 import torch
 
 from torchsim import EpgEngine, fse_description
+from torchsim.sequence._accelerators import _pack_events, real_subspace_axis
 from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
+from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
 
 # The gradients a real adjoint does produce: every differentiable input the
 # subspace contains. Derived rather than listed, so a new parameter cannot
@@ -16,8 +18,6 @@ from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
 INSIDE_THE_SUBSPACE = tuple(
     index for index in range(len(FLOAT_NAMES)) if index not in OUTSIDE_THE_SUBSPACE
 )
-from torchsim.sequence._accelerators import _pack_events, real_subspace_axis
-from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
 
 ECHO_SPACING_S = 5e-3
 ECHOES = 10
@@ -128,9 +128,7 @@ def test_real_kernel_reproduces_the_complex_one(phase):
     assert real_subspace_axis(events, prepared) == 1
 
     complex_signal = _run_packed(prepared, events, 10, packed.output_count, 1)
-    real_signal = _run_packed(
-        prepared, events, 10, packed.output_count, 1, real_axis=1
-    )
+    real_signal = _run_packed(prepared, events, 10, packed.output_count, 1, real_axis=1)
     scale = complex_signal.abs().max()
     assert ((complex_signal - real_signal).abs().max() / scale) < 1e-6
 
@@ -206,9 +204,7 @@ def test_real_adjoint_reproduces_the_complex_one(phase, always_worth_detecting):
         (events[2].shape[0], prepared[0].numel(), packed.output_count),
         dtype=torch.complex64,
     )
-    arguments = dict(
-        state_count=10, output_count=packed.output_count, threads=1
-    )
+    arguments = dict(state_count=10, output_count=packed.output_count, threads=1)
     expected = _run_packed_vjp(prepared, events, seed, **arguments)
     wanted = tuple(index in INSIDE_THE_SUBSPACE for index in range(len(FLOAT_NAMES)))
     actual = _run_packed_vjp(prepared, events, seed, wanted=wanted, **arguments)
@@ -289,9 +285,7 @@ def test_the_real_adjoint_reaches_the_inversion_gradient():
     seed = torch.randn(
         (trains, prepared[0].numel(), packed.output_count), dtype=torch.complex64
     )
-    arguments = dict(
-        state_count=10, output_count=packed.output_count, threads=1
-    )
+    arguments = dict(state_count=10, output_count=packed.output_count, threads=1)
     expected = _run_packed_vjp(prepared, events, seed, **arguments)
     wanted = tuple(index in INSIDE_THE_SUBSPACE for index in range(len(FLOAT_NAMES)))
     actual = _run_packed_vjp(prepared, events, seed, wanted=wanted, **arguments)
@@ -338,12 +332,8 @@ def test_real_second_order_kernel_reproduces_the_complex_one():
         (events[2].shape[0], prepared[0].numel(), packed.output_count),
         dtype=torch.complex64,
     )
-    arguments = dict(
-        state_count=10, output_count=packed.output_count, threads=1
-    )
-    expected, _ = _run_packed_vjp_jvp(
-        prepared, events, tangents, seed, **arguments
-    )
+    arguments = dict(state_count=10, output_count=packed.output_count, threads=1)
+    expected, _ = _run_packed_vjp_jvp(prepared, events, tangents, seed, **arguments)
     actual, _ = _run_packed_vjp_jvp(
         prepared, events, tangents, seed, real_axis=1, **arguments
     )
@@ -362,9 +352,7 @@ def test_real_second_order_kernel_reproduces_the_complex_one():
 
 def _packed(trains):
     generator = torch.Generator().manual_seed(0)
-    flip = torch.deg2rad(
-        80.0 + 80.0 * torch.rand(trains, ECHOES, generator=generator)
-    )
+    flip = torch.deg2rad(80.0 + 80.0 * torch.rand(trains, ECHOES, generator=generator))
     description = fse_description(
         flip,
         echo_spacing_s=ECHO_SPACING_S,
@@ -372,7 +360,7 @@ def _packed(trains):
         excitation_phase_rad=torch.pi / 2,
     )
     return _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -413,9 +401,7 @@ def test_partial_train_blocks_match_the_complex_kernel(trains):
     )
     tangents = (*t2_seed, *event_seed)
     keywords = dict(state_count=10, output_count=packed.output_count, threads=1)
-    reference, _ = _run_packed_vjp_jvp(
-        prepared, events, tangents, seed, **keywords
-    )
+    reference, _ = _run_packed_vjp_jvp(prepared, events, tangents, seed, **keywords)
     result, _ = _run_packed_vjp_jvp(
         prepared, events, tangents, seed, real_axis=1, **keywords
     )
@@ -431,11 +417,9 @@ def test_partial_train_blocks_match_the_complex_kernel(trains):
 
 def _tissue_events(trains, echoes=20, atoms=64, b0_hz=0.0):
     generator = torch.Generator().manual_seed(0)
-    flip = torch.deg2rad(
-        80.0 + 80.0 * torch.rand(trains, echoes, generator=generator)
-    )
+    flip = torch.deg2rad(80.0 + 80.0 * torch.rand(trains, echoes, generator=generator))
     packed = _pack_events(
-                fse_description(
+        fse_description(
             flip,
             echo_spacing_s=ECHO_SPACING_S,
             phases_rad=torch.pi / 2,
@@ -510,9 +494,10 @@ def test_a_seed_that_leaves_the_subspace_is_not_chosen(direction):
         for index, value in enumerate(tissue)
     )
     phase_seed = torch.zeros_like(events[3])
-    assert _auto_real_axis(
-        "jvp", events, tissue, 10, (seed[4], seed[5], phase_seed)
-    ) is None
+    assert (
+        _auto_real_axis("jvp", events, tissue, 10, (seed[4], seed[5], phase_seed))
+        is None
+    )
 
 
 def test_an_rf_phase_seed_is_not_chosen():
@@ -520,9 +505,12 @@ def test_an_rf_phase_seed_is_not_chosen():
 
     events, tissue, _ = _tissue_events(_trains_worth(8))
     zeros = tuple(torch.zeros_like(value) for value in tissue)
-    assert _auto_real_axis(
-        "jvp", events, tissue, 10, (zeros[4], zeros[5], torch.ones_like(events[3]))
-    ) is None
+    assert (
+        _auto_real_axis(
+            "jvp", events, tissue, 10, (zeros[4], zeros[5], torch.ones_like(events[3]))
+        )
+        is None
+    )
 
 
 # --- the adjoint, where the verdict also depends on what is being asked for ---
@@ -557,8 +545,7 @@ def _every_gradient():
 def _only(*names):
     """A mask over the differentiable inputs, named rather than positional."""
     positions = {
-        name if isinstance(name, int) else FLOAT_NAMES.index(name)
-        for name in names
+        name if isinstance(name, int) else FLOAT_NAMES.index(name) for name in names
     }
     return tuple(index in positions for index in range(len(FLOAT_NAMES)))
 
@@ -589,7 +576,6 @@ def test_wanting_a_gradient_outside_the_subspace_keeps_the_complex_kernel(positi
         _auto_real_axis_adjoint,
         _run_packed_vjp_jvp,
     )
-
     from torchsim.sequence._parameters import Geometry
 
     events, tissue, tangents, cotangent, count = _adjoint_case(_trains_worth(8))
@@ -656,7 +642,7 @@ def test_autograd_asks_for_what_the_graph_needs(monkeypatch, always_worth_detect
     Differentiating T2 stays inside the subspace, so the fast adjoint is
     available -- and the answer must not depend on it being taken.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
 
     chosen = []
     original = _accelerators._auto_real_axis_adjoint
@@ -694,7 +680,7 @@ def test_the_cuda_real_adjoint_agrees_with_the_second_order_kernel(
     Widths are swept because a reverse kernel has miscompiled silently at one
     state count before, and a single width would not have caught it.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     description = fse_description(
@@ -774,7 +760,7 @@ def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass(
     """The first-order kernel is the point of this route, so the test above has
     to be reaching it rather than agreeing with itself.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     description = fse_description(
@@ -806,9 +792,8 @@ def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass(
 
     reached = []
     original = _accelerators._run_packed_vjp_jvp
-    _accelerators._run_packed_vjp_jvp = (
-        lambda *arguments, **keywords: reached.append(True)
-        or original(*arguments, **keywords)
+    _accelerators._run_packed_vjp_jvp = lambda *arguments, **keywords: (
+        reached.append(True) or original(*arguments, **keywords)
     )
     try:
         _run_packed_vjp(

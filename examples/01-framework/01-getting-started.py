@@ -68,15 +68,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -90,6 +102,7 @@ def key(axes, ncols=1):
 
 # sphinx_gallery_end_ignore
 import time
+from functools import partial
 
 import torch
 
@@ -261,13 +274,15 @@ reverse_seconds, difference_seconds = [], []
 for echoes in LENGTHS:
     shots = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, M0=1.0)
     angles = torch.full((echoes,), 60.0)
-    (cost, analytic), seconds = timed(lambda: analytic_gradient(shots, angles))
+    (cost, analytic), seconds = timed(partial(analytic_gradient, shots, angles))
     reverse_seconds.append(seconds)
-    (_, difference), seconds = timed(lambda: finite_gradient(shots, angles))
+    (_, difference), seconds = timed(partial(finite_gradient, shots, angles))
     difference_seconds.append(seconds)
-    print(f"{echoes:>4} echoes   reverse {reverse_seconds[-1]:6.3f} s   "
-          f"finite {difference_seconds[-1]:6.3f} s   "
-          f"({difference_seconds[-1] / reverse_seconds[-1]:5.1f}x)")
+    print(
+        f"{echoes:>4} echoes   reverse {reverse_seconds[-1]:6.3f} s   "
+        f"finite {difference_seconds[-1]:6.3f} s   "
+        f"({difference_seconds[-1] / reverse_seconds[-1]:5.1f}x)"
+    )
 # sphinx_gallery_end_ignore
 
 # %%
@@ -330,8 +345,10 @@ signal, dT2 = torchsim.fse_sim(
 
 # sphinx_gallery_start_ignore
 reference, reference_dT2 = acquisition.jacobian("T2", flip=flip)
-print(f"agrees with the simulator to "
-      f"{float((torch.as_tensor(dT2) - reference_dT2).abs().max()):.1e}")
+print(
+    f"agrees with the simulator to "
+    f"{float((torch.as_tensor(dT2) - reference_dT2).abs().max()):.1e}"
+)
 # sphinx_gallery_end_ignore
 
 # %%

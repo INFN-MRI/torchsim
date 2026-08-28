@@ -9,7 +9,7 @@ off the description like everything else, so a description assembled by hand
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence._description import RfUse
 
 ECHOES = 8
@@ -32,10 +32,9 @@ def _tissue():
 
 def _reference(description, tissue, state_count: int = STATES):
     """The same train through the state machine written out in torch."""
-    from utils.packed_reference import simulate_packed
-
     from torchsim.sequence._accelerators import _pack_events, geometry_of
     from torchsim.sequence._simulation import _prepare_tissue
+    from utils.packed_reference import simulate_packed
 
     prepared, shape, device = _prepare_tissue(tissue, "cpu")
     packed = _pack_events(
@@ -46,8 +45,14 @@ def _reference(description, tissue, state_count: int = STATES):
         rf_raster_time_s=1e-6,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     signal = simulate_packed(

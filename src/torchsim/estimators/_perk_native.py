@@ -39,14 +39,17 @@ def regress(
     held = [
         _ready(tensor)
         for tensor in (
-            signals, frequency, transposed, phase, feature_mean, weight,
+            signals,
+            frequency,
+            transposed,
+            phase,
+            feature_mean,
+            weight,
             parameter_mean,
         )
     ]
     voxels, contrasts = held[0].shape
-    output = torch.empty(
-        (voxels, weight.shape[0]), dtype=torch.float32, device="cpu"
-    )
+    output = torch.empty((voxels, weight.shape[0]), dtype=torch.float32, device="cpu")
     _perk_cpu.regress(
         tuple(tensor.data_ptr() for tensor in (*held, output)),
         voxels,

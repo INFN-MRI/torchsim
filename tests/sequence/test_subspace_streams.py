@@ -59,11 +59,7 @@ def _stream(
     recorded = 0
     for index in range(count):
         # An excitation first, so the stream always carries both roles.
-        role = (
-            EXCITATION
-            if index == 0 or _chance(rng, 0.25)
-            else REFOCUSING
-        )
+        role = EXCITATION if index == 0 or _chance(rng, 0.25) else REFOCUSING
         dephasing = 0
         if not still:
             for bit in DEPHASING:

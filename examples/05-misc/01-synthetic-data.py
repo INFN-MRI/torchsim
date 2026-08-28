@@ -236,8 +236,9 @@ NAMES = ("grey matter", "white matter", "CSF")
 
 segmentation = Preprocess().run(
     str(subject.image.path),
-    output_paths={name: f"{tempfile.gettempdir()}/{name}.nii.gz"
-                  for name in ("p1", "p2", "p3")},
+    output_paths={
+        name: f"{tempfile.gettempdir()}/{name}.nii.gz" for name in ("p1", "p2", "p3")
+    },
     run_all=False,
 )
 
@@ -247,7 +248,7 @@ segmentation = Preprocess().run(
 # alignment they need. The rest puts every volume in RAS on a 1 mm isotropic
 # grid, so that one index is the same axial slice everywhere and a square
 # slice is a square image.
-for key, name in zip(("p1", "p2", "p3"), NAMES):
+for key, name in zip(("p1", "p2", "p3"), NAMES, strict=False):
     subject.add_image(
         tio.ScalarImage(
             tensor=torch.as_tensor(segmentation[key].get_fdata())[None].float(),
@@ -266,8 +267,10 @@ occupancy = fractions.sum(-1)
 brain = occupancy > 0.5
 
 mixed = int(((fractions.max(-1).values < 0.99) & brain).sum())
-print(f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels; "
-      f"{100 * mixed / int(brain.sum()):.0f}% are a mixture of two tissues or more")
+print(
+    f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels; "
+    f"{100 * mixed / int(brain.sum()):.0f}% are a mixture of two tissues or more"
+)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -282,8 +285,9 @@ print(f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels; "
 figure, axes = canvas(1, 4, (SIZE, SIZE))
 panel(axes[0, 0], anatomy.cpu(), "gray", (0, float(anatomy.max())), title="T1w")
 for column, name in enumerate(("grey", "white", "CSF"), start=1):
-    handle = panel(axes[0, column], fractions[..., column - 1].cpu(), "magma", (0, 1),
-                   title=name)
+    handle = panel(
+        axes[0, column], fractions[..., column - 1].cpu(), "magma", (0, 1), title=name
+    )
 scalebar(handle, axes[0, 1:], "probability")
 # sphinx_gallery_end_ignore
 
@@ -312,8 +316,10 @@ class_T2 = NAMES_T2
 # sphinx_gallery_start_ignore
 print(f"\n{'tissue':<14} {'voxels':>8}   {'M0':>4} {'T1 (ms)':>8} {'T2 (ms)':>8}")
 for k, name in enumerate(NAMES):
-    print(f"{name:<14} {int(dominant[..., k].sum()):8d}   "
-          f"{class_M0[k]:4.2f} {class_T1[k]:8.0f} {class_T2[k]:8.1f}")
+    print(
+        f"{name:<14} {int(dominant[..., k].sum()):8d}   "
+        f"{class_M0[k]:4.2f} {class_T1[k]:8.0f} {class_T2[k]:8.1f}"
+    )
 # sphinx_gallery_end_ignore
 
 # %%
@@ -390,16 +396,16 @@ build = mrinufft.get_operator(backend)
 started = time.perf_counter()
 # sphinx_gallery_end_ignore
 arms = [
-    build(trajectory[frame], (SIZE, SIZE), n_coils=COILS, squeeze_dims=False, density=True)
+    build(
+        trajectory[frame], (SIZE, SIZE), n_coils=COILS, squeeze_dims=False, density=True
+    )
     for frame in range(FRAMES)
 ]
 # sphinx_gallery_start_ignore
 print(f"{FRAMES} arms built in {time.perf_counter() - started:.1f}s")
 # sphinx_gallery_end_ignore
 
-coil_series = (
-    sensitivities[:, None] * series.movedim(-1, 0)[None]
-).to(device)
+coil_series = (sensitivities[:, None] * series.movedim(-1, 0)[None]).to(device)
 
 # sphinx_gallery_start_ignore
 started = time.perf_counter()
@@ -408,9 +414,7 @@ kspace = torch.stack(
     [arms[frame].op(coil_series[:, frame][None])[0] for frame in range(FRAMES)]
 )
 # sphinx_gallery_start_ignore
-print(
-    f"forward NUFFT {time.perf_counter() - started:.1f}s -> {tuple(kspace.shape)}"
-)
+print(f"forward NUFFT {time.perf_counter() - started:.1f}s -> {tuple(kspace.shape)}")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -424,12 +428,11 @@ print(
 # The trajectory is a plot rather than a map, so it gets a panel and a half.
 # That makes this the widest row on the page, and PANEL is set from it.
 figure = plt.figure(figsize=(5.5 * PANEL + BAR_WIDTH, PANEL + 1.05))
-grid = figure.add_gridspec(
-    1, 6, width_ratios=(1, 1, 1, 1, BAR_WIDTH / PANEL, 1.5)
-)
+grid = figure.add_gridspec(1, 6, width_ratios=(1, 1, 1, 1, BAR_WIDTH / PANEL, 1.5))
 for index in range(4):
-    domain(figure.add_subplot(grid[0, index]), sensitivities[index],
-           title=f"coil {index}")
+    domain(
+        figure.add_subplot(grid[0, index]), sensitivities[index], title=f"coil {index}"
+    )
 
 bar = figure.colorbar(
     plt.cm.ScalarMappable(plt.Normalize(-np.pi, np.pi), cmap=PHASE),

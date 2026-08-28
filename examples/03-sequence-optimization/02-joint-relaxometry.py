@@ -124,15 +124,27 @@ def key(axes, ncols=1):
     """
     if hasattr(axes, "add_subplot"):
         handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(handles, labels, loc="outside upper center",
-                           ncols=ncols, frameon=False, handlelength=1.6,
-                           columnspacing=1.4)
+        return axes.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncols=ncols,
+            frameon=False,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
     axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
     figure = axes[0].figure
     legends = [
-        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
-                    frameon=False, borderaxespad=0.0, handlelength=1.6,
-                    columnspacing=1.4)
+        axis.legend(
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=ncols,
+            frameon=False,
+            borderaxespad=0.0,
+            handlelength=1.6,
+            columnspacing=1.4,
+        )
         for axis in axes
     ]
     figure.canvas.draw()
@@ -196,9 +208,7 @@ def rows(acquisition, **design):
     """The Jacobian rows for every joint parameter, zero where the block is blind."""
     present = [name for name in JOINT if name in acquisition.exposes]
     _, jacobian = acquisition.jacobian(present, **design)
-    placed = jacobian.new_zeros(
-        jacobian.shape[:-2] + (len(JOINT), jacobian.shape[-1])
-    )
+    placed = jacobian.new_zeros(jacobian.shape[:-2] + (len(JOINT), jacobian.shape[-1]))
     where = torch.tensor([JOINT.index(name) for name in present])
     return placed.index_copy(-2, where, jacobian)
 
@@ -292,13 +302,19 @@ for axis, start_angles, designed, title in (
     (axes[1], ssfp_start, ssfp_designed, "bSSFP block"),
 ):
     index = torch.arange(1, start_angles.numel() + 1)
-    axis.bar(index - 0.19, start_angles, width=0.36, color="grey",
-             label="published spread")
-    axis.bar(index + 0.19, designed.detach(), width=0.36, color="crimson",
-             label="designed")
-    for position, angle in zip(index, designed.detach()):
-        axis.annotate(f"{float(angle):.0f}", (float(position) + 0.19, float(angle)),
-                      ha="center", va="bottom")
+    axis.bar(
+        index - 0.19, start_angles, width=0.36, color="grey", label="published spread"
+    )
+    axis.bar(
+        index + 0.19, designed.detach(), width=0.36, color="crimson", label="designed"
+    )
+    for position, angle in zip(index, designed.detach(), strict=False):
+        axis.annotate(
+            f"{float(angle):.0f}",
+            (float(position) + 0.19, float(angle)),
+            ha="center",
+            va="bottom",
+        )
     axis.set(xlabel="Acquisition", title=title, xticks=index.tolist())
     axis.grid(alpha=0.3, axis="y")
 axes[0].set_ylabel("Flip angle [deg]")
@@ -346,9 +362,7 @@ for axis, acquisition, start_angles, designed, title in (
 key(figure, ncols=4)
 
 axes[2].plot(result.loss.cpu())
-axes[2].set(
-    xlabel="Iteration", ylabel="log relative CRLB", title="convergence"
-)
+axes[2].set(xlabel="Iteration", ylabel="log relative CRLB", title="convergence")
 axes[2].grid(alpha=0.3)
 # sphinx_gallery_end_ignore
 
@@ -498,8 +512,7 @@ def mapped(spgr_flip, ssfp_flip):
 
 before, before_seconds = mapped(spgr_start, ssfp_start)
 after, after_seconds = mapped(spgr_designed, ssfp_designed)
-print(f"{2 * int(mask.sum())} joint fits in "
-      f"{before_seconds + after_seconds:.1f} s")
+print(f"{2 * int(mask.sum())} joint fits in {before_seconds + after_seconds:.1f} s")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -575,6 +588,7 @@ for label, maps in found.items():
 # what a precision design buys and all it buys.
 #
 
+
 # sphinx_gallery_start_ignore
 def painted(values):
     """A flat vector of brain voxels, back in the shape of the slice."""
@@ -596,8 +610,9 @@ for name in ("T1", "T2"):
     panel(axes[0, 0], reference, cmap, limits, title="truth")
     axes[1, 0].set_visible(False)
     for column, method in enumerate(found, start=1):
-        estimate = panel(axes[0, column], painted(found[method][name]), cmap, limits,
-                         title=method)
+        estimate = panel(
+            axes[0, column], painted(found[method][name]), cmap, limits, title=method
+        )
         error = panel(axes[1, column], residuals[method], "inferno", (0.0, top or 1.0))
     scalebar(estimate, axes[0], label)
     scalebar(error, axes[1, 1:], f"|error|, {label}")

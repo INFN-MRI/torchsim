@@ -76,20 +76,32 @@ def generator(t1a_ms, t1b_ms, t1c_ms, exchange_b, exchange_c, fraction_b, fracti
 def _minor_sum(matrix):
     """The sum of a 3x3's principal 2x2 minors, its second invariant."""
     return (
-        matrix[..., 0, 0] * matrix[..., 1, 1] - matrix[..., 0, 1] * matrix[..., 1, 0]
-        + matrix[..., 0, 0] * matrix[..., 2, 2] - matrix[..., 0, 2] * matrix[..., 2, 0]
-        + matrix[..., 1, 1] * matrix[..., 2, 2] - matrix[..., 1, 2] * matrix[..., 2, 1]
+        matrix[..., 0, 0] * matrix[..., 1, 1]
+        - matrix[..., 0, 1] * matrix[..., 1, 0]
+        + matrix[..., 0, 0] * matrix[..., 2, 2]
+        - matrix[..., 0, 2] * matrix[..., 2, 0]
+        + matrix[..., 1, 1] * matrix[..., 2, 2]
+        - matrix[..., 1, 2] * matrix[..., 2, 1]
     )
 
 
 def _determinant(matrix):
     return (
         matrix[..., 0, 0]
-        * (matrix[..., 1, 1] * matrix[..., 2, 2] - matrix[..., 1, 2] * matrix[..., 2, 1])
+        * (
+            matrix[..., 1, 1] * matrix[..., 2, 2]
+            - matrix[..., 1, 2] * matrix[..., 2, 1]
+        )
         - matrix[..., 0, 1]
-        * (matrix[..., 1, 0] * matrix[..., 2, 2] - matrix[..., 1, 2] * matrix[..., 2, 0])
+        * (
+            matrix[..., 1, 0] * matrix[..., 2, 2]
+            - matrix[..., 1, 2] * matrix[..., 2, 0]
+        )
         + matrix[..., 0, 2]
-        * (matrix[..., 1, 0] * matrix[..., 2, 1] - matrix[..., 1, 1] * matrix[..., 2, 0])
+        * (
+            matrix[..., 1, 0] * matrix[..., 2, 1]
+            - matrix[..., 1, 1] * matrix[..., 2, 0]
+        )
     )
 
 
@@ -262,7 +274,9 @@ def test_the_equilibrium_is_a_fixed_point() -> None:
     """
     values, dt = _draw(40000, 2)
     (t1a, t1b, t1c, _, _, fraction_b, fraction_c) = values
-    equilibrium = torch.stack((1.0 - fraction_b - fraction_c, fraction_b, fraction_c), -1)
+    equilibrium = torch.stack(
+        (1.0 - fraction_b - fraction_c, fraction_b, fraction_c), -1
+    )
     source = torch.stack(
         (
             (1.0 - fraction_b - fraction_c) * 1000.0 / t1a,
@@ -313,9 +327,9 @@ def test_both_branches_agree_where_they_meet() -> None:
     scaled = scaled * (SPREAD_CUT / spread.clamp(min=1e-12))[..., None, None]
 
     expected = torch.matrix_exp(scaled)
-    relative = (three_pool_step(scaled) - expected).abs().amax((-2, -1)) / expected.abs().amax(
+    relative = (three_pool_step(scaled) - expected).abs().amax(
         (-2, -1)
-    ).clamp(min=1e-30)
+    ) / expected.abs().amax((-2, -1)).clamp(min=1e-30)
     assert float(relative.max()) < 1e-12
 
 
@@ -337,9 +351,9 @@ def test_coalescent_roots_keep_the_operator_exact(identical, exchange) -> None:
     scaled = _scaled(values, dt)
     expected = torch.matrix_exp(scaled)
 
-    relative = (three_pool_step(scaled) - expected).abs().amax((-2, -1)) / expected.abs().amax(
+    relative = (three_pool_step(scaled) - expected).abs().amax(
         (-2, -1)
-    ).clamp(min=1e-30)
+    ) / expected.abs().amax((-2, -1)).clamp(min=1e-30)
     assert float(torch.quantile(relative, 0.99)) < 1e-7
     assert float(relative.max()) < 1e-5
 
@@ -404,7 +418,13 @@ def _gradient(values, dt, step):
         ("well separated", (1000.0, 400.0, 800.0), (30.0, 60.0), (0.2, 0.1), 0.05),
         ("triple root", (900.0, 900.0, 900.0), (0.0, 0.0), (1 / 3.0, 1 / 3.0), 2.0),
         ("double root, wide spread", (900.0, 900.0, 1.0), (0.0, 0.0), (0.3, 0.2), 0.5),
-        ("double root, long interval", (900.0, 900.0, 0.6), (0.0, 0.0), (0.3, 0.2), 3.0),
+        (
+            "double root, long interval",
+            (900.0, 900.0, 0.6),
+            (0.0, 0.0),
+            (0.3, 0.2),
+            3.0,
+        ),
         ("double root, exchanging", (900.0, 900.0, 1.0), (40.0, 40.0), (0.3, 0.2), 0.5),
         ("no exchange at all", (900.0, 400.0, 3.0), (0.0, 0.0), (0.3, 0.2), 5.0),
         ("extreme exchange", (900.0, 400.0, 3.0), (2e5, 2e5), (0.3, 0.2), 0.5),
@@ -416,7 +436,9 @@ def test_the_derivatives_match_autograd(name, t1s, rates, fractions, dt) -> None
     the branch is guarded. Every degeneracy a user can reach by giving two
     pools the same relaxation is read here.
     """
-    values = tuple(torch.tensor(entry, dtype=REAL) for entry in (*t1s, *rates, *fractions))
+    values = tuple(
+        torch.tensor(entry, dtype=REAL) for entry in (*t1s, *rates, *fractions)
+    )
     delay = torch.tensor(dt, dtype=REAL)
 
     measured = _gradient(values, delay, three_pool_step)
@@ -493,8 +515,13 @@ def test_the_closed_form_agrees_with_the_package_operator() -> None:
             (1000.0 / t1a[index], 1000.0 / t1b[index], 1000.0 / t1c[index])
         )
         matrix = generator(
-            t1a[index], t1b[index], t1c[index], exchange_b[index], exchange_c[index],
-            fraction_b[index], fraction_c[index],
+            t1a[index],
+            t1b[index],
+            t1c[index],
+            exchange_b[index],
+            exchange_c[index],
+            fraction_b[index],
+            fraction_c[index],
         ) + torch.diag(rates)
         operator, _ = epg.longitudinal_relaxation_exchange_op(
             weight, matrix, rates, dt[index]
@@ -504,6 +531,8 @@ def test_the_closed_form_agrees_with_the_package_operator() -> None:
         )[0]
         worst = max(
             worst,
-            float((mine - operator).abs().max() / operator.abs().max().clamp(min=1e-30)),
+            float(
+                (mine - operator).abs().max() / operator.abs().max().clamp(min=1e-30)
+            ),
         )
     assert worst < 1e-6

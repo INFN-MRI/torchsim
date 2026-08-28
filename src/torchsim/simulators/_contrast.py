@@ -12,9 +12,7 @@ import torch
 from ..sequence._array import as_torch
 
 
-def across_contrasts(
-    properties: Mapping[str, Any], *sequence: Any
-) -> dict[str, Any]:
+def across_contrasts(properties: Mapping[str, Any], *sequence: Any) -> dict[str, Any]:
     """Give every property a trailing axis where the sequence has contrasts.
 
     A closed form is elementwise in the tissue, so one evaluation covers every
@@ -35,12 +33,7 @@ def across_contrasts(
     dict
         The properties, ready to broadcast against the sequence.
     """
-    contrasts = torch.broadcast_shapes(
-        *(as_torch(value).shape for value in sequence)
-    )
+    contrasts = torch.broadcast_shapes(*(as_torch(value).shape for value in sequence))
     if not contrasts:
         return dict(properties)
-    return {
-        name: value[..., None]
-        for name, value in properties.items()
-    }
+    return {name: value[..., None] for name, value in properties.items()}

@@ -15,21 +15,21 @@ the narrow one.
 import pytest
 import torch
 
+import torchsim._execution as _policy
+import torchsim.sequence._accelerators as accelerators
 from torchsim.sequence import EpgEngine, offload
-from torchsim.sequence._parameters import NO_GEOMETRY, OUTSIDE_THE_SUBSPACE, Geometry
 from torchsim.sequence._accelerators import (
     _FLOAT_INPUTS,
-    _Lane,
-    _Offload,
     _bytes_per_voxel,
     _chunk_voxels,
+    _Lane,
+    _Offload,
     _pack_events,
     _run_packed,
 )
 from torchsim.sequence._builders import fse_description
+from torchsim.sequence._parameters import NO_GEOMETRY, OUTSIDE_THE_SUBSPACE, Geometry
 from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
-import torchsim.sequence._accelerators as accelerators
-import torchsim._execution as _policy
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason="CUDA is unavailable"
@@ -44,7 +44,7 @@ def _volume(voxels, trains=1):
     shape = (trains, ECHOES) if trains > 1 else (ECHOES,)
     flip = torch.deg2rad(80.0 + 80.0 * torch.rand(shape, generator=generator))
     packed = _pack_events(
-                fse_description(
+        fse_description(
             flip,
             echo_spacing_s=5e-3,
             phases_rad=torch.pi / 2,
@@ -152,9 +152,7 @@ def test_more_lanes_do_not_widen_the_footprint():
     budget = 32 << 20
     peaks = [
         _peak_over_baseline(
-            lambda lanes=lanes: _run_offload(
-                prepared, events, outputs, budget, lanes
-            )
+            lambda lanes=lanes: _run_offload(prepared, events, outputs, budget, lanes)
         )
         for lanes in (1, 4)
     ]
@@ -219,8 +217,6 @@ def test_a_nonsense_budget_is_refused(budget, lanes):
 
 
 def test_the_previous_setting_comes_back_after_a_failure():
-    from torchsim.sequence import EpgEngine
-
     with pytest.raises(RuntimeError):
         with offload(["cuda"], budget_bytes=1 << 20):
             raise RuntimeError("boom")
@@ -249,7 +245,7 @@ def _spgr_volume(voxels, trains=1, pulses=12):
     generator = torch.Generator().manual_seed(0)
     packed = [
         _pack_events(
-                        spgr_description(
+            spgr_description(
                 torch.deg2rad(5.0 + 20.0 * torch.rand(pulses, generator=generator)),
                 repetition_time_s=10e-3,
                 echo_time_s=4e-3,
@@ -341,8 +337,9 @@ def test_an_event_seed_reaches_every_chunk():
     assert ((expected - actual).abs().max() / expected.abs().max()) < 1e-5
 
 
-def _adjoint(events, prepared, outputs, voxels, trains, real_axis, budget,
-             geometry=NO_GEOMETRY):
+def _adjoint(
+    events, prepared, outputs, voxels, trains, real_axis, budget, geometry=NO_GEOMETRY
+):
     from torchsim.sequence._accelerators import _run_packed_vjp_jvp
 
     tissue_seed, event_seed = _seeds(events, prepared, 1)
@@ -580,8 +577,7 @@ def _inside_the_subspace():
     out, which is what lets it be chosen at all.
     """
     return tuple(
-        position not in OUTSIDE_THE_SUBSPACE
-        for position in range(len(_FLOAT_INPUTS))
+        position not in OUTSIDE_THE_SUBSPACE for position in range(len(_FLOAT_INPUTS))
     )
 
 
@@ -594,13 +590,18 @@ def _only_wanted(gradients, wanted):
     if wanted is None:
         return gradients
     return tuple(
-        gradient for gradient, asked in zip(gradients, wanted, strict=True)
-        if asked
+        gradient for gradient, asked in zip(gradients, wanted, strict=True) if asked
     )
 
 
 def _first_order_adjoint(
-    events, prepared, outputs, voxels, trains, wanted, budget,
+    events,
+    prepared,
+    outputs,
+    voxels,
+    trains,
+    wanted,
+    budget,
     geometry=NO_GEOMETRY,
 ):
     """The route ``torch.autograd`` takes for a plain ``.backward()``."""
@@ -642,9 +643,7 @@ def test_a_streamed_first_order_adjoint_matches_the_cpu_run(budget, trains):
 
 @pytest.mark.parametrize("budget", [1 << 20, 512 << 20])
 @pytest.mark.parametrize("trains", [1, 3])
-def test_a_streamed_first_order_complex_adjoint_matches_the_cpu_run(
-    budget, trains
-):
+def test_a_streamed_first_order_complex_adjoint_matches_the_cpu_run(budget, trains):
     """On SPGR, so b0 and the RF phase are live rather than refocused away."""
     voxels = 2000
     events, prepared, outputs = _spgr_volume(voxels, trains=trains)
@@ -679,14 +678,12 @@ def test_a_host_resident_first_order_adjoint_follows_the_execution_target():
     """The forward moves to the card under this policy, so the backward has to
     move with it rather than stay behind.
     """
-    from torchsim.sequence import EpgEngine, execution
+    from torchsim.sequence import execution
 
     voxels = 20_000
     events, prepared, outputs = _volume(voxels)
     wanted = _inside_the_subspace()
-    expected = _first_order_adjoint(
-        events, prepared, outputs, voxels, 1, wanted, None
-    )
+    expected = _first_order_adjoint(events, prepared, outputs, voxels, 1, wanted, None)
     with execution("cuda"):
         actual = _first_order_adjoint(
             events, prepared, outputs, voxels, 1, wanted, None
@@ -730,7 +727,7 @@ def test_a_backward_through_the_public_api_streams():
     ``torch.autograd`` reaches the adjoint by a route of its own, and it is
     the one an ordinary user's ``.backward()`` takes.
     """
-    from torchsim.sequence import EpgEngine, TissueProperties
+    from torchsim.sequence import TissueProperties
 
     voxels = 20_000
     reached = []
@@ -749,16 +746,20 @@ def test_a_backward_through_the_public_api_streams():
     def gradients():
         t1 = torch.linspace(600.0, 1400.0, voxels, requires_grad=True)
         t2 = torch.linspace(40.0, 120.0, voxels, requires_grad=True)
-        signal = EpgEngine().simulate(
-            fse_description(
-                torch.deg2rad(torch.full((ECHOES,), 120.0)),
-                echo_spacing_s=5e-3,
-                phases_rad=torch.pi / 2,
-                excitation_phase_rad=torch.pi / 2,
-            ),
-            TissueProperties(t1_ms=t1, t2_ms=t2),
-            nstates=STATES,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                fse_description(
+                    torch.deg2rad(torch.full((ECHOES,), 120.0)),
+                    echo_spacing_s=5e-3,
+                    phases_rad=torch.pi / 2,
+                    excitation_phase_rad=torch.pi / 2,
+                ),
+                TissueProperties(t1_ms=t1, t2_ms=t2),
+                nstates=STATES,
+            )
+            .signal
+        )
         signal.abs().square().sum().backward()
         return t1.grad, t2.grad
 
@@ -779,14 +780,12 @@ def test_a_backward_through_the_public_api_streams():
     assert _compare_gradients((expected,), (actual,)) < 1e-4
 
 
-
-
 @pytest.mark.parametrize("trains", [1, 3])
 def test_a_streamed_first_order_adjoint_takes_its_own_kernel(trains):
     """A chunk of a first-order adjoint is a first-order adjoint, so streaming
     must not cost the kernel written for it.
     """
-    from torchsim.sequence import _accelerators as accelerators, EpgEngine
+    from torchsim.sequence import _accelerators as accelerators
 
     voxels = 2000
     events, prepared, outputs = _volume(voxels, trains=trains)

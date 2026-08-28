@@ -10,8 +10,8 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..sequence._array import as_torch, matched
 from ..model import SPOILED, Simulator, SpinPhysics
+from ..sequence._array import as_torch, matched
 
 
 class MPnRAGESimulator(Simulator):
@@ -85,8 +85,6 @@ class MPnRAGESimulator(Simulator):
             )
         return parts
 
-    def evaluate(
-        self, properties: Mapping[str, Any], **sequence: Any
-    ) -> torch.Tensor:
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Return the train the inversion recovers through."""
         return 1j * super().evaluate(properties, **sequence)

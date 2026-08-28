@@ -19,7 +19,6 @@ import pytest
 import torch
 
 from torchsim import TissueProperties, fse_description
-from torchsim.sequence._parameters import FLOAT_NAMES
 from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed,
@@ -27,7 +26,7 @@ from torchsim.sequence._accelerators import (
     real_subspace_axis,
 )
 from torchsim.sequence._description import RfDefinition, RfShape
-from torchsim.sequence._parameters import TISSUE_COUNT
+from torchsim.sequence._parameters import FLOAT_NAMES, TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue
 from torchsim.sequence._transition import transition_table
 from utils.packed_reference import simulate_packed
@@ -72,9 +71,7 @@ def _instantaneous_table():
         total_b1sq_power=1.0,
         magnitude=RfShape(num_uncompressed=8, samples=np.ones(8, dtype=np.float32)),
     )
-    return transition_table(
-        flat, torch.zeros(1), bins=1024, rf_raster_time_s=RASTER
-    )
+    return transition_table(flat, torch.zeros(1), bins=1024, rf_raster_time_s=RASTER)
 
 
 def _packed(voxels: int):
@@ -94,7 +91,7 @@ def _packed(voxels: int):
     prepared, _, device = _prepare_tissue(tissue, torch.device("cpu"))
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
     packed = _pack_events(
-                description,
+        description,
         repetitions=1,
         record="all",
         device=device,
@@ -131,7 +128,11 @@ def test_the_kernel_reads_the_table_the_oracle_reads() -> None:
         locations=locations,
     )
     actual = _run_packed(
-        tissue, events, state_count=STATES, output_count=outputs, threads=1,
+        tissue,
+        events,
+        state_count=STATES,
+        output_count=outputs,
+        threads=1,
         profile=table,
     )
 
@@ -160,7 +161,11 @@ def test_each_voxel_reads_its_own_place_along_the_slice() -> None:
     )
     tissue, events, outputs = _packed(2 * locations)
     signal = _run_packed(
-        tissue, events, state_count=STATES, output_count=outputs, threads=1,
+        tissue,
+        events,
+        state_count=STATES,
+        output_count=outputs,
+        threads=1,
         profile=table,
     )
     # Two voxels differing only in their slice position give different signals,
@@ -173,7 +178,9 @@ def test_the_real_subspace_declines_a_shaped_pulse() -> None:
     """A shaped pulse's ``a`` is complex, which is what leaves the subspace."""
     tissue, events, _ = _packed(4)
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, 2), bins=32,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, 2),
+        bins=32,
         rf_raster_time_s=RASTER,
     )
     plain = TissueProperties(
@@ -190,13 +197,13 @@ def test_the_real_subspace_declines_a_shaped_pulse() -> None:
 def test_the_card_reads_the_table_the_host_reads() -> None:
     voxels, locations = 3, 3
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
-    arguments = dict(
-        state_count=STATES, output_count=outputs, threads=1, profile=table
-    )
+    arguments = dict(state_count=STATES, output_count=outputs, threads=1, profile=table)
     expected = _run_packed(tissue, events, **arguments)
     card = torch.device("cuda")
     actual = _run_packed(
@@ -216,13 +223,20 @@ def test_a_pulse_past_the_end_of_the_table_is_refused() -> None:
     """
     tissue, events, outputs = _packed(3)
     narrow = transition_table(
-        _shaped(BANDWIDTH), torch.zeros(1), bins=32, theta_max=0.25,
+        _shaped(BANDWIDTH),
+        torch.zeros(1),
+        bins=32,
+        theta_max=0.25,
         rf_raster_time_s=RASTER,
     )
     with pytest.raises(ValueError, match="past the"):
         _run_packed(
-            tissue, events, state_count=STATES, output_count=outputs,
-            threads=1, profile=narrow,
+            tissue,
+            events,
+            state_count=STATES,
+            output_count=outputs,
+            threads=1,
+            profile=narrow,
         )
 
 
@@ -232,13 +246,13 @@ def test_a_streamed_volume_reads_the_table_a_whole_one_does() -> None:
     locations = 3
     voxels = 32
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
-    arguments = dict(
-        state_count=STATES, output_count=outputs, threads=1, profile=table
-    )
+    arguments = dict(state_count=STATES, output_count=outputs, threads=1, profile=table)
     whole = _run_packed(tissue, events, **arguments)
     # Small enough that the planner's own chunk (17 voxels here) is not a
     # multiple of the profile's width, so the rounding is doing the work.
@@ -258,9 +272,7 @@ def test_a_chunk_holds_whole_voxels_when_a_table_is_read() -> None:
     from torchsim.sequence._accelerators import _Offload, _offload_plan
 
     _, events, outputs = _packed(96)
-    plan = _Offload(
-        devices=(torch.device("cuda"),), budget_bytes=1 << 12, lanes=1
-    )
+    plan = _Offload(devices=(torch.device("cuda"),), budget_bytes=1 << 12, lanes=1)
     bare, _, _ = _offload_plan(plan, "forward", events, 96, outputs, STATES, None)
     # A slice width the unaligned chunk is not already a multiple of, so the
     # alignment has something to do however the budget happens to divide. Taken
@@ -281,7 +293,9 @@ def test_a_streamed_adjoint_reads_the_table_a_whole_one_does() -> None:
 
     locations, voxels = 3, 24
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
@@ -302,8 +316,10 @@ def test_a_streamed_adjoint_reads_the_table_a_whole_one_does() -> None:
     names = FLOAT_NAMES
     _compare(whole[0], streamed[0], names, 1e-3)
     _compare(
-        whole[1], streamed[1],
-        tuple(f"adjoint {name}" for name in names), 1e-3,
+        whole[1],
+        streamed[1],
+        tuple(f"adjoint {name}" for name in names),
+        1e-3,
     )
 
 
@@ -313,7 +329,9 @@ def test_forward_mode_follows_the_table() -> None:
 
     locations, voxels = 3, 3
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
@@ -330,8 +348,11 @@ def test_forward_mode_follows_the_table() -> None:
         return simulate_packed(
             values[:TISSUE_COUNT],
             (
-                values[TISSUE_COUNT], events[1], values[TISSUE_COUNT + 1],
-                values[TISSUE_COUNT + 2], *events[4:],
+                values[TISSUE_COUNT],
+                events[1],
+                values[TISSUE_COUNT + 1],
+                values[TISSUE_COUNT + 2],
+                *events[4:],
             ),
             state_count=STATES,
             output_count=outputs,
@@ -373,7 +394,9 @@ def test_the_adjoint_follows_the_table() -> None:
 
     locations, voxels = 3, 3
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
@@ -388,8 +411,11 @@ def test_the_adjoint_follows_the_table() -> None:
     signal = simulate_packed(
         tracked[:TISSUE_COUNT],
         (
-            tracked[TISSUE_COUNT], events[1], tracked[TISSUE_COUNT + 1],
-            tracked[TISSUE_COUNT + 2], *events[4:],
+            tracked[TISSUE_COUNT],
+            events[1],
+            tracked[TISSUE_COUNT + 1],
+            tracked[TISSUE_COUNT + 2],
+            *events[4:],
         ),
         state_count=STATES,
         output_count=outputs,
@@ -400,9 +426,7 @@ def test_the_adjoint_follows_the_table() -> None:
         signal, tracked, grad_outputs=seed, allow_unused=True
     )
 
-    actual = _run_packed_vjp(
-        tissue, events, seed, STATES, outputs, 1, profile=table
-    )
+    actual = _run_packed_vjp(tissue, events, seed, STATES, outputs, 1, profile=table)
     _compare(
         expected,
         actual,
@@ -423,7 +447,7 @@ def test_an_unprofiled_adjoint_is_untouched() -> None:
     plain = _run_packed_vjp(tissue, events, seed, STATES, outputs, 1)
     again = _run_packed_vjp(tissue, events, seed, STATES, outputs, 1, profile=None)
 
-    for left, right in zip(plain, again):
+    for left, right in zip(plain, again, strict=False):
         assert torch.equal(left, right)
 
 
@@ -433,7 +457,9 @@ def test_the_second_order_pass_follows_the_table() -> None:
 
     locations, voxels = 3, 2
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
@@ -451,8 +477,11 @@ def test_the_second_order_pass_follows_the_table() -> None:
     signal = simulate_packed(
         leaves[:TISSUE_COUNT],
         (
-            leaves[TISSUE_COUNT], events[1], leaves[TISSUE_COUNT + 1],
-            leaves[TISSUE_COUNT + 2], *events[4:],
+            leaves[TISSUE_COUNT],
+            events[1],
+            leaves[TISSUE_COUNT + 1],
+            leaves[TISSUE_COUNT + 2],
+            *events[4:],
         ),
         state_count=STATES,
         output_count=outputs,
@@ -466,7 +495,7 @@ def test_the_second_order_pass_follows_the_table() -> None:
         materialize_grads=True,
     )
     second = torch.autograd.grad(
-        sum((grad * step).sum() for grad, step in zip(first, directions)),
+        sum((grad * step).sum() for grad, step in zip(first, directions, strict=False)),
         leaves,
         materialize_grads=True,
     )
@@ -496,8 +525,8 @@ def test_an_unprofiled_second_order_pass_is_untouched() -> None:
     plain = _run_packed_vjp_jvp(*arguments)
     again = _run_packed_vjp_jvp(*arguments, profile=None)
 
-    for left, right in zip(plain, again):
-        for first, second in zip(left, right):
+    for left, right in zip(plain, again, strict=False):
+        for first, second in zip(left, right, strict=False):
             assert torch.equal(first, second)
 
 
@@ -508,7 +537,9 @@ def test_the_card_follows_the_table_through_both_adjoint_passes() -> None:
 
     locations, voxels = 3, 2
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
@@ -539,8 +570,10 @@ def test_the_card_follows_the_table_through_both_adjoint_passes() -> None:
     names = FLOAT_NAMES
     _compare(host[0], tuple(v.cpu() for v in on_card[0]), names, 1e-3)
     _compare(
-        host[1], tuple(v.cpu() for v in on_card[1]),
-        tuple(f"adjoint {name}" for name in names), 1e-3,
+        host[1],
+        tuple(v.cpu() for v in on_card[1]),
+        tuple(f"adjoint {name}" for name in names),
+        1e-3,
     )
 
 
@@ -550,7 +583,9 @@ def test_the_card_follows_the_table_in_forward_mode() -> None:
 
     locations, voxels = 3, 3
     table = transition_table(
-        _shaped(BANDWIDTH), torch.linspace(-0.5, 0.5, locations), bins=64,
+        _shaped(BANDWIDTH),
+        torch.linspace(-0.5, 0.5, locations),
+        bins=64,
         rf_raster_time_s=RASTER,
     )
     tissue, events, outputs = _packed(voxels * locations)
@@ -572,7 +607,10 @@ def test_the_card_follows_the_table_in_forward_mode() -> None:
         tuple(value.to(card) for value in events),
         tuple(value.to(card) for value in tissue_dot),
         tuple(value.to(card) for value in event_dot),
-        STATES, outputs, 1, **arguments,
+        STATES,
+        outputs,
+        1,
+        **arguments,
     )
 
     assert (expected - actual.cpu()).abs().max() < 1e-4 * expected.abs().max()

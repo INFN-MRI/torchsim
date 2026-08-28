@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description, TissueProperties
+from torchsim import EpgEngine, TissueProperties, fse_description
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _pack_events,
@@ -47,11 +47,15 @@ def _description():
 
 
 def _signal(**properties):
-    return EpgEngine().simulate(
-        _description(),
-        TissueProperties(t1_ms=1000.0, t2_ms=80.0, **properties),
-        nstates=STATES,
-    ).signal
+    return (
+        EpgEngine()
+        .simulate(
+            _description(),
+            TissueProperties(t1_ms=1000.0, t2_ms=80.0, **properties),
+            nstates=STATES,
+        )
+        .signal
+    )
 
 
 # --- the gate ---
@@ -80,9 +84,11 @@ def test_a_bound_pool_takes_its_share_of_the_first_echo():
     """
     plain = _signal().abs().flatten()[0]
     for fraction in (0.05, 0.1, 0.2):
-        bound = _signal(
-            bound_fraction=fraction, bound_exchange_hz=RATE_HZ
-        ).abs().flatten()[0]
+        bound = (
+            _signal(bound_fraction=fraction, bound_exchange_hz=RATE_HZ)
+            .abs()
+            .flatten()[0]
+        )
         assert abs(float(bound / plain) - (1.0 - fraction)) < 1e-6
 
 
@@ -99,9 +105,9 @@ def test_the_signal_falls_as_the_bound_pool_grows():
     live = plain > 0.01 * float(plain.max())
     previous = plain
     for fraction in (0.05, 0.1, 0.2):
-        bound = _signal(
-            bound_fraction=fraction, bound_exchange_hz=RATE_HZ
-        ).abs().flatten()
+        bound = (
+            _signal(bound_fraction=fraction, bound_exchange_hz=RATE_HZ).abs().flatten()
+        )
         assert bool((bound[live] < previous[live] + 1e-6).all())
         previous = bound
 
@@ -131,20 +137,14 @@ def _inversion_recovery(delays_s, **properties):
     tissue = TissueProperties(t1_ms=1000.0, t2_ms=80.0, **properties)
     prepared, _, _ = _prepare_tissue(tissue, "cpu")
     prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
-    lineshape = (
-        lineshape_table()
-        if float(prepared[BOUND].max()) > 0.0
-        else None
-    )
+    lineshape = lineshape_table() if float(prepared[BOUND].max()) > 0.0 else None
     for delay in delays_s:
         events = (
             torch.tensor([[0.0, float(delay), 0.0, 0.0]], dtype=torch.float32),
             torch.tensor([1, 0, 1, 2], dtype=torch.int32),
             torch.tensor([[0.0, 0.0, 0.5 * torch.pi, 0.0]], dtype=torch.float32),
             torch.tensor([[0.0, 0.0, 0.5 * torch.pi, 0.0]], dtype=torch.float32),
-            torch.tensor(
-                [_INVERSION, 0, _EXCITATION, _RECORD], dtype=torch.uint8
-            ),
+            torch.tensor([_INVERSION, 0, _EXCITATION, _RECORD], dtype=torch.uint8),
             torch.tensor([-1, -1, -1, 0], dtype=torch.int32),
             torch.zeros(4, dtype=torch.int32),
             torch.zeros(4, dtype=torch.float32),
@@ -175,13 +175,10 @@ def _oracle(delays_s, fraction, rate_hz, t1_ms, t1_bound_ms):
     free = 1.0 - fraction
     weight = torch.tensor([free, fraction], dtype=torch.float64)
     exchange = torch.tensor(
-        [[-rate_hz * fraction, rate_hz * free],
-         [rate_hz * fraction, -rate_hz * free]],
+        [[-rate_hz * fraction, rate_hz * free], [rate_hz * fraction, -rate_hz * free]],
         dtype=torch.float64,
     )
-    rates = torch.tensor(
-        [1000.0 / t1_ms, 1000.0 / t1_bound_ms], dtype=torch.float64
-    )
+    rates = torch.tensor([1000.0 / t1_ms, 1000.0 / t1_bound_ms], dtype=torch.float64)
     start = torch.tensor([-free, fraction], dtype=torch.complex64)
     answers = []
     for delay in delays_s:
@@ -217,9 +214,7 @@ def test_the_longitudinal_step_reproduces_the_package_operator():
         bound_exchange_hz=RATE_HZ,
         t1_bound_ms=t1_bound_ms,
     ).abs()
-    expected = scales * _oracle(
-        DELAYS_S, FRACTION, RATE_HZ, t1_ms, t1_bound_ms
-    ).abs()
+    expected = scales * _oracle(DELAYS_S, FRACTION, RATE_HZ, t1_ms, t1_bound_ms).abs()
 
     assert float(((bound - expected).abs() / expected.abs().max()).max()) < 1e-5
 
@@ -258,8 +253,10 @@ def test_the_inversion_leaves_the_bound_pool_alone():
         t1_bound_ms=400.0,
     ).abs()
 
-    assert float((free_only / free_only[0] - both_inverted / both_inverted[0])
-                 .abs().max()) > 1e-3
+    assert (
+        float((free_only / free_only[0] - both_inverted / both_inverted[0]).abs().max())
+        > 1e-3
+    )
 
 
 # --- RF saturation of the bound pool ---
@@ -309,9 +306,7 @@ def test_the_canonical_saturation_matches_the_literature_number():
 
     deposited = _hard_pulse(duration_s, samples).saturation(rf_raster_time_s=raster)
     table = lineshape_table()
-    absorbed = np.exp(
-        deposited * flip_rad**2 * float(table.at(torch.tensor(0.0)))
-    )
+    absorbed = np.exp(deposited * flip_rad**2 * float(table.at(torch.tensor(0.0))))
 
     assert 0.85 < absorbed < 0.92
 
@@ -346,9 +341,7 @@ def _saturation_events(saturation, offset_hz, delay_s=0.3):
     return (
         torch.tensor([0.0, delay_s, 0.0, 0.0], dtype=torch.float32),
         torch.tensor([1, 0, 1, 2], dtype=torch.int32),
-        torch.tensor(
-            [0.5 * torch.pi, 0.0, 0.5 * torch.pi, 0.0], dtype=torch.float32
-        ),
+        torch.tensor([0.5 * torch.pi, 0.0, 0.5 * torch.pi, 0.0], dtype=torch.float32),
         torch.zeros(4, dtype=torch.float32),
         torch.tensor(
             [_EXCITATION | _SPOIL_AFTER, 0, _EXCITATION, _RECORD],
@@ -362,9 +355,7 @@ def _saturation_events(saturation, offset_hz, delay_s=0.3):
 
 
 def _prepared(device="cpu", **properties):
-    prepared, _, _ = _prepare_tissue(
-        TissueProperties(**properties), device
-    )
+    prepared, _, _ = _prepare_tissue(TissueProperties(**properties), device)
     return tuple(value.to(torch.float32).contiguous() for value in prepared)
 
 
@@ -378,7 +369,9 @@ def _saturate_then_read(saturation, offset_hz, delay_s=0.3, **properties):
             1,
             1,
             lineshape=lineshape_table(),
-        ).abs().flatten()[0]
+        )
+        .abs()
+        .flatten()[0]
     )
 
 
@@ -429,12 +422,8 @@ def test_the_voxel_reads_the_lineshape_at_its_own_offset():
     pools = dict(bound_fraction=FRACTION, bound_exchange_hz=200.0)
     # The pulse sits at 4 kHz; the voxel that is 4 kHz off-resonance sees it on
     # resonance and absorbs the most.
-    on_resonance = _saturate_then_read(
-        MILLISECOND_PULSE, 4.0e3, b0_hz=4.0e3, **pools
-    )
-    off_resonance = _saturate_then_read(
-        MILLISECOND_PULSE, 4.0e3, b0_hz=0.0, **pools
-    )
+    on_resonance = _saturate_then_read(MILLISECOND_PULSE, 4.0e3, b0_hz=4.0e3, **pools)
+    off_resonance = _saturate_then_read(MILLISECOND_PULSE, 4.0e3, b0_hz=0.0, **pools)
 
     assert on_resonance < off_resonance
 
@@ -486,8 +475,7 @@ def _live_readout(prepared, seed=None):
     table = lineshape_table()
     if seed is None:
         return complex(
-            _run_packed(prepared, events, STATES, 1, 1, lineshape=table)
-            .flatten()[0]
+            _run_packed(prepared, events, STATES, 1, 1, lineshape=table).flatten()[0]
         )
     return complex(
         _run_packed_jvp(
@@ -607,23 +595,31 @@ def test_forward_mode_leaves_the_single_pool_answer_untouched():
     t2 = torch.tensor([80.0])
 
     def signal(value):
-        return EpgEngine().simulate(
-            _description(),
-            TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=value),
-            nstates=STATES,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                _description(),
+                TissueProperties(t1_ms=torch.tensor([1000.0]), t2_ms=value),
+                nstates=STATES,
+            )
+            .signal
+        )
 
     def gated(value):
-        return EpgEngine().simulate(
-            _description(),
-            TissueProperties(
-                t1_ms=torch.tensor([1000.0]),
-                t2_ms=value,
-                bound_fraction=0.0,
-                bound_exchange_hz=RATE_HZ,
-            ),
-            nstates=STATES,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                _description(),
+                TissueProperties(
+                    t1_ms=torch.tensor([1000.0]),
+                    t2_ms=value,
+                    bound_fraction=0.0,
+                    bound_exchange_hz=RATE_HZ,
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
 
     _, plain = torch.func.jvp(signal, (t2,), (torch.ones_like(t2),))
     _, still = torch.func.jvp(gated, (t2,), (torch.ones_like(t2),))
@@ -692,8 +688,8 @@ def test_the_adjoint_is_the_transpose_of_the_forward_direction(
     tangent = _run_packed_jvp(
         prepared,
         events,
-        direction[:len(prepared)],
-        direction[len(prepared):],
+        direction[: len(prepared)],
+        direction[len(prepared) :],
         STATES,
         1,
         1,
@@ -747,13 +743,18 @@ def test_an_adjoint_of_a_bound_pool_run_reaches_the_public_api():
     leaves = {
         name: torch.tensor([value], requires_grad=True)
         for name, value in (
-            ("t1_ms", 1000.0), ("t2_ms", 80.0), ("bound_fraction", FRACTION),
-            ("bound_exchange_hz", RATE_HZ), ("t1_bound_ms", 200.0),
+            ("t1_ms", 1000.0),
+            ("t2_ms", 80.0),
+            ("bound_fraction", FRACTION),
+            ("bound_exchange_hz", RATE_HZ),
+            ("t1_bound_ms", 200.0),
         )
     }
-    signal = EpgEngine().simulate(
-        _description(), TissueProperties(**leaves), nstates=STATES
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(_description(), TissueProperties(**leaves), nstates=STATES)
+        .signal
+    )
     signal.abs().square().sum().backward()
 
     for name in leaves:
@@ -793,12 +794,20 @@ def test_the_second_order_pass_carries_the_bound_pool():
         )
     )
 
-    leaves = tuple(
-        value.detach().clone().requires_grad_(True) for value in prepared
-    )
+    leaves = tuple(value.detach().clone().requires_grad_(True) for value in prepared)
     signal = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, None, None, None,
-        lineshape_table(), False, None
+        *leaves,
+        *events,
+        STATES,
+        1,
+        1,
+        NO_GEOMETRY,
+        None,
+        None,
+        None,
+        lineshape_table(),
+        False,
+        None,
     )
     gradients = torch.autograd.grad(signal, leaves, seed, create_graph=True)
     generator = torch.Generator().manual_seed(23)
@@ -813,14 +822,15 @@ def test_the_second_order_pass_carries_the_bound_pool():
 
     reference = sum(
         float((value * weight).sum())
-        for value, weight in zip(expected[:len(leaves)], weights, strict=True)
+        for value, weight in zip(expected[: len(leaves)], weights, strict=True)
     )
     assert abs(reference) > 0.0
     assert abs(float(contracted) - reference) / abs(reference) < 1e-2
     assert float(expected[index]) != 0.0
-    assert abs(float(diagonal) - float(expected[index])) / abs(
-        float(expected[index])
-    ) < 1e-2
+    assert (
+        abs(float(diagonal) - float(expected[index])) / abs(float(expected[index]))
+        < 1e-2
+    )
 
 
 def test_forward_mode_reaches_a_bound_pool_through_the_public_api():
@@ -828,20 +838,22 @@ def test_forward_mode_reaches_a_bound_pool_through_the_public_api():
     fraction = torch.tensor([FRACTION])
 
     def signal(value):
-        return EpgEngine().simulate(
-            _description(),
-            TissueProperties(
-                t1_ms=torch.tensor([1000.0]),
-                t2_ms=torch.tensor([80.0]),
-                bound_fraction=value,
-                bound_exchange_hz=RATE_HZ,
-            ),
-            nstates=STATES,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                _description(),
+                TissueProperties(
+                    t1_ms=torch.tensor([1000.0]),
+                    t2_ms=torch.tensor([80.0]),
+                    bound_fraction=value,
+                    bound_exchange_hz=RATE_HZ,
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
 
-    reading, tangent = torch.func.jvp(
-        signal, (fraction,), (torch.ones_like(fraction),)
-    )
+    reading, tangent = torch.func.jvp(signal, (fraction,), (torch.ones_like(fraction),))
     step = 1e-3
     difference = (signal(fraction + step) - signal(fraction - step)) / (2.0 * step)
 
@@ -858,11 +870,15 @@ def test_the_single_pool_gradient_still_reaches_every_property():
         name: torch.tensor([value], requires_grad=True)
         for name, value in (("t1_ms", 1000.0), ("t2_ms", 80.0))
     }
-    signal = EpgEngine().simulate(
-        _description(),
-        TissueProperties(**leaves, bound_fraction=0.0, bound_exchange_hz=0.0),
-        nstates=STATES,
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(),
+            TissueProperties(**leaves, bound_fraction=0.0, bound_exchange_hz=0.0),
+            nstates=STATES,
+        )
+        .signal
+    )
     signal.abs().square().sum().backward()
 
     assert float(leaves["t1_ms"].grad.abs().max()) > 0.0
@@ -886,28 +902,40 @@ def test_an_empty_pool_asked_for_its_gradient_gives_the_true_one():
     """
 
     def loss(fraction):
-        signal = EpgEngine().simulate(
-            _description(),
-            TissueProperties(
-                t1_ms=1000.0, t2_ms=80.0, bound_fraction=fraction,
-                bound_exchange_hz=25.0, t1_bound_ms=400.0,
-            ),
-            nstates=STATES,
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(
+                _description(),
+                TissueProperties(
+                    t1_ms=1000.0,
+                    t2_ms=80.0,
+                    bound_fraction=fraction,
+                    bound_exchange_hz=25.0,
+                    t1_bound_ms=400.0,
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
         return float(signal.abs().square().sum())
 
     leaves = {
         name: torch.tensor([value], requires_grad=True)
         for name, value in (
-            ("bound_fraction", 0.0), ("bound_exchange_hz", 25.0),
+            ("bound_fraction", 0.0),
+            ("bound_exchange_hz", 25.0),
             ("t1_bound_ms", 400.0),
         )
     }
-    signal = EpgEngine().simulate(
-        _description(),
-        TissueProperties(t1_ms=1000.0, t2_ms=80.0, **leaves),
-        nstates=STATES,
-    ).signal
+    signal = (
+        EpgEngine()
+        .simulate(
+            _description(),
+            TissueProperties(t1_ms=1000.0, t2_ms=80.0, **leaves),
+            nstates=STATES,
+        )
+        .signal
+    )
     signal.abs().square().sum().backward()
 
     # One-sided: a fraction is not defined below zero. The step is kept well
@@ -1005,9 +1033,7 @@ def test_the_voxel_is_counted_beside_the_pulse():
     from torchsim.sequence._simulation import _absorption_table
 
     still = _absorption_table(_tuned(33.0e3), torch.zeros(1), None)
-    spread = _absorption_table(
-        _tuned(33.0e3), torch.tensor([-8.0e3, 8.0e3]), None
-    )
+    spread = _absorption_table(_tuned(33.0e3), torch.tensor([-8.0e3, 8.0e3]), None)
 
     assert still.offset_max_hz >= 33.0e3
     assert spread.offset_max_hz >= 41.0e3
@@ -1017,17 +1043,22 @@ def test_a_far_off_resonance_prep_reaches_the_public_api():
     """The whole path: a description whose pulses sit past the default table,
     simulated through the public API rather than through the packed buffers.
     """
+
     def signal(offset_hz):
-        return EpgEngine().simulate(
-            _tuned(offset_hz),
-            TissueProperties(
-                t1_ms=torch.tensor([1000.0]),
-                t2_ms=torch.tensor([80.0]),
-                bound_fraction=FRACTION,
-                bound_exchange_hz=RATE_HZ,
-            ),
-            nstates=STATES,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                _tuned(offset_hz),
+                TissueProperties(
+                    t1_ms=torch.tensor([1000.0]),
+                    t2_ms=torch.tensor([80.0]),
+                    bound_fraction=FRACTION,
+                    bound_exchange_hz=RATE_HZ,
+                ),
+                nstates=STATES,
+            )
+            .signal
+        )
 
     assert float(signal(60.0e3).abs().max()) > 0.0
     assert not torch.equal(signal(60.0e3), signal(0.0))
@@ -1068,9 +1099,7 @@ def test_a_tabulated_pulse_leaves_the_bound_pool_reading_the_bare_flip():
     table = lineshape_table()
 
     plain = _run_packed(*arguments, lineshape=table)
-    tabulated = _run_packed(
-        *arguments, lineshape=table, profile=_instantaneous_table()
-    )
+    tabulated = _run_packed(*arguments, lineshape=table, profile=_instantaneous_table())
 
     assert float(plain.abs().max()) > 0.0
     assert float((plain - tabulated).abs().max() / plain.abs().max()) < 1e-5
@@ -1148,8 +1177,18 @@ def _routes(leaves, events, profile=None):
 
     table = lineshape_table()
     fused = _NativeEpg.apply(
-        *leaves, *events, STATES, 1, 1, NO_GEOMETRY, profile, None, None, table,
-        False, None
+        *leaves,
+        *events,
+        STATES,
+        1,
+        1,
+        NO_GEOMETRY,
+        profile,
+        None,
+        None,
+        table,
+        False,
+        None,
     )
     reference = simulate_packed(
         leaves,
@@ -1164,8 +1203,7 @@ def _routes(leaves, events, profile=None):
 
 def _live_leaves():
     return tuple(
-        value.detach().clone().requires_grad_(True)
-        for value in _prepared(**LIVE)
+        value.detach().clone().requires_grad_(True) for value in _prepared(**LIVE)
     )
 
 
@@ -1183,9 +1221,9 @@ def test_the_fused_forward_matches_the_oracle(tabulated: bool):
 
     reference = reference.detach()
     assert float(reference.abs().max()) > 0.0
-    assert float(
-        (fused.detach() - reference).abs().max() / reference.abs().max()
-    ) < 1e-4
+    assert (
+        float((fused.detach() - reference).abs().max() / reference.abs().max()) < 1e-4
+    )
 
 
 @pytest.mark.parametrize("tabulated", [False, True])
@@ -1262,7 +1300,7 @@ def test_the_cuda_kernel_matches_the_cpu_kernel():
     plausible train.
     """
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -1339,7 +1377,7 @@ def test_a_streamed_volume_matches_the_whole_one():
 
     voxels = 3000
     packed = _pack_events(
-                _description(),
+        _description(),
         repetitions=1,
         record="all",
         device=torch.device("cpu"),
@@ -1467,10 +1505,7 @@ def test_the_cuda_second_order_pass_matches_the_cpu_kernel():
         prepared = _prepared(device, **_spread(voxels))
         directions = (
             *(torch.ones_like(value) for value in prepared),
-            *(
-                torch.zeros_like(events[index]).to(device)
-                for index in (0, 2, 3)
-            ),
+            *(torch.zeros_like(events[index]).to(device) for index in (0, 2, 3)),
         )
         return _run_packed_vjp_jvp(
             prepared,
@@ -1588,9 +1623,11 @@ def test_a_gradient_taken_after_a_streamed_forward_matches_the_whole_one():
                 ("t1_bound_ms", torch.linspace(50.0, 900.0, voxels)),
             )
         }
-        signal = EpgEngine().simulate(
-            _description(), _volume(voxels, **leaves), nstates=STATES
-        ).signal
+        signal = (
+            EpgEngine()
+            .simulate(_description(), _volume(voxels, **leaves), nstates=STATES)
+            .signal
+        )
         signal.abs().square().sum().backward()
         return tuple(leaves[name].grad for name in leaves)
 
@@ -1610,7 +1647,7 @@ def test_a_pool_takes_the_first_order_kernel_on_the_card(state_count) -> None:
     forward-over-reverse pass on the same card: two arms of one wrong kernel
     agree with each other, and the backends share no code.
     """
-    from torchsim.sequence import _accelerators, EpgEngine
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import _run_packed_vjp
 
     voxels = 64
@@ -1633,9 +1670,7 @@ def test_a_pool_takes_the_first_order_kernel_on_the_card(state_count) -> None:
 
     def side(device):
         prepared, _, _ = _prepare_tissue(tissue, device)
-        prepared = tuple(
-            value.to(torch.float32).contiguous() for value in prepared
-        )
+        prepared = tuple(value.to(torch.float32).contiguous() for value in prepared)
         return prepared, tuple(value.to(device) for value in packed.buffers)
 
     host_tissue, host_events = side("cpu")
@@ -1646,7 +1681,9 @@ def test_a_pool_takes_the_first_order_kernel_on_the_card(state_count) -> None:
         generator=torch.Generator().manual_seed(9),
     )
     arguments = dict(
-        state_count=state_count, output_count=outputs, threads=1,
+        state_count=state_count,
+        output_count=outputs,
+        threads=1,
         lineshape=lineshape_table(),
     )
 

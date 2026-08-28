@@ -9,11 +9,11 @@ import torch
 
 from torchsim.sequence import (
     EpgEngine,
+    TissueProperties,
     fse_description,
     mrf_description,
     simulate_subspace,
     spgr_description,
-    TissueProperties,
 )
 
 
@@ -155,17 +155,19 @@ def test_forward_mode_matches_differencing_for_tissue_and_flip(device: str) -> N
 
     def simulate(t2_ms: torch.Tensor, flip_rad: torch.Tensor) -> torch.Tensor:
         description = fse_description(flip_rad, 5e-3, phases_rad=torch.pi / 2)
-        return EpgEngine().simulate(
-            description,
-            TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
-            nstates=10,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                description,
+                TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
+                nstates=10,
+            )
+            .signal
+        )
 
     t2_tangent = torch.tensor([0.5, -0.25], device=device)
     flip_tangent = torch.tensor([0.1, -0.2, 0.3], device=device)
-    value, followed = torch.func.jvp(
-        simulate, (t2, flip), (t2_tangent, flip_tangent)
-    )
+    value, followed = torch.func.jvp(simulate, (t2, flip), (t2_tangent, flip_tangent))
 
     # Wide enough that float32 differencing is not reading its own round-off:
     # at 1e-3 the T2 step is a part in 1e5 of the value, which is epsilon.
@@ -200,11 +202,15 @@ def test_native_reverse_over_forward_supports_sequence_design(device: str) -> No
     description = fse_description(flip, 5e-3, phases_rad=torch.pi / 2)
 
     def signal(t2_ms: torch.Tensor) -> torch.Tensor:
-        return EpgEngine().simulate(
-            description,
-            TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
-            nstates=10,
-        ).signal
+        return (
+            EpgEngine()
+            .simulate(
+                description,
+                TissueProperties(t1_ms=1000.0, t2_ms=t2_ms),
+                nstates=10,
+            )
+            .signal
+        )
 
     _, derivative = torch.func.jvp(
         signal,
@@ -227,10 +233,9 @@ def _oracle(description, tissue, device: str, state_count: int = 10):
     route -- description, preparation, packing, kernel -- against an
     implementation that shares none of it.
     """
-    from utils.packed_reference import simulate_packed
-
     from torchsim.sequence._accelerators import _pack_events, geometry_of
     from torchsim.sequence._simulation import _prepare_tissue
+    from utils.packed_reference import simulate_packed
 
     prepared, shape, resolved = _prepare_tissue(tissue, device)
     packed = _pack_events(
@@ -241,8 +246,14 @@ def _oracle(description, tissue, device: str, state_count: int = 10):
         rf_raster_time_s=1e-6,
     )
     events = (
-        packed.duration, packed.kind, packed.flip, packed.phase, packed.action,
-        packed.output_index, packed.shim_index, packed.saturation,
+        packed.duration,
+        packed.kind,
+        packed.flip,
+        packed.phase,
+        packed.action,
+        packed.output_index,
+        packed.shim_index,
+        packed.saturation,
         packed.rf_frequency_hz,
     )
     signal = simulate_packed(

@@ -30,24 +30,18 @@ def test_the_bound_is_the_variance_a_fit_actually_reaches() -> None:
     only be checking the algebra.
     """
     generator = torch.Generator().manual_seed(7)
-    design = torch.stack(
-        (torch.linspace(1.0, 2.0, 40), torch.linspace(2.0, -1.0, 40))
-    )
+    design = torch.stack((torch.linspace(1.0, 2.0, 40), torch.linspace(2.0, -1.0, 40)))
     truth = torch.tensor([0.7, -0.3])
     noise = 0.05
     draws = 20000
 
     signal = truth @ design
-    measured = signal + noise * torch.randn(
-        (draws, 40), generator=generator
-    )
+    measured = signal + noise * torch.randn((draws, 40), generator=generator)
     fisher = design @ design.T
     estimates = torch.linalg.solve(fisher, design @ measured.T).T
 
     bound = crlb(design, noise_variance=noise**2)
-    torch.testing.assert_close(
-        estimates.var(dim=0), bound, rtol=0.05, atol=0.0
-    )
+    torch.testing.assert_close(estimates.var(dim=0), bound, rtol=0.05, atol=0.0)
 
 
 def test_a_complex_signal_counts_both_channels() -> None:
@@ -233,9 +227,7 @@ def test_a_batch_of_trains_is_designed_in_one_simulation() -> None:
     assert result.parameters["flip"].shape == (6, 48)
     assert float(result.loss[-1]) < float(result.loss[0])
     # Every shot is designed, not just the one the mean happens to favour.
-    assert not torch.allclose(
-        result.parameters["flip"], initial, atol=1e-3
-    )
+    assert not torch.allclose(result.parameters["flip"], initial, atol=1e-3)
 
 
 def test_an_image_quality_design_fits_in_its_budget() -> None:

@@ -55,7 +55,6 @@ from typing import Any, Protocol, runtime_checkable
 
 import torch
 
-
 #: Guards a division whose denominator the algorithm has already tested.
 _TINY = torch.finfo(torch.float32).tiny
 
@@ -343,9 +342,7 @@ class Schedule:
         if self.initial <= 0.0:
             raise ValueError(f"initial must be positive, got {self.initial}")
         if not 0.0 < self.factor < 1.0:
-            raise ValueError(
-                f"factor must lower the damping, got {self.factor}"
-            )
+            raise ValueError(f"factor must lower the damping, got {self.factor}")
         if self.minimum <= 0.0:
             raise ValueError(f"minimum must be positive, got {self.minimum}")
 
@@ -467,9 +464,7 @@ class GaussNewton:
         step_tolerance: float = 1e-8,
     ) -> None:
         if max_iterations < 1:
-            raise ValueError(
-                f"max_iterations must be positive, got {max_iterations}"
-            )
+            raise ValueError(f"max_iterations must be positive, got {max_iterations}")
         self.damping = damping if damping is not None else Schedule()
         self.solve = solve
         self.max_iterations = int(max_iterations)
@@ -544,8 +539,16 @@ class GaussNewton:
             )
             if retiring:
                 x, live, data, residual, linearization, cost, damping = _retire(
-                    ~flat, answer, live, x, data, residual, linearization,
-                    cost, damping, self.damping,
+                    ~flat,
+                    answer,
+                    live,
+                    x,
+                    data,
+                    residual,
+                    linearization,
+                    cost,
+                    damping,
+                    self.damping,
                 )
                 if x.shape[0] == 0:
                     break
@@ -559,7 +562,8 @@ class GaussNewton:
             weights.append(damping.detach().reshape(-1).mean())
 
             reference = (
-                start[live] - x if getattr(self.damping, "anchored", False)
+                start[live] - x
+                if getattr(self.damping, "anchored", False)
                 else torch.zeros_like(x)
             )
             step = solve(linearization, -residual, _shaped(damping), reference)
@@ -570,9 +574,7 @@ class GaussNewton:
             singular = ~_per_voxel(torch.isfinite(step), encoding, torch.all)
 
             candidate = x + step
-            trial, trial_linearization = self._at(
-                operator, candidate, data, encoding
-            )
+            trial, trial_linearization = self._at(operator, candidate, data, encoding)
             trial_cost = _cost(trial, encoding)
             predicted = _per_voxel(
                 step * (_shaped(damping) * step - gradient), encoding, torch.sum
@@ -586,9 +588,7 @@ class GaussNewton:
 
             taken = better[..., None] if better.ndim else better
             x = torch.where(taken, candidate, x)
-            residual = torch.where(
-                _spread(better, trial.shape), trial, residual
-            )
+            residual = torch.where(_spread(better, trial.shape), trial, residual)
             linearization = _chosen(better, trial_linearization, linearization)
             cost = torch.where(better, trial_cost, cost)
             history.append(cost.sum())
@@ -596,8 +596,16 @@ class GaussNewton:
             if retiring:
                 staying = ~(short & ~singular)
                 x, live, data, residual, linearization, cost, damping = _retire(
-                    staying, answer, live, x, data, residual, linearization,
-                    cost, damping, self.damping,
+                    staying,
+                    answer,
+                    live,
+                    x,
+                    data,
+                    residual,
+                    linearization,
+                    cost,
+                    damping,
+                    self.damping,
                 )
                 if x.shape[0] == 0:
                     break
@@ -613,14 +621,10 @@ class GaussNewton:
         else:
             answer = x
         return Solution(
-            x=answer.reshape(*shape, answer.shape[-1])
-            if encoding is None
-            else answer,
+            x=answer.reshape(*shape, answer.shape[-1]) if encoding is None else answer,
             cost=torch.stack(history),
             damping=(
-                torch.stack(weights)
-                if weights
-                else torch.zeros(0, device=start.device)
+                torch.stack(weights) if weights else torch.zeros(0, device=start.device)
             ),
             iterations=iterations,
             unconverged=unconverged,
@@ -642,9 +646,7 @@ class GaussNewton:
             encoding.A(_forward(predicted)) - data,
             Linearization(
                 matvec=lambda d: encoding.A(_forward(operator.A_jvp(x, d))),
-                rmatvec=lambda v: operator.A_vjp(
-                    x, _backward(encoding.A_adjoint(v))
-                ),
+                rmatvec=lambda v: operator.A_vjp(x, _backward(encoding.A_adjoint(v))),
             ),
         )
 
@@ -653,8 +655,10 @@ class GaussNewton:
 
 
 def _per_voxel(values: torch.Tensor, encoding: Any, reduce: Any) -> torch.Tensor:
-    """Reduce over the channels where the voxels are independent, over all of
-    them where an encoding operator has tied them together.
+    """The reduction the problem's shape calls for.
+
+    Over the channels where the voxels are independent, over all of them where
+    an encoding operator has tied them together.
 
     Convergence, the gain ratio and the damping are per-voxel questions only
     when the voxels are separate problems. Under an encoding there is one
@@ -676,9 +680,9 @@ def _diagonal(blocks: torch.Tensor) -> Linearization:
     """The derivative of a voxel-diagonal operator, as products with it."""
     return Linearization(
         matvec=lambda d: torch.einsum("vpt,vp->vt", blocks, d.to(blocks.dtype)),
-        rmatvec=lambda v: torch.einsum(
-            "vpt,vt->vp", blocks.conj(), v.to(blocks.dtype)
-        ).real,
+        rmatvec=lambda v: (
+            torch.einsum("vpt,vt->vp", blocks.conj(), v.to(blocks.dtype)).real
+        ),
         blocks=blocks,
     )
 
@@ -749,9 +753,7 @@ def _chosen(
     """
     if standing.blocks is None or trial.blocks is None:
         return trial if bool(better.all()) else standing
-    return _diagonal(
-        torch.where(better[:, None, None], trial.blocks, standing.blocks)
-    )
+    return _diagonal(torch.where(better[:, None, None], trial.blocks, standing.blocks))
 
 
 def _retire(

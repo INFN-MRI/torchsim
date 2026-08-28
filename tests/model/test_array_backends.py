@@ -13,7 +13,6 @@ import pytest
 import torch
 
 import torchsim
-
 from torchsim.sequence._array import as_torch, backend_of, brought, like, matched
 from torchsim.simulators import FSESimulator, MRFSimulator, SPGRSimulator
 
@@ -60,9 +59,7 @@ def test_a_torch_tensor_is_left_alone() -> None:
 def test_the_signal_comes_back_in_the_library_it_was_asked_in(namespace) -> None:
     """The whole point, on a run that reaches the fused kernels."""
     sequence = MRFSimulator(flip=namespace.asarray(FLIP), TR=10.0)
-    signal = sequence.simulate(
-        T1=namespace.asarray(T1), T2=namespace.asarray(T2)
-    )
+    signal = sequence.simulate(T1=namespace.asarray(T1), T2=namespace.asarray(T2))
     assert isinstance(signal, namespace.ndarray)
     assert signal.shape == (3, 12)
 
@@ -139,8 +136,13 @@ def test_a_shared_parameter_is_spread_over_the_events() -> None:
             5.0, TE=2.0, TR=10.0, T1=1000.0, T2=100.0, device=d
         ),
         lambda d: torchsim.mp2rage_sim(
-            TI=(500.0, 1500.0), flip=5.0, TRspgr=5.0, TRmp2rage=3000.0,
-            nshots=128, T1=1000.0, device=d,
+            TI=(500.0, 1500.0),
+            flip=5.0,
+            TRspgr=5.0,
+            TRmp2rage=3000.0,
+            nshots=128,
+            T1=1000.0,
+            device=d,
         ),
         lambda d: torchsim.mrf_sim(FLIP, TR=10.0, T1=1000.0, T2=80.0, device=d),
         lambda d: torchsim.mprage_sim(
@@ -150,8 +152,11 @@ def test_a_shared_parameter_is_spread_over_the_events() -> None:
             nshots=8, flip=5.0, TR=10.0, T1=1000.0, device=d
         ),
         lambda d: torchsim.fse_sim(
-            flip=np.full(4, 120.0, dtype=np.float32), ESP=5.0,
-            T1=1000.0, T2=80.0, device=d,
+            flip=np.full(4, 120.0, dtype=np.float32),
+            ESP=5.0,
+            T1=1000.0,
+            T2=80.0,
+            device=d,
         ),
     ],
     ids=["spgr", "bssfp", "mp2rage", "mrf", "mprage", "mpnrage", "fse"],
