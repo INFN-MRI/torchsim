@@ -48,6 +48,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx_design",
     "sphinx_gallery.gen_gallery",
+    "myst_parser",
     "sphinx_add_colab_link",
     "sphinx_exec_directive",
 ]
@@ -58,7 +59,20 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "build", "Thumbs.db", ".DS_Store"]
+
+# -- Options for MyST --------------------------------------------------------
+
+#: ``dollarmath`` for the physics, ``colon_fence`` so a directive holding other
+#: directives can be written without counting backticks, ``deflist`` for the
+#: term-and-description lists the guide pages navigate with, and ``linkify`` so
+#: a bare URL is a link, as it is in reStructuredText.
+myst_enable_extensions = ["colon_fence", "deflist", "dollarmath", "linkify"]
+
+#: The footnotes of the explanation pages are already under a References
+#: heading, so the rule the transition would draw above them is a second
+#: divider where the heading is the first.
+myst_footnote_transition = False
 
 
 # generate autosummary even if no references

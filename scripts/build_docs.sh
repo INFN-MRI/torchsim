@@ -28,7 +28,7 @@ missing = [
     name
     for name in ("torch", "matplotlib", "sphinx", "sphinx_gallery",
                  "sphinx_copybutton", "sphinx_exec_directive",
-                 "sphinx_book_theme")
+                 "sphinx_book_theme", "myst_parser", "linkify_it")
     if importlib.util.find_spec(name) is None
 ]
 if missing:

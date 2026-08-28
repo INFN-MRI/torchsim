@@ -4,6 +4,8 @@ sphinx-copybutton
 sphinx-design
 sphinx-exec-directive
 sphinx-gallery
+myst-parser
+linkify-it-py
 matplotlib
 # the examples the gallery executes
 brainweb-dl

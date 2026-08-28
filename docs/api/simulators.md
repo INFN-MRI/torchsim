@@ -1,16 +1,15 @@
-Simulators
-==========
+# Simulators
 
 The sequences that ship with TorchSim. A constructor takes the keywords
-:meth:`~torchsim.model.SignalModel.simulate` takes and fixes them, so a
+{meth}`~torchsim.model.SignalModel.simulate` takes and fixes them, so a
 sequence and the tissue it is being asked about are written down together and
 what is left to give at the call is whatever is actually varying.
 
-Closed form
------------
+## Closed form
 
 Steady states that have an analytic expression, evaluated in one pass.
 
+```{eval-rst}
 .. autosummary::
    :toctree: ../generated
    :nosignatures:
@@ -21,12 +20,13 @@ Steady states that have an analytic expression, evaluated in one pass.
    torchsim.simulators.InversionRecoverySimulator
    torchsim.simulators.MultiEchoSimulator
    torchsim.simulators.DoubleAngleSimulator
+```
 
-State machine
--------------
+## State machine
 
 Trains that have to be played out, run on the extended phase graph engine.
 
+```{eval-rst}
 .. autosummary::
    :toctree: ../generated
    :nosignatures:
@@ -35,26 +35,27 @@ Trains that have to be played out, run on the extended phase graph engine.
    torchsim.simulators.MPRAGESimulator
    torchsim.simulators.MPnRAGESimulator
    torchsim.simulators.MRFSimulator
+```
 
-Functional wrappers
--------------------
+## Functional wrappers
 
 One call, protocol and tissue together, for a signal and optionally its
 derivative. What the classes above do, without holding one.
 
-Analytical
-~~~~~~~~~~
+### Analytical
 
+```{eval-rst}
 .. autosummary::
    :toctree: ../generated
    :nosignatures:
 
    torchsim.bssfp_sim
    torchsim.spgr_sim
+```
 
-Iterative
-~~~~~~~~~
+### Iterative
 
+```{eval-rst}
 .. autosummary::
    :toctree: ../generated
    :nosignatures:
@@ -64,3 +65,4 @@ Iterative
    torchsim.mp2rage_sim
    torchsim.mpnrage_sim
    torchsim.mrf_sim
+```
