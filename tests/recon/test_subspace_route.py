@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import ParameterMapping, Subspace
+from torchsim import Subspace
 from torchsim.estimators import DictionaryMatcher
 from torchsim.simulators import MultiEchoSimulator
 
@@ -109,9 +109,9 @@ def test_one_mapping_supplies_the_basis_and_reads_what_comes_back() -> None:
     """
     acquisition = MultiEchoSimulator(TE=TE_MS)
     grid = torch.linspace(20.0, 300.0, 128)
-    mapping = ParameterMapping(
-        acquisition, T2=grid, M0=1.0, rank=RANK, seed=0
-    ).train(DictionaryMatcher())
+    mapping = DictionaryMatcher(acquisition).fit(
+        T2=grid, M0=1.0, rank=RANK, seed=0
+    )
     truth = torch.tensor([[40.0, 95.0], [180.0, 260.0]])
     images = torch.as_tensor(acquisition.simulate(T2=truth)).to(torch.complex64)
 
@@ -126,9 +126,9 @@ def test_one_mapping_supplies_the_basis_and_reads_what_comes_back() -> None:
 def test_coefficients_of_the_wrong_rank_are_refused() -> None:
     """A silent mismatch would reconstruct the wrong tissue, not fail."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(
-        acquisition, T2=torch.linspace(20.0, 300.0, 64), rank=RANK, seed=0
-    ).train(DictionaryMatcher())
+    mapping = DictionaryMatcher(acquisition).fit(
+        T2=torch.linspace(20.0, 300.0, 64), rank=RANK, seed=0
+    )
 
     with pytest.raises(ValueError, match="rank 3"):
         mapping.from_coefficients(torch.zeros(4, 5))
@@ -136,11 +136,9 @@ def test_coefficients_of_the_wrong_rank_are_refused() -> None:
 
 def test_a_mapping_with_no_basis_has_no_coefficients_to_read() -> None:
     """Asking for them is a mistake about the mapping, not about the data."""
-    mapping = ParameterMapping(
-        MultiEchoSimulator(TE=TE_MS),
-        T2=torch.linspace(20.0, 300.0, 64),
-        seed=0,
-    ).train(DictionaryMatcher())
+    mapping = DictionaryMatcher(MultiEchoSimulator(TE=TE_MS)).fit(
+        T2=torch.linspace(20.0, 300.0, 64), seed=0
+    )
 
     with pytest.raises(RuntimeError, match="no subspace"):
         mapping.from_coefficients(torch.zeros(4, 3))

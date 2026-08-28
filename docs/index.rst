@@ -3,9 +3,19 @@
 
 .. toctree::
    :hidden:
-   :caption: User Guides
+   :maxdepth: 2
+   :caption: Guides
 
-   getting_started
+   user_guide
+   developer_guide
+
+.. toctree::
+   :hidden:
+   :maxdepth: 2
+   :caption: Explanation
+
+   explanations/epg
+   explanations/implementation
 
 .. toctree::
    :hidden:
@@ -25,17 +35,7 @@
    :hidden:
    :caption: Miscellaneous
 
+   misc/related
    misc/contributors
    misc/code_of_conduct
    misc/license
-   misc/development
-
-.. toctree::
-   :hidden:
-   :caption: Related Projects
-
-   epyg <https://github.com/brennerd11/EpyG>
-   sycomore <https://github.com/lamyj/sycomore/>
-   mri-sim-py <https://somnathrakshit.github.io/projects/project-mri-sim-py-epg/>
-   ssfp <https://github.com/mckib2/ssfp>
-   erwin <https://github.com/lamyj/erwin>

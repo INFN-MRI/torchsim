@@ -14,18 +14,13 @@ of T1 and T2 can have, given the derivative of each sequence's signal with
 respect to every parameter being estimated. Minimizing it chooses where on each
 signal curve the scan time is spent.
 
-.. [1] Teixeira RPAG, Malik SJ, Hajnal JV. Joint system relaxometry (JSR) and
-   Cramer-Rao lower bound optimization of sequence parameters: a framework for
-   enhanced precision of DESPOT T1 and T2 estimation.
-   Magn Reson Med. 2018;79:234-245.
-
 """
 
 # %%
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install torchsim brainweb-dl
+#    !pip install torchsim brainweb-dl cmap
 
 # %%
 #
@@ -39,6 +34,115 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
+from cmap import Colormap
+
+
+# Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
+# colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
+LIPARI = Colormap("crameri:lipari").to_matplotlib()
+NAVIA = Colormap("crameri:navia").to_matplotlib()
+
+# Colormap, window and unit per parameter. Both relaxation windows stop well
+# short of CSF, so that white and grey matter -- 500 against 833 ms in T1, 70
+# against 83 ms in T2 -- take up most of the scale and CSF saturates.
+STYLE = {
+    "T1": (LIPARI, (0.0, 1200.0), "T1 [ms]"),
+    "T2": (NAVIA, (0.0, 120.0), "T2 [ms]"),
+    "M0": ("gray", (0.0, 1.0), "M0"),
+}
+
+
+def panel(axis, values, cmap, limits, title=None, ylabel=None):
+    """One map without ticks; the handle is what a row shares a colorbar from."""
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    axis.set_xticks([])
+    axis.set_yticks([])
+    if title is not None:
+        axis.set_title(title)
+    if ylabel is not None:
+        axis.set_ylabel(ylabel)
+    return handle
+
+
+def scalebar(handle, axes, label):
+    """One colorbar for a group of panels, so none gives up width to its own."""
+    axes = list(np.ravel(axes))
+    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
+
+
+# Every panel on this page is drawn at the same size, so any two figures can be
+# read against each other. The side is set by the widest grid, which fills the
+# documentation column; a figure with fewer columns is narrower, not larger.
+PAGE_WIDTH = 8.6  # inches, the width of the documentation column
+BAR_WIDTH = 0.8  # what one colorbar takes out of it
+PANEL = (PAGE_WIDTH - 3 * BAR_WIDTH) / 3  # one image panel
+
+
+def canvas(rows, columns, shape, *, bars=1, extra=0.6):
+    """A grid of image panels, in the proportion of the images.
+
+    ``bars`` is how many colorbars a row carries and ``extra`` the height left
+    over the panels, for titles and for a figure title where there is one.
+    """
+    return plt.subplots(
+        rows,
+        columns,
+        squeeze=False,
+        figsize=(
+            columns * PANEL + bars * BAR_WIDTH,
+            PANEL * shape[0] / shape[1] * rows + extra,
+        ),
+    )
+
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
+
 
 # sphinx_gallery_end_ignore
 import time
@@ -182,7 +286,7 @@ print(f"designed in {design_time:.1f} s")
 #
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 2, figsize=(11, 3.4), sharey=True)
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3), sharey=True)
 for axis, start_angles, designed, title in (
     (axes[0], spgr_start, spgr_designed, "SPGR block"),
     (axes[1], ssfp_start, ssfp_designed, "bSSFP block"),
@@ -194,12 +298,12 @@ for axis, start_angles, designed, title in (
              label="designed")
     for position, angle in zip(index, designed.detach()):
         axis.annotate(f"{float(angle):.0f}", (float(position) + 0.19, float(angle)),
-                      ha="center", va="bottom", fontsize=7)
+                      ha="center", va="bottom")
     axis.set(xlabel="Acquisition", title=title, xticks=index.tolist())
     axis.grid(alpha=0.3, axis="y")
 axes[0].set_ylabel("Flip angle [deg]")
-axes[0].legend(fontsize=8)
-figure.tight_layout()
+axes[0].margins(y=0.15)  # headroom for the annotation over the tallest bar
+key(figure, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -224,7 +328,7 @@ figure.tight_layout()
 
 # sphinx_gallery_start_ignore
 sweep = torch.linspace(1.0, 70.0, 200)
-figure, axes = plt.subplots(1, 3, figsize=(13, 3.6))
+figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.6))
 
 for axis, acquisition, start_angles, designed, title in (
     (axes[0], spgr, spgr_start, spgr_designed, "SPGR"),
@@ -239,14 +343,13 @@ for axis, acquisition, start_angles, designed, title in (
     axis.plot(designed, sampled[0], "*", ms=14, color="crimson", label="designed")
     axis.set(xlabel="Flip angle [deg]", ylabel="|signal|", title=title)
     axis.grid(alpha=0.3)
-axes[0].legend(fontsize=7)
+key(figure, ncols=4)
 
 axes[2].plot(result.loss.cpu())
 axes[2].set(
     xlabel="Iteration", ylabel="log relative CRLB", title="convergence"
 )
 axes[2].grid(alpha=0.3)
-figure.tight_layout()
 # sphinx_gallery_end_ignore
 
 # %%
@@ -297,19 +400,15 @@ truth = {
     "T2": torch.as_tensor(T2_true[mask].copy()),
     "M0": torch.as_tensor(M0_true[mask].copy()),
 }
-figure, axes = plt.subplots(1, 3, figsize=(11, 3.6))
-for axis, values, label, limits in (
-    (axes[0], T1_true, "T1 [ms]", (0, 3000)),
-    (axes[1], T2_true, "T2 [ms]", (0, 350)),
-    (axes[2], M0_true, "M0", (0, 1.1)),
+figure, axes = canvas(1, 3, mask.shape, bars=3, extra=1.1)
+for axis, values, name in (
+    (axes[0, 0], T1_true, "T1"),
+    (axes[0, 1], T2_true, "T2"),
+    (axes[0, 2], M0_true, "M0"),
 ):
-    handle = axis.imshow(values, cmap="magma", vmin=limits[0], vmax=limits[1])
-    bar = figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    bar.set_label(label, fontsize=8)
-    bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([]), axis.set_yticks([])
-figure.suptitle("BrainWeb subject 0, slice 90 -- what the maps should come out as")
-figure.tight_layout()
+    cmap, limits, label = STYLE[name]
+    scalebar(panel(axis, values, cmap, limits), axis, label)
+figure.suptitle("BrainWeb subject 0, slice 90")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -320,7 +419,6 @@ figure.tight_layout()
 # protocols, so it is the same nonlinear least squares over the same four
 # unknowns, started from the same guess.
 #
-from torchsim import ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
 from torchsim.model import SignalModel
 
@@ -371,12 +469,11 @@ noise = torch.randn((2, *clean.shape), generator=generator, dtype=torch.float32)
 # sphinx_gallery_end_ignore
 measured = clean + NOISE * torch.complex(noise[0], noise[1])
 
-problem = ParameterMapping(joint, noise_std=NOISE, seed=0, **UNKNOWN).train(
-    NonlinearLeastSquares(
-        bounds=UNKNOWN,
-        initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
-    )
-)
+problem = NonlinearLeastSquares(
+    joint,
+    bounds=UNKNOWN,
+    initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
+).fit(UNKNOWN, noise_std=NOISE, seed=0)
 
 maps = problem(measured)  # {"T1": ..., "T2": ..., "M0": ..., "B0": ...}
 
@@ -389,12 +486,11 @@ def mapped(spgr_flip, ssfp_flip):
     draw = torch.randn((2, *exact.shape), generator=generator, dtype=torch.float32)
     seen = exact + NOISE * torch.complex(draw[0], draw[1])
 
-    fit = ParameterMapping(block, noise_std=NOISE, seed=0, **UNKNOWN).train(
-        NonlinearLeastSquares(
-            bounds=UNKNOWN,
-            initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
-        )
-    )
+    fit = NonlinearLeastSquares(
+        block,
+        bounds=UNKNOWN,
+        initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
+    ).fit(UNKNOWN, noise_std=NOISE, seed=0)
     start = time.time()
     found = fit(seen)
     return found, time.time() - start
@@ -487,59 +583,33 @@ def painted(values):
     return canvas
 
 
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to."""
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
-
-
-for name, reference, limits in (("T1", T1_true, (0, 3000)), ("T2", T2_true, (0, 350))):
+for name in ("T1", "T2"):
+    reference = T1_true if name == "T1" else T2_true
+    cmap, limits, label = STYLE[name]
     residuals = {
-        label: np.abs(painted(maps[name]) - reference) for label, maps in found.items()
+        method: np.abs(painted(maps[name]) - reference)
+        for method, maps in found.items()
     }
     top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
 
-    figure, axes = plt.subplots(2, 3, figsize=(10, 6.8))
-    panel(axes[0, 0], reference, "magma", limits)
-    axes[0, 0].set_title("truth", fontsize=10)
-    axes[0, 0].set_ylabel(f"{name} [ms]", fontsize=11)
+    figure, axes = canvas(2, 1 + len(found), mask.shape)
+    panel(axes[0, 0], reference, cmap, limits, title="truth")
     axes[1, 0].set_visible(False)
-    for column, label in enumerate(found, start=1):
-        panel(axes[0, column], painted(found[label][name]), "magma", limits,
-              label=f"{name} [ms]" if column == 2 else None)
-        axes[0, column].set_title(label, fontsize=10)
-        panel(axes[1, column], residuals[label], "inferno", (0.0, top or 1.0),
-              label=f"|error| {name} [ms]" if column == 2 else None)
-    axes[1, 1].set_ylabel("|error|", fontsize=11)
-    figure.tight_layout()
+    for column, method in enumerate(found, start=1):
+        estimate = panel(axes[0, column], painted(found[method][name]), cmap, limits,
+                         title=method)
+        error = panel(axes[1, column], residuals[method], "inferno", (0.0, top or 1.0))
+    scalebar(estimate, axes[0], label)
+    scalebar(error, axes[1, 1:], f"|error|, {label}")
 # sphinx_gallery_end_ignore
 
 # %%
 #
-# Reading the result honestly
-# ---------------------------
+# References
+# ----------
 #
-# The bound is a bound, not a prediction: an estimator can be worse than it and
-# none can be better. The measured error sits about a fifth above it, and the
-# gap is the fit rather than the design -- a Cramer-Rao bound describes a
-# linearization, and over a slice that runs from white matter to CSF the fit
-# is not linear everywhere. What carries over is the *ratio*: the design lowers
-# the bound by about a third and lowers the measured error by about a third,
-# which is the claim being made.
-#
-# Raise the noise and that stops holding. The fit becomes biased near the ends
-# of its bounds, the long-T1 voxels lose their conditioning first, and the
-# design's advantage shrinks -- which is the honest limit of designing against
-# a bound rather than against an estimator.
-#
-# Nothing above is specific to DESPOT except the cost. The acquisition, the
-# bounded parameters and the loop are the same three pieces that design a
-# sequence for image quality rather than for precision.
-#
+# .. [1] Teixeira, R. P. A. G., Malik, S. J., Hajnal, J. V., "Joint system
+#    relaxometry (JSR) and Cramer-Rao lower bound optimization of sequence
+#    parameters: a framework for enhanced precision of DESPOT T1 and T2
+#    estimation", Magnetic Resonance in Medicine 79.1 (2018), pp. 234-245.
+#    https://doi.org/10.1002/mrm.26670

@@ -49,22 +49,31 @@ dependencies = [
 "torch>=2.1",
 ]
 
-[project.optional-dependencies] # Optional
-dev = ["black", "isort", "ruff"]
-test = [
+[project.optional-dependencies]
+# One extra, so a contributor installs the whole toolchain in a single
+# command: formatters and linters, the test runner, the documentation build,
+# and everything the gallery examples import while they execute.
+dev = [
+# style and typing
+"black",
+"isort",
+"mypy",
+"ruff",
+# tests
 "pytest>=7.0",
 "pytest-black",
 "pytest-cov",
 "pytest-sugar",
 "pytest-xdist",
-]
-doc = [
+# documentation
 "sphinx>=7.0",
 "sphinx_book_theme>=1.1",
+"sphinx-design>=0.6",
 "sphinx-gallery>=0.15",
 "sphinx-exec-directive>=0.6",
 "sphinx_copybutton>=0.5",
 "matplotlib>=3.8",
+"cmap>=0.1",
 "ipywidgets>=8.0",
 # What the gallery examples reach for. None of it is needed to simulate: the
 # phantoms, the segmentation, the coils, the Fourier encoding and the linear

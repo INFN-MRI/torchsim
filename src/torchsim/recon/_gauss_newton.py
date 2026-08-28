@@ -9,12 +9,12 @@ What separates the methods is *how the linear problem is solved* and *where the
 damping comes from*, and both belong to the caller.
 
 The linear solve is a callable, and mostly it is somebody else's.
-:func:`iterative` hands the linearized problem to deepinv, whose
-``least_squares`` minimizes exactly what a Gauss-Newton step leaves --
-``||A d - b||^2 + (1/g) ||d - z||^2`` -- by conjugate gradients, LSQR,
-BiCGStab or MINRES, and asks for nothing but products with the Jacobian. There
-is no conjugate gradient written here and there should not be: a package that
-ships its own is one more copy of an algorithm nobody wanted three of.
+:func:`iterative` takes any :class:`LeastSquares` -- anything minimizing
+``||A d - b||^2 + (1/g) ||d - z||^2`` from products with the Jacobian alone,
+which is exactly what a Gauss-Newton step leaves. Given nothing it reaches
+deepinv's ``least_squares``. There is no conjugate gradient written here and
+there should not be: a package that ships its own is one more copy of an
+algorithm nobody wanted three of.
 
 :func:`direct` is the exception, and only because it is not a general linear
 solver: where the operator is voxel-diagonal the problem is a stack of small
@@ -40,6 +40,7 @@ from __future__ import annotations
 
 __all__ = [
     "GaussNewton",
+    "LeastSquares",
     "Linearization",
     "Schedule",
     "Solution",
@@ -50,7 +51,7 @@ __all__ = [
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import torch
 
@@ -117,27 +118,75 @@ class Solution:
 # %% inner solves
 
 
-def iterative(
-    solver: str = "CG", *, max_iter: int = 50, tol: float = 1e-6
-) -> Callable[..., torch.Tensor]:
-    """The inner solve, by deepinv's linear solvers.
+@runtime_checkable
+class LeastSquares(Protocol):
+    """A regularized linear least-squares solve, in deepinv's calling shape.
 
-    ``deepinv.optim.linear.least_squares`` minimizes
-    ``||A d - b||^2 + (1/g) ||d - z||^2``, which is what a Gauss-Newton step
-    leaves once the damping and its reference are in it. It asks only for
-    products with the Jacobian, so it does not care whether an encoding
-    operator sits in front of the model.
+    Minimize ``||A d - y||^2 + (1/gamma) ||d - z||^2`` given only products
+    with the operator and its adjoint. ``deepinv.optim.linear.least_squares``
+    satisfies this, and so does anything a caller writes to the same
+    signature; :func:`iterative` takes either.
 
     Parameters
     ----------
-    solver : str, optional
-        Which of deepinv's solvers to use: ``"CG"``, ``"lsqr"``,
-        ``"BiCGStab"`` or ``"minres"``. Which one suits depends on the
-        problem and is worth measuring: conjugate gradients works on the
-        normal equations, so on a small well-scaled system it stops on a
-        tolerance the squared condition number has already spoiled, while
-        LSQR and MINRES reach what a direct solve reaches -- and on a large
-        encoded problem inside a fixed iteration budget the ordering reverses.
+    A : callable
+        The forward product, ``d -> A d``.
+    AT : callable
+        The adjoint product, ``r -> A^H r``.
+    y : torch.Tensor
+        The right-hand side.
+    z : torch.Tensor
+        What the regularizer pulls the solution towards.
+    gamma : float or torch.Tensor or None
+        The reciprocal of the damping, or ``None`` where there is none.
+    max_iter : int
+        Most iterations to take.
+    tol : float
+        Stop when the residual has fallen this far relative to the data.
+    """
+
+    def __call__(
+        self,
+        *,
+        A: Callable[[torch.Tensor], torch.Tensor],
+        AT: Callable[[torch.Tensor], torch.Tensor],
+        y: torch.Tensor,
+        z: torch.Tensor,
+        gamma: float | torch.Tensor | None,
+        max_iter: int,
+        tol: float,
+    ) -> torch.Tensor:
+        """Return the step ``d`` that minimizes the damped residual."""
+
+
+def iterative(
+    solver: LeastSquares | None = None, *, max_iter: int = 50, tol: float = 1e-6
+) -> Callable[..., torch.Tensor]:
+    """The inner solve, by a regularized linear least-squares routine.
+
+    A Gauss-Newton step leaves ``||A d - b||^2 + (1/g) ||d - z||^2`` once the
+    damping and its reference are in it, and asks only for products with the
+    Jacobian, so it does not care whether an encoding operator sits in front
+    of the model. Any :class:`LeastSquares` minimizes exactly that.
+
+    Parameters
+    ----------
+    solver : LeastSquares, optional
+        Anything matching :class:`LeastSquares`. The default is deepinv's
+        ``least_squares``, which is conjugate gradients. One of its others is
+        that same function with the argument bound::
+
+            from functools import partial
+            from deepinv.optim.linear import least_squares
+
+            iterative(partial(least_squares, solver="lsqr"))
+
+        Which one suits depends on the problem and is worth measuring:
+        conjugate gradients works on the normal equations, so on a small
+        well-scaled system it stops on a tolerance the squared condition
+        number has already spoiled, while LSQR and MINRES reach what a direct
+        solve reaches -- and on a large encoded problem inside a fixed
+        iteration budget the ordering reverses.
     max_iter : int, optional
         Most inner iterations per Gauss-Newton step.
     tol : float, optional
@@ -151,8 +200,9 @@ def iterative(
     Raises
     ------
     ImportError
-        If deepinv is not installed. TorchSim does not depend on it, and
-        :func:`direct` needs nothing beyond torch.
+        If no solver is given and deepinv is not installed. TorchSim does not
+        depend on it: pass a :class:`LeastSquares` of your own, or use
+        :func:`direct` where the model stands alone.
     """
 
     def solve(
@@ -161,14 +211,18 @@ def iterative(
         damping: torch.Tensor,
         reference: torch.Tensor,
     ) -> torch.Tensor:
-        try:
-            from deepinv.optim.linear import least_squares
-        except ImportError as error:  # pragma: no cover - depends on the env
-            raise ImportError(
-                "iterative() solves through deepinv; TorchSim does not depend "
-                "on it. pip install deepinv, or use direct() where the model "
-                "stands alone."
-            ) from error
+        routine = solver
+        if routine is None:
+            try:
+                from deepinv.optim.linear import least_squares
+            except ImportError as error:  # pragma: no cover - depends on env
+                raise ImportError(
+                    "iterative() falls back to deepinv's least_squares, and "
+                    "TorchSim does not depend on deepinv. pip install "
+                    "deepinv, pass a LeastSquares of your own, or use "
+                    "direct() where the model stands alone."
+                ) from error
+            routine = least_squares
         weight = torch.as_tensor(damping)
         if not bool((weight > 0).any()):
             gamma = None
@@ -178,13 +232,12 @@ def iterative(
             gamma = 1.0 / float(weight.reshape(()))
         else:
             gamma = 1.0 / torch.broadcast_to(weight, reference.shape)
-        return least_squares(
+        return routine(
             A=linearization.matvec,
             AT=linearization.rmatvec,
             y=rhs,
             z=reference,
             gamma=gamma,
-            solver=solver,
             max_iter=max_iter,
             tol=tol,
         )
@@ -333,7 +386,7 @@ class TrustRegion:
     anchored: bool = False
     #: Each voxel carries its own weight and retires on its own.
     per_voxel: bool = True
-    _rising: torch.Tensor | None = field(default=None, repr=False)
+    _rising: torch.Tensor | None = field(default=None, repr=False, init=False)
 
     def __post_init__(self) -> None:
         if self.tau <= 0.0:

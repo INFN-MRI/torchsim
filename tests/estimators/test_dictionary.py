@@ -30,8 +30,8 @@ def test_dictionary_matcher_recovers_complex_scaled_atoms(device: str) -> None:
     selected = torch.tensor([3, 52], device=device)
     signals = scale[:, None] * dictionary[selected]
     matcher = DictionaryMatcher(
-        dictionary,
-        parameter,
+        dictionary=dictionary,
+        parameters=parameter,
         query_chunk_size=1,
         dictionary_chunk_size=11,
         top_k=2,
@@ -47,7 +47,7 @@ def test_dictionary_matcher_recovers_complex_scaled_atoms(device: str) -> None:
 
 def test_dictionary_matcher_forward_returns_indices_without_parameters() -> None:
     dictionary = torch.eye(4)
-    matcher = DictionaryMatcher(dictionary, dictionary_chunk_size=2)
+    matcher = DictionaryMatcher(dictionary=dictionary, dictionary_chunk_size=2)
 
     actual = matcher(dictionary[[2, 0]])
 
@@ -69,7 +69,7 @@ def test_a_complex_measurement_of_a_real_model_keeps_both_its_parts() -> None:
     acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 200.0, 16))
     atoms = torch.as_tensor(acquisition.simulate(T2=grid))
     assert not torch.is_complex(atoms)
-    matcher = DictionaryMatcher(atoms, grid[:, None])
+    matcher = DictionaryMatcher(dictionary=atoms, parameters=grid[:, None])
     truth = grid[::7]
     generator = torch.Generator().manual_seed(0)
     clean = torch.as_tensor(acquisition.simulate(T2=truth)).to(torch.complex64)

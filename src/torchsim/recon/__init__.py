@@ -15,6 +15,7 @@ from __future__ import annotations
 
 __all__ = [
     "GaussNewton",
+    "LeastSquares",
     "Linearization",
     "ModelOperator",
     "Schedule",
@@ -26,6 +27,7 @@ __all__ = [
 
 from ._gauss_newton import (
     GaussNewton,
+    LeastSquares,
     Linearization,
     Schedule,
     Solution,

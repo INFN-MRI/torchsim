@@ -8,6 +8,9 @@ estimators and the sequence optimizer. A description is a list of events with
 the timing and the tissue interaction each one carries; nothing in it names a
 vendor or a device.
 
+This page is the description and what it is assembled from. Running one is on
+:doc:`execution`, and the temporal basis a run spans is on :doc:`recon`.
+
 Description
 -----------
 
@@ -18,7 +21,6 @@ Description
    SequenceDescription
    SequenceEvent
    TissueProperties
-   SimulationResult
 
 Event vocabulary
 ~~~~~~~~~~~~~~~~
@@ -84,43 +86,3 @@ Whole sequences, assembled from the operators above.
    mprage_description
    mpnrage_description
    mrf_description
-
-Engine
-------
-
-The differentiable state machine a sequence description is run on.
-
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   EpgEngine
-
-Transmit calibration
---------------------
-
-What the transmit chain does to the pulse the description asked for: the
-amplitude a flip angle needs, and the profile a finite-bandwidth pulse leaves
-across the slice.
-
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   calibrate
-   exact_slice_profile
-   ExactSliceProfile
-
-Subspace
---------
-
-The low-rank temporal basis a train spans, fitted to simulated signals and used
-by both the estimators and a subspace reconstruction.
-
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   Subspace
-   SubspaceBasis
-   simulate_subspace

@@ -12,12 +12,14 @@ import torch
 
 from .._execution import one_device, per_voxel
 from .._calibrate import crossover
+from ._mapping import Estimator
 
 
-class PERK(torch.nn.Module):
+class PERK(Estimator):
     """Parameter estimation via regression with kernels.
 
-    This is the random-Fourier-feature form of PERK. Training accumulates the
+    This is the random-Fourier-feature form of PERK [1]_. Training accumulates
+    the
     required covariances in chunks, so memory depends on the feature order
     rather than the number of simulated training samples. Estimation uses only
     ``cos`` and matrix multiplication and therefore dispatches to optimized
@@ -25,6 +27,13 @@ class PERK(torch.nn.Module):
 
     Parameters
     ----------
+    acquisition : SignalModel, optional
+        The sequence being inverted: a simulator that ships with TorchSim, one
+        written by subclassing :class:`~torchsim.model.Simulator`, or any other
+        :class:`~torchsim.model.SignalModel`. Every tissue property that is
+        neither unknown nor measured separately is fixed on it beforehand, with
+        the constructor or :meth:`~torchsim.model.SignalModel.bind`. Leave it
+        out to fit from signals handed to :meth:`fit` directly.
     n_features : int, optional
         Number of random Fourier features. The default is ``1000``.
     length_scale : float or tensor, optional
@@ -35,33 +44,54 @@ class PERK(torch.nn.Module):
         ``1e-5``.
     chunk_size : int, optional
         Maximum samples transformed at once. The default is ``65536``.
-    seed : int, optional
-        Seed used for the fixed random feature map.
+    feature_seed : int, optional
+        Seed used for the fixed random feature map. Separate from the seed
+        :meth:`fit` draws the training set with.
     complex_mode : {"cartesian", "magnitude"}, optional
         Representation used for complex signals. Magnitude data are often
         preferable when image phase is a nuisance parameter.
     normalize : bool, optional
         Normalize every signal vector before feature projection. This removes
         an unknown global scale when it is not itself a target.
+    stream : bool, optional
+        Simulate the training set a chunk at a time and accumulate the
+        covariances as it goes, so memory follows the feature order rather
+        than the number of training samples. The dictionary is never held, and
+        so cannot have a basis estimated from it: a ``rank`` given to
+        :meth:`fit` needs the default. A basis fitted elsewhere, passed to
+        :meth:`fit` as ``subspace=``, streams perfectly well -- each chunk is
+        projected as it is simulated.
 
     Notes
     -----
     Cartesian complex signals are represented as interleaved real/imaginary
     features. The learned estimator remains differentiable with respect to its
     input, which permits its use inside a larger reconstruction network.
+
+    References
+    ----------
+    .. [1] Nataraj, G., Nielsen, J.-F., Scott, C., Fessler, J. A.,
+       "Dictionary-free MRI PERK: parameter estimation via regression with
+       kernels", IEEE Transactions on Medical Imaging 37.9 (2018),
+       pp. 2103-2114. https://doi.org/10.1109/TMI.2018.2817547
     """
 
     def __init__(
         self,
+        acquisition: Any = None,
+        *,
         n_features: int = 1000,
         length_scale: float | torch.Tensor | None = None,
         regularization: float = 1e-5,
         chunk_size: int = 65536,
-        seed: int | None = None,
+        feature_seed: int | None = None,
         complex_mode: Literal["cartesian", "magnitude"] = "cartesian",
         normalize: bool = False,
+        stream: bool = False,
     ) -> None:
-        super().__init__()
+        super().__init__(acquisition)
+        self.feature_seed = feature_seed
+        self.stream = bool(stream)
         if n_features < 1:
             raise ValueError("n_features must be positive")
         if regularization < 0:
@@ -73,7 +103,6 @@ class PERK(torch.nn.Module):
         self.n_features = int(n_features)
         self.regularization = float(regularization)
         self.chunk_size = int(chunk_size)
-        self.seed = seed
         self.complex_mode = complex_mode
         self.normalize = bool(normalize)
         self._requested_length_scale = length_scale
@@ -94,7 +123,7 @@ class PERK(torch.nn.Module):
         return self.weight.numel() != 0
 
     @torch.no_grad()
-    def fit(
+    def _fit_arrays(
         self,
         signals: torch.Tensor,
         parameters: torch.Tensor,
@@ -129,7 +158,7 @@ class PERK(torch.nn.Module):
             raise ValueError("signals and parameters have different sample counts")
         signals = signals.reshape(sample_count, -1)
         known = _known_matrix(known, signals, sample_count)
-        random_seed = _random_seed(self.seed)
+        random_seed = _random_seed(self.feature_seed)
 
         def batches() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
             for start in range(0, sample_count, self.chunk_size):
@@ -153,88 +182,51 @@ class PERK(torch.nn.Module):
         return self._fit_batches(batches, sample_count)
 
     @torch.no_grad()
-    def fit_simulator(
+    def _fit_simulated(
         self,
-        simulator: Any,
-        properties: Mapping[str, Any],
-        known: Mapping[str, Any] | None = None,
+        samples: int,
         *,
-        simulation_chunk_size: int | None = None,
+        chunk: int,
+        rank: int | None,
         noise_std: float | torch.Tensor = 0.0,
-        **sequence: Any,
-    ) -> PERK:
-        """Train on signals a simulator generates, without ever holding them.
+    ) -> None:
+        """Accumulate the covariances chunk by chunk, holding no dictionary.
 
-        Parameters
-        ----------
-        simulator : SignalModel
-            The sequence being inverted -- the same object sequence design and
-            a reconstruction pipeline take, so the training signals cannot
-            drift from the ones the scanner will produce.
-        properties : mapping
-            What is being estimated, as ``{name: value per training sample}``
-            under the names the simulator exposes. The order is the order of
-            the estimator's output columns.
-        known : mapping, optional
-            Properties measured separately and given to the estimator along
-            with the signal -- a transmit map, say. They reach the simulator
-            too, so the training signals carry their effect.
-        simulation_chunk_size : int, optional
-            How many samples to simulate at once. Memory follows this rather
-            than the number of training samples.
-        noise_std : float or tensor, optional
-            Noise added to the training signals, which is what teaches the
-            estimator how far to trust them.
-        sequence
-            Anything else the simulator takes, passed on unchanged.
-
-        Returns
-        -------
-        PERK
-            This estimator, fitted.
-
-        Raises
-        ------
-        ValueError
-            If ``properties`` is empty, if the values disagree on how many
-            training samples there are, or if the chunk size is not positive.
+        Where the estimator was not asked to stream this is the shared path:
+        the whole training set is simulated, a basis is fitted over it if one
+        was asked for, and it is discarded once the covariances are in.
         """
-        if not properties:
-            raise ValueError("name at least one property to estimate")
-        chunk_size = simulation_chunk_size or self.chunk_size
+        if not self.stream:
+            super()._fit_simulated(
+                samples, chunk=chunk, rank=rank, noise_std=noise_std
+            )
+            return
+        if rank is not None:
+            raise ValueError(
+                "a basis is estimated from the whole dictionary, which a "
+                "streaming fit never holds; leave stream out to fit one here, "
+                "or pass subspace= to work in one fitted elsewhere"
+            )
+        chunk_size = chunk or self.chunk_size
         if chunk_size < 1:
-            raise ValueError("simulation_chunk_size must be positive")
-        columns = _sample_columns(properties)
-        parameters = torch.stack(columns, dim=-1)
-        count = parameters.shape[0]
-        known_names = tuple(known or ())
-        known_matrix = (
-            torch.stack(_sample_columns(known, count), dim=-1) if known else None
-        )
-        random_seed = _random_seed(self.seed)
-        names = tuple(properties)
+            raise ValueError(f"chunk must be positive, got {chunk_size}")
+        drawn, parameters, known_matrix = self._draw_parameters(samples)
+        random_seed = _random_seed(self.feature_seed)
 
         def batches() -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-            for start in range(0, count, chunk_size):
-                stop = min(start + chunk_size, count)
+            for start in range(0, samples, chunk_size):
+                stop = min(start + chunk_size, samples)
                 known_chunk = (
                     None if known_matrix is None else known_matrix[start:stop]
                 )
                 given = {
-                    name: parameters[start:stop, column]
-                    for column, name in enumerate(names)
+                    name: value[start:stop] for name, value in drawn.items()
                 }
-                if known_chunk is not None:
-                    given.update(
-                        {
-                            name: known_chunk[:, column]
-                            for column, name in enumerate(known_names)
-                        }
-                    )
                 signals = torch.as_tensor(
-                    simulator.simulate(**given, **sequence),
-                    device=parameters.device,
+                    self.acquisition.simulate(**given), device=parameters.device
                 )
+                if self.subspace is not None:
+                    signals = self.subspace.project(signals)
                 generator = _generator(parameters.device, random_seed + start)
                 signals = _add_noise(signals, noise_std, generator=generator)
                 yield (
@@ -248,9 +240,9 @@ class PERK(torch.nn.Module):
                     parameters[start:stop],
                 )
 
-        return self._fit_batches(batches, count)
+        self._fit_batches(batches, samples)
 
-    def forward(
+    def _estimate_arrays(
         self,
         signals: torch.Tensor,
         known: torch.Tensor | None = None,
@@ -548,7 +540,7 @@ class PERK(torch.nn.Module):
         supposed to be a decision about speed rather than about which
         estimator comes out of it.
         """
-        generator = _generator(torch.device("cpu"), _random_seed(self.seed))
+        generator = _generator(torch.device("cpu"), _random_seed(self.feature_seed))
         frequency = torch.randn(
             self.n_features,
             length_scale.numel(),

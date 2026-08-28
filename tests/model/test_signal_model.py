@@ -13,15 +13,15 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim.model import REFOCUSED, AbstractSimulator, StateMachineModel
+from torchsim.model import REFOCUSED, Simulator, SpinPhysics
 from torchsim.sequence import _simulation
 
 
-class Relaxation(AbstractSimulator):
+class Relaxation(Simulator):
     """T1 and T2 alone -- the narrowest a model can be."""
 
-    model = StateMachineModel(
-        properties={"T1": "t1_ms", "T2": "t2_ms"}, triggers=REFOCUSED
+    model = SpinPhysics(
+        properties={"T1": "t1_ms", "T2": "t2_ms"}, operators=REFOCUSED
     )
 
     def layout(self, *, flip, ESP, phases=0.0):
@@ -30,22 +30,22 @@ class Relaxation(AbstractSimulator):
         turns = torch.deg2rad(torch.as_tensor(phases, dtype=angles.dtype))
         turns = turns.expand_as(angles) if turns.numel() == 1 else turns
         spacing_s = ESP * 1e-3
-        parts = [(0.0, self.triggers.excitation(torch.pi / 2, torch.pi / 2))]
+        parts = [(0.0, self.operators.excitation(torch.pi / 2, torch.pi / 2))]
         for index in range(angles.numel()):
             echo_s = (index + 1) * spacing_s
             parts.append((
                 echo_s - 0.5 * spacing_s,
-                self.triggers.refocusing(angles[index], turns[index]),
+                self.operators.refocusing(angles[index], turns[index]),
             ))
-            parts.append((echo_s, self.triggers.readout(turns[index])))
+            parts.append((echo_s, self.operators.readout(turns[index])))
         return parts
 
 
 class Transmit(Relaxation):
     """The same sequence, with a transmit map declared."""
 
-    model = StateMachineModel(
-        properties={"T1": "t1_ms", "T2": "t2_ms", "B1": "b1"}, triggers=REFOCUSED
+    model = SpinPhysics(
+        properties={"T1": "t1_ms", "T2": "t2_ms", "B1": "b1"}, operators=REFOCUSED
     )
 
 
@@ -107,7 +107,7 @@ def test_an_undeclared_property_cannot_change_the_answer() -> None:
 def test_a_model_declaring_unknown_tissue_says_so() -> None:
     """A typo in a tissue field is caught where it is written, not in a kernel."""
     class Wrong(Relaxation):
-        model = StateMachineModel(
+        model = SpinPhysics(
             properties={"T1": "t1_ms", "T2": "not_a_tissue_field"}
         )
 

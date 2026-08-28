@@ -1,34 +1,46 @@
 """What the spins are, and what each kind of event does to them.
 
 A signal model made of a state machine splits in two. A
-:class:`StateMachineModel` says what a voxel holds -- which tissue properties
+:class:`SpinPhysics` says what a voxel holds -- which tissue properties
 are exposed, and so which physics the kernels carry -- and what each kind of
 event is realized as: whether an excitation is ideal or integrated from a
 waveform, whether a readout is followed by an unbalanced gradient, by ideal
-spoiling, or by nothing. An :class:`AbstractSimulator` says what order the
+spoiling, or by nothing. A :class:`Simulator` says what order the
 events are played in.
 
 Splitting them is what lets one be changed without the other. The MRF timing
 with a selective excitation, or a refocused train whose readout spoils rather
 than winds, is an assignment rather than a new model.
 
-**Triggers are resolved before a description exists.** A simulator binds each
-slot when it is constructed; what a protocol then produces is an ordinary
+**The operators are resolved before a description exists.** A simulator binds
+each slot when it is constructed; what a protocol then produces is an ordinary
 :class:`~torchsim.sequence.SequenceDescription`, whose events carry their own
 action word. From there the path is the fused one -- packing, the feature
 mask, the real-subspace verdict, offload and sharding -- and nothing consults
-a trigger again. There is no interpretation at run time and none per event.
+an operator slot again. There is no interpretation at run time and none per
+event.
+
+Three vocabularies name a pulse along that path, and they are not the same
+vocabulary at three sizes. :class:`EventOperators` has one slot per role a
+sequence is written in terms of, and its values are operator factories, read
+only while a description is being assembled. Each factory emits events tagged
+with an :class:`~torchsim.sequence.RfUse`, which is what a Pulseq file
+carries, and with an :class:`~torchsim.sequence.EventAction`, which is the bit
+field the kernels read. The three do not line up one to one and are not meant
+to: the :attr:`~EventOperators.saturation` slot plays a pulse tagged
+``RfUse.EXCITATION``, because what the scanner is told about a pulse and what
+role the sequence gives it are separate questions.
 """
 
 from __future__ import annotations
 
 __all__ = [
-    "AbstractSimulator",
+    "Simulator",
     "BALANCED",
     "REFOCUSED",
     "SPOILED",
-    "StateMachineModel",
-    "Triggers",
+    "SpinPhysics",
+    "EventOperators",
     "UNBALANCED",
 ]
 
@@ -80,13 +92,18 @@ _RF_RASTER_TIME_S = 1e-6
 
 
 @dataclass(frozen=True)
-class Triggers:
-    """What each kind of event is realized as.
+class EventOperators:
+    """Which operator plays each kind of event.
 
     Each field is an operator factory, called with the parameters the protocol
     has for that event. Assigning one is how a sequence says that its readouts
     wind the states on, or that its excitation is a shaped pulse rather than an
     ideal rotation.
+
+    These are roles a sequence is written in terms of, not the tags the events
+    end up carrying: a factory here decides which
+    :class:`~torchsim.sequence.RfUse` and which
+    :class:`~torchsim.sequence.EventAction` its events are emitted with.
     """
 
     #: What a pulse that tips magnetization into the transverse plane plays.
@@ -111,18 +128,18 @@ def _uncrushed(*args: Any, **kwargs: Any) -> Operator:
 
 
 #: A readout the repetition rewinds after, and refocusing pulses left uncrushed.
-BALANCED = Triggers(readout=bSSFPReadout, refocusing=_uncrushed)
+BALANCED = EventOperators(readout=bSSFPReadout, refocusing=_uncrushed)
 #: A readout followed by one unbalanced gradient.
-UNBALANCED = Triggers(readout=SSFPFidReadout)
+UNBALANCED = EventOperators(readout=SSFPFidReadout)
 #: A readout followed by ideal transverse spoiling.
-SPOILED = Triggers(readout=SPGRReadout)
+SPOILED = EventOperators(readout=SPGRReadout)
 #: A refocusing pulse between its crushers, and the sample at the echo centre.
-REFOCUSED = Triggers(readout=FSEReadout)
+REFOCUSED = EventOperators(readout=FSEReadout)
 
 
 @dataclass(frozen=True)
-class StateMachineModel:
-    """The physics: which properties a voxel has, and what an event does to it.
+class SpinPhysics:
+    """Which properties a voxel has, and what each kind of event does to it.
 
     Attributes
     ----------
@@ -132,7 +149,7 @@ class StateMachineModel:
         model asks for off-resonance, diffusion, flow or a second pool. A name
         mapped to ``None`` is the model's own and reaches the signal without
         reaching the tissue.
-    triggers : Triggers
+    operators : EventOperators
         What each kind of event plays.
     fixed : mapping
         Tissue fields the model pins rather than exposes, as
@@ -144,7 +161,7 @@ class StateMachineModel:
     """
 
     properties: Mapping[str, str | None] = field(default_factory=lambda: _EMPTY)
-    triggers: Triggers = Triggers()
+    operators: EventOperators = field(default_factory=EventOperators)
     fixed: Mapping[str, Any] = field(default_factory=lambda: _EMPTY)
     definitions: Mapping[int, RfDefinition] = field(
         default_factory=lambda: {0: ideal_rf_definition()}
@@ -185,7 +202,7 @@ class StateMachineModel:
         return pairs
 
 
-class AbstractSimulator(SignalModel):
+class Simulator(SignalModel):
     """A protocol: what a sequence plays, and the physics behind it.
 
     Subclasses set :attr:`model` and implement :meth:`layout`, which returns
@@ -201,26 +218,26 @@ class AbstractSimulator(SignalModel):
     A protocol with a closed form -- a steady state that needs no state
     machine -- overrides :meth:`evaluate` instead and never reaches
     :meth:`layout`. Its :attr:`model` then carries only the property
-    declaration, since there are no events for triggers to realize. Both kinds
+    declaration, since there are no events for operators to realize. Both kinds
     are constructed and called the same way, which is what lets parameter
     inference and sequence optimization take either.
 
     Attributes
     ----------
-    model : StateMachineModel, optional
+    model : SpinPhysics, optional
         The physics behind the protocol.
     states : int, optional
         Configuration orders to carry, or ``None`` to size them from the
         winding the description asks for.
     """
 
-    model: StateMachineModel = StateMachineModel()
+    model: SpinPhysics = SpinPhysics()
     states: int | None = None
 
     def __init__(
         self,
         *,
-        model: StateMachineModel | None = None,
+        model: SpinPhysics | None = None,
         states: int | None = None,
         repetitions: int = 1,
         record: RecordMode = "all",
@@ -235,7 +252,7 @@ class AbstractSimulator(SignalModel):
         Parameters
         ----------
         model:
-            The state-machine model, or ``None`` for the class's own.
+            The physics, or ``None`` for the class's own.
         states:
             Configuration orders to carry.
         repetitions:
@@ -266,7 +283,7 @@ class AbstractSimulator(SignalModel):
         # Bound here rather than looked up per event: after this, what the
         # protocol produces is an ordinary description and no trigger is
         # consulted again.
-        self.triggers = self.model.triggers
+        self.operators = self.model.operators
         self.properties = self.model.properties
         self.states = states if states is not None else type(self).states
         self.repetitions = repetitions
@@ -295,7 +312,7 @@ class AbstractSimulator(SignalModel):
         )
         self._described: SequenceDescription | None = None
 
-    def resolved(self) -> AbstractSimulator:
+    def resolved(self) -> Simulator:
         """Return a copy that resolves its structure once and rebinds values.
 
         A protocol called many times with the same arguments and different
@@ -316,7 +333,7 @@ class AbstractSimulator(SignalModel):
         copy._refused = []
         return copy
 
-    def to(self, device: torch.device | str) -> AbstractSimulator:
+    def to(self, device: torch.device | str) -> Simulator:
         """This simulator, with everything it holds on ``device``.
 
         A simulator carries its protocol -- echo times, a flip train -- and
@@ -331,7 +348,7 @@ class AbstractSimulator(SignalModel):
 
         Returns
         -------
-        AbstractSimulator
+        Simulator
             A copy. This one is left where it was.
         """
         moved = super().to(device)
@@ -445,9 +462,9 @@ class AbstractSimulator(SignalModel):
     def from_description(
         cls,
         description: SequenceDescription,
-        model: StateMachineModel,
+        model: SpinPhysics,
         **settings: Any,
-    ) -> AbstractSimulator:
+    ) -> Simulator:
         """Return a simulator over a stream someone else assembled.
 
         The events are already concrete -- they carry their own action word --
@@ -493,5 +510,5 @@ class AbstractSimulator(SignalModel):
             ).signal
 
 
-class _Described(AbstractSimulator):
+class _Described(Simulator):
     """A simulator whose description was handed to it whole."""

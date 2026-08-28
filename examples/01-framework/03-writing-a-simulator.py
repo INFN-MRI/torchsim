@@ -3,7 +3,7 @@
 Writing a signal model
 ======================
 
-A signal model is written in two pieces. A **state-machine model** says what a
+A signal model is written in two pieces. The **physics** says what a
 voxel holds -- which tissue properties are exposed, and so which physics the
 kernels carry -- and what each kind of event does to it. A **simulator** says
 what order the events are played in. Everything else -- which kernel runs, how
@@ -34,6 +34,28 @@ warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 
+
+# Every figure is drawn at the width of the documentation column, so none of
+# them is scaled on the way in and type is the same size throughout.
+PAGE_WIDTH = 8.6  # inches
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
 # sphinx_gallery_end_ignore
 from dataclasses import replace
 
@@ -42,14 +64,14 @@ import torch
 
 from torchsim.model import (
     UNBALANCED,
-    AbstractSimulator,
-    StateMachineModel,
+    Simulator,
+    SpinPhysics,
 )
 
 # %%
 # Saying what the events do
 # -------------------------
-# A :class:`~torchsim.model.StateMachineModel` is the physics. ``properties``
+# A :class:`~torchsim.model.SpinPhysics` is the physics. ``properties``
 # maps the name a caller uses to the tissue field it fills, so the model keeps
 # the vocabulary your protocol is written in while the engine keeps its own.
 #
@@ -58,31 +80,31 @@ from torchsim.model import (
 # model pays for no off-resonance turn, no diffusion attenuation and no flow
 # winding. Name ``b0_hz`` and the off-resonance term comes back.
 #
-# ``triggers`` is what each kind of event is realized as. ``UNBALANCED`` says
+# ``operators`` is what each kind of event is realized as. ``UNBALANCED`` says
 # a Readout is followed by one unbalanced gradient, which is what makes this
 # an SSFP-FID rather than a balanced or a spoiled train. Swapping it is how
 # you change that, and it is the only thing you change.
 
-physics = StateMachineModel(
+physics = SpinPhysics(
     properties={"T1": "t1_ms", "T2": "t2_ms"},
-    triggers=UNBALANCED,
+    operators=UNBALANCED,
 )
 
 # %%
 # Saying what order they play in
 # ------------------------------
-# An :class:`~torchsim.model.AbstractSimulator` is the protocol. You do not
+# An :class:`~torchsim.model.Simulator` is the protocol. You do not
 # write timestamps: ``layout`` returns the *operators* of one repetition in
 # order, and the simulator turns the span each one holds into the timestamps a
 # description carries.
 #
-# The triggers are bound when the simulator is constructed. What ``layout``
+# The operators are bound when the simulator is constructed. What ``layout``
 # then produces is an ordinary description whose events carry their own action
 # word, and from there the path is the fused one -- packing, the feature mask,
 # offload and sharding. Nothing consults a trigger during a run.
 
 
-class SSFPMRF(AbstractSimulator):
+class SSFPMRF(Simulator):
     """An Inversion, then one Excitation and one sample per repetition."""
 
     model = physics
@@ -91,10 +113,10 @@ class SSFPMRF(AbstractSimulator):
     def layout(self, *, flip, TR, TI=0.0):
         """Return one repetition's operators, in the order they are played."""
         angles = torch.deg2rad(torch.as_tensor(flip))
-        parts = [self.triggers.inversion(duration_s=TI * 1e-3)]
+        parts = [self.operators.inversion(duration_s=TI * 1e-3)]
         for index in range(angles.numel()):
-            parts.append(self.triggers.excitation(angles[index]))
-            parts.append(self.triggers.readout(duration_s=TR * 1e-3))
+            parts.append(self.operators.excitation(angles[index]))
+            parts.append(self.operators.readout(duration_s=TR * 1e-3))
         return parts
 
 

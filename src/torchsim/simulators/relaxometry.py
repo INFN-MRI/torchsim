@@ -14,12 +14,12 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import AbstractSimulator, StateMachineModel
+from ..model import Simulator, SpinPhysics
 from ..sequence._array import arrays
 from ._contrast import across_contrasts
 
 
-class InversionRecoverySimulator(AbstractSimulator):
+class InversionRecoverySimulator(Simulator):
     """Longitudinal recovery from an inversion, read at a series of delays.
 
     A spin echo long enough after the inversion samples the longitudinal
@@ -43,7 +43,7 @@ class InversionRecoverySimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": None,
             "M0": None,
@@ -96,7 +96,7 @@ class InversionRecoverySimulator(AbstractSimulator):
         return held.get("M0", 1.0) * recovered + held.get("offset", 0.0)
 
 
-class MultiEchoSimulator(AbstractSimulator):
+class MultiEchoSimulator(Simulator):
     """Transverse decay, read at a series of echo times.
 
     A multi-echo spin echo decays with T2 and a multi-echo gradient echo with
@@ -115,7 +115,7 @@ class MultiEchoSimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T2": None,
             "M0": None,
@@ -150,7 +150,7 @@ class MultiEchoSimulator(AbstractSimulator):
         return held.get("M0", 1.0) * decay + held.get("offset", 0.0)
 
 
-class DoubleAngleSimulator(AbstractSimulator):
+class DoubleAngleSimulator(Simulator):
     """Excitation at a series of flip angles, scaled by the transmit field.
 
     What a voxel actually turns through is the nominal angle times the local
@@ -171,7 +171,7 @@ class DoubleAngleSimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "B1": None,
             "M0": None,

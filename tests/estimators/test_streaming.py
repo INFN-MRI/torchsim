@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import DictionaryMatcher, PERK, ParameterMapping
+from torchsim import DictionaryMatcher, PERK
 from torchsim.estimators import _perk
 from torchsim.sequence import execution
 from torchsim.simulators import MRFSimulator
@@ -37,14 +37,16 @@ def estimator() -> PERK:
     generator = torch.Generator().manual_seed(2)
     signals = torch.randn(3000, CONTRASTS, generator=generator)
     targets = torch.stack((signals.sum(-1), signals.square().mean(-1)), dim=-1)
-    return PERK(n_features=256, seed=4).fit(signals, targets)
+    return PERK(n_features=256, feature_seed=4).fit(signals=signals, parameters=targets)
 
 
 @pytest.fixture
 def matcher() -> DictionaryMatcher:
     generator = torch.Generator().manual_seed(2)
     atoms = torch.randn(2000, CONTRASTS, generator=generator)
-    return DictionaryMatcher(atoms, torch.rand(2000, 2, generator=generator))
+    return DictionaryMatcher(
+        dictionary=atoms, parameters=torch.rand(2000, 2, generator=generator)
+    )
 
 
 @CUDA
@@ -186,12 +188,11 @@ def test_a_whole_mapping_runs_under_a_policy() -> None:
     """What a user actually writes, with the volume never leaving the host."""
     generator = torch.Generator().manual_seed(5)
     flip = 5.0 + 55.0 * torch.rand(CONTRASTS, generator=generator)
-    mapping = ParameterMapping(
+    mapping = PERK(
         MRFSimulator(TR=10.0, TI=20.0, states=10, flip=flip),
-        T1=(300.0, 2000.0),
-        T2=(20.0, 200.0),
-        seed=0,
-    ).train(PERK(n_features=256, seed=0), samples=2048)
+        n_features=256,
+        feature_seed=0,
+    ).fit(T1=(300.0, 2000.0), T2=(20.0, 200.0), seed=0, samples=2048)
     truth = {"T1": torch.full((500,), 900.0), "T2": torch.full((500,), 70.0)}
     measured = mapping.acquisition.simulate(**truth)
     expected = mapping(measured)
@@ -217,9 +218,9 @@ def test_a_fit_gives_the_same_estimator_wherever_it_runs() -> None:
     signals = torch.randn(4000, CONTRASTS, generator=generator)
     targets = torch.stack((signals.sum(-1), signals.square().mean(-1)), dim=-1)
 
-    here = PERK(n_features=256, seed=6).fit(signals, targets)
+    here = PERK(n_features=256, feature_seed=6).fit(signals=signals, parameters=targets)
     with execution(target="cuda"):
-        there = PERK(n_features=256, seed=6).fit(signals, targets)
+        there = PERK(n_features=256, feature_seed=6).fit(signals=signals, parameters=targets)
 
     assert there.weight.device.type == "cpu", "the estimator comes home"
     scale = here.weight.abs().max()
@@ -243,6 +244,6 @@ def test_a_fit_on_a_card_reaches_it(monkeypatch) -> None:
     )
 
     with execution(target="cuda"):
-        PERK(n_features=128, seed=6).fit(signals, targets)
+        PERK(n_features=128, feature_seed=6).fit(signals=signals, parameters=targets)
 
     assert seen and set(seen) == {"cuda"}

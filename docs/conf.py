@@ -17,6 +17,8 @@ import dataclasses
 import os
 import sys
 
+import torch
+
 from sphinx_gallery.sorting import ExplicitOrder
 
 sys.path.insert(0, os.path.abspath("."))
@@ -44,6 +46,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
+    "sphinx_design",
     "sphinx_gallery.gen_gallery",
     "sphinx_add_colab_link",
     "sphinx_exec_directive",
@@ -67,12 +70,18 @@ autodoc_member_order = "bysource"
 # ("array-like, one per echo") rather than a signature they have to decode.
 # The annotations stay for editors and for mypy.
 autodoc_typehints = "none"
-# A dataclass default reads as ``triggers=Triggers(excitation=<function ...>)``
-# in a class heading, which is neither the type nor anything a caller writes.
-autodoc_class_signature = "separated"
-# Render a default as the source wrote it, so a dataclass field shows
-# ``Triggers()`` rather than the repr of what that call returned.
+# The constructor's arguments are documented in the class docstring, so the
+# signature belongs on the class heading directly above them rather than in an
+# ``__init__`` entry of its own, which renders with nothing under it.
+autodoc_class_signature = "mixed"
+# Render a default as the source wrote it, rather than as the repr of the
+# object the call produced.
 autodoc_preserve_defaults = True
+
+#: ``torch.nn.Module`` is the base of most of the public classes, and its own
+#: sixty-odd methods would bury the handful each class actually adds. The
+#: autosummary template drops any method whose name is one of these.
+autosummary_context = {"inherited_from_torch": sorted(dir(torch.nn.Module))}
 
 napoleon_include_private_with_doc = False
 napolon_numpy_docstring = True
@@ -224,14 +233,26 @@ def _unflagged(content: str) -> str:
     )
 
 
+def _draw_explanation_figures(app) -> None:
+    """Render the explanation pages' figures with the TorchSim being built.
+
+    They are simulated rather than drawn once and checked in, so a figure on
+    those pages cannot outlive the behaviour it shows.
+    """
+    from explanation_figures import render
+
+    render(os.path.join(app.srcdir, "generated", "figures"))
+
+
 def setup(app):
-    """Drop sphinx-gallery's code-link pass when :mod:`dbm` is missing.
+    """Wire in the figure pass, and drop sphinx-gallery's code-link pass.
 
     That pass caches the URLs it resolves with :mod:`shelve`, and some Python
     distributions package ``dbm`` separately from the interpreter. The links
     it would add are the only thing lost.
     """
     _hide_ignored_code_from_the_page_only()
+    app.connect("builder-inited", _draw_explanation_figures)
     app.connect("autodoc-skip-member", _skip_undocumented_specials)
     try:
         import dbm  # noqa: F401

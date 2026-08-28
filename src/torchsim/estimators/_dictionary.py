@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["DictionaryMatch", "DictionaryMatcher"]
+__all__ = ["MatchResult", "DictionaryMatcher"]
 
 from dataclasses import dataclass
 from typing import Any
@@ -12,10 +12,11 @@ import torch
 from .._execution import per_voxel
 from .._calibrate import crossover
 from ._grouped import Grouping, correlate, match_in_groups
+from ._mapping import Estimator
 
 
 @dataclass(frozen=True)
-class DictionaryMatch:
+class MatchResult:
     """Best dictionary atoms and their complex least-squares scales.
 
     Attributes
@@ -42,19 +43,24 @@ class DictionaryMatch:
     scales: torch.Tensor
 
 
-class DictionaryMatcher(torch.nn.Module):
+class DictionaryMatcher(Estimator):
     """Match signals using normalized complex inner products.
 
     Parameters
     ----------
+    acquisition : SignalModel, optional
+        The sequence being inverted: a simulator that ships with TorchSim, one
+        written by subclassing :class:`~torchsim.model.Simulator`, or any other
+        :class:`~torchsim.model.SignalModel`. Every tissue property that is
+        neither unknown nor measured separately is fixed on it beforehand, with
+        the constructor or :meth:`~torchsim.model.SignalModel.bind`. Leave it
+        out to fit from signals handed to :meth:`fit` directly.
     dictionary : torch.Tensor, optional
         Simulated atoms shaped ``(n_atoms, n_contrasts)``. Leave it out and
-        give them to :meth:`fit` instead, which is what
-        :class:`~torchsim.ParameterMapping` does.
+        give an ``acquisition`` instead, and the atoms are simulated from it.
     parameters : torch.Tensor, optional
-        Parameter values shaped ``(n_atoms, n_parameters)``. If provided,
-        :meth:`forward` returns parameter estimates; otherwise it returns atom
-        indices.
+        Parameter values shaped ``(n_atoms, n_parameters)``. If provided, a
+        call returns parameter estimates; otherwise it returns atom indices.
     query_chunk_size : int, optional
         Maximum measured signals compared at once.
     dictionary_chunk_size : int, optional
@@ -72,8 +78,8 @@ class DictionaryMatcher(torch.nn.Module):
     prune : float, optional
         How far below its best group score a voxel still considers a group,
         as a fraction of that score. Larger keeps more groups and costs more.
-        The default is the value Cauley et al. tuned on 280 groups of 700
-        atoms; on a smaller dictionary or a coarser parameter grid it can rule
+        The default is the value Cauley et al. [1]_ tuned on 280 groups of
+        700 atoms; on a smaller dictionary or a coarser parameter grid it can rule
         out the group actually holding the match, which shows up as a handful
         of voxels landing several grid steps away. Widening it is the fix.
 
@@ -82,28 +88,34 @@ class DictionaryMatcher(torch.nn.Module):
     Compression comes first and is global: one temporal basis for the whole
     dictionary, which the signals are in too. Grouping then clusters within
     that basis, so the two savings multiply -- the basis shortens every inner
-    product, the grouping cuts how many are taken. State a ``rank`` on
-    :class:`~torchsim.ParameterMapping` and it hands over an
-    ``(atoms, rank)`` dictionary, already compressed.
+    product, the grouping cuts how many are taken. State a ``rank`` and the
+    dictionary it matches against is compressed to ``(atoms, rank)``.
 
     The expensive operation is a matrix product. Torch therefore dispatches
     directly to the installed CPU BLAS or cuBLAS implementation; a separate
     C++ or Triton matrix-multiplication kernel would duplicate a faster
     vendor implementation. Chunking bounds the temporary score matrix.
+
+    References
+    ----------
+    .. [1] Cauley, S. F., Setsompop, K., Ma, D., et al., "Fast group matching
+       for MR fingerprinting reconstruction", Magnetic Resonance in Medicine
+       74.2 (2015), pp. 523-528. https://doi.org/10.1002/mrm.25439
     """
 
     def __init__(
         self,
+        acquisition: Any = None,
+        *,
         dictionary: torch.Tensor | None = None,
         parameters: torch.Tensor | None = None,
-        *,
         query_chunk_size: int = 4096,
         dictionary_chunk_size: int = 16384,
         top_k: int = 1,
         groups: int | None = None,
         prune: float = 5e-3,
     ) -> None:
-        super().__init__()
+        super().__init__(acquisition)
         if query_chunk_size < 1 or dictionary_chunk_size < 1:
             raise ValueError("chunk sizes must be positive")
         if top_k < 1:
@@ -148,7 +160,7 @@ class DictionaryMatcher(torch.nn.Module):
             moved._grouping = moved._grouping.to(moved.dictionary.device)
         return moved
 
-    def fit(
+    def _fit_arrays(
         self,
         signals: torch.Tensor,
         parameters: torch.Tensor,
@@ -193,7 +205,7 @@ class DictionaryMatcher(torch.nn.Module):
         self._adopt(signals, parameters)
         return self
 
-    def forward(
+    def _estimate_arrays(
         self, signals: torch.Tensor, known: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Return best parameter values, or indices if none were supplied."""
@@ -298,7 +310,7 @@ class DictionaryMatcher(torch.nn.Module):
         self._replicas = {}
 
     @torch.no_grad()
-    def match(self, signals: torch.Tensor) -> DictionaryMatch:
+    def match(self, signals: torch.Tensor) -> MatchResult:
         """Return the top matching atoms, scores, scales, and parameters."""
         if not self.fitted:
             raise RuntimeError("the matcher has no dictionary to match against")
@@ -403,11 +415,11 @@ class DictionaryMatcher(torch.nn.Module):
         self,
         found: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
         sample_shape: torch.Size,
-    ) -> DictionaryMatch:
+    ) -> MatchResult:
         """One flat match, given the voxel shape it came from."""
         indices, scores, scales, matched = found
         output_shape = (*sample_shape, self.top_k)
-        return DictionaryMatch(
+        return MatchResult(
             parameters=None
             if matched.shape[-1] == 0
             else matched.reshape(*output_shape, -1),

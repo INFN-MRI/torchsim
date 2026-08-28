@@ -10,17 +10,27 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import SPOILED, AbstractSimulator, StateMachineModel
+from ..model import SPOILED, Simulator, SpinPhysics
 from ..sequence import AdcRole
 from ..sequence._array import arrays, as_torch, matched
 
 
-class MP2RAGESimulator(AbstractSimulator):
+class MP2RAGESimulator(Simulator):
     """Two gradient-echo blocks read at two inversion times, in closed form.
 
     The train is spoiled and sampled at the k-space centre of each block, so
     only the longitudinal magnetization carries between shots and the steady
-    state it settles into has a closed form.
+    state it settles into has a closed form. Combining the two blocks into one
+    ratio gives an image free of the receive bias field, which is what the
+    sequence is for [1]_.
+
+    References
+    ----------
+    .. [1] Marques, J. P., Kober, T., Krueger, G., van der Zwaag, W., Van de
+       Moortele, P.-F., Gruetter, R., "MP2RAGE, a self bias-field corrected
+       sequence for improved segmentation and T1-mapping at high field",
+       NeuroImage 49.2 (2010), pp. 1271-1281.
+       https://doi.org/10.1016/j.neuroimage.2009.10.002
 
     Examples
     --------
@@ -39,7 +49,7 @@ class MP2RAGESimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": "t1_ms",
             "M0": "m0",
@@ -48,7 +58,7 @@ class MP2RAGESimulator(AbstractSimulator):
         # Both blocks spoil after each readout, so nothing transverse survives
         # an interval and no T2 is asked for.
         fixed={"t2_ms": 100.0},
-        triggers=SPOILED,
+        operators=SPOILED,
     )
     states = 1
     record = "acquired"
@@ -126,22 +136,22 @@ class MP2RAGESimulator(AbstractSimulator):
             if bool(wait < 0):
                 raise ValueError(complaint)
 
-        parts = [self.triggers.inversion(duration_s=waits[0])]
+        parts = [self.operators.inversion(duration_s=waits[0])]
         for block in (0, 1):
             if block:
-                parts.append(self.triggers.delay(waits[1]))
+                parts.append(self.operators.delay(waits[1]))
             for index in range(shots):
                 sampled = index == before
-                parts.append(self.triggers.excitation(angle[block], turn[block]))
+                parts.append(self.operators.excitation(angle[block], turn[block]))
                 parts.append(
-                    self.triggers.readout(
+                    self.operators.readout(
                         turn[block],
                         role=AdcRole.SINGLE if sampled else AdcRole.NON_ACQUIRED,
                         is_echo=sampled,
                         duration_s=readout_s,
                     )
                 )
-        parts.append(self.triggers.delay(waits[2]))
+        parts.append(self.operators.delay(waits[2]))
         return parts
 
     def _signal(

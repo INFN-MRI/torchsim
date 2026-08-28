@@ -10,16 +10,29 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import AbstractSimulator, StateMachineModel
+from ..model import Simulator, SpinPhysics
 from ..sequence._array import arrays
 from ._contrast import across_contrasts
 
 
-class SPGRSimulator(AbstractSimulator):
+class SPGRSimulator(Simulator):
     """The spoiled gradient-echo steady state, read at the echo time.
 
     Spoiling leaves no transverse magnetization to carry over, so the steady
-    state is the Ernst expression in closed form and no state machine is run.
+    state is the Ernst expression [1]_ in closed form and no state machine is
+    run. Fitting T1 to a set of these at different flip angles is DESPOT1
+    [2]_.
+
+    References
+    ----------
+    .. [1] Ernst, R. R., Anderson, W. A., "Application of Fourier transform
+       spectroscopy to magnetic resonance", Review of Scientific Instruments
+       37.1 (1966), pp. 93-102. https://doi.org/10.1063/1.1719961
+
+    .. [2] Deoni, S. C. L., Rutt, B. K., Peters, T. M., "Rapid combined T1 and
+       T2 mapping using gradient recalled acquisition in the steady state",
+       Magnetic Resonance in Medicine 49.3 (2003), pp. 515-526.
+       https://doi.org/10.1002/mrm.10407
 
     Examples
     --------
@@ -32,7 +45,7 @@ class SPGRSimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": None,
             "T2star": None,

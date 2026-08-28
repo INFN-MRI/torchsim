@@ -90,8 +90,8 @@ def test_grouped_matching_finds_what_direct_matching_finds(
     """
     atoms, grid = fingerprints
 
-    direct = DictionaryMatcher(atoms, grid)(measured)
-    grouped = DictionaryMatcher(atoms, grid, groups=24)(measured)
+    direct = DictionaryMatcher(dictionary=atoms, parameters=grid)(measured)
+    grouped = DictionaryMatcher(dictionary=atoms, parameters=grid, groups=24)(measured)
 
     # Where they differ they differ by a grid step, so the relative error is
     # the claim worth making; Cauley et al. report one to two percent.
@@ -107,7 +107,7 @@ def test_grouped_matching_finds_what_direct_matching_finds(
 def test_most_of_the_dictionary_is_ruled_out(fingerprints, measured) -> None:
     """Pruning that kept every group would be a cost with no saving."""
     atoms, grid = fingerprints
-    matcher = DictionaryMatcher(atoms, grid, groups=24)
+    matcher = DictionaryMatcher(dictionary=atoms, parameters=grid, groups=24)
     normalized = measured / torch.linalg.vector_norm(
         measured, dim=-1, keepdim=True
     )
@@ -123,7 +123,7 @@ def test_a_wider_threshold_keeps_more_groups(fingerprints, measured) -> None:
     normalized = measured / torch.linalg.vector_norm(
         measured, dim=-1, keepdim=True
     )
-    grouping = DictionaryMatcher(atoms, grid, groups=24).grouping
+    grouping = DictionaryMatcher(dictionary=atoms, parameters=grid, groups=24).grouping
 
     tight = grouping.survivors(normalized, 0.0).sum(-1).float().mean()
     loose = grouping.survivors(normalized, 0.2).sum(-1).float().mean()
@@ -150,7 +150,7 @@ def test_the_condition_number_is_reported(fingerprints) -> None:
 def test_top_k_survives_the_grouping(fingerprints, measured) -> None:
     """Several candidates, gathered across whichever groups they fall in."""
     atoms, grid = fingerprints
-    matcher = DictionaryMatcher(atoms, grid, groups=24, top_k=3)
+    matcher = DictionaryMatcher(dictionary=atoms, parameters=grid, groups=24, top_k=3)
 
     found = matcher.match(measured)
 
@@ -166,7 +166,7 @@ def test_asking_for_more_groups_than_atoms_gives_one_each(
     """A group per atom is the limit, not an error."""
     atoms, grid = fingerprints
 
-    matcher = DictionaryMatcher(atoms[:8], grid[:8], groups=99)
+    matcher = DictionaryMatcher(dictionary=atoms[:8], parameters=grid[:8], groups=99)
 
     assert matcher.grouping.count == 8
     assert set(matcher.grouping.sizes) == {1}
@@ -176,7 +176,7 @@ def test_a_fitted_dictionary_is_grouped_too(fingerprints, measured) -> None:
     """Grouping follows the dictionary however it arrived."""
     atoms, grid = fingerprints
 
-    matcher = DictionaryMatcher(groups=24).fit(atoms, grid)
+    matcher = DictionaryMatcher(groups=24).fit(signals=atoms, parameters=grid)
 
     assert matcher.grouping is not None
     assert matcher.grouping.count == 24
@@ -209,7 +209,7 @@ def test_a_grouping_cannot_have_no_groups(fingerprints) -> None:
 def test_a_grouping_moves_with_its_dictionary(fingerprints, measured) -> None:
     """Clustering belongs to the dictionary, not to where it sits."""
     atoms, grid = fingerprints
-    matcher = DictionaryMatcher(atoms, grid, groups=24)
+    matcher = DictionaryMatcher(dictionary=atoms, parameters=grid, groups=24)
 
     here = matcher(measured)
     there = matcher.to("cuda")(measured.cuda()).cpu()
@@ -235,8 +235,8 @@ def test_grouping_composes_with_a_temporal_subspace(fingerprints, measured) -> N
     compressed = subspace.project(atoms)
     projected = subspace.project(measured)
 
-    direct = DictionaryMatcher(compressed, grid)(projected)
-    grouped = DictionaryMatcher(compressed, grid, groups=24)(projected)
+    direct = DictionaryMatcher(dictionary=compressed, parameters=grid)(projected)
+    grouped = DictionaryMatcher(dictionary=compressed, parameters=grid, groups=24)(projected)
 
     assert compressed.shape == (atoms.shape[0], 8)
     for column in range(grid.shape[-1]):
@@ -267,23 +267,17 @@ def test_clustering_happens_inside_the_global_basis(fingerprints) -> None:
 def test_a_mapping_with_a_rank_reaches_a_grouped_matcher(fingerprints) -> None:
     """Stating the rank on the problem is enough; the matcher follows.
 
-    :class:`~torchsim.ParameterMapping` fits the subspace, projects the
-    training signals into it, and hands the matcher a compressed dictionary --
-    then projects the volume the same way when it is called.
+    The matcher fits the subspace, projects the training signals into it,
+    matches against a compressed dictionary -- then projects the volume the
+    same way when it is called.
     """
-    from torchsim import ParameterMapping
-
     atoms, grid = fingerprints
     generator = torch.Generator().manual_seed(1)
     flip = 10.0 + 50.0 * torch.rand(200, generator=generator)
     acquisition = MRFSimulator(TR=10.0, TI=20.0, flip=flip)
-    mapping = ParameterMapping(
-        acquisition,
-        T1=grid[:, 0],
-        T2=grid[:, 1],
-        rank=8,
-        seed=0,
-    ).train(DictionaryMatcher(groups=24))
+    mapping = DictionaryMatcher(acquisition, groups=24).fit(
+        T1=grid[:, 0], T2=grid[:, 1], rank=8, seed=0
+    )
 
     truth = grid[::53]
     volume = MRFSimulator(
@@ -292,7 +286,7 @@ def test_a_mapping_with_a_rank_reaches_a_grouped_matcher(fingerprints) -> None:
     maps = mapping(volume.reshape(truth.shape[0], -1))
 
     assert mapping.subspace.rank == 8
-    assert mapping._method.grouping.count == 24
+    assert mapping.grouping.count == 24
     for column, name in enumerate(("T1", "T2")):
         step = float(torch.diff(grid[:, column].unique()).max())
         error = (maps[name] - truth[:, column]).abs()
@@ -311,8 +305,6 @@ def test_a_tighter_threshold_can_prune_away_the_right_group() -> None:
 
     Widening it recovers the voxel, which is the trade the knob exists for.
     """
-    from torchsim import ParameterMapping
-
     grid = torch.cartesian_prod(
         torch.linspace(200.0, 3000.0, 60), torch.linspace(20.0, 300.0, 30)
     )
@@ -327,13 +319,9 @@ def test_a_tighter_threshold_can_prune_away_the_right_group() -> None:
     )
 
     def misses(prune):
-        mapping = ParameterMapping(
-            simulator.bind(flip=flip),
-            T1=grid[:, 0],
-            T2=grid[:, 1],
-            rank=8,
-            seed=0,
-        ).train(DictionaryMatcher(groups=24, prune=prune))
+        mapping = DictionaryMatcher(
+            simulator.bind(flip=flip), groups=24, prune=prune
+        ).fit(T1=grid[:, 0], T2=grid[:, 1], rank=8, seed=0)
         error = (mapping(volume)["T1"] - truth[:, 0]).abs()
         return int((error > 1.0).sum())
 

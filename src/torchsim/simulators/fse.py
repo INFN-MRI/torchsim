@@ -11,10 +11,10 @@ import numpy.typing as npt
 import torch
 
 from ..sequence._array import as_torch, matched
-from ..model import REFOCUSED, AbstractSimulator, StateMachineModel
+from ..model import REFOCUSED, Simulator, SpinPhysics
 
 
-class FSESimulator(AbstractSimulator):
+class FSESimulator(Simulator):
     """A refocused echo train, sampled at every echo.
 
     Examples
@@ -29,9 +29,9 @@ class FSESimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={"T1": "t1_ms", "T2": "t2_ms", "M0": None, "B1": "b1"},
-        triggers=REFOCUSED,
+        operators=REFOCUSED,
     )
     states = 10
 
@@ -67,16 +67,16 @@ class FSESimulator(AbstractSimulator):
         # gave it, and the echo times are what the whole train is placed by.
         spacing_s = ESP * 1e-3
 
-        parts = [(0.0, self.triggers.excitation(
+        parts = [(0.0, self.operators.excitation(
             torch.pi / 180.0 * exc_flip, torch.pi / 180.0 * exc_phase
         ))]
         for index in range(angles.shape[-1]):
             echo_s = (index + 1) * spacing_s
             parts.append((
                 echo_s - 0.5 * spacing_s,
-                self.triggers.refocusing(angles[..., index], turns[..., index]),
+                self.operators.refocusing(angles[..., index], turns[..., index]),
             ))
-            parts.append((echo_s, self.triggers.readout(turns[..., index])))
+            parts.append((echo_s, self.operators.readout(turns[..., index])))
         return parts
 
     def repetition_s(self, played_s: Any, **protocol: Any) -> Any:

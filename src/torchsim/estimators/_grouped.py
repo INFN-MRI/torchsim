@@ -15,8 +15,10 @@ a group be entered without leaving the space the measurement is in. The two
 savings are then independent and multiply: the basis shortens every inner
 product, the grouping cuts how many are taken.
 
-The grouping and pruning are those of Cauley et al., *Fast group matching for
-MR fingerprinting reconstruction*, Magn Reson Med 74:523 (2015).
+The grouping and pruning are those of Cauley, S. F., Setsompop, K., Ma, D., et
+al., "Fast group matching for MR fingerprinting reconstruction", Magnetic
+Resonance in Medicine 74.2 (2015), pp. 523-528.
+https://doi.org/10.1002/mrm.25439
 """
 
 from __future__ import annotations

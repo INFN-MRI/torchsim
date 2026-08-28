@@ -33,7 +33,7 @@ methods for magnetic resonance imaging.* Phil Trans R Soc A 379:20200196
 # .. colab-link::
 #    :needs_gpu: 1
 #
-#    !pip install torchsim brainweb-dl mri-nufft[finufft,cufinufft] deepinv
+#    !pip install torchsim brainweb-dl cmap mri-nufft[finufft,cufinufft] deepinv
 
 # %%
 #
@@ -49,6 +49,83 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
+from cmap import Colormap
+
+
+# Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
+# colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
+LIPARI = Colormap("crameri:lipari").to_matplotlib()
+NAVIA = Colormap("crameri:navia").to_matplotlib()
+
+# Colormap, window and unit per parameter. Both relaxation windows stop well
+# short of CSF, so that white and grey matter -- 500 against 833 ms in T1, 70
+# against 83 ms in T2 -- take up most of the scale and CSF saturates.
+STYLE = {
+    "T1": (LIPARI, (0.0, 1200.0), "T1 [ms]"),
+    "T2": (NAVIA, (0.0, 120.0), "T2 [ms]"),
+    "M0": ("gray", (0.0, 1.0), "M0"),
+}
+
+
+def panel(axis, values, cmap, limits, title=None, ylabel=None):
+    """One map without ticks; the handle is what a row shares a colorbar from."""
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    axis.set_xticks([])
+    axis.set_yticks([])
+    if title is not None:
+        axis.set_title(title)
+    if ylabel is not None:
+        axis.set_ylabel(ylabel)
+    return handle
+
+
+def scalebar(handle, axes, label):
+    """One colorbar for a group of panels, so none gives up width to its own."""
+    axes = list(np.ravel(axes))
+    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
+
+
+# Every panel on this page is drawn at the same size, so any two figures can be
+# read against each other. The side is set by the widest grid, which fills the
+# documentation column; a figure with fewer columns is narrower, not larger.
+PAGE_WIDTH = 8.6  # inches, the width of the documentation column
+BAR_WIDTH = 0.8  # what one colorbar takes out of it
+PANEL = (PAGE_WIDTH - 1 * BAR_WIDTH) / 3  # one image panel
+
+
+def canvas(rows, columns, shape, *, bars=1, extra=0.6):
+    """A grid of image panels, in the proportion of the images.
+
+    ``bars`` is how many colorbars a row carries and ``extra`` the height left
+    over the panels, for titles and for a figure title where there is one.
+    """
+    return plt.subplots(
+        rows,
+        columns,
+        squeeze=False,
+        figsize=(
+            columns * PANEL + bars * BAR_WIDTH,
+            PANEL * shape[0] / shape[1] * rows + extra,
+        ),
+    )
+
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
 
 # sphinx_gallery_end_ignore
 import csv
@@ -84,7 +161,6 @@ import time
 import numpy as np
 import torch
 
-from torchsim import ParameterMapping
 from torchsim.estimators import DictionaryMatcher
 from torchsim.recon import GaussNewton, ModelOperator, Schedule, iterative
 from torchsim.simulators import MultiEchoSimulator
@@ -230,22 +306,15 @@ print(f"{SPOKES} spokes per echo: {undersampling:.0f}x undersampled")
 #
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 3, figsize=(12, 3.8))
-for axis, values, cmap, limits, label in (
-    (axes[0], T2_true, "viridis", (0, 350), "T2 [ms]"),
-    (axes[1], M0_true, "gray", (0, 1.1), "M0"),
+figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 2.58))
+for axis, values, name, title in (
+    (axes[0], T2_true, "T2", "ground truth"),
+    (axes[1], M0_true, "M0", "proton density"),
 ):
-    handle = axis.imshow(
-        values.cpu().numpy(), cmap=cmap, vmin=limits[0], vmax=limits[1]
-    )
-    bar = figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    bar.set_label(label, fontsize=8)
-    bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
+    cmap, limits, label = STYLE[name]
+    handle = panel(axis, values.cpu().numpy(), cmap, limits, title=title)
+    axis.figure.colorbar(handle, ax=axis, label=label, fraction=0.046, pad=0.03)
     axis.set_box_aspect(1)
-axes[0].set_title("ground truth", fontsize=10)
-axes[1].set_title("proton density", fontsize=10)
 
 for echo in (0, ECHOES // 2, ECHOES - 1):
     arm = trajectory[echo].reshape(SPOKES, SAMPLES, 2)
@@ -266,7 +335,6 @@ axes[2].set_box_aspect(1)
 # to lose the same width as the two beside it or the images shrink.
 bar = figure.colorbar(handle, ax=axes[2], fraction=0.046, pad=0.03)
 bar.ax.set_visible(False)
-figure.tight_layout()
 # sphinx_gallery_end_ignore
 
 # %%
@@ -275,7 +343,7 @@ figure.tight_layout()
 # --------------------------------
 #
 # The route this is measured against reconstructs images and then fits them,
-# so it needs an estimator. One :class:`~torchsim.ParameterMapping` states that
+# so it needs an estimator. One :class:`~torchsim.DictionaryMatcher` states that
 # problem, over a compressed basis because there is no reason to match at full
 # length: three directions hold essentially all of an eight-echo exponential,
 # which the basis reports rather than being assumed.
@@ -283,9 +351,9 @@ figure.tight_layout()
 # The nonlinear route below has no such step. Its answer *is* the maps.
 #
 grid = torch.linspace(20.0, 400.0, 500)
-mapping = ParameterMapping(
-    acquisition, T2=grid, M0=1.0, rank=RANK, seed=0
-).train(DictionaryMatcher())
+mapping = DictionaryMatcher(acquisition).fit(
+    T2=grid, M0=1.0, rank=RANK, seed=0
+)
 
 # sphinx_gallery_start_ignore
 print(f"rank {RANK} of {ECHOES} contrasts keeps {mapping.subspace.retained:.6f}")
@@ -383,7 +451,7 @@ started = clock()
 # sphinx_gallery_end_ignore
 found = GaussNewton(
     Schedule(initial=1e-3, factor=0.5, minimum=1e-7),
-    solve=iterative("CG", max_iter=20),
+    solve=iterative(max_iter=20),
     max_iterations=8,
 ).minimize(operator, kspace, initial, encoding=encoding)
 
@@ -457,51 +525,20 @@ shown = (
     ("model-based", modelled),
 )
 
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to.
-
-    A figure where only some panels carry a colorbar has panels of different
-    sizes. Giving every one a colorbar and hiding the ones that would repeat a
-    scale keeps the images comparable.
-    """
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
-
-
-columns = len(shown)
-figure, axes = plt.subplots(2, columns, figsize=(3.4 * columns, 6.8))
+cmap, limits, label = STYLE["T2"]
+figure, axes = canvas(2, len(shown), T2_true.shape)
+axes[1, 0].set_visible(False)
 for column, (title, values) in enumerate(shown):
     picture = torch.where(brain, values, torch.tensor(0.0, device=device))
-    panel(
-        axes[0, column],
-        picture.cpu().numpy(),
-        "viridis",
-        (0, 250),
-        label="T2 [ms]" if column == columns - 1 else None,
-    )
-    axes[0, column].set_title(title)
+    estimate = panel(axes[0, column], picture.cpu().numpy(), cmap, limits, title=title)
     if column == 0:
-        axes[1, column].set_visible(False)
         continue
     difference = torch.where(
         brain, (values - T2_true).abs(), torch.tensor(0.0, device=device)
     )
-    panel(
-        axes[1, column],
-        difference.cpu().numpy(),
-        "inferno",
-        (0, 80),
-        label="|error| [ms]" if column == columns - 1 else None,
-    )
-    axes[1, column].set_title("|error|")
-figure.tight_layout()
+    error = panel(axes[1, column], difference.cpu().numpy(), "inferno", (0, 80))
+scalebar(estimate, axes[0], label)
+scalebar(error, axes[1, 1:], f"|error|, {label}")
 # sphinx_gallery_end_ignore
 
 # %%

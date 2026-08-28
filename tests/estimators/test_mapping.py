@@ -1,8 +1,8 @@
 """What a mapping problem promises, whichever method fills it in.
 
-The point of stating the problem separately from the method is that the two
-are exchangeable, so most of these tests are run against both shipped methods
-rather than against one.
+Every estimator states the problem the same way and draws its own training
+set, so most of these tests are run against both shipped methods rather than
+against one.
 """
 
 from __future__ import annotations
@@ -10,12 +10,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import (
-    DictionaryMatcher,
-    Estimator,
-    PERK,
-    ParameterMapping,
-)
+from torchsim import DictionaryMatcher, Estimator, PERK
 from torchsim.simulators import FSESimulator, MRFSimulator
 
 ECHOES = 32
@@ -28,22 +23,32 @@ def _acquisition() -> MRFSimulator:
     return MRFSimulator(TR=10.0, TI=20.0, states=10, flip=flip)
 
 
-def _mapping(**extra) -> ParameterMapping:
-    unknown = {"T1": (300.0, 2000.0), "T2": (20.0, 200.0)}
-    unknown.update({name: extra.pop(name) for name in list(extra) if name in unknown})
-    return ParameterMapping(_acquisition(), seed=0, **unknown, **extra)
+UNKNOWN = {"T1": (300.0, 2000.0), "T2": (20.0, 200.0)}
+
+
+def _estimator(make):
+    return make(_acquisition())
+
+
+def _fitted(make, *, unknown=None, **settings):
+    """One estimator, fitted over the standard sampling unless told otherwise."""
+    return _estimator(make).fit(unknown or UNKNOWN, seed=0, **settings)
+
+
+def _perk(*args, **kwargs) -> PERK:
+    return PERK(*args, n_features=512, **kwargs)
 
 
 METHODS = [
-    pytest.param(lambda: PERK(n_features=512, seed=0), id="perk"),
+    pytest.param(_perk, id="perk"),
     pytest.param(DictionaryMatcher, id="dictionary"),
 ]
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_both_shipped_methods_are_estimators(method) -> None:
+@pytest.mark.parametrize("make", METHODS)
+def test_both_shipped_methods_are_estimators(make) -> None:
     """The protocol is what makes swapping one for the other a word."""
-    assert isinstance(method(), Estimator)
+    assert isinstance(make(), Estimator)
 
 
 def test_a_matcher_returns_the_tissue_its_own_atom_came_from() -> None:
@@ -53,9 +58,8 @@ def test_a_matcher_returns_the_tissue_its_own_atom_came_from() -> None:
     parameters that come back are the ones it was simulated from -- no
     tolerance, no statistics.
     """
-    mapping = _mapping()
+    mapping = _fitted(DictionaryMatcher, samples=256)
     signals, parameters, _ = mapping.training_set(256)
-    mapping.train(DictionaryMatcher(), samples=256)
 
     maps = mapping(signals)
 
@@ -63,10 +67,10 @@ def test_a_matcher_returns_the_tissue_its_own_atom_came_from() -> None:
     assert torch.allclose(maps["T2"], parameters[:, 1])
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_the_maps_come_back_named_and_shaped_like_the_volume(method) -> None:
+@pytest.mark.parametrize("make", METHODS)
+def test_the_maps_come_back_named_and_shaped_like_the_volume(make) -> None:
     """A caller reads ``maps["T1"]``, not column zero of a matrix."""
-    mapping = _mapping().train(method(), samples=512)
+    mapping = _fitted(make, samples=512)
     volume = mapping.acquisition.simulate(
         T1=torch.full((24,), 900.0), T2=torch.full((24,), 70.0)
     ).reshape(2, 3, 4, ECHOES)
@@ -77,10 +81,10 @@ def test_the_maps_come_back_named_and_shaped_like_the_volume(method) -> None:
     assert all(value.shape == (2, 3, 4) for value in maps.values())
 
 
-@pytest.mark.parametrize("method", METHODS)
-def test_a_mapping_recovers_a_tissue_it_was_trained_over(method) -> None:
+@pytest.mark.parametrize("make", METHODS)
+def test_a_mapping_recovers_a_tissue_it_was_trained_over(make) -> None:
     """Noise-free, and well inside the range trained over."""
-    mapping = _mapping().train(method(), samples=4096)
+    mapping = _fitted(make, samples=4096)
     truth = {"T1": torch.tensor([700.0, 1300.0]), "T2": torch.tensor([45.0, 110.0])}
 
     maps = mapping(mapping.acquisition.simulate(**truth))
@@ -91,10 +95,10 @@ def test_a_mapping_recovers_a_tissue_it_was_trained_over(method) -> None:
 
 def test_a_subspace_maps_as_well_as_the_contrasts_it_replaces() -> None:
     """The compression is only worth having if it changes the answer little,
-    and what it keeps is a number the mapping reports."""
+    and what it keeps is a number the estimator reports."""
     truth = {"T1": torch.tensor([700.0, 1300.0]), "T2": torch.tensor([45.0, 110.0])}
-    full = _mapping().train(DictionaryMatcher(), samples=1024)
-    compressed = _mapping(rank=6).train(DictionaryMatcher(), samples=1024)
+    full = _fitted(DictionaryMatcher, samples=1024)
+    compressed = _fitted(DictionaryMatcher, rank=6, samples=1024)
     volume = full.acquisition.simulate(**truth)
 
     assert compressed.subspace.retained > 0.999
@@ -106,7 +110,7 @@ def test_a_subspace_maps_as_well_as_the_contrasts_it_replaces() -> None:
 def test_a_known_property_reaches_the_simulator_and_is_asked_for_again() -> None:
     """A transmit map changes the signals trained on, so it has to be given
     again when a volume is mapped."""
-    mapping = ParameterMapping(
+    mapping = PERK(
         FSESimulator(
             ESP=5.0,
             TR=3000.0,
@@ -114,16 +118,12 @@ def test_a_known_property_reaches_the_simulator_and_is_asked_for_again() -> None
             T1=1000.0,
             flip=torch.full((ECHOES,), 150.0),
         ),
-        T2=(20.0, 200.0),
-        known={"B1": (0.7, 1.3)},
-        seed=0,
-    )
+        n_features=128,
+    ).fit(T2=(20.0, 200.0), known={"B1": (0.7, 1.3)}, seed=0, samples=512)
     signals, _, known = mapping.training_set(64)
 
     assert known is not None and known.shape == (64, 1)
     assert not torch.allclose(signals[0], signals[1])
-
-    mapping.train(PERK(n_features=128, seed=0), samples=512)
     with pytest.raises(ValueError, match="B1 was not given"):
         mapping(signals, known={})
 
@@ -138,48 +138,65 @@ def test_a_matcher_refuses_a_separately_measured_property() -> None:
         T2=80.0,
         flip=torch.full((ECHOES,), 30.0),
     )
-    mapping = ParameterMapping(
-        acquisition, T1=(300.0, 2000.0), known={"B1": (0.8, 1.2)}, seed=0
-    )
+    mapping = DictionaryMatcher(acquisition)
     with pytest.raises(ValueError, match="cannot take a separately measured"):
-        mapping.train(DictionaryMatcher(), samples=64)
+        mapping.fit(T1=(300.0, 2000.0), known={"B1": (0.8, 1.2)}, seed=0, samples=64
+        )
 
 
-def test_mapping_before_training_says_so() -> None:
-    mapping = _mapping()
-    with pytest.raises(RuntimeError, match="must be trained"):
-        mapping(torch.zeros(4, ECHOES))
+def test_mapping_before_fitting_says_so() -> None:
+    mapping = _estimator(DictionaryMatcher)
+    mapping._unknown = dict(UNKNOWN)  # named, but never fitted
+    with pytest.raises(RuntimeError, match="must be fitted"):
+        mapping.map(torch.zeros(4, ECHOES))
 
 
 def test_a_property_cannot_be_both_unknown_and_known() -> None:
     with pytest.raises(ValueError, match="both unknown and known"):
-        ParameterMapping(_acquisition(), T1=(300.0, 2000.0), known={"T1": (1.0, 2.0)})
+        DictionaryMatcher(_acquisition()).fit(T1=(300.0, 2000.0), known={"T1": (1.0, 2.0)}
+        )
 
 
 def test_a_mapping_needs_something_to_estimate() -> None:
     with pytest.raises(ValueError, match="at least one property"):
-        ParameterMapping(_acquisition())
+        DictionaryMatcher(_acquisition()).fit()
 
 
 def test_a_range_must_increase() -> None:
     with pytest.raises(ValueError, match="not increasing"):
-        _mapping(T2=(200.0, 20.0)).training_set(8)
+        _fitted(DictionaryMatcher, unknown={"T2": (200.0, 20.0)}, samples=8)
 
 
 def test_values_given_for_a_property_are_used_as_given() -> None:
     """A user with their own sampling -- log-spaced, or from a cohort -- hands
     it over instead of a range."""
     values = torch.linspace(400.0, 1800.0, 16)
-    mapping = ParameterMapping(_acquisition(), T1=values, T2=(20.0, 200.0), seed=0)
+    mapping = DictionaryMatcher(_acquisition()).fit(
+        T1=values, T2=(20.0, 200.0), seed=0
+    )
 
     _, parameters, _ = mapping.training_set(16)
 
     assert torch.allclose(parameters[:, 0], values)
 
 
+def test_an_estimator_with_no_acquisition_cannot_draw_a_training_set() -> None:
+    """Arrays are the other way in; asking one to simulate says what is wrong."""
+    with pytest.raises(RuntimeError, match="nothing to fit from"):
+        DictionaryMatcher().fit(T1=(300.0, 2000.0))
+
+
+def test_a_mapping_states_the_unknowns_either_way() -> None:
+    """A mapping is the form that never collides; keywords are the short one."""
+    by_mapping = DictionaryMatcher(_acquisition()).fit(UNKNOWN, seed=0)
+    by_keyword = DictionaryMatcher(_acquisition()).fit(**UNKNOWN, seed=0)
+
+    assert by_mapping.unknown == by_keyword.unknown == ("T1", "T2")
+
+
 def test_the_training_set_is_the_same_size_however_it_is_chunked() -> None:
     """Chunking bounds the memory a draw takes, and nothing else."""
-    mapping = _mapping()
+    mapping = _fitted(DictionaryMatcher, samples=64)
 
     whole = mapping.training_set(100, chunk=1000)
     pieces = mapping.training_set(100, chunk=16)

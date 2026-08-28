@@ -1,10 +1,9 @@
 """Authoring signal models.
 
-A model is written in two pieces. :class:`StateMachineModel` says what a voxel
-holds and what each kind of event does to it; :class:`AbstractSimulator` says
-what order the events are played in and is what everything downstream
-consumes. :class:`SignalModel` is the root both rest on, and is all a closed
-form needs.
+A model is written in two pieces. :class:`SpinPhysics` says what a voxel holds and
+what each kind of event does to it; :class:`Simulator` says what order the
+events are played in. :class:`SignalModel` is the root both rest on, is what
+everything downstream consumes, and is all a closed form needs.
 """
 
 from __future__ import annotations
@@ -14,10 +13,10 @@ __all__ = [
     "REFOCUSED",
     "SPOILED",
     "UNBALANCED",
-    "AbstractSimulator",
+    "EventOperators",
     "SignalModel",
-    "StateMachineModel",
-    "Triggers",
+    "Simulator",
+    "SpinPhysics",
 ]
 
 from ._signal import SignalModel
@@ -26,7 +25,7 @@ from ._state_machine import (
     REFOCUSED,
     SPOILED,
     UNBALANCED,
-    AbstractSimulator,
-    StateMachineModel,
-    Triggers,
+    EventOperators,
+    Simulator,
+    SpinPhysics,
 )

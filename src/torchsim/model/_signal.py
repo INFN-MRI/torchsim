@@ -63,7 +63,7 @@ class SignalModel(ABC):
     properties : mapping or sequence of str
         What the model exposes, as names. A mapping is read for its keys, so a
         subclass that also needs to say where each property goes -- as
-        :class:`~torchsim.model.StateMachineModel` does, naming the tissue
+        :class:`~torchsim.model.SpinPhysics` does, naming the tissue
         field each fills -- declares both at once.
     bound : mapping
         The arguments fixed on this model, under the names :meth:`simulate`

@@ -76,7 +76,12 @@ class RfMode(IntEnum):
 
 
 class RfUse(IntEnum):
-    """Pulseq RF-use tag."""
+    """Pulseq RF-use tag.
+
+    The whole tag set, not the subset the operators that ship here happen to
+    emit. A file written elsewhere may carry any of them, and an operator
+    written later may emit one nothing emits today.
+    """
 
     UNKNOWN = 0
     EXCITATION = 1

@@ -1,6 +1,7 @@
 coverage
 sphinx-book-theme
 sphinx-copybutton
+sphinx-design
 sphinx-exec-directive
 sphinx-gallery
 matplotlib
@@ -12,3 +13,4 @@ SimpleITK
 deepinv
 mri-nufft
 finufft
+cmap

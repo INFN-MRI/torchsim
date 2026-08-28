@@ -16,9 +16,11 @@ same box bounds :class:`NonlinearLeastSquares` takes. It honours
 it carries decides which method it is -- :class:`Schedule` for an iteratively
 regularized Gauss-Newton, :class:`TrustRegion` for Levenberg-Marquardt, which
 is what :class:`NonlinearLeastSquares` runs. How the linearized problem is
-solved is a callable, and mostly it is somebody else's: :func:`iterative` hands
-the linearized problem to deepinv's ``least_squares``, which minimizes exactly
-what a Gauss-Newton step leaves. There is no conjugate gradient written here.
+solved is a callable, and mostly it is somebody else's: :func:`iterative` takes
+any :class:`LeastSquares`, which minimizes exactly what a Gauss-Newton step
+leaves, and falls back to deepinv's ``least_squares`` when given nothing.
+There is no conjugate gradient written here, and no name to pass -- one of
+deepinv's others is that function with its argument bound.
 :func:`direct` is the exception and is not a general solver -- it is the batched
 damped least-squares over a voxel-diagonal Jacobian that *is* the
 Levenberg-Marquardt step. A closure around a proximal solver from elsewhere is
@@ -60,3 +62,18 @@ Linear solvers
 
    direct
    iterative
+   LeastSquares
+
+The temporal basis
+------------------
+
+The signals a train can produce do not fill the space its contrasts span, so a
+basis of a dozen or so directions carries them to a known error. The same basis
+serves a subspace reconstruction here and the estimators on :doc:`estimators`.
+
+.. autosummary::
+   :toctree: ../generated
+   :nosignatures:
+
+   Subspace
+   simulate_subspace

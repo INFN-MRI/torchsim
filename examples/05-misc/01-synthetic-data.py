@@ -25,15 +25,15 @@ of handing each of them the right array.
 # .. colab-link::
 #    :needs_gpu: 1
 #
-#    !pip install torchsim torchio deepmriprep sigpy mri-nufft[finufft,cufinufft]
+#    !pip install torchsim torchio deepmriprep sigpy cmap mri-nufft[finufft,cufinufft]
 
 # %%
 #
 # Only one step of this pipeline is TorchSim's. Four other packages do the
 # rest, and each has exactly one job here:
 #
-# * ``torchio`` fetches an IXI subject and gives it as tensors, which is where
-#   the anatomy comes from;
+# * ``torchio`` fetches a T1-weighted IXI subject and gives it as tensors,
+#   which is where the anatomy comes from;
 # * ``deepmriprep`` segments that anatomy into grey matter, white matter and
 #   CSF with a U-Net -- torch throughout, and it hands back probabilities
 #   rather than labels;
@@ -49,6 +49,102 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
+from cmap import Colormap
+
+
+# Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
+# colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
+LIPARI = Colormap("crameri:lipari").to_matplotlib()
+NAVIA = Colormap("crameri:navia").to_matplotlib()
+# Phase is cyclic, so the colormap has to be: -pi and +pi are the same colour.
+PHASE = Colormap("colorcet:CET_C6").to_matplotlib()
+
+# Colormap, window and unit per parameter. Both relaxation windows stop well
+# short of CSF, so that white and grey matter -- 500 against 833 ms in T1, 70
+# against 83 ms in T2 -- take up most of the scale and CSF saturates.
+STYLE = {
+    "T1": (LIPARI, (0.0, 1200.0), "T1 [ms]"),
+    "T2": (NAVIA, (0.0, 120.0), "T2 [ms]"),
+    "M0": ("gray", (0.0, 1.0), "M0"),
+}
+
+
+def panel(axis, values, cmap, limits, title=None, ylabel=None):
+    """One map without ticks; the handle is what a row shares a colorbar from."""
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    axis.set_xticks([])
+    axis.set_yticks([])
+    if title is not None:
+        axis.set_title(title)
+    if ylabel is not None:
+        axis.set_ylabel(ylabel)
+    return handle
+
+
+def domain(axis, values, title=None):
+    """A complex map the way coil sensitivities are read: phase in colour,
+    magnitude in opacity, so an unsupported corner reads as background rather
+    than as a phase."""
+    values = torch.as_tensor(values).cpu()
+    rgba = PHASE(((values.angle() / (2 * np.pi)) + 0.5).numpy())
+    magnitude = values.abs().numpy()
+    rgba[..., -1] = magnitude / max(magnitude.max(), 1e-12)
+    axis.set_facecolor("black")
+    axis.imshow(rgba)
+    axis.set_xticks([])
+    axis.set_yticks([])
+    axis.set_box_aspect(1)
+    if title is not None:
+        axis.set_title(title)
+
+
+def scalebar(handle, axes, label):
+    """One colorbar for a group of panels, so none gives up width to its own."""
+    axes = list(np.ravel(axes))
+    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
+
+
+# Every panel on this page is drawn at the same size, so any two figures can be
+# read against each other. The side is set by the widest grid, which fills the
+# documentation column; a figure with fewer columns is narrower, not larger.
+PAGE_WIDTH = 8.6  # inches, the width of the documentation column
+BAR_WIDTH = 0.8  # what one colorbar takes out of it
+PANEL = (PAGE_WIDTH - BAR_WIDTH) / 5.5  # one image panel
+
+
+def canvas(rows, columns, shape, *, bars=1, extra=0.6):
+    """A grid of image panels, in the proportion of the images.
+
+    ``bars`` is how many colorbars a row carries and ``extra`` the height left
+    over the panels, for titles and for a figure title where there is one.
+    """
+    return plt.subplots(
+        rows,
+        columns,
+        squeeze=False,
+        figsize=(
+            columns * PANEL + bars * BAR_WIDTH,
+            PANEL * shape[0] / shape[1] * rows + extra,
+        ),
+    )
+
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
 
 # sphinx_gallery_end_ignore
 import mrinufft
@@ -81,7 +177,7 @@ SIZE = 128
 FRAMES = 400
 SAMPLES = 768
 COILS = 8
-SLICE = 60
+SLICE = 110  # axial, at the level of the lateral ventricles
 
 # The GPU transform is used when it is both installed and usable; the
 # simulation follows it, so the images and the operator meet on one device.
@@ -94,35 +190,33 @@ backend = "cufinufft" if on_gpu else "finufft"
 # A subject
 # ---------
 #
-# One IXI subject, through torchio: proton-density and T2-weighted, acquired
-# at 1.5 T.
+# One IXI subject, through torchio: a T1-weighted volume acquired at 1.5 T.
 #
-# The proton-density image is what the phantom's M0 comes from. The relaxation
-# times are tabulated, which is the split a digital twin usually lives with:
-# what the data says, and what a table says.
+# That volume is the single measurement this example starts from. The
+# segmentation below reads it, and a table supplies the tissue properties a
+# contrast cannot give -- which is the split a digital twin usually lives
+# with: what the data says, and what a table says.
 #
-# ``download=True`` fetches the two modalities the first time and skips them
-# afterwards. They are several GB, so the first run of this notebook on a
-# fresh machine spends its time here rather than in anything below.
+# ``download=True`` fetches the archive the first time and skips it
+# afterwards; it is a few hundred MB. It lands in a cache under the home
+# directory, so that where this script is run from does not decide whether it
+# downloads again.
 #
-subject = tio.datasets.IXI(
-    str(Path("data").resolve()), modalities=("PD", "T2"), download=True
-)[0]
+CACHE = Path.home() / ".cache" / "torchsim" / "ixi-tiny"
+subject = tio.datasets.IXITiny(str(CACHE), download=True)[0]
 
 
 # sphinx_gallery_start_ignore
-def slab(volume):
+def slab(image):
     """One axial slice of a volume, at the matrix this example works in."""
-    values = np.asarray(volume, dtype=np.float32).squeeze()[:, :, SLICE].T
-    grid = torch.as_tensor(np.flip(values).copy())[None, None]
+    values = np.asarray(image.numpy(), dtype=np.float32).squeeze()[:, :, SLICE].T
+    grid = torch.as_tensor(np.flip(values, 0).copy())[None, None]
     return torch.nn.functional.interpolate(
         grid, size=(SIZE, SIZE), mode="bilinear", align_corners=False
     )[0, 0]
 
 
 # sphinx_gallery_end_ignore
-
-density, weighted = slab(subject.PD.numpy()), slab(subject.T2.numpy())
 
 # %%
 #
@@ -131,30 +225,46 @@ density, weighted = slab(subject.PD.numpy()), slab(subject.T2.numpy())
 #
 # ``deepmriprep`` segments the head into grey matter, white matter and CSF with
 # a U-Net, in torch and on the same card everything else here runs on. It is
-# trained on T1-weighted data and is being handed proton density, which is not
-# what it was built for and is visible in the CSF map -- a tool would give it
-# the T1-weighted volume of the same subject.
+# trained on T1-weighted data, which is what the subject arrived as.
 #
 # What comes back is what matters: three *probability* maps rather than one
 # label per voxel. A brain at this resolution is full of voxels that are part
 # one tissue and part another, and a segmentation that says so is the
 # difference between a phantom with partial volume in it and one without.
 #
+NAMES = ("grey matter", "white matter", "CSF")
+
 segmentation = Preprocess().run(
-    str(subject.PD.path),
+    str(subject.image.path),
     output_paths={name: f"{tempfile.gettempdir()}/{name}.nii.gz"
                   for name in ("p1", "p2", "p3")},
     run_all=False,
 )
 
-NAMES = ("grey matter", "white matter", "CSF")
-fractions = torch.stack(
-    [slab(segmentation[key].get_fdata()) for key in ("p1", "p2", "p3")], dim=-1
-).clamp(0.0, 1.0)
+# sphinx_gallery_start_ignore
+# The probability maps come back on their own grid, and carry the affine that
+# places them in the subject's coordinates, so resampling by it is all the
+# alignment they need. The rest puts every volume in RAS on a 1 mm isotropic
+# grid, so that one index is the same axial slice everywhere and a square
+# slice is a square image.
+for key, name in zip(("p1", "p2", "p3"), NAMES):
+    subject.add_image(
+        tio.ScalarImage(
+            tensor=torch.as_tensor(segmentation[key].get_fdata())[None].float(),
+            affine=segmentation[key].affine,
+        ),
+        name,
+    )
+subject = tio.Compose(
+    [tio.ToCanonical(), tio.Resample("image"), tio.Resample(1), tio.CropOrPad(240)]
+)(subject)
+
+anatomy = slab(subject.image)
+fractions = torch.stack([slab(subject[name]) for name in NAMES], dim=-1)
+fractions = fractions.clamp(0.0, 1.0)
 occupancy = fractions.sum(-1)
 brain = occupancy > 0.5
 
-# sphinx_gallery_start_ignore
 mixed = int(((fractions.max(-1).values < 0.99) & brain).sum())
 print(f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels; "
       f"{100 * mixed / int(brain.sum()):.0f}% are a mixture of two tissues or more")
@@ -162,62 +272,42 @@ print(f"{SIZE}x{SIZE} slice, {int(brain.sum())} brain voxels; "
 
 # %%
 #
-# The two contrasts the subject arrived as, and the three probabilities the
-# network made of them:
+# The contrast the subject arrived as, and the three probabilities the network
+# made of it:
 #
 
 # sphinx_gallery_start_ignore
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to."""
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
-
-
-figure, axes = plt.subplots(1, 5, figsize=(16, 3.5))
-for axis, values, title in (
-    (axes[0], density, "proton density"),
-    (axes[1], weighted, "T2-weighted"),
-):
-    panel(axis, values.cpu(), "gray", (0, float(values.max())))
-    axis.set_title(title, fontsize=10)
-for column, name in enumerate(NAMES, start=2):
-    panel(axes[column], fractions[..., column - 2].cpu(), "magma", (0, 1),
-          label="probability" if column == 4 else None)
-    axes[column].set_title(name, fontsize=10)
-figure.tight_layout()
+# Four panels across the column leave room for a word each; the paragraph above
+# says which contrast and which tissue.
+figure, axes = canvas(1, 4, (SIZE, SIZE))
+panel(axes[0, 0], anatomy.cpu(), "gray", (0, float(anatomy.max())), title="T1w")
+for column, name in enumerate(("grey", "white", "CSF"), start=1):
+    handle = panel(axes[0, column], fractions[..., column - 1].cpu(), "magma", (0, 1),
+                   title=name)
+scalebar(handle, axes[0, 1:], "probability")
 # sphinx_gallery_end_ignore
 
 # %%
 #
-# Each class is now given the three numbers a simulation needs. M0 is read off
-# the subject, because a proton-density image is what M0 is; T1 and T2 are
+# Each class is now given the three numbers a simulation needs, all three
 # tabulated at 1.5 T.
 #
-# The relaxation times could not be read off this subject even though a T2
-# weighting is sitting right there. A PD and T2 pair measures T2 only where T2
-# is comparable to the echo time that separated them -- true of parenchyma, and
-# badly false of CSF, whose T2 is an order of magnitude longer than the echo
-# time and so barely changes the ratio. A tool with a real relaxometry protocol
-# behind it would fill this table from the data; this one is honest about which
-# half it has.
+# None of them could be read off this subject: a T1-weighted volume is a
+# contrast, not a map of anything, and nothing in it fixes the scale that
+# would turn one into the other. The segmentation is what the measurement
+# supplies -- where each tissue is, and in what proportion; the table is what
+# every tissue of that class is taken to be. A tool with a relaxometry
+# protocol and a proton-density volume behind it would fill this table from
+# the data instead.
 #
+NAMES_M0 = torch.tensor([0.80, 0.70, 1.00])  # relative proton density
 NAMES_T1 = torch.tensor([1100.0, 650.0, 4000.0])  # ms, at 1.5 T
 NAMES_T2 = torch.tensor([95.0, 70.0, 2000.0])  # ms, at 1.5 T
 
 dominant = fractions > 0.5
-normalized = density / density.max()
+class_M0 = NAMES_M0
 class_T1 = NAMES_T1
 class_T2 = NAMES_T2
-class_M0 = torch.tensor(
-    [float(normalized[dominant[..., k]].median()) for k in range(len(NAMES))]
-)
 
 # sphinx_gallery_start_ignore
 print(f"\n{'tissue':<14} {'voxels':>8}   {'M0':>4} {'T1 (ms)':>8} {'T2 (ms)':>8}")
@@ -331,37 +421,35 @@ print(
 #
 
 # sphinx_gallery_start_ignore
-figure = plt.figure(figsize=(12, 3.8))
-grid = figure.add_gridspec(1, 5, width_ratios=(1, 1, 1, 1, 1.4))
+# The trajectory is a plot rather than a map, so it gets a panel and a half.
+# That makes this the widest row on the page, and PANEL is set from it.
+figure = plt.figure(figsize=(5.5 * PANEL + BAR_WIDTH, PANEL + 1.05))
+grid = figure.add_gridspec(
+    1, 6, width_ratios=(1, 1, 1, 1, BAR_WIDTH / PANEL, 1.5)
+)
 for index in range(4):
-    axis = figure.add_subplot(grid[0, index])
-    handle = axis.imshow(sensitivities[index].abs().cpu(), cmap="magma")
-    bar = figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if index == 3:
-        bar.set_label("|sensitivity|", fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    else:
-        bar.ax.set_visible(False)
-    axis.set_xticks([])
-    axis.set_yticks([])
-    axis.set_box_aspect(1)
-    axis.set_title(f"coil {index}", fontsize=9)
+    domain(figure.add_subplot(grid[0, index]), sensitivities[index],
+           title=f"coil {index}")
 
-axis = figure.add_subplot(grid[0, 4])
+bar = figure.colorbar(
+    plt.cm.ScalarMappable(plt.Normalize(-np.pi, np.pi), cmap=PHASE),
+    cax=figure.add_subplot(grid[0, 4]),
+)
+bar.set_label("phase [rad]")
+bar.set_ticks([-np.pi, 0.0, np.pi], labels=["$-\\pi$", "0", "$\\pi$"])
+
+axis = figure.add_subplot(grid[0, 5])
 for frame in (0, FRAMES // 2, FRAMES - 1):
     axis.plot(
         trajectory[frame, :, 0],
         trajectory[frame, :, 1],
-        lw=0.4,
+        lw=0.5,
         color=plt.cm.plasma(frame / (FRAMES - 1)),
-        label=f"frame {frame}",
     )
-axis.set(
-    xlabel="$k_x$", ylabel="$k_y$", title=f"1 of {FRAMES} arms, 3 shown"
-)
+# Three of the arms, coloured first to last: consecutive frames are rotated by
+# the golden angle, so each one samples somewhere the last did not.
+axis.set(xlabel="$k_x$", ylabel="$k_y$", title=f"3 of {FRAMES} arms")
 axis.set_box_aspect(1)
-axis.legend(fontsize=7)
-figure.tight_layout()
 # sphinx_gallery_end_ignore
 
 # %%
@@ -435,28 +523,14 @@ print(
 #
 
 # sphinx_gallery_start_ignore
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to."""
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
-    axis.set_xticks([])
-    axis.set_yticks([])
-
-
-figure, axes = plt.subplots(1, 3, figsize=(11, 3.6))
-for axis, (title, values, limits) in zip(axes, (
-    ("M0", truth_M0, (0, 1.1)),
-    ("T1 [ms]", truth_T1, (0, 4200)),
-    ("T2 [ms]", truth_T2, (0, 2100)),
-)):
-    panel(axis, values.cpu(), "viridis", limits, label=title)
-    axis.set_title(title, fontsize=10)
-figure.tight_layout()
+figure, axes = canvas(1, 3, (SIZE, SIZE), bars=3)
+for axis, name, values in (
+    (axes[0, 0], "T1", truth_T1),
+    (axes[0, 1], "T2", truth_T2),
+    (axes[0, 2], "M0", truth_M0),
+):
+    cmap, limits, label = STYLE[name]
+    scalebar(panel(axis, values.cpu(), cmap, limits), axis, label)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -466,29 +540,32 @@ figure.tight_layout()
 #
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(2, 3, figsize=(12, 7))
+# The row says which of the pair it is and the column what is being shown, so
+# neither has to be repeated in six headings over a three-inch panel.
+figure, axes = plt.subplots(2, 3, figsize=(PAGE_WIDTH, 5.02))
 for column, frame in enumerate((0, FRAMES // 2)):
     axes[0, column].imshow(reference[frame].abs().cpu(), cmap="gray")
-    axes[0, column].set_title(f"fully sampled, frame {frame}")
     axes[1, column].imshow(undersampled[frame].abs().cpu(), cmap="gray")
-    axes[1, column].set_title(f"one spiral arm, frame {frame}")
-for panel in axes[:, :2].ravel():
-    panel.axis("off")
+    axes[0, column].set_title(f"frame {frame}")
+for axis in axes[:, :2].ravel():
+    axis.set_xticks([]), axis.set_yticks([])
+    for side in axis.spines.values():
+        side.set_visible(False)
 
 voxel = torch.nonzero(here)[int(here.sum()) // 2]
 row, column = int(voxel[0]), int(voxel[1])
 axes[0, 2].plot(reference[:, row, column].abs().cpu(), lw=1.0)
-axes[0, 2].set_title("the target time course")
+axes[0, 2].set_title("one voxel")
 axes[1, 2].plot(undersampled[:, row, column].abs().cpu(), lw=0.7)
-axes[1, 2].set_title("what one voxel actually measures")
-for panel in axes[:, 2]:
-    panel.set_xlabel("frame")
+for axis, name in ((axes[0, 0], "fully sampled"), (axes[1, 0], "one spiral arm")):
+    axis.set_ylabel(name)
+for axis in axes[:, 2]:
+    axis.set_xlabel("frame")
 # An image keeps its own aspect and a line plot fills whatever it is given, so
 # a row of both ends up with panels of different heights unless the box each
 # one is drawn into is fixed.
 for panel in axes.ravel():
     panel.set_box_aspect(1)
-plt.tight_layout()
 # sphinx_gallery_end_ignore
 
 # %%

@@ -11,9 +11,10 @@ import torch
 
 from .._bounds import bound_of
 from ..recon import GaussNewton, ModelOperator, TrustRegion, direct
+from ._mapping import Estimator
 
 
-class NonlinearLeastSquares(torch.nn.Module):
+class NonlinearLeastSquares(Estimator):
     """Levenberg-Marquardt, stepping every voxel together.
 
     Where a dictionary spans a grid whose size is the product of the parameter
@@ -36,6 +37,13 @@ class NonlinearLeastSquares(torch.nn.Module):
 
     Parameters
     ----------
+    acquisition : SignalModel, optional
+        The sequence being inverted: a simulator that ships with TorchSim, one
+        written by subclassing :class:`~torchsim.model.Simulator`, or any other
+        :class:`~torchsim.model.SignalModel`. Every tissue property that is
+        neither unknown nor measured separately is fixed on it beforehand, with
+        the constructor or :meth:`~torchsim.model.SignalModel.bind`. Leave it
+        out to fit from signals handed to :meth:`fit` directly.
     bounds : mapping, optional
         ``{name: (low, high)}``, either end ``None`` for unbounded. A bound is
         kept by fitting a transformed variable rather than by clipping a
@@ -70,13 +78,11 @@ class NonlinearLeastSquares(torch.nn.Module):
     --------
     .. code-block:: python
 
-        mapping = ParameterMapping(
+        fit = NonlinearLeastSquares(
             FSESimulator(ESP=5.0, TR=1800.0, flip=train),
-            T1=(200.0, 3000.0),
-            T2=(10.0, 300.0),
-        )
-        mapping.train(NonlinearLeastSquares(bounds={"T2": (1.0, 500.0)}))
-        maps = mapping(volume)
+            bounds={"T2": (1.0, 500.0)},
+        ).fit(T1=(200.0, 3000.0), T2=(10.0, 300.0))
+        maps = fit.map(volume)
 
     A solve that needs more room, or a different one entirely:
 
@@ -91,21 +97,18 @@ class NonlinearLeastSquares(torch.nn.Module):
 
     def __init__(
         self,
+        acquisition: Any = None,
         *,
         bounds: Mapping[str, tuple[float | None, float | None]] | None = None,
         initial: Mapping[str, float] | None = None,
         loop: GaussNewton | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(acquisition)
         self.bounds = dict(bounds or {})
         self.initial = dict(initial or {})
         self.loop = loop if loop is not None else GaussNewton(
             TrustRegion(), solve=direct, max_iterations=20
         )
-        self.unknown: tuple[str, ...] = ()
-        self.known: tuple[str, ...] = ()
-        self._acquisition: Any = None
-        self._subspace: Any = None
         self._start: torch.Tensor | None = None
         #: Steps the last solve took, and how many voxels ran out of them.
         self.iterations = 0
@@ -114,56 +117,9 @@ class NonlinearLeastSquares(torch.nn.Module):
     @property
     def fitted(self) -> bool:
         """Whether a model and a starting point are both in place."""
-        return self._acquisition is not None and self._start is not None
+        return self.acquisition is not None and self._start is not None
 
-    def bind(
-        self,
-        acquisition: Any,
-        unknown: Sequence[str],
-        known: Sequence[str] = (),
-        subspace: Any = None,
-    ) -> None:
-        """Take the model to fit, and what its unknowns are called.
-
-        A method that learns needs a training set; one that fits needs the
-        model itself. :class:`~torchsim.ParameterMapping` calls this on any
-        method that has it, before handing over the training set.
-
-        Parameters
-        ----------
-        acquisition : SignalModel
-            The sequence being inverted, with everything but the unknowns
-            fixed on it.
-        unknown : sequence of str
-            The property names being estimated, in the order the maps come
-            back in.
-        known : sequence of str, optional
-            The property names measured separately, in the order their columns
-            arrive in.
-        subspace : Subspace, optional
-            The compression the measurements have already been through, if
-            any. Predictions go through it too, so the residual is taken where
-            the measurement lives.
-
-        Raises
-        ------
-        ValueError
-            If a bound or a starting value names something that is not an
-            unknown.
-        """
-        self._acquisition = acquisition
-        self.unknown = tuple(unknown)
-        self.known = tuple(known)
-        self._subspace = subspace
-        for label, given in (("bounds", self.bounds), ("initial", self.initial)):
-            stray = set(given) - set(self.unknown)
-            if stray:
-                raise ValueError(
-                    f"{label} names {sorted(stray)}, which "
-                    f"{'is' if len(stray) == 1 else 'are'} not being estimated"
-                )
-
-    def fit(
+    def _fit_arrays(
         self,
         signals: torch.Tensor,
         parameters: torch.Tensor,
@@ -203,10 +159,18 @@ class NonlinearLeastSquares(torch.nn.Module):
             If no model has been bound.
         """
         del signals, known, noise_std
-        if self._acquisition is None:
+        stray = {
+            name for given in (self.bounds, self.initial) for name in given
+        } - set(self.unknown)
+        if stray:
+            raise ValueError(
+                f"bounds or initial name {sorted(stray)}, which "
+                f"{'is' if len(stray) == 1 else 'are'} not being estimated"
+            )
+        if self.acquisition is None:
             raise RuntimeError(
-                "no model to fit; give this estimator to a ParameterMapping, "
-                "or call bind() with a simulator"
+                "no model to fit; give this estimator the acquisition it is "
+                "inverting when it is made"
             )
         drawn = torch.as_tensor(parameters).reshape(-1, len(self.unknown))
         median = drawn.to(torch.float32).median(dim=0).values
@@ -233,7 +197,7 @@ class NonlinearLeastSquares(torch.nn.Module):
         self._start = torch.stack(start)
         return self
 
-    def forward(
+    def _estimate_arrays(
         self, signals: torch.Tensor, known: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Return the parameters that best explain each signal.
@@ -294,7 +258,7 @@ class NonlinearLeastSquares(torch.nn.Module):
         self, voxels: int, known: torch.Tensor | None
     ) -> ModelOperator:
         """The model to fit, with anything measured separately held on it."""
-        acquisition = self._acquisition
+        acquisition = self.acquisition
         if known is not None:
             acquisition = acquisition.bind(
                 **{
@@ -307,7 +271,7 @@ class NonlinearLeastSquares(torch.nn.Module):
             *self.unknown,
             bounds=self.bounds,
             amplitude=False,
-            subspace=self._subspace,
+            subspace=self.subspace,
         )
 
     def _at(

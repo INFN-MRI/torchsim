@@ -74,7 +74,7 @@ If you are interested in improving this project, install TorchSim in editable mo
 
     git clone git@github.com:INFN-MRI/torchsim
     cd torchsim
-    pip install -e .[dev,test,doc]
+    pip install -e .[dev]
 
 
 Related projects

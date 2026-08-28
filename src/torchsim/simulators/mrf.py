@@ -11,10 +11,10 @@ import numpy.typing as npt
 import torch
 
 from ..sequence._array import as_torch, matched
-from ..model import UNBALANCED, AbstractSimulator, StateMachineModel
+from ..model import UNBALANCED, Simulator, SpinPhysics
 
 
-class MRFSimulator(AbstractSimulator):
+class MRFSimulator(Simulator):
     """An inversion, then a variable flip-angle train whose readouts wind on.
 
     Examples
@@ -31,7 +31,7 @@ class MRFSimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": "t1_ms",
             "T2": "t2_ms",
@@ -39,7 +39,7 @@ class MRFSimulator(AbstractSimulator):
             "B1": "b1",
             "inv_efficiency": "inversion_efficiency",
         },
-        triggers=UNBALANCED,
+        operators=UNBALANCED,
     )
     states = 10
 
@@ -68,11 +68,11 @@ class MRFSimulator(AbstractSimulator):
         turns = torch.deg2rad(matched(phases, angles))
         spacing_s = matched(TR, angles) * 1e-3
 
-        parts = [self.triggers.inversion(duration_s=TI * 1e-3)]
+        parts = [self.operators.inversion(duration_s=TI * 1e-3)]
         for index in range(angles.numel()):
-            parts.append(self.triggers.excitation(angles[index], turns[index]))
+            parts.append(self.operators.excitation(angles[index], turns[index]))
             parts.append(
-                self.triggers.readout(turns[index], duration_s=spacing_s[index])
+                self.operators.readout(turns[index], duration_s=spacing_s[index])
             )
         return parts
 

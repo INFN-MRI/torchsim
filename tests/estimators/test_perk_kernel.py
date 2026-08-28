@@ -59,8 +59,8 @@ def _fitted(device: str, *, contrasts: int = 24, complex_signals: bool = False,
     parameters = torch.stack(
         (signals.abs().sum(-1), signals.abs().square().mean(-1)), dim=-1
     )
-    estimator = PERK(n_features=256, seed=5, **settings).to(device)
-    estimator.fit(signals, parameters)
+    estimator = PERK(n_features=256, feature_seed=5, **settings).to(device)
+    estimator.fit(signals=signals, parameters=parameters)
     return estimator, signals[:512]
 
 
@@ -115,8 +115,8 @@ def test_a_known_parameter_block_goes_through_the_kernel(device, composed) -> No
     signals = torch.randn(2000, 16, generator=generator, device=device)
     known = torch.rand(2000, 2, generator=generator, device=device)
     parameters = (signals.sum(-1) + known.sum(-1))[:, None]
-    estimator = PERK(n_features=128, seed=1).to(device)
-    estimator.fit(signals, parameters, known)
+    estimator = PERK(n_features=128, feature_seed=1).to(device)
+    estimator.fit(signals=signals, parameters=parameters, known=known)
 
     fused = estimator(signals[:64], known[:64])
     composed()

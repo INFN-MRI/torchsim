@@ -1,7 +1,7 @@
 """
-==================================================
-Fitting the model instead of a sampling of it
-==================================================
+=====================================
+T2 mapping by nonlinear least squares
+=====================================
 
 A dictionary is a sampling of the model, and its size is the product of the
 grids it samples. A nonlinear fit walks downhill on the model itself, so a
@@ -24,7 +24,7 @@ and in peak memory.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install torchsim brainweb-dl
+#    !pip install torchsim brainweb-dl cmap
 
 # %%
 #
@@ -40,28 +40,119 @@ from pathlib import Path
 
 import brainweb_dl
 import matplotlib.pyplot as plt
+from cmap import Colormap
 from brainweb_dl import get_mri
 
 warnings.filterwarnings("ignore")
 
 
 
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to.
+# Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
+# colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
+LIPARI = Colormap("crameri:lipari").to_matplotlib()
+NAVIA = Colormap("crameri:navia").to_matplotlib()
 
-    A figure where only some panels carry a colorbar has panels of different
-    sizes. Giving every one a colorbar and hiding the ones that would repeat a
-    scale keeps the images comparable.
-    """
+# Colormap, window and unit per parameter. Both relaxation windows stop well
+# short of CSF, so that white and grey matter -- 500 against 833 ms in T1, 70
+# against 83 ms in T2 -- take up most of the scale and CSF saturates.
+STYLE = {
+    "T1": (LIPARI, (0.0, 1200.0), "T1 [ms]"),
+    "T2": (NAVIA, (0.0, 120.0), "T2 [ms]"),
+    "M0": ("gray", (0.0, 1.0), "M0"),
+}
+
+
+def panel(axis, values, cmap, limits, title=None, ylabel=None):
+    """One map without ticks; the handle is what a row shares a colorbar from."""
     handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
     axis.set_xticks([])
     axis.set_yticks([])
+    if title is not None:
+        axis.set_title(title)
+    if ylabel is not None:
+        axis.set_ylabel(ylabel)
+    return handle
+
+
+def scalebar(handle, axes, label):
+    """One colorbar for a group of panels, so none gives up width to its own."""
+    axes = list(np.ravel(axes))
+    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
+
+
+# Every panel on this page is drawn at the same size, so any two figures can be
+# read against each other. The side is set by the widest grid, which fills the
+# documentation column; a figure with fewer columns is narrower, not larger.
+PAGE_WIDTH = 8.6  # inches, the width of the documentation column
+BAR_WIDTH = 0.8  # what one colorbar takes out of it
+PANEL = (PAGE_WIDTH - 1 * BAR_WIDTH) / 4  # one image panel
+
+
+def canvas(rows, columns, shape, *, bars=1, extra=0.6):
+    """A grid of image panels, in the proportion of the images.
+
+    ``bars`` is how many colorbars a row carries and ``extra`` the height left
+    over the panels, for titles and for a figure title where there is one.
+    """
+    return plt.subplots(
+        rows,
+        columns,
+        squeeze=False,
+        figsize=(
+            columns * PANEL + bars * BAR_WIDTH,
+            PANEL * shape[0] / shape[1] * rows + extra,
+        ),
+    )
+
+
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
 
 
 # sphinx_gallery_end_ignore
@@ -71,7 +162,6 @@ import numpy as np
 import torch
 
 import torchsim
-from torchsim import ParameterMapping
 from torchsim.estimators import DictionaryMatcher, NonlinearLeastSquares
 from torchsim.simulators import MultiEchoSimulator
 
@@ -118,11 +208,11 @@ M0_true = np.where(mask, fractions @ tissue_PD, 0.0).astype(np.float32)
 truth = torch.as_tensor(T2_true[mask].copy())
 density = torch.as_tensor(M0_true[mask].copy())
 
-figure, axes = plt.subplots(1, 2, figsize=(7.6, 3.6))
-panel(axes[0], T2_true, "magma", (0, 350), label="T2 [ms]")
-panel(axes[1], M0_true, "magma", (0, 1.1), label="M0")
-figure.suptitle("BrainWeb subject 0, slice 90 -- what the map should come out as")
-figure.tight_layout()
+figure, axes = canvas(1, 2, mask.shape, bars=2, extra=1.1)
+for axis, values, name in ((axes[0, 0], T2_true, "T2"), (axes[0, 1], M0_true, "M0")):
+    cmap, limits, label = STYLE[name]
+    scalebar(panel(axis, values, cmap, limits), axis, label)
+figure.suptitle("BrainWeb subject 0, slice 90")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -154,21 +244,21 @@ measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 #
 
 # sphinx_gallery_start_ignore
-figure, axis = plt.subplots(figsize=(6.5, 3.6))
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.76))
 for value, name in ((70.0, "white matter"), (110.0, "grey matter"), (300.0, "CSF")):
     decay = acquisition.simulate(T2=value, M0=1.0, offset=FLOOR)
     axis.semilogy(TE.numpy(), decay.numpy(), "-o", ms=3, label=f"{name}, T2 {value:.0f} ms")
 axis.axhline(FLOOR, color="k", ls="--", lw=1)
-axis.text(TE[-1], FLOOR * 1.15, "noise floor", ha="right", fontsize=8)
+axis.text(TE[-1], FLOOR * 1.15, "noise floor", ha="right")
 axis.set(xlabel="Echo time [ms]", ylabel="signal", title="what is measured")
-axis.legend(fontsize=8), axis.grid(alpha=0.3)
-figure.tight_layout()
+axis.grid(alpha=0.3)
+key(axis, ncols=3)
 # sphinx_gallery_end_ignore
 
 # sphinx_gallery_start_ignore
 def footprint(problem):
     """MiB the fitted estimator itself holds."""
-    held = sum(t.numel() * t.element_size() for t in problem.method.buffers())
+    held = sum(t.numel() * t.element_size() for t in problem.buffers())
     return held / 2**20
 
 
@@ -213,11 +303,11 @@ def error(estimate, reference):
 BOUNDS = {"T2": (10.0, 500.0), "M0": (0.1, 2.0), "offset": (0.0, 0.2)}
 START = {"T2": 100.0, "M0": 1.0, "offset": 0.02}
 
-fit = ParameterMapping(
-    acquisition, noise_std=NOISE_STD, seed=0, **BOUNDS
-).train(NonlinearLeastSquares(bounds=BOUNDS, initial=START))
+fit = NonlinearLeastSquares(acquisition, bounds=BOUNDS, initial=START).fit(
+    BOUNDS, noise_std=NOISE_STD, seed=0
+)
 
-maps = fit(measured)  # {"T2": ..., "M0": ..., "offset": ...}
+maps = fit.map(measured)  # {"T2": ..., "M0": ..., "offset": ...}
 
 # sphinx_gallery_start_ignore
 def fitted(unknown):
@@ -225,18 +315,16 @@ def fitted(unknown):
     held = {name: START[name] for name in START if name not in unknown}
     if "offset" in held:
         held["offset"] = FLOOR
-    problem = ParameterMapping(
+    problem = NonlinearLeastSquares(
         acquisition.bind(**held),
-        noise_std=NOISE_STD,
-        seed=0,
-        **{name: BOUNDS[name] for name in unknown},
+        bounds={name: BOUNDS[name] for name in unknown},
+        initial={name: START[name] for name in unknown},
     )
     start = time.perf_counter()
-    problem.train(
-        NonlinearLeastSquares(
-            bounds={name: BOUNDS[name] for name in unknown},
-            initial={name: START[name] for name in unknown},
-        )
+    problem.fit(
+        **{name: BOUNDS[name] for name in unknown},
+        noise_std=NOISE_STD,
+        seed=0,
     )
     training = time.perf_counter() - start
     found, timing, peak = mapped(problem)
@@ -266,9 +354,9 @@ print(f"fitted floor, median {float(three_maps['offset'].median()):.4f} "
 #
 T2_GRID = torch.logspace(1.0, np.log10(500.0), 400)
 
-match = ParameterMapping(
-    acquisition.bind(M0=1.0, offset=0.0), T2=T2_GRID, seed=0
-).train(DictionaryMatcher())
+match = DictionaryMatcher(acquisition.bind(M0=1.0, offset=0.0)).fit(
+    T2=T2_GRID, seed=0
+)
 
 # %%
 #
@@ -278,34 +366,29 @@ match = ParameterMapping(
 offsets = torch.linspace(0.0, 0.15, 40)
 grid_t2, grid_offset = torch.meshgrid(T2_GRID, offsets, indexing="ij")
 
-wide = ParameterMapping(
-    acquisition.bind(M0=1.0),
-    T2=grid_t2.reshape(-1),
-    offset=grid_offset.reshape(-1),
-    seed=0,
-).train(DictionaryMatcher())
+wide = DictionaryMatcher(acquisition.bind(M0=1.0)).fit(
+    T2=grid_t2.reshape(-1), offset=grid_offset.reshape(-1), seed=0
+)
 
 
 # sphinx_gallery_start_ignore
 def matched(floors):
     """Fit a matcher over T2, and over this many values of the offset."""
     if floors == 1:
-        problem = ParameterMapping(
-            acquisition.bind(M0=1.0, offset=0.0), T2=T2_GRID, seed=0
-        )
+        problem = DictionaryMatcher(acquisition.bind(M0=1.0, offset=0.0))
+        ranges = {"T2": T2_GRID}
         atoms = T2_GRID.numel()
     else:
         offsets = torch.linspace(0.0, 0.15, floors)
         grid_t2, grid_offset = torch.meshgrid(T2_GRID, offsets, indexing="ij")
-        problem = ParameterMapping(
-            acquisition.bind(M0=1.0),
-            T2=grid_t2.reshape(-1),
-            offset=grid_offset.reshape(-1),
-            seed=0,
-        )
+        problem = DictionaryMatcher(acquisition.bind(M0=1.0))
+        ranges = {
+            "T2": grid_t2.reshape(-1),
+            "offset": grid_offset.reshape(-1),
+        }
         atoms = grid_t2.numel()
     start = time.perf_counter()
-    problem.train(DictionaryMatcher())
+    problem.fit(ranges, seed=0)
     training = time.perf_counter() - start
     maps, timing, peak = mapped(problem)
     return atoms, maps, training, timing, footprint(problem), peak
@@ -371,7 +454,7 @@ for name, training, timing, model, peak, found in (
 #
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3))
 atoms = [matches[floors][0] for floors in FLOOR_VALUES]
 axes[0].plot(atoms, [matches[f][3] for f in FLOOR_VALUES], "-o", label="match")
 axes[0].axhline(three_time, color="crimson", ls="--", label="fit, 3 unknowns")
@@ -392,8 +475,8 @@ axes[1].set(
     title="memory",
 )
 for axis in axes:
-    axis.grid(alpha=0.3), axis.legend(fontsize=8)
-figure.tight_layout()
+    axis.grid(alpha=0.3)
+key(figure, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -410,37 +493,25 @@ def painted(values):
     return canvas
 
 
+# Column headings sit over a two-inch panel; the table above carries the rest.
 shown = {
-    "match, T2 only": matches[1][1]["T2"],
-    "match, T2 x 40 offsets": matches[40][1]["T2"],
-    "fit, T2 + M0 + offset": three_maps["T2"],
+    "match, T2": matches[1][1]["T2"],
+    "match + offset": matches[40][1]["T2"],
+    "fit, all three": three_maps["T2"],
 }
 
-columns = 1 + len(shown)
-figure, axes = plt.subplots(2, columns, figsize=(3.4 * columns, 6.8))
-panel(axes[0, 0], T2_true, "viridis", (0, 350))
-axes[0, 0].set_title("truth", fontsize=10)
+cmap, limits, label = STYLE["T2"]
+figure, axes = canvas(2, 1 + len(shown), mask.shape)
+panel(axes[0, 0], T2_true, cmap, limits, title="truth")
 axes[1, 0].set_visible(False)
 
 residuals = {name: np.abs(painted(values) - T2_true) for name, values in shown.items()}
 top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
 for column, (name, values) in enumerate(shown.items(), start=1):
-    panel(
-        axes[0, column],
-        painted(values),
-        "viridis",
-        (0, 350),
-        label="T2 [ms]" if column == columns - 1 else None,
-    )
-    axes[0, column].set_title(name, fontsize=9)
-    panel(
-        axes[1, column],
-        residuals[name],
-        "inferno",
-        (0.0, top or 1.0),
-        label="|error| [ms]" if column == columns - 1 else None,
-    )
-figure.tight_layout()
+    found = panel(axes[0, column], painted(values), cmap, limits, title=name)
+    error = panel(axes[1, column], residuals[name], "inferno", (0.0, top or 1.0))
+scalebar(found, axes[0], label)
+scalebar(error, axes[1, 1:], f"|error|, {label}")
 # sphinx_gallery_end_ignore
 
 # %%

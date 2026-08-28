@@ -5,7 +5,6 @@ from __future__ import annotations
 __all__ = [
     "EpgEngine",
     "SimulationResult",
-    "SubspaceBasis",
     "TissueProperties",
     "simulate_subspace",
 ]
@@ -115,9 +114,10 @@ class TissueProperties:
     off the free water -- which itself sits at ``b0_hz``. Fat beside water,
     myelin water beside free water, a metabolite beside its solvent.
 
-    The two second pools are alternatives, not layers: a tissue declaring both
-    is a three-pool system, which the kernels do not carry, and asking for one
-    is refused rather than answered with either half.
+    A tissue may declare both, which is a three-pool system: the free water
+    exchanges with each second pool and the two do not exchange with each
+    other. Only the longitudinal axis sees all three, and the fractions share
+    the voxel with the free water, so they cannot sum past one.
 
     Attributes
     ----------
@@ -177,7 +177,11 @@ class TissueProperties:
 
 @dataclass(frozen=True)
 class SimulationResult:
-    """Signals and labels recorded by one state-machine simulation.
+    """What one run of :meth:`EpgEngine.simulate` recorded.
+
+    The signal, and the labels saying where in the sequence each sample of it
+    came from -- which is what lets a caller pick out the echoes it wanted
+    without counting events itself.
 
     Attributes
     ----------
@@ -200,44 +204,21 @@ class SimulationResult:
     echo: torch.Tensor
 
 
-@dataclass(frozen=True)
-class SubspaceBasis:
-    """Low-rank temporal basis and the dictionary it was fitted to.
-
-    Attributes
-    ----------
-    subspace : Subspace
-        The basis itself, and what it reports about the energy it keeps.
-    dictionary : torch.Tensor
-        ``(atoms, contrasts)`` -- the simulated signals it was fitted to.
-    simulation : SimulationResult
-        What the simulation recorded, with the labels that say which sample is
-        which.
-    """
-
-    subspace: Subspace
-    dictionary: torch.Tensor
-    simulation: SimulationResult
-
-    @property
-    def basis(self) -> torch.Tensor:
-        """The temporal basis, ``(contrasts, rank)``."""
-        return self.subspace.basis
-
-    @property
-    def singular_values(self) -> torch.Tensor:
-        """Every singular value of the simulated dictionary."""
-        return self.subspace.singular_values
-
-
 class EpgEngine:
-    """Run a sequence description on the fused EPG kernels.
+    """Run a :class:`SequenceDescription` on the fused EPG kernels.
 
-    What a sequence plays around an event is on the events themselves, so
-    every description runs here -- one written by hand, one a builder emitted,
-    one that arrived from a scanner. Which pulses and gradients those events
-    stand for is settled before a description exists; see
-    :mod:`torchsim.sequence._operators`.
+    This is the direct route, for when what you hold is a description rather
+    than a simulator: one a builder such as
+    :func:`~torchsim.fse_description` emitted, one assembled from operators by
+    hand, or one that arrived from a scanner. A
+    :class:`~torchsim.model.Simulator` wraps this and is what most sequences
+    are written as -- it fixes tissue and protocol on itself, and adds
+    :meth:`~torchsim.model.SignalModel.jacobian`, binding and device
+    placement. Nothing here does any of that: give it a description and a
+    tissue, get a :class:`SimulationResult` back.
+
+    What a sequence plays around each event is carried by the events
+    themselves, so every description runs here whatever assembled it.
     """
 
     def shifts_per_repetition(self, description: SequenceDescription) -> int:
@@ -353,7 +334,7 @@ def simulate_subspace(
     slice_profile: ExactSliceProfile | None = None,
     rf_raster_time_s: float = 1e-6,
     device: torch.device | str | None = None,
-) -> SubspaceBasis:
+) -> Subspace:
     """Simulate a dictionary and return its leading temporal basis."""
     result = EpgEngine().simulate(
         description,
@@ -365,11 +346,8 @@ def simulate_subspace(
         rf_raster_time_s=rf_raster_time_s,
         device=device,
     )
-    return SubspaceBasis(
-        subspace=Subspace.fit(result.signal, rank),
-        dictionary=result.signal,
-        simulation=result,
-    )
+    fitted = Subspace.fit(result.signal, rank)
+    return replace(fitted, dictionary=result.signal, simulation=result)
 
 
 # %% private module subroutines

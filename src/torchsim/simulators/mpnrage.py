@@ -11,10 +11,10 @@ import numpy.typing as npt
 import torch
 
 from ..sequence._array import as_torch, matched
-from ..model import SPOILED, AbstractSimulator, StateMachineModel
+from ..model import SPOILED, Simulator, SpinPhysics
 
 
-class MPnRAGESimulator(AbstractSimulator):
+class MPnRAGESimulator(Simulator):
     """An inversion followed by a spoiled gradient-echo train, every shot read.
 
     Examples
@@ -28,7 +28,7 @@ class MPnRAGESimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": "t1_ms",
             "M0": "m0",
@@ -38,7 +38,7 @@ class MPnRAGESimulator(AbstractSimulator):
         # The train samples at the pulse and spoils after it, so no transverse
         # magnetization survives an interval and no T2 is asked for.
         fixed={"t2_ms": 100.0},
-        triggers=SPOILED,
+        operators=SPOILED,
     )
     states = 1
 
@@ -77,11 +77,11 @@ class MPnRAGESimulator(AbstractSimulator):
         turns = torch.deg2rad(matched(phases, angles))
         spacing_s = matched(TR, angles) * 1e-3
 
-        parts = [self.triggers.inversion(duration_s=TI * 1e-3)]
+        parts = [self.operators.inversion(duration_s=TI * 1e-3)]
         for index in range(shots):
-            parts.append(self.triggers.excitation(angles[index], turns[index]))
+            parts.append(self.operators.excitation(angles[index], turns[index]))
             parts.append(
-                self.triggers.readout(turns[index], duration_s=spacing_s[index])
+                self.operators.readout(turns[index], duration_s=spacing_s[index])
             )
         return parts
 

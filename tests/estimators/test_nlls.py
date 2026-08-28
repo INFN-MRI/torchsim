@@ -7,7 +7,6 @@ import pytest
 import torch
 from scipy.optimize import least_squares
 
-from torchsim import ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
 import torchsim.recon._operator as _operator
 from torchsim.simulators import (
@@ -23,8 +22,8 @@ TI_MS = torch.tensor([50.0, 200.0, 600.0, 1200.0, 2500.0])
 def multiecho_mapping(**settings):
     """A T2/M0 fit from a multi-echo decay, trained and ready."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), M0=(0.2, 2.0), seed=0)
-    mapping.train(NonlinearLeastSquares(**settings), samples=256)
+    mapping = NonlinearLeastSquares(acquisition, **settings)
+    mapping.fit(T2=(5.0, 300.0), M0=(0.2, 2.0), seed=0, samples=256)
     return acquisition, mapping
 
 
@@ -83,13 +82,9 @@ def test_no_iterate_ever_leaves_the_bounds(monkeypatch) -> None:
     """
     low, high = 20.0, 60.0
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(
-        acquisition, T2=(low, high), M0=(0.2, 2.0), seed=0
-    )
-    mapping.train(
-        NonlinearLeastSquares(bounds={"T2": (low, high), "M0": (0.0, 5.0)}),
-        samples=256,
-    )
+    mapping = NonlinearLeastSquares(
+        acquisition, bounds={"T2": (low, high), "M0": (0.0, 5.0)}
+    ).fit(T2=(low, high), M0=(0.2, 2.0), seed=0, samples=256)
     seen: list[torch.Tensor] = []
     natural = _operator.to_natural
     monkeypatch.setattr(
@@ -119,25 +114,18 @@ def test_a_starting_point_on_a_bound_is_refused() -> None:
     stay. Saying so where the value is written beats converging on nonsense.
     """
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
-
     with pytest.raises(ValueError, match="strictly inside"):
-        mapping.train(
-            NonlinearLeastSquares(
-                bounds={"T2": (10.0, 200.0)}, initial={"T2": 10.0}
-            ),
-            samples=64,
-        )
+        NonlinearLeastSquares(
+            acquisition, bounds={"T2": (10.0, 200.0)}, initial={"T2": 10.0}
+        ).fit(T2=(5.0, 300.0), seed=0, samples=64)
 
 
 def test_a_starting_point_just_inside_a_bound_converges() -> None:
     """Close to a bound is fine; on it is not."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
-    mapping.train(
-        NonlinearLeastSquares(bounds={"T2": (10.0, 200.0)}, initial={"T2": 12.0}),
-        samples=64,
-    )
+    mapping = NonlinearLeastSquares(
+        acquisition, bounds={"T2": (10.0, 200.0)}, initial={"T2": 12.0}
+    ).fit(T2=(5.0, 300.0), seed=0, samples=64)
     truth = torch.tensor([45.0, 90.0])
 
     got = mapping(acquisition.simulate(T2=truth))["T2"]
@@ -168,13 +156,9 @@ def test_a_complex_contrast_is_two_real_residuals() -> None:
     """What is minimized is the squared modulus, so both parts count."""
     flip = torch.full((16,), 150.0)
     acquisition = FSESimulator(ESP=8.0, TR=2000.0, flip=flip)
-    mapping = ParameterMapping(
-        acquisition, T1=(300.0, 2500.0), T2=(20.0, 200.0), seed=0
-    )
-    mapping.train(
-        NonlinearLeastSquares(bounds={"T1": (1.0, 5000.0), "T2": (1.0, 500.0)}),
-        samples=256,
-    )
+    mapping = NonlinearLeastSquares(
+        acquisition, bounds={"T1": (1.0, 5000.0), "T2": (1.0, 500.0)}
+    ).fit(T1=(300.0, 2500.0), T2=(20.0, 200.0), seed=0, samples=256)
     T1 = torch.tensor([500.0, 900.0, 1400.0, 2000.0])
     T2 = torch.tensor([40.0, 60.0, 90.0, 150.0])
 
@@ -190,13 +174,13 @@ def test_a_complex_contrast_is_two_real_residuals() -> None:
 def test_a_property_measured_separately_reaches_the_model() -> None:
     """A known map varies per voxel and is not fitted, but is not ignored."""
     acquisition = InversionRecoverySimulator(TI=TI_MS)
-    mapping = ParameterMapping(
-        acquisition,
-        T1=(200.0, 3000.0),
+    mapping = NonlinearLeastSquares(
+        acquisition, bounds={"T1": (1.0, 6000.0)}
+    ).fit(T1=(200.0, 3000.0),
         known={"inv_efficiency": (0.7, 1.0)},
         seed=0,
+        samples=256,
     )
-    mapping.train(NonlinearLeastSquares(bounds={"T1": (1.0, 6000.0)}), samples=256)
     T1 = torch.tensor([600.0, 1100.0, 1900.0])
     efficiency = torch.tensor([0.75, 0.9, 1.0])
 
@@ -213,12 +197,9 @@ def test_a_subspace_is_applied_to_the_prediction_too() -> None:
     in full contrasts would be subtracting two different things.
     """
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(
-        acquisition, T2=(5.0, 300.0), M0=(0.2, 2.0), rank=3, seed=0
-    )
-    mapping.train(
-        NonlinearLeastSquares(bounds={"T2": (1.0, 1000.0), "M0": (0.0, 5.0)}),
-        samples=256,
+    mapping = NonlinearLeastSquares(
+        acquisition, bounds={"T2": (1.0, 1000.0), "M0": (0.0, 5.0)}
+    ).fit(T2=(5.0, 300.0), M0=(0.2, 2.0), rank=3, seed=0, samples=256
     )
     T2 = torch.tensor([25.0, 80.0])
     M0 = torch.tensor([1.0, 1.3])
@@ -234,9 +215,9 @@ def test_a_subspace_is_applied_to_the_prediction_too() -> None:
 def test_converged_voxels_stop_being_solved() -> None:
     """Late iterations cost what is left, not what was started with."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
-    method = NonlinearLeastSquares(bounds={"T2": (1.0, 1000.0)})
-    mapping.train(method, samples=128)
+    method = NonlinearLeastSquares(acquisition, bounds={"T2": (1.0, 1000.0)})
+    method.fit(T2=(5.0, 300.0), seed=0, samples=128)
+    mapping = method
 
     mapping(acquisition.simulate(T2=torch.full((64,), 50.0)))
 
@@ -295,15 +276,9 @@ def test_an_equality_constraint_is_written_into_the_model() -> None:
 
     echoes = torch.tensor([1.2, 2.4, 3.6, 4.8, 6.0, 7.2])
     acquisition = FatWater(TE=echoes)
-    mapping = ParameterMapping(
-        acquisition, fat_fraction=(0.0, 1.0), M0=(0.5, 1.5), seed=0
-    )
-    mapping.train(
-        NonlinearLeastSquares(
-            bounds={"fat_fraction": (0.0, 1.0), "M0": (0.0, 3.0)}
-        ),
-        samples=256,
-    )
+    mapping = NonlinearLeastSquares(
+        acquisition, bounds={"fat_fraction": (0.0, 1.0), "M0": (0.0, 3.0)}
+    ).fit(fat_fraction=(0.0, 1.0), M0=(0.5, 1.5), seed=0, samples=256)
     truth = torch.tensor([0.05, 0.3, 0.7])
 
     got = mapping(acquisition.simulate(fat_fraction=truth, M0=torch.ones(3)))
@@ -320,22 +295,19 @@ def test_an_equality_constraint_is_written_into_the_model() -> None:
 def test_a_bound_on_something_not_being_estimated_is_a_mistake() -> None:
     """A misspelt name would otherwise be silently ignored."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
-
     with pytest.raises(ValueError, match="T3"):
-        mapping.train(NonlinearLeastSquares(bounds={"T3": (1.0, 2.0)}), samples=8)
+        NonlinearLeastSquares(acquisition, bounds={"T3": (1.0, 2.0)}).fit(T2=(5.0, 300.0), seed=0, samples=8
+        )
     with pytest.raises(ValueError, match="T3"):
-        mapping.train(NonlinearLeastSquares(initial={"T3": 1.0}), samples=8)
+        NonlinearLeastSquares(acquisition, initial={"T3": 1.0}).fit(T2=(5.0, 300.0), seed=0, samples=8
+        )
 
 
 def test_a_bound_that_does_not_increase_is_a_mistake() -> None:
     """An empty interval has no inside to fit in."""
     acquisition = MultiEchoSimulator(TE=TE_MS)
-    mapping = ParameterMapping(acquisition, T2=(5.0, 300.0), seed=0)
-
     with pytest.raises(ValueError, match="not increasing"):
-        mapping.train(
-            NonlinearLeastSquares(bounds={"T2": (100.0, 10.0)}), samples=8
+        NonlinearLeastSquares(acquisition, bounds={"T2": (100.0, 10.0)}).fit(T2=(5.0, 300.0), seed=0, samples=8
         )
 
 
@@ -345,7 +317,7 @@ def test_fitting_without_a_model_says_so() -> None:
 
     assert not method.fitted
     with pytest.raises(RuntimeError, match="no model"):
-        method.fit(torch.zeros(4, 6), torch.zeros(4, 1))
+        method.fit(signals=torch.zeros(4, 6), parameters=torch.zeros(4, 1))
     with pytest.raises(RuntimeError, match="no model"):
         method(torch.zeros(4, 6))
 

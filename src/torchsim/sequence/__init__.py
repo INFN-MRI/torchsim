@@ -16,7 +16,6 @@ __all__ = [
     "ShimDefinition",
     "EpgEngine",
     "SimulationResult",
-    "SubspaceBasis",
     "TissueProperties",
     "calibrate",
     "decompress_shape",
@@ -98,7 +97,6 @@ from ._transition import ExactSliceProfile, exact_slice_profile
 from ._simulation import (
     EpgEngine,
     SimulationResult,
-    SubspaceBasis,
     TissueProperties,
     simulate_subspace,
 )

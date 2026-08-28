@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim.model import AbstractSimulator, StateMachineModel
+from torchsim.model import Simulator, SpinPhysics
 from torchsim.model._binding import bind
 from torchsim.sequence import _accelerators
 from torchsim.sequence._accelerators import pack_description
@@ -280,8 +280,8 @@ def test_a_simulator_holding_a_description_is_left_alone(packings) -> None:
     for a binding must change neither the answer nor the route.
     """
 
-    class Bare(AbstractSimulator):
-        model = StateMachineModel(properties={"T1": "t1_ms", "T2": "t2_ms"})
+    class Bare(Simulator):
+        model = SpinPhysics(properties={"T1": "t1_ms", "T2": "t2_ms"})
 
     builder = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     description = builder.describe(**builder.played(flip=torch.full((8,), 120.0)))

@@ -156,11 +156,11 @@ def bind(
     Parameters
     ----------
     simulator:
-        The protocol, whose :meth:`~torchsim.model.AbstractSimulator.describe`
+        The protocol, whose :meth:`~torchsim.model.Simulator.describe`
         is walked here and, if this succeeds, not again.
     values:
         The protocol arguments as
-        :meth:`~torchsim.model.AbstractSimulator.played` returns them. The
+        :meth:`~torchsim.model.Simulator.played` returns them. The
         floating-point arrays among them are the ones rebound.
     repetitions, record, rf_raster_time_s, device:
         The run this is for. A call differing in any of them gets no binding.

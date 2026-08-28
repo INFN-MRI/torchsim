@@ -28,23 +28,20 @@ def test_perk_is_comparable_to_dictionary_matching_under_noise() -> None:
 
     grid = torch.linspace(20.0, 300.0, 1024)[:, None]
     matcher = DictionaryMatcher(
-        simulate(grid),
-        grid,
+        dictionary=simulate(grid),
+        parameters=grid,
         dictionary_chunk_size=256,
     )
     perk = PERK(
+        sequence.bind(T1=1000.0),
         n_features=256,
         chunk_size=512,
-        seed=4,
+        feature_seed=4,
         complex_mode="magnitude",
-    ).fit_simulator(
-        sequence,
-        {"T2": training_t2},
-        T1=1000.0,
-        noise_std=noise_std,
-    )
+        stream=True,
+    ).fit(T2=training_t2, noise_std=noise_std)
 
-    perk_rmse = (perk(measured) - test_t2).square().mean().sqrt()
+    perk_rmse = (perk.map(measured)["T2"] - test_t2.reshape(-1)).square().mean().sqrt()
     dictionary_rmse = (matcher(measured) - test_t2).square().mean().sqrt()
 
     assert perk_rmse <= dictionary_rmse

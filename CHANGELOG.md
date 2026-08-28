@@ -4,6 +4,28 @@
 
 ### Added
 
+- **An Explanation section, ahead of the examples.** Two pages, each built
+  around figures that are re-rendered from the working tree on every
+  documentation build. *Extended phase graphs* is the physics: dephasing as a
+  helix, configuration states as its Fourier coefficients, the RF and shift
+  operators, relaxation reaching only order zero, the phase graph read against
+  the echo amplitudes TorchSim computes for the same train, why a low-flip
+  train is not a mono-exponential, how many orders a sequence has to carry,
+  the order-weighted diffusion b-factors, and the two-pool extensions. *How
+  TorchSim runs it* is the realization: events carrying their own action word,
+  one fused kernel per voxel, the terms a declaration switches on, the real
+  subspace, forward against reverse derivatives, the affine rebinding, the
+  execution policy, and the closed forms the state machine is held to.
+
+  `docs/explanation_figures.py` draws every one of them; `conf.py` calls it
+  before reading a page, so a figure cannot outlive what it shows.
+
+- **Issue, discussion and pull-request templates, and a security policy**,
+  under `.github/`. The bug form asks for the reproduction, the environment
+  and whether the CPU or the CUDA kernels were involved; the security policy
+  says that data reaching the kernels is in scope and that wrong physics is a
+  bug report.
+
 - **`examples/02` is a synthetic-data pipeline rather than a tour of calls.**
   A subject is segmented into tissue classes with SimpleITK's multi-level
   Otsu threshold; each class is given an M0 and a T2 from its own median and a
@@ -349,10 +371,129 @@
 
 ### Changed
 
+- **The documentation has a User Guide and a Developer Guide** in place of
+  *Getting Started* and *Miscellaneous*. The user guide installs PyTorch first
+  -- the build depends on hardware pip cannot see -- with tabs for the isolated
+  environment and for CPU, CUDA and Apple silicon, then maps the rest of the
+  documentation and says where to ask a question, report a bug and report a
+  vulnerability. The developer guide carries the compiler prerequisite, the
+  editable install, the style rules, the test suite's markers and cost, the
+  documentation build, and how a pull request is opened.
+
+- **One `dev` extra, in place of `dev`, `test` and `doc`.** A contributor
+  installs the whole toolchain with `pip install -e ".[dev]"`.
+
+- **One citation format across the documentation.** Numbered `[N]_` markers in
+  the prose, resolved by a `References` section holding
+  `Surname, A. B., …, "Title", Journal vol.issue (Year), pp. X-Y.` and a DOI
+  link. The gallery's two cited examples moved their references to the end of
+  the page, and the methods that were named without a source now carry one:
+  PERK (Nataraj et al.), the Ernst steady state and DESPOT1 (Ernst and
+  Anderson; Deoni et al.), DESPOT2, MP2RAGE (Marques et al.) and the group
+  matching `DictionaryMatcher` prunes with (Cauley et al.).
+
+- **The two authoring classes are named for what they are.**
+  `AbstractSimulator` is `Simulator` -- users subclass it and write `layout`,
+  and "abstract" said nothing a docstring does not. `StateMachineModel` is
+  `SpinPhysics`: it is a frozen record of which properties a voxel has and what
+  each kind of event does to it, not a model in the `SignalModel` sense and
+  not a class anyone subclasses.
+
+- **`DictionaryMatch` is `MatchResult`**, one letter apart from
+  `DictionaryMatcher` no longer, and named as `SimulationResult` and
+  `Solution` are.
+
+- **`Subspace` carries the dictionary it was fitted to.**
+  `simulate_subspace` returns a `Subspace` with `dictionary` and `simulation`
+  filled in; `SubspaceBasis`, which held a `Subspace` and forwarded two
+  attributes to it, is gone.
+
+- **`Grouping` is internal.** Nothing outside `DictionaryMatcher` constructs
+  one; a `groups=` count is the whole public surface.
+
+- **An estimator states its own mapping problem, in three steps.** `PERK`,
+  `DictionaryMatcher`, `LookupTable` and `NonlinearLeastSquares` are each made
+  from the acquisition they invert and their own settings, `fit` states the
+  sampling and draws the training set, and `map` returns named maps:
+
+  ```python
+  fitter = PERK(acquisition, n_features=1000)
+  fitter.fit({"T1": (200.0, 3000.0), "T2": (10.0, 300.0)}, noise_std=0.01)
+  maps = fitter.map(volume)
+  ```
+
+  The sampling belongs to the fit rather than to the estimator, so one
+  estimator can be fitted over a different range without being rebuilt, and no
+  tissue name ever shares a keyword namespace with a method setting. Naming
+  the properties as keywords is the same thing and is usually shorter.
+
+  `ParameterMapping` is gone, and with it `ModelEstimator` and the `bind`
+  hook: an estimator that fits the model rather than a sampling of it reads
+  the acquisition it was made with. `fit(signals=..., parameters=...)` still
+  takes arrays from elsewhere -- `map` then returns the parameter columns
+  rather than named maps.
+
+  `DictionaryMatcher`'s `dictionary` and `parameters` are keyword-only, the
+  first positional argument now being the acquisition. `LookupTable.rank` is
+  `points`, which is what it counts, leaving `rank` to mean the subspace
+  everywhere. `PERK`'s `seed` is `feature_seed`, distinct from the `seed` that
+  `fit` draws the training set with.
+
+- **`PERK.fit_simulator` is `PERK(..., stream=True)`.** Where a training set
+  is too large to hold, the flag says so once and the ordinary `fit` reads its
+  chunks from the acquisition, accumulating covariances as it goes. Without
+  it, `fit` simulates the dictionary whole -- which is what lets a `rank` be
+  read off it -- fits the method, and drops it. Asking a streaming fit for a
+  rank is refused rather than quietly ignored, since the basis it would need
+  is exactly the thing streaming does not keep.
+
+  The basis a rank produces stays on the estimator as `subspace`, on a
+  `DictionaryMatcher` and a `PERK` alike, so a subspace reconstruction can be
+  handed it and the coefficients it returns read back through
+  `from_coefficients` without being projected twice.
+
+- **`fit(subspace=...)` works in a basis fitted elsewhere**, rather than
+  fitting one from the training set. A reconstruction and the estimator that
+  reads its coefficients then hold the same basis by construction, instead of
+  both being asked for the same rank and trusted to agree. It is the
+  alternative to `rank`, not a companion to it, and giving both is refused.
+  A borrowed basis streams: each chunk is projected as it is simulated, so
+  `stream=True` is no longer shut out of working in a subspace.
+
+- **`EventOperators` is what `Triggers` was called.** It holds one operator
+  factory per role a sequence is written in terms of, and `SpinPhysics` takes
+  it as `operators=`. It is not the vocabulary the events end up carrying:
+  `RfUse` is the Pulseq tag and `EventAction` is the bit field the kernels
+  read, and the three do not line up one to one -- the `saturation` slot plays
+  a pulse tagged `RfUse.EXCITATION`.
+
+- **`iterative` takes a solver object, and only a solver object.**
+  Anything matching the `LeastSquares` protocol -- `A`, `AT`, `y`, `z`,
+  `gamma`, `max_iter`, `tol` in, the damped step out -- is called directly. A
+  reconstruction that brings its own conjugate gradients, or wraps a proximal
+  solver to carry a regularizer, needs nothing from a dependency TorchSim does
+  not have. Given nothing, it falls back to deepinv's `least_squares`, which
+  satisfies the protocol unchanged; one of deepinv's others is that same
+  function with its argument bound, which is the caller's own composition
+  rather than a name TorchSim interprets.
+
+- **The API pages follow one subject each.** *Sequences* is the description
+  and what assembles it -- events, operators, builders. The engine and the
+  transmit calibration that run one are on *Running a simulation* with the
+  placement policy, and `Subspace` and `simulate_subspace` are on
+  *Model-based reconstruction*, next to the operator that reads the basis.
+
+- **`ModelEstimator` declares the hook `ParameterMapping.train` already
+  called.** A method that fits the model rather than a sampling of it is
+  handed the acquisition, the names being solved for and the basis in use
+  before it is fitted. That was a `getattr(method, "bind", None)` no
+  user-written estimator could have known about; it is a protocol now, and
+  `NonlinearLeastSquares` satisfies it.
+
 - **`PERK.fit` walks its source twice rather than three times**, and once when
   `length_scale` is given. The covariance is accumulated as a raw second moment
   the mean is subtracted from afterwards, instead of needing the mean first.
-  Under `fit_simulator` that is the difference between simulating the training
+  Under a streaming fit that is the difference between simulating the training
   set twice and simulating it three times.
 
 - **`Acquisition` moved to `torchsim.model`**, where both `torchsim.optim` and
@@ -365,12 +506,11 @@
 - **A mapping's maps come back beside the volume**, not beside whatever device
   the method was fitted on.
 
-- **`PERK.fit_simulator` takes a simulator**, with the properties being
-  estimated named as `{name: value per training sample}` and any measured
-  separately given as `known=`. It took a callable over a parameter matrix,
-  which left the caller to keep the column order of that matrix in step with
-  the sequence by hand. Handing it the simulator is what keeps the training
-  signals and the ones the scanner will produce the same object.
+- **A streaming fit reads its signals from the simulator**, rather than from a
+  callable over a parameter matrix that left the caller to keep the column
+  order of that matrix in step with the sequence by hand. Taking the simulator
+  is what keeps the training signals and the ones the scanner will produce the
+  same object.
 
 - **Operators are named for the thing they are, not the act of making one:**
   `Excitation`, `Refocusing`, `Inversion`, `Saturation`, `Readout`, `Delay`,

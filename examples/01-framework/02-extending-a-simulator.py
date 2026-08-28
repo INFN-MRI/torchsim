@@ -10,7 +10,7 @@ wants is one of them.
 The first is **giving an existing simulator physics it does not carry**. A
 simulator declares which tissue properties it exposes, and that declaration is
 what decides which terms the kernels evaluate. Adding a property to the
-declaration is the whole of adding the physics: the timing, the triggers and
+declaration is the whole of adding the physics: the timing, the operators and
 the layout are untouched.
 
 The second is **assembling a new sequence out of operators that already
@@ -41,12 +41,66 @@ warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 
+
+# Every figure is drawn at the width of the documentation column, so none of
+# them is scaled on the way in and type is the same size throughout.
+PAGE_WIDTH = 8.6  # inches
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
+
+
 # sphinx_gallery_end_ignore
 from dataclasses import replace
 
 import torch
 
-from torchsim.model import SPOILED, AbstractSimulator, StateMachineModel
+from torchsim.model import SPOILED, Simulator, SpinPhysics
 from torchsim.sequence import Delay, Excitation, Spoil, module
 from torchsim.simulators import MRFSimulator
 # %%
@@ -54,13 +108,11 @@ from torchsim.simulators import MRFSimulator
 # What a simulator declares
 # -------------------------
 #
-# A state-machine model is two things: a map from the names a caller uses to
-# the tissue fields they fill, and a set of triggers saying what each kind of
+# The physics is two things: a map from the names a caller uses to
+# the tissue fields they fill, and a set of operators saying what each kind of
 # event plays. The shipped fingerprinting sequence declares five properties.
 #
-print("MRFSimulator exposes:")
-for name, field in MRFSimulator.model.properties.items():
-    print(f"  {name:<16} -> {field}")
+MRFSimulator.model.properties
 
 # %%
 #
@@ -150,11 +202,14 @@ POOL = {"bound_fraction": 0.12, "bound_exchange": 30.0, "T1_bound": 1000.0}
 #
 without = single.simulate(**WHITE_MATTER)
 gated = two_pool.simulate(**WHITE_MATTER, bound_fraction=0.0)
-print(f"\ngate closed, identical: {torch.equal(without, gated)}")
 
 with_pool = two_pool.simulate(**WHITE_MATTER, **POOL)
 shift = (without - with_pool).abs().max() / without.abs().max()
+
+# sphinx_gallery_start_ignore
+print(f"\ngate closed, identical: {torch.equal(without, gated)}")
 print(f"gate open, largest change: {100 * float(shift):.0f}% of the peak signal")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -171,14 +226,13 @@ print(f"gate open, largest change: {100 * float(shift):.0f}% of the peak signal"
 _, sensitivity = two_pool.jacobian("bound_fraction", **WHITE_MATTER, **POOL)
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 3, figsize=(13, 3.4))
+figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.1))
 axes[0].plot(repetition.numpy(), flip.numpy())
 axes[0].set(xlabel="Repetition", ylabel="Flip angle [deg]", title="the schedule")
 
 axes[1].plot(without.abs().numpy(), label="one pool")
 axes[1].plot(with_pool.abs().numpy(), label="bound fraction 0.12")
 axes[1].set(xlabel="Repetition", ylabel="|signal|", title="what the pool does")
-axes[1].legend(fontsize=8)
 
 axes[2].plot(sensitivity.abs().numpy(), color="crimson")
 axes[2].set(
@@ -188,7 +242,7 @@ axes[2].set(
 )
 for axis in axes:
     axis.grid(alpha=0.3)
-figure.tight_layout()
+key(axes[1])
 # sphinx_gallery_end_ignore
 
 # %%
@@ -212,7 +266,7 @@ figure.tight_layout()
 #
 
 
-class SaturationRecovery(AbstractSimulator):
+class SaturationRecovery(Simulator):
     """Saturate, wait, read what recovered -- once per saturation time.
 
     Parameters are given at construction or at the call, as for any simulator:
@@ -220,9 +274,9 @@ class SaturationRecovery(AbstractSimulator):
     flip angle in degrees.
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={"T1": "t1_ms", "T2": "t2_ms", "M0": "m0", "B1": "b1"},
-        triggers=SPOILED,
+        operators=SPOILED,
     )
     # Every block begins by destroying the transverse magnetization, so nothing
     # is carried in a dephased configuration and one order is the whole state.
@@ -239,14 +293,14 @@ class SaturationRecovery(AbstractSimulator):
         for index in range(waits.numel()):
             parts.append(saturate)
             parts.append(Delay(waits[index]))
-            parts.append(self.triggers.excitation(angle[index], turn[index]))
-            parts.append(self.triggers.readout(turn[index]))
+            parts.append(self.operators.excitation(angle[index], turn[index]))
+            parts.append(self.operators.readout(turn[index]))
         return parts
 
 
 # %%
 #
-# ``self.triggers`` is why the excitation and the readout are not named
+# ``self.operators`` is why the excitation and the readout are not named
 # directly. ``SPOILED`` says a readout is followed by ideal transverse
 # spoiling; swapping it for ``UNBALANCED`` or ``BALANCED`` changes what this
 # sequence is without touching a line of the layout above.
@@ -272,28 +326,33 @@ simulated = sequence.simulate(T1=830.0, T2=80.0, M0=1.0).abs()
 expected = torch.sin(torch.deg2rad(torch.tensor(FLIP_DEG))) * (
     1 - torch.exp(-SATURATION_TIMES / 830.0)
 )
+# sphinx_gallery_start_ignore
 print(f"\nlargest disagreement with the closed form: "
       f"{float((simulated - expected).abs().max()):.2e}")
+# sphinx_gallery_end_ignore
 
 # %%
 #
 # What the layout actually produced
 # ---------------------------------
 #
-# :meth:`~torchsim.model.AbstractSimulator.describe` returns the event stream
+# :meth:`~torchsim.model.Simulator.describe` returns the event stream
 # the layout lays down -- the same object a sequence arriving from a scanner
 # would be read into, with a timestamp and an action word on every event. It is
 # worth looking at once: a sequence that plays the wrong thing is far easier to
 # see here than in the signal it produces.
 #
 description = sequence.describe(TS=SATURATION_TIMES, flip=FLIP_DEG)
+
+# sphinx_gallery_start_ignore
 print(f"\n{len(description.events)} events, "
       f"{description.tr_duration_us * 1e-3:.0f} ms long")
+# sphinx_gallery_end_ignore
 
 # sphinx_gallery_start_ignore
 from torchsim.sequence import EventType
 
-figure, axis = plt.subplots(figsize=(11, 3.2))
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.2))
 for event in description.events:
     when = float(event.timestamp_us) * 1e-3
     if event.type is EventType.RF:
@@ -309,8 +368,8 @@ axis.set(
     title="one saturate-wait-read block per saturation time",
     ylim=(-8, 100),
 )
-axis.legend(fontsize=8, loc="upper right"), axis.grid(alpha=0.3)
-figure.tight_layout()
+axis.grid(alpha=0.3)
+key(axis, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -323,8 +382,11 @@ STEP_MS = 1.0
 signal, dT1 = sequence.jacobian("T1", T1=830.0, T2=80.0, M0=1.0)
 moved = sequence.simulate(T1=830.0 + STEP_MS, T2=80.0, M0=1.0)
 difference = (moved - signal) / STEP_MS
+
+# sphinx_gallery_start_ignore
 print(f"agrees with a finite difference to "
       f"{float((dT1 - difference).abs().max()):.1e}")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -339,7 +401,7 @@ dense = SaturationRecovery(TS=times, flip=FLIP_DEG)
 curves = dense.simulate(T1=T1_MS, T2=torch.tensor([80.0, 110.0, 2000.0]), M0=1.0)
 
 # sphinx_gallery_start_ignore
-figure, axis = plt.subplots(figsize=(6.5, 3.6))
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.76))
 for row, name in enumerate(NAMES):
     line, = axis.plot(times.numpy(), curves[row].abs().numpy(), label=name)
     analytic = torch.sin(torch.deg2rad(torch.tensor(FLIP_DEG))) * (
@@ -352,8 +414,8 @@ axis.set(
     xscale="log",
     title="simulated, against the closed form (dashed)",
 )
-axis.legend(fontsize=8), axis.grid(alpha=0.3)
-figure.tight_layout()
+axis.grid(alpha=0.3)
+key(axis, ncols=3)
 # sphinx_gallery_end_ignore
 
 # %%

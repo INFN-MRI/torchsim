@@ -32,6 +32,60 @@ warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 
+
+# Every figure is drawn at the width of the documentation column, so none of
+# them is scaled on the way in and type is the same size throughout.
+PAGE_WIDTH = 8.6  # inches
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
+
+
 # sphinx_gallery_end_ignore
 import torch
 
@@ -140,12 +194,17 @@ weighting = prepared / prepared[:, :1]
 expected = torch.exp(-prep_times_ms / T2_MS[:, None])
 
 # sphinx_gallery_start_ignore
-plt.figure()
-plt.plot(prep_times_ms, weighting.T, "o")
-plt.plot(prep_times_ms, expected.T, "-")
-plt.xlabel("preparation time [ms]")
-plt.ylabel("relative echo amplitude")
-plt.legend(["T2 = 40 ms", "T2 = 80 ms", "T2 = 160 ms"])
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.0))
+for column, name in enumerate(("T2 = 40 ms", "T2 = 80 ms", "T2 = 160 ms")):
+    line, = axis.plot(prep_times_ms, weighting[column], "o", label=name)
+    axis.plot(prep_times_ms, expected[column], "-", color=line.get_color())
+axis.set(
+    xlabel="preparation time [ms]",
+    ylabel="relative echo amplitude",
+    title="simulated, against the closed form (solid)",
+)
+axis.grid(alpha=0.3)
+key(axis, ncols=3)
 
 print(
     "worst departure from exp(-TE/T2):",
@@ -169,7 +228,10 @@ print(
 register_operator("t2-prep", t2_preparation)
 
 built = operator("t2-prep")(60e-3)
+
+# sphinx_gallery_start_ignore
 print("registered:", built.duration_s, "s,", len(built.emit(0.0)), "events")
+# sphinx_gallery_end_ignore
 
 # %%
 # What an operator cannot say

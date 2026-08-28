@@ -34,6 +34,60 @@ warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 
+
+# Every figure is drawn at the width of the documentation column, so none of
+# them is scaled on the way in and type is the same size throughout.
+PAGE_WIDTH = 8.6  # inches
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
+
+
 # sphinx_gallery_end_ignore
 import time
 
@@ -80,7 +134,7 @@ signal = acquisition.simulate(flip=flip)  # (3, 48): one row per tissue
 refocused = acquisition.simulate(flip=torch.full((ECHOES,), 180.0))
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.0))
 for axis, values, title in (
     (axes[0], signal, "a 60 degree train"),
     (axes[1], refocused, "a 180 degree train"),
@@ -89,8 +143,7 @@ for axis, values, title in (
         axis.plot(values[row].abs().numpy(), label=name)
     axis.set(xlabel="Echo", ylabel="|signal|", title=title)
     axis.grid(alpha=0.3)
-axes[0].legend(fontsize=8)
-figure.tight_layout()
+key(figure, ncols=3)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -116,7 +169,10 @@ moved = acquisition.simulate(flip=flip, T2=T2_MS + STEP_MS)
 finite = (moved - signal) / STEP_MS
 
 discrepancy = (dT2 - finite).abs().max() / dT2.abs().max()
+
+# sphinx_gallery_start_ignore
 print(f"largest disagreement with a {STEP_MS} ms step: {float(discrepancy):.2e}")
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -223,13 +279,13 @@ for echoes in LENGTHS:
 #
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 3, figsize=(14, 3.6))
+figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.5))
 axes[0].plot(dT2[0].abs().numpy(), "-k", label="forward mode")
 axes[0].plot(finite[0].abs().numpy(), "*r", ms=4, label="finite difference")
 axes[0].set(
     xlabel="Echo",
     ylabel=r"$|\partial\,\mathrm{signal}/\partial T_2|$",
-    title=f"tissue derivative, {ECHOES} echoes",
+    title="tissue derivative",
 )
 
 axes[1].plot(analytic.numpy(), "-k", label="reverse mode")
@@ -237,21 +293,24 @@ axes[1].plot(difference.numpy(), "*r", ms=4, label="finite difference")
 axes[1].set(
     xlabel="Echo",
     ylabel=r"$\partial\,\mathrm{CRLB}/\partial\alpha$",
-    title=f"schedule gradient, {LENGTHS[-1]} echoes",
+    title="schedule gradient",
 )
 
 axes[2].plot(LENGTHS, reverse_seconds, "-ok", label="reverse mode")
 axes[2].plot(LENGTHS, difference_seconds, "-*r", label="finite difference")
 axes[2].set(
-    xlabel="Echoes in the train",
-    ylabel="Time for one gradient [s]",
+    xlabel="Echoes",
+    ylabel="Time [s]",
     title="what each costs",
     xscale="log",
     yscale="log",
+    xticks=list(LENGTHS),
+    xticklabels=[str(length) for length in LENGTHS],
 )
+axes[2].minorticks_off()
 for axis in axes:
-    axis.grid(alpha=0.3), axis.legend(fontsize=8)
-figure.tight_layout()
+    axis.grid(alpha=0.3)
+key(axes)
 # sphinx_gallery_end_ignore
 
 # %%

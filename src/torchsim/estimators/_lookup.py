@@ -9,8 +9,10 @@ from typing import Any
 
 import torch
 
+from ._mapping import Estimator
 
-class LookupTable(torch.nn.Module):
+
+class LookupTable(Estimator):
     """Read one unknown back from a monotonic signal curve.
 
     Where a model has a single unknown, a dictionary match degenerates: the
@@ -19,13 +21,20 @@ class LookupTable(torch.nn.Module):
     then costs nothing and removes the grid spacing from the answer entirely,
     which is what a matched estimate is otherwise limited by.
 
-    This is how an MP2RAGE T1 map is made. The two inversion-recovery blocks
-    are combined into one ratio per voxel, that ratio is a monotonic function
-    of T1 over the range a brain spans, and the map is the inverse of that
-    function.
+    This is how an MP2RAGE T1 map is made [1]_. The two inversion-recovery
+    blocks are combined into one ratio per voxel, that ratio is a monotonic
+    function of T1 over the range a brain spans, and the map is the inverse of
+    that function.
 
     Parameters
     ----------
+    acquisition : SignalModel, optional
+        The sequence being inverted: a simulator that ships with TorchSim, one
+        written by subclassing :class:`~torchsim.model.Simulator`, or any other
+        :class:`~torchsim.model.SignalModel`. Every tissue property that is
+        neither unknown nor measured separately is fixed on it beforehand, with
+        the constructor or :meth:`~torchsim.model.SignalModel.bind`. Leave it
+        out to fit from signals handed to :meth:`fit` directly.
     combine : callable, optional
         Reduce a model's contrasts to the one number the curve is in, called
         as ``combine(signals)`` on ``(..., contrasts)`` and returning
@@ -43,6 +52,14 @@ class LookupTable(torch.nn.Module):
     A lookup is a binary search and one linear blend per voxel, so this
     estimator runs where its signals already are. Streaming a volume to a card
     for it would spend more time on the transfer than on the search.
+
+    References
+    ----------
+    .. [1] Marques, J. P., Kober, T., Krueger, G., van der Zwaag, W., Van de
+       Moortele, P.-F., Gruetter, R., "MP2RAGE, a self bias-field corrected
+       sequence for improved segmentation and T1-mapping at high field",
+       NeuroImage 49.2 (2010), pp. 1271-1281.
+       https://doi.org/10.1016/j.neuroimage.2009.10.002
 
     Examples
     --------
@@ -62,19 +79,20 @@ class LookupTable(torch.nn.Module):
         )
         unified = (blocks[:, 0] * blocks[:, 1]) / blocks.square().sum(-1)
 
-        table = LookupTable().fit(unified[:, None], T1[:, None])
-        print(table.rank, "points spanning", [round(v, 3) for v in table.span])
+        table = LookupTable().fit(signals=unified[:, None], parameters=T1[:, None])
+        print(table.points, "points spanning", [round(v, 3) for v in table.span])
         print(table(torch.tensor([[0.1], [-0.2]])).flatten().tolist())
 
     """
 
     def __init__(
         self,
+        acquisition: Any = None,
         *,
         combine: Callable[[torch.Tensor], torch.Tensor] | None = None,
         monotonic: bool = True,
     ) -> None:
-        super().__init__()
+        super().__init__(acquisition)
         self.combine = combine
         self.monotonic = bool(monotonic)
         self.register_buffer("intensity", torch.empty(0))
@@ -86,7 +104,7 @@ class LookupTable(torch.nn.Module):
         return self.intensity.numel() != 0
 
     @property
-    def rank(self) -> int:
+    def points(self) -> int:
         """How many points the table keeps."""
         return int(self.intensity.numel())
 
@@ -102,7 +120,7 @@ class LookupTable(torch.nn.Module):
             raise RuntimeError("the table has no curve to span")
         return float(self.intensity[0]), float(self.intensity[-1])
 
-    def fit(
+    def _fit_arrays(
         self,
         signals: torch.Tensor,
         parameters: torch.Tensor,
@@ -166,7 +184,7 @@ class LookupTable(torch.nn.Module):
         self.parameter = values.contiguous()
         return self
 
-    def forward(
+    def _estimate_arrays(
         self, signals: torch.Tensor, known: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Return the parameter each signal stands for.

@@ -15,6 +15,7 @@ from __future__ import annotations
 __all__ = ["Subspace"]
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
@@ -30,10 +31,20 @@ class Subspace:
     singular_values : torch.Tensor
         Every singular value of the signals it was fitted from, not only the
         ones kept, so :attr:`retained` can be read and another rank costed.
+    dictionary : torch.Tensor, optional
+        ``(atoms, contrasts)`` -- the signals the basis was fitted to, where
+        they were simulated for the purpose.
+        :func:`~torchsim.simulate_subspace` fills this in;
+        :meth:`fit` leaves it out, since the caller already holds them.
+    simulation : SimulationResult, optional
+        What that simulation recorded, with the labels that say which sample
+        is which.
     """
 
     basis: torch.Tensor
     singular_values: torch.Tensor
+    dictionary: torch.Tensor | None = None
+    simulation: Any | None = None
 
     @property
     def rank(self) -> int:

@@ -11,11 +11,11 @@ import numpy.typing as npt
 import torch
 
 from ..sequence._array import as_torch, matched
-from ..model import SPOILED, AbstractSimulator, StateMachineModel
+from ..model import SPOILED, Simulator, SpinPhysics
 from ..sequence import AdcRole
 
 
-class MPRAGESimulator(AbstractSimulator):
+class MPRAGESimulator(Simulator):
     """An inversion followed by a spoiled train, sampled at the k-space centre.
 
     Examples
@@ -29,7 +29,7 @@ class MPRAGESimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": "t1_ms",
             "M0": "m0",
@@ -38,7 +38,7 @@ class MPRAGESimulator(AbstractSimulator):
         # The train samples at the pulse and spoils after it, so no transverse
         # magnetization survives an interval and no T2 is asked for.
         fixed={"t2_ms": 100.0},
-        triggers=SPOILED,
+        operators=SPOILED,
     )
     states = 1
     record = "acquired"
@@ -95,15 +95,15 @@ class MPRAGESimulator(AbstractSimulator):
         # The inversion time is measured to the sampled shot, so the wait after
         # the inversion is what is left once the shots before it have played.
         parts = [
-            self.triggers.inversion(
+            self.operators.inversion(
                 duration_s=inversion_s - readout_s[:before].sum()
             )
         ]
         for index in range(shots):
             acquired = index == before
-            parts.append(self.triggers.excitation(angles[index], turns[index]))
+            parts.append(self.operators.excitation(angles[index], turns[index]))
             parts.append(
-                self.triggers.readout(
+                self.operators.readout(
                     turns[index],
                     role=AdcRole.SINGLE if acquired else AdcRole.NON_ACQUIRED,
                     is_echo=acquired,

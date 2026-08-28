@@ -19,9 +19,9 @@ from torchsim.model import (
     REFOCUSED,
     SPOILED,
     UNBALANCED,
-    AbstractSimulator,
-    StateMachineModel,
-    Triggers,
+    Simulator,
+    SpinPhysics,
+    EventOperators,
 )
 from torchsim.sequence import EpgEngine, EventAction, EventType, ideal_rf_definition
 from torchsim.simulators import MRFSimulator
@@ -32,10 +32,10 @@ T2 = torch.tensor([40.0, 80.0, 120.0])
 TISSUE = {"T1": T1, "T2": T2}
 
 
-class Train(AbstractSimulator):
+class Train(Simulator):
     """One Excitation and one sample per repetition, however it is realized."""
 
-    model = StateMachineModel(properties={"T1": "t1_ms", "T2": "t2_ms"})
+    model = SpinPhysics(properties={"T1": "t1_ms", "T2": "t2_ms"})
     states = 8
 
     def layout(self, *, flip, TR):
@@ -43,15 +43,15 @@ class Train(AbstractSimulator):
         angles = torch.deg2rad(torch.as_tensor(flip))
         parts = []
         for index in range(angles.numel()):
-            parts.append(self.triggers.excitation(angles[index]))
-            parts.append(self.triggers.readout(duration_s=TR * 1e-3))
+            parts.append(self.operators.excitation(angles[index]))
+            parts.append(self.operators.readout(duration_s=TR * 1e-3))
         return parts
 
 
-def _with(triggers):
+def _with(operators):
     """Return the same protocol, realized by a different trigger table."""
     return Train(
-        model=replace(Train.model, triggers=triggers),
+        model=replace(Train.model, operators=operators),
         flip=FLIP,
         TR=10.0,
         crusher_dephasing_rad=torch.pi,
@@ -120,8 +120,8 @@ def test_a_shipped_simulator_reaches_the_fused_kernels(monkeypatch) -> None:
 def test_a_protocol_with_no_layout_says_so() -> None:
     """The message names both ways of saying what a sequence plays."""
 
-    class Empty(AbstractSimulator):
-        model = StateMachineModel(properties={"T1": "t1_ms", "T2": "t2_ms"})
+    class Empty(Simulator):
+        model = SpinPhysics(properties={"T1": "t1_ms", "T2": "t2_ms"})
 
     with pytest.raises(NotImplementedError, match="layout|describe"):
         Empty().simulate(**TISSUE)
@@ -132,7 +132,7 @@ def test_a_description_handed_over_whole_skips_the_layout() -> None:
     protocol = _with(UNBALANCED)
     described = protocol.describe(flip=FLIP, TR=10.0)
 
-    handed = AbstractSimulator.from_description(described, protocol.model, states=8)
+    handed = Simulator.from_description(described, protocol.model, states=8)
     assert torch.equal(handed.simulate(**TISSUE), protocol.simulate(**TISSUE))
 
     # And it is the stream that was given, not one rebuilt from a layout.
@@ -143,7 +143,7 @@ def test_a_handed_over_description_agrees_with_the_engine_directly() -> None:
     """Nothing is added between a stream and the kernels."""
     protocol = _with(SPOILED)
     described = protocol.describe(flip=FLIP, TR=10.0)
-    handed = AbstractSimulator.from_description(described, protocol.model, states=8)
+    handed = Simulator.from_description(described, protocol.model, states=8)
 
     from torchsim.sequence import TissueProperties
 
@@ -166,7 +166,7 @@ def test_a_trigger_table_defaults_to_the_bare_operators() -> None:
     """An unassigned slot is the plain event, not a surprise."""
     from torchsim.sequence import Excitation, Readout
 
-    table = Triggers()
+    table = EventOperators()
     assert table.excitation is Excitation
     assert table.readout is Readout
 
@@ -180,7 +180,7 @@ def test_every_shipped_table_says_something() -> None:
     tables = {"balanced": BALANCED, "unbalanced": UNBALANCED,
               "spoiled": SPOILED, "refocused": REFOCUSED}
     for name, table in tables.items():
-        assert table != Triggers(), f"{name} decides nothing"
+        assert table != EventOperators(), f"{name} decides nothing"
     assert len({table.readout for table in tables.values()}) == len(tables)
 
 

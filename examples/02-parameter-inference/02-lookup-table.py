@@ -1,7 +1,7 @@
 """
-================================================
-One unknown: reading T1 off an MP2RAGE curve
-================================================
+====================
+MP2RAGE lookup table
+====================
 
 A dictionary spans the parameters jointly, and its size is the product of the
 grids. With a single unknown that product is one grid, and the dictionary
@@ -23,7 +23,7 @@ of the two is limited by it.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install torchsim brainweb-dl
+#    !pip install torchsim brainweb-dl cmap
 
 # %%
 #
@@ -39,28 +39,119 @@ from pathlib import Path
 
 import brainweb_dl
 import matplotlib.pyplot as plt
+from cmap import Colormap
 from brainweb_dl import get_mri
 
 warnings.filterwarnings("ignore")
 
 
 
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to.
+# Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
+# colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
+LIPARI = Colormap("crameri:lipari").to_matplotlib()
+NAVIA = Colormap("crameri:navia").to_matplotlib()
 
-    A figure where only some panels carry a colorbar has panels of different
-    sizes. Giving every one a colorbar and hiding the ones that would repeat a
-    scale keeps the images comparable.
-    """
+# Colormap, window and unit per parameter. Both relaxation windows stop well
+# short of CSF, so that white and grey matter -- 500 against 833 ms in T1, 70
+# against 83 ms in T2 -- take up most of the scale and CSF saturates.
+STYLE = {
+    "T1": (LIPARI, (0.0, 1200.0), "T1 [ms]"),
+    "T2": (NAVIA, (0.0, 120.0), "T2 [ms]"),
+    "M0": ("gray", (0.0, 1.0), "M0"),
+}
+
+
+def panel(axis, values, cmap, limits, title=None, ylabel=None):
+    """One map without ticks; the handle is what a row shares a colorbar from."""
     handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
     axis.set_xticks([])
     axis.set_yticks([])
+    if title is not None:
+        axis.set_title(title)
+    if ylabel is not None:
+        axis.set_ylabel(ylabel)
+    return handle
+
+
+def scalebar(handle, axes, label):
+    """One colorbar for a group of panels, so none gives up width to its own."""
+    axes = list(np.ravel(axes))
+    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
+
+
+# Every panel on this page is drawn at the same size, so any two figures can be
+# read against each other. The side is set by the widest grid, which fills the
+# documentation column; a figure with fewer columns is narrower, not larger.
+PAGE_WIDTH = 8.6  # inches, the width of the documentation column
+BAR_WIDTH = 0.8  # what one colorbar takes out of it
+PANEL = (PAGE_WIDTH - 1 * BAR_WIDTH) / 3  # one image panel
+
+
+def canvas(rows, columns, shape, *, bars=1, extra=0.6):
+    """A grid of image panels, in the proportion of the images.
+
+    ``bars`` is how many colorbars a row carries and ``extra`` the height left
+    over the panels, for titles and for a figure title where there is one.
+    """
+    return plt.subplots(
+        rows,
+        columns,
+        squeeze=False,
+        figsize=(
+            columns * PANEL + bars * BAR_WIDTH,
+            PANEL * shape[0] / shape[1] * rows + extra,
+        ),
+    )
+
+
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
 
 
 # sphinx_gallery_end_ignore
@@ -70,7 +161,6 @@ import numpy as np
 import torch
 
 import torchsim
-from torchsim import ParameterMapping
 from torchsim.estimators import DictionaryMatcher, LookupTable
 from torchsim.simulators import MP2RAGESimulator
 
@@ -120,11 +210,11 @@ M0_true = np.where(mask, fractions @ tissue_PD, 0.0).astype(np.float32)
 truth = torch.as_tensor(T1_true[mask].copy())
 density = torch.as_tensor(M0_true[mask].copy())
 
-figure, axes = plt.subplots(1, 2, figsize=(7.6, 3.6))
-panel(axes[0], T1_true, "magma", (0, 3000), label="T1 [ms]")
-panel(axes[1], M0_true, "magma", (0, 1.1), label="M0")
-figure.suptitle("BrainWeb subject 0, slice 90 -- what the map should come out as")
-figure.tight_layout()
+figure, axes = canvas(1, 2, mask.shape, bars=2, extra=1.1)
+for axis, values, name in ((axes[0, 0], T1_true, "T1"), (axes[0, 1], M0_true, "M0")):
+    cmap, limits, label = STYLE[name]
+    scalebar(panel(axis, values, cmap, limits), axis, label)
+figure.suptitle("BrainWeb subject 0, slice 90")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -181,12 +271,11 @@ curve = unified(acquisition.simulate(T1=sweep, M0=1.0))
 # sphinx_gallery_start_ignore
 turning = int(curve.argmin()) if curve[0] > curve[-1] else int(curve.argmax())
 
-figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3))
 blocks = acquisition.simulate(T1=sweep, M0=1.0)
 axes[0].plot(sweep.numpy(), blocks[:, 0].numpy(), label=f"TI = {PROTOCOL['TI'][0]:.0f} ms")
 axes[0].plot(sweep.numpy(), blocks[:, 1].numpy(), label=f"TI = {PROTOCOL['TI'][1]:.0f} ms")
 axes[0].set(xlabel="T1 [ms]", ylabel="magnetization", title="the two blocks")
-axes[0].legend(fontsize=8)
 
 axes[1].plot(sweep.numpy(), curve.numpy(), color="crimson")
 axes[1].axvline(float(sweep[turning]), color="k", ls="--", lw=1)
@@ -197,7 +286,7 @@ axes[1].set(
 )
 for axis in axes:
     axis.grid(alpha=0.3)
-figure.tight_layout()
+key(axes[0], ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -218,7 +307,7 @@ measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 # sphinx_gallery_start_ignore
 def footprint(problem):
     """MiB the fitted estimator itself holds."""
-    held = sum(t.numel() * t.element_size() for t in problem.method.buffers())
+    held = sum(t.numel() * t.element_size() for t in problem.buffers())
     return held / 2**20
 
 
@@ -238,12 +327,12 @@ def mapped(problem, passes=3):
     return maps, best, peak
 
 
-def estimated(method, points):
+def estimated(make, points):
     """Fit this method over a grid of this many points, then map the slice."""
     grid = torch.linspace(50.0, 6000.0, points)
-    problem = ParameterMapping(acquisition.bind(M0=1.0), T1=grid, seed=0)
+    problem = make(acquisition.bind(M0=1.0))
     start = time.perf_counter()
-    problem.train(method)
+    problem.fit(T1=grid, seed=0)
     training = time.perf_counter() - start
     found, timing, peak = mapped(problem)
     return problem, found, training, timing, footprint(problem), peak
@@ -271,15 +360,13 @@ def error(estimate, reference):
 #
 grid = torch.linspace(50.0, 6000.0, 60)
 
-table = ParameterMapping(acquisition.bind(M0=1.0), T1=grid, seed=0).train(
-    LookupTable(combine=unified)
+table = LookupTable(acquisition.bind(M0=1.0), combine=unified).fit(
+    T1=grid, seed=0
 )
 
-maps = table(measured)  # {"T1": ...}, one value per voxel
+maps = table.map(measured)  # {"T1": ...}, one value per voxel
 
-match = ParameterMapping(acquisition.bind(M0=1.0), T1=grid, seed=0).train(
-    DictionaryMatcher()
-)
+match = DictionaryMatcher(acquisition.bind(M0=1.0)).fit(T1=grid, seed=0)
 
 # %%
 #
@@ -293,9 +380,11 @@ POINTS = (30, 60, 120, 250, 500, 1000, 2000)
 matched = {}
 looked_up = {}
 for points in POINTS:
-    _, found, _, timing, _, _ = estimated(DictionaryMatcher(), points)
+    _, found, _, timing, _, _ = estimated(DictionaryMatcher, points)
     matched[points] = (error(found["T1"], truth), timing)
-    problem, found, _, timing, _, _ = estimated(LookupTable(combine=unified), points)
+    problem, found, _, timing, _, _ = estimated(
+        lambda acq: LookupTable(acq, combine=unified), points
+    )
     looked_up[points] = (error(found["T1"], truth), timing)
 
 print(f"\n{'points':>7}{'match':>10}{'table':>10}{'match':>10}{'table':>10}")
@@ -321,7 +410,7 @@ for points in POINTS:
 #
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3))
 axes[0].plot(POINTS, [matched[n][0] for n in POINTS], "-o", label="match")
 axes[0].plot(POINTS, [looked_up[n][0] for n in POINTS], "-*", label="lookup table")
 axes[0].set(
@@ -341,8 +430,8 @@ axes[1].set(
     title="what it costs to pay it",
 )
 for axis in axes:
-    axis.grid(alpha=0.3), axis.legend(fontsize=8)
-figure.tight_layout()
+    axis.grid(alpha=0.3)
+key(figure, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -359,14 +448,14 @@ TABLE_POINTS = 60
 MATCH_POINTS = 2000
 
 problem, table_maps, table_training, table_time, table_model, table_peak = estimated(
-    LookupTable(combine=unified), TABLE_POINTS
+    lambda acq: LookupTable(acq, combine=unified), TABLE_POINTS
 )
 _, match_maps, match_training, match_time, match_model, match_peak = estimated(
-    DictionaryMatcher(), MATCH_POINTS
+    DictionaryMatcher, MATCH_POINTS
 )
-print(f"the table keeps {problem.method.rank} of {TABLE_POINTS} points -- the "
+print(f"the table keeps {problem.points} of {TABLE_POINTS} points -- the "
       f"monotonic run -- and spans unified "
-      f"{problem.method.span[0]:.2f} to {problem.method.span[1]:.2f}")
+      f"{problem.span[0]:.2f} to {problem.span[1]:.2f}")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -387,20 +476,20 @@ M0_map = proton_density(maps)
 
 # sphinx_gallery_start_ignore
 estimates = {
-    f"lookup, {TABLE_POINTS} points": (table_maps, proton_density(table_maps)),
-    f"match, {MATCH_POINTS} atoms": (match_maps, proton_density(match_maps)),
+    "lookup": (table_maps, proton_density(table_maps)),
+    "match": (match_maps, proton_density(match_maps)),
 }
 
 print(f"\n{'method':<24}{'train':>9}{'map':>9}{'model':>10}{'peak':>10}"
       f"{'T1':>8}{'M0':>8}")
 print("-" * 78)
-for name, training, timing, model, peak in (
-    (f"lookup, {TABLE_POINTS} points", table_training, table_time, table_model,
-     table_peak),
-    (f"match, {MATCH_POINTS} atoms", match_training, match_time, match_model,
-     match_peak),
+for short, name, training, timing, model, peak in (
+    ("lookup", f"lookup, {TABLE_POINTS} points", table_training, table_time,
+     table_model, table_peak),
+    ("match", f"match, {MATCH_POINTS} atoms", match_training, match_time,
+     match_model, match_peak),
 ):
-    found, m0 = estimates[name]
+    found, m0 = estimates[short]
     print(f"{name:<24}{training:8.2f}s{1e3 * timing:7.1f}ms"
           f"{model:6.2f} MiB{peak:6.0f} MiB"
           f"{error(found['T1'], truth):7.2f}%{error(m0, density):7.2f}%")
@@ -417,75 +506,32 @@ def painted(values):
 
 
 panels = [
-    ("T1 [ms]", T1_true, {name: found["T1"] for name, (found, _) in estimates.items()},
-     (0, 3000)),
-    ("M0", M0_true, {name: m0 for name, (_, m0) in estimates.items()}, (0, 1.1)),
+    ("T1", T1_true, {name: found["T1"] for name, (found, _) in estimates.items()}),
+    ("M0", M0_true, {name: m0 for name, (_, m0) in estimates.items()}),
 ]
 
-columns = 1 + len(estimates)
-rows = len(panels)
-figure, axes = plt.subplots(rows, columns, figsize=(3.3 * columns, 3.3 * rows))
-for row, (label, reference, found, limits) in enumerate(panels):
-    panel(axes[row, 0], reference, "magma", limits)
-    axes[row, 0].set_ylabel(label, fontsize=11)
-    axes[row, 0].set_title("truth" if row == 0 else "", fontsize=10)
-    for column, (name, values) in enumerate(found.items(), start=1):
-        panel(
-            axes[row, column],
-            painted(values),
-            "magma",
-            limits,
-            label=label if column == columns - 1 else None,
-        )
-        if row == 0:
-            axes[row, column].set_title(name, fontsize=9)
-figure.tight_layout()
+figure, axes = canvas(len(panels), 1 + len(estimates), mask.shape)
+for row, (name, reference, found) in enumerate(panels):
+    cmap, limits, label = STYLE[name]
+    panel(axes[row, 0], reference, cmap, limits, ylabel=label,
+          title="truth" if row == 0 else None)
+    for column, (method, values) in enumerate(found.items(), start=1):
+        handle = panel(axes[row, column], painted(values), cmap, limits,
+                       title=method if row == 0 else None)
+    scalebar(handle, axes[row], "")
 
 # The errors, each parameter on a scale of its own: an error map read at the
 # scale of the map it came from is a black rectangle.
-figure, axes = plt.subplots(
-    rows, len(estimates), figsize=(3.3 * len(estimates), 3.3 * rows), squeeze=False
-)
-for row, (label, reference, found, limits) in enumerate(panels):
+figure, axes = canvas(len(panels), len(estimates), mask.shape)
+for row, (name, reference, found) in enumerate(panels):
+    label = STYLE[name][2]
     residuals = {
-        name: np.abs(painted(values) - reference) for name, values in found.items()
+        method: np.abs(painted(values) - reference)
+        for method, values in found.items()
     }
     top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
-    for column, (name, values) in enumerate(residuals.items()):
-        panel(
-            axes[row, column],
-            values,
-            "inferno",
-            (0.0, top or 1.0),
-            label=f"|error|, {label}" if column == len(residuals) - 1 else None,
-        )
-        if row == 0:
-            axes[row, column].set_title(name, fontsize=9)
-figure.tight_layout()
+    for column, (method, values) in enumerate(residuals.items()):
+        handle = panel(axes[row, column], values, "inferno", (0.0, top or 1.0),
+                       title=f"\u0394 {method}" if row == 0 else None)
+    scalebar(handle, axes[row], f"|error|, {label}")
 # sphinx_gallery_end_ignore
-
-# %%
-#
-# Reading the result honestly
-# ---------------------------
-#
-# What makes this work is the single unknown, and it is worth being clear about
-# what bought it. The train spoils after every readout, so no T2 enters; the
-# proton density and the receive gain divide out of the unified combination;
-# and the inversion efficiency was *given* rather than estimated. Each of those
-# is an assumption, and each is what turns a surface into a curve.
-#
-# The one that usually breaks first is the transmit field. A flip angle that is
-# not what was prescribed moves the curve, and the T1 read off it moves with
-# it -- which is why an MP2RAGE protocol is designed for a curve that is as
-# flat in B1 as it can be made, and why a separately measured B1 map is
-# sometimes handed in alongside. A property measured per voxel is what
-# :class:`~torchsim.ParameterMapping` calls ``known``, and it is the one thing
-# a table cannot take: a curve per voxel is not a curve.
-#
-# The other end of the range is the turning point. Beyond it the curve doubles
-# back, the table keeps only the monotonic run, and every voxel past it is
-# reported at the endpoint. For a brain at these inversion times that lies
-# above CSF and nothing is lost; for a phantom of long-T1 solutions it would
-# not, and the protocol rather than the estimator is what would have to change.
-#

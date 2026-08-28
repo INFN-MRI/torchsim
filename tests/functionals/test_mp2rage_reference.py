@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim.model import AbstractSimulator
+from torchsim.model import Simulator
 from torchsim.simulators import MP2RAGESimulator
 
 # The protocol of Marques et al., Neuroimage 49(2):1271, Table 1 at 7 T.
@@ -242,7 +242,7 @@ def played(description, **properties):
     origin. The kernels return transverse magnetization, whose phase carries
     the sign the closed form writes directly.
     """
-    replayed = AbstractSimulator.from_description(
+    replayed = Simulator.from_description(
         description, MP2RAGESimulator.model, record="echo", nstates=1
     )
     signal = replayed.simulate(**properties, repetitions=REPETITIONS)

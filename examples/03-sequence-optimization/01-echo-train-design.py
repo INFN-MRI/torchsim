@@ -20,14 +20,6 @@ is a whole segmented protocol, in which every shot carries its own repetition
 time, its own echo train length and its own flip angles, chosen by where in
 k-space that shot samples [2]_.
 
-.. [1] Busse RF, Brau ACS, Vu A, et al. Effects of refocusing flip angle
-   modulation and view ordering in 3D fast spin echo.
-   Magn Reson Med. 2008;60:640-649.
-
-.. [2] Buonincontri G, Paul D, Liu W, Forman C, Kluge T. Doubling the
-   repetition time without paying the price: 3D turbo spin echo with
-   individually parameterized echo trains. ISMRM 2025, abstract 566-05-007.
-
 """
 
 # %%
@@ -50,6 +42,60 @@ warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+# Every figure is drawn at the width of the documentation column, so none of
+# them is scaled on the way in and type is the same size throughout.
+PAGE_WIDTH = 8.6  # inches
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
+
 
 # sphinx_gallery_end_ignore
 import time
@@ -113,13 +159,6 @@ def blur(signal, acquired):
     energy = (signal * acquired[:, None, :]).square().sum(-1).clamp_min(1e-12)
     lines = acquired.sum(-1)[:, None]
     return lines / (2 * torch.pi) * (step.square().sum(-1) / energy).sqrt()
-
-
-def spread(modulation):
-    """The point spread function itself, for drawing."""
-    return torch.fft.fftshift(
-        torch.fft.fft(modulation, dim=-1).abs().square(), dim=-1
-    )
 
 
 # %%
@@ -278,7 +317,7 @@ for label, angles, signal in (
         f"{float(at_centre[0, FLUID] - at_centre[0, CARTILAGE]):>5.3f}"
     )
 
-figure, axes = plt.subplots(1, 3, figsize=(13, 3.4))
+figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.7))
 echo_index = np.arange(1, ECHOES + 1)
 pixel = np.arange(ECHOES) - ECHOES // 2
 
@@ -287,22 +326,33 @@ axes[0].plot(
 )
 axes[0].plot(echo_index, designed_flip[0].numpy(force=True), label="designed")
 axes[0].set(xlabel="Echo #", ylabel="Refocusing angle [deg]", title="the train")
-axes[0].legend(fontsize=8), axes[0].grid(alpha=0.3)
+axes[0].grid(alpha=0.3)
 
-for tissue, name, style in (
-    (CARTILAGE, "cartilage", "-"),
-    (FLUID, "synovial fluid", "--"),
+# Dashed is prescribed and solid designed, as in the panel beside it, so the
+# colour is free to carry the tissue and the legend stays two entries long.
+for tissue, name, colour in (
+    (CARTILAGE, "cartilage", "tab:blue"),
+    (FLUID, "synovial fluid", "tab:orange"),
 ):
     axes[1].plot(
-        echo_index, prescribed_signal[0, tissue].numpy(force=True), "k" + style,
-        alpha=0.5, label=f"{name}, prescribed",
+        echo_index, prescribed_signal[0, tissue].numpy(force=True), "--",
+        color=colour, alpha=0.6,
     )
     axes[1].plot(
-        echo_index, designed_signal[0, tissue].numpy(force=True), style,
-        label=f"{name}, designed",
+        echo_index, designed_signal[0, tissue].numpy(force=True), "-",
+        color=colour, label=name,
     )
 axes[1].set(xlabel="Echo #", ylabel="|signal|", title="k-space modulation")
-axes[1].legend(fontsize=7), axes[1].grid(alpha=0.3)
+axes[1].grid(alpha=0.3)
+
+
+
+def spread(modulation):
+    """The point spread function itself, for drawing."""
+    return torch.fft.fftshift(
+        torch.fft.fft(modulation, dim=-1).abs().square(), dim=-1
+    )
+
 
 for label, signal in (("prescribed", prescribed_signal), ("designed", designed_signal)):
     psf = spread(signal[0, CARTILAGE])
@@ -312,14 +362,14 @@ for label, signal in (("prescribed", prescribed_signal), ("designed", designed_s
         label=f"{label}, {float(blur(signal, ALWAYS)[0, CARTILAGE]):.2f} px",
     )
 axes[2].set(
-    xlabel="Pixel", ylabel="PSF (normalized)", title="cartilage point spread",
+    xlabel="Pixel", ylabel="PSF (normalized)", title="point spread",
     ylim=(1e-5, 2.0),
 )
-axes[2].legend(fontsize=8), axes[2].grid(alpha=0.3)
+axes[2].grid(alpha=0.3)
+key(axes, ncols=1)
 # An image keeps its own aspect and a line plot fills whatever it is given, so
 # the box each panel is drawn into has to be fixed for the row to line up.
 axes[2].set_box_aspect(1)
-figure.tight_layout()
 # sphinx_gallery_end_ignore
 
 # %%
@@ -368,7 +418,6 @@ muscle_map = inside & ~cartilage_map & ~fluid_map
 PHANTOM = torch.stack(
     [cartilage_map, muscle_map, fluid_map]
 ).to(torch.complex64)
-# sphinx_gallery_end_ignore
 
 
 def imaged(signal):
@@ -397,6 +446,7 @@ def imaged(signal):
 prescribed_image = imaged(prescribed_signal)
 designed_image = imaged(designed_signal)
 scale = float(prescribed_image.max())
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -406,10 +456,11 @@ scale = float(prescribed_image.max())
 # them -- and it is the *depth of the troughs between the bars* that the design
 # moves.
 #
-VIEW = (slice(6, 114), slice(12, 108))
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+VIEW = (slice(6, 114), slice(12, 108))
+
+figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.4))
 for axis, picture, title in (
     (axes[0], prescribed_image, "prescribed"),
     (axes[1], designed_image, "designed"),
@@ -443,11 +494,11 @@ axes[2].set(
     ylabel="signal (normalized)",
     title="through the fluid bars",
 )
-axes[2].legend(fontsize=8), axes[2].grid(alpha=0.3)
+axes[2].grid(alpha=0.3)
+key(axes[2], ncols=2)
 # An image keeps its own aspect and a line plot fills whatever it is given, so
 # the box each panel is drawn into has to be fixed for the row to line up.
 axes[2].set_box_aspect(1)
-figure.tight_layout()
 # sphinx_gallery_end_ignore
 
 # %%
@@ -686,7 +737,7 @@ print(
 #
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(2, 3, figsize=(13, 6.5))
+figure, axes = plt.subplots(2, 3, figsize=(PAGE_WIDTH, 6.7))
 colours = plt.cm.viridis(np.linspace(0.0, 0.85, SAMPLES))
 grid_index = np.arange(1, GRID + 1)
 shown = (0, 5, 10, 15)
@@ -697,28 +748,28 @@ for shot in shown:
         grid_index[live.numpy(force=True)],
         flip[shot][live].numpy(force=True),
         color=colours[shot],
-        label=f"radius {float(radius[shot]):.2f}",
+        label=f"r = {float(radius[shot]):.2f}",
     )
 axes[0, 0].set(
     xlabel="Echo #", ylabel="Refocusing angle [deg]", title="designed trains"
 )
-axes[0, 0].legend(fontsize=7), axes[0, 0].grid(alpha=0.3)
+axes[0, 0].grid(alpha=0.3)
 
 axes[0, 1].plot(radius.numpy(force=True), start_length[:, 0].numpy(force=True),
                 "k--", label="prescribed")
 axes[0, 1].plot(radius.numpy(force=True), length[:, 0].numpy(force=True),
                 label="designed")
 axes[0, 1].set(xlabel="k-space radius", ylabel="Echo train length",
-               title="ETL across k-space")
-axes[0, 1].legend(fontsize=8), axes[0, 1].grid(alpha=0.3)
+               title="train length")
+axes[0, 1].grid(alpha=0.3)
 
 axes[0, 2].plot(radius.numpy(force=True), start_TR[:, 0].numpy(force=True),
                 "k--", label="prescribed")
 axes[0, 2].plot(radius.numpy(force=True), TR[:, 0].numpy(force=True),
                 label="designed")
 axes[0, 2].set(xlabel="k-space radius", ylabel="TR [ms]",
-               title=f"scan {float(scan_s) / 60:.2f} of {BUDGET_S / 60:.0f} min")
-axes[0, 2].legend(fontsize=8), axes[0, 2].grid(alpha=0.3)
+               title=f"scan {float(scan_s) / 60:.1f}/{BUDGET_S / 60:.0f} min")
+axes[0, 2].grid(alpha=0.3)
 
 for axis, tissue, name in (
     (axes[1, 0], CARTILAGE, "cartilage"),
@@ -732,7 +783,7 @@ for axis, tissue, name in (
             color=colours[shot],
         )
     axis.axvline(TE_ECHO, color="k", ls=":", lw=1)
-    axis.set(xlabel="Echo #", ylabel="|signal|", title=f"{name} modulation")
+    axis.set(xlabel="Echo #", ylabel="|signal|", title=name)
     axis.grid(alpha=0.3)
 
 start_contrast = start_at_centre[:, FLUID] - start_at_centre[:, CARTILAGE]
@@ -742,42 +793,26 @@ axes[1, 2].plot(radius.numpy(force=True),
                 (at_centre[:, FLUID] - at_centre[:, CARTILAGE]).numpy(force=True),
                 label="designed")
 axes[1, 2].set(xlabel="k-space radius", ylabel="fluid - cartilage",
-               title="contrast across k-space")
-axes[1, 2].legend(fontsize=8), axes[1, 2].grid(alpha=0.3)
-figure.tight_layout()
+               title="contrast")
+axes[1, 2].grid(alpha=0.3)
+# A legend wider than its panel makes the layout give the panel up for it, so
+# each is columned to stay inside: four short entries in two, two long in one.
+key([axes[0, 0]], ncols=2)
+key([axes[0, 1], axes[0, 2], axes[1, 2]], ncols=1)
 # sphinx_gallery_end_ignore
 
 # %%
 #
-# Reading the result honestly
-# ---------------------------
+# References
+# ----------
 #
-# The contrast the exam gains is bought with **flip angles**, not with the
-# repetition time. Holding everything else at the prescription and moving only
-# the centre repetition time to what the design chose makes the contrast
-# *worse* -- there is less time for fluid to recover -- while moving only the
-# angles reproduces almost the whole gain. What the shorter repetition time
-# buys is the scan time that pays for the rest.
+# .. [1] Busse, R. F., Brau, A. C. S., Vu, A., et al., "Effects of
+#    refocusing flip angle modulation and view ordering in 3D fast spin
+#    echo", Magnetic Resonance in Medicine 60.3 (2008), pp. 640-649.
+#    https://doi.org/10.1002/mrm.21680
 #
-# The two ends of k-space end up wanting opposite things, which is the reason
-# for parameterizing them separately. The centre takes high refocusing angles,
-# which keep magnetization transverse and so weight the image by T2, where
-# fluid and cartilage differ most. The periphery takes low ones, which park
-# part of the magnetization along the longitudinal axis between echoes so that
-# the train decays more slowly than T2 alone would have it, and the point it
-# spreads stays narrow.
-#
-# What is *not* modelled here is the reordering. Shots of different length
-# covering different k-space sections need a view order built for them, and
-# the abstract reports that a conventional wedge ordering fails on exactly
-# this sequence. The design above chooses parameters; it assumes a view order
-# exists that can play them.
-#
-# The cost the whole thing ran at is the reason the structure is resolved
-# once. A simulator walks the layout, builds the event stream and packs it on
-# its first call, and afterwards rebinds only the
-# numbers that changed -- so an iteration costs about what the kernels cost
-# rather than several times more. That is what puts a design of this size
-# inside the time a scanner has between the prescription and the first
-# excitation.
-#
+# .. [2] Buonincontri, G., Paul, D., Liu, W., Forman, C., Kluge, T.,
+#    "Doubling the repetition time without paying the price: 3D turbo spin
+#    echo with individually parameterized echo trains", Proceedings of the
+#    International Society for Magnetic Resonance in Medicine (2025),
+#    abstract 566-05-007.

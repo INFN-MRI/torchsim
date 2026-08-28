@@ -5,9 +5,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import ParameterMapping
 from torchsim.estimators import NonlinearLeastSquares
+from functools import partial
+
 from torchsim.recon import (
+    LeastSquares,
     Linearization,
     GaussNewton,
     ModelOperator,
@@ -115,14 +117,9 @@ def test_a_trust_region_is_the_fit_that_ships(problem) -> None:
     """
     acquisition = MultiEchoSimulator(TE=TE_MS)
     bounds = {"T2": (10.0, 300.0), "M0": (0.0, 5.0)}
-    mapping = ParameterMapping(
-        acquisition, T2=(10.0, 300.0), M0=(0.2, 2.0), seed=0
-    ).train(
-        NonlinearLeastSquares(
-            bounds=bounds, initial={"T2": 100.0, "M0": 1.0}
-        ),
-        samples=256,
-    )
+    mapping = NonlinearLeastSquares(
+        acquisition, bounds=bounds, initial={"T2": 100.0, "M0": 1.0}
+    ).fit(T2=(10.0, 300.0), M0=(0.2, 2.0), seed=0, samples=256)
     scaling = torch.tensor([1.0, 0.8, 1.2, 0.5, 1.0])
     measured = acquisition.simulate(T2=TRUTH, M0=scaling)
 
@@ -341,13 +338,86 @@ def test_the_inner_solve_defaults_under_an_encoding(phantom) -> None:
     assert float(found.cost[-1]) < 0.3 * float(found.cost[0])
 
 
-@pytest.mark.parametrize("solver", ["CG", "lsqr", "BiCGStab", "minres"])
-def test_every_deepinv_solver_can_be_named(problem, solver) -> None:
-    """Which one suits is the caller's to measure, so all of them must run."""
+
+
+@pytest.mark.parametrize("name", ["CG", "lsqr", "BiCGStab", "minres"])
+def test_one_of_deepinvs_solvers_is_that_function_with_its_argument_bound(
+    problem, name
+) -> None:
+    """Which one suits is the caller's to measure, so all of them must run.
+
+    Binding the argument is the caller's own composition -- TorchSim takes an
+    object and never a name.
+    """
+    least_squares = pytest.importorskip("deepinv.optim.linear").least_squares
     operator, measured, start = problem
 
     found = GaussNewton(
-        Schedule(minimum=1e-8), solve=iterative(solver), max_iterations=25
+        Schedule(minimum=1e-8),
+        solve=iterative(partial(least_squares, solver=name)),
+        max_iterations=25,
     ).minimize(operator, measured, start)
 
     assert float(found.cost[-1]) < 1e-3 * float(found.cost[0])
+
+
+class ConjugateGradients:
+    """A least-squares solve written here, matching :class:`LeastSquares`.
+
+    Conjugate gradients on ``(A^H A + (1/gamma) I) d = A^H y + (1/gamma) z``,
+    which is the normal equations of what the protocol asks to be minimized.
+    Written in the test so the duck-typed path is exercised without deepinv.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, *, A, AT, y, z, gamma, max_iter, tol):
+        self.calls += 1
+        weight = 0.0 if gamma is None else 1.0 / gamma
+
+        def normal(d):
+            return AT(A(d)) + weight * d
+
+        d = torch.zeros_like(z)
+        residual = AT(y) + weight * z - normal(d)
+        direction = residual.clone()
+        squared = (residual.conj() * residual).real.sum()
+        for _ in range(max_iter):
+            if squared <= tol**2:
+                break
+            applied = normal(direction)
+            step = squared / ((direction.conj() * applied).real.sum() + 1e-30)
+            d = d + step * direction
+            residual = residual - step * applied
+            update = (residual.conj() * residual).real.sum()
+            direction = residual + (update / (squared + 1e-30)) * direction
+            squared = update
+        return d
+
+
+def test_a_solver_object_needs_no_deepinv(problem) -> None:
+    """Anything matching LeastSquares is taken, so deepinv is never forced."""
+    operator, measured, start = problem
+    mine = ConjugateGradients()
+
+    found = GaussNewton(
+        Schedule(minimum=1e-8), solve=iterative(mine), max_iterations=25
+    ).minimize(operator, measured, start)
+
+    assert mine.calls > 0
+    assert isinstance(mine, LeastSquares)
+    assert float(found.cost[-1]) < 1e-3 * float(found.cost[0])
+
+
+def test_a_solver_object_reaches_what_the_default_does(problem) -> None:
+    """The two paths differ in who solves, not in what is solved."""
+    operator, measured, start = problem
+
+    loop = lambda solve: GaussNewton(  # noqa: E731
+        Schedule(minimum=1e-8), solve=solve, max_iterations=25
+    ).minimize(operator, measured, start)
+
+    assert torch.allclose(
+        loop(iterative(ConjugateGradients())).x, loop(iterative()).x, rtol=1e-2
+    )

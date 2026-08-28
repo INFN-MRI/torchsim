@@ -9,7 +9,7 @@ that interface.
 The pages below follow the subpackages.
 
 :doc:`model`
-    What a sequence of your own is written from: a state-machine model saying
+    What a sequence of your own is written from: the physics, saying
     what each kind of event does to the spins, and a simulator saying what
     order they are played in.
 
@@ -18,8 +18,8 @@ The pages below follow the subpackages.
     functional wrappers.
 
 :doc:`sequence`
-    The device-agnostic description an acquisition is assembled from -- events,
-    operators, builders -- and the differentiable engine it is run on.
+    The device-agnostic description an acquisition is assembled from: events,
+    the operators that emit them, and builders for whole sequences.
 
 :doc:`estimators`
     Estimating tissue properties from a measured volume: dictionary matching,
@@ -27,13 +27,14 @@ The pages below follow the subpackages.
 
 :doc:`recon`
     Solving for parameter maps straight from k-space, with the signal model
-    inside the forward operator.
+    inside the forward operator, and the temporal basis that makes it cheap.
 
 :doc:`optim`
     Choosing a sequence's parameters by minimizing a cost you write.
 
 :doc:`execution`
-    Where a per-voxel workload runs, and the remaining utilities.
+    Running a description: the differentiable engine, transmit calibration,
+    and where a per-voxel workload is placed.
 
 .. toctree::
    :hidden:

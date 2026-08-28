@@ -10,17 +10,25 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import AbstractSimulator, StateMachineModel
+from ..model import Simulator, SpinPhysics
 from ..sequence._array import arrays
 from ._contrast import across_contrasts
 
 
-class bSSFPSimulator(AbstractSimulator):
+class bSSFPSimulator(Simulator):
     """The balanced SSFP steady state, read at the echo time.
 
     A balanced repetition returns the transverse magnetization to where it
     started, so the steady state is a closed form in the phase a voxel accrues
-    across one TR and no state machine is run.
+    across one TR and no state machine is run. Fitting T2 to a set of these,
+    given a T1 from :class:`SPGRSimulator`, is DESPOT2 [1]_.
+
+    References
+    ----------
+    .. [1] Deoni, S. C. L., Peters, T. M., Rutt, B. K., "High-resolution T1
+       and T2 mapping of the brain in a clinically acceptable time with
+       DESPOT1 and DESPOT2", Magnetic Resonance in Medicine 53.1 (2005),
+       pp. 237-241. https://doi.org/10.1002/mrm.20314
 
     Examples
     --------
@@ -33,7 +41,7 @@ class bSSFPSimulator(AbstractSimulator):
 
     """
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": None,
             "T2": None,

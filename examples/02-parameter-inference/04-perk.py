@@ -1,7 +1,7 @@
 """
-=========================================
-Kernel regression, with no grid at all
-=========================================
+=============================
+PERK: kernel ridge regression
+=============================
 
 A dictionary spans the parameters jointly, so its size is the product of the
 grids and a third parameter multiplies it again. PERK never builds one. It is a
@@ -22,7 +22,7 @@ beside it so that the trade is a table rather than an argument.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install torchsim brainweb-dl
+#    !pip install torchsim brainweb-dl cmap
 
 # %%
 #
@@ -38,28 +38,119 @@ from pathlib import Path
 
 import brainweb_dl
 import matplotlib.pyplot as plt
+from cmap import Colormap
 from brainweb_dl import get_mri
 
 warnings.filterwarnings("ignore")
 
 
 
-def panel(axis, values, cmap, limits, label=None):
-    """One map, with a colorbar every panel loses the same width to.
+# Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
+# colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
+LIPARI = Colormap("crameri:lipari").to_matplotlib()
+NAVIA = Colormap("crameri:navia").to_matplotlib()
 
-    A figure where only some panels carry a colorbar has panels of different
-    sizes. Giving every one a colorbar and hiding the ones that would repeat a
-    scale keeps the images comparable.
-    """
+# Colormap, window and unit per parameter. Both relaxation windows stop well
+# short of CSF, so that white and grey matter -- 500 against 833 ms in T1, 70
+# against 83 ms in T2 -- take up most of the scale and CSF saturates.
+STYLE = {
+    "T1": (LIPARI, (0.0, 1200.0), "T1 [ms]"),
+    "T2": (NAVIA, (0.0, 120.0), "T2 [ms]"),
+    "M0": ("gray", (0.0, 1.0), "M0"),
+}
+
+
+def panel(axis, values, cmap, limits, title=None, ylabel=None):
+    """One map without ticks; the handle is what a row shares a colorbar from."""
     handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    bar = axis.figure.colorbar(handle, ax=axis, fraction=0.046, pad=0.03)
-    if label is None:
-        bar.ax.set_visible(False)
-    else:
-        bar.set_label(label, fontsize=8)
-        bar.ax.tick_params(labelsize=7)
     axis.set_xticks([])
     axis.set_yticks([])
+    if title is not None:
+        axis.set_title(title)
+    if ylabel is not None:
+        axis.set_ylabel(ylabel)
+    return handle
+
+
+def scalebar(handle, axes, label):
+    """One colorbar for a group of panels, so none gives up width to its own."""
+    axes = list(np.ravel(axes))
+    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
+
+
+# Every panel on this page is drawn at the same size, so any two figures can be
+# read against each other. The side is set by the widest grid, which fills the
+# documentation column; a figure with fewer columns is narrower, not larger.
+PAGE_WIDTH = 8.6  # inches, the width of the documentation column
+BAR_WIDTH = 0.8  # what one colorbar takes out of it
+PANEL = (PAGE_WIDTH - 3 * BAR_WIDTH) / 3  # one image panel
+
+
+def canvas(rows, columns, shape, *, bars=1, extra=0.6):
+    """A grid of image panels, in the proportion of the images.
+
+    ``bars`` is how many colorbars a row carries and ``extra`` the height left
+    over the panels, for titles and for a figure title where there is one.
+    """
+    return plt.subplots(
+        rows,
+        columns,
+        squeeze=False,
+        figsize=(
+            columns * PANEL + bars * BAR_WIDTH,
+            PANEL * shape[0] / shape[1] * rows + extra,
+        ),
+    )
+
+
+
+# Figures are read at gallery scale, so the type sizes are set once here.
+plt.rcParams.update(
+    {
+        "figure.dpi": 110,
+        "figure.figsize": (PAGE_WIDTH, 3.6),
+        "savefig.dpi": 110,
+        "font.size": 16,
+        "axes.titlesize": 17,
+        "axes.labelsize": 17,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 13,
+        "figure.titlesize": 19,
+        "figure.constrained_layout.use": True,
+    }
+)
+
+
+def key(axes, ncols=1):
+    """The legend above what it describes, clear of the curves and the titles.
+
+    Takes a figure, where every panel is showing the same series, and puts one
+    legend over the whole of it. Takes an axis, or several, where the panels
+    differ, and puts a legend over each -- every titled panel in the figure
+    then ends up with the same padding, so the titles line up whether or not
+    that panel carries one, which is only known once it has been laid out.
+    """
+    if hasattr(axes, "add_subplot"):
+        handles, labels = axes.axes[0].get_legend_handles_labels()
+        return axes.legend(handles, labels, loc="outside upper center",
+                           ncols=ncols, frameon=False, handlelength=1.6,
+                           columnspacing=1.4)
+    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
+    figure = axes[0].figure
+    legends = [
+        axis.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncols=ncols,
+                    frameon=False, borderaxespad=0.0, handlelength=1.6,
+                    columnspacing=1.4)
+        for axis in axes
+    ]
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
+    for axis in figure.axes:
+        if axis.get_title():
+            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
+    return legends
 
 
 # sphinx_gallery_end_ignore
@@ -69,7 +160,7 @@ import numpy as np
 import torch
 
 import torchsim
-from torchsim import ParameterMapping, Subspace
+from torchsim import Subspace
 from torchsim.estimators import PERK, DictionaryMatcher
 from torchsim.simulators import MRFSimulator
 
@@ -119,15 +210,15 @@ T1_true = np.where(mask, fractions @ tissue_T1 / share, 0.0).astype(np.float32)
 T2_true = np.where(mask, fractions @ tissue_T2 / share, 0.0).astype(np.float32)
 M0_true = np.where(mask, fractions @ tissue_PD, 0.0).astype(np.float32)
 
-figure, axes = plt.subplots(1, 3, figsize=(11, 3.6))
-for axis, values, label, limits in (
-    (axes[0], T1_true, "T1 [ms]", (0, 3000)),
-    (axes[1], T2_true, "T2 [ms]", (0, 350)),
-    (axes[2], M0_true, "M0", (0, 1.1)),
+figure, axes = canvas(1, 3, mask.shape, bars=3, extra=1.1)
+for axis, values, name in (
+    (axes[0, 0], T1_true, "T1"),
+    (axes[0, 1], T2_true, "T2"),
+    (axes[0, 2], M0_true, "M0"),
 ):
-    panel(axis, values, "magma", limits, label=label)
-figure.suptitle("BrainWeb subject 0, slice 90 -- what the maps should come out as")
-figure.tight_layout()
+    cmap, limits, label = STYLE[name]
+    scalebar(panel(axis, values, cmap, limits), axis, label)
+figure.suptitle("BrainWeb subject 0, slice 90")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -161,15 +252,15 @@ fingerprints = acquisition.simulate(
 ).real
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 2, figsize=(11, 3.4))
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3))
 axes[0].plot(repetition.numpy(), flip.numpy())
 axes[0].set(xlabel="Repetition", ylabel="Flip angle [deg]", title="the schedule")
 axes[0].grid(alpha=0.3)
 for row, name in enumerate(("white matter", "grey matter", "CSF")):
     axes[1].plot(repetition.numpy(), fingerprints[row].numpy(force=True), label=name)
 axes[1].set(xlabel="Repetition", ylabel="signal", title="fingerprints")
-axes[1].legend(fontsize=8), axes[1].grid(alpha=0.3)
-figure.tight_layout()
+axes[1].grid(alpha=0.3)
+key(axes[1], ncols=3)
 # sphinx_gallery_end_ignore
 
 # %%
@@ -194,7 +285,7 @@ measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 # sphinx_gallery_start_ignore
 def footprint(problem):
     """MiB the fitted estimator itself holds -- a dictionary, or a regression."""
-    held = sum(t.numel() * t.element_size() for t in problem.method.buffers())
+    held = sum(t.numel() * t.element_size() for t in problem.buffers())
     return held / 2**20
 
 
@@ -250,8 +341,7 @@ prior = torch.Generator().manual_seed(11)
 # span, and one minus the energy it keeps is the relative squared error of
 # projecting a trajectory through it and back -- a number, not an estimate.
 #
-training_signals, _, _ = ParameterMapping(
-    acquisition,
+training_signals, _, _ = PERK(acquisition).fit(
     T1=log_uniform(*T1_RANGE, SAMPLES),
     T2=log_uniform(*T2_RANGE, SAMPLES),
     noise_std=NOISE_STD,
@@ -259,12 +349,22 @@ training_signals, _, _ = ParameterMapping(
 ).training_set(SAMPLES)
 training_signals = training_signals.real
 
-print("\n rank   retained energy   left outside")
-for rank in (2, 4, 8, 16, 32):
-    retained = Subspace.fit(training_signals, rank).retained
-    print(f"{rank:>5}   {retained:.9f}   {1 - retained:.2e}")
-
 RANK = 4
+
+# sphinx_gallery_start_ignore
+ranks = (1, 2, 3, 4, 6, 8, 12, 16, 24, 32)
+outside = [1 - Subspace.fit(training_signals, rank).retained for rank in ranks]
+noise_energy = NOISE_STD**2 * CONTRASTS / float(training_signals.square().sum(-1).mean())
+
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.59))
+axis.semilogy(ranks, outside, "o-", label="left outside the basis")
+axis.axhline(noise_energy, color="crimson", linestyle="--", label="added by the noise")
+axis.axvline(RANK, color="0.5", linewidth=1)
+axis.set(xlabel="rank", ylabel="relative energy",
+         title="what projecting through the basis loses")
+axis.grid(alpha=0.3)
+key(axis, ncols=2)
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -284,15 +384,14 @@ RANK = 4
 
 FEATURES = 1000
 
-perk = ParameterMapping(
-    acquisition,
+perk = PERK(
+    acquisition, n_features=FEATURES, regularization=1e-6, normalize=True
+).fit(
     T1=log_uniform(*T1_RANGE, SAMPLES),
     T2=log_uniform(*T2_RANGE, SAMPLES),
     noise_std=NOISE_STD,
     seed=0,
     rank=RANK,
-).train(
-    PERK(n_features=FEATURES, regularization=1e-6, normalize=True, seed=4),
     samples=SAMPLES,
 )
 
@@ -302,15 +401,14 @@ maps = perk(measured)  # {"T1": ..., "T2": ...}, one value per voxel
 def regressed(features):
     """Train a regression of this size, then map the slice."""
     start = time.perf_counter()
-    problem = ParameterMapping(
-        acquisition,
+    problem = PERK(
+        acquisition, n_features=features, regularization=1e-6, normalize=True
+    ).fit(
         T1=log_uniform(*T1_RANGE, SAMPLES),
         T2=log_uniform(*T2_RANGE, SAMPLES),
         noise_std=NOISE_STD,
         seed=0,
         rank=RANK,
-    ).train(
-        PERK(n_features=features, regularization=1e-6, normalize=True, seed=4),
         samples=SAMPLES,
     )
     training = time.perf_counter() - start
@@ -339,9 +437,9 @@ grid_t1, grid_t2 = torch.meshgrid(T1_GRID, T2_GRID, indexing="ij")
 # sphinx_gallery_start_ignore
 start = time.perf_counter()
 # sphinx_gallery_end_ignore
-matched = ParameterMapping(
-    acquisition, T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), rank=RANK, seed=0
-).train(DictionaryMatcher())
+matched = DictionaryMatcher(acquisition).fit(
+    T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), rank=RANK, seed=0
+)
 
 # sphinx_gallery_start_ignore
 match_training = time.perf_counter() - start
@@ -372,8 +470,8 @@ M0_map = proton_density(maps)
 
 # sphinx_gallery_start_ignore
 estimates = {
-    f"match, rank {RANK}": (match_maps, proton_density(match_maps)),
-    f"PERK, {FEATURES} features": (perk_maps, proton_density(perk_maps)),
+    "match": (match_maps, proton_density(match_maps)),
+    "PERK": (perk_maps, proton_density(perk_maps)),
 }
 # sphinx_gallery_end_ignore
 
@@ -424,81 +522,34 @@ def painted(values):
 
 
 panels = [
-    ("T1 [ms]", T1_true, {name: found["T1"] for name, (found, _) in estimates.items()},
-     (0, 3000)),
-    ("T2 [ms]", T2_true, {name: found["T2"] for name, (found, _) in estimates.items()},
-     (0, 350)),
-    ("M0", M0_true, {name: m0 for name, (_, m0) in estimates.items()}, (0, 1.1)),
+    ("T1", T1_true, {name: found["T1"] for name, (found, _) in estimates.items()}),
+    ("T2", T2_true, {name: found["T2"] for name, (found, _) in estimates.items()}),
+    ("M0", M0_true, {name: m0 for name, (_, m0) in estimates.items()}),
 ]
 
-columns = 1 + len(estimates)
-rows = len(panels)
-figure, axes = plt.subplots(rows, columns, figsize=(3.3 * columns, 3.3 * rows))
-for row, (label, reference, found, limits) in enumerate(panels):
-    panel(axes[row, 0], reference, "magma", limits)
-    axes[row, 0].set_ylabel(label, fontsize=11)
-    axes[row, 0].set_title("truth" if row == 0 else "", fontsize=10)
-    for column, (name, values) in enumerate(found.items(), start=1):
-        panel(
-            axes[row, column],
-            painted(values),
-            "magma",
-            limits,
-            label=label if column == columns - 1 else None,
-        )
-        if row == 0:
-            axes[row, column].set_title(name, fontsize=9)
-figure.tight_layout()
+figure, axes = canvas(len(panels), 1 + len(estimates), mask.shape)
+for row, (name, reference, found) in enumerate(panels):
+    cmap, limits, label = STYLE[name]
+    panel(axes[row, 0], reference, cmap, limits, ylabel=label,
+          title="truth" if row == 0 else None)
+    for column, (method, values) in enumerate(found.items(), start=1):
+        handle = panel(axes[row, column], painted(values), cmap, limits,
+                       title=method if row == 0 else None)
+    scalebar(handle, axes[row], "")
 
-# The errors, each parameter on a scale of its own: an error map read at the
+# Each parameter's errors on a scale of their own: an error map read at the
 # scale of the map it came from is a black rectangle.
-figure, axes = plt.subplots(
-    rows, len(estimates), figsize=(3.3 * len(estimates), 3.3 * rows), squeeze=False
-)
-for row, (label, reference, found, limits) in enumerate(panels):
+figure, axes = canvas(len(panels), len(estimates), mask.shape)
+for row, (name, reference, found) in enumerate(panels):
+    label = STYLE[name][2]
     residuals = {
-        name: np.abs(painted(values) - reference) for name, values in found.items()
+        method: np.abs(painted(values) - reference)
+        for method, values in found.items()
     }
     top = max(float(np.percentile(values[mask], 98)) for values in residuals.values())
-    for column, (name, values) in enumerate(residuals.items()):
-        panel(
-            axes[row, column],
-            values,
-            "inferno",
-            (0.0, top or 1.0),
-            label=f"|error|, {label}" if column == len(residuals) - 1 else None,
-        )
-        if row == 0:
-            axes[row, column].set_title(name, fontsize=9)
-figure.tight_layout()
+    for column, (method, values) in enumerate(residuals.items()):
+        error = panel(axes[row, column], values, "inferno", (0.0, top or 1.0),
+                      title=f"\u0394 {method}" if row == 0 else None)
+    unit = label[label.find(" ["):] if "[" in label else ""
+    scalebar(error, axes[row], f"|error|{unit}")
 # sphinx_gallery_end_ignore
-
-# %%
-#
-# Reading the result honestly
-# ---------------------------
-#
-# On two parameters the regression is the less accurate of the two and has no
-# speed to offer in exchange: a compressed match is both quicker and closer.
-# That is the case a grid is best at, and the comparison is being run where it
-# favours the grid.
-#
-# What the sweep shows is the part that carries over. The cost per voxel is
-# almost unmoved by the size of the model -- eight times the features changes
-# the mapping time by less than the measurement is worth -- and that cost is
-# paid once, during training.
-#
-# The sweep also shows where a regression stops improving. From five hundred
-# features to a thousand the error roughly halves; from a thousand to four
-# thousand it does not fall at all. Twenty thousand training samples are being
-# asked to determine a four-thousand-by-four-thousand covariance, which is
-# about five samples per direction, and no amount of regularization makes that
-# a well-posed estimate. More features want more training, and training is
-# simulation.
-#
-# The scaling is what decides between them. A match costs one inner product per
-# atom per voxel and the atom count is the product of the parameter grids, so a
-# third parameter multiplies it; a regression's inference cost does not move at
-# all. The argument for regression strengthens with every parameter added
-# rather than weakening.
-#

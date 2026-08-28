@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim.model import UNBALANCED, AbstractSimulator, StateMachineModel
+from torchsim.model import UNBALANCED, Simulator, SpinPhysics
 from torchsim.sequence import (
     EpgEngine,
     mrf_description,
@@ -27,10 +27,10 @@ T2 = torch.tensor([40.0, 80.0, 120.0])
 BOUND = torch.tensor([0.05, 0.10, 0.15])
 
 
-class Anything(AbstractSimulator):
+class Anything(Simulator):
     """A model over the whole tissue: whatever is named is what is carried."""
 
-    model = StateMachineModel(
+    model = SpinPhysics(
         properties={
             "T1": "t1_ms",
             "T2": "t2_ms",
@@ -38,7 +38,7 @@ class Anything(AbstractSimulator):
             "bound_exchange": "bound_exchange_hz",
             "T1_bound": "t1_bound_ms",
         },
-        triggers=UNBALANCED,
+        operators=UNBALANCED,
     )
     states = 8
 
@@ -104,11 +104,11 @@ def asked(monkeypatch):
     return seen
 
 
-class Relaxation(AbstractSimulator):
+class Relaxation(Simulator):
     """T1 and T2 over an unbalanced train."""
 
-    model = StateMachineModel(
-        properties={"T1": "t1_ms", "T2": "t2_ms"}, triggers=UNBALANCED
+    model = SpinPhysics(
+        properties={"T1": "t1_ms", "T2": "t2_ms"}, operators=UNBALANCED
     )
     states = 8
 
