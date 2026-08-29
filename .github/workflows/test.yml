@@ -76,30 +76,11 @@ jobs:
         shell: cmd
         run: |
           for /f "usebackq delims=" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
-          set CMAKE_ARGS=--debug-find-pkg=Python
           python -m pip install ".[test]"
 
       - name: Build the extensions and install
         if: runner.os != 'Windows'
         run: python -m pip install ".[test]"
-
-      # TEMPORARY: the hints scikit-build-core handed CMake, and what CMake
-      # made of them. Removed with the step above.
-      - name: Diagnose the CMake configure (Windows)
-        if: always() && runner.os == 'Windows'
-        shell: python
-        run: |
-          import pathlib
-
-          for name in ("CMakeInit.txt", "CMakeCache.txt"):
-              for found in pathlib.Path("build").rglob(name):
-                  print("=" * 60, found)
-                  text = found.read_text(errors="replace")
-                  if name == "CMakeCache.txt":
-                      text = "\n".join(
-                          line for line in text.splitlines() if "Python" in line
-                      )
-                  print(text)
 
       - name: Report what was built
         shell: python
