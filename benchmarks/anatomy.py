@@ -15,6 +15,14 @@ identical; only the subspace verdict differs, so the ratio is what that
 specialization is worth. (The two are different sequences and produce different
 signals -- what is being compared is the cost of the same amount of work.)
 
+**Whether the fast path is reached at all.** The same pass with the verdict
+forced to the real kernels, to the complex ones, and left to decide for
+itself. Where deciding costs what forcing costs, the decision is right and any
+distance left is the kernel's; where it costs what the complex kernel costs,
+the verdict is not reaching it. This is the one to run first on a card, since
+it separates a plumbing problem from an arithmetic one without needing to know
+what either should cost.
+
 Run as ``python benchmarks/anatomy.py [--device cuda]``.
 """
 
@@ -43,6 +51,73 @@ def best(
         synchronize()
         times.append(time.perf_counter() - start)
     return min(times)
+
+
+def _reached(
+    device: torch.device,
+    args: argparse.Namespace,
+    T1: torch.Tensor,
+    T2: torch.Tensor,
+    echo_train: torch.Tensor,
+    synchronize: Callable[[], None],
+) -> None:
+    """Auto against forced, for the plain pass and the forward-mode one.
+
+    Reaches past the public interface on purpose: what is being measured is
+    which kernel a verdict selects, which is not something a caller can ask
+    for.
+    """
+    from torchsim.sequence import _builders
+    from torchsim.sequence._accelerators import (
+        _pack_events,
+        _run_packed,
+        _run_packed_jvp,
+        real_subspace_axis,
+    )
+    from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
+
+    description = _builders.fse_description(
+        echo_train.to(torch.float32) * (torch.pi / 180.0),
+        5e-3,
+        phases_rad=0.0,
+        excitation_phase_rad=0.0,
+    )
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=device,
+        rf_raster_time_s=1e-6,
+    )
+    events = packed.buffers
+    tissue, _, _ = _prepare_tissue(TissueProperties(t1_ms=T1, t2_ms=T2), device)
+    if real_subspace_axis(events, tissue) != 1:
+        print("\nThe train did not earn the real subspace; nothing to compare.\n")
+        return
+
+    tangents = [torch.zeros_like(value) for value in tissue]
+    tangents[1] = torch.ones_like(tissue[1])
+    event_zeros = tuple(torch.zeros_like(events[index]) for index in (0, 2, 3))
+    shape = (32, packed.output_count, 0)
+
+    print("\nIs the fast path reached? Auto against a forced verdict")
+    print(f"{'pass':>12s}  {'auto':>9s}  {'forced real':>11s}  {'forced complex':>14s}")
+    for name, run in (
+        ("forward", lambda axis: lambda: _run_packed(tissue, events, *shape, axis)),
+        (
+            "forward-mode",
+            lambda axis: (
+                lambda: _run_packed_jvp(
+                    tissue, events, tuple(tangents), event_zeros, *shape, axis
+                )
+            ),
+        ),
+    ):
+        times = [best(run(axis), args.repeats, synchronize) for axis in (None, 1, -1)]
+        print(
+            f"{name:>12s}  {times[0] * 1e3:8.1f} ms  {times[1] * 1e3:8.1f} ms  "
+            f"{times[2] * 1e3:11.1f} ms"
+        )
 
 
 def main() -> None:
@@ -106,6 +181,8 @@ def main() -> None:
             synchronize,
         )
         print(f"  {label:24s} {timings[label] * 1e3:8.1f} ms")
+    _reached(device, args, T1, T2, echo_train, synchronize)
+
     ratio = timings["quarter turn, complex"] / timings["in phase, real"]
     print(f"\n  the real path is {ratio:.1f}x the complex one on this machine.\n")
 
