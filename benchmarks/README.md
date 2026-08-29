@@ -173,36 +173,24 @@ tissue, not the EPG arithmetic underneath them. Epgpy, vectorized across
 tissues, shows the same thing from the other side: its per-tissue cost falls by
 an order of magnitude between one tissue and a hundred, then stops improving.
 
-**The Jacobian reaches the fast path, and the kernel behind it is what is
-slow.** Forcing the verdict rather than letting it be decided settles which:
+**The Jacobian reaches the fast path, and now so does the kernel behind it.**
+Forcing the verdict rather than letting it be decided settles the first half:
 `_run_packed_jvp` with the real axis asked for runs in the same time as the
-call that decides for itself, so the decision is right. What differs is the
-gain -- the real *forward* kernel is 12x its complex counterpart, the real
-forward-*mode* kernel only 2.5x -- and one cause of that was a lane kernel
-running eight trains at a time on a dictionary that has one, filling seven
-lanes with repeats. It is now taken only where there are trains to fill it.
+call that decides for itself, so the decision was never the problem. The kernel
+was. Lanes were filled from the *train* axis -- eight trains of one atom -- and
+a dictionary has one train per atom, so seven lanes carried repeats. Filling
+them from the atom axis instead, which is the axis a dictionary is wide in,
+takes a forward-mode pass over ten thousand tissues from 16.9 s to 3.1 s.
 
-At ten thousand tissues: BlochSimulators' finite differences 0.79 s, which is
-3.0x its own forward pass and is what three passes should cost; TorchSim's dual
-arithmetic 8.9 s for two properties and 4.5 s for one; epgpy's analytic
-derivative 177 s, 4.9x its own. TorchSim's is linear in the number of
-properties, as forward mode should be, and exact where the finite differences
-are not, but it is still 45x its own forward pass for three passes' worth of
-arithmetic. `anatomy.py` isolates that on one event stream: 35x its forward
-pass on the real path against 5x on the complex one. The remaining distance is
-that the plain real kernel vectorizes over configuration orders and the dual
-one does not; a lane kernel over *atoms* rather than trains is what would close
-it, and is the next piece of CPU work.
-
-**Which of the two obvious optimizations is worth doing depends on the path,
-and `anatomy.py` measures both.** Split the time into what scales with the
-configuration orders and what does not, and the fixed per-event part -- the two
-exponentials, the loads, the branches, everything a hand-written sequence
-simulator hoists out of its repetition loop -- is **7% of a 32-order run on the
-complex path and 65% of one on the real path**. The state arithmetic is what
-the real kernels made thirty times cheaper, so what is left over is the part
-that does not scale: hoisting is worth almost nothing until the verdict is
-right, and is the next lever once it is.
+At ten thousand tissues: BlochSimulators' finite differences 0.77 s, which is
+2.5x its own forward pass and is what three passes should cost; TorchSim's dual
+arithmetic 3.1 s for two properties and 1.6 s for one, which is 8.3x its own
+forward pass per property; epgpy's analytic derivative 177 s, 4.9x its own.
+TorchSim's is linear in the number of properties, as forward mode should be,
+and exact where the finite differences are not. `anatomy.py` reports the
+multiple on one event stream -- 13.5x its forward pass on the real path against
+5.3x on the complex one -- which is the check that the dual kernels take the
+path the plain ones take.
 
 **TorchSim pays a structure cost the others do not.** Resolving a
 500-repetition train -- walking 1 500 events, packing them, learning the affine

@@ -130,9 +130,11 @@ def main() -> None:
             f"jacobian {jacobian * 1e3:8.1f} ms   {jacobian / forward:5.1f}x"
         )
     print(
-        "\n  A forward-mode pass costs several times its own forward pass either\n"
-        "  way, but the multiple is far larger where the forward pass is fast:\n"
-        "  what the real path gains, the dual kernels do not gain with it."
+        "\n  A forward-mode pass carries a tangent beside every quantity, so a\n"
+        "  few times its own forward pass is what it should cost. The multiple\n"
+        "  is the check that the dual kernels take the same path the plain ones\n"
+        "  take, rather than the arithmetic being cheap where the plumbing is\n"
+        "  not."
     )
 
 

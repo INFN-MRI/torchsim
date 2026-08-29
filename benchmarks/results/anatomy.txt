@@ -2,24 +2,26 @@
 
 Fixed per-event cost against per-state cost
  orders   best (ms)   ms per order
-      8        30.9           3.87
-     16        33.8           2.11
-     32        41.8           1.30
+      8        30.3           3.79
+     16        32.8           2.05
+     32        40.2           1.26
      64        56.3           0.88
 
-  fixed 27.3 ms, 0.45 ms per order: the fixed part is 65% of a 32-order run.
+  fixed 26.6 ms, 0.46 ms per order: the fixed part is 64% of a 32-order run.
   That is the whole of what hoisting the relaxation factors can save.
 
 The real subspace against the complex path, same event stream
-  in phase, real               47.0 ms
-  quarter turn, complex       452.9 ms
+  in phase, real               43.8 ms
+  quarter turn, complex       447.3 ms
 
-  the real path is 9.6x the complex one on this machine.
+  the real path is 10.2x the complex one on this machine.
 
 What the Jacobian costs on each path, same event stream
-  in phase, real           forward     46.2 ms   jacobian   1534.9 ms    33.2x
-  quarter turn, complex    forward    997.3 ms   jacobian   5182.0 ms     5.2x
+  in phase, real           forward     42.6 ms   jacobian    574.2 ms    13.5x
+  quarter turn, complex    forward    965.0 ms   jacobian   5068.2 ms     5.3x
 
-  A forward-mode pass costs several times its own forward pass either
-  way, but the multiple is far larger where the forward pass is fast:
-  what the real path gains, the dual kernels do not gain with it.
+  A forward-mode pass carries a tangent beside every quantity, so a
+  few times its own forward pass is what it should cost. The multiple
+  is the check that the dual kernels take the same path the plain ones
+  take, rather than the arithmetic being cheap where the plumbing is
+  not.

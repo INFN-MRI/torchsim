@@ -19,13 +19,20 @@
   lane-vectorized real ones. The signal is unchanged to the last bit the
   comparison in `benchmarks/validate.py` can see.
 
-- **The lane kernels are taken only where there are trains to fill them.** A
-  block of eight lanes carries eight trains of one atom, so a run with fewer
-  trains than that -- a dictionary has one -- filled the rest with repeats of
-  the first and paid for arithmetic it discarded. Forward-mode passes over a
-  dictionary took the lane kernel and ran at half the speed of the scalar one;
-  they now take the scalar one, and a two-property Jacobian over ten thousand
-  atoms falls from 16.9 s to 8.9 s.
+- **A forward-mode pass fills its lanes from the axis the run is wide in.** A
+  block of eight lanes carried eight trains of one atom, and a dictionary has
+  one train per atom: seven lanes held repeats of the first and the kernel paid
+  for arithmetic it discarded, which made the lane kernel slower than the
+  scalar one it was chosen over. There is now a kernel that fills a block with
+  eight *atoms* of one train -- the cheaper way round as well as the wider one,
+  since a tissue property is contiguous in the atom index while an event value
+  is one number every lane shares -- and the dispatch picks whichever axis has
+  eight entries to give, atoms first, or the scalar kernel where neither does.
+
+  A two-property Jacobian over ten thousand atoms falls from 16.9 s to 3.1 s,
+  and a forward-mode pass is 8.3x its own forward pass per property where it
+  was 45x. Nothing about a slice-profiled run changes: that is where the trains
+  are, and the per-train kernel still serves it.
 
 - **Packing a description computes each pulse's flip angle once per RF
   definition**, over all its occurrences at once, rather than once per event.

@@ -3397,6 +3397,254 @@ inline void shift_real_lanes(float* plus, float* minus, const std::size_t states
     lane_store(plus, -lane_load(minus));
 }
 
+// Lanes over atoms: one train's events, eight tissues at a time. A dictionary
+// carries one train and many atoms, which is the way round a block of trains
+// cannot fill -- and it is the cheaper way round besides, since a tissue
+// property is contiguous in the atom index while an event value is one number
+// every lane shares.
+struct AtomLaneView {
+    std::int64_t train;
+    std::int64_t atom_begin;
+    std::int64_t active;
+};
+
+inline AtomLaneView atom_lane_view(const Buffers& buffers, const std::int64_t work) {
+    const std::int64_t blocks = lane_blocks(buffers.atom_count);
+    const std::int64_t train = work / blocks;
+    const std::int64_t begin =
+        (work % blocks) * static_cast<std::int64_t>(REAL_LANES);
+    return AtomLaneView{
+        train,
+        begin,
+        std::min<std::int64_t>(
+            static_cast<std::int64_t>(REAL_LANES), buffers.atom_count - begin
+        ),
+    };
+}
+
+// One tissue property for every lane, repeating the block's first atom into the
+// inactive lanes of a partial block. A property the run does not declare reads
+// as its identity in every lane.
+inline void gather_atoms(
+    const float* const buffer,
+    const bool present,
+    const float identity,
+    const AtomLaneView& view,
+    float* const out
+) {
+    if (!present || buffer == nullptr) {
+        for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+            out[lane] = identity;
+        }
+        return;
+    }
+    for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+        const std::int64_t offset =
+            static_cast<std::int64_t>(lane) < view.active
+                ? static_cast<std::int64_t>(lane)
+                : 0;
+        out[lane] = buffer[view.atom_begin + offset];
+    }
+}
+
+// The forward-mode pass of the real subspace, eight atoms at a time. The state
+// arithmetic is the per-train kernel's; what differs is where a lane comes
+// from, so the tissue is gathered once per block and every event value is a
+// splat.
+void simulate_real_jvp_atom_lane_range(
+    const JvpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count
+) {
+    const Buffers& primal = buffers.primal;
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    const std::size_t width = states * REAL_LANES;
+    std::vector<float> storage(6U * width);
+    float* const TORCHSIM_RESTRICT plus = storage.data();
+    float* const TORCHSIM_RESTRICT minus = plus + width;
+    float* const TORCHSIM_RESTRICT longitudinal = minus + width;
+    float* const TORCHSIM_RESTRICT dot_plus = longitudinal + width;
+    float* const TORCHSIM_RESTRICT dot_minus = dot_plus + width;
+    float* const TORCHSIM_RESTRICT dot_longitudinal = dot_minus + width;
+
+    float t1[REAL_LANES], t2[REAL_LANES], dot_t1[REAL_LANES], dot_t2[REAL_LANES];
+    float rate1[REAL_LANES], rate2[REAL_LANES];
+    float t1_scale[REAL_LANES], t2_scale[REAL_LANES];
+    float b1[REAL_LANES], dot_b1[REAL_LANES];
+    float m0[REAL_LANES], dot_m0[REAL_LANES];
+    float efficiency[REAL_LANES], efficiency_dot[REAL_LANES];
+    float e1[REAL_LANES], e2[REAL_LANES];
+    float e1_dot[REAL_LANES], e2_dot[REAL_LANES];
+    float cosine[REAL_LANES], sine[REAL_LANES], alpha_dot[REAL_LANES];
+    const LaneVector half = lane_splat(0.5F);
+    const LaneVector one = lane_splat(1.0F);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const AtomLaneView view = atom_lane_view(primal, work);
+        const std::int64_t event_base = view.train * event_count;
+        std::fill(storage.begin(), storage.end(), 0.0F);
+        for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+            longitudinal[lane] = 1.0F;
+        }
+
+        gather_atoms(primal.t1, true, 1.0F, view, t1);
+        gather_atoms(primal.t2, true, 1.0F, view, t2);
+        gather_atoms(buffers.t1, true, 0.0F, view, dot_t1);
+        gather_atoms(buffers.t2, true, 0.0F, view, dot_t2);
+        gather_atoms(primal.b1, primal.transmit, 1.0F, view, b1);
+        gather_atoms(buffers.b1, primal.transmit, 0.0F, view, dot_b1);
+        gather_atoms(primal.m0, primal.density, 1.0F, view, m0);
+        gather_atoms(buffers.m0, primal.density, 0.0F, view, dot_m0);
+        gather_atoms(
+            primal.inversion_efficiency, primal.inverting, 1.0F, view, efficiency
+        );
+        gather_atoms(
+            buffers.inversion_efficiency, primal.inverting, 0.0F, view, efficiency_dot
+        );
+        for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+            rate1[lane] = 1000.0F / t1[lane];
+            rate2[lane] = 1000.0F / t2[lane];
+            t1_scale[lane] = 1000.0F * dot_t1[lane] / (t1[lane] * t1[lane]);
+            t2_scale[lane] = 1000.0F * dot_t2[lane] / (t2[lane] * t2[lane]);
+            // An inversion turns the longitudinal states over, so the factor
+            // the kernel applies is the negative of the efficiency.
+            efficiency[lane] = -efficiency[lane];
+            efficiency_dot[lane] = -efficiency_dot[lane];
+        }
+
+        for (std::int64_t event = 0; event < event_count; ++event) {
+            const float dt = primal.duration[event_base + event];
+            const float dt_dot = buffers.duration[event_base + event];
+            for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+                e1[lane] = std::exp(-rate1[lane] * dt);
+                e2[lane] = std::exp(-rate2[lane] * dt);
+                e1_dot[lane] = e1[lane] * (dt * t1_scale[lane] - rate1[lane] * dt_dot);
+                e2_dot[lane] = e2[lane] * (dt * t2_scale[lane] - rate2[lane] * dt_dot);
+            }
+            const LaneVector v_e1 = lane_load(e1);
+            const LaneVector v_e2 = lane_load(e2);
+            const LaneVector v_e1_dot = lane_load(e1_dot);
+            const LaneVector v_e2_dot = lane_load(e2_dot);
+            for (std::size_t state = 0; state < states; ++state) {
+                const std::size_t base = state * REAL_LANES;
+                const LaneVector p = lane_load(plus + base);
+                const LaneVector m = lane_load(minus + base);
+                const LaneVector z = lane_load(longitudinal + base);
+                lane_store(
+                    dot_plus + base, lane_load(dot_plus + base) * v_e2 + p * v_e2_dot
+                );
+                lane_store(plus + base, p * v_e2);
+                lane_store(
+                    dot_minus + base, lane_load(dot_minus + base) * v_e2 + m * v_e2_dot
+                );
+                lane_store(minus + base, m * v_e2);
+                lane_store(
+                    dot_longitudinal + base,
+                    lane_load(dot_longitudinal + base) * v_e1 + z * v_e1_dot
+                );
+                lane_store(longitudinal + base, z * v_e1);
+            }
+            lane_store(longitudinal, lane_load(longitudinal) + (one - v_e1));
+            lane_store(dot_longitudinal, lane_load(dot_longitudinal) - v_e1_dot);
+
+            const std::uint8_t action = primal.action[event];
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_lanes(plus, minus, states);
+                shift_real_lanes(dot_plus, dot_minus, states);
+            }
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const LaneVector factor = lane_load(efficiency);
+                    const LaneVector factor_dot = lane_load(efficiency_dot);
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const std::size_t base = state * REAL_LANES;
+                        const LaneVector z = lane_load(longitudinal + base);
+                        lane_store(
+                            dot_longitudinal + base,
+                            lane_load(dot_longitudinal + base) * factor + z * factor_dot
+                        );
+                        lane_store(longitudinal + base, z * factor);
+                    }
+                } else {
+                    const float flip = primal.flip[event_base + event];
+                    const float flip_dot = buffers.flip[event_base + event];
+                    for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+                        const float alpha = flip * b1[lane];
+                        cosine[lane] = std::cos(alpha);
+                        sine[lane] = std::sin(alpha);
+                        alpha_dot[lane] = flip_dot * b1[lane] + flip * dot_b1[lane];
+                    }
+                    const LaneVector c = lane_load(cosine);
+                    const LaneVector s = lane_load(sine);
+                    const LaneVector rate = lane_load(alpha_dot);
+                    const LaneVector chs = half * (one + c);
+                    const LaneVector shs = half * (one - c);
+                    const LaneVector hs = half * s;
+                    const LaneVector c_dot = -(s * rate);
+                    const LaneVector s_dot = c * rate;
+                    const LaneVector chs_dot = half * c_dot;
+                    const LaneVector shs_dot = -(half * c_dot);
+                    const LaneVector hs_dot = half * s_dot;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const std::size_t base = state * REAL_LANES;
+                        const LaneVector p = lane_load(plus + base);
+                        const LaneVector m = lane_load(minus + base);
+                        const LaneVector z = lane_load(longitudinal + base);
+                        const LaneVector dp = lane_load(dot_plus + base);
+                        const LaneVector dm = lane_load(dot_minus + base);
+                        const LaneVector dz = lane_load(dot_longitudinal + base);
+                        lane_store(
+                            dot_plus + base,
+                            chs * dp + chs_dot * p + shs * dm + shs_dot * m
+                                - s * dz - s_dot * z
+                        );
+                        lane_store(
+                            dot_minus + base,
+                            shs * dp + shs_dot * p + chs * dm + chs_dot * m
+                                + s * dz + s_dot * z
+                        );
+                        lane_store(
+                            dot_longitudinal + base,
+                            hs * dp + hs_dot * p - hs * dm - hs_dot * m
+                                + c * dz + c_dot * z
+                        );
+                        lane_store(plus + base, chs * p + shs * m - s * z);
+                        lane_store(minus + base, shs * p + chs * m + s * z);
+                        lane_store(longitudinal + base, hs * p - hs * m + c * z);
+                    }
+                }
+            } else if (primal.kind[event] == 2 && (action & RECORD) != 0) {
+                const std::int64_t offset = primal.output_index[event];
+                for (std::int64_t lane = 0; lane < view.active; ++lane) {
+                    const std::int64_t index =
+                        (view.train * primal.atom_count + view.atom_begin + lane)
+                            * output_count
+                        + offset;
+                    primal.output_real[index] = 0.0F;
+                    primal.output_imag[index] =
+                        dot_m0[lane] * plus[lane] + m0[lane] * dot_plus[lane];
+                }
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real_lanes(plus, minus, states);
+                shift_real_lanes(dot_plus, dot_minus, states);
+            }
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus, plus + width, 0.0F);
+                std::fill(minus, minus + width, 0.0F);
+                std::fill(dot_plus, dot_plus + width, 0.0F);
+                std::fill(dot_minus, dot_minus + width, 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real_lanes(plus, minus, states);
+                shift_real_lanes(dot_plus, dot_minus, states);
+            }
+        }
+    }
+}
+
 void simulate_real_jvp_lane_range(
     const JvpBuffers& buffers,
     const std::int64_t work_begin,
@@ -8691,20 +8939,26 @@ void dispatch_jvp(
     const Pools pools
 ) {
     const bool single = pools == Pools::ONE;
-    // Lanes run eight trains of one atom at a time, so a run with fewer trains
-    // than that fills the rest of the block with repeats of the first and pays
-    // for arithmetic it throws away. A dictionary has one train per atom, which
-    // is the shape this would cost the most on: the scalar kernel is the faster
-    // one there, and measurably so.
-    const bool lanes = real_axis == 1 && single && lane_kernels_enabled()
-        && train_count >= static_cast<std::int64_t>(REAL_LANES)
+    // A block of lanes has to be filled from one axis or the other, and the one
+    // to fill it from is whichever the run is wide in. A dictionary is wide in
+    // atoms and has one train; a slice-profiled run is the other way about.
+    // Filling a block from an axis with fewer than eight entries pads the rest
+    // with repeats and pays for arithmetic it discards, so a run narrow in both
+    // takes the scalar kernel.
+    const bool reduced = real_axis == 1 && single && lane_kernels_enabled()
         && !any_diffusion(buffers.primal.diffusion, atom_count)
         && !any_diffusion(buffers.diffusion, atom_count);
+    const bool atom_lanes =
+        reduced && atom_count >= static_cast<std::int64_t>(REAL_LANES);
+    const bool lanes = reduced && !atom_lanes
+        && train_count >= static_cast<std::int64_t>(REAL_LANES);
     void (*kernel)(
         const JvpBuffers&, std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t
     ) = &simulate_jvp_single_pool<RfMode::INSTANT>;
-    if (lanes) {
+    if (atom_lanes) {
+        kernel = &simulate_real_jvp_atom_lane_range;
+    } else if (lanes) {
         kernel = &simulate_real_jvp_lane_range;
     } else if (real_axis == 1 && single) {
         kernel = &simulate_real_jvp_range;
@@ -8737,9 +8991,11 @@ void dispatch_jvp(
             kernel = &simulate_jvp_single_pool<RfMode::PROFILED>;
         }
     }
-    // A lane kernel's work item covers a block of trains rather than one train.
-    const std::int64_t work_count =
-        atom_count * (lanes ? lane_blocks(train_count) : train_count);
+    // A lane kernel's work item covers a block of one axis rather than one
+    // train: eight atoms of a train, or eight trains of an atom.
+    const std::int64_t work_count = atom_lanes
+        ? train_count * lane_blocks(atom_count)
+        : atom_count * (lanes ? lane_blocks(train_count) : train_count);
     const unsigned int thread_count = worker_count(requested_threads, work_count);
     const std::int64_t block = (work_count + thread_count - 1) / thread_count;
     WorkerPool::instance().run(thread_count, [&](const unsigned int slot) {
