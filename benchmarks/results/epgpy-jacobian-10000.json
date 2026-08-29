@@ -1,0 +1,35 @@
+{
+  "backend": "epgpy",
+  "mode": "jacobian",
+  "atoms": 10000,
+  "length": 500,
+  "states": 20,
+  "device": "cpu",
+  "threads": 1,
+  "repeats": 2,
+  "seconds": [
+    103.32272707599986,
+    103.20697498100026
+  ],
+  "setup_seconds": 0.0,
+  "baseline_rss_mib": 31.59765625,
+  "peak_rss_mib": 1716.05859375,
+  "peak_device_mib": 0.0,
+  "versions": {
+    "epgpy": "3.2.dev7",
+    "numpy": "2.4.6"
+  },
+  "machine": {
+    "platform": "Linux-6.18.44-fc-v22-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "python": "3.11.15"
+  },
+  "note": "max_nstate matches the orders TorchSim keeps",
+  "best": 103.20697498100026,
+  "median": 103.26485102850006,
+  "atoms_per_second": 96.89267611845939,
+  "checksum": [
+    0.0,
+    -1553.2673341695215
+  ]
+}

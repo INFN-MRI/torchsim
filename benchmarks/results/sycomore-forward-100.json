@@ -1,0 +1,35 @@
+{
+  "backend": "sycomore",
+  "mode": "forward",
+  "atoms": 100,
+  "length": 500,
+  "states": 158,
+  "device": "cpu",
+  "threads": 1,
+  "repeats": 3,
+  "seconds": [
+    0.146554955000056,
+    0.1464245940001092,
+    0.14949278399990362
+  ],
+  "setup_seconds": 0.0,
+  "baseline_rss_mib": 32.3125,
+  "peak_rss_mib": 35.1875,
+  "peak_device_mib": 0.0,
+  "versions": {
+    "sycomore": "1.3.2"
+  },
+  "machine": {
+    "platform": "Linux-6.18.44-fc-v22-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "python": "3.11.15"
+  },
+  "note": "threshold=1e-06; orders reached 11-158",
+  "best": 0.1464245940001092,
+  "median": 0.146554955000056,
+  "atoms_per_second": 682.9453800631703,
+  "checksum": [
+    0.0,
+    -2212.4631974469758
+  ]
+}

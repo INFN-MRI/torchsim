@@ -1,0 +1,19 @@
+MRF-FISP, 500 repetitions, TR = 10.0 ms, inversion prepared.
+Reference: sycomore, every order kept, double precision.
+
+ states   max |difference|    relative
+      5          3.061e-02    1.75e-01
+     10          1.761e-02    1.01e-01
+     20          8.658e-03    4.95e-02
+     40          4.390e-03    2.51e-02
+     80          2.009e-03    1.15e-02
+
+TorchSim against epgpy, both truncated to 20 orders: max 2.229e-03, relative 1.27e-02
+
+Per tissue, at 20 orders:
+  T1 =    200 ms, T2 =     10 ms:  max 1.014e-06, NRMSE 1.247e-06
+  T1 =    600 ms, T2 =     40 ms:  max 4.499e-07, NRMSE 1.309e-06
+  T1 =   1000 ms, T2 =     80 ms:  max 2.696e-05, NRMSE 8.547e-05
+  T1 =   1500 ms, T2 =    120 ms:  max 1.657e-04, NRMSE 6.685e-04
+  T1 =   3000 ms, T2 =    300 ms:  max 1.685e-03, NRMSE 9.100e-03
+  T1 =   4000 ms, T2 =   2000 ms:  max 8.658e-03, NRMSE 5.669e-02
