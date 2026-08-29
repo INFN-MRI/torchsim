@@ -5,7 +5,9 @@ from __future__ import annotations
 __all__: list[str] = []
 
 import os
-from collections.abc import Iterator, Sequence
+import weakref
+from collections import OrderedDict
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -1312,11 +1314,66 @@ def _loop_vmap(
 _PHASE_TOLERANCE = 1e-5
 
 
+_REMEMBERED: OrderedDict[
+    tuple[int, ...],
+    tuple[tuple[weakref.ref[torch.Tensor], ...], tuple[int, ...], Any],
+] = OrderedDict()
+
+# A binding resolves one sequence and rebinds its values, so a handful of event
+# streams is what a design loop or a dictionary sweep alternates between, and an
+# entry costs a tuple of weak references.
+_REMEMBERED_LIMIT = 32
+
+
+def _remembered(inputs: tuple[torch.Tensor, ...], read: Callable[[], Any]) -> Any:
+    """``read()``, computed once per set of buffers it would read.
+
+    The answer is a property of the buffers, so it changes only when one of them
+    is replaced or written to. Keying on identity and version says exactly that,
+    and both are free where ``read`` is a device round trip: a call that hits
+    touches no memory the kernel does not touch anyway.
+
+    The references are weak, so a remembered answer never keeps a chunk of a
+    streamed run alive, and a dead reference is a miss rather than a match
+    against whatever later took the same address.
+
+    An in-place write that bypasses a tensor's version counter is not seen,
+    which is the assumption autograd already makes of the same buffers.
+    """
+    try:
+        key = tuple(map(id, inputs))
+        versions = tuple(value._version for value in inputs)
+        references = tuple(weakref.ref(value) for value in inputs)
+    except (AttributeError, TypeError):
+        return read()
+    found = _REMEMBERED.get(key)
+    if found is not None:
+        seen_references, seen_versions, answer = found
+        if seen_versions == versions and all(
+            reference() is value
+            for reference, value in zip(seen_references, inputs, strict=True)
+        ):
+            _REMEMBERED.move_to_end(key)
+            return answer
+    answer = read()
+    _REMEMBERED[key] = (references, versions, answer)
+    _REMEMBERED.move_to_end(key)
+    while len(_REMEMBERED) > _REMEMBERED_LIMIT:
+        _REMEMBERED.popitem(last=False)
+    return answer
+
+
+def forget_event_summaries() -> None:
+    """Drop every remembered event-stream summary, so the next call reads again."""
+    _REMEMBERED.clear()
+
+
 def real_subspace_axis(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
     profile: Any = None,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> int | None:
     """The real axis the states are confined to, or ``None``.
 
@@ -1352,6 +1409,11 @@ def real_subspace_axis(
     states fill the plane -- a real projection of a complex trajectory, not a
     subspace a kernel can be built on, and the phase spread is what rules it
     out.
+
+    ``features`` names the terms the caller's tissue gives anything to do, as
+    :func:`torchsim.sequence._parameters.features_of` reads them off the values
+    passed in. A term absent from that set is at its identity everywhere, which
+    settles three of the four questions here without reading a buffer at all.
     """
     if profile is not None or dynamic is not None:
         # A shaped pulse turns about an axis with a component along z, which
@@ -1361,35 +1423,56 @@ def real_subspace_axis(
         # take no pair argument at all: a verdict of 1 would not slow the
         # answer down, it would drop the pulse.
         return None
-    b0_free, phase_free, flow_free, has_pulse, spread = _summarize(events, tissue)
-    if not (b0_free and phase_free and flow_free and has_pulse):
+    if not _tissue_stays_on_the_axis(tissue, features):
         return None
-    if spread > _PHASE_TOLERANCE:
+    has_pulse, spread = _pulse_axis(events)
+    if not has_pulse or spread > _PHASE_TOLERANCE:
         return None
     return 1
 
 
-def _summarize(
-    events: tuple[torch.Tensor, ...],
+def _tissue_stays_on_the_axis(
     tissue: tuple[torch.Tensor, ...],
-) -> tuple[bool, bool, bool, bool, float]:
-    """Reduce the subspace question to five numbers in one device round trip.
+    features: frozenset[str] | None,
+) -> bool:
+    """Whether off-resonance, transmit phase and velocity are all absent.
 
-    Each reduction read back on its own would be its own synchronization, and on
-    CUDA that latency dwarfs the reductions themselves -- enough to cost more
-    than the kernel the answer is meant to speed up. Stacking them means one
-    transfer whatever the device.
+    A feature the caller did not declare is one whose parameter was left at its
+    identity, so the answer is already known and no buffer is touched. What is
+    declared is still reduced over, since a property given as a full tensor is
+    declared whatever it holds, and a map of zeros is a map a run should not
+    lose the fast path to. The three reductions are stacked into one transfer:
+    read back separately they would be three synchronizations on a device.
+    """
+    wanted = {"B0", "B1_PHASE", "FLOW"}
+    if features is not None and not (wanted & features):
+        return True
+    b1_phase, b0 = tissue[4], tissue[5]
+    velocity = tissue[TISSUE_NAMES.index("velocity_m_per_s")]
+    answers = torch.stack(
+        ((b0 == 0).all(), (b1_phase == 0).all(), (velocity == 0).all())
+    ).tolist()
+    return all(answers)
 
-    Returns whether off-resonance is absent, whether transmit phase is absent,
-    whether the spins are still, whether the sequence turns any spins at all,
-    and how far the phases of the pulses that do spread.
+
+def _pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
+    """Whether the stream turns any spins, and how far its pulse phases spread.
 
     An ideal inversion is left out of that spread: it scales the longitudinal
     states and turns nothing, so whatever sits in its phase buffer says nothing
     about the axis the transverse states lie on.
+
+    The answer belongs to the event stream, which a binding resolves once and
+    reuses for every call afterwards, so it is remembered against the buffers
+    it was read from rather than recomputed per call.
     """
-    b1_phase, b0 = tissue[4], tissue[5]
-    velocity = tissue[TISSUE_NAMES.index("velocity_m_per_s")]
+    return _remembered(
+        (events[1], events[3], events[4]), lambda: _read_pulse_axis(events)
+    )
+
+
+def _read_pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
+    """Reduce the pulse phases to one flag and one number in one round trip."""
     kind, phase, action = events[1], events[3], events[4]
     turning = (kind == 1) & ((action & _INVERSION) == 0)
     # Phases matter modulo pi: a half turn only flips the sign of the state.
@@ -1408,9 +1491,6 @@ def _summarize(
     quarter = 0.5 * torch.pi
     summary = torch.stack(
         (
-            (b0 == 0).all().to(wrapped.dtype),
-            (b1_phase == 0).all().to(wrapped.dtype),
-            (velocity == 0).all().to(wrapped.dtype),
             turning.any().to(wrapped.dtype),
             torch.minimum(
                 extent(wrapped),
@@ -1418,13 +1498,7 @@ def _summarize(
             ),
         )
     ).tolist()
-    return (
-        bool(summary[0]),
-        bool(summary[1]),
-        bool(summary[2]),
-        bool(summary[3]),
-        summary[4],
-    )
+    return bool(summary[0]), summary[1]
 
 
 def _auto_real_axis(
@@ -1435,6 +1509,7 @@ def _auto_real_axis(
     tangents: tuple[torch.Tensor, ...] = (),
     profile: Any = None,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> int | None:
     """The subspace verdict, when deciding it costs less than it saves.
 
@@ -1454,7 +1529,7 @@ def _auto_real_axis(
         seeded = torch.stack([(direction != 0).any() for direction in tangents]).any()
         if bool(seeded):
             return None
-    return real_subspace_axis(events, tissue, profile, dynamic)
+    return real_subspace_axis(events, tissue, profile, dynamic, features)
 
 
 def _auto_real_axis_adjoint(
@@ -1465,6 +1540,7 @@ def _auto_real_axis_adjoint(
     wanted: tuple[bool, ...] | None,
     profile: Any = None,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> int | None:
     """The subspace verdict for an adjoint, given what the caller will read.
 
@@ -1486,6 +1562,7 @@ def _auto_real_axis_adjoint(
         tuple(tangents[index] for index in _OUTSIDE_THE_SUBSPACE) if tangents else (),
         profile=profile,
         dynamic=dynamic,
+        features=features,
     )
 
 
@@ -2551,6 +2628,7 @@ def _run_packed(
             state_count,
             profile=profile,
             dynamic=dynamic,
+            features=features,
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for: the semisolid one adds a longitudinal component, and the exchanging
@@ -2726,7 +2804,7 @@ def _run_packed_vjp(
     """
     profile = _tables(profile, events, dynamic)
     real_axis = _auto_real_axis_adjoint(
-        events, tissue, state_count, (), wanted, profile, dynamic
+        events, tissue, state_count, (), wanted, profile, dynamic, features
     )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
@@ -2969,7 +3047,7 @@ def _run_packed_vjp_jvp(
     profile = _tables(profile, events, dynamic)
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
-            events, tissue, state_count, tangents, wanted, profile, dynamic
+            events, tissue, state_count, tangents, wanted, profile, dynamic, features
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
@@ -3182,6 +3260,7 @@ def _run_packed_jvp(
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
             profile=profile,
             dynamic=dynamic,
+            features=features,
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.

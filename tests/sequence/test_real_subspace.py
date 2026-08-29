@@ -868,3 +868,99 @@ def test_the_real_kernel_reproduces_the_complex_one_without_refocusing():
     real_signal = _run_packed(prepared, events, 10, packed.output_count, 1, real_axis=1)
     scale = complex_signal.abs().max()
     assert ((complex_signal - real_signal).abs().max() / scale) < 1e-6
+
+
+def test_a_declared_tissue_settles_the_question_without_a_buffer():
+    """What the caller passed already says whether the three terms are there.
+
+    A property left at its identity is absent from the feature set, and absent
+    is the whole answer: the verdict is the same one the reduction gives, and
+    it is reached without reading the buffer that reduction would read.
+    """
+    from torchsim.sequence._parameters import features_of
+
+    description = fse_description(
+        _flip(), echo_spacing_s=ECHO_SPACING_S, phases_rad=0.0, excitation_phase_rad=0.0
+    )
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    plain = TissueProperties(
+        t1_ms=torch.tensor([800.0, 1400.0]), t2_ms=torch.tensor([45.0, 120.0])
+    )
+    prepared, _, _ = _prepare_tissue(plain, "cpu")
+    assert real_subspace_axis(packed.buffers, prepared) == 1
+    assert (
+        real_subspace_axis(packed.buffers, prepared, features=features_of(plain)) == 1
+    )
+
+    off_resonant = _tissue(40.0, 0.0)
+    prepared, _, _ = _prepare_tissue(off_resonant, "cpu")
+    assert real_subspace_axis(packed.buffers, prepared) is None
+    assert (
+        real_subspace_axis(packed.buffers, prepared, features=features_of(off_resonant))
+        is None
+    )
+
+
+def test_a_map_of_zeros_keeps_the_axis_it_declares_it_has_left():
+    """A declared term is still reduced over rather than taken at its word.
+
+    A caller who passes off-resonance as a full map has declared the term
+    whatever the map holds, and a map of zeros is one a run should not lose the
+    fast path to.
+    """
+    from torchsim.sequence._parameters import features_of
+
+    description = fse_description(
+        _flip(), echo_spacing_s=ECHO_SPACING_S, phases_rad=0.0, excitation_phase_rad=0.0
+    )
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    zeroed = _tissue(0.0, 0.0)
+    assert "B0" in features_of(zeroed)
+    prepared, _, _ = _prepare_tissue(zeroed, "cpu")
+    assert (
+        real_subspace_axis(packed.buffers, prepared, features=features_of(zeroed)) == 1
+    )
+
+
+def test_a_rewritten_phase_buffer_is_read_again():
+    """The remembered summary follows the buffer it was read from.
+
+    The event stream is the half of the verdict a binding holds fixed, so it is
+    read once and reused. A caller who writes new phases into the same buffer
+    gets the verdict those phases earn, not the one the old ones did.
+    """
+    description = fse_description(
+        _flip(), echo_spacing_s=ECHO_SPACING_S, phases_rad=0.0, excitation_phase_rad=0.0
+    )
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    plain = TissueProperties(
+        t1_ms=torch.tensor([800.0, 1400.0]), t2_ms=torch.tensor([45.0, 120.0])
+    )
+    prepared, _, _ = _prepare_tissue(plain, "cpu")
+    events = packed.buffers
+    assert real_subspace_axis(events, prepared) == 1
+
+    kind, phase = events[1], events[3]
+    turning = kind == 1
+    quarter = torch.where(turning, torch.full_like(phase, 0.25 * torch.pi), phase)
+    phase.copy_(quarter)
+    phase[turning.nonzero()[0]] = 0.0
+    assert real_subspace_axis(events, prepared) is None

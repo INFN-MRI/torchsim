@@ -4,6 +4,21 @@
 
 ### Changed
 
+- **The real-subspace verdict is worked out once per sequence, not once per
+  call.** The verdict has two halves and both were re-read on every
+  `simulate`. The half that scans the event stream -- do all the pulses turn
+  about one axis -- belongs to a structure a binding resolves once, so it is
+  now remembered against the buffers it was read from, by identity and version,
+  through weak references that a streamed chunk is free to outlive. The half
+  that asks whether the tissue carries off-resonance, transmit phase or flow is
+  answered from the feature set the caller's values already declare, and
+  touches a buffer only for a term given as a full map.
+
+  A 500-repetition fingerprinting verdict falls from 130 us to 3 us and, more
+  to the point on a card, from one synchronizing round trip per call to none.
+  A tissue that declares off-resonance as a map of zeros keeps the fast path,
+  as it did.
+
 - **A train with no refocusing pulse can reach the real kernels.** The
   real-subspace verdict asked for refocusing pulses and an excitation sharing
   their phase, which is one arrangement of the condition rather than the
