@@ -124,12 +124,14 @@ sdist.include = ["src/torchsim/_version.py"]
 # is the wheel every supported interpreter installs. There is nothing to
 # repeat per minor version.
 build = "cp310-*"
-# PyTorch ships no musllinux wheel, so a musl build of the kernels could not
-# be installed beside the package that imports them.
-skip = ["*musllinux*", "pp*"]
+skip = ["*-musllinux_i686", "pp*"]
 build-frontend = "build"
 # No PyTorch, no NumPy, nothing: the check loads the compiled kernels by path.
 test-command = "python {project}/scripts/check_wheel.py"
+# A wheel is installed with its dependencies before it is tested, and PyTorch
+# publishes no musllinux wheel for that install to resolve. The workflow loads
+# the musl kernels in an Alpine container instead, where nothing resolves.
+test-skip = "*musllinux*"
 
 [tool.cibuildwheel.linux]
 # scikit-build-core installs cmake and ninja as build-time wheels inside the
