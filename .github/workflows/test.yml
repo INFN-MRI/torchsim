@@ -76,6 +76,7 @@ jobs:
         shell: cmd
         run: |
           for /f "usebackq delims=" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          set CMAKE_ARGS=--debug-find-pkg=Python
           python -m pip install ".[test]"
 
       - name: Build the extensions and install

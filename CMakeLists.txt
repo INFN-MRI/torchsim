@@ -9,7 +9,7 @@ project(torchsim LANGUAGES CXX)
 set(TORCHSIM_ABI3_VERSION 3.10)
 
 find_package(Python 3.10 REQUIRED
-    COMPONENTS Interpreter Development.SABIModule
+    COMPONENTS Interpreter Development.Module Development.SABIModule
 )
 
 find_package(Threads REQUIRED)
