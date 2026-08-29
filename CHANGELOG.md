@@ -2,7 +2,39 @@
 
 ## Unreleased
 
+### Changed
+
+- **A train with no refocusing pulse can reach the real kernels.** The
+  real-subspace verdict asked for refocusing pulses and an excitation sharing
+  their phase, which is one arrangement of the condition rather than the
+  condition itself: what confines the states to an axis is every pulse turning
+  about the same one. It now reads exactly that -- all RF phases equal modulo a
+  half turn, an ideal inversion excepted since it turns nothing -- which admits
+  the spoiled, constant-phase trains that fingerprinting is made of and still
+  refuses RF spoiling, a quarter-turn excitation, off-resonance, transmit phase
+  and flow.
+
+  A ten-thousand-atom fingerprinting dictionary goes from 2.34 s to 0.18 s on
+  four CPU cores, which is the difference between the complex kernels and the
+  lane-vectorized real ones. The signal is unchanged to the last bit the
+  comparison in `benchmarks/validate.py` can see.
+
+- **Packing a description computes each pulse's flip angle once per RF
+  definition**, over all its occurrences at once, rather than once per event.
+  Resolving a binding packs the description several times over -- once plainly
+  and twice per differentiated argument, under forward-mode -- and the per-event
+  arithmetic dominated all of them: 20 000 scalar tensor operations for a
+  500-repetition train, now 4 000. First-call structure resolution halves.
+
 ### Added
+
+- **`SSFPEchoReadout`**, the other sample an unbalanced repetition can take.
+  An ADC placed after the winding gradient rather than before it reads the
+  order the next pulse would refocus, which is the strongly T2-weighted half of
+  a reversed-FISP pair. It is `Dephase`, `Readout`, `Delay` -- the same
+  operators `SSFPFidReadout` composes, in the other order -- so nothing in the
+  kernels changed to make it possible, and `tests/sequence/test_ssfp_readouts.py`
+  pins both readouts against an extended phase graph written out in the test.
 
 - **An Explanation section, ahead of the examples.** Two pages, each built
   around figures that are re-rendered from the working tree on every

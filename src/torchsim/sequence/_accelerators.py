@@ -567,6 +567,9 @@ def _pack_events(
     echo_flags: list[bool] = []
     previous_absolute: Any = 0.0
     output_index = 0
+    # Where each pulse's flip angle goes, gathered by the definition that says
+    # what its envelope integrates to.
+    turned: dict[int, list[tuple[int, Any]]] = {}
 
     for repetition in range(repetitions):
         # A single playing never advances by the repetition time, so it does
@@ -608,13 +611,14 @@ def _pack_events(
                     action |= (
                         _REFOCUSING if event.rf_use is RfUse.REFOCUSING else _EXCITATION
                     )
-                    definition = description.rf_definitions[event.rf_definition_id]
-                    flip_value, integral_phase = definition.flip_angle(
-                        event.rf_amplitude_hz,
-                        rf_raster_time_s=rf_raster_time_s,
+                    # What the pulse turns through is settled after the walk,
+                    # one call per definition rather than one per event: the
+                    # arithmetic is the same either way, and a train of a
+                    # thousand pulses is a thousand dispatches saved on every
+                    # packing -- of which resolving a binding does several.
+                    turned.setdefault(event.rf_definition_id, []).append(
+                        (len(flips), event.rf_amplitude_hz)
                     )
-                    flip = flip_value
-                    phase = phase + integral_phase
             elif event.type is EventType.ADC:
                 phase = event.adc_phase_rad
                 if _record_event(event, record):
@@ -631,6 +635,29 @@ def _pack_events(
             actions.append(action)
             saturations.append(saturation)
             frequencies.append(frequency)
+
+    for definition_id, occurrences in turned.items():
+        definition = description.rf_definitions[definition_id]
+        positions = [position for position, _ in occurrences]
+        amplitudes = [amplitude for _, amplitude in occurrences]
+        gathered = _gathered_amplitudes(amplitudes, device)
+        if gathered is None:
+            # A group whose pulses disagree about their shape -- some a number,
+            # some a value per train -- is rare enough to be left to the plain
+            # path, where each occurrence stands on its own.
+            for position, amplitude in occurrences:
+                angle, integral_phase = definition.flip_angle(
+                    amplitude, rf_raster_time_s=rf_raster_time_s
+                )
+                flips[position] = angle
+                phases[position] = phases[position] + integral_phase
+            continue
+        angles, integral_phases = definition.flip_angle(
+            gathered, rf_raster_time_s=rf_raster_time_s
+        )
+        for index, position in enumerate(positions):
+            flips[position] = angles[index]
+            phases[position] = phases[position] + integral_phases[index]
 
     trains = _batch_width([*durations, *flips, *phases])
     return _PackedEvents(
@@ -663,6 +690,27 @@ def _pack_events(
     )
 
 
+def _gathered_amplitudes(amplitudes: list[Any], device: torch.device) -> Any:
+    """The pulse amplitudes of one definition as one tensor, or ``None``.
+
+    ``None`` says they cannot be stacked as they are -- which is the signal to
+    take them one at a time rather than to convert them, since converting is
+    the per-event work this exists to avoid.
+    """
+    if not any(isinstance(amplitude, torch.Tensor) for amplitude in amplitudes):
+        return torch.tensor(amplitudes, dtype=torch.float32, device=device)
+    first = amplitudes[0]
+    if not all(
+        isinstance(amplitude, torch.Tensor)
+        and amplitude.shape == first.shape
+        and amplitude.dtype is first.dtype
+        and amplitude.device == first.device
+        for amplitude in amplitudes
+    ):
+        return None
+    return torch.stack(amplitudes).to(device=device, dtype=torch.float32)
+
+
 def _record_event(event: SequenceEvent, mode: str) -> bool:
     if mode == "all":
         return True
@@ -673,6 +721,12 @@ def _record_event(event: SequenceEvent, mode: str) -> bool:
 
 def _scalar(value: Any, device: torch.device) -> torch.Tensor:
     if isinstance(value, torch.Tensor):
+        # Packing a train of a thousand events issues these one per event, and
+        # under the forward-mode passes that resolve a binding it issues them
+        # again per seed, so a conversion that would not change anything is
+        # worth not making.
+        if value.ndim == 0 and value.dtype is torch.float32 and value.device == device:
+            return value
         return value.to(device=device, dtype=torch.float32).reshape(())
     return torch.as_tensor(value, dtype=torch.float32, device=device).reshape(())
 
@@ -1266,15 +1320,26 @@ def real_subspace_axis(
 ) -> int | None:
     """The real axis the states are confined to, or ``None``.
 
-    Returns 1 when the refocusing pulses share one phase, the excitation shares
-    it too, and there is neither off-resonance, transmit phase, nor spin
-    velocity. The state machine then never leaves the axis on which the signal
-    is pure imaginary. Flow dephasing belongs on that list because it turns each
-    dephasing order through a phase of its own, which is a rotation out of the
-    axis rather than a scaling along it. Washout stays on the axis -- it scales
-    both relaxation factors and nothing more -- but the real kernels do not
-    carry it, so any velocity at all is refused here whatever geometry drives
-    it.
+    Returns 1 when every pulse in the sequence turns about one axis -- all the
+    RF phases equal modulo a half turn, since a half turn only flips the sign
+    of a state -- and there is neither off-resonance, transmit phase, nor spin
+    velocity. The states then start real, and every operator the kernels carry
+    keeps them real: the rotation about a single axis has real coefficients on
+    the axis the signal lies on, the shift's conjugate coupling becomes a sign,
+    relaxation and spoiling scale, and an ideal inversion scales the
+    longitudinal states alone.
+
+    That covers both arrangements the literature names. A refocused train whose
+    excitation shares the phase of its refocusing pulses, or sits a half turn
+    from them, is the CPMG and anti-CPMG pair. A spoiled or unbalanced train
+    whose pulses all share one phase is the same condition with no refocusing
+    pulse in it, which is what a fingerprinting schedule is.
+
+    Flow dephasing turns each dephasing order through a phase of its own, which
+    is a rotation out of the axis rather than a scaling along it. Washout stays
+    on the axis -- it scales both relaxation factors and nothing more -- but the
+    real kernels do not carry it, so any velocity at all is refused here
+    whatever geometry drives it.
 
     A transmit array is not on that list: a row per shim scales the flip its
     own pulse turns through, which is a scaling along the axis. Its phase is,
@@ -1285,7 +1350,8 @@ def real_subspace_axis(
     centers but not between them. An excitation a quarter turn from the
     refocusing pulses gives a signal that is real at every sample while its
     states fill the plane -- a real projection of a complex trajectory, not a
-    subspace a kernel can be built on.
+    subspace a kernel can be built on, and the phase spread is what rules it
+    out.
     """
     if profile is not None or dynamic is not None:
         # A shaped pulse turns about an axis with a component along z, which
@@ -1295,29 +1361,19 @@ def real_subspace_axis(
         # take no pair argument at all: a verdict of 1 would not slow the
         # answer down, it would drop the pulse.
         return None
-    (
-        b0_free,
-        phase_free,
-        flow_free,
-        has_refocusing,
-        has_excitation,
-        spread,
-        offset,
-    ) = _summarize(events, tissue)
-    if not (b0_free and phase_free and flow_free and has_refocusing and has_excitation):
+    b0_free, phase_free, flow_free, has_pulse, spread = _summarize(events, tissue)
+    if not (b0_free and phase_free and flow_free and has_pulse):
         return None
     if spread > _PHASE_TOLERANCE:
         return None
-    if offset < _PHASE_TOLERANCE or abs(offset - torch.pi) < _PHASE_TOLERANCE:
-        return 1
-    return None
+    return 1
 
 
 def _summarize(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
-) -> tuple[bool, bool, bool, bool, bool, float, float]:
-    """Reduce the subspace question to six numbers in one device round trip.
+) -> tuple[bool, bool, bool, bool, float]:
+    """Reduce the subspace question to five numbers in one device round trip.
 
     Each reduction read back on its own would be its own synchronization, and on
     CUDA that latency dwarfs the reductions themselves -- enough to cost more
@@ -1325,34 +1381,41 @@ def _summarize(
     transfer whatever the device.
 
     Returns whether off-resonance is absent, whether transmit phase is absent,
-    whether the spins are still, whether the sequence has refocusing and
-    excitation pulses, how far the per-role phases spread, and how far
-    excitation sits from refocusing.
+    whether the spins are still, whether the sequence turns any spins at all,
+    and how far the phases of the pulses that do spread.
+
+    An ideal inversion is left out of that spread: it scales the longitudinal
+    states and turns nothing, so whatever sits in its phase buffer says nothing
+    about the axis the transverse states lie on.
     """
     b1_phase, b0 = tissue[4], tissue[5]
     velocity = tissue[TISSUE_NAMES.index("velocity_m_per_s")]
-    action, phase = events[4], events[3]
-    refocusing = (action & _REFOCUSING) != 0
-    excitation = (action & _EXCITATION) != 0
+    kind, phase, action = events[1], events[3], events[4]
+    turning = (kind == 1) & ((action & _INVERSION) == 0)
     # Phases matter modulo pi: a half turn only flips the sign of the state.
     wrapped = torch.remainder(phase, torch.pi)
     infinity = torch.full_like(wrapped, float("inf"))
 
-    def extent(selected: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        lowest = torch.where(selected, wrapped, infinity).min()
-        return lowest, torch.where(selected, wrapped, -infinity).max()
+    def extent(values: torch.Tensor) -> torch.Tensor:
+        lowest = torch.where(turning, values, infinity).min()
+        highest = torch.where(turning, values, -infinity).max()
+        return highest - lowest
 
-    refocus_low, refocus_high = extent(refocusing)
-    excite_low, excite_high = extent(excitation)
+    # One set that straddles zero -- phases a hair under a half turn beside
+    # phases a hair over it -- has the full spread on this scale and none on a
+    # scale turned a quarter of the way round, so the smaller of the two is the
+    # spread that means what it says.
+    quarter = 0.5 * torch.pi
     summary = torch.stack(
         (
             (b0 == 0).all().to(wrapped.dtype),
             (b1_phase == 0).all().to(wrapped.dtype),
             (velocity == 0).all().to(wrapped.dtype),
-            refocusing.any().to(wrapped.dtype),
-            excitation.any().to(wrapped.dtype),
-            torch.maximum(refocus_high - refocus_low, excite_high - excite_low),
-            torch.remainder(excite_low - refocus_low, torch.pi),
+            turning.any().to(wrapped.dtype),
+            torch.minimum(
+                extent(wrapped),
+                extent(torch.remainder(wrapped + quarter, torch.pi)),
+            ),
         )
     ).tolist()
     return (
@@ -1360,9 +1423,7 @@ def _summarize(
         bool(summary[1]),
         bool(summary[2]),
         bool(summary[3]),
-        bool(summary[4]),
-        summary[5],
-        summary[6],
+        summary[4],
     )
 
 

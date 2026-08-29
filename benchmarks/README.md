@@ -138,35 +138,32 @@ comparisons quoted below were taken inside one interleaved window.
 
 At ten thousand tissues, four threads, 32 orders:
 
-| | forward | over TorchSim |
+| | forward | against TorchSim |
 | --- | ---: | ---: |
-| BlochSimulators.jl, real states | 0.253 s | 9.3x faster |
-| BlochSimulators.jl, complex states | 0.970 s | 2.4x faster |
-| TorchSim | 2.344 s | -- |
-| sycomore | 24.09 s | 10.3x slower |
-| epgpy | 36.37 s | 15.5x slower |
+| TorchSim | 0.184 s | -- |
+| BlochSimulators.jl, real states | 0.262 s | 1.4x slower |
+| BlochSimulators.jl, complex states | 0.990 s | 5.4x slower |
+| sycomore | 24.09 s | 131x slower |
+| epgpy | 36.37 s | 198x slower |
+
+TorchSim's row was 2.344 s until the real-subspace verdict was widened to
+cover a spoiled train that shares one RF phase; see the entry in
+`CHANGELOG.md`. The two Julia rows and the two Python ones are unchanged, and
+the whole table above was taken in one interleaved window after that change.
 
 ## Reading them
 
 Four things the table does not say on its own.
 
-**BlochSimulators.jl is the fastest of these by a wide margin, and it is the
-comparison that matters.** It is the one other package built for exactly this
-workload, and on the CPU it beats TorchSim by 9.3x. Most of that gap is one
-specialization; what is left is the difference between a hand-written sequence
-loop with its relaxation factors hoisted out and a generic event-stream kernel
-that reads what to do from a packed description.
-
-**The real-valued specialization is worth 3.8x here, and TorchSim does not take
-it on this sequence.** A flip-angle train with no phase keeps the configuration
-states real, and BlochSimulators picks that up from the element type of its
-`RF_train`: 0.253 s real against 0.970 s complex, same machine, same window.
-TorchSim has the same specialization -- and its test for it
-(`real_subspace_axis` in `src/torchsim/sequence/_accelerators.py`) requires the
-sequence to contain *refocusing* pulses, so a spoiled FID train with zero
-phase, which is what fingerprinting is, is refused and runs complex. Against
-BlochSimulators' complex path, which is the like-for-like arithmetic, TorchSim
-is 2.4x slower rather than 9.3x.
+**BlochSimulators.jl is the comparison that matters, and the two are now within
+half a factor of each other.** It is the one other package built for exactly
+this workload. Both take a real path when a train's pulses share one axis --
+BlochSimulators reads that off the element type of its `RF_train`, TorchSim
+decides it per run from the phases the description carries -- and both fall
+back to complex arithmetic when they cannot. The real path is worth 3.8x in
+BlochSimulators (0.262 s against 0.990 s) and 9.7x in TorchSim, whose real
+kernels are lane-vectorized eight trains at a time on top of the arithmetic
+saving.
 
 **Where the loop lives is most of the difference among the Python packages.**
 Sycomore's cost barely moves with the number of orders it carries -- the same
@@ -176,31 +173,27 @@ tissue, not the EPG arithmetic underneath them. Epgpy, vectorized across
 tissues, shows the same thing from the other side: its per-tissue cost falls by
 an order of magnitude between one tissue and a hundred, then stops improving.
 
-**A Jacobian costs what the method costs, and exactness is not free.** At ten
-thousand tissues: BlochSimulators' finite differences 0.888 s, which is 3.5x
-its own forward pass and is what three passes should cost; TorchSim's dual
-arithmetic 27.7 s for two properties and 13.7 s for one, which is 11.8x and
-5.8x its own forward pass; epgpy's analytic derivative 177 s, 4.9x its own.
-TorchSim's is linear in the number of properties, as forward mode should be,
-and each directional derivative costs about six plain passes rather than one.
-What it buys over the finite differences is exactness and no step size to
-choose -- a real advantage in a fit, and one that has to be argued rather than
-assumed.
+**The Jacobian did not follow the forward pass onto the fast path.** At ten
+thousand tissues: BlochSimulators' finite differences 0.79 s, which is 3.0x its
+own forward pass and is what three passes should cost; TorchSim's dual
+arithmetic 16.9 s for two properties and 8.4 s for one; epgpy's analytic
+derivative 177 s, 4.9x its own. TorchSim's is linear in the number of
+properties, as forward mode should be, and it is exact where the finite
+differences are not -- but it is now **92x its own forward pass** where it was
+12x before the verdict widened. `anatomy.py` isolates that on one event stream:
+60x its forward pass on the real path against 5x on the complex one. Whatever
+the plain kernels gained, the dual ones did not gain with them, and that is
+where the CPU work goes next.
 
-**Neither of the two obvious explanations for that 2.4x is the right one, and
-`anatomy.py` says so.** Run the same schedule at several order counts and split
-the time into what scales with the orders and what does not: the fixed
-per-event part -- the two exponentials, the loads, the branches -- is 32 ms of a
-474 ms run at 32 orders, **7%**. Hoisting the relaxation factors out of the
-event loop the way a hand-written sequence simulator does cannot buy more than
-that. What can is the specialization above: run one refocused train twice, in
-phase with its refocusing pulses and a quarter turn from them, so that the
-event stream and the arithmetic content are identical and only the subspace
-verdict differs, and it is 48.6 ms against 454.6 ms -- **9.4x**, because the
-real kernels are also lane-vectorized eight trains at a time and the complex
-ones are not. Widening the verdict to cover a zero-phase spoiled train would
-put the dictionary at roughly a quarter of a second at ten thousand tissues,
-which is where BlochSimulators.jl already is.
+**Which of the two obvious optimizations is worth doing depends on the path,
+and `anatomy.py` measures both.** Split the time into what scales with the
+configuration orders and what does not, and the fixed per-event part -- the two
+exponentials, the loads, the branches, everything a hand-written sequence
+simulator hoists out of its repetition loop -- is **7% of a 32-order run on the
+complex path and 65% of one on the real path**. The state arithmetic is what
+the real kernels made thirty times cheaper, so what is left over is the part
+that does not scale: hoisting is worth almost nothing until the verdict is
+right, and is the next lever once it is.
 
 **TorchSim pays a structure cost the others do not.** Resolving a
 500-repetition train -- walking 1 500 events, packing them, learning the affine

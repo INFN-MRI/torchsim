@@ -107,7 +107,33 @@ def main() -> None:
         )
         print(f"  {label:24s} {timings[label] * 1e3:8.1f} ms")
     ratio = timings["quarter turn, complex"] / timings["in phase, real"]
-    print(f"\n  the real path is {ratio:.1f}x the complex one on this machine.")
+    print(f"\n  the real path is {ratio:.1f}x the complex one on this machine.\n")
+
+    print("What the Jacobian costs on each path, same event stream")
+    for label, exc_phase in (("in phase, real", 0.0), ("quarter turn, complex", 90.0)):
+        sequence = FSESimulator(ESP=5.0, TR=3000.0, states=32, exc_phase=exc_phase)
+        if device.type != "cpu":
+            sequence = sequence.to(device)
+        sequence = sequence.resolved()
+        forward = best(
+            lambda s=sequence: s.simulate(flip=echo_train, T1=T1, T2=T2),
+            args.repeats,
+            synchronize,
+        )
+        jacobian = best(
+            lambda s=sequence: s.jacobian(("T1", "T2"), flip=echo_train, T1=T1, T2=T2),
+            args.repeats,
+            synchronize,
+        )
+        print(
+            f"  {label:24s} forward {forward * 1e3:8.1f} ms   "
+            f"jacobian {jacobian * 1e3:8.1f} ms   {jacobian / forward:5.1f}x"
+        )
+    print(
+        "\n  A forward-mode pass costs several times its own forward pass either\n"
+        "  way, but the multiple is far larger where the forward pass is fast:\n"
+        "  what the real path gains, the dual kernels do not gain with it."
+    )
 
 
 if __name__ == "__main__":

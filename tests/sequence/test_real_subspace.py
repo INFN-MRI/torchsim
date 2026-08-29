@@ -809,3 +809,62 @@ def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass(
         _accelerators._run_packed_vjp_jvp = original
 
     assert not reached
+
+
+def _spoiled_axis(phases_rad):
+    """The verdict and the signal for an unbalanced train of the given phases."""
+    from torchsim import mrf_description
+
+    flip = torch.deg2rad(torch.linspace(5.0, 60.0, ECHOES))
+    description = mrf_description(flip, 10e-3, phases_rad=phases_rad)
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
+    signal = EpgEngine().simulate(description, _tissue(0.0, 0.0)).signal
+    return real_subspace_axis(packed.buffers, prepared), signal, packed, prepared
+
+
+@pytest.mark.parametrize("phase", [0.0, torch.pi / 3, torch.pi])
+def test_a_train_with_no_refocusing_pulse_stays_on_the_axis(phase):
+    """Winding the states on does not take them off the axis a pulse turns about.
+
+    A fingerprinting schedule has an inversion and a train of excitations and
+    no refocusing pulse at all, so the arrangement is one axis rather than two.
+    """
+    axis, signal, _, _ = _spoiled_axis(phase)
+    assert axis == 1
+    # The engine runs the complex kernel on a problem this small, so what is
+    # left on the real axis is the round-off of demodulating by the pulse
+    # phase rather than anything the states did.
+    assert signal.real.abs().max() < 1e-6 * signal.imag.abs().max()
+
+
+def test_rf_spoiling_breaks_the_subspace():
+    """Quadratic phase increments turn about a different axis every repetition.
+
+    Each sample is demodulated by the phase of the pulse that made it, so the
+    echoes still look nearly imaginary; the states do not, and the verdict
+    follows the states.
+    """
+    index = torch.arange(ECHOES, dtype=torch.float32)
+    axis, signal, _, _ = _spoiled_axis(torch.deg2rad(0.5 * 117.0 * index * (index + 1)))
+    assert axis is None
+    assert signal.real.abs().max() > 1e-3 * signal.imag.abs().max()
+
+
+def test_the_real_kernel_reproduces_the_complex_one_without_refocusing():
+    """The widened verdict is an optimization, not an approximation."""
+    from torchsim.sequence._accelerators import _run_packed
+
+    axis, _, packed, prepared = _spoiled_axis(0.0)
+    assert axis == 1
+    events = _buffers(packed)
+    complex_signal = _run_packed(prepared, events, 10, packed.output_count, 1)
+    real_signal = _run_packed(prepared, events, 10, packed.output_count, 1, real_axis=1)
+    scale = complex_signal.abs().max()
+    assert ((complex_signal - real_signal).abs().max() / scale) < 1e-6

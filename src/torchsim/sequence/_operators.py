@@ -36,6 +36,7 @@ __all__ = [
     "Readout",
     "Refocusing",
     "SPGRReadout",
+    "SSFPEchoReadout",
     "SSFPFidReadout",
     "Saturation",
     "Spoil",
@@ -379,6 +380,33 @@ def SSFPFidReadout(
     )
 
 
+def SSFPEchoReadout(
+    phase_rad: Any = 0.0,
+    *,
+    duration_s: Any = 0.0,
+    role: AdcRole = AdcRole.SINGLE,
+    is_echo: bool = True,
+) -> Operator:
+    """Return one unbalanced gradient, then the sample the echo forms at.
+
+    The repetition's other sample. An unbalanced train winds every order on
+    once per repetition, so the order the next pulse would refocus sits at
+    zero once the gradient has played -- which is where this reads it, and
+    what makes the sample an echo of the *previous* excitation rather than a
+    free induction decay after this one. It is the strongly T2-weighted half
+    of a reversed-FISP pair, and it takes the same ideal winding
+    :func:`SSFPFidReadout` does, in the other order.
+
+    ``duration_s`` is what is left of the repetition after the sample.
+    """
+    return module(
+        Dephase(),
+        Readout(phase_rad, role=role, is_echo=is_echo),
+        Delay(duration_s),
+        duration_s=duration_s,
+    )
+
+
 def SPGRReadout(
     phase_rad: Any = 0.0,
     *,
@@ -429,6 +457,7 @@ _REGISTRY: dict[str, Callable[..., Operator]] = {
     "spoil": Spoil,
     "bssfp-readout": bSSFPReadout,
     "ssfp-fid-readout": SSFPFidReadout,
+    "ssfp-echo-readout": SSFPEchoReadout,
     "spgr-readout": SPGRReadout,
     "fse-readout": FSEReadout,
 }
