@@ -311,8 +311,15 @@ def _fit(points: list[tuple[float, float]]) -> _Rates:
 
 
 def _summary_cost(device: torch.device) -> float:
-    """What one subspace test costs: the reductions plus the round trip."""
-    from ._accelerators import _summarize
+    """What one subspace test costs a call: the reductions plus the round trip.
 
-    tissue, events, _outputs = _problem(_FIRST_VOXELS, device)
-    return _elapsed(lambda: _summarize(events, tissue), device)
+    The half of the verdict that reads the event stream is settled once per
+    sequence and reused, so what a call pays is the half that reads the tissue.
+    A caller who leaves off-resonance, transmit phase and flow at their
+    identities pays nothing at all; this measures the caller who gives one of
+    them as a map, which is the case the threshold has to cover.
+    """
+    from ._accelerators import _tissue_stays_on_the_axis
+
+    tissue, _events, _outputs = _problem(_FIRST_VOXELS, device)
+    return _elapsed(lambda: _tissue_stays_on_the_axis(tissue, None), device)

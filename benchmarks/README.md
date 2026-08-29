@@ -186,32 +186,29 @@ takes a forward-mode pass over ten thousand tissues from 16.9 s to 3.1 s.
 
 At ten thousand tissues: BlochSimulators' finite differences 0.77 s, which is
 2.5x its own forward pass and is what three passes should cost; TorchSim's dual
-arithmetic 3.1 s for two properties and 1.6 s for one, which is 8.3x its own
+arithmetic 1.05 s for two properties and 0.56 s for one, which is 2.8x its own
 forward pass per property; epgpy's analytic derivative 177 s, 4.9x its own.
 TorchSim's is linear in the number of properties, as forward mode should be,
 and exact where the finite differences are not.
 
-`anatomy.py` reports the multiple on one event stream -- 13.5x its forward pass
-on the real path against 5.3x on the complex one -- which is the check that the
-dual kernels take the path the plain ones take.
-
 **The reverse pass takes the same lanes.** A gradient through the same
-dictionary takes 0.92 s, 4.8x its own forward pass; `TORCHSIM_REAL_SCALAR=1`
+dictionary takes 0.93 s, 5.0x its own forward pass; `TORCHSIM_REAL_SCALAR=1`
 leaves it at 1.61 s. So the lanes are worth 1.8x on the adjoint against 2.8x on
 the forward-mode pass -- the adjoint records a trajectory and walks it back,
 and that traffic is the same however wide the arithmetic is.
 
-One measurement here is order-dependent, and badly: a gradient timed in a
-process that has already run a Jacobian costs 5.6 s rather than 1.6 s, and so
-does everything else that reaches the CPU kernels -- a plain forward pass goes
-from 0.185 s to 0.52 s. It is not the machine (nine seconds of four-thread
-`torch.mm` leaves the forward pass at 0.183 s), not the verdict or the
-execution policy (both unchanged), and not the buffers (a fresh simulator on
-fresh inputs is just as slow). The extra time is inside the kernel call, the
-thread count is the same, and a single-threaded run is unaffected, so what a
-forward-mode pass leaves behind is costing the pool its parallelism. A reverse
-pass does not do it. Every number here was taken in a process that ran no
-Jacobian first.
+**Timings used to depend on what the process had run before**, and finding out
+why was worth more than any of the numbers above. A gradient measured after a
+Jacobian cost 5.6 s where the same gradient measured first cost 1.6 s, and a
+plain forward pass went from 0.185 s to 0.52 s -- while `torch.mm` in the same
+process was untouched, and a single-threaded run was untouched. What a
+forward-mode pass left behind was a dirty vector-register state on the pool's
+worker threads: the kernels are multiversioned, the loader picks an AVX-512
+clone, and a worker parks between jobs rather than executing anything that
+would clear it, so every later kernel on that thread paid the transition
+penalty for the life of the process. One `vzeroupper` per job settles it; see
+`CHANGELOG.md`. It is why the Jacobian row above is a third of what it was --
+the pass was poisoning its own threads as it ran.
 
 **TorchSim pays a structure cost the others do not.** Resolving a
 500-repetition train -- walking 1 500 events, packing them, learning the affine

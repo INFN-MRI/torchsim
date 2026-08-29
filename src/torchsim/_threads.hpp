@@ -18,6 +18,34 @@
 
 namespace torchsim {
 
+// Leave the vector registers in the state a legacy-encoded caller expects.
+//
+// The kernels are multiversioned: ``target_clones`` compiles each one for
+// several instruction sets and the loader picks the widest the processor can
+// run. A clone that used the upper halves of the vector registers leaves them
+// dirty, and on Intel parts every SSE-encoded instruction executed afterwards
+// -- everything in a translation unit built for the base architecture, libm's
+// ``expf`` among it -- then pays a transition penalty until something clears
+// them. A thread that returns to Python clears them within moments because
+// everything around it is AVX-encoded; a worker parks in a wait and carries
+// the state to its next job, which is how one forward-mode pass can leave a
+// pool running every later kernel at a third of its speed.
+//
+// One instruction per job settles it. ``vzeroupper`` faults on a processor
+// with no AVX at all, hence the runtime test, and the clobber list is what
+// tells the compiler not to hold a vector value across it.
+inline void release_vector_state() {
+#if defined(__x86_64__) || defined(__i386__)
+#if defined(__GNUC__) || defined(__clang__)
+    if (__builtin_cpu_supports("avx")) {
+        __asm__ __volatile__("vzeroupper" ::: "xmm0", "xmm1", "xmm2", "xmm3",
+                             "xmm4", "xmm5", "xmm6", "xmm7");
+    }
+#endif
+#endif
+}
+
+
 // Workers outlive the call that first needs them, so a kernel pays for a
 // handoff rather than for thread creation.
 //
@@ -38,6 +66,7 @@ public:
     void run(const unsigned int slots, const std::function<void(unsigned int)>& task) {
         if (slots <= 1) {
             task(0);
+            release_vector_state();
             return;
         }
         // One job at a time. A kernel already spreads across every core, so a
@@ -55,6 +84,7 @@ public:
         }
         ready_.notify_all();
         task(0);
+        release_vector_state();
         std::unique_lock<std::mutex> guard(mutex_);
         finished_.wait(guard, [this] { return outstanding_ == 0; });
         task_ = nullptr;
@@ -75,6 +105,7 @@ private:
                 task = task_;
             }
             (*task)(slot);
+            release_vector_state();
             {
                 const std::lock_guard<std::mutex> guard(mutex_);
                 --outstanding_;

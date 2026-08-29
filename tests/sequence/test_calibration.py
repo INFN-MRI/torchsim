@@ -65,6 +65,20 @@ def test_the_probe_a_measurement_times_actually_runs(kind):
     _call(kind, 64, torch.device("cpu"), -1, STATES)()
 
 
+def test_the_cost_of_a_subspace_test_is_measured_too():
+    """The other half of a detection threshold, and it fails the same way.
+
+    ``_measure_detection`` weighs what a subspace test costs against what the
+    real kernels save, and a test that raises is caught like any other probe --
+    so this one is called directly, where the fallback cannot stand in for it.
+    """
+    from torchsim.sequence._calibration import _summary_cost
+
+    cost = _summary_cost(torch.device("cpu"))
+    assert math.isfinite(cost)
+    assert cost > 0.0
+
+
 @pytest.mark.parametrize("kind", KINDS)
 def test_detection_stays_reachable(kind):
     """An unmeasurable saving must not lock the real kernels away entirely."""

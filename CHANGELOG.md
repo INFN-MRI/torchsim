@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Fixed
+
+- **A pass no longer leaves the worker pool slower than it found it.** The CPU
+  kernels are multiversioned, so on a machine with AVX-512 the loader picks a
+  clone that uses the upper halves of the vector registers. A pool worker
+  returns from that clone and parks in a wait, executing nothing that would
+  clear them, so every later kernel on that thread ran SSE-encoded arithmetic
+  against a dirty register state and paid the transition penalty -- for the
+  life of the process, on every thread but the one that returns to Python.
+
+  One forward-mode pass was enough to make everything after it cost two and a
+  half times as much: a forward pass over ten thousand tissues went from
+  0.185 s to 0.52 s and stayed there. The pool now clears the state as each job
+  ends. A two-property Jacobian falls from 3.09 s to 1.05 s -- it was poisoning
+  its own threads as it ran -- and a gradient measured after one from 5.6 s to
+  0.93 s.
+
+- **A detection threshold is measured again rather than falling back.** What a
+  subspace test costs is probed by running one, and the probe reached for a
+  function the verdict no longer has; a probe that raises is caught on purpose,
+  so the documented fallback quietly stood in for a measurement on every
+  machine. It now times the half of the verdict a call actually pays -- the
+  reductions over the tissue -- which is 26 us here against a 5 000-work-unit
+  fallback, so the real kernels are reached at far smaller problems than the
+  fallback allowed.
+
 ### Changed
 
 - **A description's pulses are packed a definition at a time.** Packing walked
