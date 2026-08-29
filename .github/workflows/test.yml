@@ -18,12 +18,6 @@ jobs:
     name: ${{ matrix.os }} · Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
-    # A multi-config generator makes CMake's FindPython look for a debug
-    # import library beside the release one, and a stable-ABI install ships
-    # only python3.lib. Ninja is single-config, which is what the other two
-    # platforms already build with.
-    env:
-      CMAKE_GENERATOR: Ninja
 
     strategy:
       fail-fast: false
@@ -66,20 +60,7 @@ jobs:
       # on this runner, with this compiler, which is the half of the package a
       # pure-Python job would never exercise. CMake and Ninja arrive as
       # build-time wheels through scikit-build-core.
-      # Ninja does not bring the MSVC environment with it the way the Visual
-      # Studio generator does, and without it CMake takes the MinGW gcc that
-      # is on the runner's PATH -- which cannot link python3.lib, the import
-      # library the stable ABI is reached through. vcvars64 puts cl.exe in
-      # front of it.
-      - name: Build the extensions and install (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          for /f "usebackq delims=" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
-          python -m pip install ".[test]"
-
       - name: Build the extensions and install
-        if: runner.os != 'Windows'
         run: python -m pip install ".[test]"
 
       - name: Report what was built
