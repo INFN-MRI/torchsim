@@ -4,6 +4,20 @@
 
 ### Changed
 
+- **The adjoint fills its lanes from the atom axis too.** The real subspace had
+  a laned kernel for forward mode and a scalar one for the reverse pass, so a
+  gradient reached the fast path and then ran an eighth as wide as it could.
+  There is now `simulate_real_vjp_atom_lane_range`, built the way the
+  forward-mode kernel is: the tissue gathered once per block of eight atoms,
+  every event value a splat, the trajectory recorded lane-major, and an
+  inactive lane of a partial block seeded with a zero cotangent so every
+  gradient it computes stays zero and no sum over lanes needs a mask.
+
+  A gradient over ten thousand tissues falls from 1.61 s to 0.92 s, 4.8x its
+  own forward pass where it was 8.3x. Diffusion is left to the per-atom kernel,
+  its damping factors varying with the configuration order as well as the atom;
+  the gradient along the damping rate is still exact where no atom diffuses.
+
 - **The real-subspace verdict is worked out once per sequence, not once per
   call.** The verdict has two halves and both were re-read on every
   `simulate`. The half that scans the event stream -- do all the pulses turn

@@ -195,14 +195,23 @@ and exact where the finite differences are not.
 on the real path against 5.3x on the complex one -- which is the check that the
 dual kernels take the path the plain ones take.
 
-**The reverse pass has not had the same treatment.** A gradient through the
-same dictionary takes 5.64 s, 30x its forward pass, and
-`TORCHSIM_REAL_SCALAR=1` leaves it at 5.70 s: the adjoint reaches the real
-subspace and then runs the scalar kernel, there being no laned one for it to
-reach. What that same change bought forward mode -- 8.79 s to 3.09 s -- is the
-size of what is on the table. On a card the picture is different again, since
-every pass has its own real kernel there and the atom axis is what the launch
-grid is already spread over.
+**The reverse pass takes the same lanes.** A gradient through the same
+dictionary takes 0.92 s, 4.8x its own forward pass; `TORCHSIM_REAL_SCALAR=1`
+leaves it at 1.61 s. So the lanes are worth 1.8x on the adjoint against 2.8x on
+the forward-mode pass -- the adjoint records a trajectory and walks it back,
+and that traffic is the same however wide the arithmetic is.
+
+One measurement here is order-dependent, and badly: a gradient timed in a
+process that has already run a Jacobian costs 5.6 s rather than 1.6 s, and so
+does everything else that reaches the CPU kernels -- a plain forward pass goes
+from 0.185 s to 0.52 s. It is not the machine (nine seconds of four-thread
+`torch.mm` leaves the forward pass at 0.183 s), not the verdict or the
+execution policy (both unchanged), and not the buffers (a fresh simulator on
+fresh inputs is just as slow). The extra time is inside the kernel call, the
+thread count is the same, and a single-threaded run is unaffected, so what a
+forward-mode pass leaves behind is costing the pool its parallelism. A reverse
+pass does not do it. Every number here was taken in a process that ran no
+Jacobian first.
 
 **TorchSim pays a structure cost the others do not.** Resolving a
 500-repetition train -- walking 1 500 events, packing them, learning the affine

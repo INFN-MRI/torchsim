@@ -6175,6 +6175,377 @@ void simulate_real_vjp_range(
 }
 
 
+// The reverse of ``shift_real_lanes``, eight atoms wide.
+inline void shift_real_adjoint_lanes(
+    float* const plus_bar, float* const minus_bar, const std::size_t states
+) {
+    if (states == 0) {
+        return;
+    }
+    const LaneVector carry = -lane_load(plus_bar);
+    for (std::size_t state = 0; state + 1 < states; ++state) {
+        lane_store(
+            plus_bar + state * REAL_LANES,
+            lane_load(plus_bar + (state + 1) * REAL_LANES)
+        );
+    }
+    lane_store(plus_bar + (states - 1) * REAL_LANES, lane_splat(0.0F));
+    for (std::size_t state = states - 1; state > 0; --state) {
+        lane_store(
+            minus_bar + state * REAL_LANES,
+            lane_load(minus_bar + (state - 1) * REAL_LANES)
+        );
+    }
+    lane_store(minus_bar, lane_splat(0.0F));
+    if (states > 1) {
+        lane_store(
+            minus_bar + REAL_LANES, lane_load(minus_bar + REAL_LANES) + carry
+        );
+    }
+}
+
+// A gradient on an event value is one number every atom contributes to, so the
+// block's lanes are summed across before it lands.
+inline float lane_sum(const LaneVector value) {
+    float buffer[REAL_LANES];
+    lane_store(buffer, value);
+    float total = 0.0F;
+    for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+        total += buffer[lane];
+    }
+    return total;
+}
+
+// The adjoint of the real subspace, eight atoms at a time. The arithmetic is
+// the per-atom kernel's, laid out the way ``simulate_real_jvp_atom_lane_range``
+// lays the forward-mode pass out: the tissue is gathered once per block, every
+// event value is a splat, and the trajectory is recorded lane-major.
+//
+// An inactive lane of a partial block is seeded with a zero cotangent, which
+// leaves every gradient it computes at zero -- so the sums over lanes that
+// carry an event's gradient need no mask, and the per-atom rows it would write
+// are never scattered.
+//
+// The dispatch reaches this kernel only where no atom diffuses, so the damping
+// factors are one throughout; the gradient along the damping rate is not, and
+// is accumulated from the state weights as the per-atom kernel does.
+void simulate_real_vjp_atom_lane_range(
+    const VjpBuffers& buffers,
+    const std::int64_t work_begin,
+    const std::int64_t work_end,
+    const std::int64_t event_count,
+    const std::int64_t state_count,
+    const std::int64_t output_count,
+    float* grad_flip_local,
+    float* grad_phase_local,
+    float* grad_duration_local,
+    float* grad_tissue_local
+) {
+    (void)grad_phase_local;
+    const Buffers& primal = buffers.primal;
+    const std::int64_t atoms = primal.atom_count;
+    const std::size_t states = static_cast<std::size_t>(state_count);
+    const std::size_t width = states * REAL_LANES;
+    const std::size_t stride = 3U * width;
+
+    std::vector<float> trajectory(
+        static_cast<std::size_t>(event_count) * stride
+    );
+    std::vector<float> storage(6U * width);
+    float* const TORCHSIM_RESTRICT plus = storage.data();
+    float* const TORCHSIM_RESTRICT minus = plus + width;
+    float* const TORCHSIM_RESTRICT longitudinal = minus + width;
+    float* const TORCHSIM_RESTRICT plus_bar = longitudinal + width;
+    float* const TORCHSIM_RESTRICT minus_bar = plus_bar + width;
+    float* const TORCHSIM_RESTRICT longitudinal_bar = minus_bar + width;
+
+    float t1[REAL_LANES], t2[REAL_LANES], m0[REAL_LANES], b1[REAL_LANES];
+    float efficiency[REAL_LANES];
+    float rate1[REAL_LANES], rate2[REAL_LANES];
+    float scale1[REAL_LANES], scale2[REAL_LANES];
+    float e1[REAL_LANES], e2[REAL_LANES];
+    float cosine[REAL_LANES], sine[REAL_LANES];
+    float seed[REAL_LANES];
+    const LaneVector half = lane_splat(0.5F);
+    const LaneVector one = lane_splat(1.0F);
+    const LaneVector zero = lane_splat(0.0F);
+
+    for (std::int64_t work = work_begin; work < work_end; ++work) {
+        const AtomLaneView view = atom_lane_view(primal, work);
+        const std::int64_t event_base = view.train * event_count;
+        float* const grad_flip_train = grad_flip_local + event_base;
+        float* const grad_duration_train = grad_duration_local + event_base;
+
+        gather_atoms(primal.t1, true, 1.0F, view, t1);
+        gather_atoms(primal.t2, true, 1.0F, view, t2);
+        gather_atoms(primal.m0, primal.density, 1.0F, view, m0);
+        gather_atoms(primal.b1, primal.transmit, 1.0F, view, b1);
+        gather_atoms(
+            primal.inversion_efficiency, primal.inverting, 1.0F, view, efficiency
+        );
+        for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+            rate1[lane] = 1000.0F / t1[lane];
+            rate2[lane] = 1000.0F / t2[lane];
+            scale1[lane] = 1000.0F / (t1[lane] * t1[lane]);
+            scale2[lane] = 1000.0F / (t2[lane] * t2[lane]);
+        }
+        const LaneVector v_m0 = lane_load(m0);
+        const LaneVector v_b1 = lane_load(b1);
+        const LaneVector v_inversion = lane_load(efficiency);
+        const LaneVector v_rate1 = lane_load(rate1);
+        const LaneVector v_rate2 = lane_load(rate2);
+        const LaneVector t1_scale = lane_load(scale1);
+        const LaneVector t2_scale = lane_load(scale2);
+
+        std::fill(storage.begin(), storage.end(), 0.0F);
+        for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+            longitudinal[lane] = 1.0F;
+        }
+
+        // ---- forward, recording the state entering each event ----
+        for (std::int64_t event = 0; event < event_count; ++event) {
+            float* const slot = trajectory.data()
+                + static_cast<std::size_t>(event) * stride;
+            std::copy(plus, plus + width, slot);
+            std::copy(minus, minus + width, slot + width);
+            std::copy(longitudinal, longitudinal + width, slot + 2U * width);
+
+            const float dt = primal.duration[event_base + event];
+            for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+                e1[lane] = std::exp(-rate1[lane] * dt);
+                e2[lane] = std::exp(-rate2[lane] * dt);
+            }
+            const LaneVector v_e1 = lane_load(e1);
+            const LaneVector v_e2 = lane_load(e2);
+            for (std::size_t state = 0; state < states; ++state) {
+                const std::size_t base = state * REAL_LANES;
+                lane_store(plus + base, lane_load(plus + base) * v_e2);
+                lane_store(minus + base, lane_load(minus + base) * v_e2);
+                lane_store(
+                    longitudinal + base, lane_load(longitudinal + base) * v_e1
+                );
+            }
+            lane_store(longitudinal, lane_load(longitudinal) + (one - v_e1));
+
+            const std::uint8_t action = primal.action[event];
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_lanes(plus, minus, states);
+            }
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const LaneVector factor = -v_inversion;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const std::size_t base = state * REAL_LANES;
+                        lane_store(
+                            longitudinal + base, lane_load(longitudinal + base) * factor
+                        );
+                    }
+                } else {
+                    const float flip = primal.flip[event_base + event];
+                    for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+                        const float alpha = flip * b1[lane];
+                        cosine[lane] = std::cos(alpha);
+                        sine[lane] = std::sin(alpha);
+                    }
+                    const LaneVector c = lane_load(cosine);
+                    const LaneVector s = lane_load(sine);
+                    const LaneVector chs = half * (one + c);
+                    const LaneVector shs = half * (one - c);
+                    const LaneVector hs = half * s;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const std::size_t base = state * REAL_LANES;
+                        const LaneVector p = lane_load(plus + base);
+                        const LaneVector m = lane_load(minus + base);
+                        const LaneVector z = lane_load(longitudinal + base);
+                        lane_store(plus + base, chs * p + shs * m - s * z);
+                        lane_store(minus + base, shs * p + chs * m + s * z);
+                        lane_store(longitudinal + base, hs * p - hs * m + c * z);
+                    }
+                }
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real_lanes(plus, minus, states);
+            }
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus, plus + width, 0.0F);
+                std::fill(minus, minus + width, 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real_lanes(plus, minus, states);
+            }
+        }
+
+        // ---- reverse ----
+        std::fill(plus_bar, plus_bar + 3U * width, 0.0F);
+        LaneVector grad_t1 = zero;
+        LaneVector grad_t2 = zero;
+        LaneVector grad_m0 = zero;
+        LaneVector grad_b1 = zero;
+        LaneVector grad_inversion = zero;
+        LaneVector grad_damping = zero;
+
+        for (std::int64_t event = event_count - 1; event >= 0; --event) {
+            const float* const slot = trajectory.data()
+                + static_cast<std::size_t>(event) * stride;
+            const std::uint8_t action = primal.action[event];
+            const float dt = primal.duration[event_base + event];
+            for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+                e1[lane] = std::exp(-rate1[lane] * dt);
+                e2[lane] = std::exp(-rate2[lane] * dt);
+            }
+            const LaneVector v_e1 = lane_load(e1);
+            const LaneVector v_e2 = lane_load(e2);
+
+            // Replay the intra-event stages from the recorded entry state, into
+            // the state planes the forward pass has finished with.
+            for (std::size_t state = 0; state < states; ++state) {
+                const std::size_t base = state * REAL_LANES;
+                lane_store(plus + base, lane_load(slot + base) * v_e2);
+                lane_store(minus + base, lane_load(slot + width + base) * v_e2);
+                lane_store(
+                    longitudinal + base,
+                    lane_load(slot + 2U * width + base) * v_e1
+                );
+            }
+            lane_store(longitudinal, lane_load(longitudinal) + (one - v_e1));
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_lanes(plus, minus, states);
+            }
+            // The state planes now hold what entered the RF operator.
+
+            if ((action & SPOIL_AFTER) != 0) {
+                std::fill(plus_bar, plus_bar + width, 0.0F);
+                std::fill(minus_bar, minus_bar + width, 0.0F);
+            } else if ((action & SHIFT_AFTER) != 0) {
+                shift_real_adjoint_lanes(plus_bar, minus_bar, states);
+            }
+            if ((action & POST_SHIFT) != 0) {
+                shift_real_adjoint_lanes(plus_bar, minus_bar, states);
+            }
+
+            if (primal.kind[event] == 1) {
+                if ((action & INVERSION) != 0) {
+                    const LaneVector factor = -v_inversion;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const std::size_t base = state * REAL_LANES;
+                        const LaneVector zb = lane_load(longitudinal_bar + base);
+                        grad_inversion =
+                            grad_inversion - zb * lane_load(longitudinal + base);
+                        lane_store(longitudinal_bar + base, zb * factor);
+                    }
+                } else {
+                    const float flip = primal.flip[event_base + event];
+                    for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+                        const float alpha = flip * b1[lane];
+                        cosine[lane] = std::cos(alpha);
+                        sine[lane] = std::sin(alpha);
+                    }
+                    const LaneVector c = lane_load(cosine);
+                    const LaneVector s = lane_load(sine);
+                    const LaneVector chs = half * (one + c);
+                    const LaneVector shs = half * (one - c);
+                    const LaneVector hs = half * s;
+                    LaneVector grad_alpha = zero;
+                    for (std::size_t state = 0; state < states; ++state) {
+                        const std::size_t base = state * REAL_LANES;
+                        const LaneVector p = lane_load(plus + base);
+                        const LaneVector m = lane_load(minus + base);
+                        const LaneVector z = lane_load(longitudinal + base);
+                        const LaneVector pb = lane_load(plus_bar + base);
+                        const LaneVector mb = lane_load(minus_bar + base);
+                        const LaneVector zb = lane_load(longitudinal_bar + base);
+                        grad_alpha = grad_alpha
+                            + pb * (hs * m - hs * p - c * z)
+                            + mb * (hs * p - hs * m + c * z)
+                            + zb * (half * c * p - half * c * m - s * z);
+                        lane_store(plus_bar + base, chs * pb + shs * mb + hs * zb);
+                        lane_store(minus_bar + base, shs * pb + chs * mb - hs * zb);
+                        lane_store(
+                            longitudinal_bar + base, -(s * pb) + s * mb + c * zb
+                        );
+                    }
+                    grad_flip_train[event] += lane_sum(grad_alpha * v_b1);
+                    grad_b1 = grad_b1 + grad_alpha * lane_splat(flip);
+                }
+            } else if (primal.kind[event] == 2 && (action & RECORD) != 0) {
+                // The sample is i * m0 * plus[0]; only the imaginary seed acts.
+                const std::int64_t offset = primal.output_index[event];
+                for (std::size_t lane = 0; lane < REAL_LANES; ++lane) {
+                    if (static_cast<std::int64_t>(lane) >= view.active) {
+                        seed[lane] = 0.0F;
+                        continue;
+                    }
+                    const std::int64_t index =
+                        (view.train * atoms + view.atom_begin
+                         + static_cast<std::int64_t>(lane))
+                            * output_count
+                        + offset;
+                    seed[lane] = buffers.grad_output_imag[index];
+                }
+                const LaneVector v_seed = lane_load(seed);
+                grad_m0 = grad_m0 + v_seed * lane_load(plus);
+                lane_store(plus_bar, lane_load(plus_bar) + v_seed * v_m0);
+            }
+
+            if ((action & PRE_SHIFT) != 0) {
+                shift_real_adjoint_lanes(plus_bar, minus_bar, states);
+            }
+
+            LaneVector grad_e1 = -lane_load(longitudinal_bar);
+            LaneVector grad_e2 = zero;
+            LaneVector grad_b_factor = zero;
+            for (std::size_t state = 0; state < states; ++state) {
+                const std::size_t base = state * REAL_LANES;
+                const LaneVector pb = lane_load(plus_bar + base);
+                const LaneVector mb = lane_load(minus_bar + base);
+                const LaneVector zb = lane_load(longitudinal_bar + base);
+                const LaneVector plus_term = pb * lane_load(slot + base);
+                const LaneVector minus_term = mb * lane_load(slot + width + base);
+                const LaneVector longitudinal_term =
+                    zb * lane_load(slot + 2U * width + base);
+                grad_e2 = grad_e2 + plus_term + minus_term;
+                grad_e1 = grad_e1 + longitudinal_term;
+                grad_b_factor = grad_b_factor
+                    - (lane_splat(transverse_weight(state))
+                           * (v_e2 * (plus_term + minus_term))
+                       + lane_splat(longitudinal_weight(state))
+                           * (v_e1 * longitudinal_term));
+                lane_store(plus_bar + base, pb * v_e2);
+                lane_store(minus_bar + base, mb * v_e2);
+                lane_store(longitudinal_bar + base, zb * v_e1);
+            }
+            const LaneVector v_dt = lane_splat(dt);
+            grad_t1 = grad_t1 + grad_e1 * (v_e1 * v_dt * t1_scale);
+            grad_t2 = grad_t2 + grad_e2 * (v_e2 * v_dt * t2_scale);
+            grad_damping = grad_damping + grad_b_factor * v_dt;
+            grad_duration_train[event] += lane_sum(
+                -(grad_e1 * (v_rate1 * v_e1)) - grad_e2 * (v_rate2 * v_e2)
+            );
+        }
+
+        // A real-subspace run is a single-shim one, so each parameter's row is
+        // its own index; the four the representation divides out are left
+        // alone, which is what the caller promised not to read.
+        float row_t1[REAL_LANES], row_t2[REAL_LANES], row_m0[REAL_LANES];
+        float row_b1[REAL_LANES], row_inversion[REAL_LANES], row_damping[REAL_LANES];
+        lane_store(row_t1, grad_t1);
+        lane_store(row_t2, grad_t2);
+        lane_store(row_m0, grad_m0);
+        lane_store(row_b1, grad_b1);
+        lane_store(row_inversion, grad_inversion);
+        lane_store(row_damping, grad_damping);
+        for (std::int64_t lane = 0; lane < view.active; ++lane) {
+            const std::int64_t atom = view.atom_begin + lane;
+            grad_tissue_local[0 * atoms + atom] += row_t1[lane];
+            grad_tissue_local[1 * atoms + atom] += row_t2[lane];
+            grad_tissue_local[2 * atoms + atom] += row_m0[lane];
+            grad_tissue_local[3 * atoms + atom] += row_b1[lane];
+            grad_tissue_local[6 * atoms + atom] += row_inversion[lane];
+            grad_tissue_local[7 * atoms + atom] += row_damping[lane];
+        }
+    }
+}
+
+
 struct VjpJvpBuffers {
     Buffers primal;
     // tangent directions for the ten differentiable inputs
@@ -9239,8 +9610,19 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         tail_slot(raw, expected, Tail::GRADIENT)
     );
 
-    const std::int64_t work_count =
-        static_cast<std::int64_t>(atom_count) * static_cast<std::int64_t>(train_count);
+    // Lanes over atoms, which is the axis a dictionary is wide in; a run with
+    // fewer than a block of them takes the per-atom kernel. Diffusion is left
+    // to that one, its damping factors varying with the state as well as the
+    // atom.
+    const bool atom_lanes = real_axis == 1 && pool_kind == 0
+        && lane_kernels_enabled()
+        && static_cast<std::int64_t>(atom_count) >= static_cast<std::int64_t>(REAL_LANES)
+        && !any_diffusion(buffers.primal.diffusion, atom_count);
+    const std::int64_t work_count = atom_lanes
+        ? static_cast<std::int64_t>(train_count)
+            * lane_blocks(static_cast<std::int64_t>(atom_count))
+        : static_cast<std::int64_t>(atom_count)
+            * static_cast<std::int64_t>(train_count);
     const unsigned int thread_count = worker_count(requested_threads, work_count);
 
     const std::size_t events =
@@ -9293,7 +9675,9 @@ PyObject* simulate_vjp(PyObject*, PyObject* arguments) {
         // The caller establishes the real-subspace conditions and promises not
         // to read the four gradients the representation divides out. A bound
         // pool leaves that subspace, on the same terms as the forward.
-        if (real_axis == 1 && pool_kind == 0) {
+        if (atom_lanes) {
+            kernel = &simulate_real_vjp_atom_lane_range;
+        } else if (real_axis == 1 && pool_kind == 0) {
             kernel = &simulate_real_vjp_range;
         }
         const std::int64_t block = (work_count + thread_count - 1) / thread_count;

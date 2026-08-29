@@ -964,3 +964,39 @@ def test_a_rewritten_phase_buffer_is_read_again():
     phase.copy_(quarter)
     phase[turning.nonzero()[0]] = 0.0
     assert real_subspace_axis(events, prepared) is None
+
+
+# The laned adjoint fills a block from the atom axis, so an atom count that
+# does not fill the last block leaves lanes carrying a repeat of the block's
+# first atom. These counts straddle that boundary; every per-atom gradient the
+# block writes and every per-event gradient it sums has to ignore them.
+@pytest.mark.parametrize("atoms", [7, 8, 9, 17])
+def test_partial_atom_blocks_of_the_adjoint_match_the_complex_kernel(atoms):
+    from torchsim.sequence._accelerators import (
+        _auto_real_axis_adjoint,
+        _run_packed_vjp,
+    )
+
+    trains = _trains_worth(8, atoms=atoms)
+    events, tissue, count = _tissue_events(trains, atoms=atoms)
+    wanted = tuple(index in INSIDE_THE_SUBSPACE for index in range(len(FLOAT_NAMES)))
+    assert _auto_real_axis_adjoint(events, tissue, 10, (), wanted) == 1
+
+    torch.manual_seed(0)
+    seed = torch.randn(
+        (trains, atoms, count) if trains > 1 else (atoms, count),
+        dtype=torch.complex64,
+    )
+    keywords = dict(state_count=10, output_count=count, threads=1)
+    real = _run_packed_vjp(tissue, events, seed, wanted=wanted, **keywords)
+    complex_path = _run_packed_vjp(tissue, events, seed, wanted=None, **keywords)
+
+    floor = 1e-6 * max(float(value.abs().max()) for value in complex_path)
+    compared = 0
+    for index in INSIDE_THE_SUBSPACE:
+        scale = float(complex_path[index].abs().max())
+        drift = float((complex_path[index] - real[index]).abs().max())
+        assert drift <= 2e-4 * scale + floor, f"{FLOAT_NAMES[index]}: {drift}"
+        if scale > floor:
+            compared += 1
+    assert compared >= 3
