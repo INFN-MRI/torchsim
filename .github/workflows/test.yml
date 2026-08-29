@@ -18,6 +18,13 @@ jobs:
     name: ${{ matrix.os }} · Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    # A multi-config generator makes CMake's FindPython look for a debug
+    # import library beside the release one, and a stable-ABI install ships
+    # only python3.lib. Ninja is single-config, which is what the other two
+    # platforms already build with.
+    env:
+      CMAKE_GENERATOR: Ninja
+
     strategy:
       fail-fast: false
       matrix:
@@ -59,29 +66,6 @@ jobs:
       # on this runner, with this compiler, which is the half of the package a
       # pure-Python job would never exercise. CMake and Ninja arrive as
       # build-time wheels through scikit-build-core.
-      # TEMPORARY: what the Windows SABI build cannot find, from the machine
-      # that has it. Removed once the cause is known.
-      - name: Diagnose the Python layout (Windows)
-        if: runner.os == 'Windows'
-        shell: python
-        run: |
-          import pathlib, sys, sysconfig
-
-          print("executable    ", sys.executable)
-          print("prefix        ", sys.prefix)
-          print("base_prefix   ", sys.base_prefix)
-          print("include       ", sysconfig.get_path("include"))
-          print("installed_base", sysconfig.get_config_var("installed_base"))
-          print("LIBDEST       ", sysconfig.get_config_var("LIBDEST"))
-          roots = {sys.prefix, sys.base_prefix}
-          roots.add(str(sysconfig.get_config_var("installed_base") or ""))
-          for root in sorted(filter(None, roots)):
-              libs = pathlib.Path(root) / "libs"
-              print(f"--- {libs}  exists={libs.is_dir()}")
-              if libs.is_dir():
-                  for entry in sorted(libs.iterdir()):
-                      print("      ", entry.name)
-
       - name: Build the extensions and install
         run: python -m pip install ".[test]"
 
