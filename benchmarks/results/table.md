@@ -38,20 +38,20 @@
 | torchsim | forward | 4 | 1 | 0.0019 | 522 | 714 | 107.0 |
 | torchsim | forward | 4 | 10 | 0.0043 | 2,339 | 714 | 107.0 |
 | torchsim | forward | 4 | 100 | 0.0282 | 3,551 | 714 | 107.1 |
-| torchsim | forward | 4 | 1000 | 0.0298 | 33,595 | 724 | 116.5 |
+| torchsim | forward | 4 | 1000 | 0.0221 | 45,284 | 723 | 116.4 |
 | torchsim | forward | 4 | 10000 | 0.1839 | 54,385 | 826 | 218.7 |
 | torchsim | forward | 4 | 100000 | 23.4589 | 4,263 | 1862 | 1255.1 |
 | torchsim | jacobian(T1) | 4 | 1 | 0.0089 | 112 | 721 | 113.8 |
 | torchsim | jacobian(T1) | 4 | 10 | 0.0229 | 437 | 721 | 113.7 |
 | torchsim | jacobian(T1) | 4 | 100 | 0.1488 | 672 | 721 | 113.7 |
-| torchsim | jacobian(T1) | 4 | 1000 | 0.8479 | 1,179 | 745 | 138.1 |
-| torchsim | jacobian(T1) | 4 | 10000 | 8.3624 | 1,196 | 948 | 340.5 |
+| torchsim | jacobian(T1) | 4 | 1000 | 0.4515 | 2,215 | 746 | 138.4 |
+| torchsim | jacobian(T1) | 4 | 10000 | 4.4521 | 2,246 | 948 | 340.8 |
 | torchsim | jacobian(T1) | 4 | 100000 | 152.7505 | 655 | 3012 | 2404.9 |
 | torchsim | jacobian(T1,T2) | 4 | 1 | 0.0166 | 60 | 721 | 113.7 |
 | torchsim | jacobian(T1,T2) | 4 | 10 | 0.0443 | 226 | 721 | 113.7 |
 | torchsim | jacobian(T1,T2) | 4 | 100 | 0.2971 | 337 | 721 | 113.7 |
-| torchsim | jacobian(T1,T2) | 4 | 1000 | 1.7190 | 582 | 760 | 152.9 |
-| torchsim | jacobian(T1,T2) | 4 | 10000 | 16.8700 | 593 | 1061 | 453.5 |
+| torchsim | jacobian(T1,T2) | 4 | 1000 | 0.9038 | 1,106 | 760 | 152.7 |
+| torchsim | jacobian(T1,T2) | 4 | 10000 | 8.8602 | 1,129 | 1062 | 455.1 |
 | torchsim | jacobian(T1,T2) | 4 | 100000 | 278.2875 | 359 | 4158 | 3550.8 |
 
 - BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction

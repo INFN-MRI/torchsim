@@ -452,6 +452,90 @@ def _real(voxels: int, states: int, shims: int = 1) -> None:
         print(f"  undriven shim row   {float(rows[driven:].abs().max()):.2e}")
 
 
+def _spoiled(voxels: int, states: int) -> None:
+    """The real kernels on a train with no refocusing pulse in it.
+
+    A fingerprinting schedule holds its states on one axis the same way a
+    refocused train does -- every pulse turns about it -- but it reaches the
+    kernels through different actions: an ideal inversion, a winding after each
+    sample, and no crusher pair anywhere. The verdict is earned rather than
+    forced, and the forward pass, the forward-mode pass and the adjoint are
+    each held to the complex kernels that carry the same train.
+    """
+    install()
+    from torchsim.sequence import _builders, _epg_triton
+    from torchsim.sequence._accelerators import real_subspace_axis
+    from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
+    from utils.packed_reference import simulate_packed
+
+    repetitions = 6
+    tissue = _tissue(voxels)
+    events, outputs = _events(
+        _builders.mrf_description(
+            torch.deg2rad(torch.linspace(10.0, 60.0, repetitions)),
+            10e-3,
+            phases_rad=0.0,
+        )
+    )
+    assert real_subspace_axis(events, tissue) == 1, "this train is not in the subspace"
+    shape = dict(state_count=states, output_count=outputs)
+
+    expected = simulate_packed(tissue, events, **shape)
+    signal = _epg_triton.simulate(tissue, events, real_axis=1, **shape)
+    forward = float((signal - expected).abs().max() / expected.abs().max())
+    print(f"  spoiled forward     {forward:.2e}")
+    assert forward <= ORACLE_TOLERANCE, f"spoiled forward drifted: {forward:.2e}"
+
+    # Forward mode along the two relaxation times, which is what a dictionary
+    # Jacobian seeds and what the estimators consume.
+    tangents = list(torch.zeros_like(value) for value in tissue)
+    tangents[0] = torch.ones_like(tissue[0])
+    tangents[1] = torch.ones_like(tissue[1])
+    zeros = (
+        torch.zeros_like(events[0]),
+        torch.zeros_like(events[2]),
+        torch.zeros_like(events[3]),
+    )
+    real_jvp = _epg_triton.simulate_jvp(
+        tissue, events, tuple(tangents), zeros, real_axis=1, **shape
+    )
+    complex_jvp = _epg_triton.simulate_jvp(
+        tissue, events, tuple(tangents), zeros, **shape
+    )
+    scale = float(complex_jvp[1].abs().max())
+    assert scale > 1e-6, "the forward-mode pass returned nothing"
+    drift = float((complex_jvp[1] - real_jvp[1]).abs().max()) / scale
+    print(f"  spoiled forward-mode {drift:.2e}")
+    assert drift <= ORACLE_TOLERANCE, f"spoiled forward-mode drifted: {drift:.2e}"
+
+    generator = torch.Generator().manual_seed(23)
+    seed = torch.complex(
+        torch.rand(voxels, outputs, generator=generator) * 2.0 - 1.0,
+        torch.rand(voxels, outputs, generator=generator) * 2.0 - 1.0,
+    )
+    real = _epg_triton.simulate_real_vjp(tissue, events, seed, **shape)
+    complex_side = _epg_triton.simulate_vjp(tissue, events, seed, **shape)
+    scale = max(
+        float(value.abs().max())
+        for index, value in enumerate(complex_side)
+        if value.numel() and index not in OUTSIDE_THE_SUBSPACE
+    )
+    assert scale > 1e-3, f"the adjoint returned nothing: {scale:.2e}"
+    worst = 0.0
+    for index, (a, b) in enumerate(zip(complex_side, real, strict=False)):
+        if not a.numel() or not b.numel():
+            continue
+        if index in OUTSIDE_THE_SUBSPACE:
+            assert float(b.abs().max()) == 0.0, (
+                f"{FLOAT_NAMES[index]} is outside the subspace but reads "
+                f"{float(b.abs().max()):.2e}"
+            )
+            continue
+        worst = max(worst, float((a - b).abs().max()) / scale)
+    print(f"  spoiled adjoint     {worst:.2e} of {scale:.2e}")
+    assert worst <= ORACLE_TOLERANCE, f"spoiled adjoint drifted: {worst:.2e}"
+
+
 def _pooled(voxels: int, states: int, pools: int) -> None:
     """One and two pools, against an oracle and against the pass they specialize.
 
@@ -617,6 +701,9 @@ def _case(name: str) -> None:
         return
     if name == "real_shimmed":
         _real(3, 4, shims=3)
+        return
+    if name == "spoiled":
+        _spoiled(3, 4)
         return
     if name == "one_pool":
         _pooled(3, 4, 1)

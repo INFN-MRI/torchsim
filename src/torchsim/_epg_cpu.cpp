@@ -8691,7 +8691,13 @@ void dispatch_jvp(
     const Pools pools
 ) {
     const bool single = pools == Pools::ONE;
+    // Lanes run eight trains of one atom at a time, so a run with fewer trains
+    // than that fills the rest of the block with repeats of the first and pays
+    // for arithmetic it throws away. A dictionary has one train per atom, which
+    // is the shape this would cost the most on: the scalar kernel is the faster
+    // one there, and measurably so.
     const bool lanes = real_axis == 1 && single && lane_kernels_enabled()
+        && train_count >= static_cast<std::int64_t>(REAL_LANES)
         && !any_diffusion(buffers.primal.diffusion, atom_count)
         && !any_diffusion(buffers.diffusion, atom_count);
     void (*kernel)(
@@ -9111,7 +9117,13 @@ void dispatch_second_order(
     const Pools pools
 ) {
     const bool bound = pools != Pools::ONE;
+    // Lanes run eight trains of one atom at a time, so a run with fewer trains
+    // than that fills the rest of the block with repeats of the first and pays
+    // for arithmetic it throws away. A dictionary has one train per atom, which
+    // is the shape this would cost the most on: the scalar kernel is the faster
+    // one there, and measurably so.
     const bool lanes = real_axis == 1 && !bound && lane_kernels_enabled()
+        && train_count >= static_cast<std::int64_t>(REAL_LANES)
         && !any_diffusion(buffers.primal.diffusion, atom_count)
         && !any_diffusion(buffers.dot_diffusion, atom_count);
     void (*kernel)(

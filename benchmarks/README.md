@@ -173,17 +173,26 @@ tissue, not the EPG arithmetic underneath them. Epgpy, vectorized across
 tissues, shows the same thing from the other side: its per-tissue cost falls by
 an order of magnitude between one tissue and a hundred, then stops improving.
 
-**The Jacobian did not follow the forward pass onto the fast path.** At ten
-thousand tissues: BlochSimulators' finite differences 0.79 s, which is 3.0x its
-own forward pass and is what three passes should cost; TorchSim's dual
-arithmetic 16.9 s for two properties and 8.4 s for one; epgpy's analytic
+**The Jacobian reaches the fast path, and the kernel behind it is what is
+slow.** Forcing the verdict rather than letting it be decided settles which:
+`_run_packed_jvp` with the real axis asked for runs in the same time as the
+call that decides for itself, so the decision is right. What differs is the
+gain -- the real *forward* kernel is 12x its complex counterpart, the real
+forward-*mode* kernel only 2.5x -- and one cause of that was a lane kernel
+running eight trains at a time on a dictionary that has one, filling seven
+lanes with repeats. It is now taken only where there are trains to fill it.
+
+At ten thousand tissues: BlochSimulators' finite differences 0.79 s, which is
+3.0x its own forward pass and is what three passes should cost; TorchSim's dual
+arithmetic 8.9 s for two properties and 4.5 s for one; epgpy's analytic
 derivative 177 s, 4.9x its own. TorchSim's is linear in the number of
-properties, as forward mode should be, and it is exact where the finite
-differences are not -- but it is now **92x its own forward pass** where it was
-12x before the verdict widened. `anatomy.py` isolates that on one event stream:
-60x its forward pass on the real path against 5x on the complex one. Whatever
-the plain kernels gained, the dual ones did not gain with them, and that is
-where the CPU work goes next.
+properties, as forward mode should be, and exact where the finite differences
+are not, but it is still 45x its own forward pass for three passes' worth of
+arithmetic. `anatomy.py` isolates that on one event stream: 35x its forward
+pass on the real path against 5x on the complex one. The remaining distance is
+that the plain real kernel vectorizes over configuration orders and the dual
+one does not; a lane kernel over *atoms* rather than trains is what would close
+it, and is the next piece of CPU work.
 
 **Which of the two obvious optimizations is worth doing depends on the path,
 and `anatomy.py` measures both.** Split the time into what scales with the

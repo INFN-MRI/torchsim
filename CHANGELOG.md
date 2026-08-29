@@ -19,6 +19,14 @@
   lane-vectorized real ones. The signal is unchanged to the last bit the
   comparison in `benchmarks/validate.py` can see.
 
+- **The lane kernels are taken only where there are trains to fill them.** A
+  block of eight lanes carries eight trains of one atom, so a run with fewer
+  trains than that -- a dictionary has one -- filled the rest with repeats of
+  the first and paid for arithmetic it discarded. Forward-mode passes over a
+  dictionary took the lane kernel and ran at half the speed of the scalar one;
+  they now take the scalar one, and a two-property Jacobian over ten thousand
+  atoms falls from 16.9 s to 8.9 s.
+
 - **Packing a description computes each pulse's flip angle once per RF
   definition**, over all its occurrences at once, rather than once per event.
   Resolving a binding packs the description several times over -- once plainly
