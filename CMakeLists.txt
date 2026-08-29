@@ -29,10 +29,15 @@ function(torchsim_add_kernel name source)
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/torchsim")
     target_link_libraries(${name} PRIVATE Threads::Threads)
 
+    # The mask a host kernel reads decides which terms it evaluates, and the
+    # tests hold a gated launch to a whole one bit for bit. Contraction is free
+    # to fuse a multiply and an add on one side of that and not the other, which
+    # moves the last place of a result that has to be identical. MSVC does not
+    # contract across statements under its default /fp:precise.
     if(MSVC)
         target_compile_options(${name} PRIVATE /O2)
     else()
-        target_compile_options(${name} PRIVATE -O3)
+        target_compile_options(${name} PRIVATE -O3 -ffp-contract=off)
     endif()
 
     install(TARGETS ${name} DESTINATION torchsim)
