@@ -25,9 +25,20 @@ function(torchsim_add_kernel name source)
         WITH_SOABI
         "${source}"
     )
-    # ``_threads.hpp`` sits beside the sources it is shared by.
+    # The shared headers sit beside the sources they are shared by.
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/torchsim")
     target_link_libraries(${name} PRIVATE Threads::Threads)
+
+    # Nothing the C++ runtime owns crosses the module boundary: the kernel
+    # takes raw buffers from the interpreter and hands back objects the
+    # interpreter allocated. So the runtime goes inside the extension, and a
+    # wheel carries no library beside it and needs no redistributable
+    # installed to import.
+    if(MSVC)
+        set_property(TARGET ${name} PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
 
     # The mask a host kernel reads decides which terms it evaluates, and the
     # tests hold a gated launch to a whole one bit for bit. Contraction is free

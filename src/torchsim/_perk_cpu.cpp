@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "_ifunc.hpp"
 #include "_threads.hpp"
 
 // The PERK feature map and its regression, fused.
@@ -28,7 +29,8 @@
 // ``target_clones`` resolves that at load time: the compiler emits one copy of
 // the function per instruction set and the dynamic linker picks the copy this
 // processor can run.
-#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__)) \
+    && TORCHSIM_HAS_IFUNC
 #define TORCHSIM_VECTORIZED __attribute__((target_clones("avx2", "default")))
 #else
 #define TORCHSIM_VECTORIZED

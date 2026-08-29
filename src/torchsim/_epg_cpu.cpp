@@ -18,6 +18,7 @@
 #include <sched.h>
 #endif
 
+#include "_ifunc.hpp"
 #include "_threads.hpp"
 
 // MSVC rejects the GNU spelling of both of these outright, and the kernel is
@@ -2953,7 +2954,8 @@ TORCHSIM_ALWAYS_INLINE void simulate_jvp_range(
     }
 }
 
-#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
+#if defined(__GNUC__) && !defined(__clang__) && TORCHSIM_HAS_IFUNC \
+    && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
 inline void shift_real(
@@ -8322,7 +8324,7 @@ TORCHSIM_ALWAYS_INLINE void simulate_vjp_jvp_range(
 // that is what the ``always_inline`` on the range kernels is for. Taking the
 // address of one still emits an out-of-line copy, which is what the two-pool
 // dispatch selects.
-#if defined(__GNUC__) && !defined(__clang__) \
+#if defined(__GNUC__) && !defined(__clang__) && TORCHSIM_HAS_IFUNC \
     && (defined(__x86_64__) || defined(__i386__))
 #define CLONED_KERNEL \
     __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
