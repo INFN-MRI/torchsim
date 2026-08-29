@@ -72,6 +72,17 @@ jobs:
       # `cibuildwheel` run and this one agree.
       - uses: pypa/cibuildwheel@v4.2.0
 
+      # cibuildwheel installs a wheel with its dependencies before it tests
+      # it, and PyTorch publishes no musllinux wheel for that to resolve. The
+      # kernels need none of it, so they are loaded here with the dependencies
+      # left out -- on a later interpreter than the one they were built
+      # against, which is the stable ABI they claim.
+      - name: Load the musl kernels
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm --volume "$PWD:/io" --workdir /io python:3.12-alpine \
+            sh -c 'pip install --no-deps wheelhouse/*musllinux*.whl && python scripts/check_wheel.py'
+
       - uses: actions/upload-artifact@v7
         with:
           name: dist-${{ matrix.os }}
