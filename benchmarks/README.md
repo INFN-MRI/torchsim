@@ -161,9 +161,11 @@ this workload. Both take a real path when a train's pulses share one axis --
 BlochSimulators reads that off the element type of its `RF_train`, TorchSim
 decides it per run from the phases the description carries -- and both fall
 back to complex arithmetic when they cannot. The real path is worth 3.8x in
-BlochSimulators (0.262 s against 0.990 s) and 9.7x in TorchSim, whose real
-kernels are lane-vectorized eight trains at a time on top of the arithmetic
-saving.
+BlochSimulators (0.262 s against 0.990 s) and 9.7x in TorchSim. That is the
+arithmetic alone on both sides: TorchSim's forward real kernel is scalar, and
+`TORCHSIM_REAL_SCALAR=1` leaves a forward pass at the same 0.185 s. The lane
+kernels are on the differentiated paths, where the same states are carried
+beside their duals.
 
 **Where the loop lives is most of the difference among the Python packages.**
 Sycomore's cost barely moves with the number of orders it carries -- the same
@@ -187,10 +189,20 @@ At ten thousand tissues: BlochSimulators' finite differences 0.77 s, which is
 arithmetic 3.1 s for two properties and 1.6 s for one, which is 8.3x its own
 forward pass per property; epgpy's analytic derivative 177 s, 4.9x its own.
 TorchSim's is linear in the number of properties, as forward mode should be,
-and exact where the finite differences are not. `anatomy.py` reports the
-multiple on one event stream -- 13.5x its forward pass on the real path against
-5.3x on the complex one -- which is the check that the dual kernels take the
-path the plain ones take.
+and exact where the finite differences are not.
+
+`anatomy.py` reports the multiple on one event stream -- 13.5x its forward pass
+on the real path against 5.3x on the complex one -- which is the check that the
+dual kernels take the path the plain ones take.
+
+**The reverse pass has not had the same treatment.** A gradient through the
+same dictionary takes 5.64 s, 30x its forward pass, and
+`TORCHSIM_REAL_SCALAR=1` leaves it at 5.70 s: the adjoint reaches the real
+subspace and then runs the scalar kernel, there being no laned one for it to
+reach. What that same change bought forward mode -- 8.79 s to 3.09 s -- is the
+size of what is on the table. On a card the picture is different again, since
+every pass has its own real kernel there and the atom axis is what the launch
+grid is already spread over.
 
 **TorchSim pays a structure cost the others do not.** Resolving a
 500-repetition train -- walking 1 500 events, packing them, learning the affine

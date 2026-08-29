@@ -202,16 +202,26 @@ def main() -> None:
             args.repeats,
             synchronize,
         )
+
+        def gradient(s: Any = sequence) -> None:
+            t1 = T1.clone().requires_grad_(True)
+            t2 = T2.clone().requires_grad_(True)
+            s.simulate(flip=echo_train, T1=t1, T2=t2).abs().sum().backward()
+
+        adjoint = best(gradient, args.repeats, synchronize)
         print(
             f"  {label:24s} forward {forward * 1e3:8.1f} ms   "
-            f"jacobian {jacobian * 1e3:8.1f} ms   {jacobian / forward:5.1f}x"
+            f"jacobian {jacobian * 1e3:8.1f} ms   {jacobian / forward:5.1f}x   "
+            f"gradient {adjoint * 1e3:8.1f} ms   {adjoint / forward:5.1f}x"
         )
     print(
-        "\n  A forward-mode pass carries a tangent beside every quantity, so a\n"
-        "  few times its own forward pass is what it should cost. The multiple\n"
-        "  is the check that the dual kernels take the same path the plain ones\n"
-        "  take, rather than the arithmetic being cheap where the plumbing is\n"
-        "  not."
+        "\n  A pass that carries a derivative beside every quantity should cost a\n"
+        "  few times the plain one. The multiple is the check that the dual and\n"
+        "  adjoint kernels take the same path the plain ones take, rather than\n"
+        "  the arithmetic being cheap where the plumbing is not. Run the whole\n"
+        "  file again under TORCHSIM_REAL_SCALAR=1 to separate what the real\n"
+        "  subspace is worth from what the lane kernels on top of it are worth:\n"
+        "  a multiple that does not move is a pass with no laned kernel to take."
     )
 
 
