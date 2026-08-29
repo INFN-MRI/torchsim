@@ -1,0 +1,17 @@
+2000 tissues, 500 repetitions, cpu
+
+Fixed per-event cost against per-state cost
+ orders   best (ms)   ms per order
+      8       141.7          17.72
+     16       251.0          15.69
+     32       474.2          14.82
+     64       909.2          14.21
+
+  fixed 32.1 ms, 13.71 ms per order: the fixed part is 7% of a 32-order run.
+  That is the whole of what hoisting the relaxation factors can save.
+
+The real subspace against the complex path, same event stream
+  in phase, real               48.6 ms
+  quarter turn, complex       454.6 ms
+
+  the real path is 9.4x the complex one on this machine.

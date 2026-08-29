@@ -187,6 +187,21 @@ What it buys over the finite differences is exactness and no step size to
 choose -- a real advantage in a fit, and one that has to be argued rather than
 assumed.
 
+**Neither of the two obvious explanations for that 2.4x is the right one, and
+`anatomy.py` says so.** Run the same schedule at several order counts and split
+the time into what scales with the orders and what does not: the fixed
+per-event part -- the two exponentials, the loads, the branches -- is 32 ms of a
+474 ms run at 32 orders, **7%**. Hoisting the relaxation factors out of the
+event loop the way a hand-written sequence simulator does cannot buy more than
+that. What can is the specialization above: run one refocused train twice, in
+phase with its refocusing pulses and a quarter turn from them, so that the
+event stream and the arithmetic content are identical and only the subspace
+verdict differs, and it is 48.6 ms against 454.6 ms -- **9.4x**, because the
+real kernels are also lane-vectorized eight trains at a time and the complex
+ones are not. Widening the verdict to cover a zero-phase spoiled train would
+put the dictionary at roughly a quarter of a second at ten thousand tissues,
+which is where BlochSimulators.jl already is.
+
 **TorchSim pays a structure cost the others do not.** Resolving a
 500-repetition train -- walking 1 500 events, packing them, learning the affine
 rebinding -- takes seconds, once per sequence *shape*. Almost all of it is
