@@ -511,6 +511,17 @@ def _cotangent(seed=4):
     )
 
 
+def _quotient_resolution(reading: float, step: float) -> float:
+    """What a central difference of a float32 reading cannot resolve.
+
+    The two readings agree to their leading digits and the derivative is what
+    is left after they cancel, so the quotient keeps only the digits the
+    subtraction did not take. Each reading is a sum of rounded terms, which is
+    the factor in front of the epsilon.
+    """
+    return 16.0 * torch.finfo(torch.float32).eps * abs(reading) / (2.0 * step)
+
+
 @pytest.mark.parametrize("name", sorted(LIVE))
 def test_the_adjoint_matches_finite_differences(name: str) -> None:
     """Every direction three pools carry, including the semisolid pool's own
@@ -531,7 +542,9 @@ def test_the_adjoint_matches_finite_differences(name: str) -> None:
     ) / (2.0 * step)
 
     assert abs(difference) > 0.0, "the probe leaves this direction dead"
-    assert abs(gradient - difference) / abs(difference) < 5e-3
+    assert abs(gradient - difference) <= 5e-3 * abs(difference) + _quotient_resolution(
+        reading(), step
+    )
 
 
 def test_the_adjoint_transposes_the_forward_direction():
@@ -658,10 +671,15 @@ def test_the_second_order_pass_saturates_the_pool_the_pulse_deposits_into():
     first = _run_packed_vjp(prepared, events, seed, **options)
     _, second = _run_packed_vjp_jvp(prepared, events, still, seed, **options)
 
+    # The gradients span many orders of magnitude. An entry far below the
+    # largest is under the rounding of the sums that produced it, so what is
+    # left in it is noise and dividing by it measures the platform's
+    # arithmetic rather than the two kernels.
+    floor = 1e-6 * max(float(value.abs().max()) for value in first)
     compared = 0
     for expected, measured in zip(first, second, strict=True):
         scale = float(expected.abs().max())
-        if scale < 1e-9:
+        if scale <= floor:
             continue
         assert float((expected - measured).abs().max()) / scale < 1e-4
         compared += 1

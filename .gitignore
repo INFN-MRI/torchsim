@@ -51,6 +51,9 @@ private/
 .idea/
 .DS_Store
 Thumbs.db
+# The stream Windows attaches to a downloaded file. A colon is not a legal
+# character in a Windows path, so a checkout that carries one fails there.
+*:Zone.Identifier
 
 # Local environment
 .env

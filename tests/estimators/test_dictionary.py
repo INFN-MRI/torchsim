@@ -79,10 +79,21 @@ def test_a_complex_measurement_of_a_real_model_keeps_both_its_parts() -> None:
     )
     step = float(torch.diff(grid).max())
 
+    in_phase = None
     for turn in (0.0, 0.15, 0.25, 0.5):
         phase = torch.exp(2j * torch.pi * torch.tensor(turn))
 
         found = matcher(clean * phase + noise)[:, 0]
 
         error = float((found - truth).abs().mean())
-        assert error < step, f"at {turn} turns the match drifted {error:.1f} ms"
+        if turn == 0.0:
+            in_phase = error
+            assert error < step, f"the match misses in phase, by {error:.1f} ms"
+        # Reading only the real part scales the signal-to-noise ratio by
+        # ``Re(rho)``, which sends the quarter turn to matching noise across
+        # the whole grid -- tens of milliseconds, not a fraction more than the
+        # same data in phase costs.
+        assert error < 2.0 * in_phase, (
+            f"at {turn} turns the match drifted {error:.1f} ms, "
+            f"against {in_phase:.1f} ms in phase"
+        )

@@ -18,7 +18,18 @@
 #include <sched.h>
 #endif
 
+#include "_ifunc.hpp"
 #include "_threads.hpp"
+
+// MSVC rejects the GNU spelling of both of these outright, and the kernel is
+// built by whichever compiler the platform ships.
+#if defined(_MSC_VER)
+#define TORCHSIM_ALWAYS_INLINE __forceinline
+#define TORCHSIM_RESTRICT __restrict
+#else
+#define TORCHSIM_ALWAYS_INLINE __attribute__((always_inline)) inline
+#define TORCHSIM_RESTRICT __restrict__
+#endif
 
 namespace {
 
@@ -2406,7 +2417,7 @@ inline void rotate(
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
 template <RfMode MODE, Pools POOLS>
-__attribute__((always_inline)) inline void simulate_jvp_range(
+TORCHSIM_ALWAYS_INLINE void simulate_jvp_range(
     const JvpBuffers& buffers,
     const std::int64_t work_begin,
     const std::int64_t work_end,
@@ -2943,7 +2954,8 @@ __attribute__((always_inline)) inline void simulate_jvp_range(
     }
 }
 
-#if defined(__GNUC__) && !defined(__clang__) && (defined(__x86_64__) || defined(__i386__))
+#if defined(__GNUC__) && !defined(__clang__) && TORCHSIM_HAS_IFUNC \
+    && (defined(__x86_64__) || defined(__i386__))
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
 inline void shift_real(
@@ -3397,12 +3409,12 @@ void simulate_real_jvp_lane_range(
     const std::size_t states = static_cast<std::size_t>(state_count);
     const std::size_t width = states * REAL_LANES;
     std::vector<float> storage(6U * width);
-    float* const __restrict__ plus = storage.data();
-    float* const __restrict__ minus = plus + width;
-    float* const __restrict__ longitudinal = minus + width;
-    float* const __restrict__ dot_plus = longitudinal + width;
-    float* const __restrict__ dot_minus = dot_plus + width;
-    float* const __restrict__ dot_longitudinal = dot_minus + width;
+    float* const TORCHSIM_RESTRICT plus = storage.data();
+    float* const TORCHSIM_RESTRICT minus = plus + width;
+    float* const TORCHSIM_RESTRICT longitudinal = minus + width;
+    float* const TORCHSIM_RESTRICT dot_plus = longitudinal + width;
+    float* const TORCHSIM_RESTRICT dot_minus = dot_plus + width;
+    float* const TORCHSIM_RESTRICT dot_longitudinal = dot_minus + width;
 
     float dt[REAL_LANES], dt_dot[REAL_LANES];
     float flip[REAL_LANES], flip_dot[REAL_LANES];
@@ -4525,7 +4537,7 @@ inline void shift_adjoint(DualState& fplus_bar, DualState& fminus_bar) {
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
 template <RfMode MODE, Pools POOLS>
-__attribute__((always_inline)) inline void simulate_vjp_range(
+TORCHSIM_ALWAYS_INLINE void simulate_vjp_range(
     const VjpBuffers& buffers,
     const std::int64_t work_begin,
     const std::int64_t work_end,
@@ -7069,7 +7081,7 @@ inline DualFloat shim_dual(
 // clone is a copy of the caller, so a body reached through a call is
 // compiled once for the baseline instruction set and no more.
 template <RfMode MODE, Pools POOLS>
-__attribute__((always_inline)) inline void simulate_vjp_jvp_range(
+TORCHSIM_ALWAYS_INLINE void simulate_vjp_jvp_range(
     const VjpJvpBuffers& buffers,
     const std::int64_t work_begin,
     const std::int64_t work_end,
@@ -8312,7 +8324,7 @@ __attribute__((always_inline)) inline void simulate_vjp_jvp_range(
 // that is what the ``always_inline`` on the range kernels is for. Taking the
 // address of one still emits an out-of-line copy, which is what the two-pool
 // dispatch selects.
-#if defined(__GNUC__) && !defined(__clang__) \
+#if defined(__GNUC__) && !defined(__clang__) && TORCHSIM_HAS_IFUNC \
     && (defined(__x86_64__) || defined(__i386__))
 #define CLONED_KERNEL \
     __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))

@@ -9,7 +9,7 @@ project(torchsim LANGUAGES CXX)
 set(TORCHSIM_ABI3_VERSION 3.10)
 
 find_package(Python 3.10 REQUIRED
-    COMPONENTS Interpreter Development.SABIModule
+    COMPONENTS Interpreter Development.Module Development.SABIModule
 )
 
 find_package(Threads REQUIRED)
@@ -25,14 +25,30 @@ function(torchsim_add_kernel name source)
         WITH_SOABI
         "${source}"
     )
-    # ``_threads.hpp`` sits beside the sources it is shared by.
+    # The shared headers sit beside the sources they are shared by.
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/torchsim")
     target_link_libraries(${name} PRIVATE Threads::Threads)
 
+    # Nothing the C++ runtime owns crosses the module boundary: the kernel
+    # takes raw buffers from the interpreter and hands back objects the
+    # interpreter allocated. So the runtime goes inside the extension, and a
+    # wheel carries no library beside it and needs no redistributable
+    # installed to import.
+    if(MSVC)
+        set_property(TARGET ${name} PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    # The mask a host kernel reads decides which terms it evaluates, and the
+    # tests hold a gated launch to a whole one bit for bit. Contraction is free
+    # to fuse a multiply and an add on one side of that and not the other, which
+    # moves the last place of a result that has to be identical. MSVC does not
+    # contract across statements under its default /fp:precise.
     if(MSVC)
         target_compile_options(${name} PRIVATE /O2)
     else()
-        target_compile_options(${name} PRIVATE -O3)
+        target_compile_options(${name} PRIVATE -O3 -ffp-contract=off)
     endif()
 
     install(TARGETS ${name} DESTINATION torchsim)

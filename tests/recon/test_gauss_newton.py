@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from functools import partial
 
 import pytest
@@ -19,6 +20,14 @@ from torchsim.recon import (
     iterative,
 )
 from torchsim.simulators import MultiEchoSimulator
+
+#: ``iterative()`` with nothing named falls back to deepinv's ``least_squares``,
+#: which TorchSim does not depend on. What is asserted under this mark is the
+#: fallback; the duck-typed route beside it is what holds without deepinv.
+needs_deepinv = pytest.mark.skipif(
+    importlib.util.find_spec("deepinv") is None,
+    reason="deepinv supplies the fallback inner solve",
+)
 
 TE_MS = torch.linspace(10.0, 200.0, 12)
 BOUND = {"T2": (10.0, 300.0)}
@@ -63,7 +72,7 @@ def problem():
     [
         (TrustRegion(), direct),
         (Schedule(minimum=1e-8), direct),
-        (Schedule(minimum=1e-8), iterative()),
+        pytest.param(Schedule(minimum=1e-8), iterative(), marks=needs_deepinv),
     ],
 )
 def test_every_pairing_finds_the_answer(problem, damping, solve) -> None:
@@ -87,6 +96,7 @@ def test_every_pairing_finds_the_answer(problem, damping, solve) -> None:
     torch.testing.assert_close(maps["amplitude"], AMPLITUDE, rtol=1e-3, atol=1e-4)
 
 
+@needs_deepinv
 def test_the_two_policies_land_in_the_same_place(problem) -> None:
     """A trust region and a schedule differ in how they get there, not where."""
     operator, measured, start = problem
@@ -145,6 +155,7 @@ def test_the_residual_falls(problem) -> None:
     assert found.unconverged == 0
 
 
+@needs_deepinv
 def test_the_damping_of_a_schedule_falls_to_its_floor(problem) -> None:
     """The regularization is released as the iterate settles, and no further."""
     operator, measured, start = problem
@@ -185,6 +196,7 @@ def phantom():
     return operator, encoding, kspace, t2, amplitude
 
 
+@needs_deepinv
 def test_solving_through_an_encoding_beats_reconstructing_first(
     phantom,
 ) -> None:
@@ -217,6 +229,7 @@ def test_solving_through_an_encoding_beats_reconstructing_first(
     assert error(modelled) < error(naive)
 
 
+@needs_deepinv
 def test_the_encoded_loop_lowers_its_residual(phantom) -> None:
     """Data consistency in k-space, which is where the data is."""
     operator, encoding, kspace, _, _ = phantom
@@ -318,6 +331,7 @@ def test_the_inner_solve_defaults_to_what_the_problem_needs(problem) -> None:
     )
 
 
+@needs_deepinv
 def test_the_inner_solve_defaults_under_an_encoding(phantom) -> None:
     """The same, with an encoding operator: nothing to name, and it runs."""
     operator, encoding, kspace, _, _ = phantom
@@ -401,6 +415,7 @@ def test_a_solver_object_needs_no_deepinv(problem) -> None:
     assert float(found.cost[-1]) < 1e-3 * float(found.cost[0])
 
 
+@needs_deepinv
 def test_a_solver_object_reaches_what_the_default_does(problem) -> None:
     """The two paths differ in who solves, not in what is solved."""
     operator, measured, start = problem
