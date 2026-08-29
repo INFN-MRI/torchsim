@@ -59,8 +59,49 @@ jobs:
       # on this runner, with this compiler, which is the half of the package a
       # pure-Python job would never exercise. CMake and Ninja arrive as
       # build-time wheels through scikit-build-core.
+      # TEMPORARY: what the Windows SABI build cannot find, from the machine
+      # that has it. Removed once the cause is known.
+      - name: Diagnose the Python layout (Windows)
+        if: runner.os == 'Windows'
+        shell: python
+        run: |
+          import pathlib, sys, sysconfig
+
+          print("executable    ", sys.executable)
+          print("prefix        ", sys.prefix)
+          print("base_prefix   ", sys.base_prefix)
+          print("include       ", sysconfig.get_path("include"))
+          print("installed_base", sysconfig.get_config_var("installed_base"))
+          print("LIBDEST       ", sysconfig.get_config_var("LIBDEST"))
+          roots = {sys.prefix, sys.base_prefix}
+          roots.add(str(sysconfig.get_config_var("installed_base") or ""))
+          for root in sorted(filter(None, roots)):
+              libs = pathlib.Path(root) / "libs"
+              print(f"--- {libs}  exists={libs.is_dir()}")
+              if libs.is_dir():
+                  for entry in sorted(libs.iterdir()):
+                      print("      ", entry.name)
+
       - name: Build the extensions and install
         run: python -m pip install ".[test]"
+
+      # TEMPORARY: the hints scikit-build-core handed CMake, and what CMake
+      # made of them. Removed with the step above.
+      - name: Diagnose the CMake configure (Windows)
+        if: always() && runner.os == 'Windows'
+        shell: python
+        run: |
+          import pathlib
+
+          for name in ("CMakeInit.txt", "CMakeCache.txt"):
+              for found in pathlib.Path("build").rglob(name):
+                  print("=" * 60, found)
+                  text = found.read_text(errors="replace")
+                  if name == "CMakeCache.txt":
+                      text = "\n".join(
+                          line for line in text.splitlines() if "Python" in line
+                      )
+                  print(text)
 
       - name: Report what was built
         shell: python
