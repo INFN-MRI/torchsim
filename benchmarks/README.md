@@ -215,12 +215,19 @@ Jacobian first.
 
 **TorchSim pays a structure cost the others do not.** Resolving a
 500-repetition train -- walking 1 500 events, packing them, learning the affine
-rebinding -- takes seconds, once per sequence *shape*. Almost all of it is
-per-event scalar tensor arithmetic in the packing path, run under two nested
-`torch.func.jvp` interpreters: 5 054 calls to `RfDefinition.flip_angle` issuing
-20 000 scalar torch operations. A dictionary sweep, a design loop or a fit pays
-it once; a single curve pays it for nothing, and is better served by sycomore
-or epgpy.
+rebinding -- takes 1.7 s, once per sequence *shape*; a 500-echo refocused train
+takes 0.43 s. Both were several times that when the packing worked an event at
+a time: a call to `RfDefinition.flip_angle` per pulse, a slice per pulse to
+place what it returned, and a stack of fifteen hundred scalars to finish, all
+of it under two nested `torch.func.jvp` interpreters. A definition's pulses are
+now turned through in one call and placed in one scatter, which takes the
+refocused train from 3.65 s to 0.43 s and the fingerprinting one from 2.38 s to
+1.67 s.
+
+What is left is the walk itself -- fifteen hundred events built and read in
+Python, sixteen times over, once plainly and twice per differentiated argument.
+A dictionary sweep, a design loop or a fit pays it once; a single curve pays it
+for nothing, and is better served by sycomore or epgpy.
 
 ## What is still missing
 

@@ -537,6 +537,76 @@ def simulate_native(
 # %% private module subroutines
 
 
+@dataclass(frozen=True)
+class _Placed:
+    """One RF definition's pulses, and where in the stream they sit.
+
+    ``positions`` indexes the event axis; ``angles`` and ``integral_phases``
+    carry one entry per position, and a trailing train axis where the pulses
+    were given a value per train.
+    """
+
+    positions: torch.Tensor
+    angles: torch.Tensor
+    integral_phases: torch.Tensor
+
+
+def _placed_width(placed: list[_Placed], trains: int | None) -> int | None:
+    """The train count the pulses imply, checked against what the rest implies."""
+    for group in placed:
+        for value in (group.angles, group.integral_phases):
+            if value.dim() < 2:
+                continue
+            if trains is not None and trains != value.shape[1]:
+                raise ValueError(
+                    f"inconsistent train counts across events: {trains} "
+                    f"and {value.shape[1]}"
+                )
+            trains = value.shape[1]
+    return trains
+
+
+def _placed_into(
+    base: torch.Tensor,
+    placed: list[_Placed],
+    trains: int | None,
+    accumulate: bool,
+) -> torch.Tensor:
+    """A float event buffer written a definition at a time rather than an event.
+
+    Every pulse of one definition lands in one scatter, so a train of a thousand
+    identical pulses costs one operation here instead of a thousand: a slice per
+    pulse to place its flip, an addition per pulse to fold in the phase its
+    envelope carries, and a stack of a thousand scalars to finish. Resolving a
+    binding packs the same description several times over, under two nested
+    forward-mode interpreters, which is what makes the difference worth having.
+
+    ``accumulate`` distinguishes the two: the flip is what the pulse turns
+    through and replaces what the buffer held, while the phase adds to what the
+    event already carried.
+    """
+    # Scatter along the event axis, which is the trailing one in a batched
+    # buffer, so the buffer is turned over for the scatter and back after it.
+    buffer = base if trains is None else base.transpose(0, 1)
+    for group in placed:
+        values = group.integral_phases if accumulate else group.angles
+        values = _placed_values(values, trains)
+        buffer = (
+            buffer.index_add(0, group.positions, values)
+            if accumulate
+            else buffer.index_put((group.positions,), values)
+        )
+    result = buffer if trains is None else buffer.transpose(0, 1)
+    return result.to(torch.float32).contiguous()
+
+
+def _placed_values(value: torch.Tensor, trains: int | None) -> torch.Tensor:
+    """One definition's per-pulse values, widened to the buffer's train axis."""
+    if trains is None or value.dim() >= 2:
+        return value
+    return value.unsqueeze(1).expand(value.shape[0], trains)
+
+
 def _pack_events(
     description: SequenceDescription,
     *,
@@ -638,35 +708,55 @@ def _pack_events(
             saturations.append(saturation)
             frequencies.append(frequency)
 
+    placed: list[_Placed] | None = []
     for definition_id, occurrences in turned.items():
         definition = description.rf_definitions[definition_id]
-        positions = [position for position, _ in occurrences]
-        amplitudes = [amplitude for _, amplitude in occurrences]
-        gathered = _gathered_amplitudes(amplitudes, device)
-        if gathered is None:
+        gathered = _gathered_amplitudes(
+            [amplitude for _, amplitude in occurrences], device
+        )
+        if gathered is None or placed is None:
             # A group whose pulses disagree about their shape -- some a number,
             # some a value per train -- is rare enough to be left to the plain
             # path, where each occurrence stands on its own.
+            placed = None
+            continue
+        angles, integral_phases = definition.flip_angle(
+            gathered, rf_raster_time_s=rf_raster_time_s
+        )
+        placed.append(
+            _Placed(
+                torch.as_tensor(
+                    [position for position, _ in occurrences],
+                    dtype=torch.int64,
+                    device=device,
+                ),
+                angles,
+                integral_phases,
+            )
+        )
+    if placed is None:
+        for definition_id, occurrences in turned.items():
+            definition = description.rf_definitions[definition_id]
             for position, amplitude in occurrences:
                 angle, integral_phase = definition.flip_angle(
                     amplitude, rf_raster_time_s=rf_raster_time_s
                 )
                 flips[position] = angle
                 phases[position] = phases[position] + integral_phase
-            continue
-        angles, integral_phases = definition.flip_angle(
-            gathered, rf_raster_time_s=rf_raster_time_s
-        )
-        for index, position in enumerate(positions):
-            flips[position] = angles[index]
-            phases[position] = phases[position] + integral_phases[index]
 
     trains = _batch_width([*durations, *flips, *phases])
+    if placed is not None:
+        trains = _placed_width(placed, trains)
+    flip_buffer = _stack_values(flips, device, trains)
+    phase_buffer = _stack_values(phases, device, trains)
+    if placed:
+        flip_buffer = _placed_into(flip_buffer, placed, trains, accumulate=False)
+        phase_buffer = _placed_into(phase_buffer, placed, trains, accumulate=True)
     return _PackedEvents(
         duration=_stack_values(durations, device, trains),
         kind=torch.as_tensor(kinds, dtype=torch.int32, device=device).contiguous(),
-        flip=_stack_values(flips, device, trains),
-        phase=_stack_values(phases, device, trains),
+        flip=flip_buffer,
+        phase=phase_buffer,
         action=torch.as_tensor(actions, dtype=torch.uint8, device=device).contiguous(),
         output_index=torch.as_tensor(
             output_indices, dtype=torch.int32, device=device
@@ -698,19 +788,39 @@ def _gathered_amplitudes(amplitudes: list[Any], device: torch.device) -> Any:
     ``None`` says they cannot be stacked as they are -- which is the signal to
     take them one at a time rather than to convert them, since converting is
     the per-event work this exists to avoid.
+
+    A number among tensors is widened to their shape rather than refused: a
+    refocused train whose excitation is a fixed angle and whose refocusing
+    pulses are a schedule is one definition holding exactly that mixture, and
+    it is the common case rather than the awkward one.
     """
-    if not any(isinstance(amplitude, torch.Tensor) for amplitude in amplitudes):
+    tensors = [
+        amplitude for amplitude in amplitudes if isinstance(amplitude, torch.Tensor)
+    ]
+    if not tensors:
         return torch.tensor(amplitudes, dtype=torch.float32, device=device)
-    first = amplitudes[0]
+    first = tensors[0]
     if not all(
-        isinstance(amplitude, torch.Tensor)
-        and amplitude.shape == first.shape
+        amplitude.shape == first.shape
         and amplitude.dtype is first.dtype
         and amplitude.device == first.device
+        for amplitude in tensors
+    ):
+        return None
+    if len(tensors) == len(amplitudes):
+        return torch.stack(amplitudes).to(device=device, dtype=torch.float32)
+    if not all(
+        isinstance(amplitude, (int, float)) or isinstance(amplitude, torch.Tensor)
         for amplitude in amplitudes
     ):
         return None
-    return torch.stack(amplitudes).to(device=device, dtype=torch.float32)
+    widened = [
+        amplitude
+        if isinstance(amplitude, torch.Tensor)
+        else torch.full_like(first, float(amplitude))
+        for amplitude in amplitudes
+    ]
+    return torch.stack(widened).to(device=device, dtype=torch.float32)
 
 
 def _record_event(event: SequenceEvent, mode: str) -> bool:

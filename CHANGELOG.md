@@ -4,6 +4,21 @@
 
 ### Changed
 
+- **A description's pulses are packed a definition at a time.** Packing walked
+  the event stream and then worked each pulse over on its own: a call to
+  `RfDefinition.flip_angle` per pulse, a slice per pulse to place the angle it
+  returned, an addition per pulse to fold in the phase its envelope carries,
+  and a stack of as many scalars to finish. The occurrences of one definition
+  are now gathered during the walk, turned through in one call, and written
+  into the flip and phase buffers with one scatter each. A number among tensor
+  amplitudes is widened rather than refused, which is what a refocused train
+  is -- a fixed excitation among a schedule.
+
+  Resolving a 500-echo refocused train falls from 3.65 s to 0.43 s and a
+  500-repetition fingerprinting schedule from 2.38 s to 1.67 s, once per
+  sequence shape. The buffers are bit for bit what the per-pulse path writes
+  wherever nothing had to be widened.
+
 - **The adjoint fills its lanes from the atom axis too.** The real subspace had
   a laned kernel for forward mode and a scalar one for the reverse pass, so a
   gradient reached the fast path and then ran an eighth as wide as it could.
