@@ -6,15 +6,13 @@
   "states": 158,
   "device": "cpu",
   "threads": 1,
-  "repeats": 3,
+  "repeats": 1,
   "seconds": [
-    1.4732970180000393,
-    1.4340617729999394,
-    1.46530295499997
+    2.510538419999648
   ],
   "setup_seconds": 0.0,
-  "baseline_rss_mib": 32.23828125,
-  "peak_rss_mib": 56.4375,
+  "baseline_rss_mib": 31.80078125,
+  "peak_rss_mib": 55.5546875,
   "peak_device_mib": 0.0,
   "versions": {
     "sycomore": "1.3.2"
@@ -25,9 +23,9 @@
     "python": "3.11.15"
   },
   "note": "threshold=1e-06; orders reached 11-158",
-  "best": 1.4340617729999394,
-  "median": 1.46530295499997,
-  "atoms_per_second": 697.3200309970484,
+  "best": 2.510538419999648,
+  "median": 2.510538419999648,
+  "atoms_per_second": 398.32093069507386,
   "checksum": [
     0.0,
     -22136.914468600728

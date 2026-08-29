@@ -128,7 +128,12 @@ def parser(backend: str) -> argparse.ArgumentParser:
     cli = argparse.ArgumentParser(description=f"{backend} fingerprinting benchmark")
     cli.add_argument("--atoms", type=int, default=1000)
     cli.add_argument("--length", type=int, default=500, help="repetitions in the train")
-    cli.add_argument("--states", type=int, default=20, help="configuration orders kept")
+    cli.add_argument(
+        "--states",
+        type=int,
+        default=32,
+        help="configuration orders kept; BlochSimulators requires a multiple of 32",
+    )
     cli.add_argument("--repeats", type=int, default=3)
     cli.add_argument("--mode", choices=("forward", "jacobian"), default="forward")
     cli.add_argument("--device", default="cpu")

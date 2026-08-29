@@ -73,7 +73,7 @@ def main() -> None:
 
     measurement = Measurement(
         backend="epgpy",
-        mode=args.mode,
+        mode="jacobian(T1,T2)" if args.mode == "jacobian" else "forward",
         atoms=args.atoms,
         length=args.length,
         states=args.states,

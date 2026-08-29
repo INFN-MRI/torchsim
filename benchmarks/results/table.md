@@ -1,43 +1,77 @@
 | backend | mode | threads | atoms | best (s) | atoms/s | peak RSS (MiB) | over baseline (MiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| epgpy | forward | 1 | 1 | 0.0240 | 42 | 36 | 4.8 |
-| epgpy | forward | 1 | 10 | 0.0445 | 225 | 37 | 5.4 |
-| epgpy | forward | 1 | 100 | 0.1508 | 663 | 43 | 11.7 |
-| epgpy | forward | 1 | 1000 | 1.5767 | 634 | 109 | 77.1 |
-| epgpy | forward | 1 | 10000 | 19.5585 | 511 | 761 | 729.8 |
-| epgpy | jacobian | 1 | 1 | 0.0696 | 14 | 37 | 5.7 |
-| epgpy | jacobian | 1 | 10 | 0.1461 | 68 | 39 | 7.3 |
-| epgpy | jacobian | 1 | 100 | 0.6333 | 158 | 54 | 22.1 |
-| epgpy | jacobian | 1 | 1000 | 7.1266 | 140 | 205 | 173.4 |
-| epgpy | jacobian | 1 | 10000 | 103.2070 | 97 | 1716 | 1684.5 |
-| sycomore | forward | 1 | 1 | 0.0014 | 719 | 33 | 0.5 |
-| sycomore | forward | 1 | 10 | 0.0106 | 942 | 33 | 0.8 |
-| sycomore | forward | 1 | 100 | 0.1464 | 683 | 35 | 2.9 |
-| sycomore | forward | 1 | 100 | 0.1908 | 524 | 35 | 2.9 |
-| sycomore | forward | 1 | 100 | 0.1327 | 754 | 35 | 2.8 |
-| sycomore | forward | 1 | 100 | 0.1442 | 693 | 35 | 2.8 |
-| sycomore | forward | 1 | 100 | 0.1448 | 691 | 35 | 2.8 |
-| sycomore | forward | 1 | 100 | 0.1418 | 705 | 35 | 2.8 |
-| sycomore | forward | 1 | 1000 | 1.4341 | 697 | 56 | 24.2 |
-| sycomore | forward | 1 | 10000 | 14.3996 | 694 | 266 | 233.5 |
-| torchsim | forward | 1 | 1000 | 0.5255 | 1,903 | 743 | 123.9 |
-| torchsim | forward | 1 | 10000 | 5.2154 | 1,917 | 840 | 221.4 |
-| torchsim | forward | 4 | 1 | 0.0015 | 656 | 726 | 107.1 |
-| torchsim | forward | 4 | 10 | 0.0028 | 3,634 | 726 | 107.0 |
-| torchsim | forward | 4 | 100 | 0.0178 | 5,614 | 726 | 107.0 |
-| torchsim | forward | 4 | 1000 | 0.1436 | 6,962 | 738 | 119.7 |
-| torchsim | forward | 4 | 10000 | 1.3538 | 7,387 | 840 | 221.4 |
-| torchsim | forward | 4 | 100000 | 13.2164 | 7,566 | 1874 | 1255.0 |
-| torchsim | jacobian | 4 | 1 | 0.0112 | 89 | 733 | 113.8 |
-| torchsim | jacobian | 4 | 10 | 0.0259 | 386 | 733 | 113.8 |
-| torchsim | jacobian | 4 | 100 | 0.1665 | 601 | 733 | 113.8 |
-| torchsim | jacobian | 4 | 1000 | 1.4482 | 690 | 777 | 157.6 |
-| torchsim | jacobian | 4 | 10000 | 14.3792 | 695 | 1076 | 457.6 |
-| torchsim | jacobian | 4 | 100000 | 141.9735 | 704 | 4171 | 3551.9 |
-| torchsim | jacobian(T1) | 4 | 100 | 0.0818 | 1,223 | 733 | 113.9 |
-| torchsim | jacobian(T1) | 4 | 1000 | 0.7257 | 1,378 | 759 | 140.3 |
-| torchsim | jacobian(T1) | 4 | 10000 | 7.1417 | 1,400 | 960 | 341.0 |
+| BlochSimulators.jl | forward | 1 | 1000 | 0.0847 | 11,808 | 808 | 145.6 |
+| BlochSimulators.jl | forward | 1 | 10000 | 1.0011 | 9,989 | 839 | 179.1 |
+| BlochSimulators.jl | forward | 1 | 100000 | 9.0561 | 11,042 | 1181 | 521.0 |
+| BlochSimulators.jl | forward | 4 | 1 | 0.0003 | 3,056 | 819 | 173.2 |
+| BlochSimulators.jl | forward | 4 | 10 | 0.0010 | 9,570 | 818 | 173.2 |
+| BlochSimulators.jl | forward | 4 | 100 | 0.0046 | 21,822 | 832 | 188.1 |
+| BlochSimulators.jl | forward | 4 | 1000 | 0.0242 | 41,304 | 833 | 188.6 |
+| BlochSimulators.jl | forward | 4 | 10000 | 0.2526 | 39,581 | 870 | 225.4 |
+| BlochSimulators.jl | forward | 4 | 100000 | 2.5157 | 39,750 | 1187 | 545.8 |
+| BlochSimulators.jl | forward(complex) | 4 | 1000 | 0.1546 | 6,469 | 817 | 169.4 |
+| BlochSimulators.jl | forward(complex) | 4 | 10000 | 0.9701 | 10,308 | 825 | 178.6 |
+| BlochSimulators.jl | forward(complex) | 4 | 100000 | 9.5250 | 10,499 | 1617 | 970.5 |
+| BlochSimulators.jl | jacobian(T1,T2) | 4 | 1000 | 0.1003 | 9,970 | 830 | 182.8 |
+| BlochSimulators.jl | jacobian(T1,T2) | 4 | 10000 | 0.8879 | 11,263 | 922 | 277.7 |
+| BlochSimulators.jl | jacobian(T1,T2) | 4 | 100000 | 8.5213 | 11,735 | 1900 | 1258.0 |
+| KomaMRI.jl | forward | 4 | 1 | 0.1174 | 9 | 898 | 30.9 |
+| KomaMRI.jl | forward | 4 | 10 | 0.4169 | 24 | 945 | 82.4 |
+| KomaMRI.jl | forward | 4 | 100 | 1.0960 | 91 | 1373 | 504.7 |
+| epgpy | forward | 1 | 1 | 0.0339 | 30 | 36 | 4.5 |
+| epgpy | forward | 1 | 10 | 0.0665 | 150 | 36 | 5.0 |
+| epgpy | forward | 1 | 100 | 0.2503 | 400 | 43 | 11.9 |
+| epgpy | forward | 1 | 1000 | 2.3033 | 434 | 110 | 79.1 |
+| epgpy | forward | 1 | 10000 | 36.3704 | 275 | 783 | 751.4 |
+| epgpy | jacobian(T1,T2) | 1 | 1 | 0.0904 | 11 | 37 | 5.4 |
+| epgpy | jacobian(T1,T2) | 1 | 10 | 0.2378 | 42 | 38 | 6.8 |
+| epgpy | jacobian(T1,T2) | 1 | 100 | 1.3470 | 74 | 54 | 22.5 |
+| epgpy | jacobian(T1,T2) | 1 | 1000 | 13.9996 | 71 | 209 | 177.6 |
+| epgpy | jacobian(T1,T2) | 1 | 10000 | 177.0630 | 56 | 1759 | 1728.0 |
+| sycomore | forward | 1 | 1 | 0.0020 | 494 | 32 | 0.6 |
+| sycomore | forward | 1 | 10 | 0.0243 | 412 | 33 | 0.8 |
+| sycomore | forward | 1 | 100 | 0.2437 | 410 | 35 | 3.0 |
+| sycomore | forward | 1 | 1000 | 2.5105 | 398 | 56 | 23.8 |
+| sycomore | forward | 1 | 10000 | 24.0942 | 415 | 265 | 233.5 |
+| torchsim | forward | 1 | 1000 | 0.9195 | 1,088 | 725 | 118.0 |
+| torchsim | forward | 1 | 10000 | 9.3538 | 1,069 | 828 | 221.1 |
+| torchsim | forward | 4 | 1 | 0.0019 | 522 | 714 | 107.0 |
+| torchsim | forward | 4 | 10 | 0.0043 | 2,339 | 714 | 107.0 |
+| torchsim | forward | 4 | 100 | 0.0282 | 3,551 | 714 | 107.1 |
+| torchsim | forward | 4 | 1000 | 0.2367 | 4,225 | 727 | 120.2 |
+| torchsim | forward | 4 | 10000 | 2.3437 | 4,267 | 828 | 221.1 |
+| torchsim | forward | 4 | 100000 | 23.4589 | 4,263 | 1862 | 1255.1 |
+| torchsim | jacobian(T1) | 4 | 1 | 0.0089 | 112 | 721 | 113.8 |
+| torchsim | jacobian(T1) | 4 | 10 | 0.0229 | 437 | 721 | 113.7 |
+| torchsim | jacobian(T1) | 4 | 100 | 0.1488 | 672 | 721 | 113.7 |
+| torchsim | jacobian(T1) | 4 | 1000 | 1.3914 | 719 | 744 | 136.6 |
+| torchsim | jacobian(T1) | 4 | 10000 | 13.6714 | 731 | 949 | 342.3 |
+| torchsim | jacobian(T1) | 4 | 100000 | 152.7505 | 655 | 3012 | 2404.9 |
+| torchsim | jacobian(T1,T2) | 4 | 1 | 0.0166 | 60 | 721 | 113.7 |
+| torchsim | jacobian(T1,T2) | 4 | 10 | 0.0443 | 226 | 721 | 113.7 |
+| torchsim | jacobian(T1,T2) | 4 | 100 | 0.2971 | 337 | 721 | 113.7 |
+| torchsim | jacobian(T1,T2) | 4 | 1000 | 2.7422 | 365 | 761 | 153.8 |
+| torchsim | jacobian(T1,T2) | 4 | 10000 | 27.7063 | 361 | 1062 | 454.7 |
+| torchsim | jacobian(T1,T2) | 4 | 100000 | 278.2875 | 359 | 4158 | 3550.8 |
 
+- BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=100000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=1: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=10: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=100: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=100000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=1000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=10000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=100000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
+- BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
+- BlochSimulators.jl n=100000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
+- KomaMRI.jl n=1: isochromat: 64 spins per tissue through one spoiler cycle, 64 spins in all
+- KomaMRI.jl n=10: isochromat: 64 spins per tissue through one spoiler cycle, 640 spins in all
+- KomaMRI.jl n=100: isochromat: 64 spins per tissue through one spoiler cycle, 6400 spins in all
 - epgpy n=1: max_nstate matches the orders TorchSim keeps
 - epgpy n=10: max_nstate matches the orders TorchSim keeps
 - epgpy n=100: max_nstate matches the orders TorchSim keeps
@@ -50,11 +84,6 @@
 - epgpy n=10000: max_nstate matches the orders TorchSim keeps
 - sycomore n=1: threshold=1e-06; orders reached 11-11
 - sycomore n=10: threshold=1e-06; orders reached 11-158
-- sycomore n=100: threshold=1e-06; orders reached 11-158
-- sycomore n=100: threshold=0; orders reached 501-501
-- sycomore n=100: threshold=0.01; orders reached 2-8
-- sycomore n=100: threshold=0.001; orders reached 4-34
-- sycomore n=100: threshold=0.0001; orders reached 6-75
 - sycomore n=100: threshold=1e-06; orders reached 11-158
 - sycomore n=1000: threshold=1e-06; orders reached 11-158
 - sycomore n=10000: threshold=1e-06; orders reached 11-158

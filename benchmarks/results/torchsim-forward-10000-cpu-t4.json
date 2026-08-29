@@ -1,20 +1,18 @@
 {
   "backend": "torchsim",
   "mode": "forward",
-  "atoms": 1,
+  "atoms": 10000,
   "length": 500,
-  "states": 20,
+  "states": 32,
   "device": "cpu",
   "threads": 4,
-  "repeats": 3,
+  "repeats": 1,
   "seconds": [
-    0.001616210000065621,
-    0.0015242079998643021,
-    0.0015764239999498386
+    2.3436737170004562
   ],
-  "setup_seconds": 5.571124730000065,
-  "baseline_rss_mib": 618.86328125,
-  "peak_rss_mib": 725.9765625,
+  "setup_seconds": 7.249587244000395,
+  "baseline_rss_mib": 607.015625,
+  "peak_rss_mib": 828.15625,
   "peak_device_mib": 0.0,
   "versions": {
     "torchsim": "0.0.4.dev136",
@@ -26,11 +24,11 @@
     "python": "3.11.15"
   },
   "note": "",
-  "best": 0.0015242079998643021,
-  "median": 0.0015764239999498386,
-  "atoms_per_second": 656.0784355475292,
+  "best": 2.3436737170004562,
+  "median": 2.3436737170004562,
+  "atoms_per_second": 4266.805540149364,
   "checksum": [
-    47.452178955078125,
+    221383.171875,
     0.0
   ]
 }

@@ -3,18 +3,16 @@
   "mode": "forward",
   "atoms": 100,
   "length": 500,
-  "states": 20,
+  "states": 32,
   "device": "cpu",
   "threads": 1,
-  "repeats": 3,
+  "repeats": 1,
   "seconds": [
-    0.18149231799998233,
-    0.15076529699990715,
-    0.151989095999852
+    0.2503117169999314
   ],
   "setup_seconds": 0.0,
-  "baseline_rss_mib": 31.67578125,
-  "peak_rss_mib": 43.40234375,
+  "baseline_rss_mib": 31.28125,
+  "peak_rss_mib": 43.1796875,
   "peak_device_mib": 0.0,
   "versions": {
     "epgpy": "3.2.dev7",
@@ -26,11 +24,11 @@
     "python": "3.11.15"
   },
   "note": "max_nstate matches the orders TorchSim keeps",
-  "best": 0.15076529699990715,
-  "median": 0.151989095999852,
-  "atoms_per_second": 663.2826120460704,
+  "best": 0.2503117169999314,
+  "median": 0.2503117169999314,
+  "atoms_per_second": 399.5018738976067,
   "checksum": [
     0.0,
-    -2212.5942527400057
+    -2212.4794476409147
   ]
 }

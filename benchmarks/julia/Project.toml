@@ -1,0 +1,24 @@
+name = "TorchSimBenchmarks"
+
+# The two Julia simulators the dictionary benchmark runs against, and what the
+# scripts here need to drive them. Instantiate with:
+#
+#     julia --project=benchmarks/julia -e 'using Pkg; Pkg.instantiate()'
+#
+# BlochSimulators pulls CUDA.jl in as a dependency. It does not need a card to
+# install or to run on the CPU -- the CUDA extension fails to precompile
+# without a driver, and nothing here uses it.
+
+[deps]
+BlochSimulators = "2c9a3a5d-4a8d-4ca7-a6c9-04a38836deab"
+ComputationalResources = "ed09eef8-17a6-5b46-8889-db040fac31e3"
+KomaMRIBase = "d0bc0b20-b151-4d03-b2a4-6ca51751cb9c"
+KomaMRICore = "4baa4f4d-2ae9-40db-8331-a7d1080e3f4e"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[compat]
+BlochSimulators = "0.9"
+KomaMRIBase = "0.14"
+KomaMRICore = "0.13"
+julia = "1.10"

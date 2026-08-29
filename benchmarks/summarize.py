@@ -30,7 +30,11 @@ def row(record: dict) -> str:
 
 def main() -> None:
     """Print every record, grouped by backend and mode."""
-    records = [json.loads(path.read_text()) for path in sorted(RESULTS.glob("*.json"))]
+    records = [
+        json.loads(path.read_text())
+        for path in sorted(RESULTS.glob("*.json"))
+        if path.name != "validation.json"
+    ]
     records.sort(key=lambda r: (r["backend"], r["mode"], r["threads"], r["atoms"]))
     print(HEADER)
     for record in records:
