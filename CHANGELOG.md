@@ -2,27 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- **`ss_iter` plays a description into the state a scanner plays it in.** A
-  simulation starts from equilibrium, which is a transient a scanner plays at
-  the beginning of an examination and never again: every later playing starts
-  from what the one before it left. `ss_iter=N` plays the stream N times and
-  records the last, on `EpgEngine.simulate`, on a simulator's constructor and
-  per call; a sequence whose physics knows how far it has to settle declares
-  its own default.
-
-  The settling playings cost their arithmetic and none of the signal -- only
-  the recording is suppressed, so the answer is what `repetitions=N` records on
-  its last playing, to the bit, without holding the N-1 before it.
-
-  It matters more than a refinement. A thousand-frame fingerprinting train
-  simulated from equilibrium is 20% out on its first frame, 12% at frame 100
-  and 51% at its worst against the train a scanner repeats; two playings settle
-  it to float32, taking a ten-thousand-tissue dictionary from 0.50 s to 0.87 s.
-  A spoiled train driven this way reproduces the Ernst equation to float32,
-  which is the test it is held to.
-
 ### Fixed
 
 - **A pass no longer leaves the worker pool slower than it found it.** The CPU
@@ -50,6 +29,30 @@
   fallback allowed.
 
 ### Changed
+
+- **`repetitions` plays a description into the state a scanner plays it in,
+  and records the last playing rather than all of them.** A simulation starts
+  from equilibrium, which is a transient a scanner plays at the beginning of an
+  examination and never again: every later playing starts from what the one
+  before it left. `repetitions=N` now settles the magnetization through N
+  playings and records the Nth, on `EpgEngine.simulate`, on a simulator's
+  constructor and per call; a sequence whose physics knows how far it has to
+  settle sets its own class default.
+
+  The settling playings cost their arithmetic and none of the signal, so a run
+  holds one playing however many it took.
+
+  It matters more than a refinement. A thousand-frame fingerprinting train
+  simulated from equilibrium is 20% out on its first frame, 12% at frame 100
+  and 51% at its worst against the train a scanner repeats; two playings settle
+  it to float32, taking a ten-thousand-tissue dictionary from 0.50 s to 0.87 s.
+  A spoiled train driven this way reproduces the Ernst equation to float32,
+  which is the test it is held to.
+
+  A caller who read every playing out of one call -- the only use of the old
+  behaviour was to take the last of them -- now gets the last one directly, and
+  a caller who wants the approach itself asks for each length in turn.
+
 
 - **A description's pulses are packed a definition at a time.** Packing walked
   the event stream and then worked each pulse over on its own: a call to

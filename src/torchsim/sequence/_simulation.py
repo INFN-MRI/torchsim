@@ -236,7 +236,6 @@ class EpgEngine:
         tissue: TissueProperties,
         *,
         repetitions: int = 1,
-        ss_iter: int = 1,
         record: RecordMode = "all",
         nstates: int | None = None,
         slice_profile: ExactSliceProfile | None = None,
@@ -258,12 +257,6 @@ class EpgEngine:
         repetitions = _as_integer(repetitions, "repetitions")
         if repetitions < 1:
             raise ValueError("repetitions must be positive")
-        ss_iter = _as_integer(ss_iter, "ss_iter")
-        if ss_iter < 1:
-            raise ValueError("ss_iter must be positive")
-        # Every playing but the last is a settling one, played into the state
-        # the next inherits and recorded from none of them.
-        settle = ss_iter - 1
         if record not in {"all", "acquired", "echo"}:
             raise ValueError("record must be 'all', 'acquired', or 'echo'")
 
@@ -295,7 +288,7 @@ class EpgEngine:
         _within_one_voxel(tissue.bound_fraction, tissue.pool_b_fraction)
 
         if nstates is None:
-            winding = (settle + repetitions) * self.shifts_per_repetition(description)
+            winding = repetitions * self.shifts_per_repetition(description)
             nstates = max(8, min(64, 1 + winding))
         else:
             nstates = _as_integer(nstates, "nstates")
@@ -317,7 +310,6 @@ class EpgEngine:
             prepared,
             output_shape,
             repetitions=repetitions,
-            settle=settle,
             record=record,
             nstates=nstates,
             slice_profile=slice_profile,

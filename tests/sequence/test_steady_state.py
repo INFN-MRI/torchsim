@@ -2,7 +2,7 @@
 
 A description simulated once starts from equilibrium, which is a transient a
 scanner plays at the beginning of an examination and never again: every later
-playing starts from whatever the one before it left. ``ss_iter`` plays the
+playing starts from whatever the one before it left. ``repetitions`` plays the
 stream that many times and records the last, which is what makes a simulated
 dictionary the dictionary the scanner acquires.
 
@@ -11,6 +11,8 @@ being checked is the physics rather than TorchSim's agreement with itself.
 """
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -43,34 +45,49 @@ TISSUE = TissueProperties(
 )
 
 
-@pytest.mark.parametrize("name", list(STREAMS))
-@pytest.mark.parametrize("iterations", [1, 2, 3, 5])
-def test_settling_records_what_the_last_playing_of_a_repeat_records(name, iterations):
-    """The magnetization crosses a settling playing; only the recording stops.
+def _written_out(stream, playings):
+    """The same train, written out as one description that records throughout.
 
-    Held to the bit against the route that records every playing and throws
-    all but the last away, which is the same run with the same arithmetic in
-    the same order.
+    An independent route to the same magnetization: rather than asking for
+    ``playings`` of one stream, this concatenates the events by hand at the
+    timestamps they fall on and records every one of them, so the last block of
+    samples is what a settled run should hold.
     """
-    stream = STREAMS[name]
-    settled = EpgEngine().simulate(stream, TISSUE, ss_iter=iterations, nstates=16)
-    every = EpgEngine().simulate(stream, TISSUE, repetitions=iterations, nstates=16)
+    events = []
+    for playing in range(playings):
+        offset = stream.tr_duration_us * playing
+        events.extend(
+            replace(event, timestamp_us=event.timestamp_us + offset)
+            for event in stream.events
+        )
+    return replace(
+        stream, events=tuple(events), tr_duration_us=stream.tr_duration_us * playings
+    )
 
-    last = every.repetition == iterations - 1
-    kept = every.signal.reshape(*every.signal.shape[:-1], -1)[..., last]
-    assert settled.signal.shape == kept.shape
-    assert torch.equal(settled.signal, kept)
+
+@pytest.mark.parametrize("name", list(STREAMS))
+@pytest.mark.parametrize("playings", [1, 2, 3, 5])
+def test_settling_records_what_the_last_playing_of_a_written_out_train_records(
+    name, playings
+):
+    """The magnetization crosses a settling playing; only the recording stops."""
+    stream = STREAMS[name]
+    settled = EpgEngine().simulate(stream, TISSUE, repetitions=playings, nstates=16)
+    written = EpgEngine().simulate(_written_out(stream, playings), TISSUE, nstates=16)
+
+    kept = written.signal.reshape(*written.signal.shape[:-1], -1)
+    kept = kept[..., -settled.signal.shape[-1] :]
+    scale = kept.abs().max()
+    assert ((settled.signal - kept).abs().max() / scale) < 1e-5
     # Its labels say what it is: one playing, numbered from zero.
     assert torch.equal(settled.repetition, torch.zeros_like(settled.repetition))
-    assert torch.equal(settled.time_us, every.time_us[last])
 
 
-@pytest.mark.parametrize("iterations", [1, 4, 16])
-def test_a_settled_run_holds_one_playing_however_many_it_took(iterations):
-    """Which is the whole point of it over ``repetitions``: the settling
-    playings cost their arithmetic and none of the signal."""
+@pytest.mark.parametrize("playings", [1, 4, 16])
+def test_a_settled_run_holds_one_playing_however_many_it_took(playings):
+    """The settling playings cost their arithmetic and none of the signal."""
     stream = STREAMS["unbalanced"]
-    settled = EpgEngine().simulate(stream, TISSUE, ss_iter=iterations, nstates=16)
+    settled = EpgEngine().simulate(stream, TISSUE, repetitions=playings, nstates=16)
     once = EpgEngine().simulate(stream, TISSUE, nstates=16)
     assert settled.signal.shape == once.signal.shape
 
@@ -88,7 +105,7 @@ def test_a_settled_spoiled_train_is_the_ernst_equation(t1_ms, t2_ms):
         .simulate(
             _spoiled(),
             TissueProperties(t1_ms=t1_ms, t2_ms=t2_ms),
-            ss_iter=512,
+            repetitions=512,
             nstates=4,
         )
         .signal.reshape(-1)[0]
@@ -105,8 +122,8 @@ def test_a_settled_spoiled_train_is_the_ernst_equation(t1_ms, t2_ms):
 
 
 def test_settling_is_refused_where_it_makes_no_sense():
-    with pytest.raises(ValueError, match="ss_iter"):
-        EpgEngine().simulate(_spoiled(), TISSUE, ss_iter=0)
+    with pytest.raises(ValueError, match="repetitions"):
+        EpgEngine().simulate(_spoiled(), TISSUE, repetitions=0)
 
 
 def test_a_sequence_may_declare_how_far_it_has_to_settle():
@@ -114,13 +131,13 @@ def test_a_sequence_may_declare_how_far_it_has_to_settle():
     from torchsim.simulators import MRFSimulator
 
     flip = torch.linspace(5.0, 60.0, 20)
-    assert MRFSimulator(flip=flip, TR=10.0, states=16).ss_iter == 1
+    assert MRFSimulator(flip=flip, TR=10.0, states=16).repetitions == 1
 
-    declared = MRFSimulator(flip=flip, TR=10.0, states=16, ss_iter=3)
-    assert declared.ss_iter == 3
+    declared = MRFSimulator(flip=flip, TR=10.0, states=16, repetitions=3)
+    assert declared.repetitions == 3
     fixed = declared.simulate(T1=1000.0, T2=80.0)
     per_call = MRFSimulator(flip=flip, TR=10.0, states=16).simulate(
-        T1=1000.0, T2=80.0, ss_iter=3
+        T1=1000.0, T2=80.0, repetitions=3
     )
     assert torch.equal(fixed, per_call)
-    assert not torch.equal(fixed, declared.simulate(T1=1000.0, T2=80.0, ss_iter=1))
+    assert not torch.equal(fixed, declared.simulate(T1=1000.0, T2=80.0, repetitions=1))
