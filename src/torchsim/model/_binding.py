@@ -124,6 +124,7 @@ def run_key(
     record: str,
     rf_raster_time_s: float,
     device: torch.device,
+    ss_iter: int = 1,
 ) -> tuple[Any, ...]:
     """What a packing is resolved for, and so what a later call must match.
 
@@ -134,6 +135,7 @@ def run_key(
     return (
         tuple((name, _keyed(value)) for name, value in sorted(values.items())),
         repetitions,
+        ss_iter,
         record,
         rf_raster_time_s,
         torch.device(device),
@@ -148,6 +150,7 @@ def bind(
     record: str,
     rf_raster_time_s: float = 1e-6,
     device: torch.device | str = "cpu",
+    ss_iter: int = 1,
 ) -> Packing | None:
     """Resolve ``simulator``'s structure for ``values``, or return ``None``.
 
@@ -160,7 +163,7 @@ def bind(
         The protocol arguments as
         :meth:`~torchsim.model.Simulator.played` returns them. The
         floating-point arrays among them are the ones rebound.
-    repetitions, record, rf_raster_time_s, device:
+    repetitions, ss_iter, record, rf_raster_time_s, device:
         The run this is for. A call differing in any of them gets no binding.
 
     Returns
@@ -188,6 +191,7 @@ def bind(
             record=record,
             device=device,
             rf_raster_time_s=rf_raster_time_s,
+            settle=ss_iter - 1,
         )
 
     def buffers(given: tuple[torch.Tensor, ...]) -> _PackedEvents:

@@ -243,6 +243,7 @@ def pack_description(
     record: str,
     device: torch.device,
     rf_raster_time_s: float = 1e-6,
+    settle: int = 0,
     slice_profile: Any = None,
 ) -> _PackedEvents:
     """Pack a description's events into the buffers a run would hand a kernel.
@@ -260,6 +261,7 @@ def pack_description(
         record=record,
         device=device,
         rf_raster_time_s=rf_raster_time_s,
+        settle=settle,
     )
 
 
@@ -271,6 +273,7 @@ def _pack_for(
     record: str,
     device: torch.device,
     rf_raster_time_s: float,
+    settle: int = 0,
 ) -> _PackedEvents:
     return _pack_events(
         description,
@@ -278,6 +281,7 @@ def _pack_for(
         record=record,
         device=device,
         rf_raster_time_s=rf_raster_time_s,
+        settle=settle,
         shim_rows=shim_rows(description),
         table_rows={key: row for row, key in enumerate(shapes)},
     )
@@ -448,6 +452,7 @@ def simulate_native(
     nstates: int,
     slice_profile: ExactSliceProfile | None,
     rf_raster_time_s: float,
+    settle: int = 0,
     lineshape: Any = None,
     exchanging: bool = False,
     features: frozenset[str] | None = None,
@@ -480,7 +485,7 @@ def simulate_native(
     )
     if packed is not None and (
         packed.kind.device != device
-        or int(packed.kind.numel()) != repetitions * len(description.events)
+        or int(packed.kind.numel()) != (settle + repetitions) * len(description.events)
     ):
         # A packing built for another device or another number of repetitions
         # is not this run's; rebuilding is slower and right.
@@ -493,6 +498,7 @@ def simulate_native(
             record=record,
             device=device,
             rf_raster_time_s=rf_raster_time_s,
+            settle=settle,
         )
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
@@ -513,7 +519,7 @@ def simulate_native(
             description,
             packed,
             transmit,
-            repetitions=repetitions,
+            repetitions=settle + repetitions,
             positions=None if slice_profile is None else slice_profile.positions(),
             rf_raster_time_s=rf_raster_time_s,
         )
@@ -717,9 +723,18 @@ def _pack_events(
     record: str,
     device: torch.device,
     rf_raster_time_s: float,
+    settle: int = 0,
     shim_rows: dict[int, int] | None = None,
     table_rows: dict[int, int] | None = None,
 ) -> _PackedEvents:
+    """The buffers a run hands the kernels.
+
+    ``settle`` plays the stream that many extra times before the ones that are
+    recorded, which is how a sequence is carried into the steady state a
+    scanner plays it in. The magnetization crosses each playing as it stands;
+    only the recording is suppressed, so a settling playing costs its
+    arithmetic and none of the signal.
+    """
     # Values stay as plain Python numbers unless the description carries
     # tensors (an optimizer differentiating through flip angles), so the common
     # case builds each buffer with a single allocation instead of one scalar
@@ -763,7 +778,8 @@ def _pack_events(
     # what its envelope integrates to.
     turned: dict[int, list[tuple[int, Any]]] = {}
 
-    for repetition in range(repetitions):
+    for repetition in range(settle + repetitions):
+        recording = repetition >= settle
         # A single playing never advances by the repetition time, so it does
         # not matter what shape that time has -- which is what lets a protocol
         # give each train in a batch its own.
@@ -830,13 +846,13 @@ def _pack_events(
                     )
             elif event.type is EventType.ADC:
                 phase = event.adc_phase_rad
-                if _record_event(event, record):
+                if recording and _record_event(event, record):
                     action |= _RECORD
                     event_output_index = output_index
                     times.append(absolute)
                     unrefocused_times.append(unrefocused)
                     event_indices.append(event_index)
-                    repetition_indices.append(repetition)
+                    repetition_indices.append(repetition - settle)
                     echo_flags.append(event.is_echo)
                     output_index += 1
             if (action & _SPOIL_AFTER) != 0:

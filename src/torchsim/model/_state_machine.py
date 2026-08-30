@@ -83,7 +83,14 @@ _EMPTY: Mapping[str, Any] = MappingProxyType({})
 
 # What a caller may name that describes the run rather than the sequence. Each
 # has an attribute of the same name, set once at construction.
-RUN_SETTINGS = ("nstates", "repetitions", "record", "device", "execution")
+RUN_SETTINGS = (
+    "nstates",
+    "repetitions",
+    "ss_iter",
+    "record",
+    "device",
+    "execution",
+)
 
 # The raster :class:`~torchsim.sequence.EpgEngine` reads a pulse's shape on,
 # named here because a packing resolved against one is not valid against
@@ -233,6 +240,11 @@ class Simulator(SignalModel):
 
     model: SpinPhysics = SpinPhysics()
     states: int | None = None
+    # How many playings a sequence needs to reach the state a scanner plays it
+    # in. One is the transient from equilibrium, which is what a scanner plays
+    # once and never again; a sequence whose own physics says otherwise
+    # overrides this.
+    ss_iter: int = 1
 
     def __init__(
         self,
@@ -240,6 +252,7 @@ class Simulator(SignalModel):
         model: SpinPhysics | None = None,
         states: int | None = None,
         repetitions: int = 1,
+        ss_iter: int | None = None,
         record: RecordMode = "all",
         execution: str | torch.device | Sequence[Any] | None = None,
         resolve: bool = True,
@@ -256,7 +269,13 @@ class Simulator(SignalModel):
         states:
             Configuration orders to carry.
         repetitions:
-            How many times the description is played into its steady state.
+            How many playings of the description the signal holds.
+        ss_iter:
+            How many times the description is played to reach the steady state
+            a scanner plays it in, of which only the last is recorded. One --
+            the default, unless the sequence declares otherwise -- starts every
+            playing from equilibrium, which is the transient a scanner only
+            ever plays once.
         record:
             Which ADCs the signal holds.
         execution:
@@ -287,6 +306,7 @@ class Simulator(SignalModel):
         self.properties = self.model.properties
         self.states = states if states is not None else type(self).states
         self.repetitions = repetitions
+        self.ss_iter = ss_iter if ss_iter is not None else type(self).ss_iter
         self.record = record
         self.execution = execution
         self.crusher_dephasing_rad = crusher_dephasing_rad
@@ -365,6 +385,7 @@ class Simulator(SignalModel):
         tissue: TissueProperties,
         *,
         repetitions: int,
+        ss_iter: int,
         record: str,
         device: Any,
     ) -> tuple[SequenceDescription, Any]:
@@ -374,6 +395,7 @@ class Simulator(SignalModel):
         where = target_device(tissue, device)
         settings = {
             "repetitions": repetitions,
+            "ss_iter": ss_iter,
             "record": record,
             "rf_raster_time_s": _RF_RASTER_TIME_S,
         }
@@ -478,14 +500,16 @@ class Simulator(SignalModel):
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
         """Run one simulation of the described protocol.
 
-        ``nstates``, ``repetitions``, ``record``, ``device`` and ``execution``
-        describe the run and are taken here, each falling back to what the
-        constructor was given; everything else overrides a protocol argument.
+        ``nstates``, ``repetitions``, ``ss_iter``, ``record``, ``device`` and
+        ``execution`` describe the run and are taken here, each falling back to
+        what the constructor was given; everything else overrides a protocol
+        argument.
         """
         given = dict(sequence)
         states = given.pop("nstates", self.states)
         settings = {
             "repetitions": given.pop("repetitions", self.repetitions),
+            "ss_iter": given.pop("ss_iter", self.ss_iter),
             "record": given.pop("record", self.record),
             "device": given.pop("device", None),
         }
@@ -496,6 +520,7 @@ class Simulator(SignalModel):
             played,
             tissue,
             repetitions=settings["repetitions"],
+            ss_iter=settings["ss_iter"],
             record=settings["record"],
             device=settings["device"],
         )

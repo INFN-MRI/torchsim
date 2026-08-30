@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Added
+
+- **`ss_iter` plays a description into the state a scanner plays it in.** A
+  simulation starts from equilibrium, which is a transient a scanner plays at
+  the beginning of an examination and never again: every later playing starts
+  from what the one before it left. `ss_iter=N` plays the stream N times and
+  records the last, on `EpgEngine.simulate`, on a simulator's constructor and
+  per call; a sequence whose physics knows how far it has to settle declares
+  its own default.
+
+  The settling playings cost their arithmetic and none of the signal -- only
+  the recording is suppressed, so the answer is what `repetitions=N` records on
+  its last playing, to the bit, without holding the N-1 before it.
+
+  It matters more than a refinement. A thousand-frame fingerprinting train
+  simulated from equilibrium is 20% out on its first frame, 12% at frame 100
+  and 51% at its worst against the train a scanner repeats; two playings settle
+  it to float32, taking a ten-thousand-tissue dictionary from 0.50 s to 0.87 s.
+  A spoiled train driven this way reproduces the Ernst equation to float32,
+  which is the test it is held to.
+
 ### Fixed
 
 - **A pass no longer leaves the worker pool slower than it found it.** The CPU
