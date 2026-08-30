@@ -98,6 +98,14 @@ class _PackedEvents:
     # it travels with the table rather than with the events.
     profile_index: torch.Tensor
     time_us: torch.Tensor
+    # Signed time each sample's coherence has dephased through, in
+    # microseconds. Not a kernel buffer: it is what the analytic off-resonance
+    # and static-spread terms are applied with, after the states are done.
+    unrefocused_us: torch.Tensor
+    # Whether off-resonance may be applied to the samples rather than carried
+    # by the states; see ``_windings_are_uniform``. A tensor rather than a bool
+    # so that it travels with the other buffers a binding compares.
+    analytic_dephasing: torch.Tensor
     event_index: torch.Tensor
     repetition: torch.Tensor
     echo: torch.Tensor
@@ -607,6 +615,57 @@ def _placed_values(value: torch.Tensor, trains: int | None) -> torch.Tensor:
     return value.unsqueeze(1).expand(value.shape[0], trains)
 
 
+_WINDING_TOLERANCE = 1e-5
+
+
+def _windings_are_uniform(rates: list[float]) -> bool:
+    """Whether the dephasing order advances at one steady rate through the run.
+
+    A bulk off-resonance turns the transverse states through a phase that grows
+    with time, and the gradients wind them through one that grows with area. A
+    state's configuration order stands for the second, so it stands for the
+    first as well -- and the phase can be read off the sample rather than
+    carried -- exactly where the two grow together: where every stretch between
+    two pulses winds at the same orders per unit time.
+
+    A stretch that spoils is not on the list, since nothing transverse survives
+    it to carry a phase across. A stretch that winds nothing is, with a rate of
+    zero, and rules the analytic route out: a balanced sequence keeps its
+    coherences unwound across the pulse, and their order then says nothing about
+    how long they have been dephasing. So does a train whose repetition time
+    varies, whose stretches wind alike but last unlike.
+    """
+    if not rates:
+        # Nothing survives a pulse, so nothing carries a phase across one.
+        return True
+    first = rates[0]
+    if not first > 0.0:
+        return False
+    # Loose enough for float32 timestamps, which disagree in the seventh digit,
+    # and tight enough that a repetition time varying by anything a scanner
+    # could play -- a hundred nanoseconds on ten milliseconds is already well
+    # under the RF raster -- lands on the other side.
+    return all(abs(rate - first) <= _WINDING_TOLERANCE * first for rate in rates)
+
+
+def _lead(value: Any) -> float:
+    """One number standing for a duration that may differ per train.
+
+    A batch whose trains are timed differently has a different structure per
+    train, and the analytic terms are decided for the description as a whole.
+    Such a duration comes back as a NaN, which no comparison accepts, so the
+    decision falls to the states.
+    """
+    if isinstance(value, torch.Tensor):
+        if value.numel() == 0:
+            return 0.0
+        first = float(value.reshape(-1)[0])
+        if value.numel() > 1 and bool((value != value.reshape(-1)[0]).any()):
+            return float("nan")
+        return first
+    return float(value)
+
+
 def _pack_events(
     description: SequenceDescription,
     *,
@@ -634,10 +693,27 @@ def _pack_events(
     saturations: list[float] = []
     frequencies: list[float] = []
     times: list[Any] = []
+    unrefocused_times: list[Any] = []
     event_indices: list[int] = []
     repetition_indices: list[int] = []
     echo_flags: list[bool] = []
     previous_absolute: Any = 0.0
+    # Time the recorded coherence has dephased through, signed: it starts at an
+    # excitation, runs with the clock, and winds back after a refocusing pulse.
+    # A bulk off-resonance turns the sample through it and a static field spread
+    # damps by it, which is what lets both be applied to the echoes rather than
+    # carried by the states; see ``analytic_dephasing``.
+    unrefocused: Any = 0.0
+    # What the analytic terms need to know about the structure: how fast the
+    # dephasing order advances in each stretch between pulses, and whether the
+    # transverse states survive that stretch at all.
+    winding_rates: list[float] = []
+    stretch_us = 0.0
+    stretch_orders = 0
+    stretch_spoiled = False
+    # Nothing transverse exists before the first pulse that lays some down, so
+    # what a preparation spends its time doing says nothing about the winding.
+    turning_yet = False
     output_index = 0
     # Where each pulse's flip angle goes, gathered by the definition that says
     # what its envelope integrates to.
@@ -653,6 +729,8 @@ def _pack_events(
         for event_index, event in enumerate(description.events):
             absolute = repetition_offset + event.timestamp_us
             durations.append((absolute - previous_absolute) * 1e-6)
+            unrefocused = unrefocused + (absolute - previous_absolute)
+            stretch_us += float(_lead(absolute - previous_absolute))
             previous_absolute = absolute
             kinds.append(int(event.type))
             action = int(event.action)
@@ -676,13 +754,28 @@ def _pack_events(
                     event.rf_definition_id
                 ].saturation(rf_raster_time_s=rf_raster_time_s)
                 if event.rf_use is RfUse.INVERSION:
+                    # An inversion turns no transverse magnetization, so it
+                    # leaves the dephasing it has been through alone, and the
+                    # stretch it sits in runs on through it.
                     action |= _INVERSION
                 else:
+                    if (action & _PRE_SHIFT) != 0:
+                        stretch_orders += 1
+                    if turning_yet and stretch_us > 0.0 and not stretch_spoiled:
+                        winding_rates.append(stretch_orders / stretch_us)
+                    turning_yet = True
+                    stretch_us = 0.0
+                    stretch_orders = 1 if (action & _POST_SHIFT) != 0 else 0
+                    stretch_spoiled = False
                     # The pulse's role, carried explicitly rather than inferred
                     # from the crusher bits a given policy happens to set.
-                    action |= (
-                        _REFOCUSING if event.rf_use is RfUse.REFOCUSING else _EXCITATION
-                    )
+                    refocusing = event.rf_use is RfUse.REFOCUSING
+                    action |= _REFOCUSING if refocusing else _EXCITATION
+                    # A refocusing pulse conjugates the transverse states, so
+                    # what they have dephased through starts winding back;
+                    # anything else lays down fresh magnetization, which has
+                    # dephased through nothing yet.
+                    unrefocused = -unrefocused if refocusing else 0.0
                     # What the pulse turns through is settled after the walk,
                     # one call per definition rather than one per event: the
                     # arithmetic is the same either way, and a train of a
@@ -697,10 +790,15 @@ def _pack_events(
                     action |= _RECORD
                     event_output_index = output_index
                     times.append(absolute)
+                    unrefocused_times.append(unrefocused)
                     event_indices.append(event_index)
                     repetition_indices.append(repetition)
                     echo_flags.append(event.is_echo)
                     output_index += 1
+            if (action & _SPOIL_AFTER) != 0:
+                stretch_spoiled = True
+            elif (action & _SHIFT_AFTER) != 0:
+                stretch_orders += 1
             output_indices.append(event_output_index)
             flips.append(flip)
             phases.append(phase)
@@ -774,6 +872,10 @@ def _pack_events(
             profile_indices, dtype=torch.int32, device=device
         ).contiguous(),
         time_us=_stack_values(times, device),
+        unrefocused_us=_stack_values(unrefocused_times, device),
+        analytic_dephasing=torch.tensor(
+            _windings_are_uniform(winding_rates), dtype=torch.bool, device=device
+        ),
         event_index=torch.as_tensor(event_indices, dtype=torch.int64, device=device),
         repetition=torch.as_tensor(
             repetition_indices, dtype=torch.int64, device=device

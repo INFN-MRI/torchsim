@@ -471,11 +471,24 @@ def test_off_resonance_is_not_chosen():
     assert _auto_real_axis("forward", events, tissue, 10) is None
 
 
-def test_a_tiny_problem_skips_the_test_that_would_cost_more_than_it_saves():
+def test_a_tiny_problem_skips_the_test_that_would_cost_more_than_it_saves(monkeypatch):
+    """The rule, against a threshold this test names rather than measures.
+
+    What a machine measures moves with the machine, and deciding is cheap
+    enough now that the measured threshold sits within a small multiple of the
+    smallest problem this file can build -- so a probe taken on a loaded
+    machine could land either side of it. The rule is the same whatever the
+    number: work under the threshold is not worth the test.
+    """
+    from torchsim.sequence import _accelerators
     from torchsim.sequence._accelerators import _auto_real_axis
 
-    events, tissue, _ = _tissue_events(_trains_worth(1 / 8, atoms=2), atoms=2)
+    events, tissue, _ = _tissue_events(1, atoms=2)
+    work = 2 * int(events[1].numel())
+    monkeypatch.setattr(_accelerators, "detection", lambda *_: 8.0 * work)
     assert _auto_real_axis("forward", events, tissue, 10) is None
+    monkeypatch.setattr(_accelerators, "detection", lambda *_: work / 8.0)
+    assert _auto_real_axis("forward", events, tissue, 10) == 1
 
 
 @pytest.mark.parametrize("direction", [4, 5])
