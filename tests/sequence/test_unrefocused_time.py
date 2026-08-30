@@ -155,3 +155,103 @@ def test_a_spoiled_train_carries_its_echo_time_to_every_sample():
         # Timestamps are float32 microseconds, so a millisecond is held to
         # about a nanosecond -- well under an RF raster tick.
         assert np.abs(carried - echo_time_s).max() < 1e-5 * echo_time_s
+
+
+def _both_ways(description, tissue, wants_grad=False):
+    """The same run with the field on the samples and carried by the states."""
+    from torchsim.sequence import _accelerators
+
+    answers = []
+    for analytic in (True, False):
+        patched = None
+        if not analytic:
+            patched = _accelerators._analytic_turn
+            _accelerators._analytic_turn = lambda *_arguments: None
+        try:
+            properties = tissue()
+            signal = (
+                EpgEngine().simulate(description, properties, nstates=STATES).signal
+            )
+            if not wants_grad:
+                answers.append((signal.detach(),))
+                continue
+            # Phase sensitive, so an off-resonance derivative is not zero by
+            # symmetry the way a magnitude's would be.
+            (signal.real.sum() + 0.5 * signal.imag.sum()).backward()
+            answers.append(
+                (
+                    signal.detach(),
+                    properties.t1_ms.grad,
+                    properties.t2_ms.grad,
+                    properties.b0_hz.grad,
+                )
+            )
+        finally:
+            if patched is not None:
+                _accelerators._analytic_turn = patched
+    return answers
+
+
+def test_a_field_on_the_samples_answers_what_a_field_in_the_states_answers():
+    """Including the derivative along it, which the kernels no longer produce."""
+    voxels = 128
+    description = _spoiled(4e-3)
+
+    def tissue():
+        return TissueProperties(
+            t1_ms=torch.linspace(200.0, 3000.0, voxels).requires_grad_(True),
+            t2_ms=torch.linspace(10.0, 300.0, voxels).requires_grad_(True),
+            b0_hz=torch.full((voxels,), B0_HZ).requires_grad_(True),
+        )
+
+    analytic, in_states = _both_ways(description, tissue, wants_grad=True)
+    for name, mine, theirs in zip(
+        ("signal", "dT1", "dT2", "dB0"), analytic, in_states, strict=True
+    ):
+        scale = theirs.abs().max()
+        assert scale > 0, name
+        assert ((mine - theirs).abs().max() / scale) < 1e-5, name
+
+
+def test_off_resonance_no_longer_keeps_a_run_off_the_real_kernels(
+    always_worth_detecting,
+):
+    """Which is the point of taking it out of the states.
+
+    A train whose pulses share an axis has a real subspace to run in, and a
+    static field offset used to be enough to lose it. Applied to the samples it
+    is not: the states never see it, so they stay on the axis and the reduced
+    kernels stay available -- for the plain pass and for the derivatives alike.
+    """
+    from torchsim.sequence import _accelerators
+
+    verdicts = []
+    original = _accelerators._auto_real_axis
+
+    def watched(kind, *arguments, **keywords):
+        verdict = original(kind, *arguments, **keywords)
+        verdicts.append((kind, verdict))
+        return verdict
+
+    voxels = 64
+    description = _unbalanced(torch.full((LENGTH,), 10e-3))
+    properties = TissueProperties(
+        t1_ms=torch.linspace(200.0, 3000.0, voxels),
+        t2_ms=torch.linspace(10.0, 300.0, voxels),
+        b0_hz=torch.full((voxels,), B0_HZ),
+    )
+    _accelerators._auto_real_axis = watched
+    try:
+        EpgEngine().simulate(description, properties, nstates=STATES)
+        assert verdicts == [("forward", 1)]
+
+        verdicts.clear()
+        _accelerators._analytic_turn = (patched := _accelerators._analytic_turn)
+        _accelerators._analytic_turn = lambda *_arguments: None
+        try:
+            EpgEngine().simulate(description, properties, nstates=STATES)
+            assert verdicts == [("forward", None)]
+        finally:
+            _accelerators._analytic_turn = patched
+    finally:
+        _accelerators._auto_real_axis = original

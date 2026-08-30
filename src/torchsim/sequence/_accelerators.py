@@ -414,6 +414,30 @@ def _order_weighted_rates(
     )
 
 
+def _analytic_turn(
+    packed: _PackedEvents,
+    tissue: tuple[torch.Tensor, ...],
+    output_shape: torch.Size,
+) -> torch.Tensor | None:
+    """What a bulk off-resonance does to each sample, or ``None`` to carry it.
+
+    ``None`` where the sequence does not admit the analytic form -- see
+    :func:`_windings_are_uniform` -- and where there is no off-resonance to
+    apply, which spares an idle multiply over the whole signal.
+
+    The turn is negative because the states are held in the frame the pulses
+    define, which the off-resonance runs behind.
+    """
+    if not bool(packed.analytic_dephasing):
+        return None
+    off_resonance = tissue[5]
+    if not off_resonance.requires_grad and not bool(off_resonance.any()):
+        return None
+    unrefocused_s = packed.unrefocused_us.to(off_resonance.dtype) * 1e-6
+    angle = (-2.0 * torch.pi) * off_resonance.reshape(*output_shape, 1) * unrefocused_s
+    return torch.polar(torch.ones_like(angle), angle)
+
+
 def simulate_native(
     description: SequenceDescription,
     prepared_tissue: tuple[torch.Tensor, ...],
@@ -473,6 +497,14 @@ def simulate_native(
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
+    turning = _analytic_turn(packed, tissue, output_shape)
+    if turning is not None:
+        # Held out of the states rather than zeroed in place: the kernels then
+        # carry no off-resonance term and produce no derivative along one, and
+        # the turn applied below carries both. What reaches them is a constant,
+        # so a caller differentiating off-resonance is answered by the turn.
+        tissue = (*tissue[:5], torch.zeros_like(tissue[5]), *tissue[6:])
+        features = None if features is None else features - {"B0"}
     tissue = _order_weighted_rates(tissue, description)
     table = None
     dynamic = None
@@ -533,6 +565,8 @@ def simulate_native(
             dim=-2
         )
     signal = signal.reshape(*leading, *output_shape, packed.output_count)
+    if turning is not None:
+        signal = signal * turning
     return (
         signal,
         packed.time_us,
@@ -615,10 +649,15 @@ def _placed_values(value: torch.Tensor, trains: int | None) -> torch.Tensor:
     return value.unsqueeze(1).expand(value.shape[0], trains)
 
 
-_WINDING_TOLERANCE = 1e-5
+# Timestamps are held in float32 as often as not, so a stretch measured late in
+# a long train is known to a few parts in ten million of where the train has got
+# to rather than of its own length. Stretches are held to that, which on a
+# five-second train is a few microseconds -- below an RF raster tick, and a turn
+# of a few thousandths at any off-resonance worth simulating.
+_TIMESTAMP_RESOLUTION = 16.0 * float(torch.finfo(torch.float32).eps)
 
 
-def _windings_are_uniform(rates: list[float]) -> bool:
+def _windings_are_uniform(stretches: list[tuple[int, float]], span_us: float) -> bool:
     """Whether the dephasing order advances at one steady rate through the run.
 
     A bulk off-resonance turns the transverse states through a phase that grows
@@ -626,26 +665,31 @@ def _windings_are_uniform(rates: list[float]) -> bool:
     state's configuration order stands for the second, so it stands for the
     first as well -- and the phase can be read off the sample rather than
     carried -- exactly where the two grow together: where every stretch between
-    two pulses winds at the same orders per unit time.
+    two pulses winds through the same orders in the same time.
 
-    A stretch that spoils is not on the list, since nothing transverse survives
-    it to carry a phase across. A stretch that winds nothing is, with a rate of
-    zero, and rules the analytic route out: a balanced sequence keeps its
-    coherences unwound across the pulse, and their order then says nothing about
-    how long they have been dephasing. So does a train whose repetition time
-    varies, whose stretches wind alike but last unlike.
+    ``stretches`` are the ones whose transverse states reach the next pulse, as
+    ``(orders, microseconds)``. A stretch that spoils is not among them, since
+    nothing survives it to carry a phase across. A stretch that winds nothing is,
+    and rules the analytic route out: a balanced sequence keeps its coherences
+    unwound across the pulse, and their order then says nothing about how long
+    they have been dephasing. So does a train whose repetition time varies,
+    whose stretches wind alike but last unlike.
     """
-    if not rates:
+    if not stretches:
         # Nothing survives a pulse, so nothing carries a phase across one.
         return True
-    first = rates[0]
-    if not first > 0.0:
+    orders, duration = stretches[0]
+    if orders < 1 or not duration > 0.0:
         return False
-    # Loose enough for float32 timestamps, which disagree in the seventh digit,
-    # and tight enough that a repetition time varying by anything a scanner
-    # could play -- a hundred nanoseconds on ten milliseconds is already well
-    # under the RF raster -- lands on the other side.
-    return all(abs(rate - first) <= _WINDING_TOLERANCE * first for rate in rates)
+    # A refocused train's first stretch is half of the ones that follow -- the
+    # excitation to the first crusher against crusher to crusher -- so each is
+    # held to the time its own winding earns at the first one's rate, not to
+    # the first one's time.
+    tolerance = _TIMESTAMP_RESOLUTION * max(span_us, duration)
+    return all(
+        count >= 1 and abs(length - count * duration / orders) <= tolerance
+        for count, length in stretches
+    )
 
 
 def _lead(value: Any) -> float:
@@ -707,7 +751,7 @@ def _pack_events(
     # What the analytic terms need to know about the structure: how fast the
     # dephasing order advances in each stretch between pulses, and whether the
     # transverse states survive that stretch at all.
-    winding_rates: list[float] = []
+    stretches: list[tuple[int, float]] = []
     stretch_us = 0.0
     stretch_orders = 0
     stretch_spoiled = False
@@ -762,7 +806,7 @@ def _pack_events(
                     if (action & _PRE_SHIFT) != 0:
                         stretch_orders += 1
                     if turning_yet and stretch_us > 0.0 and not stretch_spoiled:
-                        winding_rates.append(stretch_orders / stretch_us)
+                        stretches.append((stretch_orders, stretch_us))
                     turning_yet = True
                     stretch_us = 0.0
                     stretch_orders = 1 if (action & _POST_SHIFT) != 0 else 0
@@ -874,7 +918,9 @@ def _pack_events(
         time_us=_stack_values(times, device),
         unrefocused_us=_stack_values(unrefocused_times, device),
         analytic_dephasing=torch.tensor(
-            _windings_are_uniform(winding_rates), dtype=torch.bool, device=device
+            _windings_are_uniform(stretches, float(_lead(previous_absolute))),
+            dtype=torch.bool,
+            device=device,
         ),
         event_index=torch.as_tensor(event_indices, dtype=torch.int64, device=device),
         repetition=torch.as_tensor(

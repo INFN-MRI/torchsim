@@ -45,6 +45,29 @@
   sequence shape. The buffers are bit for bit what the per-pulse path writes
   wherever nothing had to be widened.
 
+- **A bulk off-resonance is applied to the samples, not carried by the states.**
+  A static field offset turns the transverse states through a phase that grows
+  with time and the gradients wind them through one that grows with area, so
+  wherever the two grow together a state's configuration order stands for both
+  and the turn belongs to the sample. Packing carries the signed time each
+  sample has dephased through -- reset at an excitation, negated at a
+  refocusing pulse -- and the run applies `exp(-2i.pi.f.tau)` to the recorded
+  signal instead of handing the field to the kernels.
+
+  What that buys is the real subspace. A train whose pulses share an axis used
+  to lose the reduced kernels to any off-resonance at all; it no longer does,
+  and the derivative along the field comes from the turn rather than from a
+  kernel, so the reduced adjoint is available to a caller who asks for it. A
+  500-repetition fingerprinting dictionary over ten thousand tissues at 50 Hz
+  falls from 2.17 s to 0.18 s, its Jacobian from 5.88 s to 0.41 s and its
+  gradient from 10.5 s to 0.53 s. The same holds on a card, where each of the
+  four passes has a reduced kernel of its own.
+
+  A sequence the analytic form does not fit keeps carrying the field through
+  the states, decided once when the structure is packed: a balanced sequence,
+  whose coherences cross a pulse unwound, and a train whose repetition time
+  varies, whose stretches wind alike in unlike times.
+
 - **The adjoint fills its lanes from the atom axis too.** The real subspace had
   a laned kernel for forward mode and a scalar one for the reverse pass, so a
   gradient reached the fast path and then ran an eighth as wide as it could.
