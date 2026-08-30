@@ -28,6 +28,30 @@
   fallback, so the real kernels are reached at far smaller problems than the
   fallback allowed.
 
+### Added
+
+- **`repetitions="auto"` reads the settled signal off a handful of playings.**
+  A description played over and over is an affine recursion on its states, so
+  its samples are a constant plus decaying modes -- exactly, since the
+  recursion is linear -- and finitely many terms fix the limit of a sequence of
+  that form. Five playings settle a train governed by one mode and thirteen
+  settle one governed by six, which is past every sequence measured. The
+  transform recovers the eigenvalues of the transition operator on the way
+  without ever forming it, and it differentiates: the derivatives of a settled
+  answer match those of thousands of playings to 1e-5.
+
+  Where a train arrives slowly it is worth a great deal. An unbalanced
+  single-repetition train over ten thousand tissues settles in 41 ms against
+  2.33 s of running to it, and a thousand-playing guess costs 0.56 s and is
+  forty times further out.
+
+  Where a train arrives quickly it is worth less than it looks. The transform
+  is walked in double precision -- single loses three decimal places on an
+  unbalanced train, measured -- and at a million voxels that arithmetic costs
+  more than the playings it saves. A sequence whose settling length is known is
+  still better served by asking for it: an integer is exact where this is
+  accurate to about 1e-4.
+
 ### Changed
 
 - **`repetitions` plays a description into the state a scanner plays it in,

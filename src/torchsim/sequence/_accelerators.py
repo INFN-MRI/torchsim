@@ -243,6 +243,7 @@ def pack_description(
     record: str,
     device: torch.device,
     rf_raster_time_s: float = 1e-6,
+    record_every: bool = False,
     slice_profile: Any = None,
 ) -> _PackedEvents:
     """Pack a description's events into the buffers a run would hand a kernel.
@@ -260,6 +261,7 @@ def pack_description(
         record=record,
         device=device,
         rf_raster_time_s=rf_raster_time_s,
+        record_every=record_every,
     )
 
 
@@ -271,6 +273,7 @@ def _pack_for(
     record: str,
     device: torch.device,
     rf_raster_time_s: float,
+    record_every: bool = False,
 ) -> _PackedEvents:
     return _pack_events(
         description,
@@ -278,6 +281,7 @@ def _pack_for(
         record=record,
         device=device,
         rf_raster_time_s=rf_raster_time_s,
+        record_every=record_every,
         shim_rows=shim_rows(description),
         table_rows={key: row for row, key in enumerate(shapes)},
     )
@@ -453,6 +457,7 @@ def simulate_native(
     features: frozenset[str] | None = None,
     transmit: torch.Tensor | None = None,
     packed: _PackedEvents | None = None,
+    record_every: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules.
 
@@ -493,6 +498,7 @@ def simulate_native(
             record=record,
             device=device,
             rf_raster_time_s=rf_raster_time_s,
+            record_every=record_every,
         )
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
@@ -717,6 +723,7 @@ def _pack_events(
     record: str,
     device: torch.device,
     rf_raster_time_s: float,
+    record_every: bool = False,
     shim_rows: dict[int, int] | None = None,
     table_rows: dict[int, int] | None = None,
 ) -> _PackedEvents:
@@ -727,6 +734,9 @@ def _pack_events(
     in. The magnetization crosses every playing as it stands; only the
     recording is suppressed, so a settling playing costs its arithmetic and
     none of the signal.
+
+    ``record_every`` keeps them all instead, which is what reading the settled
+    signal off a handful of playings needs and no caller asks for directly.
     """
     # Values stay as plain Python numbers unless the description carries
     # tensors (an optimizer differentiating through flip angles), so the common
@@ -772,7 +782,7 @@ def _pack_events(
     turned: dict[int, list[tuple[int, Any]]] = {}
 
     for repetition in range(repetitions):
-        recording = repetition == repetitions - 1
+        recording = record_every or repetition == repetitions - 1
         # A single playing never advances by the repetition time, so it does
         # not matter what shape that time has -- which is what lets a protocol
         # give each train in a batch its own.
@@ -845,7 +855,7 @@ def _pack_events(
                     times.append(absolute)
                     unrefocused_times.append(unrefocused)
                     event_indices.append(event_index)
-                    repetition_indices.append(0)
+                    repetition_indices.append(repetition if record_every else 0)
                     echo_flags.append(event.is_echo)
                     output_index += 1
             if (action & _SPOIL_AFTER) != 0:

@@ -244,7 +244,7 @@ class Simulator(SignalModel):
         *,
         model: SpinPhysics | None = None,
         states: int | None = None,
-        repetitions: int | None = None,
+        repetitions: int | str | None = None,
         record: RecordMode = "all",
         execution: str | torch.device | Sequence[Any] | None = None,
         resolve: bool = True,
@@ -265,7 +265,9 @@ class Simulator(SignalModel):
             scanner plays it in, of which the last is the one recorded. One --
             the default, unless the sequence declares otherwise -- records the
             playing that starts from equilibrium, which is the transient a
-            scanner plays once and never again.
+            scanner plays once and never again. ``"auto"`` reads the settled
+            state off a handful of playings rather than running to it, and
+            holds no structure fixed across calls.
         record:
             Which ADCs the signal holds.
         execution:
@@ -375,12 +377,16 @@ class Simulator(SignalModel):
         played: Mapping[str, Any],
         tissue: TissueProperties,
         *,
-        repetitions: int,
+        repetitions: int | str,
         record: str,
         device: Any,
     ) -> tuple[SequenceDescription, Any]:
         """The description to run, and its events already packed if they are."""
         if not self._resolving or self._described is not None:
+            return self.describe(**played), None
+        if not isinstance(repetitions, int):
+            # How many playings a settled run takes is decided against the
+            # tissue it is given, so there is no one packing to hold fixed.
             return self.describe(**played), None
         where = target_device(tissue, device)
         settings = {

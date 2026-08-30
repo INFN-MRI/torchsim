@@ -36,6 +36,11 @@ from ._transmit import shim_rows, transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
 
+# What a caller asks for instead of a number of playings, when the sequence is
+# to be carried to the state it settles in rather than played a fixed number of
+# times.
+AUTO = "auto"
+
 # Relaxation times enter every backend as rates ``1000 / T``. A non-positive
 # time therefore yields an infinite rate, and zero-duration events (an RF pulse
 # at the same timestamp as its neighbour) turn ``inf * 0`` into NaN, which the
@@ -230,20 +235,70 @@ class EpgEngine:
             bin(int(event.action & winding)).count("1") for event in description.events
         )
 
+    # How many playings the settled route asks for. Five is enough to remove
+    # two modes and to compare the two, so a train that arrives on its own and
+    # one governed by a single mode -- a spoiled train, a long one, one an
+    # inversion resets -- are answered there and never pay for the rest.
+    # Thirteen removes six, which is past every sequence measured.
+    _SETTLING = (5, 13)
+
+    def _settled(
+        self,
+        description: SequenceDescription,
+        tissue: TissueProperties,
+        **run: Any,
+    ) -> SimulationResult:
+        """Read the settled signal off a few playings; see :mod:`._settling`."""
+        from ._settling import SETTLED, settled
+
+        result = None
+        for playings in self._SETTLING:
+            result = self.simulate(
+                description, tissue, repetitions=playings, _every=True, **run
+            )
+            samples = result.signal.shape[-1] // playings
+            blocks = result.signal.reshape(
+                *result.signal.shape[:-1], playings, samples
+            ).movedim(-2, 0)
+            limit, residual = settled(blocks)
+            if residual < SETTLED or playings == self._SETTLING[-1]:
+                break
+        assert result is not None
+        # The answer stands for one playing rather than for the last of the
+        # ones it took, so it is labelled as the first is: a caller reads the
+        # echo times of the sequence, not of the settling.
+        first = result.repetition == 0
+        return replace(
+            result,
+            signal=limit,
+            time_us=result.time_us[first],
+            event_index=result.event_index[first],
+            repetition=result.repetition[first],
+            echo=result.echo[first],
+        )
+
     def simulate(
         self,
         description: SequenceDescription,
         tissue: TissueProperties,
         *,
-        repetitions: int = 1,
+        repetitions: int | str = 1,
         record: RecordMode = "all",
         nstates: int | None = None,
         slice_profile: ExactSliceProfile | None = None,
         rf_raster_time_s: float = 1e-6,
         device: torch.device | str | None = None,
         events: Any = None,
+        _every: bool = False,
     ) -> SimulationResult:
         """Walk an event stream and record selected ADC signals.
+
+        ``repetitions`` plays the description that many times and records the
+        last, which is how a sequence is carried into the state a scanner plays
+        it in. ``"auto"`` reads that state off a handful of playings instead of
+        running to it: a settled signal is a constant plus decaying modes, and
+        finitely many terms fix its limit. On a spoiled train that is thirteen
+        playings where reaching the same answer by running takes hundreds.
 
         ``events`` is the description's stream already packed into buffers, for
         a caller that holds the structure fixed and rebuilds only what varies;
@@ -254,6 +309,16 @@ class EpgEngine:
             RuntimeError: if no fused kernel can take this tissue -- a device
                 that has none, or a build without the extension.
         """
+        if repetitions == AUTO:
+            return self._settled(
+                description,
+                tissue,
+                record=record,
+                nstates=nstates,
+                slice_profile=slice_profile,
+                rf_raster_time_s=rf_raster_time_s,
+                device=device,
+            )
         repetitions = _as_integer(repetitions, "repetitions")
         if repetitions < 1:
             raise ValueError("repetitions must be positive")
@@ -321,6 +386,7 @@ class EpgEngine:
             features=features,
             transmit=sensitivities,
             packed=events,
+            record_every=_every,
         )
         if accelerated is None:
             raise RuntimeError(
