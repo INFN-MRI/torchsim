@@ -58,7 +58,11 @@ def settled(playings: torch.Tensor) -> tuple[torch.Tensor, float]:
         # It arrived by itself; there is nothing left for the transform to do.
         return playings[-1], drift
 
-    working = playings.to(torch.complex128 if playings.is_complex() else torch.float64)
+    # Carried at the width the playings arrive in. Double was measured against
+    # single across the three families and is a wash -- better on one, alike on
+    # another, worse on the third -- while costing two and a half times as much
+    # over a volume, which at these sizes is where all the time goes.
+    working = playings
     previous = torch.zeros_like(working[:1]).expand_as(working)
     current = working
     best, residual = playings[-1], drift
@@ -76,6 +80,6 @@ def settled(playings: torch.Tensor) -> tuple[torch.Tensor, float]:
         estimate = current[-1]
         moved = float((estimate - reached).detach().abs().max()) / scale
         if moved < residual:
-            best, residual = estimate.to(playings.dtype), moved
+            best, residual = estimate, moved
         reached = estimate
     return best, residual

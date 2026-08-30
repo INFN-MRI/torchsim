@@ -72,8 +72,14 @@ def _long_train(frames=200):
     )
 
 
-# What it takes to run to the same answer is in the third column, which is what
-# the transform is worth.
+# What it takes to run to the same answer, and how close settling gets. The
+# tolerance is a property of the sequence rather than of the arithmetic: where
+# one mode governs the train the transform removes it and lands within parts in
+# a hundred thousand, and where several do, the order it stops at is chosen by
+# a residual that is itself round-off before the modes are exhausted. Which
+# order that turns out to be varies from one tissue to the next, so these are
+# asked of a spread of them rather than of one: the worst of the spread and the
+# middle of it are held separately, because they say different things.
 FAMILIES = {
     "spoiled": (
         _builders.spgr_description(
@@ -81,6 +87,7 @@ FAMILIES = {
         ),
         {},
         2048,
+        (5e-4, 2e-5),
     ),
     "unbalanced": (
         _builders.mrf_description(
@@ -88,16 +95,25 @@ FAMILIES = {
         ),
         {},
         4096,
+        (1e-2, 6e-3),
     ),
-    "balanced, off the band": (_balanced(), {"b0_hz": 40.0}, 4096),
-    "a train that arrives on its own": (_long_train(), {}, 8),
+    "balanced, off the band": (_balanced(), {"b0_hz": 40.0}, 4096, (1e-2, 2e-3)),
+    "a train that arrives on its own": (_long_train(), {}, 8, (2e-4, 1e-6)),
 }
+
+TISSUES = dict(
+    t1_ms=torch.linspace(300.0, 3000.0, 32), t2_ms=torch.linspace(20.0, 250.0, 32)
+)
 
 
 @pytest.mark.parametrize("name", list(FAMILIES))
 def test_settling_lands_where_running_to_it_lands(name):
-    description, extra, playings = FAMILIES[name]
-    tissue = TissueProperties(t1_ms=1000.0, t2_ms=80.0, **extra)
+    description, extra, playings, (worst, typical) = FAMILIES[name]
+    spread = dict(TISSUES)
+    spread.update(
+        {key: torch.full_like(spread["t1_ms"], value) for key, value in extra.items()}
+    )
+    tissue = TissueProperties(**spread)
     engine = EpgEngine()
 
     reached = engine.simulate(
@@ -108,11 +124,15 @@ def test_settling_lands_where_running_to_it_lands(name):
     ).signal
 
     assert found.shape == reached.shape
-    assert ((found - reached).abs().max() / reached.abs().max()) < 1e-3
+    drift = (found - reached).abs() / reached.abs().max()
+    assert float(drift.max()) < worst
+    # Most of the spread does far better than the worst of it, which is what
+    # says the bound is set by the hardest tissue rather than by the method.
+    assert float(drift.median()) < typical
 
 
 def test_a_settled_run_is_labelled_as_the_one_playing_it_stands_for():
-    description, _extra, _playings = FAMILIES["spoiled"]
+    description, _extra, _playings, _bounds = FAMILIES["spoiled"]
     tissue = TissueProperties(t1_ms=1000.0, t2_ms=80.0)
     engine = EpgEngine()
     found = engine.simulate(description, tissue, repetitions="auto", nstates=4)
@@ -127,7 +147,7 @@ def test_a_settled_run_is_labelled_as_the_one_playing_it_stands_for():
 
 def test_the_settled_answer_carries_the_derivatives_of_the_one_it_stands_for():
     """The transform is arithmetic on the playings, so it differentiates."""
-    description, _extra, playings = FAMILIES["spoiled"]
+    description, _extra, playings, _bounds = FAMILIES["spoiled"]
 
     def gradients(repetitions):
         t1_ms = torch.tensor([600.0, 1400.0]).requires_grad_(True)

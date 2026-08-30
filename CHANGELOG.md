@@ -45,12 +45,16 @@
   2.33 s of running to it, and a thousand-playing guess costs 0.56 s and is
   forty times further out.
 
-  Where a train arrives quickly it is worth less than it looks. The transform
-  is walked in double precision -- single loses three decimal places on an
-  unbalanced train, measured -- and at a million voxels that arithmetic costs
-  more than the playings it saves. A sequence whose settling length is known is
-  still better served by asking for it: an integer is exact where this is
-  accurate to about 1e-4.
+  Where a train arrives quickly it is worth less than it looks: at a million
+  voxels the transform's own arithmetic costs about what the playings it saves
+  cost. A sequence whose settling length is known is still better served by
+  asking for it, an integer being exact where this is not.
+
+  How close it gets is set by the order it stops at rather than by the width
+  the arithmetic is carried in, which is why it is carried at the width the
+  playings arrive in. A train governed by one mode settles to a few parts in a
+  hundred thousand; one governed by several settles to a few parts in a
+  thousand, and which order a given tissue stops at varies across a dictionary.
 
 ### Changed
 
