@@ -4,11 +4,20 @@ Each case pairs the predicate against the signal it describes, so the rule
 cannot drift away from the behaviour it is meant to predict.
 """
 
+from dataclasses import replace
+from unittest import mock
+
 import pytest
 import torch
 
 from torchsim import EpgEngine, fse_description
-from torchsim.sequence._accelerators import _pack_events, real_subspace_axis
+from torchsim.sequence import _accelerators as accelerators
+from torchsim.sequence._accelerators import (
+    _one_axis,
+    _pack_events,
+    _run_packed,
+    real_subspace_axis,
+)
 from torchsim.sequence._parameters import FLOAT_NAMES, OUTSIDE_THE_SUBSPACE
 from torchsim.sequence._simulation import TissueProperties, _prepare_tissue
 
@@ -1015,25 +1024,87 @@ def test_partial_atom_blocks_of_the_adjoint_match_the_complex_kernel(atoms):
     assert compared >= 3
 
 
-# An axis is not a direction. Pulses a half turn apart lie on one axis and keep
-# the states real, so the subspace is genuinely there -- but they turn about it
-# in opposite senses, and a flip angle carries no sign to say which. These are
-# the arrangements that tempted the verdict and would have been answered wrong.
+# An axis is not a direction. Pulses a half turn apart lie on one axis and turn
+# about it in opposite senses, and a flip angle carries no sign to say which --
+# so a packing subtracts the half turns, negating the flips it turns round and
+# the samples it demodulates the other way. What the kernels then see is a
+# stream on one axis, and the reduced ones can carry it.
 HALF_A_TURN = {
     "an excitation a half turn from its refocusing pulses": (torch.pi, 0.0),
     "refocusing pulses a half turn from the excitation": (0.0, torch.pi),
+    "a train alternating its phase, as a phase-cycled one does": (
+        0.0,
+        torch.tensor([0.0, torch.pi] * 3),
+    ),
 }
 
 
-@pytest.mark.parametrize("name", list(HALF_A_TURN))
-def test_pulses_a_half_turn_apart_do_not_earn_the_reduced_kernels(name):
+def _half_a_turn(name):
     excitation, refocusing = HALF_A_TURN[name]
-    events, prepared, _ = _tissue_events(1)
     description = fse_description(
         torch.deg2rad(torch.full((6,), 140.0)),
         echo_spacing_s=ECHO_SPACING_S,
         phases_rad=refocusing,
         excitation_phase_rad=excitation,
+    )
+    return _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+
+
+@pytest.mark.parametrize("name", list(HALF_A_TURN))
+def test_pulses_a_half_turn_apart_are_brought_onto_one_axis(name):
+    packed = _half_a_turn(name)
+    prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
+    assert real_subspace_axis(packed.buffers, prepared) is None
+
+    settled, samples = _one_axis(packed)
+    assert real_subspace_axis(settled.buffers, prepared) == 1
+
+    # And the reduced kernel answers what the full one does, which is what the
+    # verdict has just claimed of it.
+    arguments = (prepared, settled.buffers, 8, packed.output_count, 1)
+    sign = 1.0 if samples is None else samples
+    complex_path = _run_packed(*arguments, real_axis=-1) * sign
+    reduced = _run_packed(*arguments, real_axis=1) * sign
+    scale = complex_path.abs().max()
+    assert (complex_path - reduced).abs().max() <= 1e-5 * scale
+
+    # The rewrite is an identity: the sequence it describes is unchanged.
+    original = _run_packed(
+        prepared, packed.buffers, 8, packed.output_count, 1, real_axis=-1
+    )
+    assert (original - complex_path).abs().max() <= 1e-5 * scale
+
+
+@pytest.mark.parametrize("name", list(HALF_A_TURN))
+def test_a_half_turn_apart_reaches_the_engine(name):
+    """End to end, against the same sequence with the packing stood down."""
+    excitation, refocusing = HALF_A_TURN[name]
+    description = fse_description(
+        torch.deg2rad(torch.full((6,), 140.0)),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=refocusing,
+        excitation_phase_rad=excitation,
+    )
+    tissue = _tissue(0.0, 0.0)
+    settled = EpgEngine().simulate(description, tissue).signal
+    with mock.patch.object(accelerators, "_one_axis", lambda packed: (packed, None)):
+        plain = EpgEngine().simulate(description, tissue).signal
+    assert (settled - plain).abs().max() <= 1e-5 * plain.abs().max()
+
+
+def test_a_uniform_train_is_left_exactly_as_it_stands():
+    """Nothing is a half turn out, so the packing has nothing to subtract."""
+    description = fse_description(
+        torch.deg2rad(torch.full((6,), 140.0)),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=torch.pi / 4,
+        excitation_phase_rad=torch.pi / 4,
     )
     packed = _pack_events(
         description,
@@ -1042,27 +1113,39 @@ def test_pulses_a_half_turn_apart_do_not_earn_the_reduced_kernels(name):
         device=torch.device("cpu"),
         rf_raster_time_s=1e-6,
     )
-    events = packed.buffers
-    prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
-    assert real_subspace_axis(events, prepared) is None
-
-    # And the refusal is not caution: the reduced kernel really would answer
-    # something else, the sign of the turn being what it cannot carry.
-    from torchsim.sequence._accelerators import _run_packed
-
-    arguments = (prepared, events, 8, packed.output_count, 1)
-    complex_path = _run_packed(*arguments, real_axis=-1)
-    reduced = _run_packed(*arguments, real_axis=1)
-    assert ((complex_path - reduced).abs().max() / complex_path.abs().max()) > 0.5
+    settled, samples = _one_axis(packed)
+    assert settled is packed
+    assert samples is None
 
 
-def test_a_train_alternating_its_phase_does_not_either():
-    """Which is what a phase-cycled balanced sequence does every repetition."""
-    phases = torch.tensor([0.0, torch.pi] * 3)
+def test_pulses_a_quarter_turn_apart_are_left_to_the_full_kernel():
+    """No sign brings them together, so the packing does not try."""
     description = fse_description(
         torch.deg2rad(torch.full((6,), 140.0)),
         echo_spacing_s=ECHO_SPACING_S,
-        phases_rad=phases,
+        phases_rad=torch.pi / 2,
+        excitation_phase_rad=0.0,
+    )
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    settled, samples = _one_axis(packed)
+    assert settled is packed
+    assert samples is None
+    prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
+    assert real_subspace_axis(packed.buffers, prepared) is None
+
+
+def test_a_sample_demodulated_off_the_axis_keeps_the_full_kernel():
+    """The reduced kernels demodulate by nothing, so they cannot produce it."""
+    description = fse_description(
+        torch.deg2rad(torch.full((6,), 140.0)),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=0.0,
         excitation_phase_rad=0.0,
     )
     packed = _pack_events(
@@ -1073,4 +1156,51 @@ def test_a_train_alternating_its_phase_does_not_either():
         rf_raster_time_s=1e-6,
     )
     prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
-    assert real_subspace_axis(packed.buffers, prepared) is None
+    assert real_subspace_axis(packed.buffers, prepared) == 1
+
+    recording = (packed.kind == 2) & ((packed.action & 32) != 0)
+    phase = torch.where(recording, torch.pi / 2, packed.phase)
+    turned = replace(packed, phase=phase.contiguous())
+    assert real_subspace_axis(turned.buffers, prepared) is None
+
+    # And the refusal is not caution: demodulating a quarter turn round is a
+    # signal the reduced kernel does not carry.
+    arguments = (prepared, turned.buffers, 8, packed.output_count, 1)
+    complex_path = _run_packed(*arguments, real_axis=-1)
+    reduced = _run_packed(*arguments, real_axis=1)
+    assert (complex_path - reduced).abs().max() > 0.5 * complex_path.abs().max()
+
+
+@pytest.mark.parametrize("name", list(HALF_A_TURN))
+def test_the_rewrite_carries_derivatives_as_well_as_values(name):
+    """Subtracting a half turn is affine, so the phase gradient survives it."""
+    excitation, refocusing = HALF_A_TURN[name]
+
+    def gradients(settle):
+        flip = torch.deg2rad(torch.full((6,), 140.0)).requires_grad_(True)
+        phases = (
+            torch.as_tensor(refocusing, dtype=torch.float32)
+            .expand(6)
+            .clone()
+            .requires_grad_(True)
+        )
+        tissue = _tissue(0.0, 0.0)
+        tissue.t2_ms.requires_grad_(True)
+        description = fse_description(
+            flip,
+            echo_spacing_s=ECHO_SPACING_S,
+            phases_rad=phases,
+            excitation_phase_rad=excitation,
+        )
+        with mock.patch.object(
+            accelerators,
+            "_one_axis",
+            accelerators._one_axis if settle else (lambda packed: (packed, None)),
+        ):
+            signal = EpgEngine().simulate(description, tissue).signal
+        weight = torch.linspace(0.3, 1.9, signal.shape[-1])
+        loss = (weight * signal.real).sum() + (1.7 * weight * signal.imag).sum()
+        return torch.autograd.grad(loss, [flip, phases, tissue.t2_ms])
+
+    for settled, plain in zip(gradients(True), gradients(False), strict=True):
+        assert (settled - plain).abs().max() <= 1e-5 * plain.abs().max()

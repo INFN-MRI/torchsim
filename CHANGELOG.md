@@ -4,19 +4,26 @@
 
 ### Fixed
 
-- **A train whose pulses sit a half turn apart no longer takes the reduced
-  kernels.** The subspace verdict accepted RF phases equal modulo half a turn,
-  on the grounds that a half turn only flips the sign of a state -- which is
-  true of the states and not of the operator. Pulses a half turn apart do lie
-  on one axis, and they turn about it in opposite senses; what the reduced
-  kernels carry is a flip angle with no sign to say which. So an excitation a
-  half turn from its refocusing pulses came back negated, and a train
-  alternating its phase -- a phase-cycled balanced sequence, every repetition
-  of it -- came back somewhere else entirely, off by more than the signal.
+- **A train whose pulses sit a half turn apart is answered right.** The
+  subspace verdict accepted RF phases equal modulo half a turn, on the grounds
+  that a half turn only flips the sign of a state -- which is true of the
+  states and not of the operator. Pulses a half turn apart do lie on one axis,
+  and they turn about it in opposite senses; what the reduced kernels carry is
+  a flip angle with no sign to say which. So an excitation a half turn from
+  its refocusing pulses came back negated, and a train alternating its phase
+  -- a phase-cycled balanced sequence, every repetition of it -- came back
+  somewhere else entirely, off by more than the signal.
 
-  The verdict now asks for the phases to agree over a whole turn. What it
-  refuses goes to the full kernels and is right; the anti-CPMG arrangement
-  loses the reduced path it should never have had.
+  The verdict now asks for the phases to agree over a whole turn, and a
+  packing brings a stream a half turn out into line before it is asked; see
+  below.
+
+- **A sample demodulated off the axis its pulses share keeps the full
+  kernels.** The verdict read the RF phases and not the ADC phases, while the
+  reduced kernels report the transverse state in the frame the pulses set and
+  demodulate by nothing. A sequence whose readout carried a phase of its own
+  was answered in the wrong frame. The spread now covers the pulses and the
+  samples together.
 
 - **A pass no longer leaves the worker pool slower than it found it.** The CPU
   kernels are multiversioned, so on a machine with AVX-512 the loader picks a
@@ -43,6 +50,24 @@
   fallback allowed.
 
 ### Added
+
+- **A train a half turn out is brought onto one axis and keeps the reduced
+  kernels.** Turning through `-alpha` about an axis is turning through `alpha`
+  about the opposite one, and demodulating a sample a half turn round negates
+  it. So a packing subtracts the half turns: it negates the flip of every
+  pulse it brings into line and carries the sign of every sample it turns
+  round out to the signal. Both identities hold at every phase, so the rewrite
+  carries derivatives as exactly as it carries values -- a phase gradient
+  through it matches the full kernel's to 3e-08 -- and it needs nothing of the
+  kernels, so the CPU and CUDA paths and the forward and reverse modes all get
+  it at once.
+
+  The anti-CPMG arrangement and the phase-cycled train -- an excitation a half
+  turn from its refocusing pulses, refocusing pulses a half turn from the
+  excitation, a train alternating 0 and pi -- reach the reduced kernels and
+  agree with the full ones to float32 round-off. A 64-echo train over twenty
+  thousand tissues goes from 1.23 s to 75 ms, and its gradient from 7.7 s to
+  0.33 s, which is what the same train already cost with its pulses in phase.
 
 - **A settled state is solved for where the train never winds.** Such a train
   carries one configuration order, and one order is three numbers: a transverse

@@ -9,7 +9,7 @@ import weakref
 from collections import OrderedDict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import torch
@@ -442,6 +442,80 @@ def _analytic_turn(
     return torch.polar(torch.ones_like(angle), angle)
 
 
+def _half_turns(
+    packed: _PackedEvents,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None] | None:
+    """How far each pulse and sample sits from the axis the stream shares.
+
+    Returns the multiple of a half turn each event is out by, the sign that
+    multiple puts on a flip, and the sign it puts on a recorded sample --
+    ``None`` where nothing is out by one, or where the phases lie on different
+    axes and no sign can bring them together.
+
+    Turning through ``-alpha`` about an axis is turning through ``alpha`` about
+    the opposite one, and demodulating a sample a half turn round negates it.
+    Both hold at every phase, so subtracting the half turns is an identity in
+    value and in derivative alike, and what it leaves is a stream whose pulses
+    and samples share one phase -- which is what the reduced kernels ask for.
+    """
+    kind, phase, action = packed.kind, packed.phase, packed.action
+    turning = (kind == 1) & ((action & _INVERSION) == 0)
+    recording = (kind == 2) & ((action & _RECORD) != 0)
+    present = torch.stack((turning.any(), recording.any())).tolist()
+    if not present[0]:
+        return None
+    # Anchored on a sample where the stream takes any, so a train whose samples
+    # already agree needs no sign on its signal.
+    anchor = recording if present[1] else turning
+    settled = phase.detach()
+    delta = settled - settled[..., anchor][..., :1]
+    on_the_axis = turning | recording
+    zero = torch.zeros_like(delta)
+    out_by = torch.where(on_the_axis, torch.round(delta / torch.pi), zero)
+    residue = torch.where(on_the_axis, delta - out_by * torch.pi, zero)
+    sign = torch.cos(out_by * torch.pi)
+    summary = torch.stack(
+        (residue.abs().max(), (sign < 0).any().to(delta.dtype))
+    ).tolist()
+    if summary[0] > _PHASE_TOLERANCE or not summary[1]:
+        return None
+    samples = None
+    if present[1]:
+        samples = sign[..., recording]
+        if samples.dim() > 1:
+            # The sign multiplies a signal whose train axis leads its voxels,
+            # so one that differs train by train has nowhere to go.
+            if not bool((samples == samples[:1]).all()):
+                return None
+            samples = samples[0]
+    return out_by, torch.where(turning, sign, torch.ones_like(sign)), samples
+
+
+def _one_axis(packed: _PackedEvents) -> tuple[_PackedEvents, torch.Tensor | None]:
+    """The stream with its pulses and samples brought onto one axis.
+
+    Returns it beside the sign its samples carry away, which the caller applies
+    to the signal. The stream is returned as it stands where its pulses already
+    share a phase, and where they share no axis at all.
+    """
+    corrections = _remembered(
+        "half turns",
+        (packed.kind, packed.phase, packed.action),
+        lambda: _half_turns(packed),
+    )
+    if corrections is None:
+        return packed, None
+    out_by, flips, samples = corrections
+    return (
+        replace(
+            packed,
+            flip=(packed.flip * flips).contiguous(),
+            phase=(packed.phase - out_by * torch.pi).contiguous(),
+        ),
+        samples,
+    )
+
+
 def simulate_native(
     description: SequenceDescription,
     prepared_tissue: tuple[torch.Tensor, ...],
@@ -514,6 +588,11 @@ def simulate_native(
     tissue = _order_weighted_rates(tissue, description)
     table = None
     dynamic = None
+    samples = None
+    if not shapes and transmit is None:
+        # A shaped or per-voxel pulse is turned through by a table rather than
+        # by a flip, so there is no flip to carry a sign; those go as they are.
+        packed, samples = _one_axis(packed)
     if transmit is not None:
         dynamic, locations = _dynamic_rotations(
             description,
@@ -573,6 +652,8 @@ def simulate_native(
     signal = signal.reshape(*leading, *output_shape, packed.output_count)
     if turning is not None:
         signal = signal * turning
+    if samples is not None:
+        signal = signal * samples
     return (
         signal,
         packed.time_us,
@@ -1604,8 +1685,13 @@ _REMEMBERED: OrderedDict[
 _REMEMBERED_LIMIT = 32
 
 
-def _remembered(inputs: tuple[torch.Tensor, ...], read: Callable[[], Any]) -> Any:
+def _remembered(
+    tag: str, inputs: tuple[torch.Tensor, ...], read: Callable[[], Any]
+) -> Any:
     """``read()``, computed once per set of buffers it would read.
+
+    ``tag`` names what is being remembered, so that two questions asked of the
+    same buffers do not answer each other.
 
     The answer is a property of the buffers, so it changes only when one of them
     is replaced or written to. Keying on identity and version says exactly that,
@@ -1620,7 +1706,7 @@ def _remembered(inputs: tuple[torch.Tensor, ...], read: Callable[[], Any]) -> An
     which is the assumption autograd already makes of the same buffers.
     """
     try:
-        key = tuple(map(id, inputs))
+        key = (tag, *map(id, inputs))
         versions = tuple(value._version for value in inputs)
         references = tuple(weakref.ref(value) for value in inputs)
     except (AttributeError, TypeError):
@@ -1739,7 +1825,12 @@ def _tissue_stays_on_the_axis(
 
 
 def _pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
-    """Whether the stream turns any spins, and how far its pulse phases spread.
+    """Whether the stream turns any spins, and how far its phases spread.
+
+    The spread covers the pulses and the samples together: the reduced kernels
+    report the transverse state in the frame the pulses set and demodulate by
+    nothing, so a sample demodulated by some other phase is one they cannot
+    produce.
 
     An ideal inversion is left out of that spread: it scales the longitudinal
     states and turns nothing, so whatever sits in its phase buffer says nothing
@@ -1750,23 +1841,28 @@ def _pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
     it was read from rather than recomputed per call.
     """
     return _remembered(
-        (events[1], events[3], events[4]), lambda: _read_pulse_axis(events)
+        "pulse axis",
+        (events[1], events[3], events[4]),
+        lambda: _read_pulse_axis(events),
     )
 
 
 def _read_pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
-    """Reduce the pulse phases to one flag and one number in one round trip."""
+    """Reduce the phases to one flag and one number in one round trip."""
     kind, phase, action = events[1], events[3], events[4]
     turning = (kind == 1) & ((action & _INVERSION) == 0)
-    # A whole turn, not half of one. Pulses a half turn apart do lie on one
-    # axis, and their states stay real -- but they turn about it in opposite
-    # senses, and the reduced kernels carry a flip without a sign to say which.
+    on_the_axis = turning | ((kind == 2) & ((action & _RECORD) != 0))
+    # A whole turn, not half of one. Pulses a half turn apart turn about one
+    # axis in opposite senses, and the reduced kernels carry a flip without a
+    # sign to say which -- so a packing brings them into line before this is
+    # asked, negating the flips it turns round; see ``_one_axis``. What reaches
+    # here disagreeing by a half turn is a stream no packing settled.
     wrapped = torch.remainder(phase, _WHOLE_TURN)
     infinity = torch.full_like(wrapped, float("inf"))
 
     def extent(values: torch.Tensor) -> torch.Tensor:
-        lowest = torch.where(turning, values, infinity).min()
-        highest = torch.where(turning, values, -infinity).max()
+        lowest = torch.where(on_the_axis, values, infinity).min()
+        highest = torch.where(on_the_axis, values, -infinity).max()
         return highest - lowest
 
     # One set that straddles zero -- phases a hair under a whole turn beside

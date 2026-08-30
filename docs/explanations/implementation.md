@@ -142,6 +142,15 @@ train. That is the CPMG and anti-CPMG arrangement of the EPG literature
 [^2], and it means the arithmetic can be done in real numbers: the shift's
 conjugate coupling becomes a sign, and the rotation reduces to a real 3x3.
 
+A pulse a half turn round is the same pulse turning the other way, and a
+sample demodulated a half turn round is the same sample negated. The event
+stream is packed with those half turns subtracted -- the flips they negate
+carry the sign, and the samples they negate hand theirs to the signal -- so an
+anti-CPMG train, or one alternating its phase every repetition as a
+phase-cycled balanced sequence does, arrives on one axis and takes this path.
+Both identities hold at every phase, so what the packing rewrites is
+differentiated exactly.
+
 ```{figure} /generated/figures/real_subspace.png
 :width: 100%
 :alt: A state trajectory on a line against one filling the plane, and the run times of each.
