@@ -4,6 +4,20 @@
 
 ### Fixed
 
+- **A train whose pulses sit a half turn apart no longer takes the reduced
+  kernels.** The subspace verdict accepted RF phases equal modulo half a turn,
+  on the grounds that a half turn only flips the sign of a state -- which is
+  true of the states and not of the operator. Pulses a half turn apart do lie
+  on one axis, and they turn about it in opposite senses; what the reduced
+  kernels carry is a flip angle with no sign to say which. So an excitation a
+  half turn from its refocusing pulses came back negated, and a train
+  alternating its phase -- a phase-cycled balanced sequence, every repetition
+  of it -- came back somewhere else entirely, off by more than the signal.
+
+  The verdict now asks for the phases to agree over a whole turn. What it
+  refuses goes to the full kernels and is right; the anti-CPMG arrangement
+  loses the reduced path it should never have had.
+
 - **A pass no longer leaves the worker pool slower than it found it.** The CPU
   kernels are multiversioned, so on a machine with AVX-512 the loader picks a
   clone that uses the upper halves of the vector registers. A pool worker
@@ -29,6 +43,23 @@
   fallback allowed.
 
 ### Added
+
+- **A settled state is solved for where the train never winds.** Such a train
+  carries one configuration order, and one order is three numbers: a transverse
+  magnetization, one complex number there since `F-` is the conjugate of `F+`,
+  and a longitudinal one, which is real. Both ends of the map are reachable
+  with nothing but the sequence -- a state is prepared by turning equilibrium
+  through a pulse, and read by an ADC followed by a pulse that tips the
+  longitudinal part into the plane -- so four prepared states determine the
+  whole affine map and its fixed point is a solve rather than a limit. No
+  kernel carries anything new.
+
+  `repetitions="auto"` takes that route where it applies and reads the limit
+  off a few playings where it does not. A balanced train settles to 3e-06
+  against the 5e-03 the transform reaches, reproduces the closed form to 2e-06,
+  and differentiates: its derivatives match those of thousands of playings to
+  5e-06. Over a million voxels it costs 1.4 s where running to the same answer
+  costs 9.5 s.
 
 - **`repetitions="auto"` reads the settled signal off a handful of playings.**
   A description played over and over is an affine recursion on its states, so

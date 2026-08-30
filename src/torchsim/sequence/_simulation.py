@@ -248,8 +248,28 @@ class EpgEngine:
         tissue: TissueProperties,
         **run: Any,
     ) -> SimulationResult:
-        """Read the settled signal off a few playings; see :mod:`._settling`."""
+        """Carry the description to the state it settles in.
+
+        A train that winds nothing carries one configuration order, and that
+        state is small enough to solve for outright; see :mod:`._fixed_point`.
+        Anything else is read off a few playings; see :mod:`._settling`.
+        """
+        from ._fixed_point import carries_one_order, settled_state
         from ._settling import SETTLED, settled
+
+        if carries_one_order(description):
+            once = self.simulate(description, tissue, **{**run, "nstates": 1})
+            return replace(
+                once,
+                signal=settled_state(
+                    lambda probed, **extra: (
+                        self.simulate(
+                            probed, tissue, **{**run, "nstates": 1, **extra}
+                        ).signal
+                    ),
+                    description,
+                ),
+            )
 
         result = None
         for playings in self._SETTLING:

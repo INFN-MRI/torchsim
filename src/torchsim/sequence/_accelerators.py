@@ -1590,6 +1590,8 @@ def _loop_vmap(
 # How far two RF phases may drift and still count as the same one.
 _PHASE_TOLERANCE = 1e-5
 
+_WHOLE_TURN = 2.0 * torch.pi
+
 
 _REMEMBERED: OrderedDict[
     tuple[int, ...],
@@ -1654,20 +1656,24 @@ def real_subspace_axis(
 ) -> int | None:
     """The real axis the states are confined to, or ``None``.
 
-    Returns 1 when every pulse in the sequence turns about one axis -- all the
-    RF phases equal modulo a half turn, since a half turn only flips the sign
-    of a state -- and there is neither off-resonance, transmit phase, nor spin
-    velocity. The states then start real, and every operator the kernels carry
+    Returns 1 when every pulse in the sequence turns the same way about one
+    axis -- all the RF phases equal -- and there is neither off-resonance,
+    transmit phase, nor spin velocity. The states then start real, and every operator the kernels carry
     keeps them real: the rotation about a single axis has real coefficients on
     the axis the signal lies on, the shift's conjugate coupling becomes a sign,
     relaxation and spoiling scale, and an ideal inversion scales the
     longitudinal states alone.
 
-    That covers both arrangements the literature names. A refocused train whose
-    excitation shares the phase of its refocusing pulses, or sits a half turn
-    from them, is the CPMG and anti-CPMG pair. A spoiled or unbalanced train
-    whose pulses all share one phase is the same condition with no refocusing
-    pulse in it, which is what a fingerprinting schedule is.
+    A refocused train whose excitation shares the phase of its refocusing
+    pulses is the CPMG arrangement; a spoiled or unbalanced train whose pulses
+    all share one phase is the same condition with no refocusing pulse in it,
+    which is what a fingerprinting schedule is.
+
+    Pulses a half turn apart are refused although their states do stay real.
+    They turn about one axis in opposite senses, and what the reduced kernels
+    carry is a flip angle with no sign to say which sense -- so an excitation a
+    half turn from its refocusing pulses, or a train alternating its phase,
+    goes to the full kernels.
 
     Flow dephasing turns each dephasing order through a phase of its own, which
     is a rotation out of the axis rather than a scaling along it. Washout stays
@@ -1752,8 +1758,10 @@ def _read_pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
     """Reduce the pulse phases to one flag and one number in one round trip."""
     kind, phase, action = events[1], events[3], events[4]
     turning = (kind == 1) & ((action & _INVERSION) == 0)
-    # Phases matter modulo pi: a half turn only flips the sign of the state.
-    wrapped = torch.remainder(phase, torch.pi)
+    # A whole turn, not half of one. Pulses a half turn apart do lie on one
+    # axis, and their states stay real -- but they turn about it in opposite
+    # senses, and the reduced kernels carry a flip without a sign to say which.
+    wrapped = torch.remainder(phase, _WHOLE_TURN)
     infinity = torch.full_like(wrapped, float("inf"))
 
     def extent(values: torch.Tensor) -> torch.Tensor:
@@ -1761,17 +1769,16 @@ def _read_pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
         highest = torch.where(turning, values, -infinity).max()
         return highest - lowest
 
-    # One set that straddles zero -- phases a hair under a half turn beside
+    # One set that straddles zero -- phases a hair under a whole turn beside
     # phases a hair over it -- has the full spread on this scale and none on a
-    # scale turned a quarter of the way round, so the smaller of the two is the
+    # scale turned half of the way round, so the smaller of the two is the
     # spread that means what it says.
-    quarter = 0.5 * torch.pi
     summary = torch.stack(
         (
             turning.any().to(wrapped.dtype),
             torch.minimum(
                 extent(wrapped),
-                extent(torch.remainder(wrapped + quarter, torch.pi)),
+                extent(torch.remainder(wrapped + torch.pi, _WHOLE_TURN)),
             ),
         )
     ).tolist()

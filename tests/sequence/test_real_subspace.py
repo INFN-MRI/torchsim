@@ -1013,3 +1013,64 @@ def test_partial_atom_blocks_of_the_adjoint_match_the_complex_kernel(atoms):
         if scale > floor:
             compared += 1
     assert compared >= 3
+
+
+# An axis is not a direction. Pulses a half turn apart lie on one axis and keep
+# the states real, so the subspace is genuinely there -- but they turn about it
+# in opposite senses, and a flip angle carries no sign to say which. These are
+# the arrangements that tempted the verdict and would have been answered wrong.
+HALF_A_TURN = {
+    "an excitation a half turn from its refocusing pulses": (torch.pi, 0.0),
+    "refocusing pulses a half turn from the excitation": (0.0, torch.pi),
+}
+
+
+@pytest.mark.parametrize("name", list(HALF_A_TURN))
+def test_pulses_a_half_turn_apart_do_not_earn_the_reduced_kernels(name):
+    excitation, refocusing = HALF_A_TURN[name]
+    events, prepared, _ = _tissue_events(1)
+    description = fse_description(
+        torch.deg2rad(torch.full((6,), 140.0)),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=refocusing,
+        excitation_phase_rad=excitation,
+    )
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    events = packed.buffers
+    prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
+    assert real_subspace_axis(events, prepared) is None
+
+    # And the refusal is not caution: the reduced kernel really would answer
+    # something else, the sign of the turn being what it cannot carry.
+    from torchsim.sequence._accelerators import _run_packed
+
+    arguments = (prepared, events, 8, packed.output_count, 1)
+    complex_path = _run_packed(*arguments, real_axis=-1)
+    reduced = _run_packed(*arguments, real_axis=1)
+    assert ((complex_path - reduced).abs().max() / complex_path.abs().max()) > 0.5
+
+
+def test_a_train_alternating_its_phase_does_not_either():
+    """Which is what a phase-cycled balanced sequence does every repetition."""
+    phases = torch.tensor([0.0, torch.pi] * 3)
+    description = fse_description(
+        torch.deg2rad(torch.full((6,), 140.0)),
+        echo_spacing_s=ECHO_SPACING_S,
+        phases_rad=phases,
+        excitation_phase_rad=0.0,
+    )
+    packed = _pack_events(
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    prepared, _, _ = _prepare_tissue(_tissue(0.0, 0.0), "cpu")
+    assert real_subspace_axis(packed.buffers, prepared) is None
