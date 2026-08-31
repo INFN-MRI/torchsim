@@ -157,5 +157,8 @@ def report(measurement: Measurement, path: str) -> None:
         )
     )
     if path:
+        # With the trailing newline a text file is expected to end on, since
+        # these records are committed and the repository's hooks check for it.
         with open(path, "w") as stream:
             json.dump(measurement.as_dict(), stream, indent=2)
+            stream.write("\n")

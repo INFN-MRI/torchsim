@@ -75,7 +75,7 @@ def run(command: list[str], tag: str) -> dict | None:
         return previous
     record = json.loads(target.read_text())
     if previous and previous["best"] < record["best"]:
-        target.write_text(json.dumps(previous, indent=2))
+        target.write_text(json.dumps(previous, indent=2) + "\n")
         return previous
     return record
 
