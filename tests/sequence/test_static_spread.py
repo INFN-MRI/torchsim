@@ -200,6 +200,26 @@ def test_a_sequence_that_does_not_wind_at_one_rate_refuses_the_spread():
         _signal(description, t2_prime_ms=T2_PRIME_MS)
 
 
+def test_a_spread_that_is_no_spread_is_not_refused():
+    """The refusal is about what the tissue has, not what it named.
+
+    A map handed a whole array of them says a spread is in play before a
+    buffer is touched, which is what keeps the common case off the device;
+    what an array of infinities holds is still no spread, and refusing it
+    would turn a sequence away over nothing.
+    """
+    description = _builders.mrf_description(
+        torch.full((LENGTH,), np.deg2rad(40.0)),
+        torch.linspace(11e-3, 15e-3, LENGTH),
+    )
+    idle = torch.full((2,), float("inf"))
+    signal = _signal(description, t2_prime_ms=idle).reshape(2, -1)
+    torch.testing.assert_close(
+        torch.as_tensor(signal),
+        torch.as_tensor(_signal(description).reshape(1, -1)).expand(2, -1).clone(),
+    )
+
+
 def test_the_spread_is_differentiated():
     """Against the derivative of the factor it applies, which is a closed form."""
     description = _spoiled(6e-3)
