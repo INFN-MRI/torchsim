@@ -857,6 +857,36 @@ def _lead(value: Any) -> float:
     return float(value)
 
 
+def sample_times_us(interval_us: torch.Tensor, recorded: torch.Tensor) -> torch.Tensor:
+    """When each recorded sample is taken, from the intervals that precede it.
+
+    A stream's clock is the running total of the gaps between its events, so a
+    sample's timestamp is the sum of every interval up to and including its
+    own. That is what lets a rebinding produce the times from the intervals it
+    already maps, where a repetition time reaching every later timestamp is not
+    something one source element accounts for; see
+    :mod:`torchsim.model._binding`, which is where this is read.
+
+    The sum is taken at double width. The intervals are float32 and a long
+    train accumulates thousands of them, which is a rounding the samples' own
+    width has no room to absorb.
+
+    Parameters
+    ----------
+    interval_us:
+        How long each event of the packed stream sits after the one before it,
+        in microseconds.
+    recorded:
+        Which of those events an ADC records, in stream order.
+
+    Returns
+    -------
+    torch.Tensor
+        One timestamp per recorded sample, in microseconds.
+    """
+    return torch.cumsum(interval_us.double(), -1)[..., recorded].to(torch.float32)
+
+
 def _pack_events(
     description: SequenceDescription,
     *,
@@ -885,7 +915,12 @@ def _pack_events(
     # tensor per event.
     shim_rows = shim_rows or {}
     table_rows = table_rows or {}
-    durations: list[Any] = []
+    # When each event happens, kept as the description gives it. The intervals
+    # the kernels take are one difference over the whole stream at the end, and
+    # the recorded times are a slice of it -- so an event whose timing is a
+    # tensor costs nothing here, and a walk under forward mode, of which
+    # resolving a binding does several, issues no dispatch per event at all.
+    clock: list[Any] = []
     kinds: list[int] = []
     flips: list[Any] = []
     phases: list[Any] = []
@@ -895,23 +930,25 @@ def _pack_events(
     profile_indices: list[int] = []
     saturations: list[float] = []
     frequencies: list[float] = []
-    times: list[Any] = []
     unrefocused_times: list[Any] = []
     event_indices: list[int] = []
     repetition_indices: list[int] = []
     echo_flags: list[bool] = []
-    previous_absolute: Any = 0.0
-    # Time the recorded coherence has dephased through, signed: it starts at an
-    # excitation, runs with the clock, and winds back after a refocusing pulse.
-    # A bulk off-resonance turns the sample through it and a static field spread
-    # damps by it, which is what lets both be applied to the echoes rather than
-    # carried by the states; see ``analytic_dephasing``.
-    unrefocused: Any = 0.0
+    # When the pulse that last turned the transverse states was played, and
+    # what the coherence had dephased through just after it. Time the recorded
+    # coherence has dephased through is signed: it starts at an excitation,
+    # runs with the clock, and winds back after a refocusing pulse. A bulk
+    # off-resonance turns the sample through it and a static field spread damps
+    # by it, which is what lets both be applied to the echoes rather than
+    # carried by the states; see ``analytic_dephasing``. Read from the pulse
+    # rather than accumulated, so it costs a subtraction where a sample is
+    # taken instead of one at every event in between.
+    turned_at: Any = 0.0
+    carried: Any = 0.0
     # What the analytic terms need to know about the structure: how fast the
     # dephasing order advances in each stretch between pulses, and whether the
     # transverse states survive that stretch at all.
     stretches: list[tuple[int, float]] = []
-    stretch_us = 0.0
     stretch_orders = 0
     stretch_spoiled = False
     # Nothing transverse exists before the first pulse that lays some down, so
@@ -931,11 +968,12 @@ def _pack_events(
             description.tr_duration_us * repetition if repetition else 0.0
         )
         for event_index, event in enumerate(description.events):
-            absolute = repetition_offset + event.timestamp_us
-            durations.append((absolute - previous_absolute) * 1e-6)
-            unrefocused = unrefocused + (absolute - previous_absolute)
-            stretch_us += float(_lead(absolute - previous_absolute))
-            previous_absolute = absolute
+            absolute = (
+                repetition_offset + event.timestamp_us
+                if repetition
+                else event.timestamp_us
+            )
+            clock.append(absolute)
             kinds.append(int(event.type))
             action = int(event.action)
             flip: Any = 0.0
@@ -965,10 +1003,15 @@ def _pack_events(
                 else:
                     if (action & _PRE_SHIFT) != 0:
                         stretch_orders += 1
-                    if turning_yet and stretch_us > 0.0 and not stretch_spoiled:
-                        stretches.append((stretch_orders, stretch_us))
+                    # One subtraction per pulse rather than one per event: what
+                    # the stretch lasted and what the coherence has dephased
+                    # through are the same span, read from the pulse before.
+                    since_turning = absolute - turned_at
+                    if turning_yet and not stretch_spoiled:
+                        span_us = float(_lead(since_turning))
+                        if span_us > 0.0:
+                            stretches.append((stretch_orders, span_us))
                     turning_yet = True
-                    stretch_us = 0.0
                     stretch_orders = 1 if (action & _POST_SHIFT) != 0 else 0
                     stretch_spoiled = False
                     # The pulse's role, carried explicitly rather than inferred
@@ -979,7 +1022,8 @@ def _pack_events(
                     # what they have dephased through starts winding back;
                     # anything else lays down fresh magnetization, which has
                     # dephased through nothing yet.
-                    unrefocused = -unrefocused if refocusing else 0.0
+                    carried = -(since_turning + carried) if refocusing else 0.0
+                    turned_at = absolute
                     # What the pulse turns through is settled after the walk,
                     # one call per definition rather than one per event: the
                     # arithmetic is the same either way, and a train of a
@@ -993,8 +1037,7 @@ def _pack_events(
                 if recording and _record_event(event, record):
                     action |= _RECORD
                     event_output_index = output_index
-                    times.append(absolute)
-                    unrefocused_times.append(unrefocused)
+                    unrefocused_times.append(absolute - turned_at + carried)
                     event_indices.append(event_index)
                     repetition_indices.append(repetition if record_every else 0)
                     echo_flags.append(event.is_echo)
@@ -1046,7 +1089,7 @@ def _pack_events(
                 flips[position] = angle
                 phases[position] = phases[position] + integral_phase
 
-    trains = _batch_width([*durations, *flips, *phases])
+    trains = _batch_width([*flips, *phases])
     if placed is not None:
         trains = _placed_width(placed, trains)
     flip_buffer = _stack_values(flips, device, trains)
@@ -1054,15 +1097,24 @@ def _pack_events(
     if placed:
         flip_buffer = _placed_into(flip_buffer, placed, trains, accumulate=False)
         phase_buffer = _placed_into(phase_buffer, placed, trains, accumulate=True)
+    # The clock the stream ran on, and the intervals and sample times read off
+    # it: one difference and one slice over the whole stream, where the walk
+    # would have taken a subtraction per event.
+    clock_us = _stack_clock(clock, device)
+    intervals_s = (torch.diff(clock_us, prepend=clock_us.new_zeros(1)) * 1e-6).to(
+        torch.float32
+    )
+    output_buffer = torch.as_tensor(output_indices, dtype=torch.int32, device=device)
+    recorded = output_buffer >= 0
     return _PackedEvents(
-        duration=_stack_values(durations, device, trains),
+        duration=(
+            intervals_s if trains is None else intervals_s.expand(trains, -1)
+        ).contiguous(),
         kind=torch.as_tensor(kinds, dtype=torch.int32, device=device).contiguous(),
         flip=flip_buffer,
         phase=phase_buffer,
         action=torch.as_tensor(actions, dtype=torch.uint8, device=device).contiguous(),
-        output_index=torch.as_tensor(
-            output_indices, dtype=torch.int32, device=device
-        ).contiguous(),
+        output_index=output_buffer.contiguous(),
         shim_index=torch.as_tensor(
             shim_indices, dtype=torch.int32, device=device
         ).contiguous(),
@@ -1075,10 +1127,10 @@ def _pack_events(
         profile_index=torch.as_tensor(
             profile_indices, dtype=torch.int32, device=device
         ).contiguous(),
-        time_us=_stack_values(times, device),
+        time_us=clock_us[recorded].to(torch.float32).contiguous(),
         unrefocused_us=_stack_values(unrefocused_times, device),
         analytic_dephasing=torch.tensor(
-            _windings_are_uniform(stretches, float(_lead(previous_absolute))),
+            _windings_are_uniform(stretches, float(_lead(clock[-1] if clock else 0.0))),
             dtype=torch.bool,
             device=device,
         ),
@@ -1149,6 +1201,22 @@ def _scalar(value: Any, device: torch.device) -> torch.Tensor:
             return value
         return value.to(device=device, dtype=torch.float32).reshape(())
     return torch.as_tensor(value, dtype=torch.float32, device=device).reshape(())
+
+
+def _stack_clock(values: list[Any], device: torch.device) -> torch.Tensor:
+    """The stream's timestamps, at the width the description timed them in.
+
+    A description that times itself in Python arithmetic keeps double width
+    here rather than being narrowed first: a train played many times over runs
+    a clock into the millions of microseconds, where float32 cannot resolve the
+    interval between two neighbouring events at all, and the intervals are read
+    off this by differencing it.
+    """
+    if not values:
+        return torch.empty(0, dtype=torch.float64, device=device)
+    if any(isinstance(value, torch.Tensor) for value in values):
+        return torch.stack([_scalar(value, device) for value in values])
+    return torch.tensor(values, dtype=torch.float64, device=device)
 
 
 def _stack_values(

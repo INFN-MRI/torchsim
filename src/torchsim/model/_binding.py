@@ -37,11 +37,19 @@ from typing import Any
 
 import torch
 
-from ..sequence._accelerators import _PackedEvents, pack_description
+from ..sequence._accelerators import (
+    _PackedEvents,
+    pack_description,
+    sample_times_us,
+)
 from ..sequence._description import SequenceDescription
 
-#: The packed buffers whose entries are values rather than structure.
-_VALUES = ("duration", "flip", "phase", "time_us")
+#: The packed buffers whose entries are values rather than structure. The
+#: sample times are not among them: a timestamp is the running total of every
+#: interval before it, so one repetition time reaches every later one and no
+#: single element accounts for it. They are read off the rebuilt intervals
+#: instead, which is where a stream's clock comes from anyway.
+_VALUES = ("duration", "flip", "phase")
 
 #: How far from a whole number a recovered source index may read before the
 #: entry is taken to draw on more than one element at once.
@@ -51,6 +59,14 @@ _WHOLE = 1e-3
 #: with the values it was read at, so an entry that only happens to agree
 #: there does not agree here.
 _ELSEWHERE = (1.37, 0.11)
+
+#: What a walk can resolve of its own clock, as a fraction of how far the
+#: stream runs. A walk holds its timestamps at float32 and reads an interval
+#: off the difference of two of them, so what an interval says is good to one
+#: part in 2^23 of the span and not of the interval. A rebuild reaches the same
+#: interval from an offset and a scale and rounds elsewhere, which on a long
+#: train is a whole microsecond on an interval of a few thousand.
+_CLOCK_RESOLUTION = 4.0 * float(torch.finfo(torch.float32).eps)
 
 
 @dataclass(frozen=True)
@@ -104,6 +120,7 @@ class Packing:
         self._key = key
         self._structure = structure
         self._maps = maps
+        self._recorded = structure.output_index >= 0
 
     def matches(self, key: tuple[Any, ...]) -> bool:
         """Whether this packing was resolved for the run ``key`` describes."""
@@ -111,9 +128,14 @@ class Packing:
 
     def pack(self, values: Mapping[str, Any]) -> _PackedEvents:
         """Return the event buffers for ``values``, differentiable in them."""
+        rebuilt = {name: self._maps[name].rebuild(values) for name in _VALUES}
+        clock = rebuilt["duration"]
         return replace(
             self._structure,
-            **{name: self._maps[name].rebuild(values) for name in _VALUES},
+            **rebuilt,
+            time_us=sample_times_us(
+                (clock[0] if clock.dim() > 1 else clock) * 1e6, self._recorded
+            ),
         )
 
 
@@ -194,7 +216,11 @@ def bind(
         return packed(described(given))
 
     def floats(*given: torch.Tensor) -> tuple[torch.Tensor, ...]:
-        return tuple(getattr(buffers(given), buffer) for buffer in _VALUES)
+        # One walk, read three times. Packing inside the comprehension would
+        # walk the stream once per buffer, and a walk is what this whole module
+        # exists to spend once.
+        packed = buffers(given)
+        return tuple(getattr(packed, buffer) for buffer in _VALUES)
 
     primals = tuple(values[name].detach() for name in names)
     reference = described(primals)
@@ -328,14 +354,33 @@ def _agrees(
     moved = tuple(value * gain + shift for value in primals)
     fresh = buffers(moved)
     rebuilt = packing.pack(dict(zip(names, moved, strict=True)))
+    slack = _clock_slack(fresh)
     return all(
         torch.allclose(
             getattr(rebuilt, buffer),
             getattr(fresh, buffer),
             rtol=1e-5,
-            atol=1e-7,
+            atol=slack.get(buffer, 1e-7),
         )
         if getattr(fresh, buffer).is_floating_point()
         else torch.equal(getattr(rebuilt, buffer), getattr(fresh, buffer))
         for buffer in _PackedEvents.__dataclass_fields__
     )
+
+
+def _clock_slack(fresh: _PackedEvents) -> dict[str, float]:
+    """How far the buffers a stream times itself with may disagree.
+
+    One part in 2^23 of the span, for the intervals and for the sample times
+    alike: an interval telescopes into the clock and a sample time is the sum
+    of the intervals before it, so both carry the rounding of the largest
+    timestamp the walk held and neither carries more than one of them.
+    """
+    if not fresh.duration.numel():
+        return {}
+    span_s = float(fresh.duration.abs().sum(-1).max())
+    return {
+        "duration": _CLOCK_RESOLUTION * span_s,
+        "unrefocused_us": _CLOCK_RESOLUTION * span_s * 1e6,
+        "time_us": _CLOCK_RESOLUTION * span_s * 1e6,
+    }

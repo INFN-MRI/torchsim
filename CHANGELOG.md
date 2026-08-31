@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **Resolving a protocol walks its stream once per direction, not four
+  times.** The map is read off four packed buffers, and the walk that produces
+  them sat inside the comprehension that read them -- so every forward-mode
+  pass rebuilt the whole stream once per buffer. A walk is per-event Python
+  under a forward-mode interpreter, which is the one thing resolving spends
+  its time on. Resolving a 500-echo train goes from ten walks to four and from
+  0.45 s to 0.10 s; a 500-repetition fingerprinting schedule from nine to six
+  and from 15.3 s to 3.8 s.
+
+- **A schedule whose repetition time varies is bound rather than refused.** A
+  timestamp is every interval before it, so one repetition time reaches every
+  later event -- and a map giving each entry one source element cannot say
+  that. It was the sample times alone that asked for it: the intervals
+  themselves each draw on one repetition time, and the times are their running
+  total. So the times are read off the intervals and the map is asked only
+  about what it can answer.
+
+  A fingerprinting schedule that moves its repetition times -- which is what
+  makes it a fingerprinting schedule -- was rebuilding its whole event stream
+  on every call. At 500 repetitions that is 149 ms a call, against 1.0 ms
+  bound.
+
 - **A train whose pulses sit a half turn apart is answered right.** The
   subspace verdict accepted RF phases equal modulo half a turn, on the grounds
   that a half turn only flips the sign of a state -- which is true of the
@@ -134,6 +156,22 @@
   thousand, and which order a given tissue stops at varies across a dictionary.
 
 ### Changed
+
+- **A packed stream is timed once over the whole of it.** The walk collected
+  every event's timestamp and read the intervals off one difference and the
+  sample times off one slice, where it had been subtracting per event and
+  keeping a second clock beside it for what a coherence has gone unrefocused
+  -- that one now reads from the pulse that last turned the states, which is a
+  subtraction per pulse and per sample rather than per event. A description
+  whose timing is a tensor issues no dispatch per event at all, which is what
+  a forward-mode pass pays for. Packing a 500-repetition schedule falls from
+  77 ms to 27 ms.
+
+  The clock is kept at double width and narrowed once. A train played into a
+  steady state runs a float32 clock into the millions of microseconds, where
+  the interval between two neighbouring events is below what that width can
+  resolve at all -- so an echo spacing read as a difference of two narrowed
+  timestamps came back wrong by percents.
 
 - **`repetitions` plays a description into the state a scanner plays it in,
   and records the last playing rather than all of them.** A simulation starts

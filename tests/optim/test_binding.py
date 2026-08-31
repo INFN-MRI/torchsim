@@ -349,3 +349,120 @@ def test_a_train_masked_to_zero_is_refused(packings) -> None:
     )
     assert len(packings) == packed, "a bound rerun must not reach the packer"
     assert torch.isfinite(answer).all()
+
+
+def test_a_repetition_time_that_varies_is_bound() -> None:
+    """A timestamp is every interval before it, so one value reaches many.
+
+    That is the shape a fingerprinting schedule has -- each repetition sets its
+    own duration and every later event moves with it -- and a map that gave
+    each entry one source element could not describe it. The sample times come
+    off the intervals instead, which have one source element each.
+    """
+    simulator = MRFSimulator(TI=20.0, states=10)
+    design = {
+        "flip": torch.linspace(5.0, 60.0, 24),
+        "TR": torch.linspace(9.0, 14.0, 24),
+    }
+    played = simulator.played(**design)
+    packing = bind(
+        simulator, played, repetitions=simulator.repetitions, record=simulator.record
+    )
+    assert packing is not None
+    assert "TR" in packing.varying
+
+    elsewhere = {**played, **{name: played[name] * 0.63 + 1.0 for name in design}}
+    fresh = pack_description(
+        simulator.describe(**elsewhere),
+        repetitions=simulator.repetitions,
+        record=simulator.record,
+        device=torch.device("cpu"),
+    )
+    bound = packing.pack(elsewhere)
+    # A walk reads an interval off the difference of two float32 timestamps, so
+    # what it can resolve is set by how far the stream runs; a map that reaches
+    # the same interval from an offset and a scale rounds elsewhere.
+    span_s = float(fresh.duration.sum())
+    clock = 8.0 * float(torch.finfo(torch.float32).eps) * span_s
+    for buffer, slack in (
+        ("duration", clock),
+        ("flip", 1e-9),
+        ("phase", 1e-9),
+        ("time_us", clock * 1e6),
+    ):
+        torch.testing.assert_close(
+            getattr(bound, buffer), getattr(fresh, buffer), rtol=1e-6, atol=slack
+        )
+
+
+def test_a_schedule_that_moves_its_timing_answers_what_the_plain_one_does() -> None:
+    """End to end, since a timing the map gets wrong is a different sequence."""
+    design = {
+        "flip": torch.linspace(5.0, 60.0, 24),
+        "TR": torch.linspace(9.0, 14.0, 24),
+    }
+    simulator = MRFSimulator(TI=20.0, states=10)
+    resolved = simulator.resolved()
+    resolved.simulate(**design, **TISSUE)
+
+    moved = {name: value * 0.9 + 0.5 for name, value in design.items()}
+    plain = simulator.simulate(**moved, **TISSUE)
+    bound = resolved.simulate(**moved, **TISSUE)
+    torch.testing.assert_close(bound, plain, rtol=1e-6, atol=1e-7)
+
+
+@pytest.mark.parametrize(
+    "design",
+    [
+        pytest.param({"flip": torch.linspace(5.0, 60.0, 24)}, id="one"),
+        pytest.param(
+            {
+                "flip": torch.linspace(5.0, 60.0, 24),
+                "TR": torch.linspace(9.0, 14.0, 24),
+            },
+            id="two",
+        ),
+    ],
+)
+def test_resolving_walks_the_stream_once_per_direction(design, packings) -> None:
+    """Which is the whole cost of resolving, and what it is spent on.
+
+    One walk for the structure, two per argument for the derivatives the map is
+    read from, and one to check the map against a packing it never saw. A walk
+    is per-event Python under a forward-mode interpreter, so an extra one is
+    not a rounding error in what resolving costs.
+    """
+    simulator = MRFSimulator(TR=10.0, TI=20.0, states=10)
+    played = simulator.played(**design)
+    packings.clear()
+
+    packing = bind(
+        simulator, played, repetitions=simulator.repetitions, record=simulator.record
+    )
+
+    assert packing is not None
+    assert len(packings) == 2 + 2 * len(packing.varying)
+
+
+def test_the_sample_times_are_the_clock_the_intervals_make() -> None:
+    """A long train, where a float32 clock and its intervals part company.
+
+    A timestamp millions of microseconds out has no room left for the interval
+    between two neighbouring events, so the stream is timed at double width and
+    narrowed once. Read the other way round -- an interval per event, narrowed
+    each time -- the echo spacing here would come back wrong by percents.
+    """
+    simulator = FSESimulator(ESP=5.0, TR=1e6, states=10)
+    played = simulator.played(flip=torch.full((64,), 120.0))
+    packed = pack_description(
+        simulator.describe(**played),
+        repetitions=3,
+        record="all",
+        device=torch.device("cpu"),
+    )
+    # The last playing, which starts two seconds of clock in. Every interval a
+    # refocused train spends is half an echo spacing.
+    playing = packed.duration[2 * (packed.duration.numel() // 3) + 1 :]
+    spent = playing[playing > 0]
+    assert spent.numel() > 100
+    torch.testing.assert_close(spent, torch.full_like(spent, 2.5e-3), rtol=0, atol=1e-9)

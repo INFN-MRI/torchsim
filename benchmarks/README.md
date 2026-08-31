@@ -211,20 +211,20 @@ penalty for the life of the process. One `vzeroupper` per job settles it; see
 the pass was poisoning its own threads as it ran.
 
 **TorchSim pays a structure cost the others do not.** Resolving a
-500-repetition train -- walking 1 500 events, packing them, learning the affine
-rebinding -- takes 1.7 s, once per sequence *shape*; a 500-echo refocused train
-takes 0.43 s. Both were several times that when the packing worked an event at
-a time: a call to `RfDefinition.flip_angle` per pulse, a slice per pulse to
-place what it returned, and a stack of fifteen hundred scalars to finish, all
-of it under two nested `torch.func.jvp` interpreters. A definition's pulses are
-now turned through in one call and placed in one scatter, which takes the
-refocused train from 3.65 s to 0.43 s and the fingerprinting one from 2.38 s to
-1.67 s.
+500-repetition fingerprinting train -- walking 2 000 events, packing them,
+learning the affine rebinding -- takes 3.8 s, once per sequence *shape*; a
+500-echo refocused train takes 0.10 s. What it buys is the calls afterwards:
+the fingerprinting train is 1.0 ms a call bound against 149 ms rebuilt.
 
-What is left is the walk itself -- fifteen hundred events built and read in
-Python, sixteen times over, once plainly and twice per differentiated argument.
-A dictionary sweep, a design loop or a fit pays it once; a single curve pays it
-for nothing, and is better served by sycomore or epgpy.
+The walk is where that time goes. It is per-event Python, and resolving runs
+it once for the structure, twice per differentiated argument for the
+derivatives the map is read from, and once more to check the map against a
+packing it never saw -- six walks for a schedule moving its flip angles and
+its repetition times, each one under a forward-mode interpreter that charges a
+dispatch for every tensor operation the walk performs.
+
+A dictionary sweep, a design loop or a fit pays that once; a single curve pays
+it for nothing, and is better served by sycomore or epgpy.
 
 ## What is still missing
 
