@@ -68,6 +68,7 @@ events; it reaches the fused kernels with no change to them.
    Spoil
    bSSFPReadout
    SSFPFidReadout
+   SSFPEchoReadout
    SPGRReadout
    FSEReadout
    ideal_rf_definition

@@ -236,7 +236,7 @@ REPETITIONS = 8
 
 
 def played(description, **properties):
-    """Return the last repetition's two samples, as signed magnetizations.
+    """Return the settled playing's two samples, as signed magnetizations.
 
     ``from_description`` is the route a stream from a scanner takes, and
     ``record="echo"`` keeps the readouts flagged as reaching the k-space
@@ -247,8 +247,7 @@ def played(description, **properties):
         description, MP2RAGESimulator.model, record="echo", nstates=1
     )
     signal = replayed.simulate(**properties, repetitions=REPETITIONS)
-    last = signal.reshape(-1, REPETITIONS, 2)[:, -1, :]
-    return (1j * last).real
+    return (1j * signal.reshape(-1, 2)).real
 
 
 @pytest.mark.parametrize("nshots", [(64, 64), (26, 102), (100, 28)])

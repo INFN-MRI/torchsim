@@ -555,8 +555,13 @@ class RfDefinition:
         except ImportError:  # pragma: no cover - Torch is a required dependency
             torch = None
         if torch is not None and isinstance(amplitude_hz, torch.Tensor):
-            area_tensor = torch.as_tensor(area, device=amplitude_hz.device)
-            signed_area = amplitude_hz * area_tensor
+            # The area is a Python number, so it multiplies a tensor without
+            # being made one first. A pulse whose envelope integrates to a real
+            # number -- every shape that is symmetric about its centre, which
+            # is most of them -- keeps the product real, and a real product is
+            # both cheaper per event and the only kind the real-subspace
+            # kernels can be handed.
+            signed_area = amplitude_hz * (area.real if area.imag == 0.0 else area)
             return 2.0 * torch.pi * torch.abs(signed_area), torch.angle(signed_area)
         signed_area = amplitude_hz * area
         return 2.0 * np.pi * abs(signed_area), np.angle(signed_area)

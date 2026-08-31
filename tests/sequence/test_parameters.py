@@ -18,6 +18,7 @@ from torchsim.sequence._parameters import (
     EVENT_PARAMETERS,
     FLOAT_INPUTS,
     PACKED_COUNT,
+    PROPERTY_NAMES,
     SEED_INPUT,
     TISSUE_COUNT,
     TISSUE_NAMES,
@@ -34,7 +35,11 @@ def test_the_table_names_the_tissue_dataclass_fields():
     """``_prepare_tissue`` reads the table, so a typo would silently drop one."""
     fields = tuple(field.name for field in dataclasses.fields(TissueProperties))
 
-    assert TISSUE_NAMES == fields
+    assert PROPERTY_NAMES == fields
+    # The ABI is the leading run of them: the kernels take that many buffers
+    # and index them by position, so a property the signal carries rather than
+    # the states has to sit past the last one they read.
+    assert PROPERTY_NAMES[: len(TISSUE_NAMES)] == TISSUE_NAMES
 
 
 def test_every_tissue_parameter_is_prepared():

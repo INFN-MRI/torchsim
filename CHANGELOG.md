@@ -2,7 +2,314 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Resolving a protocol walks its stream once per direction, not four
+  times.** The map is read off four packed buffers, and the walk that produces
+  them sat inside the comprehension that read them -- so every forward-mode
+  pass rebuilt the whole stream once per buffer. A walk is per-event Python
+  under a forward-mode interpreter, which is the one thing resolving spends
+  its time on. Resolving a 500-echo train goes from ten walks to four and from
+  0.45 s to 0.10 s; a 500-repetition fingerprinting schedule from nine to six
+  and from 15.3 s to 3.8 s.
+
+- **A schedule whose repetition time varies is bound rather than refused.** A
+  timestamp is every interval before it, so one repetition time reaches every
+  later event -- and a map giving each entry one source element cannot say
+  that. It was the sample times alone that asked for it: the intervals
+  themselves each draw on one repetition time, and the times are their running
+  total. So the times are read off the intervals and the map is asked only
+  about what it can answer.
+
+  A fingerprinting schedule that moves its repetition times -- which is what
+  makes it a fingerprinting schedule -- was rebuilding its whole event stream
+  on every call. At 500 repetitions that is 149 ms a call, against 1.0 ms
+  bound.
+
+- **A train whose pulses sit a half turn apart is answered right.** The
+  subspace verdict accepted RF phases equal modulo half a turn, on the grounds
+  that a half turn only flips the sign of a state -- which is true of the
+  states and not of the operator. Pulses a half turn apart do lie on one axis,
+  and they turn about it in opposite senses; what the reduced kernels carry is
+  a flip angle with no sign to say which. So an excitation a half turn from
+  its refocusing pulses came back negated, and a train alternating its phase
+  -- a phase-cycled balanced sequence, every repetition of it -- came back
+  somewhere else entirely, off by more than the signal.
+
+  The verdict now asks for the phases to agree over a whole turn, and a
+  packing brings a stream a half turn out into line before it is asked; see
+  below.
+
+- **A sample demodulated off the axis its pulses share keeps the full
+  kernels.** The verdict read the RF phases and not the ADC phases, while the
+  reduced kernels report the transverse state in the frame the pulses set and
+  demodulate by nothing. A sequence whose readout carried a phase of its own
+  was answered in the wrong frame. The spread now covers the pulses and the
+  samples together.
+
+- **A pass no longer leaves the worker pool slower than it found it.** The CPU
+  kernels are multiversioned, so on a machine with AVX-512 the loader picks a
+  clone that uses the upper halves of the vector registers. A pool worker
+  returns from that clone and parks in a wait, executing nothing that would
+  clear them, so every later kernel on that thread ran SSE-encoded arithmetic
+  against a dirty register state and paid the transition penalty -- for the
+  life of the process, on every thread but the one that returns to Python.
+
+  One forward-mode pass was enough to make everything after it cost two and a
+  half times as much: a forward pass over ten thousand tissues went from
+  0.185 s to 0.52 s and stayed there. The pool now clears the state as each job
+  ends. A two-property Jacobian falls from 3.09 s to 1.05 s -- it was poisoning
+  its own threads as it ran -- and a gradient measured after one from 5.6 s to
+  0.93 s.
+
+- **A detection threshold is measured again rather than falling back.** What a
+  subspace test costs is probed by running one, and the probe reached for a
+  function the verdict no longer has; a probe that raises is caught on purpose,
+  so the documented fallback quietly stood in for a measurement on every
+  machine. It now times the half of the verdict a call actually pays -- the
+  reductions over the tissue -- which is 26 us here against a 5 000-work-unit
+  fallback, so the real kernels are reached at far smaller problems than the
+  fallback allowed.
+
 ### Added
+
+- **`t2_prime_ms` puts the field spread across a voxel on the signal.** A voxel
+  is not one frequency, and EPG carries no term for the spread within it: a
+  configuration order stands for the winding the gradients put on the states,
+  not for the time they took. So the spread is applied to what was recorded,
+  from the same signed unrefocused time the analytic off-resonance already
+  reads -- by its magnitude, since dephasing either side of an echo costs the
+  same, where the turn reads its sign.
+
+  A Lorentzian population of angular half-width `1 / T2'` averages to
+  `exp(-|tau| / T2')` over the voxel, so a gradient echo decays at `T2*`, a
+  spin echo is left at `T2`, and the decay grows and recovers either side of
+  every echo. It is a factor on the signal rather than a term in a kernel, so
+  it costs one multiply, both devices have it, and autograd differentiates it:
+  no kernel changed.
+
+  It asks the sequence to wind at one steady rate, which is what makes an
+  order stand for elapsed time. Where it does not -- a balanced train, or an
+  unbalanced one whose repetitions last unlike -- the spread is refused rather
+  than dropped, since there is no term in the states to fall back on and a
+  tissue silently stripped of it would read as one that has none.
+
+- **A train a half turn out is brought onto one axis and keeps the reduced
+  kernels.** Turning through `-alpha` about an axis is turning through `alpha`
+  about the opposite one, and demodulating a sample a half turn round negates
+  it. So a packing subtracts the half turns: it negates the flip of every
+  pulse it brings into line and carries the sign of every sample it turns
+  round out to the signal. Both identities hold at every phase, so the rewrite
+  carries derivatives as exactly as it carries values -- a phase gradient
+  through it matches the full kernel's to 3e-08 -- and it needs nothing of the
+  kernels, so the CPU and CUDA paths and the forward and reverse modes all get
+  it at once.
+
+  The anti-CPMG arrangement and the phase-cycled train -- an excitation a half
+  turn from its refocusing pulses, refocusing pulses a half turn from the
+  excitation, a train alternating 0 and pi -- reach the reduced kernels and
+  agree with the full ones to float32 round-off. A 64-echo train over twenty
+  thousand tissues goes from 1.23 s to 75 ms, and its gradient from 7.7 s to
+  0.33 s, which is what the same train already cost with its pulses in phase.
+
+- **A settled state is solved for where the train never winds.** Such a train
+  carries one configuration order, and one order is three numbers: a transverse
+  magnetization, one complex number there since `F-` is the conjugate of `F+`,
+  and a longitudinal one, which is real. Both ends of the map are reachable
+  with nothing but the sequence -- a state is prepared by turning equilibrium
+  through a pulse, and read by an ADC followed by a pulse that tips the
+  longitudinal part into the plane -- so four prepared states determine the
+  whole affine map and its fixed point is a solve rather than a limit. No
+  kernel carries anything new.
+
+  `repetitions="auto"` takes that route where it applies and reads the limit
+  off a few playings where it does not. A balanced train settles to 3e-06
+  against the 5e-03 the transform reaches, reproduces the closed form to 2e-06,
+  and differentiates: its derivatives match those of thousands of playings to
+  5e-06. Over a million voxels it costs 1.4 s where running to the same answer
+  costs 9.5 s.
+
+- **`repetitions="auto"` reads the settled signal off a handful of playings.**
+  A description played over and over is an affine recursion on its states, so
+  its samples are a constant plus decaying modes -- exactly, since the
+  recursion is linear -- and finitely many terms fix the limit of a sequence of
+  that form. Five playings settle a train governed by one mode and thirteen
+  settle one governed by six, which is past every sequence measured. The
+  transform recovers the eigenvalues of the transition operator on the way
+  without ever forming it, and it differentiates: the derivatives of a settled
+  answer match those of thousands of playings to 1e-5.
+
+  Where a train arrives slowly it is worth a great deal. An unbalanced
+  single-repetition train over ten thousand tissues settles in 41 ms against
+  2.33 s of running to it, and a thousand-playing guess costs 0.56 s and is
+  forty times further out.
+
+  Where a train arrives quickly it is worth less than it looks: at a million
+  voxels the transform's own arithmetic costs about what the playings it saves
+  cost. A sequence whose settling length is known is still better served by
+  asking for it, an integer being exact where this is not.
+
+  How close it gets is set by the order it stops at rather than by the width
+  the arithmetic is carried in, which is why it is carried at the width the
+  playings arrive in. A train governed by one mode settles to a few parts in a
+  hundred thousand; one governed by several settles to a few parts in a
+  thousand, and which order a given tissue stops at varies across a dictionary.
+
+### Changed
+
+- **A packed stream is timed once over the whole of it.** The walk collected
+  every event's timestamp and read the intervals off one difference and the
+  sample times off one slice, where it had been subtracting per event and
+  keeping a second clock beside it for what a coherence has gone unrefocused
+  -- that one now reads from the pulse that last turned the states, which is a
+  subtraction per pulse and per sample rather than per event. A description
+  whose timing is a tensor issues no dispatch per event at all, which is what
+  a forward-mode pass pays for. Packing a 500-repetition schedule falls from
+  77 ms to 27 ms.
+
+  The clock is kept at double width and narrowed once. A train played into a
+  steady state runs a float32 clock into the millions of microseconds, where
+  the interval between two neighbouring events is below what that width can
+  resolve at all -- so an echo spacing read as a difference of two narrowed
+  timestamps came back wrong by percents.
+
+- **`repetitions` plays a description into the state a scanner plays it in,
+  and records the last playing rather than all of them.** A simulation starts
+  from equilibrium, which is a transient a scanner plays at the beginning of an
+  examination and never again: every later playing starts from what the one
+  before it left. `repetitions=N` now settles the magnetization through N
+  playings and records the Nth, on `EpgEngine.simulate`, on a simulator's
+  constructor and per call; a sequence whose physics knows how far it has to
+  settle sets its own class default.
+
+  The settling playings cost their arithmetic and none of the signal, so a run
+  holds one playing however many it took.
+
+  It matters more than a refinement. A thousand-frame fingerprinting train
+  simulated from equilibrium is 20% out on its first frame, 12% at frame 100
+  and 51% at its worst against the train a scanner repeats; two playings settle
+  it to float32, taking a ten-thousand-tissue dictionary from 0.50 s to 0.87 s.
+  A spoiled train driven this way reproduces the Ernst equation to float32,
+  which is the test it is held to.
+
+  A caller who read every playing out of one call -- the only use of the old
+  behaviour was to take the last of them -- now gets the last one directly, and
+  a caller who wants the approach itself asks for each length in turn.
+
+
+- **A description's pulses are packed a definition at a time.** Packing walked
+  the event stream and then worked each pulse over on its own: a call to
+  `RfDefinition.flip_angle` per pulse, a slice per pulse to place the angle it
+  returned, an addition per pulse to fold in the phase its envelope carries,
+  and a stack of as many scalars to finish. The occurrences of one definition
+  are now gathered during the walk, turned through in one call, and written
+  into the flip and phase buffers with one scatter each. A number among tensor
+  amplitudes is widened rather than refused, which is what a refocused train
+  is -- a fixed excitation among a schedule.
+
+  Resolving a 500-echo refocused train falls from 3.65 s to 0.43 s and a
+  500-repetition fingerprinting schedule from 2.38 s to 1.67 s, once per
+  sequence shape. The buffers are bit for bit what the per-pulse path writes
+  wherever nothing had to be widened.
+
+- **A bulk off-resonance is applied to the samples, not carried by the states.**
+  A static field offset turns the transverse states through a phase that grows
+  with time and the gradients wind them through one that grows with area, so
+  wherever the two grow together a state's configuration order stands for both
+  and the turn belongs to the sample. Packing carries the signed time each
+  sample has dephased through -- reset at an excitation, negated at a
+  refocusing pulse -- and the run applies `exp(-2i.pi.f.tau)` to the recorded
+  signal instead of handing the field to the kernels.
+
+  What that buys is the real subspace. A train whose pulses share an axis used
+  to lose the reduced kernels to any off-resonance at all; it no longer does,
+  and the derivative along the field comes from the turn rather than from a
+  kernel, so the reduced adjoint is available to a caller who asks for it. A
+  500-repetition fingerprinting dictionary over ten thousand tissues at 50 Hz
+  falls from 2.17 s to 0.18 s, its Jacobian from 5.88 s to 0.41 s and its
+  gradient from 10.5 s to 0.53 s. The same holds on a card, where each of the
+  four passes has a reduced kernel of its own.
+
+  A sequence the analytic form does not fit keeps carrying the field through
+  the states, decided once when the structure is packed: a balanced sequence,
+  whose coherences cross a pulse unwound, and a train whose repetition time
+  varies, whose stretches wind alike in unlike times.
+
+- **The adjoint fills its lanes from the atom axis too.** The real subspace had
+  a laned kernel for forward mode and a scalar one for the reverse pass, so a
+  gradient reached the fast path and then ran an eighth as wide as it could.
+  There is now `simulate_real_vjp_atom_lane_range`, built the way the
+  forward-mode kernel is: the tissue gathered once per block of eight atoms,
+  every event value a splat, the trajectory recorded lane-major, and an
+  inactive lane of a partial block seeded with a zero cotangent so every
+  gradient it computes stays zero and no sum over lanes needs a mask.
+
+  A gradient over ten thousand tissues falls from 1.61 s to 0.92 s, 4.8x its
+  own forward pass where it was 8.3x. Diffusion is left to the per-atom kernel,
+  its damping factors varying with the configuration order as well as the atom;
+  the gradient along the damping rate is still exact where no atom diffuses.
+
+- **The real-subspace verdict is worked out once per sequence, not once per
+  call.** The verdict has two halves and both were re-read on every
+  `simulate`. The half that scans the event stream -- do all the pulses turn
+  about one axis -- belongs to a structure a binding resolves once, so it is
+  now remembered against the buffers it was read from, by identity and version,
+  through weak references that a streamed chunk is free to outlive. The half
+  that asks whether the tissue carries off-resonance, transmit phase or flow is
+  answered from the feature set the caller's values already declare, and
+  touches a buffer only for a term given as a full map.
+
+  A 500-repetition fingerprinting verdict falls from 130 us to 3 us and, more
+  to the point on a card, from one synchronizing round trip per call to none.
+  A tissue that declares off-resonance as a map of zeros keeps the fast path,
+  as it did.
+
+- **A train with no refocusing pulse can reach the real kernels.** The
+  real-subspace verdict asked for refocusing pulses and an excitation sharing
+  their phase, which is one arrangement of the condition rather than the
+  condition itself: what confines the states to an axis is every pulse turning
+  about the same one. It now reads exactly that -- all RF phases equal modulo a
+  half turn, an ideal inversion excepted since it turns nothing -- which admits
+  the spoiled, constant-phase trains that fingerprinting is made of and still
+  refuses RF spoiling, a quarter-turn excitation, off-resonance, transmit phase
+  and flow.
+
+  A ten-thousand-atom fingerprinting dictionary goes from 2.34 s to 0.18 s on
+  four CPU cores, which is the difference between the complex kernels and the
+  lane-vectorized real ones. The signal is unchanged to the last bit the
+  comparison in `benchmarks/validate.py` can see.
+
+- **A forward-mode pass fills its lanes from the axis the run is wide in.** A
+  block of eight lanes carried eight trains of one atom, and a dictionary has
+  one train per atom: seven lanes held repeats of the first and the kernel paid
+  for arithmetic it discarded, which made the lane kernel slower than the
+  scalar one it was chosen over. There is now a kernel that fills a block with
+  eight *atoms* of one train -- the cheaper way round as well as the wider one,
+  since a tissue property is contiguous in the atom index while an event value
+  is one number every lane shares -- and the dispatch picks whichever axis has
+  eight entries to give, atoms first, or the scalar kernel where neither does.
+
+  A two-property Jacobian over ten thousand atoms falls from 16.9 s to 3.1 s,
+  and a forward-mode pass is 8.3x its own forward pass per property where it
+  was 45x. Nothing about a slice-profiled run changes: that is where the trains
+  are, and the per-train kernel still serves it.
+
+- **Packing a description computes each pulse's flip angle once per RF
+  definition**, over all its occurrences at once, rather than once per event.
+  Resolving a binding packs the description several times over -- once plainly
+  and twice per differentiated argument, under forward-mode -- and the per-event
+  arithmetic dominated all of them: 20 000 scalar tensor operations for a
+  500-repetition train, now 4 000. First-call structure resolution halves.
+
+### Added
+
+- **`SSFPEchoReadout`**, the other sample an unbalanced repetition can take.
+  An ADC placed after the winding gradient rather than before it reads the
+  order the next pulse would refocus, which is the strongly T2-weighted half of
+  a reversed-FISP pair. It is `Dephase`, `Readout`, `Delay` -- the same
+  operators `SSFPFidReadout` composes, in the other order -- so nothing in the
+  kernels changed to make it possible, and `tests/sequence/test_ssfp_readouts.py`
+  pins both readouts against an extended phase graph written out in the test.
 
 - **An Explanation section, ahead of the examples.** Two pages, each built
   around figures that are re-rendered from the working tree on every

@@ -5,9 +5,11 @@ from __future__ import annotations
 __all__: list[str] = []
 
 import os
-from collections.abc import Iterator, Sequence
+import weakref
+from collections import OrderedDict
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import torch
@@ -96,6 +98,14 @@ class _PackedEvents:
     # it travels with the table rather than with the events.
     profile_index: torch.Tensor
     time_us: torch.Tensor
+    # Signed time each sample's coherence has dephased through, in
+    # microseconds. Not a kernel buffer: it is what the analytic off-resonance
+    # and static-spread terms are applied with, after the states are done.
+    unrefocused_us: torch.Tensor
+    # Whether off-resonance may be applied to the samples rather than carried
+    # by the states; see ``_windings_are_uniform``. A tensor rather than a bool
+    # so that it travels with the other buffers a binding compares.
+    analytic_dephasing: torch.Tensor
     event_index: torch.Tensor
     repetition: torch.Tensor
     echo: torch.Tensor
@@ -233,6 +243,7 @@ def pack_description(
     record: str,
     device: torch.device,
     rf_raster_time_s: float = 1e-6,
+    record_every: bool = False,
     slice_profile: Any = None,
 ) -> _PackedEvents:
     """Pack a description's events into the buffers a run would hand a kernel.
@@ -250,6 +261,7 @@ def pack_description(
         record=record,
         device=device,
         rf_raster_time_s=rf_raster_time_s,
+        record_every=record_every,
     )
 
 
@@ -261,6 +273,7 @@ def _pack_for(
     record: str,
     device: torch.device,
     rf_raster_time_s: float,
+    record_every: bool = False,
 ) -> _PackedEvents:
     return _pack_events(
         description,
@@ -268,6 +281,7 @@ def _pack_for(
         record=record,
         device=device,
         rf_raster_time_s=rf_raster_time_s,
+        record_every=record_every,
         shim_rows=shim_rows(description),
         table_rows={key: row for row, key in enumerate(shapes)},
     )
@@ -404,6 +418,157 @@ def _order_weighted_rates(
     )
 
 
+def _applies(value: torch.Tensor) -> bool:
+    """Whether this per-voxel term has anything to do to the signal.
+
+    A term left at its identity everywhere is skipped rather than multiplied
+    through, which spares an idle pass over the whole signal -- but one being
+    differentiated is applied whatever it holds, since a derivative at an
+    identity is a number like any other.
+    """
+    return bool(value.requires_grad) or bool(value.any())
+
+
+def _refuse_a_spread(r2_prime_hz: torch.Tensor) -> None:
+    """Refuse a field spread the sequence gives no unrefocused time to read.
+
+    The states carry no such term -- a configuration order stands for winding
+    and not for elapsed time -- so where the two do not grow together there is
+    nothing to fall back on, and a spread quietly dropped would read as a
+    tissue that has none.
+
+    Raises
+    ------
+        ValueError: if the tissue declares a spread and the sequence does not
+            wind at one steady rate.
+    """
+    if not _applies(r2_prime_hz):
+        return
+    raise ValueError(
+        "t2_prime_ms damps each sample by how long it has gone unrefocused, "
+        "which this sequence does not say: its dephasing order stands for the "
+        "winding the gradients put on the states and not for the time they "
+        "took, so the two have to grow together. A train that keeps its "
+        "coherences unwound across a pulse, or whose repetitions last "
+        "unlike, does not"
+    )
+
+
+def _analytic_dephasing(
+    packed: _PackedEvents,
+    tissue: tuple[torch.Tensor, ...],
+    r2_prime_hz: torch.Tensor | None,
+    output_shape: torch.Size,
+) -> torch.Tensor | None:
+    """What the field does to each sample, or ``None`` to leave it to the states.
+
+    A bulk off-resonance turns a sample through a phase and a spread across the
+    voxel damps it, both by how long the sample has gone unrefocused: the turn
+    by the signed time, since a refocusing pulse winds it back, and the damping
+    by its magnitude, since dephasing either side of an echo costs the same.
+    They are one complex factor and are applied as one.
+
+    ``None`` where the sequence does not admit the analytic form -- see
+    :func:`_windings_are_uniform` -- and where neither term has anything to do,
+    which spares an idle multiply over the whole signal. The turn is negative
+    because the states are held in the frame the pulses define, which the
+    off-resonance runs behind.
+    """
+    if not bool(packed.analytic_dephasing):
+        return None
+    off_resonance = tissue[5]
+    turning = _applies(off_resonance)
+    spreading = r2_prime_hz is not None and _applies(r2_prime_hz)
+    if not turning and not spreading:
+        return None
+    unrefocused_s = packed.unrefocused_us.to(off_resonance.dtype) * 1e-6
+    damping = (
+        torch.exp(-r2_prime_hz.reshape(*output_shape, 1) * unrefocused_s.abs())
+        if spreading
+        else None
+    )
+    if not turning:
+        # A real factor rather than a complex one of zero argument, which is
+        # half the multiply and the same answer.
+        return damping
+    angle = (-2.0 * torch.pi) * off_resonance.reshape(*output_shape, 1) * unrefocused_s
+    return torch.polar(torch.ones_like(angle) if damping is None else damping, angle)
+
+
+def _half_turns(
+    packed: _PackedEvents,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None] | None:
+    """How far each pulse and sample sits from the axis the stream shares.
+
+    Returns the multiple of a half turn each event is out by, the sign that
+    multiple puts on a flip, and the sign it puts on a recorded sample --
+    ``None`` where nothing is out by one, or where the phases lie on different
+    axes and no sign can bring them together.
+
+    Turning through ``-alpha`` about an axis is turning through ``alpha`` about
+    the opposite one, and demodulating a sample a half turn round negates it.
+    Both hold at every phase, so subtracting the half turns is an identity in
+    value and in derivative alike, and what it leaves is a stream whose pulses
+    and samples share one phase -- which is what the reduced kernels ask for.
+    """
+    kind, phase, action = packed.kind, packed.phase, packed.action
+    turning = (kind == 1) & ((action & _INVERSION) == 0)
+    recording = (kind == 2) & ((action & _RECORD) != 0)
+    present = torch.stack((turning.any(), recording.any())).tolist()
+    if not present[0]:
+        return None
+    # Anchored on a sample where the stream takes any, so a train whose samples
+    # already agree needs no sign on its signal.
+    anchor = recording if present[1] else turning
+    settled = phase.detach()
+    delta = settled - settled[..., anchor][..., :1]
+    on_the_axis = turning | recording
+    zero = torch.zeros_like(delta)
+    out_by = torch.where(on_the_axis, torch.round(delta / torch.pi), zero)
+    residue = torch.where(on_the_axis, delta - out_by * torch.pi, zero)
+    sign = torch.cos(out_by * torch.pi)
+    summary = torch.stack(
+        (residue.abs().max(), (sign < 0).any().to(delta.dtype))
+    ).tolist()
+    if summary[0] > _PHASE_TOLERANCE or not summary[1]:
+        return None
+    samples = None
+    if present[1]:
+        samples = sign[..., recording]
+        if samples.dim() > 1:
+            # The sign multiplies a signal whose train axis leads its voxels,
+            # so one that differs train by train has nowhere to go.
+            if not bool((samples == samples[:1]).all()):
+                return None
+            samples = samples[0]
+    return out_by, torch.where(turning, sign, torch.ones_like(sign)), samples
+
+
+def _one_axis(packed: _PackedEvents) -> tuple[_PackedEvents, torch.Tensor | None]:
+    """The stream with its pulses and samples brought onto one axis.
+
+    Returns it beside the sign its samples carry away, which the caller applies
+    to the signal. The stream is returned as it stands where its pulses already
+    share a phase, and where they share no axis at all.
+    """
+    corrections = _remembered(
+        "half turns",
+        (packed.kind, packed.phase, packed.action),
+        lambda: _half_turns(packed),
+    )
+    if corrections is None:
+        return packed, None
+    out_by, flips, samples = corrections
+    return (
+        replace(
+            packed,
+            flip=(packed.flip * flips).contiguous(),
+            phase=(packed.phase - out_by * torch.pi).contiguous(),
+        ),
+        samples,
+    )
+
+
 def simulate_native(
     description: SequenceDescription,
     prepared_tissue: tuple[torch.Tensor, ...],
@@ -417,13 +582,19 @@ def simulate_native(
     lineshape: Any = None,
     exchanging: bool = False,
     features: frozenset[str] | None = None,
+    r2_prime_hz: torch.Tensor | None = None,
     transmit: torch.Tensor | None = None,
     packed: _PackedEvents | None = None,
+    record_every: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
     """Run a fused CPU/CUDA state machine with explicit AD rules.
 
     ``features`` names the terms the tissue gives anything to do, and the
     kernels carry those and no others. ``None`` leaves every term in.
+
+    ``r2_prime_hz`` is the field spread across each voxel, as a rate. It
+    reaches the samples rather than the states, so it is not among the prepared
+    tissue the kernels take.
 
     ``transmit`` is the complex per-channel sensitivity, ``(voxels,
     channels)``, given when the sequence drives a pulse whose channels carry
@@ -459,13 +630,29 @@ def simulate_native(
             record=record,
             device=device,
             rf_raster_time_s=rf_raster_time_s,
+            record_every=record_every,
         )
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
+    if r2_prime_hz is not None and not bool(packed.analytic_dephasing):
+        _refuse_a_spread(r2_prime_hz)
+    dephasing = _analytic_dephasing(packed, tissue, r2_prime_hz, output_shape)
+    if dephasing is not None:
+        # Held out of the states rather than zeroed in place: the kernels then
+        # carry no off-resonance term and produce no derivative along one, and
+        # the factor applied below carries both. What reaches them is a
+        # constant, so a caller differentiating off-resonance is answered by it.
+        tissue = (*tissue[:5], torch.zeros_like(tissue[5]), *tissue[6:])
+        features = None if features is None else features - {"B0"}
     tissue = _order_weighted_rates(tissue, description)
     table = None
     dynamic = None
+    samples = None
+    if not shapes and transmit is None:
+        # A shaped or per-voxel pulse is turned through by a table rather than
+        # by a flip, so there is no flip to carry a sign; those go as they are.
+        packed, samples = _one_axis(packed)
     if transmit is not None:
         dynamic, locations = _dynamic_rotations(
             description,
@@ -523,6 +710,10 @@ def simulate_native(
             dim=-2
         )
     signal = signal.reshape(*leading, *output_shape, packed.output_count)
+    if dephasing is not None:
+        signal = signal * dephasing
+    if samples is not None:
+        signal = signal * samples
     return (
         signal,
         packed.time_us,
@@ -535,6 +726,167 @@ def simulate_native(
 # %% private module subroutines
 
 
+@dataclass(frozen=True)
+class _Placed:
+    """One RF definition's pulses, and where in the stream they sit.
+
+    ``positions`` indexes the event axis; ``angles`` and ``integral_phases``
+    carry one entry per position, and a trailing train axis where the pulses
+    were given a value per train.
+    """
+
+    positions: torch.Tensor
+    angles: torch.Tensor
+    integral_phases: torch.Tensor
+
+
+def _placed_width(placed: list[_Placed], trains: int | None) -> int | None:
+    """The train count the pulses imply, checked against what the rest implies."""
+    for group in placed:
+        for value in (group.angles, group.integral_phases):
+            if value.dim() < 2:
+                continue
+            if trains is not None and trains != value.shape[1]:
+                raise ValueError(
+                    f"inconsistent train counts across events: {trains} "
+                    f"and {value.shape[1]}"
+                )
+            trains = value.shape[1]
+    return trains
+
+
+def _placed_into(
+    base: torch.Tensor,
+    placed: list[_Placed],
+    trains: int | None,
+    accumulate: bool,
+) -> torch.Tensor:
+    """A float event buffer written a definition at a time rather than an event.
+
+    Every pulse of one definition lands in one scatter, so a train of a thousand
+    identical pulses costs one operation here instead of a thousand: a slice per
+    pulse to place its flip, an addition per pulse to fold in the phase its
+    envelope carries, and a stack of a thousand scalars to finish. Resolving a
+    binding packs the same description several times over, under two nested
+    forward-mode interpreters, which is what makes the difference worth having.
+
+    ``accumulate`` distinguishes the two: the flip is what the pulse turns
+    through and replaces what the buffer held, while the phase adds to what the
+    event already carried.
+    """
+    # Scatter along the event axis, which is the trailing one in a batched
+    # buffer, so the buffer is turned over for the scatter and back after it.
+    buffer = base if trains is None else base.transpose(0, 1)
+    for group in placed:
+        values = group.integral_phases if accumulate else group.angles
+        values = _placed_values(values, trains)
+        buffer = (
+            buffer.index_add(0, group.positions, values)
+            if accumulate
+            else buffer.index_put((group.positions,), values)
+        )
+    result = buffer if trains is None else buffer.transpose(0, 1)
+    return result.to(torch.float32).contiguous()
+
+
+def _placed_values(value: torch.Tensor, trains: int | None) -> torch.Tensor:
+    """One definition's per-pulse values, widened to the buffer's train axis."""
+    if trains is None or value.dim() >= 2:
+        return value
+    return value.unsqueeze(1).expand(value.shape[0], trains)
+
+
+# Timestamps are held in float32 as often as not, so a stretch measured late in
+# a long train is known to a few parts in ten million of where the train has got
+# to rather than of its own length. Stretches are held to that, which on a
+# five-second train is a few microseconds -- below an RF raster tick, and a turn
+# of a few thousandths at any off-resonance worth simulating.
+_TIMESTAMP_RESOLUTION = 16.0 * float(torch.finfo(torch.float32).eps)
+
+
+def _windings_are_uniform(stretches: list[tuple[int, float]], span_us: float) -> bool:
+    """Whether the dephasing order advances at one steady rate through the run.
+
+    A bulk off-resonance turns the transverse states through a phase that grows
+    with time, and the gradients wind them through one that grows with area. A
+    state's configuration order stands for the second, so it stands for the
+    first as well -- and the phase can be read off the sample rather than
+    carried -- exactly where the two grow together: where every stretch between
+    two pulses winds through the same orders in the same time.
+
+    ``stretches`` are the ones whose transverse states reach the next pulse, as
+    ``(orders, microseconds)``. A stretch that spoils is not among them, since
+    nothing survives it to carry a phase across. A stretch that winds nothing is,
+    and rules the analytic route out: a balanced sequence keeps its coherences
+    unwound across the pulse, and their order then says nothing about how long
+    they have been dephasing. So does a train whose repetition time varies,
+    whose stretches wind alike but last unlike.
+    """
+    if not stretches:
+        # Nothing survives a pulse, so nothing carries a phase across one.
+        return True
+    orders, duration = stretches[0]
+    if orders < 1 or not duration > 0.0:
+        return False
+    # A refocused train's first stretch is half of the ones that follow -- the
+    # excitation to the first crusher against crusher to crusher -- so each is
+    # held to the time its own winding earns at the first one's rate, not to
+    # the first one's time.
+    tolerance = _TIMESTAMP_RESOLUTION * max(span_us, duration)
+    return all(
+        count >= 1 and abs(length - count * duration / orders) <= tolerance
+        for count, length in stretches
+    )
+
+
+def _lead(value: Any) -> float:
+    """One number standing for a duration that may differ per train.
+
+    A batch whose trains are timed differently has a different structure per
+    train, and the analytic terms are decided for the description as a whole.
+    Such a duration comes back as a NaN, which no comparison accepts, so the
+    decision falls to the states.
+    """
+    if isinstance(value, torch.Tensor):
+        if value.numel() == 0:
+            return 0.0
+        first = float(value.reshape(-1)[0])
+        if value.numel() > 1 and bool((value != value.reshape(-1)[0]).any()):
+            return float("nan")
+        return first
+    return float(value)
+
+
+def sample_times_us(interval_us: torch.Tensor, recorded: torch.Tensor) -> torch.Tensor:
+    """When each recorded sample is taken, from the intervals that precede it.
+
+    A stream's clock is the running total of the gaps between its events, so a
+    sample's timestamp is the sum of every interval up to and including its
+    own. That is what lets a rebinding produce the times from the intervals it
+    already maps, where a repetition time reaching every later timestamp is not
+    something one source element accounts for; see
+    :mod:`torchsim.model._binding`, which is where this is read.
+
+    The sum is taken at double width. The intervals are float32 and a long
+    train accumulates thousands of them, which is a rounding the samples' own
+    width has no room to absorb.
+
+    Parameters
+    ----------
+    interval_us:
+        How long each event of the packed stream sits after the one before it,
+        in microseconds.
+    recorded:
+        Which of those events an ADC records, in stream order.
+
+    Returns
+    -------
+    torch.Tensor
+        One timestamp per recorded sample, in microseconds.
+    """
+    return torch.cumsum(interval_us.double(), -1)[..., recorded].to(torch.float32)
+
+
 def _pack_events(
     description: SequenceDescription,
     *,
@@ -542,16 +894,33 @@ def _pack_events(
     record: str,
     device: torch.device,
     rf_raster_time_s: float,
+    record_every: bool = False,
     shim_rows: dict[int, int] | None = None,
     table_rows: dict[int, int] | None = None,
 ) -> _PackedEvents:
+    """The buffers a run hands the kernels.
+
+    ``repetitions`` plays the stream that many times and records the last of
+    them, which is how a sequence is carried into the state a scanner plays it
+    in. The magnetization crosses every playing as it stands; only the
+    recording is suppressed, so a settling playing costs its arithmetic and
+    none of the signal.
+
+    ``record_every`` keeps them all instead, which is what reading the settled
+    signal off a handful of playings needs and no caller asks for directly.
+    """
     # Values stay as plain Python numbers unless the description carries
     # tensors (an optimizer differentiating through flip angles), so the common
     # case builds each buffer with a single allocation instead of one scalar
     # tensor per event.
     shim_rows = shim_rows or {}
     table_rows = table_rows or {}
-    durations: list[Any] = []
+    # When each event happens, kept as the description gives it. The intervals
+    # the kernels take are one difference over the whole stream at the end, and
+    # the recorded times are a slice of it -- so an event whose timing is a
+    # tensor costs nothing here, and a walk under forward mode, of which
+    # resolving a binding does several, issues no dispatch per event at all.
+    clock: list[Any] = []
     kinds: list[int] = []
     flips: list[Any] = []
     phases: list[Any] = []
@@ -561,14 +930,37 @@ def _pack_events(
     profile_indices: list[int] = []
     saturations: list[float] = []
     frequencies: list[float] = []
-    times: list[Any] = []
+    unrefocused_times: list[Any] = []
     event_indices: list[int] = []
     repetition_indices: list[int] = []
     echo_flags: list[bool] = []
-    previous_absolute: Any = 0.0
+    # When the pulse that last turned the transverse states was played, and
+    # what the coherence had dephased through just after it. Time the recorded
+    # coherence has dephased through is signed: it starts at an excitation,
+    # runs with the clock, and winds back after a refocusing pulse. A bulk
+    # off-resonance turns the sample through it and a static field spread damps
+    # by it, which is what lets both be applied to the echoes rather than
+    # carried by the states; see ``analytic_dephasing``. Read from the pulse
+    # rather than accumulated, so it costs a subtraction where a sample is
+    # taken instead of one at every event in between.
+    turned_at: Any = 0.0
+    carried: Any = 0.0
+    # What the analytic terms need to know about the structure: how fast the
+    # dephasing order advances in each stretch between pulses, and whether the
+    # transverse states survive that stretch at all.
+    stretches: list[tuple[int, float]] = []
+    stretch_orders = 0
+    stretch_spoiled = False
+    # Nothing transverse exists before the first pulse that lays some down, so
+    # what a preparation spends its time doing says nothing about the winding.
+    turning_yet = False
     output_index = 0
+    # Where each pulse's flip angle goes, gathered by the definition that says
+    # what its envelope integrates to.
+    turned: dict[int, list[tuple[int, Any]]] = {}
 
     for repetition in range(repetitions):
+        recording = record_every or repetition == repetitions - 1
         # A single playing never advances by the repetition time, so it does
         # not matter what shape that time has -- which is what lets a protocol
         # give each train in a batch its own.
@@ -576,9 +968,12 @@ def _pack_events(
             description.tr_duration_us * repetition if repetition else 0.0
         )
         for event_index, event in enumerate(description.events):
-            absolute = repetition_offset + event.timestamp_us
-            durations.append((absolute - previous_absolute) * 1e-6)
-            previous_absolute = absolute
+            absolute = (
+                repetition_offset + event.timestamp_us
+                if repetition
+                else event.timestamp_us
+            )
+            clock.append(absolute)
             kinds.append(int(event.type))
             action = int(event.action)
             flip: Any = 0.0
@@ -601,30 +996,56 @@ def _pack_events(
                     event.rf_definition_id
                 ].saturation(rf_raster_time_s=rf_raster_time_s)
                 if event.rf_use is RfUse.INVERSION:
+                    # An inversion turns no transverse magnetization, so it
+                    # leaves the dephasing it has been through alone, and the
+                    # stretch it sits in runs on through it.
                     action |= _INVERSION
                 else:
+                    if (action & _PRE_SHIFT) != 0:
+                        stretch_orders += 1
+                    # One subtraction per pulse rather than one per event: what
+                    # the stretch lasted and what the coherence has dephased
+                    # through are the same span, read from the pulse before.
+                    since_turning = absolute - turned_at
+                    if turning_yet and not stretch_spoiled:
+                        span_us = float(_lead(since_turning))
+                        if span_us > 0.0:
+                            stretches.append((stretch_orders, span_us))
+                    turning_yet = True
+                    stretch_orders = 1 if (action & _POST_SHIFT) != 0 else 0
+                    stretch_spoiled = False
                     # The pulse's role, carried explicitly rather than inferred
                     # from the crusher bits a given policy happens to set.
-                    action |= (
-                        _REFOCUSING if event.rf_use is RfUse.REFOCUSING else _EXCITATION
+                    refocusing = event.rf_use is RfUse.REFOCUSING
+                    action |= _REFOCUSING if refocusing else _EXCITATION
+                    # A refocusing pulse conjugates the transverse states, so
+                    # what they have dephased through starts winding back;
+                    # anything else lays down fresh magnetization, which has
+                    # dephased through nothing yet.
+                    carried = -(since_turning + carried) if refocusing else 0.0
+                    turned_at = absolute
+                    # What the pulse turns through is settled after the walk,
+                    # one call per definition rather than one per event: the
+                    # arithmetic is the same either way, and a train of a
+                    # thousand pulses is a thousand dispatches saved on every
+                    # packing -- of which resolving a binding does several.
+                    turned.setdefault(event.rf_definition_id, []).append(
+                        (len(flips), event.rf_amplitude_hz)
                     )
-                    definition = description.rf_definitions[event.rf_definition_id]
-                    flip_value, integral_phase = definition.flip_angle(
-                        event.rf_amplitude_hz,
-                        rf_raster_time_s=rf_raster_time_s,
-                    )
-                    flip = flip_value
-                    phase = phase + integral_phase
             elif event.type is EventType.ADC:
                 phase = event.adc_phase_rad
-                if _record_event(event, record):
+                if recording and _record_event(event, record):
                     action |= _RECORD
                     event_output_index = output_index
-                    times.append(absolute)
+                    unrefocused_times.append(absolute - turned_at + carried)
                     event_indices.append(event_index)
-                    repetition_indices.append(repetition)
+                    repetition_indices.append(repetition if record_every else 0)
                     echo_flags.append(event.is_echo)
                     output_index += 1
+            if (action & _SPOIL_AFTER) != 0:
+                stretch_spoiled = True
+            elif (action & _SHIFT_AFTER) != 0:
+                stretch_orders += 1
             output_indices.append(event_output_index)
             flips.append(flip)
             phases.append(phase)
@@ -632,16 +1053,68 @@ def _pack_events(
             saturations.append(saturation)
             frequencies.append(frequency)
 
-    trains = _batch_width([*durations, *flips, *phases])
+    placed: list[_Placed] | None = []
+    for definition_id, occurrences in turned.items():
+        definition = description.rf_definitions[definition_id]
+        gathered = _gathered_amplitudes(
+            [amplitude for _, amplitude in occurrences], device
+        )
+        if gathered is None or placed is None:
+            # A group whose pulses disagree about their shape -- some a number,
+            # some a value per train -- is rare enough to be left to the plain
+            # path, where each occurrence stands on its own.
+            placed = None
+            continue
+        angles, integral_phases = definition.flip_angle(
+            gathered, rf_raster_time_s=rf_raster_time_s
+        )
+        placed.append(
+            _Placed(
+                torch.as_tensor(
+                    [position for position, _ in occurrences],
+                    dtype=torch.int64,
+                    device=device,
+                ),
+                angles,
+                integral_phases,
+            )
+        )
+    if placed is None:
+        for definition_id, occurrences in turned.items():
+            definition = description.rf_definitions[definition_id]
+            for position, amplitude in occurrences:
+                angle, integral_phase = definition.flip_angle(
+                    amplitude, rf_raster_time_s=rf_raster_time_s
+                )
+                flips[position] = angle
+                phases[position] = phases[position] + integral_phase
+
+    trains = _batch_width([*flips, *phases])
+    if placed is not None:
+        trains = _placed_width(placed, trains)
+    flip_buffer = _stack_values(flips, device, trains)
+    phase_buffer = _stack_values(phases, device, trains)
+    if placed:
+        flip_buffer = _placed_into(flip_buffer, placed, trains, accumulate=False)
+        phase_buffer = _placed_into(phase_buffer, placed, trains, accumulate=True)
+    # The clock the stream ran on, and the intervals and sample times read off
+    # it: one difference and one slice over the whole stream, where the walk
+    # would have taken a subtraction per event.
+    clock_us = _stack_clock(clock, device)
+    intervals_s = (torch.diff(clock_us, prepend=clock_us.new_zeros(1)) * 1e-6).to(
+        torch.float32
+    )
+    output_buffer = torch.as_tensor(output_indices, dtype=torch.int32, device=device)
+    recorded = output_buffer >= 0
     return _PackedEvents(
-        duration=_stack_values(durations, device, trains),
-        kind=torch.as_tensor(kinds, dtype=torch.int32, device=device).contiguous(),
-        flip=_stack_values(flips, device, trains),
-        phase=_stack_values(phases, device, trains),
-        action=torch.as_tensor(actions, dtype=torch.uint8, device=device).contiguous(),
-        output_index=torch.as_tensor(
-            output_indices, dtype=torch.int32, device=device
+        duration=(
+            intervals_s if trains is None else intervals_s.expand(trains, -1)
         ).contiguous(),
+        kind=torch.as_tensor(kinds, dtype=torch.int32, device=device).contiguous(),
+        flip=flip_buffer,
+        phase=phase_buffer,
+        action=torch.as_tensor(actions, dtype=torch.uint8, device=device).contiguous(),
+        output_index=output_buffer.contiguous(),
         shim_index=torch.as_tensor(
             shim_indices, dtype=torch.int32, device=device
         ).contiguous(),
@@ -654,13 +1127,60 @@ def _pack_events(
         profile_index=torch.as_tensor(
             profile_indices, dtype=torch.int32, device=device
         ).contiguous(),
-        time_us=_stack_values(times, device),
+        time_us=clock_us[recorded].to(torch.float32).contiguous(),
+        unrefocused_us=_stack_values(unrefocused_times, device),
+        analytic_dephasing=torch.tensor(
+            _windings_are_uniform(stretches, float(_lead(clock[-1] if clock else 0.0))),
+            dtype=torch.bool,
+            device=device,
+        ),
         event_index=torch.as_tensor(event_indices, dtype=torch.int64, device=device),
         repetition=torch.as_tensor(
             repetition_indices, dtype=torch.int64, device=device
         ),
         echo=torch.as_tensor(echo_flags, dtype=torch.bool, device=device),
     )
+
+
+def _gathered_amplitudes(amplitudes: list[Any], device: torch.device) -> Any:
+    """The pulse amplitudes of one definition as one tensor, or ``None``.
+
+    ``None`` says they cannot be stacked as they are -- which is the signal to
+    take them one at a time rather than to convert them, since converting is
+    the per-event work this exists to avoid.
+
+    A number among tensors is widened to their shape rather than refused: a
+    refocused train whose excitation is a fixed angle and whose refocusing
+    pulses are a schedule is one definition holding exactly that mixture, and
+    it is the common case rather than the awkward one.
+    """
+    tensors = [
+        amplitude for amplitude in amplitudes if isinstance(amplitude, torch.Tensor)
+    ]
+    if not tensors:
+        return torch.tensor(amplitudes, dtype=torch.float32, device=device)
+    first = tensors[0]
+    if not all(
+        amplitude.shape == first.shape
+        and amplitude.dtype is first.dtype
+        and amplitude.device == first.device
+        for amplitude in tensors
+    ):
+        return None
+    if len(tensors) == len(amplitudes):
+        return torch.stack(amplitudes).to(device=device, dtype=torch.float32)
+    if not all(
+        isinstance(amplitude, (int, float)) or isinstance(amplitude, torch.Tensor)
+        for amplitude in amplitudes
+    ):
+        return None
+    widened = [
+        amplitude
+        if isinstance(amplitude, torch.Tensor)
+        else torch.full_like(first, float(amplitude))
+        for amplitude in amplitudes
+    ]
+    return torch.stack(widened).to(device=device, dtype=torch.float32)
 
 
 def _record_event(event: SequenceEvent, mode: str) -> bool:
@@ -673,8 +1193,30 @@ def _record_event(event: SequenceEvent, mode: str) -> bool:
 
 def _scalar(value: Any, device: torch.device) -> torch.Tensor:
     if isinstance(value, torch.Tensor):
+        # Packing a train of a thousand events issues these one per event, and
+        # under the forward-mode passes that resolve a binding it issues them
+        # again per seed, so a conversion that would not change anything is
+        # worth not making.
+        if value.ndim == 0 and value.dtype is torch.float32 and value.device == device:
+            return value
         return value.to(device=device, dtype=torch.float32).reshape(())
     return torch.as_tensor(value, dtype=torch.float32, device=device).reshape(())
+
+
+def _stack_clock(values: list[Any], device: torch.device) -> torch.Tensor:
+    """The stream's timestamps, at the width the description timed them in.
+
+    A description that times itself in Python arithmetic keeps double width
+    here rather than being narrowed first: a train played many times over runs
+    a clock into the millions of microseconds, where float32 cannot resolve the
+    interval between two neighbouring events at all, and the intervals are read
+    off this by differencing it.
+    """
+    if not values:
+        return torch.empty(0, dtype=torch.float64, device=device)
+    if any(isinstance(value, torch.Tensor) for value in values):
+        return torch.stack([_scalar(value, device) for value in values])
+    return torch.tensor(values, dtype=torch.float64, device=device)
 
 
 def _stack_values(
@@ -1257,24 +1799,101 @@ def _loop_vmap(
 # How far two RF phases may drift and still count as the same one.
 _PHASE_TOLERANCE = 1e-5
 
+_WHOLE_TURN = 2.0 * torch.pi
+
+
+_REMEMBERED: OrderedDict[
+    tuple[int, ...],
+    tuple[tuple[weakref.ref[torch.Tensor], ...], tuple[int, ...], Any],
+] = OrderedDict()
+
+# A binding resolves one sequence and rebinds its values, so a handful of event
+# streams is what a design loop or a dictionary sweep alternates between, and an
+# entry costs a tuple of weak references.
+_REMEMBERED_LIMIT = 32
+
+
+def _remembered(
+    tag: str, inputs: tuple[torch.Tensor, ...], read: Callable[[], Any]
+) -> Any:
+    """``read()``, computed once per set of buffers it would read.
+
+    ``tag`` names what is being remembered, so that two questions asked of the
+    same buffers do not answer each other.
+
+    The answer is a property of the buffers, so it changes only when one of them
+    is replaced or written to. Keying on identity and version says exactly that,
+    and both are free where ``read`` is a device round trip: a call that hits
+    touches no memory the kernel does not touch anyway.
+
+    The references are weak, so a remembered answer never keeps a chunk of a
+    streamed run alive, and a dead reference is a miss rather than a match
+    against whatever later took the same address.
+
+    An in-place write that bypasses a tensor's version counter is not seen,
+    which is the assumption autograd already makes of the same buffers.
+    """
+    try:
+        key = (tag, *map(id, inputs))
+        versions = tuple(value._version for value in inputs)
+        references = tuple(weakref.ref(value) for value in inputs)
+    except (AttributeError, TypeError):
+        return read()
+    found = _REMEMBERED.get(key)
+    if found is not None:
+        seen_references, seen_versions, answer = found
+        if seen_versions == versions and all(
+            reference() is value
+            for reference, value in zip(seen_references, inputs, strict=True)
+        ):
+            _REMEMBERED.move_to_end(key)
+            return answer
+    answer = read()
+    _REMEMBERED[key] = (references, versions, answer)
+    _REMEMBERED.move_to_end(key)
+    while len(_REMEMBERED) > _REMEMBERED_LIMIT:
+        _REMEMBERED.popitem(last=False)
+    return answer
+
+
+def forget_event_summaries() -> None:
+    """Drop every remembered event-stream summary, so the next call reads again."""
+    _REMEMBERED.clear()
+
 
 def real_subspace_axis(
     events: tuple[torch.Tensor, ...],
     tissue: tuple[torch.Tensor, ...],
     profile: Any = None,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> int | None:
     """The real axis the states are confined to, or ``None``.
 
-    Returns 1 when the refocusing pulses share one phase, the excitation shares
-    it too, and there is neither off-resonance, transmit phase, nor spin
-    velocity. The state machine then never leaves the axis on which the signal
-    is pure imaginary. Flow dephasing belongs on that list because it turns each
-    dephasing order through a phase of its own, which is a rotation out of the
-    axis rather than a scaling along it. Washout stays on the axis -- it scales
-    both relaxation factors and nothing more -- but the real kernels do not
-    carry it, so any velocity at all is refused here whatever geometry drives
-    it.
+    Returns 1 when every pulse in the sequence turns the same way about one
+    axis -- all the RF phases equal -- and there is neither off-resonance,
+    transmit phase, nor spin velocity. The states then start real, and every operator the kernels carry
+    keeps them real: the rotation about a single axis has real coefficients on
+    the axis the signal lies on, the shift's conjugate coupling becomes a sign,
+    relaxation and spoiling scale, and an ideal inversion scales the
+    longitudinal states alone.
+
+    A refocused train whose excitation shares the phase of its refocusing
+    pulses is the CPMG arrangement; a spoiled or unbalanced train whose pulses
+    all share one phase is the same condition with no refocusing pulse in it,
+    which is what a fingerprinting schedule is.
+
+    Pulses a half turn apart are refused although their states do stay real.
+    They turn about one axis in opposite senses, and what the reduced kernels
+    carry is a flip angle with no sign to say which sense -- so an excitation a
+    half turn from its refocusing pulses, or a train alternating its phase,
+    goes to the full kernels.
+
+    Flow dephasing turns each dephasing order through a phase of its own, which
+    is a rotation out of the axis rather than a scaling along it. Washout stays
+    on the axis -- it scales both relaxation factors and nothing more -- but the
+    real kernels do not carry it, so any velocity at all is refused here
+    whatever geometry drives it.
 
     A transmit array is not on that list: a row per shim scales the flip its
     own pulse turns through, which is a scaling along the axis. Its phase is,
@@ -1285,7 +1904,13 @@ def real_subspace_axis(
     centers but not between them. An excitation a quarter turn from the
     refocusing pulses gives a signal that is real at every sample while its
     states fill the plane -- a real projection of a complex trajectory, not a
-    subspace a kernel can be built on.
+    subspace a kernel can be built on, and the phase spread is what rules it
+    out.
+
+    ``features`` names the terms the caller's tissue gives anything to do, as
+    :func:`torchsim.sequence._parameters.features_of` reads them off the values
+    passed in. A term absent from that set is at its identity everywhere, which
+    settles three of the four questions here without reading a buffer at all.
     """
     if profile is not None or dynamic is not None:
         # A shaped pulse turns about an axis with a component along z, which
@@ -1295,75 +1920,93 @@ def real_subspace_axis(
         # take no pair argument at all: a verdict of 1 would not slow the
         # answer down, it would drop the pulse.
         return None
-    (
-        b0_free,
-        phase_free,
-        flow_free,
-        has_refocusing,
-        has_excitation,
-        spread,
-        offset,
-    ) = _summarize(events, tissue)
-    if not (b0_free and phase_free and flow_free and has_refocusing and has_excitation):
+    if not _tissue_stays_on_the_axis(tissue, features):
         return None
-    if spread > _PHASE_TOLERANCE:
+    has_pulse, spread = _pulse_axis(events)
+    if not has_pulse or spread > _PHASE_TOLERANCE:
         return None
-    if offset < _PHASE_TOLERANCE or abs(offset - torch.pi) < _PHASE_TOLERANCE:
-        return 1
-    return None
+    return 1
 
 
-def _summarize(
-    events: tuple[torch.Tensor, ...],
+def _tissue_stays_on_the_axis(
     tissue: tuple[torch.Tensor, ...],
-) -> tuple[bool, bool, bool, bool, bool, float, float]:
-    """Reduce the subspace question to six numbers in one device round trip.
+    features: frozenset[str] | None,
+) -> bool:
+    """Whether off-resonance, transmit phase and velocity are all absent.
 
-    Each reduction read back on its own would be its own synchronization, and on
-    CUDA that latency dwarfs the reductions themselves -- enough to cost more
-    than the kernel the answer is meant to speed up. Stacking them means one
-    transfer whatever the device.
-
-    Returns whether off-resonance is absent, whether transmit phase is absent,
-    whether the spins are still, whether the sequence has refocusing and
-    excitation pulses, how far the per-role phases spread, and how far
-    excitation sits from refocusing.
+    A feature the caller did not declare is one whose parameter was left at its
+    identity, so the answer is already known and no buffer is touched. What is
+    declared is still reduced over, since a property given as a full tensor is
+    declared whatever it holds, and a map of zeros is a map a run should not
+    lose the fast path to. The three reductions are stacked into one transfer:
+    read back separately they would be three synchronizations on a device.
     """
+    wanted = {"B0", "B1_PHASE", "FLOW"}
+    if features is not None and not (wanted & features):
+        return True
     b1_phase, b0 = tissue[4], tissue[5]
     velocity = tissue[TISSUE_NAMES.index("velocity_m_per_s")]
-    action, phase = events[4], events[3]
-    refocusing = (action & _REFOCUSING) != 0
-    excitation = (action & _EXCITATION) != 0
-    # Phases matter modulo pi: a half turn only flips the sign of the state.
-    wrapped = torch.remainder(phase, torch.pi)
+    answers = torch.stack(
+        ((b0 == 0).all(), (b1_phase == 0).all(), (velocity == 0).all())
+    ).tolist()
+    return all(answers)
+
+
+def _pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
+    """Whether the stream turns any spins, and how far its phases spread.
+
+    The spread covers the pulses and the samples together: the reduced kernels
+    report the transverse state in the frame the pulses set and demodulate by
+    nothing, so a sample demodulated by some other phase is one they cannot
+    produce.
+
+    An ideal inversion is left out of that spread: it scales the longitudinal
+    states and turns nothing, so whatever sits in its phase buffer says nothing
+    about the axis the transverse states lie on.
+
+    The answer belongs to the event stream, which a binding resolves once and
+    reuses for every call afterwards, so it is remembered against the buffers
+    it was read from rather than recomputed per call.
+    """
+    return _remembered(
+        "pulse axis",
+        (events[1], events[3], events[4]),
+        lambda: _read_pulse_axis(events),
+    )
+
+
+def _read_pulse_axis(events: tuple[torch.Tensor, ...]) -> tuple[bool, float]:
+    """Reduce the phases to one flag and one number in one round trip."""
+    kind, phase, action = events[1], events[3], events[4]
+    turning = (kind == 1) & ((action & _INVERSION) == 0)
+    on_the_axis = turning | ((kind == 2) & ((action & _RECORD) != 0))
+    # A whole turn, not half of one. Pulses a half turn apart turn about one
+    # axis in opposite senses, and the reduced kernels carry a flip without a
+    # sign to say which -- so a packing brings them into line before this is
+    # asked, negating the flips it turns round; see ``_one_axis``. What reaches
+    # here disagreeing by a half turn is a stream no packing settled.
+    wrapped = torch.remainder(phase, _WHOLE_TURN)
     infinity = torch.full_like(wrapped, float("inf"))
 
-    def extent(selected: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        lowest = torch.where(selected, wrapped, infinity).min()
-        return lowest, torch.where(selected, wrapped, -infinity).max()
+    def extent(values: torch.Tensor) -> torch.Tensor:
+        lowest = torch.where(on_the_axis, values, infinity).min()
+        highest = torch.where(on_the_axis, values, -infinity).max()
+        return highest - lowest
 
-    refocus_low, refocus_high = extent(refocusing)
-    excite_low, excite_high = extent(excitation)
+    # One set that straddles zero -- phases a hair under a whole turn beside
+    # phases a hair over it -- has the full spread on this scale and none on a
+    # scale turned half of the way round, so the smaller of the two is the
+    # spread that means what it says.
     summary = torch.stack(
         (
-            (b0 == 0).all().to(wrapped.dtype),
-            (b1_phase == 0).all().to(wrapped.dtype),
-            (velocity == 0).all().to(wrapped.dtype),
-            refocusing.any().to(wrapped.dtype),
-            excitation.any().to(wrapped.dtype),
-            torch.maximum(refocus_high - refocus_low, excite_high - excite_low),
-            torch.remainder(excite_low - refocus_low, torch.pi),
+            turning.any().to(wrapped.dtype),
+            torch.minimum(
+                extent(wrapped),
+                extent(torch.remainder(wrapped + torch.pi, _WHOLE_TURN)),
+            ),
         )
     ).tolist()
-    return (
-        bool(summary[0]),
-        bool(summary[1]),
-        bool(summary[2]),
-        bool(summary[3]),
-        bool(summary[4]),
-        summary[5],
-        summary[6],
-    )
+    return bool(summary[0]), summary[1]
 
 
 def _auto_real_axis(
@@ -1374,6 +2017,7 @@ def _auto_real_axis(
     tangents: tuple[torch.Tensor, ...] = (),
     profile: Any = None,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> int | None:
     """The subspace verdict, when deciding it costs less than it saves.
 
@@ -1393,7 +2037,7 @@ def _auto_real_axis(
         seeded = torch.stack([(direction != 0).any() for direction in tangents]).any()
         if bool(seeded):
             return None
-    return real_subspace_axis(events, tissue, profile, dynamic)
+    return real_subspace_axis(events, tissue, profile, dynamic, features)
 
 
 def _auto_real_axis_adjoint(
@@ -1404,6 +2048,7 @@ def _auto_real_axis_adjoint(
     wanted: tuple[bool, ...] | None,
     profile: Any = None,
     dynamic: Any = None,
+    features: frozenset[str] | None = None,
 ) -> int | None:
     """The subspace verdict for an adjoint, given what the caller will read.
 
@@ -1425,6 +2070,7 @@ def _auto_real_axis_adjoint(
         tuple(tangents[index] for index in _OUTSIDE_THE_SUBSPACE) if tangents else (),
         profile=profile,
         dynamic=dynamic,
+        features=features,
     )
 
 
@@ -2490,6 +3136,7 @@ def _run_packed(
             state_count,
             profile=profile,
             dynamic=dynamic,
+            features=features,
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for: the semisolid one adds a longitudinal component, and the exchanging
@@ -2665,7 +3312,7 @@ def _run_packed_vjp(
     """
     profile = _tables(profile, events, dynamic)
     real_axis = _auto_real_axis_adjoint(
-        events, tissue, state_count, (), wanted, profile, dynamic
+        events, tissue, state_count, (), wanted, profile, dynamic, features
     )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
@@ -2908,7 +3555,7 @@ def _run_packed_vjp_jvp(
     profile = _tables(profile, events, dynamic)
     if real_axis is None:
         real_axis = _auto_real_axis_adjoint(
-            events, tissue, state_count, tangents, wanted, profile, dynamic
+            events, tissue, state_count, tangents, wanted, profile, dynamic, features
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.
@@ -3121,6 +3768,7 @@ def _run_packed_jvp(
             (tissue_tangents[4], tissue_tangents[5], event_tangents[2]),
             profile=profile,
             dynamic=dynamic,
+            features=features,
         )
     # Neither second pool is inside a real subspace the reduced kernels stand
     # for; see the forward path for why.

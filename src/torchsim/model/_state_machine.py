@@ -74,7 +74,7 @@ from ..sequence import (
     ideal_rf_definition,
 )
 from ..sequence._array import brought, is_array, read
-from ..sequence._parameters import TISSUE_NAMES
+from ..sequence._parameters import PROPERTY_NAMES
 from ..sequence._simulation import RecordMode, target_device
 from ._binding import Packing, bind, run_key
 from ._signal import SignalModel, _moved
@@ -196,7 +196,7 @@ class SpinPhysics:
         pairs = dict(self.properties)
         unknown = {field for field in pairs.values() if field is not None}
         unknown |= set(self.fixed)
-        unknown -= set(TISSUE_NAMES)
+        unknown -= set(PROPERTY_NAMES)
         if unknown:
             raise ValueError(f"unknown tissue: {sorted(unknown)}")
         return pairs
@@ -233,13 +233,18 @@ class Simulator(SignalModel):
 
     model: SpinPhysics = SpinPhysics()
     states: int | None = None
+    # How many playings a sequence needs to reach the state a scanner plays it
+    # in. One is the transient from equilibrium, which is what a scanner plays
+    # once and never again; a sequence whose own physics says otherwise
+    # overrides this.
+    repetitions: int = 1
 
     def __init__(
         self,
         *,
         model: SpinPhysics | None = None,
         states: int | None = None,
-        repetitions: int = 1,
+        repetitions: int | str | None = None,
         record: RecordMode = "all",
         execution: str | torch.device | Sequence[Any] | None = None,
         resolve: bool = True,
@@ -256,7 +261,13 @@ class Simulator(SignalModel):
         states:
             Configuration orders to carry.
         repetitions:
-            How many times the description is played into its steady state.
+            How many times the description is played to reach the state a
+            scanner plays it in, of which the last is the one recorded. One --
+            the default, unless the sequence declares otherwise -- records the
+            playing that starts from equilibrium, which is the transient a
+            scanner plays once and never again. ``"auto"`` reads the settled
+            state off a handful of playings rather than running to it, and
+            holds no structure fixed across calls.
         record:
             Which ADCs the signal holds.
         execution:
@@ -286,7 +297,9 @@ class Simulator(SignalModel):
         self.operators = self.model.operators
         self.properties = self.model.properties
         self.states = states if states is not None else type(self).states
-        self.repetitions = repetitions
+        self.repetitions = (
+            repetitions if repetitions is not None else type(self).repetitions
+        )
         self.record = record
         self.execution = execution
         self.crusher_dephasing_rad = crusher_dephasing_rad
@@ -364,12 +377,16 @@ class Simulator(SignalModel):
         played: Mapping[str, Any],
         tissue: TissueProperties,
         *,
-        repetitions: int,
+        repetitions: int | str,
         record: str,
         device: Any,
     ) -> tuple[SequenceDescription, Any]:
         """The description to run, and its events already packed if they are."""
         if not self._resolving or self._described is not None:
+            return self.describe(**played), None
+        if not isinstance(repetitions, int):
+            # How many playings a settled run takes is decided against the
+            # tissue it is given, so there is no one packing to hold fixed.
             return self.describe(**played), None
         where = target_device(tissue, device)
         settings = {

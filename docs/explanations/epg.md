@@ -301,10 +301,18 @@ It assumes the dephasing within a voxel is **linear in position**, so that a
 gradient is a shift; sequences whose gradients are unbalanced by non-integer
 amounts, or whose voxels contain their own strong field variation, need the
 orders to be interpreted with care. It treats an isochromat's off-resonance as
-a constant precession rather than as a distribution, so intravoxel
-$T_2'$ dephasing is not automatic -- what a balanced sequence needs is
-a spread of off-resonance across voxels, which TorchSim gets from a
-`B0` map rather than from within one voxel.
+a constant precession rather than as a distribution, so a spread of field
+across the voxel is not something the states carry.
+
+TorchSim applies that spread to the samples instead. `t2_prime_ms` sets a
+Lorentzian population of frequencies, half-width $1 / T_2'$ in angular
+frequency, whose average over the voxel is $e^{-|\tau| / T_2'}$ in the time
+$\tau$ a sample has gone
+unrefocused -- so a gradient echo decays at $T_2^*$, a spin echo is left at
+$T_2$, and the decay grows and recovers either side of each echo. It asks the
+sequence to wind at one steady rate, which is the condition under which a
+configuration order stands for elapsed time as well as for area; a balanced
+train does not, and needs a spread of `b0_hz` across voxels as before.
 
 Pulses are instantaneous rotations unless you say otherwise. A real
 slice-selective pulse acts under its gradient, so what it does depends on

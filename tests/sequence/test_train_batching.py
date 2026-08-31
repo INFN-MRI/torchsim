@@ -156,7 +156,13 @@ def test_batched_reduction_is_scheduling_independent(threads, always_worth_detec
 
 @pytest.mark.parametrize("threads", [2, 4, 8, 0])
 def test_thread_count_only_reassociates(threads, always_worth_detecting):
-    """Changing the thread count regroups the sum, so it may move by an ulp."""
+    """Changing the thread count regroups the sum, so it may move by an ulp.
+
+    The floor is tied to the largest gradient in the set rather than to each
+    one's own, because a gradient that sits orders below its siblings -- a
+    refocused train's T1 derivative at these echo times is five decades under
+    its T2 one -- carries no relative precision to hold a reassociation to.
+    """
     flip = _schedules(8, 12)
     prepared, _, _ = _prepare_tissue(_tissue(), "cpu")
     events = _buffers(_pack(flip))
@@ -165,9 +171,10 @@ def test_thread_count_only_reassociates(threads, always_worth_detecting):
 
     reference = _vjp(prepared, events, seed, outputs, 1)
     actual = _vjp(prepared, events, seed, outputs, threads)
+    floor = 1e-6 * max(float(value.abs().max()) for value in reference)
     for expected, got in zip(reference, actual, strict=True):
-        scale = expected.abs().max().clamp_min(1e-30)
-        assert ((expected - got).abs().max() / scale) < 1e-6
+        drift = float((expected - got).abs().max())
+        assert drift <= 1e-6 * float(expected.abs().max()) + floor
 
 
 def test_mismatched_train_widths_are_rejected(always_worth_detecting):
@@ -304,3 +311,91 @@ def test_workers_are_reusable_across_concurrent_callers(always_worth_detecting):
     for caller in callers:
         caller.join()
     assert not mismatches
+
+
+@pytest.mark.parametrize("trains", [1, 3])
+def test_placing_a_definition_at_once_writes_what_placing_it_per_pulse_writes(trains):
+    """The two ways of filling the flip and phase buffers agree.
+
+    A definition whose pulses can be gathered has its whole block of flips and
+    envelope phases written in one scatter; one whose pulses cannot is taken a
+    pulse at a time. Both fill the same buffers.
+
+    A refocused train's excitation is a fixed angle among a schedule of
+    tensors, and gathering widens it to their dtype before the turn is worked
+    out rather than after, so that one entry rounds a step earlier. Every other
+    entry is bit for bit.
+    """
+    from torchsim.sequence import _accelerators
+
+    flip = _schedules(trains, 6)
+    scattered = _pack(flip)
+    original = _accelerators._gathered_amplitudes
+    _accelerators._gathered_amplitudes = lambda amplitudes, device: None
+    try:
+        per_pulse = _pack(flip)
+    finally:
+        _accelerators._gathered_amplitudes = original
+
+    for name in ("flip", "phase", "duration"):
+        left = getattr(scattered, name)
+        right = getattr(per_pulse, name)
+        assert left.shape == right.shape, name
+        assert torch.allclose(left, right, rtol=1e-6, atol=1e-7), name
+
+
+def test_a_schedule_of_tensors_is_placed_bit_for_bit():
+    """With nothing to widen, the scatter is the per-pulse path reassociated.
+
+    Every pulse of a fingerprinting schedule carries a tensor amplitude, so
+    gathering changes no dtype and the two ways of filling the buffers do the
+    same arithmetic on the same values.
+    """
+    from torchsim.sequence import _accelerators, _builders
+
+    echoes = 12
+    description = _builders.mrf_description(
+        torch.linspace(0.1, 1.0, echoes), torch.full((echoes,), 10e-3)
+    )
+    pack = lambda: _pack_events(  # noqa: E731
+        description,
+        repetitions=1,
+        record="all",
+        device=torch.device("cpu"),
+        rf_raster_time_s=1e-6,
+    )
+    scattered = pack()
+    original = _accelerators._gathered_amplitudes
+    _accelerators._gathered_amplitudes = lambda amplitudes, device: None
+    try:
+        per_pulse = pack()
+    finally:
+        _accelerators._gathered_amplitudes = original
+    for name in ("flip", "phase", "duration"):
+        assert torch.equal(getattr(scattered, name), getattr(per_pulse, name)), name
+
+
+def test_a_definition_is_asked_what_it_turns_through_once_per_packing():
+    """Not once per pulse: the walk gathers the occurrences and asks in one go.
+
+    Resolving a binding packs a description several times over, under two
+    nested forward-mode interpreters, so a call per pulse is the cost that
+    makes a long train expensive to resolve.
+    """
+    from torchsim.sequence._description import RfDefinition
+
+    flip = _schedules(1, 64)
+    calls = 0
+    original = RfDefinition.flip_angle
+
+    def counted(self, amplitude_hz, **keywords):
+        nonlocal calls
+        calls += 1
+        return original(self, amplitude_hz, **keywords)
+
+    RfDefinition.flip_angle = counted
+    try:
+        _pack(flip)
+    finally:
+        RfDefinition.flip_angle = original
+    assert calls == len(_describe(flip).rf_definitions)

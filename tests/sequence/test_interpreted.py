@@ -56,6 +56,7 @@ def _run(case: str) -> subprocess.CompletedProcess[str]:
         "two_pools",
         "real",
         "real_shimmed",
+        "spoiled",
     ],
 )
 def test_the_kernels_agree_with_what_they_specialize(case: str) -> None:

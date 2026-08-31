@@ -1,0 +1,36 @@
+{
+  "backend": "torchsim",
+  "mode": "jacobian(T1)",
+  "atoms": 100,
+  "length": 500,
+  "states": 32,
+  "device": "cpu",
+  "threads": 4,
+  "repeats": 3,
+  "seconds": [
+    0.14879291699980968,
+    0.1498404290000508,
+    0.15595913500010283
+  ],
+  "setup_seconds": 8.40564737900013,
+  "baseline_rss_mib": 607.0625,
+  "peak_rss_mib": 720.77734375,
+  "peak_device_mib": 0.0,
+  "versions": {
+    "torchsim": "0.0.4.dev136",
+    "torch": "2.13.0+cu130"
+  },
+  "machine": {
+    "platform": "Linux-6.18.44-fc-v22-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "python": "3.11.15"
+  },
+  "note": "",
+  "best": 0.14879291699980968,
+  "median": 0.1498404290000508,
+  "atoms_per_second": 672.0750020656421,
+  "checksum": [
+    -4.975078105926514,
+    0.0
+  ]
+}

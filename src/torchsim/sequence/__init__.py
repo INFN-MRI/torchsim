@@ -46,6 +46,7 @@ __all__ = [
     "simulate_subspace",
     "SPGRReadout",
     "Spoil",
+    "SSFPEchoReadout",
     "SSFPFidReadout",
     "spgr_description",
 ]
@@ -85,6 +86,7 @@ from ._operators import (
     Saturation,
     SPGRReadout,
     Spoil,
+    SSFPEchoReadout,
     SSFPFidReadout,
     bSSFPReadout,
     compose,

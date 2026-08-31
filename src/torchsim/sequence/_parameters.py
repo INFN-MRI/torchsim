@@ -19,6 +19,8 @@ __all__ = [
     "Geometry",
     "EVENT_PARAMETERS",
     "TISSUE_PARAMETERS",
+    "SAMPLE_PARAMETERS",
+    "PROPERTY_PARAMETERS",
     "at_identity",
     "features_of",
     "wants_bound_pool",
@@ -129,6 +131,16 @@ TISSUE_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("pool_b_shift_hz", identity=0.0, feature="BM"),
 )
 
+# What a voxel does to a sample rather than to a state, which is why these are
+# not in the ABI above: no kernel reads them. A static spread of the field
+# dephases a sample by how long it has gone unrefocused, and a configuration
+# order carries the winding it has been through but not the time -- so the
+# spread is applied to what was recorded, from the clock the packing keeps.
+SAMPLE_PARAMETERS: tuple[Parameter, ...] = (
+    Parameter("t2_prime_ms", identity=float("inf"), feature="T2_PRIME", gate=True),
+)
+
+
 EVENT_PARAMETERS: tuple[Parameter, ...] = (
     Parameter("duration"),
     Parameter("kind", differentiable=False),
@@ -171,6 +183,13 @@ FLOAT_COUNT = len(FLOAT_INPUTS)
 SEED_INPUT = PACKED_COUNT
 
 TISSUE_NAMES: tuple[str, ...] = tuple(parameter.name for parameter in TISSUE_PARAMETERS)
+
+SAMPLE_NAMES: tuple[str, ...] = tuple(parameter.name for parameter in SAMPLE_PARAMETERS)
+
+# Every property a tissue carries, whether a kernel reads it or the signal
+# does. What a caller may set, and what a model may declare.
+PROPERTY_PARAMETERS: tuple[Parameter, ...] = (*TISSUE_PARAMETERS, *SAMPLE_PARAMETERS)
+PROPERTY_NAMES: tuple[str, ...] = (*TISSUE_NAMES, *SAMPLE_NAMES)
 
 # Which tissue buffers hold a row per shim.
 TRANSMIT_INPUTS: tuple[int, ...] = tuple(
@@ -257,7 +276,7 @@ def features_of(tissue: Any) -> frozenset[str]:
     """
     return frozenset(
         parameter.feature
-        for parameter in TISSUE_PARAMETERS
+        for parameter in PROPERTY_PARAMETERS
         if parameter.gate
         and not at_identity(parameter, getattr(tissue, parameter.name))
     )
