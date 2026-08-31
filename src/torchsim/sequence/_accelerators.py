@@ -2579,13 +2579,6 @@ class _Lane(Lane):
         self.real = torch.empty(size, dtype=torch.float32, device=device)
         self.imag = torch.empty_like(self.real)
         self.signal = torch.empty(size, dtype=torch.complex64, device=device)
-        planes = 2 if real_axis == 1 else 4
-        self.scratch = [
-            torch.empty(
-                (train_count * chunk, state_count), dtype=torch.float32, device=device
-            )
-            for _ in range(planes)
-        ]
         # A forward-over-reverse pass needs a trajectory and gradient
         # accumulators as well; the adjoint path hangs them here.
         self.adjoint: Any = None
@@ -2738,7 +2731,6 @@ def _run_offloaded(
             per_device[lane.device],
             real,
             imag,
-            lane.scratch,
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,
@@ -2807,7 +2799,6 @@ def _run_offloaded_jvp(
             seeds[lane.device],
             real,
             imag,
-            lane.scratch,
             state_count=state_count,
             output_count=output_count,
             real_axis=real_axis,

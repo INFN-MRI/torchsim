@@ -227,15 +227,27 @@ def test_an_off_resonance_seed_keeps_the_complex_kernel_on_cuda():
     assert torch.equal(automatic, complex_kernel)
 
 
-@pytest.mark.parametrize("total", [0, 1, 1024, 3071, 3072, 5000, 100_000])
 @pytest.mark.parametrize("block_states", [4, 16])
-def test_the_packing_width_is_a_power_of_two(total, block_states):
+def test_the_packing_width_is_a_power_of_two(block_states):
     """It indexes a ``tl.arange``, which rejects anything else."""
     from torchsim.sequence._epg_triton import _problems_per_program
 
-    width = _problems_per_program(total, block_states)
+    width = _problems_per_program(block_states)
     assert width >= 1
     assert width & (width - 1) == 0
+
+
+@pytest.mark.parametrize("block_states", [4, 16, 32])
+def test_the_packing_width_ignores_how_many_problems_there_are(block_states):
+    """A chunk of a run must compile the tile the whole run compiles.
+
+    Two tile shapes reassociate their arithmetic differently, so a width read
+    off the launch size would make a streamed volume answer differently from
+    the same volume run whole.
+    """
+    from torchsim.sequence._epg_triton import _problems_per_program
+
+    assert _problems_per_program(block_states) >= 1
 
 
 @pytest.mark.parametrize("atoms", [3, 16, 21])

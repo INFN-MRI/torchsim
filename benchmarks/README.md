@@ -194,8 +194,8 @@ asking:
 | | CPU, four threads | RTX 4060 Laptop | what the card buys |
 | --- | ---: | ---: | ---: |
 | BlochSimulators.jl | 2.276 s | 0.037 s | 61x |
-| TorchSim | 1.903 s | 0.196 s | 9.7x |
-| TorchSim, Jacobian in T1 and T2 | 9.657 s | 1.085 s | 8.9x |
+| TorchSim | 1.903 s | 0.079 s | 24x |
+| TorchSim, Jacobian in T1 and T2 | 9.657 s | 0.432 s | 22x |
 | BlochSimulators.jl, finite differences | 7.409 s | 0.119 s | 62x |
 
 KomaMRI reaches a thousand tissues, and 64 isochromats each: 7.33 s on four
@@ -214,9 +214,9 @@ path is worth 2.5x in BlochSimulators (0.212 s against 0.520 s) and 4.9x in
 TorchSim, which `anatomy.py` measures on one event stream with only the verdict
 changed.
 
-On the card that parity goes. BlochSimulators simulates a hundred thousand
-tissues in 37 ms against TorchSim's 196 ms, and takes its finite-difference
-Jacobian in 119 ms against TorchSim's 1.09 s. The two lay the same recursion out
+On the card the two separate. BlochSimulators simulates a hundred thousand
+tissues in 37 ms against TorchSim's 79 ms, and takes its finite-difference
+Jacobian in 119 ms against TorchSim's 432 ms. The two lay the same recursion out
 differently: BlochSimulators gives each voxel a whole warp and each thread
 `states / 32` of the configuration orders, held in registers as an immutable
 `SMatrix`, while TorchSim's Triton kernel takes a tile of voxels by all of

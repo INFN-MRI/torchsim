@@ -58,45 +58,51 @@ _FLIP_SEED = _FLOAT_NAMES.index("flip")
 
 
 @triton.jit
+def _up(values, state):
+    """``values`` moved one configuration order up: ``result[k] = values[k - 1]``.
+
+    A shift along the state axis of a tile the program already holds. Order
+    zero is left to the caller, which fills it from the sequence's own boundary
+    condition rather than from a neighbour.
+    """
+    index = tl.broadcast_to(tl.maximum(state - 1, 0), values.shape)
+    return tl.gather(values, index, 1)
+
+
+@triton.jit
+def _down(values, state):
+    """``values`` moved one order down: ``result[k] = values[k + 1]``.
+
+    The top order has no neighbour to read, so it reads itself and the caller
+    masks it away.
+    """
+    index = tl.broadcast_to(tl.minimum(state + 1, values.shape[1] - 1), values.shape)
+    return tl.gather(values, index, 1)
+
+
+@triton.jit
+def _first(values, state):
+    """Order zero of ``values``, spread across every order."""
+    index = tl.broadcast_to(state * 0, values.shape)
+    return tl.gather(values, index, 1)
+
+
+@triton.jit
 def _shift(
     fplus_real,
     fplus_imag,
     fminus_real,
     fminus_imag,
-    scratch_fplus_real,
-    scratch_fplus_imag,
-    scratch_fminus_real,
-    scratch_fminus_imag,
     state,
     state_mask,
     state_count: tl.constexpr,
 ):
-    tl.store(scratch_fplus_real + state, fplus_real, mask=state_mask)
-    tl.store(scratch_fplus_imag + state, fplus_imag, mask=state_mask)
-    tl.store(scratch_fminus_real + state, fminus_real, mask=state_mask)
-    tl.store(scratch_fminus_imag + state, fminus_imag, mask=state_mask)
-    tl.debug_barrier()
-
-    plus_real = tl.load(
-        scratch_fplus_real + state - 1,
-        mask=(state > 0) & state_mask,
-        other=0.0,
-    )
-    plus_imag = tl.load(
-        scratch_fplus_imag + state - 1,
-        mask=(state > 0) & state_mask,
-        other=0.0,
-    )
-    minus_real = tl.load(
-        scratch_fminus_real + state + 1,
-        mask=(state + 1 < state_count) & state_mask,
-        other=0.0,
-    )
-    minus_imag = tl.load(
-        scratch_fminus_imag + state + 1,
-        mask=(state + 1 < state_count) & state_mask,
-        other=0.0,
-    )
+    keep_up = (state > 0) & state_mask
+    keep_down = (state + 1 < state_count) & state_mask
+    plus_real = tl.where(keep_up, _up(fplus_real, state), 0.0)
+    plus_imag = tl.where(keep_up, _up(fplus_imag, state), 0.0)
+    minus_real = tl.where(keep_down, _down(fminus_real, state), 0.0)
+    minus_imag = tl.where(keep_down, _down(fminus_imag, state), 0.0)
     plus_real = tl.where(state == 0, minus_real, plus_real)
     plus_imag = tl.where(state == 0, -minus_imag, plus_imag)
     return plus_real, plus_imag, minus_real, minus_imag
@@ -106,25 +112,13 @@ def _shift(
 def _shift_real(
     plus,
     minus,
-    scratch_plus,
-    scratch_minus,
     state,
     state_mask,
     state_count: tl.constexpr,
 ):
-    tl.store(scratch_plus + state, plus, mask=state_mask)
-    tl.store(scratch_minus + state, minus, mask=state_mask)
-    tl.debug_barrier()
-
-    shifted_plus = tl.load(
-        scratch_plus + state - 1,
-        mask=(state > 0) & state_mask,
-        other=0.0,
-    )
-    shifted_minus = tl.load(
-        scratch_minus + state + 1,
-        mask=(state + 1 < state_count) & state_mask,
-        other=0.0,
+    shifted_plus = tl.where((state > 0) & state_mask, _up(plus, state), 0.0)
+    shifted_minus = tl.where(
+        (state + 1 < state_count) & state_mask, _down(minus, state), 0.0
     )
     return tl.where(state == 0, -shifted_minus, shifted_plus), shifted_minus
 
@@ -4521,10 +4515,6 @@ def _shift_adjoint(
     plus_bar_imag,
     minus_bar_real,
     minus_bar_imag,
-    scratch_pr,
-    scratch_pi,
-    scratch_mr,
-    scratch_mi,
     state,
     state_mask,
     state_count: tl.constexpr,
@@ -4534,20 +4524,14 @@ def _shift_adjoint(
     The conjugate refill at order zero sends the incoming plus adjoint back
     onto minus, conjugated, at the index the minus shift moves it to.
     """
-    tl.store(scratch_pr + state, plus_bar_real, mask=state_mask)
-    tl.store(scratch_pi + state, plus_bar_imag, mask=state_mask)
-    tl.store(scratch_mr + state, minus_bar_real, mask=state_mask)
-    tl.store(scratch_mi + state, minus_bar_imag, mask=state_mask)
-    tl.debug_barrier()
-
-    carry_real = tl.load(scratch_pr, mask=state_mask, other=0.0)
-    carry_imag = -tl.load(scratch_pi, mask=state_mask, other=0.0)
+    carry_real = tl.where(state_mask, _first(plus_bar_real, state), 0.0)
+    carry_imag = -tl.where(state_mask, _first(plus_bar_imag, state), 0.0)
     forward = (state + 1 < state_count) & state_mask
     backward = (state > 0) & state_mask
-    shifted_pr = tl.load(scratch_pr + state + 1, mask=forward, other=0.0)
-    shifted_pi = tl.load(scratch_pi + state + 1, mask=forward, other=0.0)
-    shifted_mr = tl.load(scratch_mr + state - 1, mask=backward, other=0.0)
-    shifted_mi = tl.load(scratch_mi + state - 1, mask=backward, other=0.0)
+    shifted_pr = tl.where(forward, _down(plus_bar_real, state), 0.0)
+    shifted_pi = tl.where(forward, _down(plus_bar_imag, state), 0.0)
+    shifted_mr = tl.where(backward, _up(minus_bar_real, state), 0.0)
+    shifted_mi = tl.where(backward, _up(minus_bar_imag, state), 0.0)
     shifted_mr = tl.where(state == 1, shifted_mr + carry_real, shifted_mr)
     shifted_mi = tl.where(state == 1, shifted_mi + carry_imag, shifted_mi)
     return shifted_pr, shifted_pi, shifted_mr, shifted_mi
@@ -4557,8 +4541,6 @@ def _shift_adjoint(
 def _shift_real_adjoint(
     plus_bar,
     minus_bar,
-    scratch_plus,
-    scratch_minus,
     state,
     state_mask,
     state_count: tl.constexpr,
@@ -4568,21 +4550,11 @@ def _shift_real_adjoint(
     The ``a0 = -b0`` coupling sends the incoming plus adjoint back onto minus,
     at the index the minus shift moves it to.
     """
-    tl.store(scratch_plus + state, plus_bar, mask=state_mask)
-    tl.store(scratch_minus + state, minus_bar, mask=state_mask)
-    tl.debug_barrier()
-
-    carry = -tl.load(scratch_plus, mask=state_mask, other=0.0)
-    shifted_plus = tl.load(
-        scratch_plus + state + 1,
-        mask=(state + 1 < state_count) & state_mask,
-        other=0.0,
+    carry = -tl.where(state_mask, _first(plus_bar, state), 0.0)
+    shifted_plus = tl.where(
+        (state + 1 < state_count) & state_mask, _down(plus_bar, state), 0.0
     )
-    shifted_minus = tl.load(
-        scratch_minus + state - 1,
-        mask=(state > 0) & state_mask,
-        other=0.0,
-    )
+    shifted_minus = tl.where((state > 0) & state_mask, _up(minus_bar, state), 0.0)
     shifted_minus = tl.where(state == 1, shifted_minus + carry, shifted_minus)
     return shifted_plus, shifted_minus
 
@@ -5714,10 +5686,6 @@ def _epg_vjp_kernel(
     grad_duration,
     trajectory_r,
     trajectory_i,
-    scratch_pr,
-    scratch_pi,
-    scratch_mr,
-    scratch_mi,
     problem_base,
     problem_end,
     atom_count,
@@ -5755,11 +5723,6 @@ def _epg_vjp_kernel(
     atom = problem % atom_count
     train = problem // atom_count
     local = problem - problem_base
-    scratch_offset = local * state_count
-    sp_r = scratch_pr + scratch_offset
-    sp_i = scratch_pi + scratch_offset
-    sm_r = scratch_mr + scratch_offset
-    sm_i = scratch_mi + scratch_offset
     record_stride = (
         7 if pools == 3 else (6 if pools == 2 else (4 if pools == 1 else 3))
     ) * state_count
@@ -6101,26 +6064,14 @@ def _epg_vjp_kernel(
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
-        svr, svi, wvr, wvi = _shift(
-            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
-        )
+        svr, svi, wvr, wvi = _shift(pvr, pvi, mvr, mvi, state, state_mask, state_count)
         pvr = tl.where(pre_shift, svr, pvr)
         pvi = tl.where(pre_shift, svi, pvi)
         mvr = tl.where(pre_shift, wvr, mvr)
         mvi = tl.where(pre_shift, wvi, mvi)
         if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
-                bpvr,
-                bpvi,
-                bmvr,
-                bmvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                bpvr, bpvi, bmvr, bmvi, state, state_mask, state_count
             )
             bpvr = tl.where(pre_shift, svr, bpvr)
             bpvi = tl.where(pre_shift, svi, bpvi)
@@ -6301,26 +6252,14 @@ def _epg_vjp_kernel(
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
-                bpvr,
-                bpvi,
-                bmvr,
-                bmvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                bpvr, bpvi, bmvr, bmvi, state, state_mask, state_count
             )
             spoil_b = (event_action & 8) != 0
             bpvr = tl.where(spoil_b, 0.0, tl.where(do_shift, svr, bpvr))
             bpvi = tl.where(spoil_b, 0.0, tl.where(do_shift, svi, bpvi))
             bmvr = tl.where(spoil_b, 0.0, tl.where(do_shift, wvr, bmvr))
             bmvi = tl.where(spoil_b, 0.0, tl.where(do_shift, wvi, bmvi))
-        svr, svi, wvr, wvi = _shift(
-            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
-        )
+        svr, svi, wvr, wvi = _shift(pvr, pvi, mvr, mvi, state, state_mask, state_count)
         pvr = tl.where(do_shift, svr, pvr)
         pvi = tl.where(do_shift, svi, pvi)
         mvr = tl.where(do_shift, wvr, mvr)
@@ -6870,17 +6809,7 @@ def _epg_vjp_kernel(
 
         pre_shift = (event_action & 1) != 0
         svr, svi, wvr, wvi = _shift(
-            rpvr,
-            rpvi,
-            rmvr,
-            rmvi,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            rpvr, rpvi, rmvr, rmvi, state, state_mask, state_count
         )
         spvr = tl.where(pre_shift, svr, rpvr)
         spvi = tl.where(pre_shift, svi, rpvi)
@@ -6892,17 +6821,7 @@ def _epg_vjp_kernel(
         sbmvi = empty
         if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
-                rbpvr,
-                rbpvi,
-                rbmvr,
-                rbmvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                rbpvr, rbpvi, rbmvr, rbmvi, state, state_mask, state_count
             )
             sbpvr = tl.where(pre_shift, svr, rbpvr)
             sbpvi = tl.where(pre_shift, svi, rbpvi)
@@ -6913,17 +6832,7 @@ def _epg_vjp_kernel(
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         spoil = (event_action & 8) != 0
         avr, avi, bvr, bvi = _shift_adjoint(
-            pbvr,
-            pbvi,
-            mbvr,
-            mbvi,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            pbvr, pbvi, mbvr, mbvi, state, state_mask, state_count
         )
         trailing = do_shift & ~spoil
         pbvr = tl.where(spoil, 0.0, tl.where(trailing, avr, pbvr))
@@ -6932,17 +6841,7 @@ def _epg_vjp_kernel(
         mbvi = tl.where(spoil, 0.0, tl.where(trailing, bvi, mbvi))
         if pools == 2 or pools == 3:
             avr, avi, bvr, bvi = _shift_adjoint(
-                ubvr,
-                ubvi,
-                wbvr,
-                wbvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                ubvr, ubvi, wbvr, wbvi, state, state_mask, state_count
             )
             ubvr = tl.where(spoil, 0.0, tl.where(trailing, avr, ubvr))
             ubvi = tl.where(spoil, 0.0, tl.where(trailing, avi, ubvi))
@@ -7377,34 +7276,14 @@ def _epg_vjp_kernel(
             poolbr = tl.where(invert, -atom_inv * poolbr, poolbr)
             poolbi = tl.where(invert, -atom_inv * poolbi, poolbi)
             avr, avi, bvr, bvi = _shift_adjoint(
-                ubvr,
-                ubvi,
-                wbvr,
-                wbvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                ubvr, ubvi, wbvr, wbvi, state, state_mask, state_count
             )
             ubvr = tl.where(pre_shift, avr, ubvr)
             ubvi = tl.where(pre_shift, avi, ubvi)
             wbvr = tl.where(pre_shift, bvr, wbvr)
             wbvi = tl.where(pre_shift, bvi, wbvi)
         avr, avi, bvr, bvi = _shift_adjoint(
-            pbvr,
-            pbvi,
-            mbvr,
-            mbvi,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            pbvr, pbvi, mbvr, mbvi, state, state_mask, state_count
         )
         pbvr = tl.where(pre_shift, avr, pbvr)
         pbvi = tl.where(pre_shift, avi, pbvi)
@@ -8608,10 +8487,6 @@ def _epg_vjp_jvp_kernel(
     trajectory_vi,
     trajectory_tr,
     trajectory_ti,
-    scratch_pr,
-    scratch_pi,
-    scratch_mr,
-    scratch_mi,
     problem_base,
     problem_end,
     atom_count,
@@ -8654,11 +8529,6 @@ def _epg_vjp_jvp_kernel(
     # that many consecutive rows, and the event says which shape it drives.
     location = atom % locations
     local = problem - problem_base
-    scratch_offset = local * state_count
-    sp_r = scratch_pr + scratch_offset
-    sp_i = scratch_pi + scratch_offset
-    sm_r = scratch_mr + scratch_offset
-    sm_i = scratch_mi + scratch_offset
     # A second pool rides along as planes of its own: it enters an event as its
     # own vector and the RF operator acts on it, so the reverse sweep cannot
     # replay it from the free pool's. A semisolid pool adds one plane, a
@@ -9260,12 +9130,8 @@ def _epg_vjp_jvp_kernel(
 
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
-        svr, svi, wvr, wvi = _shift(
-            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
-        )
-        str_, sti, wtr, wti = _shift(
-            ptr, pti, mtr, mti, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
-        )
+        svr, svi, wvr, wvi = _shift(pvr, pvi, mvr, mvi, state, state_mask, state_count)
+        str_, sti, wtr, wti = _shift(ptr, pti, mtr, mti, state, state_mask, state_count)
         pvr = tl.where(pre_shift, svr, pvr)
         pvi = tl.where(pre_shift, svi, pvi)
         ptr = tl.where(pre_shift, str_, ptr)
@@ -9276,30 +9142,10 @@ def _epg_vjp_jvp_kernel(
         mti = tl.where(pre_shift, wti, mti)
         if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
-                bpvr,
-                bpvi,
-                bmvr,
-                bmvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                bpvr, bpvi, bmvr, bmvi, state, state_mask, state_count
             )
             str_, sti, wtr, wti = _shift(
-                bptr,
-                bpti,
-                bmtr,
-                bmti,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                bptr, bpti, bmtr, bmti, state, state_mask, state_count
             )
             bpvr = tl.where(pre_shift, svr, bpvr)
             bpvi = tl.where(pre_shift, svi, bpvi)
@@ -9589,12 +9435,8 @@ def _epg_vjp_jvp_kernel(
         zti = tl.where(rotate, turned_zti, zti)
 
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
-        svr, svi, wvr, wvi = _shift(
-            pvr, pvi, mvr, mvi, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
-        )
-        str_, sti, wtr, wti = _shift(
-            ptr, pti, mtr, mti, sp_r, sp_i, sm_r, sm_i, state, state_mask, state_count
-        )
+        svr, svi, wvr, wvi = _shift(pvr, pvi, mvr, mvi, state, state_mask, state_count)
+        str_, sti, wtr, wti = _shift(ptr, pti, mtr, mti, state, state_mask, state_count)
         pvr = tl.where(do_shift, svr, pvr)
         pvi = tl.where(do_shift, svi, pvi)
         ptr = tl.where(do_shift, str_, ptr)
@@ -9614,30 +9456,10 @@ def _epg_vjp_jvp_kernel(
         mti = tl.where(spoil, 0.0, mti)
         if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
-                bpvr,
-                bpvi,
-                bmvr,
-                bmvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                bpvr, bpvi, bmvr, bmvi, state, state_mask, state_count
             )
             str_, sti, wtr, wti = _shift(
-                bptr,
-                bpti,
-                bmtr,
-                bmti,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                bptr, bpti, bmtr, bmti, state, state_mask, state_count
             )
             bpvr = tl.where(spoil, 0.0, tl.where(do_shift, svr, bpvr))
             bpvi = tl.where(spoil, 0.0, tl.where(do_shift, svi, bpvi))
@@ -10382,30 +10204,10 @@ def _epg_vjp_jvp_kernel(
 
         pre_shift = (event_action & 1) != 0
         svr, svi, wvr, wvi = _shift(
-            rpvr,
-            rpvi,
-            rmvr,
-            rmvi,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            rpvr, rpvi, rmvr, rmvi, state, state_mask, state_count
         )
         str_, sti, wtr, wti = _shift(
-            rptr,
-            rpti,
-            rmtr,
-            rmti,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            rptr, rpti, rmtr, rmti, state, state_mask, state_count
         )
         spvr = tl.where(pre_shift, svr, rpvr)
         spvi = tl.where(pre_shift, svi, rpvi)
@@ -10425,30 +10227,10 @@ def _epg_vjp_jvp_kernel(
         sbmti = rbmti
         if pools == 2 or pools == 3:
             svr, svi, wvr, wvi = _shift(
-                rbpvr,
-                rbpvi,
-                rbmvr,
-                rbmvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                rbpvr, rbpvi, rbmvr, rbmvi, state, state_mask, state_count
             )
             str_, sti, wtr, wti = _shift(
-                rbptr,
-                rbpti,
-                rbmtr,
-                rbmti,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                rbptr, rbpti, rbmtr, rbmti, state, state_mask, state_count
             )
             sbpvr = tl.where(pre_shift, svr, rbpvr)
             sbpvi = tl.where(pre_shift, svi, rbpvi)
@@ -10463,30 +10245,10 @@ def _epg_vjp_jvp_kernel(
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         spoil = (event_action & 8) != 0
         avr, avi, bvr, bvi = _shift_adjoint(
-            pbvr,
-            pbvi,
-            mbvr,
-            mbvi,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            pbvr, pbvi, mbvr, mbvi, state, state_mask, state_count
         )
         atr, ati, btr, bti = _shift_adjoint(
-            pbtr,
-            pbti,
-            mbtr,
-            mbti,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            pbtr, pbti, mbtr, mbti, state, state_mask, state_count
         )
         trailing = do_shift & ~spoil
         pbvr = tl.where(spoil, 0.0, tl.where(trailing, avr, pbvr))
@@ -10499,30 +10261,10 @@ def _epg_vjp_jvp_kernel(
         mbti = tl.where(spoil, 0.0, tl.where(trailing, bti, mbti))
         if pools == 2 or pools == 3:
             avr, avi, bvr, bvi = _shift_adjoint(
-                ubvr,
-                ubvi,
-                wbvr,
-                wbvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                ubvr, ubvi, wbvr, wbvi, state, state_mask, state_count
             )
             atr, ati, btr, bti = _shift_adjoint(
-                ubtr,
-                ubti,
-                wbtr,
-                wbti,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                ubtr, ubti, wbtr, wbti, state, state_mask, state_count
             )
             ubvr = tl.where(spoil, 0.0, tl.where(trailing, avr, ubvr))
             ubvi = tl.where(spoil, 0.0, tl.where(trailing, avi, ubvi))
@@ -11301,30 +11043,10 @@ def _epg_vjp_jvp_kernel(
             g_b1pt += grad_phi_t
 
         avr, avi, bvr, bvi = _shift_adjoint(
-            pbvr,
-            pbvi,
-            mbvr,
-            mbvi,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            pbvr, pbvi, mbvr, mbvi, state, state_mask, state_count
         )
         atr, ati, btr, bti = _shift_adjoint(
-            pbtr,
-            pbti,
-            mbtr,
-            mbti,
-            sp_r,
-            sp_i,
-            sm_r,
-            sm_i,
-            state,
-            state_mask,
-            state_count,
+            pbtr, pbti, mbtr, mbti, state, state_mask, state_count
         )
         pbvr = tl.where(pre_shift, avr, pbvr)
         pbvi = tl.where(pre_shift, avi, pbvi)
@@ -11336,30 +11058,10 @@ def _epg_vjp_jvp_kernel(
         mbti = tl.where(pre_shift, bti, mbti)
         if pools == 2 or pools == 3:
             avr, avi, bvr, bvi = _shift_adjoint(
-                ubvr,
-                ubvi,
-                wbvr,
-                wbvi,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                ubvr, ubvi, wbvr, wbvi, state, state_mask, state_count
             )
             atr, ati, btr, bti = _shift_adjoint(
-                ubtr,
-                ubti,
-                wbtr,
-                wbti,
-                sp_r,
-                sp_i,
-                sm_r,
-                sm_i,
-                state,
-                state_mask,
-                state_count,
+                ubtr, ubti, wbtr, wbti, state, state_mask, state_count
             )
             ubvr = tl.where(pre_shift, avr, ubvr)
             ubvi = tl.where(pre_shift, avi, ubvi)
@@ -13361,8 +13063,6 @@ def _epg_real_vjp_jvp_kernel(
     grad_duration_tangent,
     trajectory_value,
     trajectory_tangent,
-    scratch_plus,
-    scratch_minus,
     problem_base,
     problem_end,
     atom_count,
@@ -13389,9 +13089,6 @@ def _epg_real_vjp_jvp_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
-    scratch_offset = (problem - problem_base) * state_count
-    scratch_p = scratch_plus + scratch_offset
-    scratch_m = scratch_minus + scratch_offset
     # The trajectory holds the state entering every event: three planes of
     # configuration orders, for the value and the tangent alike.
     record_stride = 3 * state_count
@@ -13495,22 +13192,10 @@ def _epg_real_vjp_jvp_kernel(
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
         shifted_pv, shifted_mv = _shift_real(
-            plus_value,
-            minus_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_value, minus_value, state, state_mask, state_count
         )
         shifted_pt, shifted_mt = _shift_real(
-            plus_tangent,
-            minus_tangent,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_tangent, minus_tangent, state, state_mask, state_count
         )
         plus_value = tl.where(pre_shift, shifted_pv, plus_value)
         minus_value = tl.where(pre_shift, shifted_mv, minus_value)
@@ -13581,22 +13266,10 @@ def _epg_real_vjp_jvp_kernel(
 
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         shifted_pv, shifted_mv = _shift_real(
-            plus_value,
-            minus_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_value, minus_value, state, state_mask, state_count
         )
         shifted_pt, shifted_mt = _shift_real(
-            plus_tangent,
-            minus_tangent,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_tangent, minus_tangent, state, state_mask, state_count
         )
         plus_value = tl.where(do_shift, shifted_pv, plus_value)
         minus_value = tl.where(do_shift, shifted_mv, minus_value)
@@ -13684,10 +13357,10 @@ def _epg_real_vjp_jvp_kernel(
 
         pre_shift = (event_action & 1) != 0
         shifted_pv, shifted_mv = _shift_real(
-            stage_pv, stage_mv, scratch_p, scratch_m, state, state_mask, state_count
+            stage_pv, stage_mv, state, state_mask, state_count
         )
         shifted_pt, shifted_mt = _shift_real(
-            stage_pt, stage_mt, scratch_p, scratch_m, state, state_mask, state_count
+            stage_pt, stage_mt, state, state_mask, state_count
         )
         stage_pv = tl.where(pre_shift, shifted_pv, stage_pv)
         stage_mv = tl.where(pre_shift, shifted_mv, stage_mv)
@@ -13698,22 +13371,10 @@ def _epg_real_vjp_jvp_kernel(
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         spoil = (event_action & 8) != 0
         adjoint_pv, adjoint_mv = _shift_real_adjoint(
-            plus_bar_value,
-            minus_bar_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_bar_value, minus_bar_value, state, state_mask, state_count
         )
         adjoint_pt, adjoint_mt = _shift_real_adjoint(
-            plus_bar_tangent,
-            minus_bar_tangent,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_bar_tangent, minus_bar_tangent, state, state_mask, state_count
         )
         trailing = do_shift & ~spoil
         plus_bar_value = tl.where(
@@ -13890,22 +13551,10 @@ def _epg_real_vjp_jvp_kernel(
         plus_bar_tangent += tl.where(state == 0, seed * atom_dot_m0, 0.0)
 
         adjoint_pv, adjoint_mv = _shift_real_adjoint(
-            plus_bar_value,
-            minus_bar_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_bar_value, minus_bar_value, state, state_mask, state_count
         )
         adjoint_pt, adjoint_mt = _shift_real_adjoint(
-            plus_bar_tangent,
-            minus_bar_tangent,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_bar_tangent, minus_bar_tangent, state, state_mask, state_count
         )
         plus_bar_value = tl.where(pre_shift, adjoint_pv, plus_bar_value)
         minus_bar_value = tl.where(pre_shift, adjoint_mv, minus_bar_value)
@@ -14085,8 +13734,6 @@ def _epg_real_vjp_kernel(
     grad_flip,
     grad_duration,
     trajectory_value,
-    scratch_plus,
-    scratch_minus,
     problem_base,
     problem_end,
     atom_count,
@@ -14113,9 +13760,6 @@ def _epg_real_vjp_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
-    scratch_offset = (problem - problem_base) * state_count
-    scratch_p = scratch_plus + scratch_offset
-    scratch_m = scratch_minus + scratch_offset
     # The trajectory holds the state entering every event: three planes of
     # configuration orders.
     record_stride = 3 * state_count
@@ -14179,13 +13823,7 @@ def _epg_real_vjp_kernel(
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
         shifted_pv, shifted_mv = _shift_real(
-            plus_value,
-            minus_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_value, minus_value, state, state_mask, state_count
         )
         plus_value = tl.where(pre_shift, shifted_pv, plus_value)
         minus_value = tl.where(pre_shift, shifted_mv, minus_value)
@@ -14225,13 +13863,7 @@ def _epg_real_vjp_kernel(
 
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         shifted_pv, shifted_mv = _shift_real(
-            plus_value,
-            minus_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_value, minus_value, state, state_mask, state_count
         )
         plus_value = tl.where(do_shift, shifted_pv, plus_value)
         minus_value = tl.where(do_shift, shifted_mv, minus_value)
@@ -14284,7 +13916,7 @@ def _epg_real_vjp_kernel(
 
         pre_shift = (event_action & 1) != 0
         shifted_pv, shifted_mv = _shift_real(
-            stage_pv, stage_mv, scratch_p, scratch_m, state, state_mask, state_count
+            stage_pv, stage_mv, state, state_mask, state_count
         )
         stage_pv = tl.where(pre_shift, shifted_pv, stage_pv)
         stage_mv = tl.where(pre_shift, shifted_mv, stage_mv)
@@ -14293,13 +13925,7 @@ def _epg_real_vjp_kernel(
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         spoil = (event_action & 8) != 0
         adjoint_pv, adjoint_mv = _shift_real_adjoint(
-            plus_bar_value,
-            minus_bar_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_bar_value, minus_bar_value, state, state_mask, state_count
         )
         trailing = do_shift & ~spoil
         plus_bar_value = tl.where(
@@ -14394,13 +14020,7 @@ def _epg_real_vjp_kernel(
         plus_bar_value += tl.where(state == 0, seed * atom_m0, 0.0)
 
         adjoint_pv, adjoint_mv = _shift_real_adjoint(
-            plus_bar_value,
-            minus_bar_value,
-            scratch_p,
-            scratch_m,
-            state,
-            state_mask,
-            state_count,
+            plus_bar_value, minus_bar_value, state, state_mask, state_count
         )
         plus_bar_value = tl.where(pre_shift, adjoint_pv, plus_bar_value)
         minus_bar_value = tl.where(pre_shift, adjoint_mv, minus_bar_value)
@@ -14482,8 +14102,6 @@ def _epg_real_kernel(
     shim_index,
     output_real,
     output_imag,
-    scratch_plus,
-    scratch_minus,
     atom_count,
     train_count,
     event_count,
@@ -14503,9 +14121,6 @@ def _epg_real_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
-    workspace_offset = problem * state_count
-    scratch_p = scratch_plus + workspace_offset
-    scratch_m = scratch_minus + workspace_offset
 
     empty = tl.zeros((problems, block_states), tl.float32)
     plus = empty
@@ -14535,71 +14150,76 @@ def _epg_real_kernel(
     event_base = train * event_count
     for event in range(0, event_count):
         dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        e1 = tl.exp(-rate1 * dt)
-        e2 = tl.exp(-rate2 * dt)
-        damp_z = 1.0
-        damp_t = 1.0
-        if diffusing:
-            damp_z, damp_t = _damping(atom_damping, dt, order)
-        recovery = 1.0 - e1
-        plus *= e2 * damp_t
-        minus *= e2 * damp_t
-        longitudinal = longitudinal * (e1 * damp_z) + tl.where(
-            state == 0, recovery, 0.0
-        )
+        # An event of no duration relaxes nothing: both factors are one and the
+        # recovery term is zero. Half the events of a spoiled repetition are
+        # instantaneous, and reducing over the trains this program carries makes
+        # that a branch the whole program agrees on rather than a tile of
+        # multiplies by one.
+        if tl.max(dt) != 0.0:
+            e1 = tl.exp(-rate1 * dt)
+            e2 = tl.exp(-rate2 * dt)
+            damp_z = 1.0
+            damp_t = 1.0
+            if diffusing:
+                damp_z, damp_t = _damping(atom_damping, dt, order)
+            recovery = 1.0 - e1
+            plus *= e2 * damp_t
+            minus *= e2 * damp_t
+            longitudinal = longitudinal * (e1 * damp_z) + tl.where(
+                state == 0, recovery, 0.0
+            )
 
+        # Every flag below is read from a per-event array with no atom index, so
+        # it is uniform across the program and can steer real control flow. A
+        # `tl.where` would make every event pay for every operator: a spoiled
+        # repetition is four events and needs one rotation and one shift.
         event_action = tl.load(action + event).to(tl.int32)
-        pre_shift = (event_action & 1) != 0
-        shifted_p, shifted_m = _shift_real(
-            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
-        )
-        plus = tl.where(pre_shift, shifted_p, plus)
-        minus = tl.where(pre_shift, shifted_m, minus)
+        if (event_action & 1) != 0:
+            plus, minus = _shift_real(plus, minus, state, state_mask, state_count)
 
         event_kind = tl.load(kind + event)
         is_rf = event_kind == 1
         is_inversion = (event_action & 4) != 0
-        invert = is_rf & is_inversion
-        longitudinal = tl.where(invert, -atom_inversion * longitudinal, longitudinal)
+        if is_rf and is_inversion:
+            longitudinal = -atom_inversion * longitudinal
+        elif is_rf:
+            alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+            pulse_b1 = atom_b1
+            # One shim is the whole sequence's transmit field, loaded once
+            # above; several give each pulse the row of the shim it drives.
+            if shimmed and transmit:
+                shim_row = tl.load(shim_index + event).to(tl.int64) * atom_count
+                pulse_b1 = tl.load(b1 + shim_row + atom, mask=active_atom, other=1.0)
+            alpha *= pulse_b1
+            cosine = tl.cos(alpha)
+            sine = tl.sin(alpha)
+            cosine_half_sq = 0.5 * (1.0 + cosine)
+            sine_half_sq = 0.5 * (1.0 - cosine)
+            half_sine = 0.5 * sine
+            rotated_p = (
+                cosine_half_sq * plus + sine_half_sq * minus - sine * longitudinal
+            )
+            rotated_m = (
+                sine_half_sq * plus + cosine_half_sq * minus + sine * longitudinal
+            )
+            longitudinal = half_sine * plus - half_sine * minus + cosine * longitudinal
+            plus = rotated_p
+            minus = rotated_m
 
-        alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        pulse_b1 = atom_b1
-        # One shim is the whole sequence's transmit field, loaded once above;
-        # several give each pulse the row of the shim it drives.
-        if shimmed and transmit:
-            shim_row = tl.load(shim_index + event).to(tl.int64) * atom_count
-            pulse_b1 = tl.load(b1 + shim_row + atom, mask=active_atom, other=1.0)
-        alpha *= pulse_b1
-        cosine = tl.cos(alpha)
-        sine = tl.sin(alpha)
-        cosine_half_sq = 0.5 * (1.0 + cosine)
-        sine_half_sq = 0.5 * (1.0 - cosine)
-        half_sine = 0.5 * sine
-        rotated_p = cosine_half_sq * plus + sine_half_sq * minus - sine * longitudinal
-        rotated_m = sine_half_sq * plus + cosine_half_sq * minus + sine * longitudinal
-        rotated_z = half_sine * plus - half_sine * minus + cosine * longitudinal
+        if ((event_action & 32) != 0) and event_kind == 2:
+            out = tl.load(output_index + event)
+            output_offset = problem * output_count + out
+            output_mask = active_atom & (state == 0) & (out >= 0)
+            tl.store(output_real + output_offset + state, empty, mask=output_mask)
+            tl.store(
+                output_imag + output_offset + state, atom_m0 * plus, mask=output_mask
+            )
 
-        rotate = is_rf & ~is_inversion
-        plus = tl.where(rotate, rotated_p, plus)
-        minus = tl.where(rotate, rotated_m, minus)
-        longitudinal = tl.where(rotate, rotated_z, longitudinal)
-
-        record = ((event_action & 32) != 0) & (event_kind == 2)
-        out = tl.load(output_index + event)
-        output_offset = problem * output_count + out
-        output_mask = active_atom & (state == 0) & record & (out >= 0)
-        tl.store(output_real + output_offset + state, empty, mask=output_mask)
-        tl.store(output_imag + output_offset + state, atom_m0 * plus, mask=output_mask)
-
-        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
-        shifted_p, shifted_m = _shift_real(
-            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
-        )
-        plus = tl.where(do_shift, shifted_p, plus)
-        minus = tl.where(do_shift, shifted_m, minus)
-        spoil = (event_action & 8) != 0
-        plus = tl.where(spoil, 0.0, plus)
-        minus = tl.where(spoil, 0.0, minus)
+        if ((event_action & 2) != 0) or ((event_action & 16) != 0):
+            plus, minus = _shift_real(plus, minus, state, state_mask, state_count)
+        if (event_action & 8) != 0:
+            plus = empty
+            minus = empty
 
 
 @triton.jit
@@ -14626,8 +14246,6 @@ def _epg_real_jvp_kernel(
     tangent_flip,
     output_real,
     output_imag,
-    scratch_plus,
-    scratch_minus,
     atom_count,
     train_count,
     event_count,
@@ -14647,9 +14265,6 @@ def _epg_real_jvp_kernel(
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
-    workspace_offset = problem * state_count
-    scratch_p = scratch_plus + workspace_offset
-    scratch_m = scratch_minus + workspace_offset
 
     empty = tl.zeros((problems, block_states), tl.float32)
     plus = empty
@@ -14700,129 +14315,126 @@ def _epg_real_jvp_kernel(
         dot_dt = tl.load(
             tangent_duration + event_base + event, mask=active_atom, other=0.0
         )
-        e1 = tl.exp(-rate1 * dt)
-        e2 = tl.exp(-rate2 * dt)
-        dot_e1 = e1 * (1000.0 * dt * dot_t1 / (atom_t1 * atom_t1) - rate1 * dot_dt)
-        dot_e2 = e2 * (1000.0 * dt * dot_t2 / (atom_t2 * atom_t2) - rate2 * dot_dt)
-        damp_z = 1.0
-        ddamp_z = 0.0
-        damp_t = 1.0
-        ddamp_t = 0.0
-        if diffusing:
-            damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
-                atom_damping, dot_damping, dt, dot_dt, order
-            )
-        # Order zero is undamped, so the recovery term keeps the bare factor.
-        recovery, dot_recovery = 1.0 - e1, -dot_e1
-        dot_e1 = dot_e1 * damp_z + e1 * ddamp_z
-        e1 = e1 * damp_z
-        dot_e2 = dot_e2 * damp_t + e2 * ddamp_t
-        e2 = e2 * damp_t
-        dot_plus = dot_plus * e2 + plus * dot_e2
-        dot_minus = dot_minus * e2 + minus * dot_e2
-        dot_longitudinal = dot_longitudinal * e1 + longitudinal * dot_e1
-        dot_longitudinal += tl.where(state == 0, dot_recovery, 0.0)
-        plus *= e2
-        minus *= e2
-        longitudinal = longitudinal * e1 + tl.where(state == 0, recovery, 0.0)
+        # An event of no duration relaxes nothing, and carries no tangent along
+        # the relaxation either: both factors are one and both their derivatives
+        # are zero.
+        if tl.max(dt) != 0.0 or tl.max(dot_dt) != 0.0:
+            e1 = tl.exp(-rate1 * dt)
+            e2 = tl.exp(-rate2 * dt)
+            dot_e1 = e1 * (1000.0 * dt * dot_t1 / (atom_t1 * atom_t1) - rate1 * dot_dt)
+            dot_e2 = e2 * (1000.0 * dt * dot_t2 / (atom_t2 * atom_t2) - rate2 * dot_dt)
+            damp_z = 1.0
+            ddamp_z = 0.0
+            damp_t = 1.0
+            ddamp_t = 0.0
+            if diffusing:
+                damp_z, ddamp_z, damp_t, ddamp_t = _damping_jvp(
+                    atom_damping, dot_damping, dt, dot_dt, order
+                )
+            # Order zero is undamped, so the recovery keeps the bare factor.
+            recovery, dot_recovery = 1.0 - e1, -dot_e1
+            dot_e1 = dot_e1 * damp_z + e1 * ddamp_z
+            e1 = e1 * damp_z
+            dot_e2 = dot_e2 * damp_t + e2 * ddamp_t
+            e2 = e2 * damp_t
+            dot_plus = dot_plus * e2 + plus * dot_e2
+            dot_minus = dot_minus * e2 + minus * dot_e2
+            dot_longitudinal = dot_longitudinal * e1 + longitudinal * dot_e1
+            dot_longitudinal += tl.where(state == 0, dot_recovery, 0.0)
+            plus *= e2
+            minus *= e2
+            longitudinal = longitudinal * e1 + tl.where(state == 0, recovery, 0.0)
 
+        # Every flag below is read from a per-event array with no atom index, so
+        # it is uniform across the program and can steer real control flow.
         event_action = tl.load(action + event).to(tl.int32)
-        pre_shift = (event_action & 1) != 0
-        shifted_p, shifted_m = _shift_real(
-            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
-        )
-        shifted_dp, shifted_dm = _shift_real(
-            dot_plus, dot_minus, scratch_p, scratch_m, state, state_mask, state_count
-        )
-        plus = tl.where(pre_shift, shifted_p, plus)
-        minus = tl.where(pre_shift, shifted_m, minus)
-        dot_plus = tl.where(pre_shift, shifted_dp, dot_plus)
-        dot_minus = tl.where(pre_shift, shifted_dm, dot_minus)
+        if (event_action & 1) != 0:
+            plus, minus = _shift_real(plus, minus, state, state_mask, state_count)
+            dot_plus, dot_minus = _shift_real(
+                dot_plus, dot_minus, state, state_mask, state_count
+            )
 
         event_kind = tl.load(kind + event)
         is_rf = event_kind == 1
         is_inversion = (event_action & 4) != 0
-        invert = is_rf & is_inversion
-        dot_longitudinal = tl.where(
-            invert,
-            -atom_inversion * dot_longitudinal - dot_inversion * longitudinal,
-            dot_longitudinal,
-        )
-        longitudinal = tl.where(invert, -atom_inversion * longitudinal, longitudinal)
-
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        dot_flip = tl.load(
-            tangent_flip + event_base + event, mask=active_atom, other=0.0
-        )
-        pulse_b1 = atom_b1
-        pulse_dot_b1 = dot_b1
-        # One shim is the whole sequence's transmit field, loaded once above;
-        # several give each pulse the row of the shim it drives.
-        if shimmed:
-            shim_row = tl.load(shim_index + event).to(tl.int64) * atom_count
-            if transmit:
-                pulse_b1 = tl.load(b1 + shim_row + atom, mask=active_atom, other=1.0)
-            pulse_dot_b1 = tl.load(
-                tangent_b1 + shim_row + atom, mask=active_atom, other=0.0
+        if is_rf and is_inversion:
+            dot_longitudinal = (
+                -atom_inversion * dot_longitudinal - dot_inversion * longitudinal
             )
-        alpha = event_flip * pulse_b1
-        dot_alpha = dot_flip * pulse_b1 + event_flip * pulse_dot_b1
-        cosine = tl.cos(alpha)
-        sine = tl.sin(alpha)
-        cosine_half_sq = 0.5 * (1.0 + cosine)
-        sine_half_sq = 0.5 * (1.0 - cosine)
-        half_sine = 0.5 * sine
-        dot_cosine = -sine * dot_alpha
-        dot_sine = cosine * dot_alpha
-        dot_cosine_half_sq = -0.5 * sine * dot_alpha
-        dot_sine_half_sq = 0.5 * sine * dot_alpha
-        dot_half_sine = 0.5 * cosine * dot_alpha
+            longitudinal = -atom_inversion * longitudinal
+        elif is_rf:
+            event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+            dot_flip = tl.load(
+                tangent_flip + event_base + event, mask=active_atom, other=0.0
+            )
+            pulse_b1 = atom_b1
+            pulse_dot_b1 = dot_b1
+            # One shim is the whole sequence's transmit field, loaded once above;
+            # several give each pulse the row of the shim it drives.
+            if shimmed:
+                shim_row = tl.load(shim_index + event).to(tl.int64) * atom_count
+                if transmit:
+                    pulse_b1 = tl.load(
+                        b1 + shim_row + atom, mask=active_atom, other=1.0
+                    )
+                pulse_dot_b1 = tl.load(
+                    tangent_b1 + shim_row + atom, mask=active_atom, other=0.0
+                )
+            alpha = event_flip * pulse_b1
+            dot_alpha = dot_flip * pulse_b1 + event_flip * pulse_dot_b1
+            cosine = tl.cos(alpha)
+            sine = tl.sin(alpha)
+            cosine_half_sq = 0.5 * (1.0 + cosine)
+            sine_half_sq = 0.5 * (1.0 - cosine)
+            half_sine = 0.5 * sine
+            dot_cosine = -sine * dot_alpha
+            dot_sine = cosine * dot_alpha
+            dot_cosine_half_sq = -0.5 * sine * dot_alpha
+            dot_sine_half_sq = 0.5 * sine * dot_alpha
+            dot_half_sine = 0.5 * cosine * dot_alpha
 
-        rotated_dp = cosine_half_sq * dot_plus + dot_cosine_half_sq * plus
-        rotated_dp += sine_half_sq * dot_minus + dot_sine_half_sq * minus
-        rotated_dp -= sine * dot_longitudinal + dot_sine * longitudinal
-        rotated_dm = sine_half_sq * dot_plus + dot_sine_half_sq * plus
-        rotated_dm += cosine_half_sq * dot_minus + dot_cosine_half_sq * minus
-        rotated_dm += sine * dot_longitudinal + dot_sine * longitudinal
-        rotated_dz = half_sine * dot_plus + dot_half_sine * plus
-        rotated_dz -= half_sine * dot_minus + dot_half_sine * minus
-        rotated_dz += cosine * dot_longitudinal + dot_cosine * longitudinal
-        rotated_p = cosine_half_sq * plus + sine_half_sq * minus - sine * longitudinal
-        rotated_m = sine_half_sq * plus + cosine_half_sq * minus + sine * longitudinal
-        rotated_z = half_sine * plus - half_sine * minus + cosine * longitudinal
+            rotated_dp = cosine_half_sq * dot_plus + dot_cosine_half_sq * plus
+            rotated_dp += sine_half_sq * dot_minus + dot_sine_half_sq * minus
+            rotated_dp -= sine * dot_longitudinal + dot_sine * longitudinal
+            rotated_dm = sine_half_sq * dot_plus + dot_sine_half_sq * plus
+            rotated_dm += cosine_half_sq * dot_minus + dot_cosine_half_sq * minus
+            rotated_dm += sine * dot_longitudinal + dot_sine * longitudinal
+            rotated_dz = half_sine * dot_plus + dot_half_sine * plus
+            rotated_dz -= half_sine * dot_minus + dot_half_sine * minus
+            rotated_dz += cosine * dot_longitudinal + dot_cosine * longitudinal
+            rotated_p = (
+                cosine_half_sq * plus + sine_half_sq * minus - sine * longitudinal
+            )
+            rotated_m = (
+                sine_half_sq * plus + cosine_half_sq * minus + sine * longitudinal
+            )
+            rotated_z = half_sine * plus - half_sine * minus + cosine * longitudinal
 
-        rotate = is_rf & ~is_inversion
-        plus = tl.where(rotate, rotated_p, plus)
-        minus = tl.where(rotate, rotated_m, minus)
-        longitudinal = tl.where(rotate, rotated_z, longitudinal)
-        dot_plus = tl.where(rotate, rotated_dp, dot_plus)
-        dot_minus = tl.where(rotate, rotated_dm, dot_minus)
-        dot_longitudinal = tl.where(rotate, rotated_dz, dot_longitudinal)
+            plus = rotated_p
+            minus = rotated_m
+            longitudinal = rotated_z
+            dot_plus = rotated_dp
+            dot_minus = rotated_dm
+            dot_longitudinal = rotated_dz
 
-        record = ((event_action & 32) != 0) & (event_kind == 2)
-        out = tl.load(output_index + event)
-        output_offset = problem * output_count + out
-        output_mask = active_atom & (state == 0) & record & (out >= 0)
-        signal_imag = dot_m0 * plus + atom_m0 * dot_plus
-        tl.store(output_real + output_offset + state, empty, mask=output_mask)
-        tl.store(output_imag + output_offset + state, signal_imag, mask=output_mask)
+        if ((event_action & 32) != 0) and event_kind == 2:
+            out = tl.load(output_index + event)
+            output_offset = problem * output_count + out
+            output_mask = active_atom & (state == 0) & (out >= 0)
+            signal_imag = dot_m0 * plus + atom_m0 * dot_plus
+            tl.store(output_real + output_offset + state, empty, mask=output_mask)
+            tl.store(output_imag + output_offset + state, signal_imag, mask=output_mask)
 
-        do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
-        shifted_p, shifted_m = _shift_real(
-            plus, minus, scratch_p, scratch_m, state, state_mask, state_count
-        )
-        shifted_dp, shifted_dm = _shift_real(
-            dot_plus, dot_minus, scratch_p, scratch_m, state, state_mask, state_count
-        )
-        plus = tl.where(do_shift, shifted_p, plus)
-        minus = tl.where(do_shift, shifted_m, minus)
-        dot_plus = tl.where(do_shift, shifted_dp, dot_plus)
-        dot_minus = tl.where(do_shift, shifted_dm, dot_minus)
-        spoil = (event_action & 8) != 0
-        plus = tl.where(spoil, 0.0, plus)
-        minus = tl.where(spoil, 0.0, minus)
-        dot_plus = tl.where(spoil, 0.0, dot_plus)
-        dot_minus = tl.where(spoil, 0.0, dot_minus)
+        if ((event_action & 2) != 0) or ((event_action & 16) != 0):
+            plus, minus = _shift_real(plus, minus, state, state_mask, state_count)
+            dot_plus, dot_minus = _shift_real(
+                dot_plus, dot_minus, state, state_mask, state_count
+            )
+        if (event_action & 8) != 0:
+            plus = empty
+            minus = empty
+            dot_plus = empty
+            dot_minus = empty
 
 
 @triton.jit
@@ -14915,10 +14527,6 @@ def _epg_kernel(
     pool_table,
     output_real,
     output_imag,
-    scratch_fplus_real,
-    scratch_fplus_imag,
-    scratch_fminus_real,
-    scratch_fminus_imag,
     atom_count,
     train_count,
     event_count,
@@ -14949,8 +14557,8 @@ def _epg_kernel(
     problem = tl.program_id(0) * problems + tl.arange(0, problems)[:, None]
     state = tl.arange(0, block_states)[None, :]
     active_atom = problem < train_count * atom_count
-    # A partial block carries lanes with no problem behind them; they must not
-    # touch the scratch rows, which only exist for real problems.
+    # A partial block carries lanes with no problem behind them, and they must
+    # take no part in a reduction or a store.
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
@@ -14958,11 +14566,6 @@ def _epg_kernel(
     # the slice is its index modulo the profile's width. One pulse shape holds
     # that many consecutive rows, and the event says which shape it drives.
     location = atom % locations
-    workspace_offset = problem * state_count
-    scratch_pr = scratch_fplus_real + workspace_offset
-    scratch_pi = scratch_fplus_imag + workspace_offset
-    scratch_mr = scratch_fminus_real + workspace_offset
-    scratch_mi = scratch_fminus_imag + workspace_offset
 
     empty = tl.zeros((problems, block_states), tl.float32)
     fplus_real = empty
@@ -15293,10 +14896,6 @@ def _epg_kernel(
             fplus_imag,
             fminus_real,
             fminus_imag,
-            scratch_pr,
-            scratch_pi,
-            scratch_mr,
-            scratch_mi,
             state,
             state_mask,
             state_count,
@@ -15311,10 +14910,6 @@ def _epg_kernel(
                 bplus_imag,
                 bminus_real,
                 bminus_imag,
-                scratch_pr,
-                scratch_pi,
-                scratch_mr,
-                scratch_mi,
                 state,
                 state_mask,
                 state_count,
@@ -15542,10 +15137,6 @@ def _epg_kernel(
             fplus_imag,
             fminus_real,
             fminus_imag,
-            scratch_pr,
-            scratch_pi,
-            scratch_mr,
-            scratch_mi,
             state,
             state_mask,
             state_count,
@@ -15565,10 +15156,6 @@ def _epg_kernel(
                 bplus_imag,
                 bminus_real,
                 bminus_imag,
-                scratch_pr,
-                scratch_pi,
-                scratch_mr,
-                scratch_mi,
                 state,
                 state_mask,
                 state_count,
@@ -15748,10 +15335,6 @@ def _epg_jvp_kernel(
     pool_table,
     output_real,
     output_imag,
-    scratch_fplus_real,
-    scratch_fplus_imag,
-    scratch_fminus_real,
-    scratch_fminus_imag,
     atom_count,
     train_count,
     event_count,
@@ -15782,8 +15365,8 @@ def _epg_jvp_kernel(
     problem = tl.program_id(0) * problems + tl.arange(0, problems)[:, None]
     state = tl.arange(0, block_states)[None, :]
     active_atom = problem < train_count * atom_count
-    # A partial block carries lanes with no problem behind them; they must not
-    # touch the scratch rows, which only exist for real problems.
+    # A partial block carries lanes with no problem behind them, and they must
+    # take no part in a reduction or a store.
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
     train = problem // atom_count
@@ -15791,11 +15374,6 @@ def _epg_jvp_kernel(
     # the slice is its index modulo the profile's width. One pulse shape holds
     # that many consecutive rows, and the event says which shape it drives.
     location = atom % locations
-    workspace_offset = problem * state_count
-    scratch_pr = scratch_fplus_real + workspace_offset
-    scratch_pi = scratch_fplus_imag + workspace_offset
-    scratch_mr = scratch_fminus_real + workspace_offset
-    scratch_mi = scratch_fminus_imag + workspace_offset
 
     empty = tl.zeros((problems, block_states), tl.float32)
     fpr = empty
@@ -16561,30 +16139,10 @@ def _epg_jvp_kernel(
         event_action = tl.load(action + event).to(tl.int32)
         pre_shift = (event_action & 1) != 0
         shifted_pr, shifted_pi, shifted_mr, shifted_mi = _shift(
-            fpr,
-            fpi,
-            fmr,
-            fmi,
-            scratch_pr,
-            scratch_pi,
-            scratch_mr,
-            scratch_mi,
-            state,
-            state_mask,
-            state_count,
+            fpr, fpi, fmr, fmi, state, state_mask, state_count
         )
         shifted_dpr, shifted_dpi, shifted_dmr, shifted_dmi = _shift(
-            dfpr,
-            dfpi,
-            dfmr,
-            dfmi,
-            scratch_pr,
-            scratch_pi,
-            scratch_mr,
-            scratch_mi,
-            state,
-            state_mask,
-            state_count,
+            dfpr, dfpi, dfmr, dfmi, state, state_mask, state_count
         )
         fpr = tl.where(pre_shift, shifted_pr, fpr)
         fpi = tl.where(pre_shift, shifted_pi, fpi)
@@ -16596,30 +16154,10 @@ def _epg_jvp_kernel(
         dfmi = tl.where(pre_shift, shifted_dmi, dfmi)
         if pools == 2 or pools == 3:
             s_bpr, s_bpi, s_bmr, s_bmi = _shift(
-                bpr,
-                bpi,
-                bmr,
-                bmi,
-                scratch_pr,
-                scratch_pi,
-                scratch_mr,
-                scratch_mi,
-                state,
-                state_mask,
-                state_count,
+                bpr, bpi, bmr, bmi, state, state_mask, state_count
             )
             s_dbpr, s_dbpi, s_dbmr, s_dbmi = _shift(
-                dbpr,
-                dbpi,
-                dbmr,
-                dbmi,
-                scratch_pr,
-                scratch_pi,
-                scratch_mr,
-                scratch_mi,
-                state,
-                state_mask,
-                state_count,
+                dbpr, dbpi, dbmr, dbmi, state, state_mask, state_count
             )
             bpr = tl.where(pre_shift, s_bpr, bpr)
             bpi = tl.where(pre_shift, s_bpi, bpi)
@@ -17001,30 +16539,10 @@ def _epg_jvp_kernel(
 
         do_shift = ((event_action & 2) != 0) | ((event_action & 16) != 0)
         shifted_pr, shifted_pi, shifted_mr, shifted_mi = _shift(
-            fpr,
-            fpi,
-            fmr,
-            fmi,
-            scratch_pr,
-            scratch_pi,
-            scratch_mr,
-            scratch_mi,
-            state,
-            state_mask,
-            state_count,
+            fpr, fpi, fmr, fmi, state, state_mask, state_count
         )
         shifted_dpr, shifted_dpi, shifted_dmr, shifted_dmi = _shift(
-            dfpr,
-            dfpi,
-            dfmr,
-            dfmi,
-            scratch_pr,
-            scratch_pi,
-            scratch_mr,
-            scratch_mi,
-            state,
-            state_mask,
-            state_count,
+            dfpr, dfpi, dfmr, dfmi, state, state_mask, state_count
         )
         fpr = tl.where(do_shift, shifted_pr, fpr)
         fpi = tl.where(do_shift, shifted_pi, fpi)
@@ -17045,30 +16563,10 @@ def _epg_jvp_kernel(
         dfmi = tl.where(spoil, 0.0, dfmi)
         if pools == 2 or pools == 3:
             s_bpr, s_bpi, s_bmr, s_bmi = _shift(
-                bpr,
-                bpi,
-                bmr,
-                bmi,
-                scratch_pr,
-                scratch_pi,
-                scratch_mr,
-                scratch_mi,
-                state,
-                state_mask,
-                state_count,
+                bpr, bpi, bmr, bmi, state, state_mask, state_count
             )
             s_dbpr, s_dbpi, s_dbmr, s_dbmi = _shift(
-                dbpr,
-                dbpi,
-                dbmr,
-                dbmi,
-                scratch_pr,
-                scratch_pi,
-                scratch_mr,
-                scratch_mi,
-                state,
-                state_mask,
-                state_count,
+                dbpr, dbpi, dbmr, dbmi, state, state_mask, state_count
             )
             bpr = tl.where(spoil, 0.0, tl.where(do_shift, s_bpr, bpr))
             bpi = tl.where(spoil, 0.0, tl.where(do_shift, s_bpi, bpi))
@@ -17323,19 +16821,30 @@ def _three_pool_table(
     return table
 
 
-def _problems_per_program(total: int, block_states: int) -> int:
+# Elements of the state tile one program carries. Four to a lane keeps enough
+# independent arithmetic in flight to cover the latency of the chain the event
+# loop is, and a wider tile spends registers without buying more of it; both
+# halves of that were measured over 8 to 64 configuration orders.
+_TILE_ELEMENTS = 64
+
+
+def _problems_per_program(block_states: int) -> int:
     """How many independent problems to carry on one program's lane axis.
 
     A warp's lanes cost about the same whether they are used or not, so packing
-    several problems into one program is close to free -- but only while enough
-    programs remain to fill the device. Below that the packing starves the GPU
-    of parallelism and costs more than the lanes save.
+    several problems into one program is close to free.
+
+    It depends on the state count alone, and deliberately not on how many
+    problems the launch has. A run cut into chunks would otherwise compile a
+    different tile from the same run whole, and the two tiles reassociate their
+    arithmetic differently -- so a streamed volume would answer a little
+    differently from an unstreamed one, which is a difference a caller has no
+    way to account for. ``tests/sequence/test_both_pools.py`` pins that.
 
     The result indexes a ``tl.arange``, so it must be a power of two.
     """
-    widest = max(1, 64 // block_states)
-    packed = max(1, min(widest, total // 1024))
-    return 1 << (packed.bit_length() - 1)
+    widest = max(1, _TILE_ELEMENTS // block_states)
+    return 1 << (widest.bit_length() - 1)
 
 
 def _output_shape(
@@ -17345,20 +16854,6 @@ def _output_shape(
     if train_count == 1:
         return (atom_count, output_count)
     return (train_count, atom_count, output_count)
-
-
-def _scratch(
-    count: int, problems: int, device: torch.device, state_count: int
-) -> list[torch.Tensor]:
-    """Per-problem staging rows for the shift, one set per state plane.
-
-    The shift moves data between lanes of the state axis, which registers
-    cannot do, so it goes out to memory and back.
-    """
-    return [
-        torch.empty((problems, state_count), dtype=torch.float32, device=device)
-        for _ in range(count)
-    ]
 
 
 def _only_scalars(flags: dict) -> dict:
@@ -17405,7 +16900,6 @@ def simulate(
         events,
         output_real,
         output_imag,
-        None,
         state_count=state_count,
         output_count=output_count,
         real_axis=real_axis,
@@ -17425,7 +16919,6 @@ def simulate_into(
     events: tuple[torch.Tensor, ...],
     output_real: torch.Tensor,
     output_imag: torch.Tensor,
-    scratch: list[torch.Tensor] | None,
     *,
     state_count: int,
     output_count: int,
@@ -17446,7 +16939,6 @@ def simulate_into(
 
     ``atom_count`` is given rather than taken from ``tissue`` because a chunk's
     buffers are sized for the largest chunk and the last one is shorter.
-    Passing ``None`` for ``scratch`` allocates it for this call alone.
     """
     (
         t1,
@@ -17483,11 +16975,8 @@ def simulate_into(
     pools = _pool_flag(lineshape, exchanging)
     block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
-    problems = _problems_per_program(total, block_states)
+    problems = _problems_per_program(block_states)
     grid = (triton.cdiv(total, problems),)
-    planes = 2 if real_axis == 1 else 4
-    if scratch is None:
-        scratch = _scratch(planes, total, t1.device, state_count)
     # A kernel argument has to be a tensor even where the branch reading it is
     # compiled out, so an unprofiled launch passes one it already has.
     table = None if profile is None else profile.packed(t1.device)
@@ -17520,7 +17009,6 @@ def simulate_into(
             shim_index,
             output_real,
             output_imag,
-            *scratch,
             atom_count,
             train_count,
             kind.numel(),
@@ -17570,7 +17058,6 @@ def simulate_into(
         t1 if pool_table is None else pool_table,
         output_real,
         output_imag,
-        *scratch,
         atom_count,
         train_count,
         kind.numel(),
@@ -17634,7 +17121,6 @@ def simulate_jvp(
         event_tangents,
         output_real,
         output_imag,
-        None,
         state_count=state_count,
         output_count=output_count,
         real_axis=real_axis,
@@ -17657,7 +17143,6 @@ def simulate_jvp_into(
     event_tangents: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     output_real: torch.Tensor,
     output_imag: torch.Tensor,
-    scratch: list[torch.Tensor] | None,
     *,
     state_count: int,
     output_count: int,
@@ -17711,10 +17196,8 @@ def simulate_jvp_into(
     shims = _shim_count(tissue)
     block_states = triton.next_power_of_2(state_count)
     total = train_count * atom_count
-    problems = _problems_per_program(total, block_states)
+    problems = _problems_per_program(block_states)
     grid = (triton.cdiv(total, problems),)
-    if scratch is None:
-        scratch = _scratch(2 if real_axis == 1 else 4, total, t1.device, state_count)
 
     if real_axis == 1:
         _epg_real_jvp_kernel[grid](
@@ -17740,7 +17223,6 @@ def simulate_jvp_into(
             tangent_flip,
             output_real,
             output_imag,
-            *scratch,
             atom_count,
             train_count,
             kind.numel(),
@@ -17795,7 +17277,6 @@ def simulate_jvp_into(
         t1 if pool_table is None else pool_table,
         output_real,
         output_imag,
-        *scratch,
         atom_count,
         train_count,
         kind.numel(),
@@ -17949,9 +17430,8 @@ def simulate_vjp(
         )
         for _ in range(2)
     ]
-    scratch = _scratch(4, wave, device, state_count)
 
-    problems = _problems_per_program(wave, block_states)
+    problems = _problems_per_program(block_states)
     for base in range(0, total, wave):
         span = min(wave, total - base)
         if pool_bars is not None:
@@ -18002,7 +17482,6 @@ def simulate_vjp(
             grad_phase,
             grad_duration,
             *trajectory,
-            *scratch,
             base,
             base + span,
             atom_count,
@@ -18093,9 +17572,8 @@ def simulate_real_vjp(
     trajectory = torch.empty(
         (wave, event_count * 3 * state_count), dtype=torch.float32, device=device
     )
-    scratch_p, scratch_m = _scratch(2, wave, device, state_count)
 
-    problems = _problems_per_program(wave, block_states)
+    problems = _problems_per_program(block_states)
     for base in range(0, total, wave):
         span = min(wave, total - base)
         _epg_real_vjp_kernel[(triton.cdiv(span, problems),)](
@@ -18116,8 +17594,6 @@ def simulate_real_vjp(
             grad_flip,
             grad_duration,
             trajectory,
-            scratch_p,
-            scratch_m,
             base,
             base + span,
             atom_count,
@@ -18220,7 +17696,6 @@ class AdjointBuffers:
             )
             for _ in range(self.planes)
         ]
-        self.scratch = _scratch(self.planes, self.wave, device, state_count)
 
     def tissue_gradients(self, atom_count: int) -> tuple[tuple[torch.Tensor, ...], ...]:
         """The per-voxel gradients of the last pass, one entry per parameter.
@@ -18309,9 +17784,6 @@ class GradientBuffers:
             )
             for _ in range(self.planes)
         ]
-        self.scratch = _scratch(
-            2 if real_axis == 1 else 4, self.wave, device, state_count
-        )
 
     def tissue_gradients(self, atom_count: int) -> tuple[torch.Tensor, ...]:
         """The per-voxel gradients of the last pass, one entry per parameter."""
@@ -18387,7 +17859,7 @@ def simulate_vjp_into(
     grad_real.copy_(grad_output.real.reshape(-1))
     grad_imag.copy_(grad_output.imag.reshape(-1))
 
-    problems = _problems_per_program(buffers.wave, block_states)
+    problems = _problems_per_program(block_states)
     for base in range(0, total, buffers.wave):
         span = min(buffers.wave, total - base)
         _epg_vjp_kernel[(triton.cdiv(span, problems),)](
@@ -18435,7 +17907,6 @@ def simulate_vjp_into(
             buffers.phase,
             buffers.duration,
             *buffers.trajectory,
-            *buffers.scratch,
             base,
             base + span,
             atom_count,
@@ -18498,7 +17969,7 @@ def simulate_real_vjp_into(
     grad_imag = buffers.cotangent[1][:size]
     grad_imag.copy_(grad_output.resolve_conj().imag.reshape(-1))
 
-    problems = _problems_per_program(buffers.wave, block_states)
+    problems = _problems_per_program(block_states)
     for base in range(0, total, buffers.wave):
         span = min(buffers.wave, total - base)
         _epg_real_vjp_kernel[(triton.cdiv(span, problems),)](
@@ -18519,7 +17990,6 @@ def simulate_real_vjp_into(
             buffers.flip,
             buffers.duration,
             buffers.trajectory[0],
-            *buffers.scratch,
             base,
             base + span,
             atom_count,
@@ -18617,7 +18087,7 @@ def simulate_vjp_jvp_into(
     for plane in grad_tissue:
         plane.zero_()
     grad_flip, grad_duration, grad_phase = buffers.flip, buffers.duration, buffers.phase
-    trajectory, scratch = buffers.trajectory, buffers.scratch
+    trajectory = buffers.trajectory
     table = None if profile is None else profile.packed(t1.device)
     pairs = None if dynamic is None else dynamic.packed(t1.device)
     pair_rows = (
@@ -18653,7 +18123,7 @@ def simulate_vjp_jvp_into(
             wave * row_count * 36, dtype=torch.float32, device=t1.device
         )
 
-    problems = _problems_per_program(wave, block_states)
+    problems = _problems_per_program(block_states)
     for base in range(0, total, wave):
         span = min(wave, total - base)
         if pool_bars is not None:
@@ -18693,7 +18163,6 @@ def simulate_vjp_jvp_into(
                 *grad_flip,
                 *grad_duration,
                 *trajectory,
-                *scratch,
                 base,
                 base + span,
                 atom_count,
@@ -18730,7 +18199,6 @@ def simulate_vjp_jvp_into(
                 *grad_phase,
                 *grad_duration,
                 *trajectory,
-                *scratch,
                 base,
                 base + span,
                 atom_count,
