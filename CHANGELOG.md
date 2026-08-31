@@ -51,6 +51,27 @@
 
 ### Added
 
+- **`t2_prime_ms` puts the field spread across a voxel on the signal.** A voxel
+  is not one frequency, and EPG carries no term for the spread within it: a
+  configuration order stands for the winding the gradients put on the states,
+  not for the time they took. So the spread is applied to what was recorded,
+  from the same signed unrefocused time the analytic off-resonance already
+  reads -- by its magnitude, since dephasing either side of an echo costs the
+  same, where the turn reads its sign.
+
+  A Lorentzian population of angular half-width `1 / T2'` averages to
+  `exp(-|tau| / T2')` over the voxel, so a gradient echo decays at `T2*`, a
+  spin echo is left at `T2`, and the decay grows and recovers either side of
+  every echo. It is a factor on the signal rather than a term in a kernel, so
+  it costs one multiply, both devices have it, and autograd differentiates it:
+  no kernel changed.
+
+  It asks the sequence to wind at one steady rate, which is what makes an
+  order stand for elapsed time. Where it does not -- a balanced train, or an
+  unbalanced one whose repetitions last unlike -- the spread is refused rather
+  than dropped, since there is no term in the states to fall back on and a
+  tissue silently stripped of it would read as one that has none.
+
 - **A train a half turn out is brought onto one axis and keeps the reduced
   kernels.** Turning through `-alpha` about an axis is turning through `alpha`
   about the opposite one, and demodulating a sample a half turn round negates

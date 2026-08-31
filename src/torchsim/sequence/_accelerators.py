@@ -418,28 +418,81 @@ def _order_weighted_rates(
     )
 
 
-def _analytic_turn(
+def _applies(value: torch.Tensor) -> bool:
+    """Whether this per-voxel term has anything to do to the signal.
+
+    A term left at its identity everywhere is skipped rather than multiplied
+    through, which spares an idle pass over the whole signal -- but one being
+    differentiated is applied whatever it holds, since a derivative at an
+    identity is a number like any other.
+    """
+    return bool(value.requires_grad) or bool(value.any())
+
+
+def _refuse_a_spread(r2_prime_hz: torch.Tensor) -> None:
+    """Refuse a field spread the sequence gives no unrefocused time to read.
+
+    The states carry no such term -- a configuration order stands for winding
+    and not for elapsed time -- so where the two do not grow together there is
+    nothing to fall back on, and a spread quietly dropped would read as a
+    tissue that has none.
+
+    Raises
+    ------
+        ValueError: if the tissue declares a spread and the sequence does not
+            wind at one steady rate.
+    """
+    if not _applies(r2_prime_hz):
+        return
+    raise ValueError(
+        "t2_prime_ms damps each sample by how long it has gone unrefocused, "
+        "which this sequence does not say: its dephasing order stands for the "
+        "winding the gradients put on the states and not for the time they "
+        "took, so the two have to grow together. A train that keeps its "
+        "coherences unwound across a pulse, or whose repetitions last "
+        "unlike, does not"
+    )
+
+
+def _analytic_dephasing(
     packed: _PackedEvents,
     tissue: tuple[torch.Tensor, ...],
+    r2_prime_hz: torch.Tensor | None,
     output_shape: torch.Size,
 ) -> torch.Tensor | None:
-    """What a bulk off-resonance does to each sample, or ``None`` to carry it.
+    """What the field does to each sample, or ``None`` to leave it to the states.
+
+    A bulk off-resonance turns a sample through a phase and a spread across the
+    voxel damps it, both by how long the sample has gone unrefocused: the turn
+    by the signed time, since a refocusing pulse winds it back, and the damping
+    by its magnitude, since dephasing either side of an echo costs the same.
+    They are one complex factor and are applied as one.
 
     ``None`` where the sequence does not admit the analytic form -- see
-    :func:`_windings_are_uniform` -- and where there is no off-resonance to
-    apply, which spares an idle multiply over the whole signal.
-
-    The turn is negative because the states are held in the frame the pulses
-    define, which the off-resonance runs behind.
+    :func:`_windings_are_uniform` -- and where neither term has anything to do,
+    which spares an idle multiply over the whole signal. The turn is negative
+    because the states are held in the frame the pulses define, which the
+    off-resonance runs behind.
     """
     if not bool(packed.analytic_dephasing):
         return None
     off_resonance = tissue[5]
-    if not off_resonance.requires_grad and not bool(off_resonance.any()):
+    turning = _applies(off_resonance)
+    spreading = r2_prime_hz is not None and _applies(r2_prime_hz)
+    if not turning and not spreading:
         return None
     unrefocused_s = packed.unrefocused_us.to(off_resonance.dtype) * 1e-6
+    damping = (
+        torch.exp(-r2_prime_hz.reshape(*output_shape, 1) * unrefocused_s.abs())
+        if spreading
+        else None
+    )
+    if not turning:
+        # A real factor rather than a complex one of zero argument, which is
+        # half the multiply and the same answer.
+        return damping
     angle = (-2.0 * torch.pi) * off_resonance.reshape(*output_shape, 1) * unrefocused_s
-    return torch.polar(torch.ones_like(angle), angle)
+    return torch.polar(torch.ones_like(angle) if damping is None else damping, angle)
 
 
 def _half_turns(
@@ -529,6 +582,7 @@ def simulate_native(
     lineshape: Any = None,
     exchanging: bool = False,
     features: frozenset[str] | None = None,
+    r2_prime_hz: torch.Tensor | None = None,
     transmit: torch.Tensor | None = None,
     packed: _PackedEvents | None = None,
     record_every: bool = False,
@@ -537,6 +591,10 @@ def simulate_native(
 
     ``features`` names the terms the tissue gives anything to do, and the
     kernels carry those and no others. ``None`` leaves every term in.
+
+    ``r2_prime_hz`` is the field spread across each voxel, as a rate. It
+    reaches the samples rather than the states, so it is not among the prepared
+    tissue the kernels take.
 
     ``transmit`` is the complex per-channel sensitivity, ``(voxels,
     channels)``, given when the sequence drives a pulse whose channels carry
@@ -577,12 +635,14 @@ def simulate_native(
     tissue = tuple(
         value.to(dtype=torch.float32).contiguous() for value in prepared_tissue
     )
-    turning = _analytic_turn(packed, tissue, output_shape)
-    if turning is not None:
+    if r2_prime_hz is not None and not bool(packed.analytic_dephasing):
+        _refuse_a_spread(r2_prime_hz)
+    dephasing = _analytic_dephasing(packed, tissue, r2_prime_hz, output_shape)
+    if dephasing is not None:
         # Held out of the states rather than zeroed in place: the kernels then
         # carry no off-resonance term and produce no derivative along one, and
-        # the turn applied below carries both. What reaches them is a constant,
-        # so a caller differentiating off-resonance is answered by the turn.
+        # the factor applied below carries both. What reaches them is a
+        # constant, so a caller differentiating off-resonance is answered by it.
         tissue = (*tissue[:5], torch.zeros_like(tissue[5]), *tissue[6:])
         features = None if features is None else features - {"B0"}
     tissue = _order_weighted_rates(tissue, description)
@@ -650,8 +710,8 @@ def simulate_native(
             dim=-2
         )
     signal = signal.reshape(*leading, *output_shape, packed.output_count)
-    if turning is not None:
-        signal = signal * turning
+    if dephasing is not None:
+        signal = signal * dephasing
     if samples is not None:
         signal = signal * samples
     return (

@@ -165,8 +165,8 @@ def _both_ways(description, tissue, wants_grad=False):
     for analytic in (True, False):
         patched = None
         if not analytic:
-            patched = _accelerators._analytic_turn
-            _accelerators._analytic_turn = lambda *_arguments: None
+            patched = _accelerators._analytic_dephasing
+            _accelerators._analytic_dephasing = lambda *_arguments: None
         try:
             properties = tissue()
             signal = (
@@ -188,7 +188,7 @@ def _both_ways(description, tissue, wants_grad=False):
             )
         finally:
             if patched is not None:
-                _accelerators._analytic_turn = patched
+                _accelerators._analytic_dephasing = patched
     return answers
 
 
@@ -246,12 +246,14 @@ def test_off_resonance_no_longer_keeps_a_run_off_the_real_kernels(
         assert verdicts == [("forward", 1)]
 
         verdicts.clear()
-        _accelerators._analytic_turn = (patched := _accelerators._analytic_turn)
-        _accelerators._analytic_turn = lambda *_arguments: None
+        _accelerators._analytic_dephasing = (
+            patched := _accelerators._analytic_dephasing
+        )
+        _accelerators._analytic_dephasing = lambda *_arguments: None
         try:
             EpgEngine().simulate(description, properties, nstates=STATES)
             assert verdicts == [("forward", None)]
         finally:
-            _accelerators._analytic_turn = patched
+            _accelerators._analytic_dephasing = patched
     finally:
         _accelerators._auto_real_axis = original

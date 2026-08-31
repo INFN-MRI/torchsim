@@ -74,7 +74,7 @@ from ..sequence import (
     ideal_rf_definition,
 )
 from ..sequence._array import brought, is_array, read
-from ..sequence._parameters import TISSUE_NAMES
+from ..sequence._parameters import PROPERTY_NAMES
 from ..sequence._simulation import RecordMode, target_device
 from ._binding import Packing, bind, run_key
 from ._signal import SignalModel, _moved
@@ -196,7 +196,7 @@ class SpinPhysics:
         pairs = dict(self.properties)
         unknown = {field for field in pairs.values() if field is not None}
         unknown |= set(self.fixed)
-        unknown -= set(TISSUE_NAMES)
+        unknown -= set(PROPERTY_NAMES)
         if unknown:
             raise ValueError(f"unknown tissue: {sorted(unknown)}")
         return pairs

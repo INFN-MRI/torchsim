@@ -26,6 +26,9 @@ from ._description import (
 )
 from ._lineshape import lineshape_reaching
 from ._parameters import (
+    PROPERTY_NAMES,
+    SAMPLE_NAMES,
+    TISSUE_COUNT,
     TISSUE_NAMES,
     features_of,
     wants_bound_pool,
@@ -120,6 +123,15 @@ class TissueProperties:
     other. Only the longitudinal axis sees all three, and the fractions share
     the voxel with the free water, so they cannot sum past one.
 
+    ``t2_prime_ms`` is the spread of the field *within* the voxel, where
+    ``b0_hz`` is where the voxel as a whole sits. A Lorentzian spread of that
+    half-width damps a sample by ``exp(-|tau| / T2')`` in the time ``tau`` it
+    has gone unrefocused, so it takes a gradient echo to ``T2*`` and leaves a
+    spin echo at ``T2``. It reaches the signal rather than the states: a
+    configuration order carries the winding it has been through and not the
+    time, so the sequence has to wind at one steady rate for the two to be the
+    same thing.
+
     Attributes
     ----------
     t1_ms, t2_ms : float or array-like
@@ -155,6 +167,10 @@ class TissueProperties:
         Its relaxation times, in milliseconds.
     pool_b_shift_hz : float or array-like, optional
         How far it sits off the free water, in Hz.
+    t2_prime_ms : float or array-like, optional
+        The Lorentzian field spread across the voxel, as the reciprocal of its
+        angular half-width, in milliseconds. Infinite by default, which is no
+        spread at all.
     """
 
     t1_ms: Any
@@ -174,6 +190,7 @@ class TissueProperties:
     t1_pool_b_ms: Any = 1000.0
     t2_pool_b_ms: Any = 100.0
     pool_b_shift_hz: Any = 0.0
+    t2_prime_ms: Any = float("inf")
 
 
 @dataclass(frozen=True)
@@ -368,6 +385,14 @@ class EpgEngine:
             _pool_b_shift,
         ) = prepared
         features = features_of(tissue)
+        # Prepared only where it was declared: a spread left at its identity
+        # has nothing for the signal to carry, and deciding that from what the
+        # caller passed spares a reduction over the voxels on every call.
+        samples = (
+            _prepare_samples(tissue, output_shape, target_device)
+            if "T2_PRIME" in features
+            else (None,)
+        )
         bound_pool = wants_bound_pool(tissue.bound_fraction)
         exchange_pool = wants_exchange_pool(tissue.pool_b_fraction)
         _within_one_voxel(tissue.bound_fraction, tissue.pool_b_fraction)
@@ -404,6 +429,7 @@ class EpgEngine:
             else None,
             exchanging=exchange_pool,
             features=features,
+            r2_prime_hz=samples[0],
             transmit=sensitivities,
             packed=events,
             record_every=_every,
@@ -582,7 +608,10 @@ def _prepare_tissue(
     device: torch.device | str | None,
     shims: int = 1,
 ) -> tuple[tuple[torch.Tensor, ...], torch.Size, torch.device]:
-    values = tuple(getattr(tissue, name) for name in TISSUE_NAMES)
+    # Broadcast over every property, the ones applied to the samples included:
+    # they say how many voxels there are as much as the rest do, even though
+    # the buffers handed to the kernels stop short of them.
+    values = tuple(getattr(tissue, name) for name in PROPERTY_NAMES)
     device = target_device(tissue, device)
     given = [_as_float_tensor(value, device) for value in values]
     # The transmit buffers may lead with a shim axis, which is not a voxel axis
@@ -605,7 +634,27 @@ def _prepare_tissue(
     # The relaxation times are the entries used as denominators downstream.
     for index in _RELAXATION_TIMES:
         flat[index] = flat[index].clamp_min(MINIMUM_RELAXATION_TIME_MS)
-    return tuple(flat), shape, device
+    return tuple(flat[:TISSUE_COUNT]), shape, device
+
+
+def _prepare_samples(
+    tissue: TissueProperties, shape: torch.Size, device: torch.device
+) -> tuple[torch.Tensor, ...]:
+    """The rates the sample properties reach the signal as, one per voxel.
+
+    A relaxation time reaches the signal as its reciprocal, inverted here
+    rather than at the multiply and clamped first on the same grounds as the
+    kernels' own: a time of zero is a decay too fast to see rather than an
+    infinity that meets an unrefocused time of zero and produces a NaN.
+    """
+    return tuple(
+        1000.0
+        / _as_float_tensor(getattr(tissue, name), device)
+        .clamp_min(MINIMUM_RELAXATION_TIME_MS)
+        .expand(shape)
+        .reshape(-1)
+        for name in SAMPLE_NAMES
+    )
 
 
 def _as_float_tensor(value: Any, device: torch.device) -> torch.Tensor:

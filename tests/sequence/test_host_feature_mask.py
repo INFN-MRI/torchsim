@@ -177,7 +177,7 @@ def _signal(monkeypatch, mask, extra, crusher_rad):
     # What the kernel was told to carry, and nothing else. A refocused train
     # takes its off-resonance analytically, which is a turn applied to the
     # samples after the kernel is done and would answer for the mask here.
-    monkeypatch.setattr(_accelerators, "_analytic_turn", lambda *_: None)
+    monkeypatch.setattr(_accelerators, "_analytic_dephasing", lambda *_: None)
     signal = (
         EpgEngine()
         .simulate(
