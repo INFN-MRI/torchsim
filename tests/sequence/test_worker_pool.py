@@ -11,14 +11,21 @@ Timed, because there is nothing else to look at: the arithmetic, the buffers
 and the kernel selected are identical either side of it. The comparison is a
 ratio of two measurements taken moments apart, which is what makes it readable
 on a shared machine: whatever slows one arm slows the other.
+
+Only a build that multiversions has a wide clone to leave a state behind. Where
+the kernels are compiled once -- clang, MSVC, musl, anything not x86 -- the two
+arms run the same code and the ratio measures how quiet the machine was, which
+is not a property of TorchSim.
 """
 
 from __future__ import annotations
 
 import time
 
+import pytest
 import torch
 
+import torchsim._epg_cpu as kernels
 from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed,
@@ -63,6 +70,10 @@ def _fastest(run, repeats: int = 5) -> float:
     )
 
 
+@pytest.mark.skipif(
+    not getattr(kernels, "multiversioned", 0),
+    reason="the kernels are compiled once here, so no clone leaves a state behind",
+)
 def test_a_forward_mode_pass_leaves_the_pool_as_it_found_it():
     tissue, events, outputs = _problem(ATOMS)
     forward = lambda: _run_packed(tissue, events, STATES, outputs, 4)  # noqa: E731

@@ -2954,8 +2954,7 @@ TORCHSIM_ALWAYS_INLINE void simulate_jvp_range(
     }
 }
 
-#if defined(__GNUC__) && !defined(__clang__) && TORCHSIM_HAS_IFUNC \
-    && (defined(__x86_64__) || defined(__i386__))
+#if TORCHSIM_MULTIVERSIONED
 __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #endif
 inline void shift_real(
@@ -8943,8 +8942,7 @@ TORCHSIM_ALWAYS_INLINE void simulate_vjp_jvp_range(
 // that is what the ``always_inline`` on the range kernels is for. Taking the
 // address of one still emits an out-of-line copy, which is what the two-pool
 // dispatch selects.
-#if defined(__GNUC__) && !defined(__clang__) && TORCHSIM_HAS_IFUNC \
-    && (defined(__x86_64__) || defined(__i386__))
+#if TORCHSIM_MULTIVERSIONED
 #define CLONED_KERNEL \
     __attribute__((target_clones("default", "sse4.2", "avx2", "avx512f")))
 #else
@@ -10077,5 +10075,17 @@ PyModuleDef module = {
 }  // namespace
 
 PyMODINIT_FUNC PyInit__epg_cpu() {
-    return PyModule_Create(&module);
+    PyObject* const created = PyModule_Create(&module);
+    if (created == nullptr) {
+        return nullptr;
+    }
+    // What a caller cannot see from the outside: whether this build has
+    // several instruction sets to pick a kernel from, and so whether the
+    // vector state a pool job leaves behind is a thing that exists here.
+    if (PyModule_AddIntConstant(created, "multiversioned", TORCHSIM_MULTIVERSIONED)
+        < 0) {
+        Py_DECREF(created);
+        return nullptr;
+    }
+    return created;
 }
