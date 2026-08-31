@@ -8,13 +8,15 @@ Reference: sycomore, every order kept, double precision.
      32          5.429e-03    3.10e-02
      64          2.675e-03    1.53e-02
 
+TorchSim on NVIDIA GeForce RTX 4060 Laptop GPU against its CPU kernel: max 1.006e-06, relative 5.75e-06
+
 TorchSim against epgpy, both truncated to 32 orders: max 1.614e-03, relative 9.23e-03
 
 BlochSimulators.jl against sycomore, per tissue:
-  T1 =    200 ms, T2 =     10 ms:  max 4.978e-11, NRMSE 1.939e-10
-  T1 =    600 ms, T2 =     40 ms:  max 1.693e-10, NRMSE 4.420e-10
-  T1 =   1000 ms, T2 =     80 ms:  max 6.176e-07, NRMSE 2.096e-06
-  T1 =   1500 ms, T2 =    120 ms:  max 1.067e-05, NRMSE 4.642e-05
+  T1 =    200 ms, T2 =     10 ms:  max 1.019e-07, NRMSE 4.143e-07
+  T1 =    600 ms, T2 =     40 ms:  max 9.908e-08, NRMSE 3.674e-07
+  T1 =   1000 ms, T2 =     80 ms:  max 6.371e-07, NRMSE 2.201e-06
+  T1 =   1500 ms, T2 =    120 ms:  max 1.078e-05, NRMSE 4.643e-05
   T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
   T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
 
@@ -26,26 +28,155 @@ Per tissue, at 32 orders:
   T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
   T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
 
-written to /home/user/torchsim/benchmarks/results/validation.json
+written to /home/mcencini/pulserver-project/refcode/recon/torchsim/benchmarks/results/validation.json
+MRF-FISP, 500 repetitions, TR = 10.0 ms, inversion prepared.
+Reference: sycomore, every order kept, double precision.
+
+ states   max |difference|    relative
+      4          3.517e-02    2.01e-01
+      8          1.996e-02    1.14e-01
+     16          1.205e-02    6.89e-02
+     32          5.429e-03    3.10e-02
+     64          2.675e-03    1.53e-02
+
+TorchSim on NVIDIA GeForce RTX 4060 Laptop GPU against its CPU kernel: max 1.006e-06, relative 5.75e-06
+
+TorchSim against epgpy, both truncated to 32 orders: max 1.614e-03, relative 9.23e-03
+
 KomaMRI.jl, 4 spins against sycomore, per tissue:
   T1 =   1000 ms, T2 =     80 ms:  max 5.246e-02, NRMSE 1.115e-01
   T1 =   3000 ms, T2 =    300 ms:  max 7.729e-02, NRMSE 2.021e-01
+
+Per tissue, at 32 orders:
+  T1 =    200 ms, T2 =     10 ms:  max 1.014e-06, NRMSE 1.247e-06
+  T1 =    600 ms, T2 =     40 ms:  max 4.499e-07, NRMSE 1.154e-06
+  T1 =   1000 ms, T2 =     80 ms:  max 7.328e-07, NRMSE 2.859e-06
+  T1 =   1500 ms, T2 =    120 ms:  max 1.086e-05, NRMSE 4.671e-05
+  T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
+  T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
+
+written to /home/mcencini/pulserver-project/refcode/recon/torchsim/benchmarks/results/validation.json
+MRF-FISP, 500 repetitions, TR = 10.0 ms, inversion prepared.
+Reference: sycomore, every order kept, double precision.
+
+ states   max |difference|    relative
+      4          3.517e-02    2.01e-01
+      8          1.996e-02    1.14e-01
+     16          1.205e-02    6.89e-02
+     32          5.429e-03    3.10e-02
+     64          2.675e-03    1.53e-02
+
+TorchSim on NVIDIA GeForce RTX 4060 Laptop GPU against its CPU kernel: max 1.006e-06, relative 5.75e-06
+
+TorchSim against epgpy, both truncated to 32 orders: max 1.614e-03, relative 9.23e-03
 
 KomaMRI.jl, 8 spins against sycomore, per tissue:
   T1 =   1000 ms, T2 =     80 ms:  max 3.116e-02, NRMSE 6.823e-02
   T1 =   3000 ms, T2 =    300 ms:  max 6.486e-02, NRMSE 1.739e-01
 
+Per tissue, at 32 orders:
+  T1 =    200 ms, T2 =     10 ms:  max 1.014e-06, NRMSE 1.247e-06
+  T1 =    600 ms, T2 =     40 ms:  max 4.499e-07, NRMSE 1.154e-06
+  T1 =   1000 ms, T2 =     80 ms:  max 7.328e-07, NRMSE 2.859e-06
+  T1 =   1500 ms, T2 =    120 ms:  max 1.086e-05, NRMSE 4.671e-05
+  T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
+  T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
+
+written to /home/mcencini/pulserver-project/refcode/recon/torchsim/benchmarks/results/validation.json
+MRF-FISP, 500 repetitions, TR = 10.0 ms, inversion prepared.
+Reference: sycomore, every order kept, double precision.
+
+ states   max |difference|    relative
+      4          3.517e-02    2.01e-01
+      8          1.996e-02    1.14e-01
+     16          1.205e-02    6.89e-02
+     32          5.429e-03    3.10e-02
+     64          2.675e-03    1.53e-02
+
+TorchSim on NVIDIA GeForce RTX 4060 Laptop GPU against its CPU kernel: max 1.006e-06, relative 5.75e-06
+
+TorchSim against epgpy, both truncated to 32 orders: max 1.614e-03, relative 9.23e-03
+
 KomaMRI.jl, 16 spins against sycomore, per tissue:
   T1 =   1000 ms, T2 =     80 ms:  max 1.092e-02, NRMSE 2.211e-02
   T1 =   3000 ms, T2 =    300 ms:  max 4.729e-02, NRMSE 1.415e-01
+
+Per tissue, at 32 orders:
+  T1 =    200 ms, T2 =     10 ms:  max 1.014e-06, NRMSE 1.247e-06
+  T1 =    600 ms, T2 =     40 ms:  max 4.499e-07, NRMSE 1.154e-06
+  T1 =   1000 ms, T2 =     80 ms:  max 7.328e-07, NRMSE 2.859e-06
+  T1 =   1500 ms, T2 =    120 ms:  max 1.086e-05, NRMSE 4.671e-05
+  T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
+  T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
+
+written to /home/mcencini/pulserver-project/refcode/recon/torchsim/benchmarks/results/validation.json
+MRF-FISP, 500 repetitions, TR = 10.0 ms, inversion prepared.
+Reference: sycomore, every order kept, double precision.
+
+ states   max |difference|    relative
+      4          3.517e-02    2.01e-01
+      8          1.996e-02    1.14e-01
+     16          1.205e-02    6.89e-02
+     32          5.429e-03    3.10e-02
+     64          2.675e-03    1.53e-02
+
+TorchSim on NVIDIA GeForce RTX 4060 Laptop GPU against its CPU kernel: max 1.006e-06, relative 5.75e-06
+
+TorchSim against epgpy, both truncated to 32 orders: max 1.614e-03, relative 9.23e-03
 
 KomaMRI.jl, 32 spins against sycomore, per tissue:
   T1 =   1000 ms, T2 =     80 ms:  max 1.225e-03, NRMSE 2.068e-03
   T1 =   3000 ms, T2 =    300 ms:  max 2.288e-02, NRMSE 5.362e-02
 
+Per tissue, at 32 orders:
+  T1 =    200 ms, T2 =     10 ms:  max 1.014e-06, NRMSE 1.247e-06
+  T1 =    600 ms, T2 =     40 ms:  max 4.499e-07, NRMSE 1.154e-06
+  T1 =   1000 ms, T2 =     80 ms:  max 7.328e-07, NRMSE 2.859e-06
+  T1 =   1500 ms, T2 =    120 ms:  max 1.086e-05, NRMSE 4.671e-05
+  T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
+  T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
+
+written to /home/mcencini/pulserver-project/refcode/recon/torchsim/benchmarks/results/validation.json
+MRF-FISP, 500 repetitions, TR = 10.0 ms, inversion prepared.
+Reference: sycomore, every order kept, double precision.
+
+ states   max |difference|    relative
+      4          3.517e-02    2.01e-01
+      8          1.996e-02    1.14e-01
+     16          1.205e-02    6.89e-02
+     32          5.429e-03    3.10e-02
+     64          2.675e-03    1.53e-02
+
+TorchSim on NVIDIA GeForce RTX 4060 Laptop GPU against its CPU kernel: max 1.006e-06, relative 5.75e-06
+
+TorchSim against epgpy, both truncated to 32 orders: max 1.614e-03, relative 9.23e-03
+
 KomaMRI.jl, 64 spins against sycomore, per tissue:
   T1 =   1000 ms, T2 =     80 ms:  max 1.511e-05, NRMSE 1.352e-04
   T1 =   3000 ms, T2 =    300 ms:  max 4.270e-03, NRMSE 1.217e-02
+
+Per tissue, at 32 orders:
+  T1 =    200 ms, T2 =     10 ms:  max 1.014e-06, NRMSE 1.247e-06
+  T1 =    600 ms, T2 =     40 ms:  max 4.499e-07, NRMSE 1.154e-06
+  T1 =   1000 ms, T2 =     80 ms:  max 7.328e-07, NRMSE 2.859e-06
+  T1 =   1500 ms, T2 =    120 ms:  max 1.086e-05, NRMSE 4.671e-05
+  T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
+  T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
+
+written to /home/mcencini/pulserver-project/refcode/recon/torchsim/benchmarks/results/validation.json
+MRF-FISP, 500 repetitions, TR = 10.0 ms, inversion prepared.
+Reference: sycomore, every order kept, double precision.
+
+ states   max |difference|    relative
+      4          3.517e-02    2.01e-01
+      8          1.996e-02    1.14e-01
+     16          1.205e-02    6.89e-02
+     32          5.429e-03    3.10e-02
+     64          2.675e-03    1.53e-02
+
+TorchSim on NVIDIA GeForce RTX 4060 Laptop GPU against its CPU kernel: max 1.006e-06, relative 5.75e-06
+
+TorchSim against epgpy, both truncated to 32 orders: max 1.614e-03, relative 9.23e-03
 
 KomaMRI.jl, 128 spins against sycomore, per tissue:
   T1 =   1000 ms, T2 =     80 ms:  max 1.509e-05, NRMSE 1.321e-04
@@ -59,4 +190,4 @@ Per tissue, at 32 orders:
   T1 =   3000 ms, T2 =    300 ms:  max 3.916e-04, NRMSE 2.288e-03
   T1 =   4000 ms, T2 =   2000 ms:  max 5.429e-03, NRMSE 3.221e-02
 
-written to /home/user/torchsim/benchmarks/results/validation.json
+written to /home/mcencini/pulserver-project/refcode/recon/torchsim/benchmarks/results/validation.json

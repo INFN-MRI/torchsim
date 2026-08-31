@@ -26,20 +26,61 @@ end
 peak_rss_mib() = Sys.maxrss() / 2^20
 
 """
-Run `f` once to warm up -- which in Julia is where the compilation goes -- then
-`repeats` times, timing each. Returns `(setup_seconds, seconds, result)`.
+Device memory CUDA.jl's pool holds, in MiB.
+
+The pool keeps what it has taken from the driver rather than handing it back,
+so reading it once the timed runs are over gives the high-water mark of what
+they asked for. It is the same quantity `torch.cuda.max_memory_reserved`
+reports, and neither counts the driver context that sits underneath it.
 """
-function timed(f; repeats::Int)
+peak_device_mib() = CUDA.cached_memory() / 2^20
+
+const WARMUP_SECONDS = 2.0
+
+"""
+Warm up for `warmup` seconds, then run `f` `repeats` times, timing each.
+Returns `(setup_seconds, seconds, result)`, where the setup is the first call --
+which in Julia is where the compilation goes.
+
+The warm-up is a budget rather than a count because what has to be warm differs
+by orders of magnitude. A card idles at a low clock and takes the better part of
+a second of continuous work to reach its boost one, so a kernel of a few
+milliseconds measured over three runs reports the ramp and not the kernel. A
+pass that already takes tens of seconds is warm after one.
+
+`synchronize` is called after every run before the clock is read, which is what
+makes a timing on a card the time the card took rather than the time the launch
+took.
+"""
+function timed(f; repeats::Int, synchronize = () -> nothing, warmup = WARMUP_SECONDS)
     start = time_ns()
     result = f()
+    synchronize()
     setup = (time_ns() - start) / 1e9
+    deadline = time_ns() + warmup * 1e9
+    while time_ns() < deadline
+        result = f()
+        synchronize()
+    end
     seconds = Float64[]
     for _ in 1:repeats
         start = time_ns()
         result = f()
+        synchronize()
         push!(seconds, (time_ns() - start) / 1e9)
     end
     return setup, seconds, result
+end
+
+"""
+The device named on a command line, before it is parsed.
+
+A script decides whether to load CUDA.jl at all from this, which has to happen
+at the top level and so before `arguments` has been called.
+"""
+function device_asked_for(argv::AbstractVector{<:AbstractString})
+    index = findfirst(==("--device"), argv)
+    return index === nothing || index == length(argv) ? "cpu" : argv[index+1]
 end
 
 "The command line every backend script takes, as a dictionary of strings."

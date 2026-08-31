@@ -6,6 +6,10 @@ at a time from Python, and an operator-per-event NumPy library -- should agree
 to the precision the coarsest of them carries. This says by how much they do,
 over a tissue grid, and shows what truncating the configuration orders costs.
 
+Where there is a card, TorchSim's two kernels are held against each other as
+well: they are separate implementations of one recursion, and a run placed on a
+card has to answer what the same run on the CPU answers.
+
 Run as ``python benchmarks/validate.py``. Epgpy is optional; the comparison
 against sycomore runs without it.
 """
@@ -64,22 +68,32 @@ def epgpy_signal(
 
 
 def torchsim_signal(
-    T1: np.ndarray, T2: np.ndarray, flip: np.ndarray, TR: float, states: int
+    T1: np.ndarray,
+    T2: np.ndarray,
+    flip: np.ndarray,
+    TR: float,
+    states: int,
+    device: str = "cpu",
 ) -> np.ndarray:
     """The same train on the fused state machine, at a given order count."""
     import torch
 
     from torchsim.simulators import MRFSimulator
 
+    where = torch.device(device)
     sequence = MRFSimulator(
-        flip=torch.tensor(flip, dtype=torch.float32), TR=TR, states=states
+        flip=torch.tensor(flip, dtype=torch.float32, device=where),
+        TR=TR,
+        states=states,
     )
+    if where.type != "cpu":
+        sequence = sequence.to(where)
     signal = sequence.simulate(
-        T1=torch.tensor(T1, dtype=torch.float32),
-        T2=torch.tensor(T2, dtype=torch.float32),
+        T1=torch.tensor(T1, dtype=torch.float32, device=where),
+        T2=torch.tensor(T2, dtype=torch.float32, device=where),
         inv_efficiency=1.0,
     )
-    return signal.numpy()
+    return signal.cpu().numpy()
 
 
 def julia_signal(path: str) -> np.ndarray | None:
@@ -147,6 +161,26 @@ def main() -> None:
             f"{difference.max() / np.abs(reference).max():10.2e}"
         )
         record["truncation"][str(states)] = float(difference.max())
+
+    import torch
+
+    if torch.cuda.is_available():
+        # The two kernels are separate implementations of the same recursion,
+        # so this is a comparison of the C++ one against the Triton one rather
+        # than a check that a tensor made the trip.
+        on_cpu = torchsim_signal(T1, T2, flip, TR, arguments.states)
+        on_card = torchsim_signal(T1, T2, flip, TR, arguments.states, device="cuda")
+        difference = np.abs(on_cpu - on_card)
+        print(
+            f"\nTorchSim on {torch.cuda.get_device_name(0)} against its CPU kernel: "
+            f"max {difference.max():.3e}, "
+            f"relative {difference.max() / np.abs(on_cpu).max():.2e}"
+        )
+        record["cuda"] = {
+            "device": torch.cuda.get_device_name(0),
+            "max": float(difference.max()),
+            "relative": float(difference.max() / np.abs(on_cpu).max()),
+        }
 
     try:
         other = epgpy_signal(T1, T2, flip, TR, arguments.states)

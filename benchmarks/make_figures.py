@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
@@ -99,16 +100,25 @@ def curves(
 
 
 def label_of(record: dict) -> str:
-    """The backend a record belongs to, threads included where they differ."""
+    """The backend a record belongs to, and the device it ran on."""
     name = record["backend"]
-    if name == "torchsim" and record["threads"] == 1:
-        return "torchsim"
-    return name
+    return f"{name}, GPU" if record.get("device", "cpu") != "cpu" else name
+
+
+def base_of(label: str) -> str:
+    """The backend a label names, whichever device it carries."""
+    return label.removesuffix(", GPU")
 
 
 def ordered(series: dict[str, list]) -> list[str]:
-    """Backends in the fixed colour order, unknown ones last."""
-    return sorted(series, key=lambda name: ORDER.index(name) if name in ORDER else 99)
+    """Backends in the fixed colour order, unknown ones last, CPU before GPU."""
+    return sorted(
+        series,
+        key=lambda name: (
+            ORDER.index(base_of(name)) if base_of(name) in ORDER else 99,
+            name != base_of(name),
+        ),
+    )
 
 
 def label_lines(
@@ -116,19 +126,24 @@ def label_lines(
 ) -> None:
     """Write a name beside the end of each line, pushed apart where they collide.
 
-    ``gap`` is the smallest vertical separation two labels may have, in the
-    axis's own units, which is what keeps the two slower packages legible
-    where their curves nearly meet.
+    ``gap`` is the smallest vertical separation two labels may have, in decades
+    where the axis is logarithmic and in its own units where it is not. Seven
+    curves over six decades put several ends within a few pixels of each other,
+    and a label that lands on top of another names neither.
     """
+    logarithmic = axes.get_yscale() == "log"
+    into = math.log10 if logarithmic else (lambda value: value)
+    out_of = (lambda value: 10.0**value) if logarithmic else (lambda value: value)
+
     ends = sorted(ends, key=lambda end: end[2])
     placed: list[float] = []
     for _, _, y in ends:
-        wanted = y if not placed else max(y, placed[-1] + gap)
-        placed.append(wanted)
+        wanted = into(y)
+        placed.append(wanted if not placed else max(wanted, placed[-1] + gap))
     for (name, x, _), at in zip(ends, placed, strict=True):
         axes.annotate(
             name,
-            xy=(x, at),
+            xy=(x, out_of(at)),
             xytext=(8, 0),
             textcoords="offset points",
             fontsize=9,
@@ -143,6 +158,22 @@ def spread(axes: plt.Axes, sizes: list[int]) -> None:
     axes.set_xlim(min(sizes) / 2.5, max(sizes) * 6)
 
 
+def draw(axes: plt.Axes, name: str, points: list[tuple[int, float]]) -> None:
+    """One backend's line: its own colour, dashed where it ran on a card."""
+    axes.plot(
+        [point[0] for point in points],
+        [point[1] for point in points],
+        color=COLORS.get(base_of(name), INK_2),
+        linewidth=2,
+        linestyle="--" if name != base_of(name) else "-",
+        marker="s" if name != base_of(name) else "o",
+        markersize=5,
+        markeredgecolor="white",
+        markeredgewidth=1.2,
+        label=name,
+    )
+
+
 def throughput(records: list[dict], suffix: str) -> None:
     """Tissues a second against dictionary size, one line per backend."""
     threaded = [
@@ -154,22 +185,9 @@ def throughput(records: list[dict], suffix: str) -> None:
     ends, sizes = [], []
     for name in ordered(series):
         points = series[name]
-        x = [p[0] for p in points]
-        y = [p[1] for p in points]
-        sizes += x
-        color = COLORS.get(name, INK_2)
-        axes.plot(
-            x,
-            y,
-            color=color,
-            linewidth=2,
-            marker="o",
-            markersize=5,
-            markeredgecolor="white",
-            markeredgewidth=1.2,
-            label=name,
-        )
-        ends.append((name, x[-1], y[-1]))
+        sizes += [point[0] for point in points]
+        draw(axes, name, points)
+        ends.append((name, points[-1][0], points[-1][1]))
     axes.set_xscale("log")
     # Four orders of magnitude between the fastest and the slowest package, so
     # a linear axis would show one line and four flat ones.
@@ -178,51 +196,66 @@ def throughput(records: list[dict], suffix: str) -> None:
     axes.set_ylabel("tissues per second")
     axes.set_title("Dictionary throughput", fontsize=12, loc="left", pad=12)
     spread(axes, sizes)
-    for name, x, y in ends:
-        axes.annotate(
-            name,
-            xy=(x, y),
-            xytext=(8, 0),
-            textcoords="offset points",
-            fontsize=9,
-            color=INK_2,
-            va="center",
-            annotation_clip=False,
-        )
+    label_lines(axes, ends, gap=0.32)
     figure.tight_layout()
     figure.savefig(FIGURES / f"throughput.{suffix}", bbox_inches="tight")
     plt.close(figure)
 
 
 def derivatives(records: list[dict], suffix: str) -> None:
-    """A Jacobian as a multiple of the same backend's forward pass."""
+    """A Jacobian as a multiple of the same backend's forward pass.
+
+    One bar per backend, device and set of properties, taken at the largest
+    dictionary that backend was asked for. The ratio is what the figure is
+    about, and it barely moves with the size once a run is big enough to be
+    bound by its arithmetic.
+    """
     forward = {
         (label_of(r), r["atoms"]): r["best"] for r in records if r["mode"] == "forward"
     }
-    bars: list[tuple[str, str, float]] = []
+    widest: dict[tuple[str, str], tuple[int, float]] = {}
     for record in records:
-        if not record["mode"].startswith("jacobian"):
+        if not record["mode"].startswith("jacobian") or record["atoms"] < 1000:
             continue
         base = forward.get((label_of(record), record["atoms"]))
-        if base is None or record["atoms"] < 1000:
+        if base is None:
             continue
         properties = "T1" if record["mode"].endswith("(T1)") else "T1, T2"
-        bars.append((label_of(record), properties, record["best"] / base))
-    if not bars:
+        key = (label_of(record), properties)
+        if key not in widest or record["atoms"] > widest[key][0]:
+            widest[key] = (record["atoms"], record["best"] / base)
+    if not widest:
         return
-    bars.sort(key=lambda b: (ORDER.index(b[0]) if b[0] in ORDER else 99, b[1]))
+    bars = sorted(
+        (
+            (name, properties, size, ratio)
+            for (name, properties), (size, ratio) in widest.items()
+        ),
+        key=lambda bar: (
+            ORDER.index(base_of(bar[0])) if base_of(bar[0]) in ORDER else 99,
+            bar[0] != base_of(bar[0]),
+            bar[1],
+        ),
+    )
 
-    figure, axes = plt.subplots(figsize=(6.4, 3.6), dpi=200)
+    figure, axes = plt.subplots(figsize=(6.4, 0.52 * len(bars) + 1.4), dpi=200)
     style(axes)
     axes.grid(axis="y", visible=False)
     axes.grid(axis="x", color=RULE, linewidth=0.8)
-    labels = [f"{name}\n{properties}" for name, properties, _ in bars]
-    values = [ratio for _, _, ratio in bars]
-    colors = [COLORS.get(name, INK_2) for name, _, _ in bars]
+    labels = [
+        f"{name}\n{properties}, {size:,} tissues" for name, properties, size, _ in bars
+    ]
+    values = [ratio for *_, ratio in bars]
+    colors = [COLORS.get(base_of(name), INK_2) for name, *_ in bars]
     axes.barh(labels[::-1], values[::-1], color=colors[::-1], height=0.55)
     for index, value in enumerate(values[::-1]):
         axes.text(
-            value + 0.15, index, f"{value:.1f}x", va="center", fontsize=9, color=INK_2
+            value + 0.06 * max(values),
+            index,
+            f"{value:.1f}x",
+            va="center",
+            fontsize=9,
+            color=INK_2,
         )
     axes.set_xlabel("cost, as a multiple of the same package's forward pass")
     axes.set_title("What a Jacobian costs", fontsize=12, loc="left", pad=12)
@@ -233,9 +266,17 @@ def derivatives(records: list[dict], suffix: str) -> None:
 
 
 def memory(records: list[dict], suffix: str) -> None:
-    """Peak resident set over the baseline, against dictionary size."""
+    """Peak resident set over the baseline, against dictionary size.
+
+    Host memory, so the runs placed on a card are left out: what they hold in
+    host memory is a driver context and says nothing about the dictionary. What
+    they hold on the card is ``peak_device_mib``, which the table carries.
+    """
     threaded = [
-        r for r in records if not (r["backend"] == "torchsim" and r["threads"] == 1)
+        r
+        for r in records
+        if r.get("device", "cpu") == "cpu"
+        and not (r["backend"] == "torchsim" and r["threads"] == 1)
     ]
     series = curves(
         threaded, "forward", lambda r: r["peak_rss_mib"] - r["baseline_rss_mib"]
@@ -244,42 +285,19 @@ def memory(records: list[dict], suffix: str) -> None:
     style(axes)
     ends, sizes = [], []
     for name in ordered(series):
-        points = [p for p in series[name] if p[1] > 0]
+        points = [point for point in series[name] if point[1] > 0]
         if not points:
             continue
-        x = [p[0] for p in points]
-        y = [p[1] for p in points]
-        sizes += x
-        color = COLORS.get(name, INK_2)
-        axes.plot(
-            x,
-            y,
-            color=color,
-            linewidth=2,
-            marker="o",
-            markersize=5,
-            markeredgecolor="white",
-            markeredgewidth=1.2,
-            label=name,
-        )
-        ends.append((name, x[-1], y[-1]))
+        sizes += [point[0] for point in points]
+        draw(axes, name, points)
+        ends.append((name, points[-1][0], points[-1][1]))
     axes.set_xscale("log")
     axes.set_yscale("log")
     axes.set_xlabel("tissues simulated in one call")
     axes.set_ylabel("peak resident set over baseline (MiB)")
     axes.set_title("What the run costs in memory", fontsize=12, loc="left", pad=12)
     spread(axes, sizes)
-    for name, x, y in ends:
-        axes.annotate(
-            name,
-            xy=(x, y),
-            xytext=(8, 0),
-            textcoords="offset points",
-            fontsize=9,
-            color=INK_2,
-            va="center",
-            annotation_clip=False,
-        )
+    label_lines(axes, ends, gap=0.22)
     figure.tight_layout()
     figure.savefig(FIGURES / f"memory.{suffix}", bbox_inches="tight")
     plt.close(figure)

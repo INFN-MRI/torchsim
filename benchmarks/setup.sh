@@ -52,13 +52,19 @@ micromamba() {
 
 setup_python() {
   say "python environment in $VENV"
-  [ -d "$VENV" ] || python3 -m venv "$VENV"
+  # $PYTHON says which interpreter to build on. It matters: an interpreter that
+  # ships a C++ runtime of its own -- a conda one does -- loads that runtime
+  # ahead of the system's, and TorchSim's kernels are compiled against the
+  # system's. The extension then fails to load with a missing GLIBCXX version,
+  # every fused kernel is reported absent, and nothing here can run.
+  [ -d "$VENV" ] || "${PYTHON:-python3}" -m venv "$VENV"
   "$VENV/bin/pip" install --quiet --upgrade pip
 
   say "PyTorch"
-  # The CPU wheel is the smaller download and is what these benchmarks measure.
-  # For a card, install from the CUDA index instead:
-  #   pip install torch --index-url https://download.pytorch.org/whl/cu128
+  # On Linux the default wheel carries CUDA and Triton, which is what the
+  # `--device cuda` half of the sweep needs. For a machine with no card, the
+  # CPU wheel is a much smaller download and runs the rest of it:
+  #   pip install torch --index-url https://download.pytorch.org/whl/cpu
   "$VENV/bin/pip" install --quiet torch
 
   say "TorchSim, from this checkout"
@@ -96,24 +102,31 @@ PY
 
 setup_julia() {
   say "julia"
+  local release="1.12.7"
   if command -v julia >/dev/null 2>&1; then
     echo "  using $(command -v julia)"
     JULIA="$(command -v julia)"
   elif [ -x "$PREFIX/julia/bin/julia" ]; then
     JULIA="$PREFIX/julia/bin/julia"
+  elif curl -fsSL -o "$PREFIX/julia.tar.gz" \
+      "https://julialang-s3.julialang.org/bin/linux/x64/${release%.*}/julia-$release-linux-x86_64.tar.gz"; then
+    echo "  no julia on the path -- unpacking $release"
+    mkdir -p "$PREFIX/julia" && tar -xzf "$PREFIX/julia.tar.gz" \
+      -C "$PREFIX/julia" --strip-components=1
+    rm -f "$PREFIX/julia.tar.gz"
+    JULIA="$PREFIX/julia/bin/julia"
   else
-    # juliaup is the ordinary way to get one; conda-forge is the fallback for
-    # a machine that cannot reach the Julia download servers.
+    # For a machine that cannot reach the Julia download servers.
     echo "  no julia on the path -- installing one from conda-forge"
     micromamba create -y -q -p "$PREFIX/julia" -c conda-forge julia
     JULIA="$PREFIX/julia/bin/julia"
   fi
 
-  say "BlochSimulators.jl and KomaMRI.jl"
-  # This resolves against the General registry and downloads a few hundred
-  # megabytes; BlochSimulators depends on CUDA.jl, whose extension will fail to
-  # precompile on a machine with no driver. That failure is expected and does
-  # not affect the CPU benchmarks.
+  say "BlochSimulators.jl, KomaMRI.jl and CUDA.jl"
+  # This resolves against the General registry and downloads a couple of
+  # gigabytes, most of it the CUDA toolkit that puts either simulator on a
+  # card. On a machine with no driver the CUDA extensions fail to precompile,
+  # which is expected and leaves the CPU benchmarks alone.
   JULIA_DEPOT_PATH="${JULIA_DEPOT_PATH:-$PREFIX/juliadepot}" \
     "$JULIA" --project="$ROOT/benchmarks/julia" -e 'using Pkg; Pkg.instantiate()'
 

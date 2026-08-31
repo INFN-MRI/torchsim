@@ -18,15 +18,28 @@
 # Run as (from the repository root):
 #
 #     julia -t 4 --project=benchmarks/julia benchmarks/julia/bench_blochsimulators.jl --atoms 10000
+#     julia --project=benchmarks/julia benchmarks/julia/bench_blochsimulators.jl --atoms 100000 --device cuda
 #
 # Derivatives are `--mode jacobian`, which is what MR-STAT does: a forward
 # difference per parameter, so three passes for two parameters.
+#
+# `--device cuda` swaps the `CPUThreads` resource for `CUDALibs` and moves the
+# sequence and the parameters onto the card; the arithmetic and the task are
+# the same, and the number of threads then names only the process doing the
+# launching.
 
 using ComputationalResources
 using BlochSimulators
 using Pkg
 
 include(joinpath(@__DIR__, "common.jl"))
+
+# CUDA.jl costs a second of load time and a few hundred megabytes of the
+# resident set this script reports, so it is loaded only where it is used.
+const ON_CARD = device_asked_for(ARGS) != "cpu"
+if ON_CARD
+    @eval using CUDA
+end
 
 function main()
     options = arguments(Dict(
@@ -37,6 +50,7 @@ function main()
         "mode" => "forward",
         "precision" => "f32",
         "rf" => "real",
+        "device" => "cpu",
         "json" => "",
         "tissues" => "",
         "dump" => "",
@@ -47,6 +61,7 @@ function main()
     repeats = parse(Int, options["repeats"])
     mode = options["mode"]
     single = options["precision"] == "f32"
+    device = options["device"]
 
     baseline = peak_rss_mib()
 
@@ -79,25 +94,40 @@ function main()
         parameters = f32(parameters)
     end
 
-    resource = Threads.nthreads() > 1 ? CPUThreads() : CPU1()
+    if ON_CARD
+        resource = CUDALibs()
+        sequence = gpu(sequence)
+        parameters = gpu(parameters)
+        # cuCtxSynchronize, which blocks until the card is done. CUDA.jl's
+        # `synchronize` yields to the Julia scheduler and polls instead, and
+        # the wake-up latency lands in the timing rather than on the card.
+        synchronize = () -> CUDA.device_synchronize()
+    else
+        resource = Threads.nthreads() > 1 ? CPUThreads() : CPU1()
+        synchronize = () -> nothing
+    end
 
     forward() = simulate_magnetization(resource, sequence, parameters)
 
     # What MR-STAT does for its Jacobian: perturb one parameter, simulate
     # again, difference. Two parameters, so three passes in all.
+    # The parameters carry their own element type once they are on a card, so
+    # perturbing them keeps it and there is nothing left to convert.
+    narrow(values) = single && !ON_CARD ? f32(values) : values
+
     function jacobian()
         step = single ? 1.0f-4 : 1e-4
         signal = simulate_magnetization(resource, sequence, parameters)
-        shifted = map(p -> T₁T₂(p.T₁ + step, p.T₂), parameters)
-        single && (shifted = f32(shifted))
+        shifted = narrow(map(p -> T₁T₂(p.T₁ + step, p.T₂), parameters))
         by_t1 = (simulate_magnetization(resource, sequence, shifted) .- signal) ./ step
-        shifted = map(p -> T₁T₂(p.T₁, p.T₂ + step), parameters)
-        single && (shifted = f32(shifted))
+        shifted = narrow(map(p -> T₁T₂(p.T₁, p.T₂ + step), parameters))
         by_t2 = (simulate_magnetization(resource, sequence, shifted) .- signal) ./ step
         return by_t1 .+ by_t2
     end
 
-    setup, seconds, signal = timed(mode == "jacobian" ? jacobian : forward; repeats)
+    setup, seconds, signal = timed(mode == "jacobian" ? jacobian : forward; repeats, synchronize)
+    device_mib = ON_CARD ? peak_device_mib() : 0.0
+    signal = ON_CARD ? Array(signal) : signal
 
     installed = Pkg.dependencies()
     version = string(only(v.version for v in values(installed) if v.name == "BlochSimulators"))
@@ -108,14 +138,14 @@ function main()
         "atoms" => atoms,
         "length" => length_,
         "states" => states,
-        "device" => "cpu",
+        "device" => device,
         "threads" => Threads.nthreads(),
         "repeats" => repeats,
         "seconds" => seconds,
         "setup_seconds" => setup,
         "baseline_rss_mib" => baseline,
         "peak_rss_mib" => peak_rss_mib(),
-        "peak_device_mib" => 0.0,
+        "peak_device_mib" => device_mib,
         "checksum" => [real(sum(signal)), imag(sum(signal))],
         "versions" => Dict("BlochSimulators" => version, "julia" => string(VERSION)),
         "machine" => machine(),

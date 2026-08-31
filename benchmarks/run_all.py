@@ -10,8 +10,11 @@ this runs usefully with any subset of them present. The Julia backends need a
 project in ``benchmarks/julia`` instantiated; ``benchmarks/setup.sh`` does all
 of that.
 
-Run as ``python benchmarks/run_all.py``; ``--quick`` cuts the sizes down and
-``--backends`` picks a subset.
+Run as ``python benchmarks/run_all.py``; ``--quick`` cuts the sizes down,
+``--backends`` picks a subset and ``--device cuda`` puts every backend that can
+reach a card on one. Sycomore and epgpy have no device to be placed on and are
+skipped there; a record's tag carries the device, so the two sweeps sit beside
+each other in ``results/``.
 """
 
 from __future__ import annotations
@@ -23,6 +26,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import summarize  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
@@ -40,9 +47,22 @@ SIZES = {
 }
 BACKENDS = tuple(SIZES)
 
+# The three backends that have a card to be placed on. The sizes are the CPU
+# ones: a hundred thousand tissues is where a dictionary and its Jacobian still
+# fit in the memory of a modest card, and past that what is measured is
+# whatever the run spills into rather than the kernel.
+DEVICE_SIZES = {
+    "torchsim": (1, 10, 100, 1_000, 10_000, 100_000),
+    "blochsimulators": (1, 10, 100, 1_000, 10_000, 100_000),
+    "koma": (1, 10, 100, 1_000),
+}
+ON_DEVICE = tuple(DEVICE_SIZES)
 
-def available(backend: str) -> bool:
-    """Whether this backend can run here at all."""
+
+def available(backend: str, device: str) -> bool:
+    """Whether this backend can run here at all, on this device."""
+    if device != "cpu" and backend not in ON_DEVICE:
+        return False
     if backend in ("blochsimulators", "koma"):
         return bool(julia())
     module = {"torchsim": "torchsim", "sycomore": "sycomore", "epgpy": "epgpy"}[backend]
@@ -101,22 +121,6 @@ def julia_run(script: str, tag: str, threads: int, **options: object) -> dict | 
     return run(command, tag)
 
 
-def table(records: list[dict]) -> str:
-    """The measurements as a markdown table."""
-    header = (
-        "| backend | mode | threads | atoms | best (s) | atoms/s | "
-        "peak RSS (MiB) | over baseline (MiB) |\n"
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
-    )
-    rows = [
-        f"| {r['backend']} | {r['mode']} | {r['threads']} | {r['atoms']} | "
-        f"{r['best']:.4f} | {r['atoms_per_second']:,.0f} | {r['peak_rss_mib']:.0f} | "
-        f"{r['peak_rss_mib'] - r['baseline_rss_mib']:.1f} |"
-        for r in records
-    ]
-    return "\n".join([header, *rows])
-
-
 def main() -> None:
     """Run every point, write the JSON records and the markdown table."""
     cli = argparse.ArgumentParser(description=__doc__)
@@ -148,7 +152,11 @@ def main() -> None:
         action="store_true",
         help="skip the Jacobian points, which are the slow ones",
     )
-    cli.add_argument("--device", default="cpu", help="TorchSim device, e.g. cuda")
+    cli.add_argument(
+        "--device",
+        default="cpu",
+        help="where every backend that has a choice runs, e.g. cuda",
+    )
     cli.add_argument(
         "--backends",
         default=",".join(BACKENDS),
@@ -160,159 +168,151 @@ def main() -> None:
     limit = 1_000 if args.quick else 10**9
     chosen = [int(n) for n in args.sizes.split(",") if n] if args.sizes else None
     wanted = [name.strip() for name in args.backends.split(",") if name.strip()]
-    shared = {"length": args.length, "states": args.states, "repeats": args.repeats}
-    records: list[dict] = []
-
-    def keep(record: dict | None) -> None:
-        if record:
-            records.append(record)
-
+    device = args.device
+    # A card's timings are skewed rather than scattered: a stable floor with a
+    # long tail of runs that met a lower clock. The floor is what is reported,
+    # and finding it takes more samples than a CPU's tight distribution does.
+    repeats = args.repeats if device == "cpu" else max(args.repeats, 15)
+    shared = {"length": args.length, "states": args.states, "repeats": repeats}
+    # A tag names the point it measures: the backend, the mode, the size, where
+    # it ran, and -- on a CPU, where it means something -- how many threads.
+    suffix = f"-{device}-t{args.threads}" if device == "cpu" else f"-{device}"
     for round_ in range(args.rounds):
         if args.rounds > 1:
             print(f"\n--- round {round_ + 1} of {args.rounds}")
         for backend in wanted:
             if backend not in BACKENDS:
                 raise SystemExit(f"unknown backend {backend!r}")
-            if not available(backend):
-                print(f"  - {backend} not installed here, skipping")
+            if not available(backend, device):
+                print(f"  - {backend} cannot run on {device} here, skipping")
                 continue
-            sizes = [n for n in (chosen or SIZES[backend]) if n <= limit]
+            default = DEVICE_SIZES[backend] if device != "cpu" else SIZES[backend]
+            sizes = [n for n in (chosen or default) if n <= limit]
 
             if backend == "torchsim":
                 for atoms in sizes:
                     for mode in (
                         ("forward",) if args.forward_only else ("forward", "jacobian")
                     ):
-                        keep(
-                            python_run(
-                                "bench_torchsim.py",
-                                f"torchsim-{mode}-{atoms}-{args.device}-t{args.threads}",
-                                atoms=atoms,
-                                mode=mode,
-                                device=args.device,
-                                threads=args.threads,
-                                **shared,
-                            )
-                        )
-                    if args.forward_only:
-                        continue
-                    keep(
                         python_run(
                             "bench_torchsim.py",
-                            f"torchsim-jacobian1-{atoms}-{args.device}-t{args.threads}",
+                            f"torchsim-{mode}-{atoms}{suffix}",
                             atoms=atoms,
-                            mode="jacobian",
-                            diff="T1",
-                            device=args.device,
+                            mode=mode,
+                            device=device,
                             threads=args.threads,
                             **shared,
                         )
+                    if args.forward_only:
+                        continue
+                    python_run(
+                        "bench_torchsim.py",
+                        f"torchsim-jacobian1-{atoms}{suffix}",
+                        atoms=atoms,
+                        mode="jacobian",
+                        diff="T1",
+                        device=device,
+                        threads=args.threads,
+                        **shared,
                     )
+                if device != "cpu":
+                    continue
+                # One thread against four says how much of the CPU number is
+                # the pool; on a card there is no such pair to take.
                 for atoms in [n for n in sizes if n >= 1_000]:
-                    keep(
-                        python_run(
-                            "bench_torchsim.py",
-                            f"torchsim-forward-{atoms}-{args.device}-t1",
-                            atoms=atoms,
-                            mode="forward",
-                            device=args.device,
-                            threads=1,
-                            **shared,
-                        )
+                    python_run(
+                        "bench_torchsim.py",
+                        f"torchsim-forward-{atoms}-{device}-t1",
+                        atoms=atoms,
+                        mode="forward",
+                        device=device,
+                        threads=1,
+                        **shared,
                     )
 
             elif backend == "sycomore":
                 for atoms in sizes:
-                    keep(
-                        python_run(
-                            "bench_sycomore.py",
-                            f"sycomore-forward-{atoms}",
-                            atoms=atoms,
-                            **shared,
-                        )
+                    python_run(
+                        "bench_sycomore.py",
+                        f"sycomore-forward-{atoms}",
+                        atoms=atoms,
+                        **shared,
                     )
 
             elif backend == "epgpy":
                 for atoms in sizes:
-                    keep(
-                        python_run(
-                            "bench_epgpy.py",
-                            f"epgpy-forward-{atoms}",
-                            atoms=atoms,
-                            **shared,
-                        )
+                    python_run(
+                        "bench_epgpy.py",
+                        f"epgpy-forward-{atoms}",
+                        atoms=atoms,
+                        **shared,
                     )
-                    keep(
-                        python_run(
-                            "bench_epgpy.py",
-                            f"epgpy-jacobian-{atoms}",
-                            atoms=atoms,
-                            mode="jacobian",
-                            **shared,
-                        )
+                    python_run(
+                        "bench_epgpy.py",
+                        f"epgpy-jacobian-{atoms}",
+                        atoms=atoms,
+                        mode="jacobian",
+                        **shared,
                     )
 
             elif backend == "blochsimulators":
                 for atoms in sizes:
-                    keep(
-                        julia_run(
-                            "bench_blochsimulators.jl",
-                            f"blochsimulators-forward-{atoms}-t{args.threads}",
-                            args.threads,
-                            atoms=atoms,
-                            **shared,
-                        )
+                    julia_run(
+                        "bench_blochsimulators.jl",
+                        f"blochsimulators-forward-{atoms}{suffix}",
+                        args.threads,
+                        atoms=atoms,
+                        device=device,
+                        **shared,
                     )
                 for atoms in [n for n in sizes if n >= 1_000]:
                     if args.forward_only:
                         continue
-                    keep(
-                        julia_run(
-                            "bench_blochsimulators.jl",
-                            f"blochsimulators-jacobian-{atoms}-t{args.threads}",
-                            args.threads,
-                            atoms=atoms,
-                            mode="jacobian",
-                            **shared,
-                        )
+                    julia_run(
+                        "bench_blochsimulators.jl",
+                        f"blochsimulators-jacobian-{atoms}{suffix}",
+                        args.threads,
+                        atoms=atoms,
+                        mode="jacobian",
+                        device=device,
+                        **shared,
                     )
-                    keep(
-                        julia_run(
-                            "bench_blochsimulators.jl",
-                            f"blochsimulators-complex-{atoms}-t{args.threads}",
-                            args.threads,
-                            atoms=atoms,
-                            rf="complex",
-                            **shared,
-                        )
+                    julia_run(
+                        "bench_blochsimulators.jl",
+                        f"blochsimulators-complex-{atoms}{suffix}",
+                        args.threads,
+                        atoms=atoms,
+                        rf="complex",
+                        device=device,
+                        **shared,
                     )
-                    keep(
-                        julia_run(
-                            "bench_blochsimulators.jl",
-                            f"blochsimulators-forward-{atoms}-t1",
-                            1,
-                            atoms=atoms,
-                            **shared,
-                        )
+                    if device != "cpu":
+                        continue
+                    julia_run(
+                        "bench_blochsimulators.jl",
+                        f"blochsimulators-forward-{atoms}-{device}-t1",
+                        1,
+                        atoms=atoms,
+                        device=device,
+                        **shared,
                     )
 
             elif backend == "koma":
                 for atoms in sizes:
-                    keep(
-                        julia_run(
-                            "bench_koma.jl",
-                            f"koma-forward-{atoms}-s{args.spins}-t{args.threads}",
-                            args.threads,
-                            atoms=atoms,
-                            spins=args.spins,
-                            length=args.length,
-                            repeats=min(args.repeats, 2),
-                        )
+                    julia_run(
+                        "bench_koma.jl",
+                        f"koma-forward-{atoms}-s{args.spins}{suffix}",
+                        args.threads,
+                        atoms=atoms,
+                        spins=args.spins,
+                        device=device,
+                        length=args.length,
+                        repeats=min(repeats, 2) if device == "cpu" else repeats,
                     )
 
-    written = RESULTS / "table.md"
-    written.write_text(table(records) + "\n")
-    print(f"\n{table(records)}\n\nwritten to {written}")
+    # From the records on disk rather than from this run's, so a sweep over a
+    # subset of the backends leaves the rest of the table where it was.
+    summarize.main()
 
 
 if __name__ == "__main__":

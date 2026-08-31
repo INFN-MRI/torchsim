@@ -1,59 +1,101 @@
-| backend | mode | threads | atoms | best (s) | atoms/s | peak RSS (MiB) | over baseline (MiB) |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| BlochSimulators.jl | forward | 1 | 1000 | 0.0847 | 11,808 | 808 | 145.6 |
-| BlochSimulators.jl | forward | 1 | 10000 | 0.8555 | 11,690 | 843 | 181.7 |
-| BlochSimulators.jl | forward | 1 | 100000 | 9.0561 | 11,042 | 1181 | 521.0 |
-| BlochSimulators.jl | forward | 4 | 1 | 0.0003 | 3,056 | 819 | 173.2 |
-| BlochSimulators.jl | forward | 4 | 10 | 0.0010 | 9,570 | 818 | 173.2 |
-| BlochSimulators.jl | forward | 4 | 100 | 0.0046 | 21,822 | 832 | 188.1 |
-| BlochSimulators.jl | forward | 4 | 1000 | 0.0242 | 41,305 | 824 | 183.3 |
-| BlochSimulators.jl | forward | 4 | 10000 | 0.2526 | 39,581 | 870 | 225.4 |
-| BlochSimulators.jl | forward | 4 | 100000 | 2.5157 | 39,750 | 1187 | 545.8 |
-| BlochSimulators.jl | forward(complex) | 4 | 1000 | 0.1005 | 9,951 | 799 | 153.7 |
-| BlochSimulators.jl | forward(complex) | 4 | 10000 | 0.9701 | 10,308 | 825 | 178.6 |
-| BlochSimulators.jl | forward(complex) | 4 | 100000 | 9.5250 | 10,499 | 1617 | 970.5 |
-| BlochSimulators.jl | jacobian(T1,T2) | 4 | 1000 | 0.0813 | 12,307 | 844 | 198.8 |
-| BlochSimulators.jl | jacobian(T1,T2) | 4 | 10000 | 0.7736 | 12,927 | 954 | 308.7 |
-| BlochSimulators.jl | jacobian(T1,T2) | 4 | 100000 | 8.5213 | 11,735 | 1900 | 1258.0 |
-| KomaMRI.jl | forward | 4 | 1 | 0.1174 | 9 | 898 | 30.9 |
-| KomaMRI.jl | forward | 4 | 10 | 0.4169 | 24 | 945 | 82.4 |
-| KomaMRI.jl | forward | 4 | 100 | 1.0960 | 91 | 1373 | 504.7 |
-| epgpy | forward | 1 | 1 | 0.0339 | 30 | 36 | 4.5 |
-| epgpy | forward | 1 | 10 | 0.0665 | 150 | 36 | 5.0 |
-| epgpy | forward | 1 | 100 | 0.2503 | 400 | 43 | 11.9 |
-| epgpy | forward | 1 | 1000 | 2.3033 | 434 | 110 | 79.1 |
-| epgpy | forward | 1 | 10000 | 36.3704 | 275 | 783 | 751.4 |
-| epgpy | jacobian(T1,T2) | 1 | 1 | 0.0904 | 11 | 37 | 5.4 |
-| epgpy | jacobian(T1,T2) | 1 | 10 | 0.2378 | 42 | 38 | 6.8 |
-| epgpy | jacobian(T1,T2) | 1 | 100 | 1.3470 | 74 | 54 | 22.5 |
-| epgpy | jacobian(T1,T2) | 1 | 1000 | 13.9996 | 71 | 209 | 177.6 |
-| epgpy | jacobian(T1,T2) | 1 | 10000 | 177.0630 | 56 | 1759 | 1728.0 |
-| sycomore | forward | 1 | 1 | 0.0020 | 494 | 32 | 0.6 |
-| sycomore | forward | 1 | 10 | 0.0243 | 412 | 33 | 0.8 |
-| sycomore | forward | 1 | 100 | 0.2437 | 410 | 35 | 3.0 |
-| sycomore | forward | 1 | 1000 | 2.5105 | 398 | 56 | 23.8 |
-| sycomore | forward | 1 | 10000 | 24.0942 | 415 | 265 | 233.5 |
-| torchsim | forward | 1 | 1000 | 0.0670 | 14,925 | 723 | 116.5 |
-| torchsim | forward | 1 | 10000 | 0.6841 | 14,618 | 827 | 219.9 |
-| torchsim | forward | 4 | 1 | 0.0019 | 522 | 714 | 107.0 |
-| torchsim | forward | 4 | 10 | 0.0043 | 2,339 | 714 | 107.0 |
-| torchsim | forward | 4 | 100 | 0.0282 | 3,551 | 714 | 107.1 |
-| torchsim | forward | 4 | 1000 | 0.0221 | 45,284 | 723 | 116.4 |
-| torchsim | forward | 4 | 10000 | 0.1839 | 54,385 | 826 | 218.7 |
-| torchsim | forward | 4 | 100000 | 23.4589 | 4,263 | 1862 | 1255.1 |
-| torchsim | jacobian(T1) | 4 | 1 | 0.0089 | 112 | 721 | 113.8 |
-| torchsim | jacobian(T1) | 4 | 10 | 0.0229 | 437 | 721 | 113.7 |
-| torchsim | jacobian(T1) | 4 | 100 | 0.1488 | 672 | 721 | 113.7 |
-| torchsim | jacobian(T1) | 4 | 1000 | 0.4515 | 2,215 | 746 | 138.4 |
-| torchsim | jacobian(T1) | 4 | 10000 | 1.5669 | 6,382 | 948 | 340.7 |
-| torchsim | jacobian(T1) | 4 | 100000 | 152.7505 | 655 | 3012 | 2404.9 |
-| torchsim | jacobian(T1,T2) | 4 | 1 | 0.0166 | 60 | 721 | 113.7 |
-| torchsim | jacobian(T1,T2) | 4 | 10 | 0.0443 | 226 | 721 | 113.7 |
-| torchsim | jacobian(T1,T2) | 4 | 100 | 0.2971 | 337 | 721 | 113.7 |
-| torchsim | jacobian(T1,T2) | 4 | 1000 | 0.9038 | 1,106 | 760 | 152.7 |
-| torchsim | jacobian(T1,T2) | 4 | 10000 | 3.1090 | 3,217 | 1061 | 454.2 |
-| torchsim | jacobian(T1,T2) | 4 | 100000 | 278.2875 | 359 | 4158 | 3550.8 |
+| backend | mode | device | threads | atoms | best (s) | atoms/s | peak RSS (MiB) | over baseline (MiB) | device (MiB) |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| BlochSimulators.jl | forward | cpu | 1 | 1000 | 0.0802 | 12,466 | 1304 | 171.5 | 0 |
+| BlochSimulators.jl | forward | cpu | 1 | 10000 | 0.8611 | 11,614 | 1334 | 198.6 | 0 |
+| BlochSimulators.jl | forward | cpu | 1 | 100000 | 9.1049 | 10,983 | 1808 | 674.6 | 0 |
+| BlochSimulators.jl | forward | cpu | 4 | 1 | 0.0002 | 4,294 | 1322 | 187.6 | 0 |
+| BlochSimulators.jl | forward | cpu | 4 | 10 | 0.0010 | 10,154 | 1306 | 172.0 | 0 |
+| BlochSimulators.jl | forward | cpu | 4 | 100 | 0.0021 | 47,610 | 1301 | 165.4 | 0 |
+| BlochSimulators.jl | forward | cpu | 4 | 1000 | 0.0217 | 46,007 | 1300 | 169.2 | 0 |
+| BlochSimulators.jl | forward | cpu | 4 | 10000 | 0.2116 | 47,251 | 1328 | 194.7 | 0 |
+| BlochSimulators.jl | forward | cpu | 4 | 100000 | 2.2758 | 43,941 | 1886 | 752.6 | 0 |
+| BlochSimulators.jl | forward | cuda | 4 | 1 | 0.0002 | 6,378 | 1394 | 248.4 | 32 |
+| BlochSimulators.jl | forward | cuda | 4 | 10 | 0.0002 | 63,031 | 1370 | 234.8 | 128 |
+| BlochSimulators.jl | forward | cuda | 4 | 100 | 0.0002 | 649,916 | 1383 | 245.7 | 1568 |
+| BlochSimulators.jl | forward | cuda | 4 | 1000 | 0.0020 | 496,652 | 1372 | 230.8 | 3552 |
+| BlochSimulators.jl | forward | cuda | 4 | 10000 | 0.0044 | 2,278,960 | 1391 | 255.3 | 3552 |
+| BlochSimulators.jl | forward | cuda | 4 | 100000 | 0.0372 | 2,690,142 | 1577 | 442.6 | 3648 |
+| BlochSimulators.jl | forward(complex) | cpu | 4 | 1000 | 0.0424 | 23,594 | 1280 | 137.2 | 0 |
+| BlochSimulators.jl | forward(complex) | cpu | 4 | 10000 | 0.5203 | 19,221 | 1384 | 250.6 | 0 |
+| BlochSimulators.jl | forward(complex) | cpu | 4 | 100000 | 5.4241 | 18,436 | 2471 | 1339.8 | 0 |
+| BlochSimulators.jl | forward(complex) | cuda | 4 | 1000 | 0.0038 | 264,849 | 1375 | 239.2 | 3552 |
+| BlochSimulators.jl | forward(complex) | cuda | 4 | 10000 | 0.0110 | 908,740 | 1405 | 272.2 | 3552 |
+| BlochSimulators.jl | forward(complex) | cuda | 4 | 100000 | 0.0886 | 1,128,364 | 1728 | 589.2 | 4960 |
+| BlochSimulators.jl | jacobian(T1,T2) | cpu | 4 | 1000 | 0.0698 | 14,327 | 1307 | 178.5 | 0 |
+| BlochSimulators.jl | jacobian(T1,T2) | cpu | 4 | 10000 | 0.8471 | 11,805 | 1461 | 328.6 | 0 |
+| BlochSimulators.jl | jacobian(T1,T2) | cpu | 4 | 100000 | 7.4086 | 13,498 | 2633 | 1502.4 | 0 |
+| BlochSimulators.jl | jacobian(T1,T2) | cuda | 4 | 1000 | 0.0014 | 694,170 | 1402 | 267.8 | 3552 |
+| BlochSimulators.jl | jacobian(T1,T2) | cuda | 4 | 10000 | 0.0118 | 850,555 | 1391 | 253.2 | 3584 |
+| BlochSimulators.jl | jacobian(T1,T2) | cuda | 4 | 100000 | 0.1189 | 841,265 | 1573 | 439.4 | 3872 |
+| KomaMRI.jl | forward | cpu | 4 | 1 | 0.0892 | 11 | 930 | 76.2 | 0 |
+| KomaMRI.jl | forward | cpu | 4 | 10 | 0.1203 | 83 | 1017 | 150.8 | 0 |
+| KomaMRI.jl | forward | cpu | 4 | 100 | 0.8882 | 113 | 1502 | 637.4 | 0 |
+| KomaMRI.jl | forward | cpu | 4 | 1000 | 7.3347 | 136 | 5850 | 4998.1 | 0 |
+| KomaMRI.jl | forward | cuda | 4 | 1 | 0.9776 | 1 | 2004 | 484.3 | 96 |
+| KomaMRI.jl | forward | cuda | 4 | 10 | 1.0743 | 9 | 1921 | 396.0 | 352 |
+| KomaMRI.jl | forward | cuda | 4 | 100 | 1.1945 | 84 | 2085 | 572.8 | 960 |
+| KomaMRI.jl | forward | cuda | 4 | 1000 | 2.6255 | 381 | 3096 | 1575.4 | 5248 |
+| epgpy | forward | cpu | 1 | 1 | 0.0292 | 34 | 37 | 4.5 | 0 |
+| epgpy | forward | cpu | 1 | 10 | 0.0533 | 188 | 37 | 4.8 | 0 |
+| epgpy | forward | cpu | 1 | 100 | 0.2371 | 422 | 44 | 11.9 | 0 |
+| epgpy | forward | cpu | 1 | 1000 | 2.5102 | 398 | 111 | 79.1 | 0 |
+| epgpy | forward | cpu | 1 | 10000 | 34.7414 | 288 | 783 | 751.2 | 0 |
+| epgpy | jacobian(T1,T2) | cpu | 1 | 1 | 0.0862 | 12 | 38 | 5.3 | 0 |
+| epgpy | jacobian(T1,T2) | cpu | 1 | 10 | 0.1852 | 54 | 39 | 6.9 | 0 |
+| epgpy | jacobian(T1,T2) | cpu | 1 | 100 | 0.9521 | 105 | 56 | 23.4 | 0 |
+| epgpy | jacobian(T1,T2) | cpu | 1 | 1000 | 10.5519 | 95 | 210 | 177.5 | 0 |
+| epgpy | jacobian(T1,T2) | cpu | 1 | 10000 | 155.9514 | 64 | 1760 | 1727.5 | 0 |
+| sycomore | forward | cpu | 1 | 1 | 0.0023 | 439 | 33 | 0.3 | 0 |
+| sycomore | forward | cpu | 1 | 10 | 0.0268 | 373 | 34 | 0.8 | 0 |
+| sycomore | forward | cpu | 1 | 100 | 0.2687 | 372 | 37 | 3.5 | 0 |
+| sycomore | forward | cpu | 1 | 1000 | 2.2262 | 449 | 57 | 23.8 | 0 |
+| sycomore | forward | cpu | 1 | 10000 | 28.3982 | 352 | 266 | 233.0 | 0 |
+| torchsim | forward | cpu | 1 | 1000 | 0.0698 | 14,324 | 724 | 117.5 | 0 |
+| torchsim | forward | cpu | 1 | 10000 | 0.7669 | 13,039 | 822 | 215.4 | 0 |
+| torchsim | forward | cpu | 1 | 100000 | 7.1735 | 13,940 | 1861 | 1254.3 | 0 |
+| torchsim | forward | cpu | 4 | 1 | 0.0009 | 1,132 | 708 | 101.6 | 0 |
+| torchsim | forward | cpu | 4 | 10 | 0.0016 | 6,343 | 708 | 101.1 | 0 |
+| torchsim | forward | cpu | 4 | 100 | 0.0037 | 27,010 | 708 | 101.2 | 0 |
+| torchsim | forward | cpu | 4 | 1000 | 0.0233 | 42,972 | 720 | 113.5 | 0 |
+| torchsim | forward | cpu | 4 | 10000 | 0.1866 | 53,578 | 860 | 252.6 | 0 |
+| torchsim | forward | cpu | 4 | 100000 | 1.9028 | 52,554 | 1861 | 1254.0 | 0 |
+| torchsim | forward | cuda | 4 | 1 | 0.0038 | 260 | 1155 | 548.6 | 122 |
+| torchsim | forward | cuda | 4 | 10 | 0.0042 | 2,373 | 1159 | 551.9 | 122 |
+| torchsim | forward | cuda | 4 | 100 | 0.0029 | 34,698 | 1209 | 601.9 | 122 |
+| torchsim | forward | cuda | 4 | 1000 | 0.0052 | 191,512 | 1200 | 593.4 | 46 |
+| torchsim | forward | cuda | 4 | 10000 | 0.0220 | 454,731 | 1213 | 606.0 | 244 |
+| torchsim | forward | cuda | 4 | 100000 | 0.1957 | 511,002 | 1203 | 596.5 | 1654 |
+| torchsim | jacobian(T1) | cpu | 4 | 1 | 0.0054 | 185 | 712 | 105.2 | 0 |
+| torchsim | jacobian(T1) | cpu | 4 | 10 | 0.0081 | 1,234 | 712 | 105.4 | 0 |
+| torchsim | jacobian(T1) | cpu | 4 | 100 | 0.0117 | 8,520 | 713 | 106.3 | 0 |
+| torchsim | jacobian(T1) | cpu | 4 | 1000 | 0.0534 | 18,738 | 745 | 138.4 | 0 |
+| torchsim | jacobian(T1) | cpu | 4 | 10000 | 0.5511 | 18,146 | 941 | 333.8 | 0 |
+| torchsim | jacobian(T1) | cpu | 4 | 100000 | 5.4812 | 18,244 | 3007 | 2400.2 | 0 |
+| torchsim | jacobian(T1) | cuda | 4 | 1 | 0.0084 | 119 | 1167 | 560.0 | 122 |
+| torchsim | jacobian(T1) | cuda | 4 | 10 | 0.0087 | 1,154 | 1165 | 558.1 | 122 |
+| torchsim | jacobian(T1) | cuda | 4 | 100 | 0.0089 | 11,198 | 1214 | 607.5 | 122 |
+| torchsim | jacobian(T1) | cuda | 4 | 1000 | 0.0111 | 90,240 | 1214 | 607.9 | 124 |
+| torchsim | jacobian(T1) | cuda | 4 | 10000 | 0.0598 | 167,185 | 1215 | 607.9 | 310 |
+| torchsim | jacobian(T1) | cuda | 4 | 100000 | 0.5480 | 182,486 | 1216 | 609.1 | 2800 |
+| torchsim | jacobian(T1,T2) | cpu | 4 | 1 | 0.0101 | 99 | 712 | 105.1 | 0 |
+| torchsim | jacobian(T1,T2) | cpu | 4 | 10 | 0.0117 | 856 | 712 | 105.7 | 0 |
+| torchsim | jacobian(T1,T2) | cpu | 4 | 100 | 0.0229 | 4,358 | 714 | 107.2 | 0 |
+| torchsim | jacobian(T1,T2) | cpu | 4 | 1000 | 0.1285 | 7,783 | 757 | 150.1 | 0 |
+| torchsim | jacobian(T1,T2) | cpu | 4 | 10000 | 1.0879 | 9,192 | 1055 | 448.1 | 0 |
+| torchsim | jacobian(T1,T2) | cpu | 4 | 100000 | 9.6565 | 10,356 | 4147 | 3540.4 | 0 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 1 | 0.0166 | 60 | 1167 | 559.9 | 122 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 10 | 0.0163 | 612 | 1164 | 557.5 | 122 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 100 | 0.0174 | 5,731 | 1214 | 607.4 | 122 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 1000 | 0.0222 | 45,076 | 1218 | 611.5 | 140 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 10000 | 0.1198 | 83,459 | 1215 | 608.1 | 506 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 100000 | 1.0851 | 92,160 | 1216 | 609.3 | 4642 |
 
+- BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=100000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=1: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=10: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=100: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
 - BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
 - BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
 - BlochSimulators.jl n=100000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
@@ -66,12 +108,23 @@
 - BlochSimulators.jl n=1000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
 - BlochSimulators.jl n=10000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
 - BlochSimulators.jl n=100000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=1000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=10000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=100000: float32; complex RF train, complex states; max_state is a multiple of 32 by construction
+- BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
+- BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
+- BlochSimulators.jl n=100000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
 - BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
 - BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
 - BlochSimulators.jl n=100000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction; forward differences, three passes
 - KomaMRI.jl n=1: isochromat: 64 spins per tissue through one spoiler cycle, 64 spins in all
 - KomaMRI.jl n=10: isochromat: 64 spins per tissue through one spoiler cycle, 640 spins in all
 - KomaMRI.jl n=100: isochromat: 64 spins per tissue through one spoiler cycle, 6400 spins in all
+- KomaMRI.jl n=1000: isochromat: 64 spins per tissue through one spoiler cycle, 64000 spins in all
+- KomaMRI.jl n=1: isochromat: 64 spins per tissue through one spoiler cycle, 64 spins in all
+- KomaMRI.jl n=10: isochromat: 64 spins per tissue through one spoiler cycle, 640 spins in all
+- KomaMRI.jl n=100: isochromat: 64 spins per tissue through one spoiler cycle, 6400 spins in all
+- KomaMRI.jl n=1000: isochromat: 64 spins per tissue through one spoiler cycle, 64000 spins in all
 - epgpy n=1: max_nstate matches the orders TorchSim keeps
 - epgpy n=10: max_nstate matches the orders TorchSim keeps
 - epgpy n=100: max_nstate matches the orders TorchSim keeps

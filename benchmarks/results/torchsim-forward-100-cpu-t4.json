@@ -8,27 +8,27 @@
   "threads": 4,
   "repeats": 3,
   "seconds": [
-    0.028925219000029756,
-    0.02816234500005521,
-    0.02978194600018469
+    0.0054160879990377,
+    0.00470043200039072,
+    0.003702366000652546
   ],
-  "setup_seconds": 7.2874569129999145,
-  "baseline_rss_mib": 607.05078125,
-  "peak_rss_mib": 714.11328125,
+  "setup_seconds": 2.439825491001102,
+  "baseline_rss_mib": 606.9140625,
+  "peak_rss_mib": 708.12890625,
   "peak_device_mib": 0.0,
   "versions": {
-    "torchsim": "0.0.4.dev136",
+    "torchsim": "0.0.4.dev137",
     "torch": "2.13.0+cu130"
   },
   "machine": {
-    "platform": "Linux-6.18.44-fc-v22-x86_64-with-glibc2.39",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.31",
     "processor": "x86_64",
-    "python": "3.11.15"
+    "python": "3.11.5"
   },
   "note": "",
-  "best": 0.02816234500005521,
-  "median": 0.028925219000029756,
-  "atoms_per_second": 3550.840670398859,
+  "best": 0.003702366000652546,
+  "median": 0.00470043200039072,
+  "atoms_per_second": 27009.755378688897,
   "checksum": [
     2212.482177734375,
     0.0

@@ -1,0 +1,48 @@
+{
+  "note": "isochromat: 64 spins per tissue through one spoiler cycle, 64000 spins in all",
+  "setup_seconds": 30.26583798,
+  "peak_device_mib": 5248,
+  "atoms_per_second": 380.8848221,
+  "mode": "forward",
+  "versions": {
+    "julia": "1.12.7",
+    "KomaMRICore": "0.13.0"
+  },
+  "baseline_rss_mib": 1520.394531,
+  "seconds": [
+    3.423114769,
+    3.690569136,
+    3.55996207,
+    2.811209332,
+    3.291214949,
+    2.882592563,
+    3.106670316,
+    2.970063624,
+    3.236705003,
+    2.798454907,
+    3.030326216,
+    2.772092822,
+    2.903351233,
+    2.632391842,
+    2.625465605
+  ],
+  "machine": {
+    "julia": "1.12.7",
+    "processor": "13th Gen Intel(R) Core(TM) i7-13700H",
+    "platform": "Linux x86_64-linux-gnu"
+  },
+  "states": 64,
+  "length": 500,
+  "backend": "KomaMRI.jl",
+  "repeats": 15,
+  "median": 2.970063624,
+  "threads": 4,
+  "device": "cuda",
+  "checksum": [
+    -0.0004385180655,
+    22125.94922
+  ],
+  "peak_rss_mib": 3095.808594,
+  "atoms": 1000,
+  "best": 2.625465605
+}

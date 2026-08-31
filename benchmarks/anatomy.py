@@ -1,6 +1,11 @@
 """What TorchSim's own runtime is made of, on one CPU core count.
 
-Two experiments, each isolating one thing the dictionary benchmark cannot:
+Four experiments, each isolating one thing the dictionary benchmark cannot:
+
+**What the structure costs.** Resolving a sequence walks its events, packs
+them and learns the affine rebinding, once per sequence shape; a call
+afterwards rebinds values onto what it found. Both are timed at one tissue, so
+what is measured is the structure rather than the dictionary.
 
 **Fixed cost against state cost.** Run the same schedule at several
 configuration-order counts. The state arithmetic scales with the orders; the
@@ -37,13 +42,25 @@ import torch
 
 from torchsim.simulators import FSESimulator, MRFSimulator
 
+WARMUP_SECONDS = 2.0
+
 
 def best(
     run: Callable[[], Any], repeats: int, synchronize: Callable[[], None]
 ) -> float:
-    """The fastest of ``repeats`` timed runs, after one warm-up."""
-    run()
-    synchronize()
+    """The fastest of ``repeats`` timed runs, after a warm-up of a few seconds.
+
+    The warm-up is a budget rather than a count because a card idles at a low
+    clock and takes the better part of a second of continuous work to reach its
+    boost one; timed over three runs after a single warm-up, a kernel of a few
+    milliseconds reports the ramp and not the kernel.
+    """
+    deadline = time.perf_counter() + WARMUP_SECONDS
+    while True:
+        run()
+        synchronize()
+        if time.perf_counter() >= deadline:
+            break
     times = []
     for _ in range(repeats):
         start = time.perf_counter()
@@ -120,8 +137,71 @@ def _reached(
         )
 
 
+def _structure(
+    device: torch.device,
+    args: argparse.Namespace,
+    synchronize: Callable[[], None],
+) -> None:
+    """What resolving a sequence's structure costs, and what it saves per call.
+
+    Resolving walks the event stream, packs it, and learns the affine map from
+    a protocol's values onto those buffers. It happens once per sequence
+    *shape*; every call afterwards rebinds values onto what it found. One
+    tissue is enough to measure it, since what is being timed is the structure
+    and not the arithmetic over the dictionary.
+    """
+    T1 = torch.full((1,), 1000.0, device=device)
+    T2 = torch.full((1,), 80.0, device=device)
+    flip = torch.linspace(5.0, 60.0, args.echoes, device=device)
+    train = torch.full((args.echoes,), 120.0, device=device)
+
+    def place(sequence: Any) -> Any:
+        return sequence.to(device) if device.type != "cpu" else sequence
+
+    sequences = (
+        (
+            f"{args.echoes}-repetition fingerprinting",
+            lambda: place(MRFSimulator(flip=flip, TR=10.0, states=32)),
+            {},
+        ),
+        (
+            f"{args.echoes}-echo refocused",
+            lambda: place(FSESimulator(ESP=5.0, TR=3000.0, states=32)),
+            {"flip": train},
+        ),
+    )
+
+    print("What resolving a structure costs, and what a bound call saves")
+    print(
+        f"{'sequence':>32s}  {'resolve (s)':>11s}  {'bound (ms)':>10s}  "
+        f"{'unresolved (ms)':>15s}"
+    )
+    for label, build, extra in sequences:
+        start = time.perf_counter()
+        resolved = build().resolved()
+        resolved.simulate(T1=T1, T2=T2, **extra)
+        synchronize()
+        cost = time.perf_counter() - start
+        bound = best(
+            lambda s=resolved, e=extra: s.simulate(T1=T1, T2=T2, **e),
+            args.repeats,
+            synchronize,
+        )
+        loose = best(
+            lambda b=build, e=extra: b().simulate(T1=T1, T2=T2, **e),
+            args.repeats,
+            synchronize,
+        )
+        print(f"{label:>32s}  {cost:11.2f}  {bound * 1e3:10.2f}  {loose * 1e3:15.2f}")
+    print(
+        "\n  A dictionary sweep, a fit or a design loop pays the resolve once and\n"
+        "  the bound column on every call after it. A single curve pays the\n"
+        "  resolve for nothing.\n"
+    )
+
+
 def main() -> None:
-    """Print both anatomies."""
+    """Print every anatomy."""
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--atoms", type=int, default=2000)
     cli.add_argument("--echoes", type=int, default=500)
@@ -139,6 +219,8 @@ def main() -> None:
     T2 = torch.linspace(10.0, 300.0, args.atoms, device=device)
 
     print(f"{args.atoms} tissues, {args.echoes} repetitions, {device}\n")
+
+    _structure(device, args, synchronize)
 
     print("Fixed per-event cost against per-state cost")
     print(f"{'orders':>7s}  {'best (ms)':>10s}  {'ms per order':>13s}")
@@ -160,12 +242,22 @@ def main() -> None:
     (low_orders, low), (high_orders, high) = points[0], points[-1]
     slope = (high - low) / (high_orders - low_orders)
     intercept = low - slope * low_orders
-    share = intercept / (intercept + slope * 32)
-    print(
-        f"\n  fixed {intercept * 1e3:.1f} ms, {slope * 1e3:.2f} ms per order:"
-        f" the fixed part is {share:.0%} of a 32-order run.\n"
-        "  That is the whole of what hoisting the relaxation factors can save.\n"
-    )
+    if slope <= 0:
+        # The state arithmetic grows with the orders, so a run whose timing does
+        # not is bound by something else -- a card given too few tissues to fill
+        # it, most often -- and there is no intercept to read out of it.
+        print(
+            f"\n  The timing did not grow with the orders, so this run is not\n"
+            f"  bound by the state arithmetic and the split cannot be read from\n"
+            f"  it. Ask for more tissues than {args.atoms}.\n"
+        )
+    else:
+        share = intercept / (intercept + slope * 32)
+        print(
+            f"\n  fixed {intercept * 1e3:.1f} ms, {slope * 1e3:.2f} ms per order:"
+            f" the fixed part is {share:.0%} of a 32-order run.\n"
+            "  That is the whole of what hoisting the relaxation factors can save.\n"
+        )
 
     print("The real subspace against the complex path, same event stream")
     echo_train = torch.full((args.echoes,), 120.0, device=device)

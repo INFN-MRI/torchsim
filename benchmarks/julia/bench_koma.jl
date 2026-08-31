@@ -17,6 +17,11 @@
 # Run as (from the repository root):
 #
 #     julia -t 4 --project=benchmarks/julia benchmarks/julia/bench_koma.jl --atoms 100 --spins 64
+#     julia --project=benchmarks/julia benchmarks/julia/bench_koma.jl --atoms 1000 --spins 64 --device cuda
+#
+# `--device cuda` is where the isochromat picture is at its best: the spins are
+# independent, so the `spins` factor the spoiler costs is exactly the kind of
+# width a card is wide in.
 #
 # `--dump` writes the per-tissue signal for `validate.py` to hold against the
 # EPG implementations.
@@ -26,6 +31,15 @@ using KomaMRIBase
 using Pkg
 
 include(joinpath(@__DIR__, "common.jl"))
+
+# KomaMRICore reaches a card through a package extension, so CUDA.jl has to be
+# loaded for `gpu = true` to find a backend. It is loaded only where it is
+# used: it costs a second and a few hundred megabytes of the resident set this
+# script reports.
+const ON_CARD = device_asked_for(ARGS) != "cpu"
+if ON_CARD
+    @eval using CUDA
+end
 
 """
 The MRF train as a Koma sequence: an inversion, then one hard excitation, one
@@ -73,6 +87,7 @@ function main()
         "spins" => "64",
         "repeats" => "3",
         "mode" => "forward",
+        "device" => "cpu",
         "json" => "",
         "tissues" => "",
         "dump" => "",
@@ -81,6 +96,7 @@ function main()
     length_ = parse(Int, options["length"])
     spins = parse(Int, options["spins"])
     repeats = parse(Int, options["repeats"])
+    device = options["device"]
 
     baseline = peak_rss_mib()
 
@@ -101,14 +117,20 @@ function main()
     parameters = Dict{String,Any}(
         "sim_method" => BlochDict(),
         "return_type" => "mat",
-        "gpu" => false,
+        "gpu" => ON_CARD,
         "Nthreads" => Threads.nthreads(),
     )
+    # cuCtxSynchronize, which blocks until the card is done. CUDA.jl's
+    # `synchronize` yields to the Julia scheduler and polls instead, and the
+    # wake-up latency lands in the timing rather than on the card.
+    synchronize = ON_CARD ? () -> CUDA.device_synchronize() : () -> nothing
 
     # (samples, spins * atoms, 1) out; the bundle of each tissue averages to
     # the signal an extended phase graph reports for it.
     run() = simulate(phantom, sequence, system; sim_params=parameters, verbose=false)
-    setup, seconds, raw = timed(run; repeats)
+    setup, seconds, raw = timed(run; repeats, synchronize)
+    device_mib = ON_CARD ? peak_device_mib() : 0.0
+    raw = Array(raw)
     signal = dropdims(sum(reshape(raw[:, :, 1], :, spins, atoms), dims=2), dims=2) ./ spins
 
     installed = Pkg.dependencies()
@@ -119,14 +141,14 @@ function main()
         "atoms" => atoms,
         "length" => length_,
         "states" => spins,
-        "device" => "cpu",
+        "device" => device,
         "threads" => Threads.nthreads(),
         "repeats" => repeats,
         "seconds" => seconds,
         "setup_seconds" => setup,
         "baseline_rss_mib" => baseline,
         "peak_rss_mib" => peak_rss_mib(),
-        "peak_device_mib" => 0.0,
+        "peak_device_mib" => device_mib,
         "checksum" => [real(sum(signal)), imag(sum(signal))],
         "versions" => Dict("KomaMRICore" => version, "julia" => string(VERSION)),
         "machine" => machine(),

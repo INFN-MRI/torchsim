@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import sys
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 
 import numpy as np
 
@@ -33,6 +33,18 @@ from _common import (  # noqa: E402
     timed,
     tissue_grid,
 )
+
+
+def installed_version() -> str:
+    """Which sycomore this is, from whichever installer put it there.
+
+    Conda-forge is what sycomore's own instructions reach for, and a conda
+    package leaves no distribution metadata a virtual environment can read.
+    """
+    try:
+        return version("sycomore")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def main() -> None:
@@ -67,7 +79,7 @@ def main() -> None:
             signal[index] = model.echo
             model.shift()
             model.apply_time_interval(10.0 * ms)
-        orders.append(model.states_count)
+        orders.append(len(model.orders))
         return signal
 
     def dictionary() -> np.ndarray:
@@ -89,7 +101,7 @@ def main() -> None:
         baseline_rss_mib=baseline,
         peak_rss_mib=peak_rss_mib(),
         checksum=complex(signal.sum()),
-        versions={"sycomore": version("sycomore")},
+        versions={"sycomore": installed_version()},
         machine=machine(),
         note=(
             f"threshold={args.threshold:g}; orders reached "

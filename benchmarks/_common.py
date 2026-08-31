@@ -105,15 +105,32 @@ def machine() -> dict[str, str]:
     }
 
 
+WARMUP_SECONDS = 2.0
+
+
 def timed(
     run: Callable[[], Any],
     *,
     repeats: int,
     synchronize: Callable[[], None] = lambda: None,
+    warmup_seconds: float = WARMUP_SECONDS,
 ) -> tuple[list[float], Any]:
-    """Run ``run`` once to warm up, then ``repeats`` times, timing each."""
-    result = run()
-    synchronize()
+    """Warm up for ``warmup_seconds``, then run ``repeats`` times, timing each.
+
+    The warm-up is a budget rather than a count because what has to be warm
+    differs by orders of magnitude. A card idles at a low clock and takes the
+    better part of a second of continuous work to reach its boost one -- a
+    kernel of a few milliseconds measured over three runs reports the ramp, not
+    the kernel. A pass that already takes tens of seconds is warm after one.
+    So the budget buys hundreds of runs for the first and exactly one for the
+    second.
+    """
+    deadline = time.perf_counter() + warmup_seconds
+    while True:
+        result = run()
+        synchronize()
+        if time.perf_counter() >= deadline:
+            break
     seconds = []
     for _ in range(repeats):
         start = time.perf_counter()

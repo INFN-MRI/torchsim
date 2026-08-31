@@ -98,8 +98,11 @@ def main() -> None:
         setup_seconds=setup,
         baseline_rss_mib=baseline,
         peak_rss_mib=peak_rss_mib(),
+        # What the caching allocator took from the driver, which is what the
+        # Julia backends report from their own pool. Neither counts the driver
+        # context underneath.
         peak_device_mib=(
-            torch.cuda.max_memory_allocated(device) / 2**20
+            torch.cuda.max_memory_reserved(device) / 2**20
             if device.type == "cuda"
             else 0.0
         ),
