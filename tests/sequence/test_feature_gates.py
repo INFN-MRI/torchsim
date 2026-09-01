@@ -9,6 +9,8 @@ gradient the gate would have had to lie about.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 import torch
 
@@ -18,6 +20,7 @@ from torchsim.sequence._parameters import (
     TISSUE_PARAMETERS,
     Geometry,
     at_identity,
+    features_of,
 )
 
 # The kernel module imports Triton at its top, and Triton is a dependency of
@@ -435,3 +438,62 @@ def test_a_diffusion_coefficient_asked_for_its_gradient_gets_a_real_one():
     )
     signal.abs().square().sum().backward()
     assert float(coefficient.grad.abs().max()) > 0.0
+
+
+def _laid_out(tissue: TissueProperties, features) -> set[str]:
+    """Which tissue properties got a value per voxel."""
+    from torchsim.sequence._simulation import _prepare_tissue
+
+    prepared, _, _ = _prepare_tissue(tissue, torch.device("cpu"), 1, features)
+    return {
+        name
+        for name, buffer in zip(TISSUE_NAMES, prepared, strict=True)
+        if buffer.numel() > 1
+    }
+
+
+def test_a_property_given_as_one_value_keeps_the_one_value_it_was_given():
+    """Neither an absent term nor a uniform one needs room per voxel.
+
+    A term the run leaves out is compiled away, so its buffer is there to be
+    pointed at rather than read. A term it carries from a single value is read
+    at one address by every voxel. Either way a scalar copied a voxel at a time
+    is the whole of what laying it out would buy.
+    """
+    voxels = 512
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(200.0, 3000.0, voxels),
+        t2_ms=torch.linspace(10.0, 300.0, voxels),
+        b1=0.85,
+    )
+    features = features_of(tissue)
+
+    assert _laid_out(tissue, features) == {"t1_ms", "t2_ms"}
+    # A caller who declares nothing gets every term, so every buffer is read.
+    assert _laid_out(tissue, None) == set(TISSUE_NAMES)
+
+    # A transmit map has to be stepped through, and the stride is one number
+    # for the launch, so it is laid out and stepped by one. The terms the run
+    # leaves out are not read at all and stay as they were given.
+    mapped = replace(tissue, b1=torch.linspace(0.8, 1.0, voxels))
+    assert _laid_out(mapped, features_of(mapped)) == {"t1_ms", "t2_ms", "b1"}
+
+
+def test_a_property_being_differentiated_is_laid_out_though_its_term_is_absent():
+    """A gradient is written beside every voxel, term or no term.
+
+    ``at_identity`` already refuses to call such a property absent; this pins
+    that the layout follows the same rule, since a pass that narrowed the
+    buffer would have nowhere to put the answer.
+    """
+    voxels = 512
+    diffusion = torch.zeros(voxels, requires_grad=True)
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(200.0, 3000.0, voxels),
+        t2_ms=torch.linspace(10.0, 300.0, voxels),
+        diffusion_um2_per_ms=diffusion,
+    )
+    features = features_of(tissue)
+
+    assert "DIFFUSION" in features
+    assert "diffusion_um2_per_ms" in _laid_out(tissue, features)

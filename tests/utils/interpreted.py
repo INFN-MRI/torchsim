@@ -695,7 +695,73 @@ def _shimmed(voxels: int, states: int) -> None:
     assert second <= WIDE_TOLERANCE, f"shimmed second order: {second:.2e}"
 
 
+def _narrowed(voxels: int, states: int) -> None:
+    """A tissue whose optional properties are one value each, kept that way.
+
+    Two things are pinned at once. A term the run leaves out is compiled away,
+    so its property needs no room per voxel; and a term the run carries from a
+    single value is read at one address by every voxel, which is the stride the
+    launch hands the kernels. What either costs if it is wrong is a read past
+    the end of a buffer, which is silent -- so the two launches are held to each
+    other bit for bit rather than to a tolerance.
+    """
+    install()
+    import math
+
+    from torchsim import TissueProperties
+    from torchsim.sequence import _builders, _epg_triton
+    from torchsim.sequence._accelerators import real_subspace_axis
+    from torchsim.sequence._parameters import TISSUE_NAMES, features_of
+    from torchsim.sequence._simulation import _prepare_tissue
+
+    echoes = 6
+    tissue = TissueProperties(
+        t1_ms=torch.linspace(600.0, 1400.0, voxels),
+        t2_ms=torch.linspace(40.0, 120.0, voxels),
+        # One global transmit scaling: a term the run does carry, from a value
+        # that is not the identity, so the buffer beside it stays laid out.
+        b1=0.85,
+    )
+    features = features_of(tissue)
+    events, outputs = _events(
+        _builders.fse_description(
+            torch.full((echoes,), math.radians(150.0)),
+            8e-3,
+            phases_rad=math.pi / 2,
+            excitation_phase_rad=math.pi / 2,
+        )
+    )
+    full, _, _ = _prepare_tissue(tissue, "cpu", 1, None)
+    thin, _, _ = _prepare_tissue(tissue, "cpu", 1, features)
+    narrowed = [
+        name
+        for name, buffer in zip(TISSUE_NAMES, thin, strict=True)
+        if buffer.numel() == 1
+    ]
+    # Only the two relaxation times are laid out per voxel: B1 is carried, but
+    # from one number, so it is read through a stride of zero like the rest.
+    assert narrowed == [
+        name for name in TISSUE_NAMES if name not in ("t1_ms", "t2_ms")
+    ], narrowed
+    assert real_subspace_axis(events, full) == 1, "this train is not in the subspace"
+
+    shape = dict(state_count=states, output_count=outputs)
+    for label, axis in (("real", 1), ("complex", -1)):
+        whole = _epg_triton.simulate(
+            full, events, real_axis=axis, features=features, **shape
+        )
+        narrow = _epg_triton.simulate(
+            thin, events, real_axis=axis, features=features, **shape
+        )
+        drift = float((whole - narrow).abs().max())
+        print(f"  {label} narrowed        {drift:.2e}")
+        assert drift == 0.0, f"the {label} kernel read a term it was told to drop"
+
+
 def _case(name: str) -> None:
+    if name == "narrowed":
+        _narrowed(3, 4)
+        return
     if name == "real":
         _real(3, 4)
         return

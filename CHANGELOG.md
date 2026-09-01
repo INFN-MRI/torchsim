@@ -4,6 +4,59 @@
 
 ### Fixed
 
+- **The real kernels take two events to an iteration.** A repetition is several
+  events -- a pulse, a sample, an interval -- so the event loop runs longer than
+  the sequence is repetitions, and one back-edge and one set of event
+  bookkeeping can serve two of them. Interleaved against the un-unrolled kernel
+  it wins every round, by about 3%: a hundred thousand tissues go from 73.1 ms
+  to 70.6 ms averaged over three pairs. Four events to an iteration is slower,
+  and the body is already wide enough that widening it costs registers.
+
+- **A per-event value that no atom varies is read once for the program.**
+  `duration`, `flip` and `phase` are indexed by the train and the event, never
+  by the atom, so with one train the address is the same for every lane. It
+  went through a per-lane `event_base`, which Triton cannot see through, and a
+  tile-shaped load emits one instruction per element the lane holds -- four
+  reads of one number. A launch now says whether it carries a single train and
+  the read is uniform where it does: over eight events of a four-element tile,
+  34 global loads become 8 and the loop body falls from 189 PTX instructions to
+  77.
+
+- **An interval as long as the last one reuses its relaxation factors.** The
+  two exponentials depend on the event only through its duration, and a train
+  repeats its intervals -- a fingerprinting readout is the same interval five
+  hundred times over. The factors are remembered against the duration that
+  produced them, which a single-train launch can compare because the duration
+  is then one number for the whole program. A train that moves its repetition
+  times recomputes them as it did.
+
+- **The shift moves the states between lanes rather than through memory.** The
+  configuration-order shift wrote both planes of the state tile out to a global
+  staging row, synchronized, and read them back at an offset: for a hundred
+  thousand voxels, about 25 GB of traffic across a forward pass. It is a gather
+  within the tile now, which lowers to warp shuffles and touches no memory at
+  all. The staging rows are gone with it, and with them a device allocation of
+  `planes * voxels * orders` floats per call.
+
+- **A kernel that computes every operator for every event pays for all of
+  them.** The event flags are read from arrays with no atom index, so they are
+  uniform across the program and can steer real control flow; the kernels chose
+  between operators with `tl.where` instead, which made an event that shifts
+  nothing pay for a shift and an event that turns nothing pay for a rotation
+  and its sine and cosine. A spoiled repetition is four events and needs one
+  rotation and one shift. The real forward and forward-mode kernels branch now,
+  and an event of no duration -- half of a spoiled train -- relaxes nothing.
+
+- **The tile a program carries is decided by the state count alone.** It was
+  read off the launch size as well, so a volume cut into chunks compiled a
+  different tile from the same volume run whole; two tiles reassociate their
+  arithmetic differently, and a streamed adjoint answered about 1.4e-4 away
+  from an unstreamed one. `tests/sequence/test_both_pools.py` pins that, and it
+  is 8e-7 now.
+
+- **A shim count reads a transmit field given as one value as the one shim it
+  is**, rather than as no shims at all.
+
 - **Resolving a protocol walks its stream once per direction, not four
   times.** The map is read off four packed buffers, and the walk that produces
   them sat inside the comprehension that read them -- so every forward-mode
@@ -156,6 +209,21 @@
   thousand, and which order a given tissue stops at varies across a dictionary.
 
 ### Changed
+
+- **A property whose term the run leaves out is not laid out per voxel, and
+  neither is one given as a single value.** Every tissue property was broadcast
+  to the voxel count and materialized, so a model naming two relaxation times
+  and one global transmit scaling still built seventeen buffers a voxel wide --
+  at eight million voxels, 519 MiB of which two properties carried anything. A
+  CUDA launch is told which terms it carries and compiles the branch that would
+  read the rest away, so their properties stay as they were given; and a term
+  carried from one number is read at one address by every voxel, through a
+  stride the launch hands the kernels. The same tissue lays out its two
+  relaxation times and nothing else: 61 MiB. A property being differentiated is
+  laid out whatever its term, since a gradient is written beside every voxel.
+
+  The host kernels read a value and discard it where a card compiles the branch
+  away, so they are told nothing and every buffer is laid out for them.
 
 - **A packed stream is timed once over the whole of it.** The walk collected
   every event's timestamp and read the intervals off one difference and the

@@ -59,12 +59,12 @@
 | torchsim | forward | cpu | 4 | 1000 | 0.0233 | 42,972 | 720 | 113.5 | 0 |
 | torchsim | forward | cpu | 4 | 10000 | 0.1866 | 53,578 | 860 | 252.6 | 0 |
 | torchsim | forward | cpu | 4 | 100000 | 1.9028 | 52,554 | 1861 | 1254.0 | 0 |
-| torchsim | forward | cuda | 4 | 1 | 0.0038 | 260 | 1155 | 548.6 | 122 |
-| torchsim | forward | cuda | 4 | 10 | 0.0042 | 2,373 | 1159 | 551.9 | 122 |
-| torchsim | forward | cuda | 4 | 100 | 0.0029 | 34,698 | 1209 | 601.9 | 122 |
-| torchsim | forward | cuda | 4 | 1000 | 0.0034 | 298,234 | 1199 | 593.7 | 26 |
-| torchsim | forward | cuda | 4 | 10000 | 0.0097 | 1,033,043 | 1201 | 595.5 | 196 |
-| torchsim | forward | cuda | 4 | 100000 | 0.0787 | 1,271,237 | 1211 | 605.9 | 1586 |
+| torchsim | forward | cuda | 4 | 1 | 0.0037 | 267 | 1152 | 551.3 | 54 |
+| torchsim | forward | cuda | 4 | 10 | 0.0034 | 2,942 | 1180 | 582.2 | 54 |
+| torchsim | forward | cuda | 4 | 100 | 0.0028 | 35,256 | 1240 | 639.7 | 54 |
+| torchsim | forward | cuda | 4 | 1000 | 0.0033 | 301,734 | 1202 | 600.6 | 54 |
+| torchsim | forward | cuda | 4 | 10000 | 0.0087 | 1,150,290 | 1194 | 592.4 | 196 |
+| torchsim | forward | cuda | 4 | 100000 | 0.0687 | 1,454,714 | 1204 | 602.3 | 1586 |
 | torchsim | jacobian(T1) | cpu | 4 | 1 | 0.0054 | 185 | 712 | 105.2 | 0 |
 | torchsim | jacobian(T1) | cpu | 4 | 10 | 0.0081 | 1,234 | 712 | 105.4 | 0 |
 | torchsim | jacobian(T1) | cpu | 4 | 100 | 0.0117 | 8,520 | 713 | 106.3 | 0 |
@@ -72,23 +72,23 @@
 | torchsim | jacobian(T1) | cpu | 4 | 10000 | 0.5511 | 18,146 | 941 | 333.8 | 0 |
 | torchsim | jacobian(T1) | cpu | 4 | 100000 | 5.4812 | 18,244 | 3007 | 2400.2 | 0 |
 | torchsim | jacobian(T1) | cuda | 4 | 1 | 0.0084 | 119 | 1167 | 560.0 | 122 |
-| torchsim | jacobian(T1) | cuda | 4 | 10 | 0.0087 | 1,154 | 1165 | 558.1 | 122 |
-| torchsim | jacobian(T1) | cuda | 4 | 100 | 0.0089 | 11,198 | 1214 | 607.5 | 122 |
-| torchsim | jacobian(T1) | cuda | 4 | 1000 | 0.0108 | 92,514 | 1213 | 607.0 | 50 |
-| torchsim | jacobian(T1) | cuda | 4 | 10000 | 0.0260 | 384,192 | 1216 | 610.7 | 316 |
-| torchsim | jacobian(T1) | cuda | 4 | 100000 | 0.2116 | 472,551 | 1214 | 608.5 | 2712 |
+| torchsim | jacobian(T1) | cuda | 4 | 10 | 0.0081 | 1,242 | 1158 | 556.2 | 54 |
+| torchsim | jacobian(T1) | cuda | 4 | 100 | 0.0079 | 12,640 | 1209 | 607.9 | 72 |
+| torchsim | jacobian(T1) | cuda | 4 | 1000 | 0.0080 | 124,412 | 1211 | 609.8 | 56 |
+| torchsim | jacobian(T1) | cuda | 4 | 10000 | 0.0237 | 421,684 | 1206 | 605.2 | 316 |
+| torchsim | jacobian(T1) | cuda | 4 | 100000 | 0.1895 | 527,615 | 1209 | 607.7 | 2732 |
 | torchsim | jacobian(T1,T2) | cpu | 4 | 1 | 0.0101 | 99 | 712 | 105.1 | 0 |
 | torchsim | jacobian(T1,T2) | cpu | 4 | 10 | 0.0117 | 856 | 712 | 105.7 | 0 |
 | torchsim | jacobian(T1,T2) | cpu | 4 | 100 | 0.0229 | 4,358 | 714 | 107.2 | 0 |
 | torchsim | jacobian(T1,T2) | cpu | 4 | 1000 | 0.1285 | 7,783 | 757 | 150.1 | 0 |
 | torchsim | jacobian(T1,T2) | cpu | 4 | 10000 | 1.0879 | 9,192 | 1055 | 448.1 | 0 |
 | torchsim | jacobian(T1,T2) | cpu | 4 | 100000 | 9.6565 | 10,356 | 4147 | 3540.4 | 0 |
-| torchsim | jacobian(T1,T2) | cuda | 4 | 1 | 0.0166 | 60 | 1167 | 559.9 | 122 |
-| torchsim | jacobian(T1,T2) | cuda | 4 | 10 | 0.0163 | 612 | 1164 | 557.5 | 122 |
-| torchsim | jacobian(T1,T2) | cuda | 4 | 100 | 0.0174 | 5,731 | 1214 | 607.4 | 122 |
-| torchsim | jacobian(T1,T2) | cuda | 4 | 1000 | 0.0186 | 53,620 | 1212 | 606.9 | 70 |
-| torchsim | jacobian(T1,T2) | cuda | 4 | 10000 | 0.0526 | 190,257 | 1221 | 614.6 | 512 |
-| torchsim | jacobian(T1,T2) | cuda | 4 | 100000 | 0.4320 | 231,464 | 1214 | 608.5 | 4622 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 1 | 0.0156 | 64 | 1164 | 563.0 | 72 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 10 | 0.0156 | 640 | 1197 | 595.8 | 54 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 100 | 0.0159 | 6,282 | 1253 | 651.3 | 54 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 1000 | 0.0158 | 63,392 | 1206 | 605.0 | 56 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 10000 | 0.0459 | 217,764 | 1206 | 605.3 | 512 |
+| torchsim | jacobian(T1,T2) | cuda | 4 | 100000 | 0.3813 | 262,295 | 1208 | 606.0 | 4642 |
 
 - BlochSimulators.jl n=1000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction
 - BlochSimulators.jl n=10000: float32; real RF train, so the states stay real; max_state is a multiple of 32 by construction

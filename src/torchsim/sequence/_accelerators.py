@@ -2296,10 +2296,12 @@ def _shim_count(tissue: tuple[torch.Tensor, ...]) -> int:
     """How many shim rows the transmit buffers carry, one per voxel each.
 
     Read off the buffers rather than passed alongside them, so the stride the
-    kernels use cannot disagree with the memory they are given.
+    kernels use cannot disagree with the memory they are given. A transmit
+    field given as one value for the whole tissue carries no row at all, and is
+    the one shim it describes.
     """
     atoms = tissue[0].numel()
-    return 1 if atoms == 0 else tissue[3].numel() // atoms
+    return 1 if atoms == 0 else max(1, tissue[3].numel() // atoms)
 
 
 def _train_count(events: tuple[torch.Tensor, ...]) -> int:
@@ -2617,6 +2619,14 @@ class _Lane(Lane):
         width = end - begin
         staged = []
         for slot, rows, value in zip(self.inputs, self.rows, values, strict=True):
+            if value.numel() == 1:
+                # A property whose term the run leaves out is kept as the one
+                # value it was given. There is nothing to cut along the voxel
+                # axis, and the kernel takes the pointer without indexing it.
+                piece = slot[:1]
+                piece.copy_(value.reshape(1), non_blocking=True)
+                staged.append(piece)
+                continue
             piece = slot[: rows * width]
             source = value.view(rows, -1)
             for row in range(rows):

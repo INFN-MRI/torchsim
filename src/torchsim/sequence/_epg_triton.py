@@ -88,6 +88,23 @@ def _first(values, state):
 
 
 @triton.jit
+def _event_value(values, event_base, event, active_atom, single_train: tl.constexpr):
+    """One event's entry of a buffer carrying a row per train.
+
+    ``duration``, ``flip`` and ``phase`` are indexed by the train and the event
+    and never by the atom, so where there is one train the address is the same
+    for every lane of the program and the value can be read once. Triton cannot
+    see that through ``event_base``, and a tile-shaped load emits one
+    instruction per element the lane holds -- four reads of one number.
+    """
+    if single_train:
+        # Spread over the program's problems, which a jitted helper has to do
+        # for itself: both arms of the branch have to hand back the one shape.
+        return tl.load(values + event) + tl.zeros_like(event_base.to(tl.float32))
+    return tl.load(values + event_base + event, mask=active_atom, other=0.0)
+
+
+@triton.jit
 def _shift(
     fplus_real,
     fplus_imag,
@@ -5698,6 +5715,8 @@ def _epg_vjp_kernel(
     profile_step,
     lineshape_step,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shimmed: tl.constexpr,
     locations: tl.constexpr,
     profile_bins: tl.constexpr,
@@ -5721,6 +5740,9 @@ def _epg_vjp_kernel(
     active_atom = problem < problem_end
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
     local = problem - problem_base
     record_stride = (
@@ -5746,26 +5768,28 @@ def _epg_vjp_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
-        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
-        atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+        atom_b1_phase = tl.load(b1_phase + scalar_atom, mask=active_atom, other=0.0)
+        atom_b0 = tl.load(b0 + scalar_atom, mask=active_atom, other=0.0)
     atom_inv = 1.0
     if inverting:
-        atom_inv = tl.load(inversion_efficiency + atom, mask=active_atom, other=1.0)
+        atom_inv = tl.load(
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
+        )
     atom_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
     atom_flow = 0.0
     direction = 0.0
     atom_washout = 0.0
     if moving:
-        atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+        atom_velocity = tl.load(velocity + scalar_atom, mask=active_atom, other=0.0)
         atom_flow = atom_velocity * flow_scale
         # |v| has no derivative at the origin, so a still voxel contributes
         # none.
@@ -5804,26 +5828,32 @@ def _epg_vjp_kernel(
     semivr = empty
     semivi = empty
     if pools == 1:
-        atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(exchange_rate + atom, mask=active_atom, other=0.0)
-        atom_t1b = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        atom_bound = tl.load(bound_fraction + scalar_atom, mask=active_atom, other=0.0)
+        atom_exchange = tl.load(
+            exchange_rate + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_t1b = tl.load(t1_bound + scalar_atom, mask=active_atom, other=1.0)
         r1b_value = 1000.0 / atom_t1b
     if pools == 2 or pools == 3:
-        atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(pool_b_exchange + atom, mask=active_atom, other=0.0)
-        atom_t1b = tl.load(t1_pool_b + atom, mask=active_atom, other=1.0)
+        atom_bound = tl.load(pool_b_fraction + scalar_atom, mask=active_atom, other=0.0)
+        atom_exchange = tl.load(
+            pool_b_exchange + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_t1b = tl.load(t1_pool_b + scalar_atom, mask=active_atom, other=1.0)
         r1b_value = 1000.0 / atom_t1b
-        atom_t2b = tl.load(t2_pool_b + atom, mask=active_atom, other=1.0)
+        atom_t2b = tl.load(t2_pool_b + scalar_atom, mask=active_atom, other=1.0)
         r2b_value = 1000.0 / atom_t2b
-        atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
+        atom_shift = tl.load(pool_b_shift + scalar_atom, mask=active_atom, other=0.0)
     if pools == 3:
         # The semisolid pool takes the rows a run with it alone would take, so
         # the two second pools never contend for one.
-        atom_semisolid = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
-        atom_semisolid_exchange = tl.load(
-            exchange_rate + atom, mask=active_atom, other=0.0
+        atom_semisolid = tl.load(
+            bound_fraction + scalar_atom, mask=active_atom, other=0.0
         )
-        atom_t1c = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        atom_semisolid_exchange = tl.load(
+            exchange_rate + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_t1c = tl.load(t1_bound + scalar_atom, mask=active_atom, other=1.0)
         r1c_value = 1000.0 / atom_t1c
         semivr = empty + tl.where(state == 0, atom_semisolid + 0.0, 0.0)
     if pools > 0:
@@ -5852,7 +5882,7 @@ def _epg_vjp_kernel(
             tl.store(trajectory_r + slot + semisolid_plane, semivr, mask=state_mask)
             tl.store(trajectory_i + slot + semisolid_plane, semivi, mask=state_mask)
 
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
         wout_value = 1.0
         if moving:
             wout_value = _washout(atom_washout, dt_value)
@@ -6091,8 +6121,8 @@ def _epg_vjp_kernel(
             poolvr = tl.where(invert, -atom_inv * poolvr, poolvr)
             poolvi = tl.where(invert, -atom_inv * poolvi, poolvi)
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
+        event_phase = _event_value(phase, event_base, event, active_atom, single_train)
         pulse_b1 = atom_b1
         pulse_b1_phase = atom_b1_phase
         # One shim is the whole sequence's transmit field, loaded once above;
@@ -6356,7 +6386,7 @@ def _epg_vjp_kernel(
 
         event_action = tl.load(action + event).to(tl.int32)
         event_kind = tl.load(kind + event)
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
         wout_value = 1.0
         if moving:
             wout_value = _washout(atom_washout, dt_value)
@@ -6848,8 +6878,8 @@ def _epg_vjp_kernel(
             wbvr = tl.where(spoil, 0.0, tl.where(trailing, bvr, wbvr))
             wbvi = tl.where(spoil, 0.0, tl.where(trailing, bvi, wbvi))
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
+        event_phase = _event_value(phase, event_base, event, active_atom, single_train)
         pulse_b1 = atom_b1
         pulse_b1_phase = atom_b1_phase
         if shimmed:
@@ -8498,6 +8528,8 @@ def _epg_vjp_jvp_kernel(
     profile_step,
     lineshape_step,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shim_rows,
     shimmed: tl.constexpr,
     locations: tl.constexpr,
@@ -8523,6 +8555,9 @@ def _epg_vjp_jvp_kernel(
     active_atom = problem < problem_end
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
     # Voxels are spread over the slice voxel-major, so a voxel's place along
     # the slice is its index modulo the profile's width. One pulse shape holds
@@ -8590,40 +8625,58 @@ def _epg_vjp_jvp_kernel(
     r1c_value = 0.0
     r1c_tangent = 0.0
     if pools == 1:
-        atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
-        d_boundf = tl.load(dot_bound_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(exchange_rate + atom, mask=active_atom, other=0.0)
-        d_exchange = tl.load(dot_exchange_rate + atom, mask=active_atom, other=0.0)
-        atom_t1b = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
-        d_t1b = tl.load(dot_t1_bound + atom, mask=active_atom, other=0.0)
+        atom_bound = tl.load(bound_fraction + scalar_atom, mask=active_atom, other=0.0)
+        d_boundf = tl.load(
+            dot_bound_fraction + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_exchange = tl.load(
+            exchange_rate + scalar_atom, mask=active_atom, other=0.0
+        )
+        d_exchange = tl.load(
+            dot_exchange_rate + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_t1b = tl.load(t1_bound + scalar_atom, mask=active_atom, other=1.0)
+        d_t1b = tl.load(dot_t1_bound + scalar_atom, mask=active_atom, other=0.0)
         r1b_value = 1000.0 / atom_t1b
         r1b_tangent = -1000.0 * d_t1b / (atom_t1b * atom_t1b)
     if pools == 2 or pools == 3:
-        atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
-        d_boundf = tl.load(dot_pool_b_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(pool_b_exchange + atom, mask=active_atom, other=0.0)
-        d_exchange = tl.load(dot_pool_b_exchange + atom, mask=active_atom, other=0.0)
-        atom_t1b = tl.load(t1_pool_b + atom, mask=active_atom, other=1.0)
-        d_t1b = tl.load(dot_t1_pool_b + atom, mask=active_atom, other=0.0)
+        atom_bound = tl.load(pool_b_fraction + scalar_atom, mask=active_atom, other=0.0)
+        d_boundf = tl.load(
+            dot_pool_b_fraction + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_exchange = tl.load(
+            pool_b_exchange + scalar_atom, mask=active_atom, other=0.0
+        )
+        d_exchange = tl.load(
+            dot_pool_b_exchange + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_t1b = tl.load(t1_pool_b + scalar_atom, mask=active_atom, other=1.0)
+        d_t1b = tl.load(dot_t1_pool_b + scalar_atom, mask=active_atom, other=0.0)
         r1b_value = 1000.0 / atom_t1b
         r1b_tangent = -1000.0 * d_t1b / (atom_t1b * atom_t1b)
-        atom_t2b = tl.load(t2_pool_b + atom, mask=active_atom, other=1.0)
-        d_t2b = tl.load(dot_t2_pool_b + atom, mask=active_atom, other=0.0)
+        atom_t2b = tl.load(t2_pool_b + scalar_atom, mask=active_atom, other=1.0)
+        d_t2b = tl.load(dot_t2_pool_b + scalar_atom, mask=active_atom, other=0.0)
         r2b_value = 1000.0 / atom_t2b
         r2b_tangent = -1000.0 * d_t2b / (atom_t2b * atom_t2b)
-        atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
-        d_shift = tl.load(dot_pool_b_shift + atom, mask=active_atom, other=0.0)
+        atom_shift = tl.load(pool_b_shift + scalar_atom, mask=active_atom, other=0.0)
+        d_shift = tl.load(dot_pool_b_shift + scalar_atom, mask=active_atom, other=0.0)
     if pools == 3:
-        atom_semisolid = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
-        d_semisolidf = tl.load(dot_bound_fraction + atom, mask=active_atom, other=0.0)
+        atom_semisolid = tl.load(
+            bound_fraction + scalar_atom, mask=active_atom, other=0.0
+        )
+        d_semisolidf = tl.load(
+            dot_bound_fraction + scalar_atom, mask=active_atom, other=0.0
+        )
         atom_semisolid_exchange = tl.load(
-            exchange_rate + atom, mask=active_atom, other=0.0
+            exchange_rate + scalar_atom, mask=active_atom, other=0.0
         )
         d_semisolid_exchange = tl.load(
-            dot_exchange_rate + atom, mask=active_atom, other=0.0
+            dot_exchange_rate + scalar_atom, mask=active_atom, other=0.0
         )
-        held_semisolid = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
-        d_semisolid_t1 = tl.load(dot_t1_bound + atom, mask=active_atom, other=0.0)
+        held_semisolid = tl.load(t1_bound + scalar_atom, mask=active_atom, other=1.0)
+        d_semisolid_t1 = tl.load(
+            dot_t1_bound + scalar_atom, mask=active_atom, other=0.0
+        )
         r1c_value = 1000.0 / held_semisolid
         r1c_tangent = -1000.0 * d_semisolid_t1 / (held_semisolid * held_semisolid)
         cvr = empty + tl.where(state == 0, atom_semisolid + 0.0, 0.0)
@@ -8647,47 +8700,51 @@ def _epg_vjp_jvp_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
-        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
-        atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+        atom_b1_phase = tl.load(b1_phase + scalar_atom, mask=active_atom, other=0.0)
+        atom_b0 = tl.load(b0 + scalar_atom, mask=active_atom, other=0.0)
     atom_inv = 1.0
     if inverting:
-        atom_inv = tl.load(inversion_efficiency + atom, mask=active_atom, other=1.0)
+        atom_inv = tl.load(
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
+        )
     d_t1 = tl.load(dot_t1 + atom, mask=active_atom, other=0.0)
     d_t2 = tl.load(dot_t2 + atom, mask=active_atom, other=0.0)
     d_m0 = 0.0
     if density:
-        d_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
+        d_m0 = tl.load(dot_m0 + scalar_atom, mask=active_atom, other=0.0)
     d_b1 = 0.0
     if transmit:
-        d_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
+        d_b1 = tl.load(dot_b1 + scalar_atom, mask=active_atom, other=0.0)
     d_b1_phase = 0.0
     d_b0 = 0.0
     if off_axis:
-        d_b1_phase = tl.load(dot_b1_phase + atom, mask=active_atom, other=0.0)
-        d_b0 = tl.load(dot_b0 + atom, mask=active_atom, other=0.0)
+        d_b1_phase = tl.load(dot_b1_phase + scalar_atom, mask=active_atom, other=0.0)
+        d_b0 = tl.load(dot_b0 + scalar_atom, mask=active_atom, other=0.0)
     d_inv = 0.0
     if inverting:
-        d_inv = tl.load(dot_inversion_efficiency + atom, mask=active_atom, other=0.0)
+        d_inv = tl.load(
+            dot_inversion_efficiency + scalar_atom, mask=active_atom, other=0.0
+        )
     atom_damping = 0.0
     d_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-        d_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
+        d_damping = tl.load(dot_diffusion + scalar_atom, mask=active_atom, other=0.0)
     atom_flow = 0.0
     d_flow = 0.0
     direction = 0.0
     atom_washout = 0.0
     d_washout = 0.0
     if moving:
-        atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
-        d_velocity = tl.load(dot_velocity + atom, mask=active_atom, other=0.0)
+        atom_velocity = tl.load(velocity + scalar_atom, mask=active_atom, other=0.0)
+        d_velocity = tl.load(dot_velocity + scalar_atom, mask=active_atom, other=0.0)
         atom_flow = atom_velocity * flow_scale
         d_flow = d_velocity * flow_scale
         # |v| has no derivative at the origin, so a still voxel contributes
@@ -8740,9 +8797,9 @@ def _epg_vjp_jvp_kernel(
             tl.store(trajectory_tr + slot + semisolid_plane, ctr, mask=state_mask)
             tl.store(trajectory_ti + slot + semisolid_plane, cti, mask=state_mask)
 
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        dt_tangent = tl.load(
-            dot_duration + event_base + event, mask=active_atom, other=0.0
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
+        dt_tangent = _event_value(
+            dot_duration, event_base, event, active_atom, single_train
         )
         wout_value = 1.0
         wout_tangent = 0.0
@@ -9175,13 +9232,13 @@ def _epg_vjp_jvp_kernel(
             btr = tl.where(invert, itr, btr)
             bti = tl.where(invert, iti, bti)
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        event_dot_flip = tl.load(
-            dot_flip + event_base + event, mask=active_atom, other=0.0
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
+        event_dot_flip = _event_value(
+            dot_flip, event_base, event, active_atom, single_train
         )
-        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
-        event_dot_phase = tl.load(
-            dot_phase + event_base + event, mask=active_atom, other=0.0
+        event_phase = _event_value(phase, event_base, event, active_atom, single_train)
+        event_dot_phase = _event_value(
+            dot_phase, event_base, event, active_atom, single_train
         )
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse a row of its own.
@@ -9622,9 +9679,9 @@ def _epg_vjp_jvp_kernel(
 
         event_action = tl.load(action + event).to(tl.int32)
         event_kind = tl.load(kind + event)
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        dt_tangent = tl.load(
-            dot_duration + event_base + event, mask=active_atom, other=0.0
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
+        dt_tangent = _event_value(
+            dot_duration, event_base, event, active_atom, single_train
         )
         wout_value = 1.0
         wout_tangent = 0.0
@@ -10275,13 +10332,13 @@ def _epg_vjp_jvp_kernel(
             wbtr = tl.where(spoil, 0.0, tl.where(trailing, btr, wbtr))
             wbti = tl.where(spoil, 0.0, tl.where(trailing, bti, wbti))
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        event_dot_flip = tl.load(
-            dot_flip + event_base + event, mask=active_atom, other=0.0
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
+        event_dot_flip = _event_value(
+            dot_flip, event_base, event, active_atom, single_train
         )
-        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
-        event_dot_phase = tl.load(
-            dot_phase + event_base + event, mask=active_atom, other=0.0
+        event_phase = _event_value(phase, event_base, event, active_atom, single_train)
+        event_dot_phase = _event_value(
+            dot_phase, event_base, event, active_atom, single_train
         )
 
         # ---- recorded sample ----
@@ -13070,6 +13127,8 @@ def _epg_real_vjp_jvp_kernel(
     event_count,
     output_count,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shim_rows,
     shimmed: tl.constexpr,
     diffusing: tl.constexpr,
@@ -13088,6 +13147,9 @@ def _epg_real_vjp_jvp_kernel(
     active_atom = problem < problem_end
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
     # The trajectory holds the state entering every event: three planes of
     # configuration orders, for the value and the tangent alike.
@@ -13108,33 +13170,35 @@ def _epg_real_vjp_jvp_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_inversion = 1.0
     if inverting:
         atom_inversion = tl.load(
-            inversion_efficiency + atom, mask=active_atom, other=1.0
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
         )
     atom_dot_t1 = tl.load(dot_t1 + atom, mask=active_atom, other=0.0)
     atom_dot_t2 = tl.load(dot_t2 + atom, mask=active_atom, other=0.0)
     atom_dot_m0 = 0.0
     if density:
-        atom_dot_m0 = tl.load(dot_m0 + atom, mask=active_atom, other=0.0)
+        atom_dot_m0 = tl.load(dot_m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_dot_b1 = 0.0
     if transmit:
-        atom_dot_b1 = tl.load(dot_b1 + atom, mask=active_atom, other=0.0)
+        atom_dot_b1 = tl.load(dot_b1 + scalar_atom, mask=active_atom, other=0.0)
     atom_dot_inversion = 0.0
     if inverting:
         atom_dot_inversion = tl.load(
-            dot_inversion_efficiency + atom, mask=active_atom, other=0.0
+            dot_inversion_efficiency + scalar_atom, mask=active_atom, other=0.0
         )
     atom_damping = 0.0
     atom_dot_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-        atom_dot_damping = tl.load(dot_diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
+        atom_dot_damping = tl.load(
+            dot_diffusion + scalar_atom, mask=active_atom, other=0.0
+        )
     order = state.to(tl.float32)
     longitudinal_weight = order * order
     transverse_weight = longitudinal_weight + order + 0.3333333333333333
@@ -13155,9 +13219,9 @@ def _epg_real_vjp_jvp_kernel(
         )
         tl.store(trajectory_tangent + slot + long_plane, long_tangent, mask=state_mask)
 
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        dt_tangent = tl.load(
-            dot_duration + event_base + event, mask=active_atom, other=0.0
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
+        dt_tangent = _event_value(
+            dot_duration, event_base, event, active_atom, single_train
         )
         e1_value = tl.exp(-rate1_value * dt_value)
         e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
@@ -13212,9 +13276,9 @@ def _epg_real_vjp_jvp_kernel(
         long_value = tl.where(invert, inverted_value, long_value)
         long_tangent = tl.where(invert, inverted_tangent, long_tangent)
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        event_dot_flip = tl.load(
-            dot_flip + event_base + event, mask=active_atom, other=0.0
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
+        event_dot_flip = _event_value(
+            dot_flip, event_base, event, active_atom, single_train
         )
         pulse_b1 = atom_b1
         pulse_dot_b1 = atom_dot_b1
@@ -13321,9 +13385,9 @@ def _epg_real_vjp_jvp_kernel(
 
         event_action = tl.load(action + event).to(tl.int32)
         event_kind = tl.load(kind + event)
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        dt_tangent = tl.load(
-            dot_duration + event_base + event, mask=active_atom, other=0.0
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
+        dt_tangent = _event_value(
+            dot_duration, event_base, event, active_atom, single_train
         )
         e1_value = tl.exp(-rate1_value * dt_value)
         e1_tangent = -e1_value * (rate1_value * dt_tangent + rate1_tangent * dt_value)
@@ -13413,9 +13477,9 @@ def _epg_real_vjp_jvp_kernel(
         long_bar_value = tl.where(invert, inverted_bar_value, long_bar_value)
         long_bar_tangent = tl.where(invert, inverted_bar_tangent, long_bar_tangent)
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        event_dot_flip = tl.load(
-            dot_flip + event_base + event, mask=active_atom, other=0.0
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
+        event_dot_flip = _event_value(
+            dot_flip, event_base, event, active_atom, single_train
         )
         pulse_b1 = atom_b1
         pulse_dot_b1 = atom_dot_b1
@@ -13741,6 +13805,8 @@ def _epg_real_vjp_kernel(
     event_count,
     output_count,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shim_rows,
     shimmed: tl.constexpr,
     diffusing: tl.constexpr,
@@ -13759,6 +13825,9 @@ def _epg_real_vjp_kernel(
     active_atom = problem < problem_end
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
     # The trajectory holds the state entering every event: three planes of
     # configuration orders.
@@ -13776,18 +13845,18 @@ def _epg_real_vjp_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_inversion = 1.0
     if inverting:
         atom_inversion = tl.load(
-            inversion_efficiency + atom, mask=active_atom, other=1.0
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
         )
     atom_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
     order = state.to(tl.float32)
     longitudinal_weight = order * order
     transverse_weight = longitudinal_weight + order + 0.3333333333333333
@@ -13801,7 +13870,7 @@ def _epg_real_vjp_kernel(
         tl.store(trajectory_value + slot + minus_plane, minus_value, mask=state_mask)
         tl.store(trajectory_value + slot + long_plane, long_value, mask=state_mask)
 
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
         e1_value = tl.exp(-rate1_value * dt_value)
         e2_value = tl.exp(-rate2_value * dt_value)
         damp_z = 1.0
@@ -13834,7 +13903,7 @@ def _epg_real_vjp_kernel(
         invert = is_rf & is_inversion
         long_value = tl.where(invert, -atom_inversion * long_value, long_value)
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
         pulse_b1 = atom_b1
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse the row of the shim it drives.
@@ -13895,7 +13964,7 @@ def _epg_real_vjp_kernel(
 
         event_action = tl.load(action + event).to(tl.int32)
         event_kind = tl.load(kind + event)
-        dt_value = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt_value = _event_value(duration, event_base, event, active_atom, single_train)
         e1_value = tl.exp(-rate1_value * dt_value)
         e2_value = tl.exp(-rate2_value * dt_value)
         damp_z = 1.0
@@ -13945,7 +14014,7 @@ def _epg_real_vjp_kernel(
             invert, -atom_inversion * long_bar_value, long_bar_value
         )
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
         pulse_b1 = atom_b1
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse the row of the shim it drives.
@@ -14107,6 +14176,8 @@ def _epg_real_kernel(
     event_count,
     output_count,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shimmed: tl.constexpr,
     diffusing: tl.constexpr,
     transmit: tl.constexpr,
@@ -14120,6 +14191,9 @@ def _epg_real_kernel(
     active_atom = problem < train_count * atom_count
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
 
     empty = tl.zeros((problems, block_states), tl.float32)
@@ -14131,33 +14205,64 @@ def _epg_real_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_inversion = 1.0
     if inverting:
         atom_inversion = tl.load(
-            inversion_efficiency + atom, mask=active_atom, other=1.0
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
         )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
     atom_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
     order = state.to(tl.float32)
 
+    # The relaxation factors depend on the event only through its duration, and
+    # a train repeats its intervals: an interval as long as the last one reuses
+    # the factors rather than taking the two exponentials again. Where several
+    # trains share the program the durations differ across its lanes and there
+    # is nothing uniform to compare, so only a single-train launch memoizes.
+    last_dt = -1.0
+    e1 = rate1 * 0.0 + 1.0
+    e2 = rate2 * 0.0 + 1.0
+
     event_base = train * event_count
-    for event in range(0, event_count):
-        dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+    # Two events to an iteration. A repetition is several events -- a pulse,
+    # a sample, an interval -- so the loop runs longer than the sequence is
+    # repetitions, and unrolling lets one back-edge and one set of event
+    # bookkeeping serve two of them. Two is where it stops paying: four was
+    # measured slower, and the body is already large enough that widening it
+    # costs registers.
+    for event in tl.range(0, event_count, loop_unroll_factor=2):
+        # Read here rather than through the helper: one train gives a duration
+        # the whole program shares, and the skip and the memo below both want
+        # to compare it as the single number it is.
+        if single_train:
+            dt = tl.load(duration + event)
+        else:
+            dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
         # An event of no duration relaxes nothing: both factors are one and the
         # recovery term is zero. Half the events of a spoiled repetition are
         # instantaneous, and reducing over the trains this program carries makes
         # that a branch the whole program agrees on rather than a tile of
         # multiplies by one.
-        if tl.max(dt) != 0.0:
-            e1 = tl.exp(-rate1 * dt)
-            e2 = tl.exp(-rate2 * dt)
+        if single_train:
+            relaxes = dt != 0.0
+        else:
+            relaxes = tl.max(dt) != 0.0
+        if relaxes:
+            if single_train:
+                if dt != last_dt:
+                    e1 = tl.exp(-rate1 * dt)
+                    e2 = tl.exp(-rate2 * dt)
+                    last_dt = dt
+            else:
+                e1 = tl.exp(-rate1 * dt)
+                e2 = tl.exp(-rate2 * dt)
             damp_z = 1.0
             damp_t = 1.0
             if diffusing:
@@ -14183,7 +14288,7 @@ def _epg_real_kernel(
         if is_rf and is_inversion:
             longitudinal = -atom_inversion * longitudinal
         elif is_rf:
-            alpha = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
+            alpha = _event_value(flip, event_base, event, active_atom, single_train)
             pulse_b1 = atom_b1
             # One shim is the whole sequence's transmit field, loaded once
             # above; several give each pulse the row of the shim it drives.
@@ -14251,6 +14356,8 @@ def _epg_real_jvp_kernel(
     event_count,
     output_count,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shimmed: tl.constexpr,
     diffusing: tl.constexpr,
     transmit: tl.constexpr,
@@ -14264,6 +14371,9 @@ def _epg_real_jvp_kernel(
     active_atom = problem < train_count * atom_count
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
 
     empty = tl.zeros((problems, block_states), tl.float32)
@@ -14278,42 +14388,50 @@ def _epg_real_jvp_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_inversion = 1.0
     if inverting:
         atom_inversion = tl.load(
-            inversion_efficiency + atom, mask=active_atom, other=1.0
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
         )
     dot_t1 = tl.load(tangent_t1 + atom, mask=active_atom, other=0.0)
     dot_t2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
     dot_m0 = 0.0
     if density:
-        dot_m0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
+        dot_m0 = tl.load(tangent_m0 + scalar_atom, mask=active_atom, other=0.0)
     dot_b1 = 0.0
     if transmit:
-        dot_b1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
+        dot_b1 = tl.load(tangent_b1 + scalar_atom, mask=active_atom, other=0.0)
     dot_inversion = 0.0
     if inverting:
         dot_inversion = tl.load(
-            tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
+            tangent_inversion_efficiency + scalar_atom, mask=active_atom, other=0.0
         )
     rate1 = 1000.0 / atom_t1
     rate2 = 1000.0 / atom_t2
     atom_damping = 0.0
     dot_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-        dot_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
+        dot_damping = tl.load(
+            tangent_diffusion + scalar_atom, mask=active_atom, other=0.0
+        )
     order = state.to(tl.float32)
 
     event_base = train * event_count
-    for event in range(0, event_count):
-        dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        dot_dt = tl.load(
-            tangent_duration + event_base + event, mask=active_atom, other=0.0
+    # Two events to an iteration. A repetition is several events -- a pulse,
+    # a sample, an interval -- so the loop runs longer than the sequence is
+    # repetitions, and unrolling lets one back-edge and one set of event
+    # bookkeeping serve two of them. Two is where it stops paying: four was
+    # measured slower, and the body is already large enough that widening it
+    # costs registers.
+    for event in tl.range(0, event_count, loop_unroll_factor=2):
+        dt = _event_value(duration, event_base, event, active_atom, single_train)
+        dot_dt = _event_value(
+            tangent_duration, event_base, event, active_atom, single_train
         )
         # An event of no duration relaxes nothing, and carries no tangent along
         # the relaxation either: both factors are one and both their derivatives
@@ -14363,9 +14481,11 @@ def _epg_real_jvp_kernel(
             )
             longitudinal = -atom_inversion * longitudinal
         elif is_rf:
-            event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-            dot_flip = tl.load(
-                tangent_flip + event_base + event, mask=active_atom, other=0.0
+            event_flip = _event_value(
+                flip, event_base, event, active_atom, single_train
+            )
+            dot_flip = _event_value(
+                tangent_flip, event_base, event, active_atom, single_train
             )
             pulse_b1 = atom_b1
             pulse_dot_b1 = dot_b1
@@ -14536,6 +14656,8 @@ def _epg_kernel(
     profile_step,
     lineshape_step,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shim_rows,
     shimmed: tl.constexpr,
     locations: tl.constexpr,
@@ -14561,6 +14683,9 @@ def _epg_kernel(
     # take no part in a reduction or a store.
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
     # Voxels are spread over the slice voxel-major, so a voxel's place along
     # the slice is its index modulo the profile's width. One pulse shape holds
@@ -14590,22 +14715,34 @@ def _epg_kernel(
     atom_semisolid_exchange = 0.0
     atom_r1_semisolid = 0.0
     if pools == 1:
-        atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(bound_exchange + atom, mask=active_atom, other=0.0)
-        atom_r1_bound = 1000.0 / tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        atom_bound = tl.load(bound_fraction + scalar_atom, mask=active_atom, other=0.0)
+        atom_exchange = tl.load(
+            bound_exchange + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_r1_bound = 1000.0 / tl.load(
+            t1_bound + scalar_atom, mask=active_atom, other=1.0
+        )
     if pools == 2 or pools == 3:
-        atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(pool_b_exchange + atom, mask=active_atom, other=0.0)
-        atom_r1_bound = 1000.0 / tl.load(t1_pool_b + atom, mask=active_atom, other=1.0)
-        atom_r2_bound = 1000.0 / tl.load(t2_pool_b + atom, mask=active_atom, other=1.0)
-        atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
+        atom_bound = tl.load(pool_b_fraction + scalar_atom, mask=active_atom, other=0.0)
+        atom_exchange = tl.load(
+            pool_b_exchange + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_r1_bound = 1000.0 / tl.load(
+            t1_pool_b + scalar_atom, mask=active_atom, other=1.0
+        )
+        atom_r2_bound = 1000.0 / tl.load(
+            t2_pool_b + scalar_atom, mask=active_atom, other=1.0
+        )
+        atom_shift = tl.load(pool_b_shift + scalar_atom, mask=active_atom, other=0.0)
     if pools == 3:
-        atom_semisolid = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
+        atom_semisolid = tl.load(
+            bound_fraction + scalar_atom, mask=active_atom, other=0.0
+        )
         atom_semisolid_exchange = tl.load(
-            bound_exchange + atom, mask=active_atom, other=0.0
+            bound_exchange + scalar_atom, mask=active_atom, other=0.0
         )
         atom_r1_semisolid = 1000.0 / tl.load(
-            t1_bound + atom, mask=active_atom, other=1.0
+            t1_bound + scalar_atom, mask=active_atom, other=1.0
         )
     # A semisolid pool holds a share of the voxel without carrying any
     # transverse magnetization, so the 2x2 below is blind to it and the
@@ -14626,34 +14763,34 @@ def _epg_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
-        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
-        atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+        atom_b1_phase = tl.load(b1_phase + scalar_atom, mask=active_atom, other=0.0)
+        atom_b0 = tl.load(b0 + scalar_atom, mask=active_atom, other=0.0)
     atom_inversion = 1.0
     if inverting:
         atom_inversion = tl.load(
-            inversion_efficiency + atom, mask=active_atom, other=1.0
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
         )
     atom_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
     atom_flow = 0.0
     atom_washout = 0.0
     if moving:
-        atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
+        atom_velocity = tl.load(velocity + scalar_atom, mask=active_atom, other=0.0)
         atom_flow = atom_velocity * flow_scale
         atom_washout = tl.abs(atom_velocity) * washout_scale
     order = state.to(tl.float32)
 
     event_base = train * event_count
     for event in range(0, event_count):
-        dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
+        dt = _event_value(duration, event_base, event, active_atom, single_train)
         wout = 1.0
         if moving:
             wout = _washout(atom_washout, dt)
@@ -14948,10 +15085,10 @@ def _epg_kernel(
                     b1_phase + row + atom, mask=active_atom, other=0.0
                 )
         alpha = (
-            tl.load(flip + event_base + event, mask=active_atom, other=0.0) * atom_b1
+            _event_value(flip, event_base, event, active_atom, single_train) * atom_b1
         )
         phi = (
-            tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+            _event_value(phase, event_base, event, active_atom, single_train)
             + atom_b1_phase
         )
         if profile_bins > 0 or dynamic:
@@ -15113,7 +15250,7 @@ def _epg_kernel(
         longitudinal_imag = tl.where(rotate, rotated_zi, longitudinal_imag)
 
         record = ((event_action & 32) != 0) & (event_kind == 2)
-        adc_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        adc_phase = _event_value(phase, event_base, event, active_atom, single_train)
         adc_cos = tl.cos(adc_phase)
         adc_sin = tl.sin(adc_phase)
         # A coil sees the whole voxel, so what it records is the sum over
@@ -15344,6 +15481,8 @@ def _epg_jvp_kernel(
     profile_step,
     lineshape_step,
     state_count: tl.constexpr,
+    single_train: tl.constexpr,
+    atom_stride: tl.constexpr,
     shim_rows,
     shimmed: tl.constexpr,
     locations: tl.constexpr,
@@ -15369,6 +15508,9 @@ def _epg_jvp_kernel(
     # take no part in a reduction or a store.
     state_mask = (state < state_count) & active_atom
     atom = problem % atom_count
+    # A property given as one value for the whole tissue is read at one
+    # address by every voxel, which is a stride of zero through it.
+    scalar_atom = atom * atom_stride
     train = problem // atom_count
     # Voxels are spread over the slice voxel-major, so a voxel's place along
     # the slice is its index modulo the profile's width. One pulse shape holds
@@ -15400,56 +15542,70 @@ def _epg_jvp_kernel(
     atom_r1_semisolid = 0.0
     d_r1_semisolid = 0.0
     if pools == 1:
-        atom_bound = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
-        d_bound = tl.load(tangent_bound_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(exchange_rate + atom, mask=active_atom, other=0.0)
-        d_exchange = tl.load(tangent_exchange_rate + atom, mask=active_atom, other=0.0)
-        held_t1 = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        atom_bound = tl.load(bound_fraction + scalar_atom, mask=active_atom, other=0.0)
+        d_bound = tl.load(
+            tangent_bound_fraction + scalar_atom, mask=active_atom, other=0.0
+        )
+        atom_exchange = tl.load(
+            exchange_rate + scalar_atom, mask=active_atom, other=0.0
+        )
+        d_exchange = tl.load(
+            tangent_exchange_rate + scalar_atom, mask=active_atom, other=0.0
+        )
+        held_t1 = tl.load(t1_bound + scalar_atom, mask=active_atom, other=1.0)
         atom_r1_bound = 1000.0 / held_t1
         d_r1_bound = (
             -1000.0
-            * tl.load(tangent_t1_bound + atom, mask=active_atom, other=0.0)
+            * tl.load(tangent_t1_bound + scalar_atom, mask=active_atom, other=0.0)
             / (held_t1 * held_t1)
         )
     if pools == 2 or pools == 3:
-        atom_bound = tl.load(pool_b_fraction + atom, mask=active_atom, other=0.0)
-        d_bound = tl.load(tangent_pool_b_fraction + atom, mask=active_atom, other=0.0)
-        atom_exchange = tl.load(pool_b_exchange + atom, mask=active_atom, other=0.0)
-        d_exchange = tl.load(
-            tangent_pool_b_exchange + atom, mask=active_atom, other=0.0
+        atom_bound = tl.load(pool_b_fraction + scalar_atom, mask=active_atom, other=0.0)
+        d_bound = tl.load(
+            tangent_pool_b_fraction + scalar_atom, mask=active_atom, other=0.0
         )
-        held_t1 = tl.load(t1_pool_b + atom, mask=active_atom, other=1.0)
+        atom_exchange = tl.load(
+            pool_b_exchange + scalar_atom, mask=active_atom, other=0.0
+        )
+        d_exchange = tl.load(
+            tangent_pool_b_exchange + scalar_atom, mask=active_atom, other=0.0
+        )
+        held_t1 = tl.load(t1_pool_b + scalar_atom, mask=active_atom, other=1.0)
         atom_r1_bound = 1000.0 / held_t1
         d_r1_bound = (
             -1000.0
-            * tl.load(tangent_t1_pool_b + atom, mask=active_atom, other=0.0)
+            * tl.load(tangent_t1_pool_b + scalar_atom, mask=active_atom, other=0.0)
             / (held_t1 * held_t1)
         )
-        held_t2 = tl.load(t2_pool_b + atom, mask=active_atom, other=1.0)
+        held_t2 = tl.load(t2_pool_b + scalar_atom, mask=active_atom, other=1.0)
         atom_r2_bound = 1000.0 / held_t2
         d_r2_bound = (
             -1000.0
-            * tl.load(tangent_t2_pool_b + atom, mask=active_atom, other=0.0)
+            * tl.load(tangent_t2_pool_b + scalar_atom, mask=active_atom, other=0.0)
             / (held_t2 * held_t2)
         )
-        atom_shift = tl.load(pool_b_shift + atom, mask=active_atom, other=0.0)
-        d_shift = tl.load(tangent_pool_b_shift + atom, mask=active_atom, other=0.0)
+        atom_shift = tl.load(pool_b_shift + scalar_atom, mask=active_atom, other=0.0)
+        d_shift = tl.load(
+            tangent_pool_b_shift + scalar_atom, mask=active_atom, other=0.0
+        )
     if pools == 3:
-        atom_semisolid = tl.load(bound_fraction + atom, mask=active_atom, other=0.0)
+        atom_semisolid = tl.load(
+            bound_fraction + scalar_atom, mask=active_atom, other=0.0
+        )
         d_semisolid = tl.load(
-            tangent_bound_fraction + atom, mask=active_atom, other=0.0
+            tangent_bound_fraction + scalar_atom, mask=active_atom, other=0.0
         )
         atom_semisolid_exchange = tl.load(
-            exchange_rate + atom, mask=active_atom, other=0.0
+            exchange_rate + scalar_atom, mask=active_atom, other=0.0
         )
         d_semisolid_exchange = tl.load(
-            tangent_exchange_rate + atom, mask=active_atom, other=0.0
+            tangent_exchange_rate + scalar_atom, mask=active_atom, other=0.0
         )
-        held_semisolid = tl.load(t1_bound + atom, mask=active_atom, other=1.0)
+        held_semisolid = tl.load(t1_bound + scalar_atom, mask=active_atom, other=1.0)
         atom_r1_semisolid = 1000.0 / held_semisolid
         d_r1_semisolid = (
             -1000.0
-            * tl.load(tangent_t1_bound + atom, mask=active_atom, other=0.0)
+            * tl.load(tangent_t1_bound + scalar_atom, mask=active_atom, other=0.0)
             / (held_semisolid * held_semisolid)
         )
     atom_free = 1.0 - atom_bound - atom_semisolid
@@ -15483,32 +15639,36 @@ def _epg_jvp_kernel(
     atom_t2 = tl.load(t2 + atom, mask=active_atom, other=1.0)
     atom_m0 = 1.0
     if density:
-        atom_m0 = tl.load(m0 + atom, mask=active_atom, other=0.0)
+        atom_m0 = tl.load(m0 + scalar_atom, mask=active_atom, other=0.0)
     atom_b1 = 1.0
     if transmit:
-        atom_b1 = tl.load(b1 + atom, mask=active_atom, other=1.0)
+        atom_b1 = tl.load(b1 + scalar_atom, mask=active_atom, other=1.0)
     atom_b1_phase = 0.0
     atom_b0 = 0.0
     if off_axis:
-        atom_b1_phase = tl.load(b1_phase + atom, mask=active_atom, other=0.0)
-        atom_b0 = tl.load(b0 + atom, mask=active_atom, other=0.0)
+        atom_b1_phase = tl.load(b1_phase + scalar_atom, mask=active_atom, other=0.0)
+        atom_b0 = tl.load(b0 + scalar_atom, mask=active_atom, other=0.0)
     atom_inversion = 1.0
     if inverting:
         atom_inversion = tl.load(
-            inversion_efficiency + atom, mask=active_atom, other=1.0
+            inversion_efficiency + scalar_atom, mask=active_atom, other=1.0
         )
     atom_damping = 0.0
     d_damping = 0.0
     if diffusing:
-        atom_damping = tl.load(diffusion + atom, mask=active_atom, other=0.0)
-        d_damping = tl.load(tangent_diffusion + atom, mask=active_atom, other=0.0)
+        atom_damping = tl.load(diffusion + scalar_atom, mask=active_atom, other=0.0)
+        d_damping = tl.load(
+            tangent_diffusion + scalar_atom, mask=active_atom, other=0.0
+        )
     atom_flow = 0.0
     d_flow = 0.0
     atom_washout = 0.0
     d_washout = 0.0
     if moving:
-        atom_velocity = tl.load(velocity + atom, mask=active_atom, other=0.0)
-        d_velocity = tl.load(tangent_velocity + atom, mask=active_atom, other=0.0)
+        atom_velocity = tl.load(velocity + scalar_atom, mask=active_atom, other=0.0)
+        d_velocity = tl.load(
+            tangent_velocity + scalar_atom, mask=active_atom, other=0.0
+        )
         atom_flow = atom_velocity * flow_scale
         d_flow = d_velocity * flow_scale
         # |v| has no derivative at the origin, so a still voxel contributes
@@ -15523,26 +15683,26 @@ def _epg_jvp_kernel(
     dt2 = tl.load(tangent_t2 + atom, mask=active_atom, other=0.0)
     dm0 = 0.0
     if density:
-        dm0 = tl.load(tangent_m0 + atom, mask=active_atom, other=0.0)
+        dm0 = tl.load(tangent_m0 + scalar_atom, mask=active_atom, other=0.0)
     db1 = 0.0
     if transmit:
-        db1 = tl.load(tangent_b1 + atom, mask=active_atom, other=0.0)
+        db1 = tl.load(tangent_b1 + scalar_atom, mask=active_atom, other=0.0)
     db1_phase = 0.0
     db0 = 0.0
     if off_axis:
-        db1_phase = tl.load(tangent_b1_phase + atom, mask=active_atom, other=0.0)
-        db0 = tl.load(tangent_b0 + atom, mask=active_atom, other=0.0)
+        db1_phase = tl.load(tangent_b1_phase + scalar_atom, mask=active_atom, other=0.0)
+        db0 = tl.load(tangent_b0 + scalar_atom, mask=active_atom, other=0.0)
     dinversion = 0.0
     if inverting:
         dinversion = tl.load(
-            tangent_inversion_efficiency + atom, mask=active_atom, other=0.0
+            tangent_inversion_efficiency + scalar_atom, mask=active_atom, other=0.0
         )
 
     event_base = train * event_count
     for event in range(0, event_count):
-        event_dt = tl.load(duration + event_base + event, mask=active_atom, other=0.0)
-        ddt = tl.load(
-            tangent_duration + event_base + event, mask=active_atom, other=0.0
+        event_dt = _event_value(duration, event_base, event, active_atom, single_train)
+        ddt = _event_value(
+            tangent_duration, event_base, event, active_atom, single_train
         )
         r1 = 1000.0 / atom_t1
         r2 = 1000.0 / atom_t2
@@ -16184,8 +16344,8 @@ def _epg_jvp_kernel(
             br = tl.where(invert, -atom_inversion * br, br)
             bi = tl.where(invert, -atom_inversion * bi, bi)
 
-        event_flip = tl.load(flip + event_base + event, mask=active_atom, other=0.0)
-        event_phase = tl.load(phase + event_base + event, mask=active_atom, other=0.0)
+        event_flip = _event_value(flip, event_base, event, active_atom, single_train)
+        event_phase = _event_value(phase, event_base, event, active_atom, single_train)
         # One shim is the whole sequence's transmit field, loaded once above;
         # several give each pulse a row of its own.
         if shimmed:
@@ -16203,13 +16363,13 @@ def _epg_jvp_kernel(
                 )
         alpha = event_flip * atom_b1
         dalpha = (
-            tl.load(tangent_flip + event_base + event, mask=active_atom, other=0.0)
+            _event_value(tangent_flip, event_base, event, active_atom, single_train)
             * atom_b1
             + event_flip * db1
         )
         phi = event_phase + atom_b1_phase
         dphi = (
-            tl.load(tangent_phase + event_base + event, mask=active_atom, other=0.0)
+            _event_value(tangent_phase, event_base, event, active_atom, single_train)
             + db1_phase
         )
         if pools == 1 or pools == 3:
@@ -16503,8 +16663,8 @@ def _epg_jvp_kernel(
         record = ((event_action & 32) != 0) & (event_kind == 2)
         adc_cos = tl.cos(event_phase)
         adc_sin = tl.sin(event_phase)
-        dadc_phase = tl.load(
-            tangent_phase + event_base + event, mask=active_atom, other=0.0
+        dadc_phase = _event_value(
+            tangent_phase, event_base, event, active_atom, single_train
         )
         dadc_cos = -adc_sin * dadc_phase
         dadc_sin = adc_cos * dadc_phase
@@ -16828,6 +16988,24 @@ def _three_pool_table(
 _TILE_ELEMENTS = 64
 
 
+def _atom_stride(*tuples: tuple[torch.Tensor, ...]) -> int:
+    """How far to step through a property to reach one voxel's value.
+
+    Zero where every optional property was given as one value for the whole
+    tissue: each is then read at one address by every voxel and needs no room
+    per voxel. The relaxation times lead each tuple and are stepped by one
+    whatever this says, since a tissue is its two relaxation times before it is
+    anything else.
+
+    One stride serves the values and the directions followed beside them, so a
+    pass carrying tangents is asked about both: a direction laid out per voxel
+    has to be stepped through even where the value it follows is one number.
+    """
+    return (
+        0 if all(value.numel() <= 1 for values in tuples for value in values[2:]) else 1
+    )
+
+
 def _problems_per_program(block_states: int) -> int:
     """How many independent problems to carry on one program's lane axis.
 
@@ -17014,6 +17192,8 @@ def simulate_into(
             kind.numel(),
             output_count,
             state_count=state_count,
+            single_train=train_count == 1,
+            atom_stride=_atom_stride(tissue),
             shimmed=_shim_count(tissue) > 1,
             **_only_scalars(_feature_flags(features, geometry)),
             block_states=block_states,
@@ -17067,6 +17247,8 @@ def simulate_into(
         1.0 if profile is None else profile.step,
         1.0 if lineshape is None else lineshape.step,
         state_count=state_count,
+        single_train=train_count == 1,
+        atom_stride=_atom_stride(tissue),
         shim_rows=shims,
         shimmed=shims > 1,
         locations=1 if profile is None else profile.points,
@@ -17228,6 +17410,8 @@ def simulate_jvp_into(
             kind.numel(),
             output_count,
             state_count=state_count,
+            single_train=train_count == 1,
+            atom_stride=_atom_stride(tissue, tissue_tangents),
             shimmed=shims > 1,
             **_only_scalars(_feature_flags(features, geometry)),
             block_states=block_states,
@@ -17286,6 +17470,8 @@ def simulate_jvp_into(
         1.0 if profile is None else profile.step,
         1.0 if lineshape is None else lineshape.step,
         state_count=state_count,
+        single_train=train_count == 1,
+        atom_stride=_atom_stride(tissue, tissue_tangents),
         shim_rows=shims,
         shimmed=shims > 1,
         locations=1 if profile is None else profile.points,
@@ -17494,6 +17680,8 @@ def simulate_vjp(
             1.0 if profile is None else profile.step,
             1.0 if lineshape is None else lineshape.step,
             state_count=state_count,
+            single_train=train_count == 1,
+            atom_stride=_atom_stride(tissue),
             shimmed=shims > 1,
             locations=locations,
             profile_bins=0 if profile is None else profile.bins,
@@ -17601,6 +17789,8 @@ def simulate_real_vjp(
             event_count,
             output_count,
             state_count=state_count,
+            single_train=train_count == 1,
+            atom_stride=_atom_stride(tissue),
             shim_rows=shims,
             shimmed=shims > 1,
             **_only_scalars(_feature_flags(features, NO_GEOMETRY)),
@@ -17919,6 +18109,8 @@ def simulate_vjp_into(
             1.0,
             1.0,
             state_count=state_count,
+            single_train=train_count == 1,
+            atom_stride=_atom_stride(tissue),
             shimmed=False,
             locations=1,
             profile_bins=0,
@@ -17997,6 +18189,8 @@ def simulate_real_vjp_into(
             event_count,
             output_count,
             state_count=state_count,
+            single_train=train_count == 1,
+            atom_stride=_atom_stride(tissue),
             # The streamed route carries one shim, as the complex one does:
             # ``GradientBuffers`` sizes its gradient plane for a single row.
             shim_rows=1,
@@ -18132,6 +18326,8 @@ def simulate_vjp_jvp_into(
         grid = (triton.cdiv(span, problems),)
         shape = dict(
             state_count=state_count,
+            single_train=train_count == 1,
+            atom_stride=_atom_stride(tissue, tangents),
             block_states=block_states,
             problems=problems,
             num_warps=1,

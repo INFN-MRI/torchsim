@@ -13,6 +13,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 import torch
+from torch.autograd.forward_ad import unpack_dual
 
 from .._subspace import Subspace
 from ._accelerators import (
@@ -27,6 +28,7 @@ from ._description import (
 from ._lineshape import lineshape_reaching
 from ._parameters import (
     PROPERTY_NAMES,
+    PROPERTY_PARAMETERS,
     SAMPLE_NAMES,
     TISSUE_COUNT,
     TISSUE_NAMES,
@@ -57,6 +59,10 @@ MINIMUM_RELAXATION_TIME_MS = 1e-6
 
 # The two tissue buffers a shim gives a row of its own.
 _TRANSMIT = frozenset((TISSUE_NAMES.index("b1"), TISSUE_NAMES.index("b1_phase_rad")))
+
+# What every voxel gets a value of whatever else the tissue declares: the two
+# relaxation times are the floor of the model rather than a term it switches on.
+_ALWAYS_PER_VOXEL = frozenset(("t1_ms", "t2_ms"))
 
 # The tissue buffers the kernels invert into a rate.
 _RELAXATION_TIMES = tuple(
@@ -364,7 +370,13 @@ class EpgEngine:
 
         tissue, sensitivities = _dynamic_transmit(tissue, description, device)
         tissue, shims = _resolve_transmit(tissue, description, device)
-        prepared, output_shape, target_device = _prepare_tissue(tissue, device, shims)
+        features = features_of(tissue)
+        # Only a CUDA launch is told which terms it carries: it compiles away
+        # the branch that would read a term left out, so those properties need
+        # no room per voxel. The host kernels read the value and discard it,
+        # which needs one to read.
+        declared = features if target_device(tissue, device).type == "cuda" else None
+        prepared, output_shape, where = _prepare_tissue(tissue, device, shims, declared)
         (
             t1,
             t2,
@@ -384,12 +396,11 @@ class EpgEngine:
             _t2_pool_b,
             _pool_b_shift,
         ) = prepared
-        features = features_of(tissue)
         # Prepared only where it was declared: a spread left at its identity
         # has nothing for the signal to carry, and deciding that from what the
         # caller passed spares a reduction over the voxels on every call.
         samples = (
-            _prepare_samples(tissue, output_shape, target_device)
+            _prepare_samples(tissue, output_shape, where)
             if "T2_PRIME" in features
             else (None,)
         )
@@ -424,9 +435,7 @@ class EpgEngine:
             nstates=nstates,
             slice_profile=slice_profile,
             rf_raster_time_s=rf_raster_time_s,
-            lineshape=_absorption_table(description, b0, target_device)
-            if bound_pool
-            else None,
+            lineshape=_absorption_table(description, b0, where) if bound_pool else None,
             exchanging=exchange_pool,
             features=features,
             r2_prime_hz=samples[0],
@@ -436,7 +445,7 @@ class EpgEngine:
         )
         if accelerated is None:
             raise RuntimeError(
-                f"no fused EPG kernel is available for a tissue on {target_device}"
+                f"no fused EPG kernel is available for a tissue on {where}"
             )
         return SimulationResult(*accelerated)
 
@@ -603,17 +612,72 @@ def target_device(
     )
 
 
+def _carries_derivative(value: Any) -> bool:
+    """Whether a gradient or a forward direction is to be tracked through this.
+
+    A property the run does not otherwise read still has to be laid out per
+    voxel when it is being differentiated, since the pass writes a gradient
+    beside every voxel it reads.
+    """
+    if getattr(value, "requires_grad", False):
+        return True
+    return isinstance(value, torch.Tensor) and unpack_dual(value).tangent is not None
+
+
 def _prepare_tissue(
     tissue: TissueProperties,
     device: torch.device | str | None,
     shims: int = 1,
+    features: frozenset[str] | None = None,
 ) -> tuple[tuple[torch.Tensor, ...], torch.Size, torch.device]:
+    """The tissue as one flat buffer per property, and how many voxels there are.
+
+    ``features`` names the terms the run carries, as
+    :func:`torchsim.sequence._parameters.features_of` reads them off the
+    tissue. A property belonging to a term the run leaves out is kept as the
+    one value it was given rather than laid out per voxel: the kernels take its
+    pointer and the branch that would read it is compiled away. ``None`` is a
+    caller who has not declared, and every property is laid out -- which is
+    what a kernel given no feature set expects, since it then keeps every term.
+    """
     # Broadcast over every property, the ones applied to the samples included:
     # they say how many voxels there are as much as the rest do, even though
     # the buffers handed to the kernels stop short of them.
     values = tuple(getattr(tissue, name) for name in PROPERTY_NAMES)
     device = target_device(tissue, device)
     given = [_as_float_tensor(value, device) for value in values]
+    spare = tuple(
+        index
+        for index, parameter in enumerate(PROPERTY_PARAMETERS)
+        if parameter.name not in _ALWAYS_PER_VOXEL
+        and not (shims > 1 and index in _TRANSMIT)
+    )
+    unread = frozenset(
+        index
+        for index in spare
+        if features is not None
+        and PROPERTY_PARAMETERS[index].feature not in features
+        and not _carries_derivative(values[index])
+    )
+
+    # A property given as one value can be read at one address by every voxel,
+    # which the kernels do by stepping the atom index with a stride of zero.
+    # That stride is one number for the whole launch, so it is available only
+    # where every optional property is either uniform or unread: with a
+    # transmit map beside a scalar density the map has to be stepped through,
+    # and the density then has to be there to be stepped through as well.
+    def _uniform(index: int) -> bool:
+        return (
+            given[index].numel() <= 1
+            and not _carries_derivative(values[index])
+            and features is not None
+        )
+
+    narrowed = (
+        frozenset(spare)
+        if all(index in unread or _uniform(index) for index in spare)
+        else unread
+    )
     # The transmit buffers may lead with a shim axis, which is not a voxel axis
     # and must stay out of the broadcast that decides how many voxels there are.
     tensors = torch.broadcast_tensors(
@@ -626,7 +690,9 @@ def _prepare_tissue(
     # Broadcasting leaves a scalar property as a stride-0 view. The kernels index
     # raw pointers, so materialize before anyone hands one to them.
     flat = [
-        given[index].expand(shims, *shape).reshape(-1).contiguous()
+        given[index].reshape(-1)[:1].contiguous()
+        if index in narrowed
+        else given[index].expand(shims, *shape).reshape(-1).contiguous()
         if shims > 1 and index in _TRANSMIT
         else value.reshape(-1).contiguous()
         for index, value in enumerate(tensors)
