@@ -15,8 +15,13 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import EpgEngine, exact_slice_profile, fse_description
-from torchsim.sequence._description import RfDefinition, RfShape
+from torchsim import (
+    EpgEngine,
+    exact_slice_profile,
+    fse_description,
+    rf_definition,
+)
+from torchsim.sequence._description import RfDefinition
 from torchsim.sequence._simulation import TissueProperties
 
 ECHOES = 6
@@ -37,24 +42,25 @@ def _describe(flip=None, definition=None):
     return replace(description, rf_definitions={definition.id: definition})
 
 
+DWELL = 1.0e-5
+
+
 def _sinc(bandwidth_hz: float, samples: int = 128, rf_id: int = 0) -> RfDefinition:
+    """A windowed sinc, scaled so an event's flip is the flip it turns.
+
+    Built through :func:`rf_definition` rather than assembled by hand, because
+    a definition whose envelope is not scaled against its own integral turns a
+    small fraction of what the event asks for. Every assertion below is then
+    against a signal of order one, where a shaped pulse quietly turning nothing
+    would show up.
+    """
     grid = np.linspace(-2.0, 2.0, samples)
     envelope = np.sinc(grid) * (0.54 + 0.46 * np.cos(np.pi * grid / 2.0))
-    envelope = envelope / np.abs(envelope).max()
-    return RfDefinition(
-        id=rf_id,
+    return rf_definition(
+        envelope.astype(np.complex128),
+        dwell_s=DWELL,
         bandwidth_hz=bandwidth_hz,
-        num_bands=1,
-        band_frequency_offsets_hz=(0.0,),
-        band_bandwidth_hz=bandwidth_hz,
-        total_b1sq_power=1.0,
-        magnitude=RfShape(
-            num_uncompressed=samples, samples=np.abs(envelope).astype(np.float32)
-        ),
-        phase=RfShape(
-            num_uncompressed=samples,
-            samples=(np.angle(envelope) / (2.0 * np.pi)).astype(np.float32),
-        ),
+        definition_id=rf_id,
     )
 
 

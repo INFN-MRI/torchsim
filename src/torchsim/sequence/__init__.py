@@ -31,6 +31,7 @@ __all__ = [
     "Excitation",
     "fse_description",
     "ideal_rf_definition",
+    "rf_definition",
     "Inversion",
     "module",
     "operator",
@@ -73,6 +74,7 @@ from ._description import (
     ShimDefinition,
     decompress_shape,
     ideal_rf_definition,
+    rf_definition,
 )
 from ._operators import (
     Delay,

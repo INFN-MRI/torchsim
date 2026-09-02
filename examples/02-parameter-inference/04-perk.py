@@ -601,3 +601,128 @@ for row, (name, reference, found) in enumerate(panels):
     unit = label[label.find(" [") :] if "[" in label else ""
     scalebar(error, axes[row], f"|error|{unit}")
 # sphinx_gallery_end_ignore
+
+# %%
+#
+# How sure is it?
+# ---------------
+#
+# A map without an error bar is an assertion. Asking for one is a keyword:
+# ``uncertainty=True`` returns the standard deviation the noise leaves on each
+# map beside the maps themselves, under the noise the fit was told about.
+#
+# What PERK does to answer is run itself. Mapping the slice is a matrix
+# multiply and takes hundredths of a second, so rather than linearize -- which
+# at a realistic noise level understates the spread, because the features are
+# cosines and the noise turns them far enough to matter -- it adds the declared
+# noise a couple of dozen times over and spreads the answers.
+#
+maps, deviation = perk(measured, uncertainty=True)
+
+# %%
+#
+# What that spread should be compared against is the Cramer-Rao bound: the
+# lowest standard deviation any *unbiased* estimate could have from this train
+# at this noise level. It is a property of the acquisition rather than of the
+# method, so it says how much of the distance between the map and the truth the
+# sequence is responsible for.
+#
+# The bound is read off the Jacobian at the true relaxation times, scaled by
+# the proton density each voxel actually has -- a voxel with half the
+# magnetization carries half the signal and so twice the standard deviation.
+#
+_, sensitivity = acquisition.jacobian("T1 T2".split(), **truth)
+sensitivity = sensitivity.real * density[:, None, None]
+floor = torchsim.crlb(
+    sensitivity, noise_variance=NOISE_STD**2, singular="infinite"
+).sqrt()
+bound = {"T1": floor[:, 0], "T2": floor[:, 1]}
+
+# %%
+#
+# And the third term, which neither of those contains: the bias. A regression
+# trained on a prior answers with the prior where the data is weak, and that
+# error is the same in every noise realization -- so repeating the measurement
+# never reveals it and the spread does not contain it.
+#
+bias = {name: maps[name] - truth[name] for name in truth}
+
+# sphinx_gallery_start_ignore
+print(
+    f"{'':<10}{'PERK spread':>14}{'CRLB':>10}{'|bias|':>10}   (median over the brain)"
+)
+for name in ("T1", "T2"):
+    print(
+        f"{name:<10}{float(deviation[name].median()):11.1f} ms"
+        f"{float(bound[name].median()):7.1f} ms"
+        f"{float(bias[name].abs().median()):7.1f} ms"
+    )
+
+bands = (
+    ("white matter", truth["T1"] < 1000.0),
+    ("grey matter", (truth["T1"] >= 1000.0) & (truth["T1"] < 2000.0)),
+    ("CSF", truth["T1"] >= 2000.0),
+)
+print()
+print(
+    f"{'':<14}{'voxels':>8}{'T1 spread':>12}{'T1 CRLB':>10}"
+    f"{'T2 spread':>12}{'T2 CRLB':>10}"
+)
+for label, where in bands:
+    print(
+        f"{label:<14}{int(where.sum()):8d}"
+        f"{float(deviation['T1'][where].median()):9.1f} ms"
+        f"{float(bound['T1'][where].median()):7.1f} ms"
+        f"{float(deviation['T2'][where].median()):9.1f} ms"
+        f"{float(bound['T2'][where].median()):7.1f} ms"
+    )
+
+figure, axes = canvas(2, 3, mask.shape)
+for row, name in enumerate(("T1", "T2")):
+    columns = (
+        ("PERK spread", deviation[name]),
+        ("CRLB", bound[name]),
+        ("|bias|", bias[name].abs()),
+    )
+    top = max(
+        float(np.percentile(values.numpy(force=True), 98)) for _, values in columns
+    )
+    for column, (title, values) in enumerate(columns):
+        handle = panel(
+            axes[row, column],
+            painted(values),
+            "inferno",
+            (0.0, top or 1.0),
+            title=title if row == 0 else None,
+            ylabel=STYLE[name][2] if column == 0 else None,
+        )
+    scalebar(handle, axes[row], "ms")
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# The three panels are on one scale per parameter, which is what makes them
+# worth putting beside each other.
+#
+# The spread follows the sequence. It is smallest in white matter, larger in
+# grey, and largest in CSF -- and the bound moves the same way, because a long
+# T1 is what this train resolves least. A wide error bar in the ventricles is
+# the acquisition saying so, not the regression failing.
+#
+# What the two parameters do not share is how far above the bound they sit. T1
+# is estimated to within a small multiple of what the train allows; T2 is
+# several times worse than allowed, and it is T2 whose error moves when the
+# feature count is swept. The bound separates those two statements: one is a
+# sequence to redesign, the other a regression to enlarge.
+#
+# The bias is the term to keep in view. It is the size of the spread here, and
+# no amount of repeating the scan would show it -- which is why the map beside
+# the truth, further up, is not replaced by the map beside its error bar.
+#
+# A method whose answer is a grid point has no such number to state. Asking a
+# :class:`~torchsim.DictionaryMatcher` for one says so rather than inventing
+# it: a match moves in steps, so the noise does not move it a little.
+# :class:`~torchsim.NonlinearLeastSquares` does state one, and there it is the
+# standard error the fit reports -- the inverse Fisher matrix at the solution,
+# which is the bound above read at the answer rather than at a truth nobody
+# has.

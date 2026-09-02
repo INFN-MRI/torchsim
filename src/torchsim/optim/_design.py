@@ -37,7 +37,7 @@ __all__ = [
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import torch
 
@@ -193,7 +193,12 @@ class SequenceDesign(torch.nn.Module):
         )
 
 
-def crlb(jacobian: torch.Tensor, *, noise_variance: float = 1.0) -> torch.Tensor:
+def crlb(
+    jacobian: torch.Tensor,
+    *,
+    noise_variance: float = 1.0,
+    singular: Literal["raise", "infinite"] = "raise",
+) -> torch.Tensor:
     """The lowest variance an unbiased estimate of each parameter can have.
 
     Parameters
@@ -205,6 +210,13 @@ def crlb(jacobian: torch.Tensor, *, noise_variance: float = 1.0) -> torch.Tensor
         Gaussian noise on the two channels means.
     noise_variance : float, optional
         The variance of that noise, in the units the signal is in.
+    singular : {"raise", "infinite"}, optional
+        What to do where the parameters are not jointly identifiable. The
+        default refuses, which is right for a design being scored: a
+        sequence that cannot separate its parameters has no bound to
+        report. ``"infinite"`` answers with an infinite variance at those
+        entries instead, which is what a map wants, since one voxel of
+        background need not stop the rest from being read.
 
     Returns
     -------
@@ -231,8 +243,14 @@ def crlb(jacobian: torch.Tensor, *, noise_variance: float = 1.0) -> torch.Tensor
         else jacobian.unsqueeze(-1)
     )
     fisher = torch.einsum("...psc,...qsc->...pq", rows, rows)
-    inverse = torch.linalg.inv(fisher)
-    return noise_variance * torch.diagonal(inverse, dim1=-2, dim2=-1).real
+    if singular == "raise":
+        inverse = torch.linalg.inv(fisher)
+        return noise_variance * torch.diagonal(inverse, dim1=-2, dim2=-1).real
+    if singular != "infinite":
+        raise ValueError(f"singular is 'raise' or 'infinite', got {singular!r}")
+    inverse, failed = torch.linalg.inv_ex(fisher)
+    bound = noise_variance * torch.diagonal(inverse, dim1=-2, dim2=-1).real
+    return bound.masked_fill((failed != 0)[..., None].expand_as(bound), float("inf"))
 
 
 # %% private module subroutines

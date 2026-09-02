@@ -1140,7 +1140,13 @@ def test_positions_run_fastest_and_sensitivities_repeat_across_them():
 
 def test_a_position_and_an_off_resonance_reach_the_same_turn():
     """Position enters through the slice-select gradient as an offset in Hz, so
-    a voxel a thickness off centre is a voxel that far off resonance.
+    a voxel a thickness off centre turns exactly as a voxel that far off
+    resonance -- read, though, from a different instant. A position is a
+    gradient, and what a gradient winds across the slice is rewound either side
+    of the pulse's middle, which is where the instantaneous event the pair
+    stands in for sits. An off resonance is rewound by nothing. So the two
+    leave the same ``b`` and an ``a`` apart by that reference, and nothing
+    else.
     """
     definition = _pulse(samples=64)
     sensitivities = torch.ones(1, 1, dtype=torch.complex128)
@@ -1161,8 +1167,11 @@ def test_a_position_and_an_off_resonance_reach_the_same_turn():
         rf_raster_time_s=RASTER,
     )
 
-    for reference, result in zip(placed, detuned, strict=True):
-        assert float((reference - result).abs().max()) < 1e-7
+    duration = float(np.sum(definition.sample_durations(rf_raster_time_s=RASTER)))
+    carried = 2.0 * np.pi * definition.bandwidth_hz * offset * duration
+
+    assert abs(complex(placed[1]) - complex(detuned[1])) < 1e-7
+    assert abs(complex(placed[0]) - complex(detuned[0]) * np.exp(0.5j * carried)) < 1e-7
 
 
 def test_a_pulse_reaches_its_rotation_one_way_or_the_other():

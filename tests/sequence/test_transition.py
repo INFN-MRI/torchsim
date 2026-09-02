@@ -63,7 +63,12 @@ def _definition(phase_modulated: bool = False) -> RfDefinition:
 
 
 def _integrate(theta: float, position: float, phase_modulated: bool = False):
-    """The same pulse, integrated straight, in double precision."""
+    """The same pulse, integrated straight, in double precision.
+
+    Referenced to the middle of the pulse, which is where the instantaneous
+    event the table stands in for sits: the turn the slice-select gradient
+    leaves is taken off at the end, half of it belonging either side.
+    """
     weight = _envelope(phase_modulated)
     weight = weight / weight.sum()
     a, b = 1.0 + 0j, 0.0 + 0j
@@ -76,7 +81,7 @@ def _integrate(theta: float, position: float, phase_modulated: bool = False):
         step_a = np.cos(half) - 1j * turn_z * scale
         step_b = -1j * (drive.real - 1j * drive.imag) * scale
         a, b = step_a * a - step_b * np.conj(b), step_b * np.conj(a) + step_a * b
-    return a, b
+    return a * np.exp(0.5j * turn_z * len(weight)), b
 
 
 @pytest.fixture(scope="module")
@@ -397,3 +402,39 @@ def test_sample_times_that_do_not_advance_are_refused() -> None:
             bins=8,
             rf_raster_time_s=RASTER,
         )
+
+
+def test_a_small_flip_is_the_transform_of_the_envelope(table) -> None:
+    """The small-tip limit, which is where a slice profile has a closed form.
+
+    Well below a right angle the Bloch response is linear in the drive, and
+    what a symmetric pulse leaves across the slice is the Fourier transform of
+    its envelope about the pulse's own middle: real, so the transverse
+    magnetization holds one phase everywhere along the slice. It is that phase
+    being flat that lets a slice be averaged at all -- referenced anywhere but
+    the middle, the transform picks up a linear phase in position and the
+    average across the slice cancels instead of rolling off.
+
+    Computed here from numpy, over the envelope this module already writes.
+    """
+    theta = 0.02
+    weight = _envelope()
+    weight = weight / weight.sum()
+    times = (np.arange(SAMPLES) - 0.5 * (SAMPLES - 1)) * RASTER
+
+    ratios = []
+    for index, position in enumerate(torch.linspace(-1.0, 1.0, 9).tolist()):
+        transform = np.sum(weight * np.exp(-2j * np.pi * BANDWIDTH * position * times))
+        assert abs(transform.imag) < 1e-9, "a symmetric envelope transforms real"
+        if abs(transform) < 1e-3:
+            # A null of the transform carries no phase to compare.
+            continue
+
+        a, b = table.at(torch.tensor(index), torch.tensor(theta, dtype=torch.float32))
+        transverse = 2.0 * np.conj(complex(a)) * complex(b)
+        ratios.append(transverse / (theta * transform.real))
+
+    assert len(ratios) >= 5
+    spread = max(abs(ratio - ratios[0]) for ratio in ratios)
+    assert spread < 1e-3, "one constant of proportionality across the slice"
+    assert abs(abs(ratios[0]) - 1.0) < 1e-3, "and the drive is the flip it names"

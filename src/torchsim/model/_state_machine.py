@@ -83,7 +83,14 @@ _EMPTY: Mapping[str, Any] = MappingProxyType({})
 
 # What a caller may name that describes the run rather than the sequence. Each
 # has an attribute of the same name, set once at construction.
-RUN_SETTINGS = ("nstates", "repetitions", "record", "device", "execution")
+RUN_SETTINGS = (
+    "nstates",
+    "repetitions",
+    "record",
+    "device",
+    "execution",
+    "slice_profile",
+)
 
 # The raster :class:`~torchsim.sequence.EpgEngine` reads a pulse's shape on,
 # named here because a packing resolved against one is not valid against
@@ -247,6 +254,7 @@ class Simulator(SignalModel):
         repetitions: int | str | None = None,
         record: RecordMode = "all",
         execution: str | torch.device | Sequence[Any] | None = None,
+        slice_profile: Any = None,
         resolve: bool = True,
         crusher_dephasing_rad: float = 0.0,
         voxel_size_m: float | None = None,
@@ -302,6 +310,7 @@ class Simulator(SignalModel):
         )
         self.record = record
         self.execution = execution
+        self.slice_profile = slice_profile
         self.crusher_dephasing_rad = crusher_dephasing_rad
         self.voxel_size_m = voxel_size_m
         self._resolving = bool(resolve)
@@ -380,9 +389,15 @@ class Simulator(SignalModel):
         repetitions: int | str,
         record: str,
         device: Any,
+        slice_profile: Any = None,
     ) -> tuple[SequenceDescription, Any]:
         """The description to run, and its events already packed if they are."""
         if not self._resolving or self._described is not None:
+            return self.describe(**played), None
+        if slice_profile is not None:
+            # A packing holds the event stream and not the table a pulse is
+            # integrated over, so a profiled run walks the description instead
+            # of rebinding onto a packing that has no table in it.
             return self.describe(**played), None
         if not isinstance(repetitions, int):
             # How many playings a settled run takes is decided against the
@@ -507,6 +522,7 @@ class Simulator(SignalModel):
             "device": given.pop("device", None),
         }
         target = given.pop("execution", self.execution)
+        profile = given.pop("slice_profile", self.slice_profile)
         played = self.played(**given)
         tissue = self.model.tissue(properties)
         described, events = self._structure(
@@ -515,12 +531,20 @@ class Simulator(SignalModel):
             repetitions=settings["repetitions"],
             record=settings["record"],
             device=settings["device"],
+            slice_profile=profile,
         )
         block = nullcontext() if target is None else execution(target)
         with block:
             return (
                 EpgEngine()
-                .simulate(described, tissue, nstates=states, events=events, **settings)
+                .simulate(
+                    described,
+                    tissue,
+                    nstates=states,
+                    events=events,
+                    slice_profile=profile,
+                    **settings,
+                )
                 .signal
             )
 

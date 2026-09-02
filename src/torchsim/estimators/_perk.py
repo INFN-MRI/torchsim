@@ -88,6 +88,7 @@ class PERK(Estimator):
         complex_mode: Literal["cartesian", "magnitude"] = "cartesian",
         normalize: bool = False,
         stream: bool = False,
+        uncertainty_draws: int = 24,
     ) -> None:
         super().__init__(acquisition)
         self.feature_seed = feature_seed
@@ -105,6 +106,10 @@ class PERK(Estimator):
         self.chunk_size = int(chunk_size)
         self.complex_mode = complex_mode
         self.normalize = bool(normalize)
+        self.uncertainty_draws = int(uncertainty_draws)
+        # Fixed once, so that asking the same estimator twice gives the same
+        # answer. Reproducible across runs exactly when the features are.
+        self._spread_seed = _random_seed(feature_seed) + 1
         self._requested_length_scale = length_scale
         self.register_buffer("frequency", torch.empty(0))
         # The same frequencies laid out for the host kernel's inner loop.
@@ -275,6 +280,89 @@ class PERK(Estimator):
                 self.parameter_mean + (features - self.feature_mean) @ self.weight.mT
             )
         return torch.cat(outputs, dim=0).reshape(*sample_shape, -1)
+
+    def _uncertainty_arrays(
+        self,
+        signals: torch.Tensor,
+        known: torch.Tensor | None,
+        values: torch.Tensor,
+        *,
+        measured: torch.Tensor,
+    ) -> torch.Tensor:
+        """The spread the noise leaves on the estimate, by running it.
+
+        A kernel regression is smooth but not linear over a realistic noise
+        level -- the features are cosines, and at the noise the method was
+        trained for they turn far enough that a derivative taken at the
+        measurement understates the spread by tens of percent. Mapping is a
+        matrix multiply, though, so the spread is measured rather than
+        approximated: the noise is drawn :attr:`uncertainty_draws` times and
+        the estimates it produces are spread.
+
+        Two things decide what that number means. The noise is added to the
+        fingerprint the answer predicts, scaled to the measurement, rather than
+        to the measurement itself -- a measurement already carries one
+        realization, and drawing on top of it would report the spread at more
+        noise than the scan has. And it is added in the measurement's own
+        domain, before any basis and with its own realness, so data that
+        carries no imaginary part is not charged for noise on one.
+        """
+        scale = torch.as_tensor(
+            self.noise_std, dtype=torch.float32, device=measured.device
+        )
+        if not torch.any(scale != 0) or self.uncertainty_draws < 2:
+            return torch.zeros_like(values)
+        generator = _generator(measured.device, self._spread_seed)
+        centre = self._predicted(measured, known, values)
+        drawn = torch.stack(
+            [
+                self._estimate_arrays(
+                    self._as_seen(
+                        _add_noise(centre, self.noise_std, generator=generator)
+                    ),
+                    known,
+                )
+                for _ in range(self.uncertainty_draws)
+            ]
+        )
+        return drawn.std(dim=0)
+
+    def _predicted(
+        self,
+        measured: torch.Tensor,
+        known: torch.Tensor | None,
+        values: torch.Tensor,
+    ) -> torch.Tensor:
+        """The measurement the estimate implies, in the domain the noise is in.
+
+        The scale is the one the measurement is of the predicted fingerprint,
+        which is the projection this estimator never solves for. Where there is
+        no sequence to predict from, the measurement stands in for its own
+        prediction and the number is the spread of a rescan.
+        """
+        if self.acquisition is None or not self._unknown:
+            return measured
+        acquisition = self.acquisition
+        if known is not None:
+            acquisition = acquisition.bind(
+                **{name: known[:, index] for index, name in enumerate(self.known)}
+            )
+        predicted = torch.as_tensor(
+            acquisition.simulate(
+                **{name: values[..., i] for i, name in enumerate(self._unknown)}
+            ),
+            device=measured.device,
+        )
+        if not torch.is_complex(measured) and torch.is_complex(predicted):
+            predicted = predicted.real
+        weight = (predicted.conj() * measured).sum(-1) / predicted.abs().square().sum(
+            -1
+        ).clamp_min(torch.finfo(torch.float32).eps)
+        return predicted * weight[..., None].to(predicted.dtype)
+
+    def _as_seen(self, contrasts: torch.Tensor) -> torch.Tensor:
+        """Contrasts in the basis the estimator was fitted in, if there is one."""
+        return contrasts if self.subspace is None else self.subspace.project(contrasts)
 
     def _placed(self, inputs: torch.Tensor) -> tuple[torch.Tensor, ...] | None:
         """Run under the execution policy, or ``None`` if none applies.

@@ -101,12 +101,17 @@ def key(axes, ncols=1):
 
 
 # sphinx_gallery_end_ignore
+import math
 import time
+from dataclasses import replace
 from functools import partial
+from pathlib import Path
 
+import numpy as np
 import torch
 
 import torchsim
+from torchsim.model import Simulator
 from torchsim.simulators import FSESimulator
 
 # %%
@@ -357,6 +362,298 @@ print(
 # varied. The object is what a loop wants: it resolves the event stream on its
 # first call and rebinds only the numbers that change afterwards, which is
 # worth about eight times the whole call to a design or a dictionary sweep.
+#
+
+# %%
+#
+# Saying how the run is made
+# --------------------------
+#
+# Everything so far took the defaults. Four settings decide what the run costs
+# and how exact it is, and each is given to the constructor or to the call.
+#
+# ``states`` is how many configuration orders are carried. A refocused train
+# winds one order per interval, and a pulse that is not a perfect 180 degrees
+# splits the magnetization down every pathway those orders describe, so the
+# answer is only as good as the number kept. Too few is a wrong answer rather
+# than a slow one. Held against a train carrying far more than it needs:
+#
+signal_ref = acquisition.simulate(flip=flip)
+converged = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, states=64).simulate(
+    flip=flip
+)
+for orders in (4, 10, 16, 32, 48):
+    truncated = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, states=orders)
+    drift = float((truncated.simulate(flip=flip) - converged).abs().max())
+    print(
+        f"  {orders:2d} orders   {drift / float(converged.abs().max()):.1e} from converged"
+    )
+
+# %%
+#
+# It lands exactly at forty-eight, which is the number of echoes: a train that
+# winds one order per interval can populate one more pathway per echo and no
+# more, so carrying more orders than the train has intervals changes nothing.
+# A spoiled sequence is the other case -- it discards the transverse orders
+# every repetition, so a handful is enough however long it runs.
+#
+# The shipped default is chosen for the refocused trains these simulators are
+# written for, and a 60 degree train is not one of them. It is the first
+# setting to raise when a signal looks wrong late in an echo train, and the
+# check above -- run once against a larger number -- is how you find out rather
+# than assume.
+
+# %%
+#
+# ``resolve`` is what makes a loop worth writing as an object. The structure of
+# a sequence -- the order of its events, which of them record, how far it winds
+# -- is settled once and the numbers are rebound onto it afterwards, so a sweep
+# that changes only flip angles never walks the stream again. What that is
+# worth grows with the sequence: a 48-echo train is the modest end of it, and
+# a 500-repetition fingerprinting schedule is where it decides whether a
+# dictionary sweep takes minutes or hours.
+#
+held = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS)
+rebuilt = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, resolve=False)
+
+# sphinx_gallery_start_ignore
+for name, shots in (("held", held), ("rebuilt", rebuilt)):
+    shots.simulate(flip=flip)  # the first call is where resolving happens
+    start = time.perf_counter()
+    for _ in range(20):
+        shots.simulate(flip=flip)
+    print(f"  {name:8s} {1e3 * (time.perf_counter() - start) / 20:6.2f} ms a call")
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# ``execution`` says where the work goes. ``"auto"`` weighs the problem against
+# what the cards have free -- work too small to repay a launch stays on the
+# host, work that fits crosses in one piece, work that does not is streamed
+# through in chunks. Naming a device insists on it, and a block settles it for
+# everything inside:
+#
+with torchsim.execution("cpu"):
+    on_the_host = acquisition.simulate(flip=flip)
+
+# sphinx_gallery_start_ignore
+print(
+    f"  forced onto the host, agrees to {float((on_the_host - signal_ref).abs().max()):.1e}"
+)
+if torch.cuda.is_available():
+    with torchsim.execution("cuda", stream=True, budget_bytes=1 << 28):
+        streamed = acquisition.simulate(flip=flip)
+    print(
+        f"  streamed through a card, agrees to {float((streamed.cpu() - signal_ref).abs().max()):.1e}"
+    )
+else:
+    print("  no card here, so the streamed comparison is skipped")
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# ``stream`` and ``budget_bytes`` are for a volume rather than a dictionary:
+# the first insists the run be cut into chunks even where it would have fit,
+# the second caps what a chunk may hold. A whole-brain map at a hundred
+# thousand voxels is the case they exist for.
+#
+# ``repetitions`` is the fourth, and it belongs with the physics rather than
+# with the machine: one playing is the transient a scanner plays once, and
+# ``"auto"`` reads off the state the sequence settles into instead. The next
+# example is where that matters.
+#
+
+
+# %%
+#
+# The pulse the scanner actually plays
+# ------------------------------------
+#
+# Everything above turned instantly. A real excitation is a shaped waveform
+# under a selection gradient, and what it does depends on where in the slice a
+# spin sits: the flip it turns at the edge is not the flip it turns at the
+# centre, so the signal a voxel gives is the average over the slice rather than
+# the nominal angle.
+#
+# TorchSim takes the envelope itself -- the complex waveform, one row per
+# transmit channel, exactly what comes off a Pulseq block or an MRD sequence
+# description. This one is an SLR 90 degree pulse, 2 ms long over a 5 mm slice,
+# designed elsewhere and saved beside this file so nothing here depends on a
+# pulse designer.
+#
+pulse = np.load(Path(__file__).parent / "data" / "slr90.npz")
+excitation = torchsim.rf_definition(
+    pulse["samples"],
+    dwell_s=float(pulse["dwell_s"]),
+    bandwidth_hz=float(pulse["bandwidth_hz"]),
+)
+
+# %%
+#
+# The amplitude a caller writes is in radians and the flip is what the pulse
+# turns, so the envelope is rescaled to make those the same thing. That is the
+# one thing to get right: a waveform left peak-normalized integrates to
+# something else entirely and turns a fraction of a degree, which comes back as
+# a signal of nothing rather than as an error.
+#
+# sphinx_gallery_start_ignore
+turned, _axis = excitation.flip_angle(torch.pi / 2)
+print(f"  an amplitude of pi/2 turns {float(np.real(turned)):.6f} rad")
+print(
+    f"  bandwidth {excitation.bandwidth_hz:.0f} Hz over a "
+    f"{1e3 * float(pulse['thickness_m']):.0f} mm slice, so it selects"
+)
+print(f"  and so the kernels read it as {excitation.rf_mode().name}")
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# A model names the pulses its events drive, so giving a simulator this one is
+# replacing the definition its excitation reads. ``slice_profile`` then says
+# where across the slice to work the rotation out; leave it off and the pulse
+# is evaluated at the slice centre alone, which is the hard-pulse answer.
+#
+shaped = replace(FSESimulator.model, definitions={excitation.id: excitation})
+protocol = dict(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, states=48)
+
+centre_only = FSESimulator(model=shaped, **protocol).simulate(flip=flip)
+across_slice = FSESimulator(
+    model=shaped, slice_profile=torchsim.exact_slice_profile(21, extent=1.2), **protocol
+).simulate(flip=flip)
+
+# sphinx_gallery_start_ignore
+print(f"  at the slice centre    {float(centre_only[0].abs().max()):.4f}")
+print(f"  averaged over the slice {float(across_slice[0].abs().max()):.4f}")
+print(
+    f"  the profile costs      "
+    f"{100 * (1 - float(across_slice[0].abs().max()) / float(centre_only[0].abs().max())):.1f}% of the signal"
+)
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# The gap is the slice profile, and it is not a scaling: the edges of the slice
+# see a smaller flip, which for a refocused train is a different pathway
+# balance rather than a smaller version of the same one. A fit that assumed the
+# nominal angle would read that as a tissue difference.
+#
+
+# sphinx_gallery_start_ignore
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.2))
+envelope = pulse["samples"]
+time_ms = 1e3 * np.arange(envelope.size) * float(pulse["dwell_s"])
+axes[0].plot(time_ms, np.abs(envelope) / np.abs(envelope).max(), "-k", lw=1.5)
+axes[0].set(xlabel="Time [ms]", ylabel="|B1| (normalized)", title="the SLR envelope")
+for values, style, label in (
+    (centre_only, "-k", "slice centre"),
+    (across_slice, "--r", "averaged over the slice"),
+):
+    axes[1].plot(values[0].abs().numpy(), style, lw=2, label=label)
+axes[1].set(xlabel="Echo", ylabel="|signal|", title="white matter")
+for axis in axes:
+    axis.grid(alpha=0.3)
+key(axes[1])
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# A stream carries the same three things this constructor takes -- the
+# waveform, its bandwidth and where each band sits -- and nothing that says
+# "selective": a pulse is selective exactly when it declares a bandwidth, which
+# is what puts it on the tabulated rotation rather than the instant one. Give
+# ``rf_raster_time_s`` where the pulse is not written on the run's own raster,
+# since sample times travel in units of it.
+#
+
+# %%
+#
+# A sequence someone else assembled
+# ---------------------------------
+#
+# Nothing above required TorchSim to have written the sequence. A description
+# is a list of events with timestamps, and a stream that arrives already
+# labelled -- from an MRD file, from Pulseq, from any generator that names what
+# it plays -- is turned into one by looking each name up in the operator
+# registry.
+#
+print("operators reachable by name:", ", ".join(torchsim.operator_names()))
+
+# %%
+#
+# The same refocused train as above, written as the stream a converter would
+# hand over: a name, when it is played, and the parameters it carries.
+#
+ESP_S = ESP_MS * 1e-3
+stream = [("excitation", 0.0, {"flip_rad": math.pi / 2, "phase_rad": math.pi / 2})]
+for index in range(ECHOES):
+    echo_s = (index + 1) * ESP_S
+    stream.append(
+        (
+            "refocusing",
+            echo_s - 0.5 * ESP_S,
+            {"flip_rad": math.radians(60.0), "phase_rad": 0.0},
+        )
+    )
+    stream.append(("readout", echo_s, {"phase_rad": 0.0}))
+
+events, _played_s = torchsim.compose(
+    *((at, torchsim.operator(name)(**params)) for name, at, params in stream)
+)
+described = torchsim.SequenceDescription(
+    subsequence_index=0,
+    tr_duration_us=3000e3,
+    events=events,
+    rf_definitions={0: torchsim.ideal_rf_definition(0)},
+)
+
+# %%
+#
+# :meth:`~torchsim.model.Simulator.from_description` runs it. The events are
+# already concrete -- each carries the action word that says whether it winds,
+# spoils or records -- so no layout is walked and nothing is inferred.
+#
+from_stream = Simulator.from_description(
+    described, acquisition.model, states=10, T1=T1_MS, T2=T2_MS
+)
+streamed_signal = from_stream.simulate()
+
+# %%
+#
+# It differentiates like anything else, because the derivative follows from the
+# events and not from who wrote them:
+#
+_, streamed_dT2 = from_stream.jacobian("T2")
+
+# sphinx_gallery_start_ignore
+print(
+    f"  {len(events)} events, signal {tuple(streamed_signal.shape)}, dT2 {tuple(streamed_dT2.shape)}"
+)
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# One thing to know when comparing it against the shipped simulator: a
+# description carries the events, and a simulator may carry physics *around*
+# them. :class:`~torchsim.simulators.FSESimulator` folds in the recovery
+# between one train and the next in closed form, which is not an event and so
+# is not in the stream. The train itself agrees; the driven equilibrium the
+# shipped object adds does not come along.
+#
+
+# sphinx_gallery_start_ignore
+figure, axis = plt.subplots(1, 1, figsize=(PAGE_WIDTH, 3.2))
+axis.plot(signal_ref[0].abs().numpy(), "-k", lw=2, label="FSESimulator")
+axis.plot(
+    streamed_signal[0].abs().numpy(), "--r", lw=2, label="from a described stream"
+)
+axis.set(
+    xlabel="Echo", ylabel="|signal|", title="white matter, the same train both ways"
+)
+axis.grid(alpha=0.3)
+key(axis)
+# sphinx_gallery_end_ignore
+
+# %%
 #
 # Where this goes
 # ---------------

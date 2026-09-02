@@ -356,8 +356,12 @@ class Estimator(torch.nn.Module):
     # -- mapping ---------------------------------------------------------
 
     def map(
-        self, volume: Any, known: Any = None
-    ) -> dict[str, torch.Tensor] | torch.Tensor:
+        self,
+        volume: Any,
+        known: Any = None,
+        *,
+        uncertainty: bool = False,
+    ) -> Any:
         """Estimate the tissue a measurement came from.
 
         Parameters
@@ -368,6 +372,10 @@ class Estimator(torch.nn.Module):
         known : mapping or torch.Tensor, optional
             The measured maps, under the names the estimator was given. Each
             is broadcast to the voxel shape.
+        uncertainty : bool, optional
+            Also return the standard deviation the noise leaves on each map.
+            See :meth:`uncertainty_of` for what that number is and what it is
+            not. Not every method can state one.
 
         Returns
         -------
@@ -375,23 +383,72 @@ class Estimator(torch.nn.Module):
             ``{name: map}`` where the estimator was told what it is solving
             for, each shaped like ``volume`` without its contrast axis. Where
             it was fitted from bare arrays, the parameter columns as a tensor.
+            With ``uncertainty=True``, a pair of those -- the maps, and the
+            standard deviations beside them.
 
         Raises
         ------
         RuntimeError
             If the estimator has not been fitted.
+        NotImplementedError
+            If ``uncertainty`` is asked of a method that does not state one.
         ValueError
             If a measured map is missing, or has the wrong voxel count.
         """
         if not self._unknown:
-            return self._estimate_arrays(volume, known)
-        return self._named(volume, known, project=True)
+            values = self._estimate_arrays(volume, known)
+            if not uncertainty:
+                return values
+            signals = torch.as_tensor(volume)
+            return values, self._spread(
+                signals.reshape(-1, signals.shape[-1]), known, values
+            )
+        return self._named(volume, known, project=True, uncertainty=uncertainty)
 
     def forward(
-        self, volume: Any, known: Any = None
-    ) -> dict[str, torch.Tensor] | torch.Tensor:
+        self,
+        volume: Any,
+        known: Any = None,
+        *,
+        uncertainty: bool = False,
+    ) -> Any:
         """Alias of :meth:`map`, so a fitted estimator is callable."""
-        return self.map(volume, known)
+        return self.map(volume, known, uncertainty=uncertainty)
+
+    def uncertainty_of(self, volume: Any, known: Any = None) -> Any:
+        """The standard deviation the measurement noise leaves on each map.
+
+        The noise :meth:`fit` was told about, propagated through the estimate
+        this method makes -- so it says how much the answer would move if the
+        scan were repeated, and it is a property of the method as much as of
+        the sequence.
+
+        It is not the error. An estimator that is biased is biased the same way
+        in every realization, so repeating the measurement never reveals that
+        part and this number does not contain it. Read against
+        :func:`~torchsim.crlb`, which is the lowest standard deviation an
+        unbiased estimate could have, it says how much of the distance to the
+        truth the acquisition is responsible for.
+
+        Parameters
+        ----------
+        volume : array-like
+            ``(..., contrasts)``, as :meth:`map` takes.
+        known : mapping or torch.Tensor, optional
+            The measured maps, as :meth:`map` takes.
+
+        Returns
+        -------
+        dict or torch.Tensor
+            One standard deviation per unknown, shaped like the maps.
+
+        Raises
+        ------
+        NotImplementedError
+            If this method does not state one.
+        """
+        _, spread = self.map(volume, known, uncertainty=True)
+        return spread
 
     def from_coefficients(
         self, coefficients: Any, known: Mapping[str, Any] | None = None
@@ -439,8 +496,13 @@ class Estimator(torch.nn.Module):
         return self._named(values, known, project=False)
 
     def _named(
-        self, volume: Any, known: Mapping[str, Any] | None, *, project: bool
-    ) -> dict[str, torch.Tensor]:
+        self,
+        volume: Any,
+        known: Mapping[str, Any] | None,
+        *,
+        project: bool,
+        uncertainty: bool = False,
+    ) -> Any:
         """Fill in the maps, from contrasts or from coefficients."""
         if not self.trained:
             raise RuntimeError("an estimator must be fitted before it maps")
@@ -451,15 +513,46 @@ class Estimator(torch.nn.Module):
         shape = signals.shape[:-1]
         voxels = int(torch.tensor(shape).prod()) if shape else 1
         signals = signals.reshape(voxels, signals.shape[-1])
+        columns = _known_matrix(known, self._known, voxels)
+        seen = signals
         if project and self._subspace is not None:
-            signals = self._subspace.project(signals)
-        values = self._estimate_arrays(
-            signals, _known_matrix(known, self._known, voxels)
+            seen = self._subspace.project(signals)
+        values = self._estimate_arrays(seen, columns)
+
+        def laid_out(matrix: torch.Tensor) -> dict[str, torch.Tensor]:
+            return {
+                name: matrix[..., column].reshape(shape).to(home)
+                for column, name in enumerate(self._unknown)
+            }
+
+        if not uncertainty:
+            return laid_out(values)
+        return laid_out(values), laid_out(
+            self._spread(seen, columns, values, measured=signals)
         )
-        return {
-            name: values[..., column].reshape(shape).to(home)
-            for column, name in enumerate(self._unknown)
-        }
+
+    def _spread(
+        self,
+        signals: torch.Tensor,
+        known: torch.Tensor | None,
+        values: torch.Tensor,
+        *,
+        measured: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """The standard deviations, with the noise the fit was told about."""
+        spread = self._uncertainty_arrays(
+            signals, known, values, measured=signals if measured is None else measured
+        )
+        if spread is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} does not state an uncertainty. A method "
+                f"whose answer is a grid point moves in steps rather than "
+                f"smoothly, so propagating the noise through it gives zero "
+                f"rather than an error bar; PERK and NonlinearLeastSquares do "
+                f"state one, and torchsim.crlb bounds what any unbiased method "
+                f"could reach on this sequence."
+            )
+        return spread
 
     # -- what a subclass supplies ----------------------------------------
 
@@ -479,6 +572,25 @@ class Estimator(torch.nn.Module):
     ) -> torch.Tensor:
         """Estimate ``(..., unknowns)`` from plain tensors."""
         raise NotImplementedError
+
+    def _uncertainty_arrays(
+        self,
+        signals: torch.Tensor,
+        known: torch.Tensor | None,
+        values: torch.Tensor,
+        *,
+        measured: torch.Tensor,
+    ) -> torch.Tensor | None:
+        """One standard deviation per unknown, or ``None`` where there is none.
+
+        ``signals`` are as :meth:`_estimate_arrays` saw them -- projected into
+        the basis where there is one -- and ``values`` is what it answered, so
+        a method that linearizes about its own estimate has it to hand.
+        ``measured`` is the measurement before any basis was applied, which is
+        the domain the noise is independent in and carries whether the data is
+        complex at all.
+        """
+        return None
 
 
 # %% private module subroutines

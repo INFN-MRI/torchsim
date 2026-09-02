@@ -10,6 +10,7 @@ from typing import Any
 import torch
 
 from .._bounds import bound_of
+from ..optim._design import crlb
 from ..recon import GaussNewton, ModelOperator, TrustRegion, direct
 from ._mapping import Estimator
 
@@ -235,6 +236,51 @@ class NonlinearLeastSquares(Estimator):
         )
         found = self._solve(measured, given)
         return found.reshape(*shape, len(self.unknown))
+
+    def _uncertainty_arrays(
+        self,
+        signals: torch.Tensor,
+        known: torch.Tensor | None,
+        values: torch.Tensor,
+        *,
+        measured: torch.Tensor,
+    ) -> torch.Tensor:
+        """The standard error of the fit, from its own sensitivity.
+
+        A least-squares solution moves with the noise by as much as the model
+        is insensitive to the parameters there, which is the inverse Fisher
+        matrix at the solution -- the same quantity :func:`~torchsim.crlb`
+        bounds an unbiased estimate by, read at the answer rather than at a
+        truth nobody has. It is a linearization about the solution, so it is
+        the standard error a fit reports and holds where the residual is small
+        enough that the model is straight across it.
+        """
+        scale = torch.as_tensor(
+            self.noise_std, dtype=torch.float32, device=values.device
+        )
+        if not torch.any(scale != 0):
+            return torch.zeros_like(values)
+        acquisition = self.acquisition
+        if known is not None:
+            acquisition = acquisition.bind(
+                **{name: known[:, index] for index, name in enumerate(self.known)}
+            )
+        _, sensitivity = acquisition.jacobian(
+            list(self.unknown),
+            **{name: values[..., i] for i, name in enumerate(self.unknown)},
+        )
+        if self.subspace is not None:
+            sensitivity = self.subspace.project(sensitivity)
+        # Per-voxel noise divides the sensitivity rather than the variance,
+        # which is the same thing and takes a map as readily as a number.
+        sensitivity = sensitivity / scale.reshape(
+            *scale.shape, *((1,) * (sensitivity.ndim - scale.ndim))
+        )
+        return (
+            crlb(sensitivity, noise_variance=1.0, singular="infinite")
+            .clamp_min(0.0)
+            .sqrt()
+        )
 
     def _solve(
         self, measured: torch.Tensor, known: torch.Tensor | None

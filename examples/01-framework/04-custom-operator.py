@@ -8,9 +8,11 @@ preparation -- that knows what it plays and how long it holds the timeline.
 Writing a new one is writing a Python function that returns events, and it
 reaches the fused kernels with no change to them: no Triton, no C++.
 
-This example builds a T2 preparation, checks it against the decay it is
-supposed to impose, and registers it under a name so a stream that arrives
-already labelled can ask for it.
+This example builds two. A T2 preparation, checked against the decay it is
+supposed to impose; and a readout that takes two samples per repetition where
+the shipped ones take one, checked against the two shipped readouts it has to
+reproduce at once. Both are then registered under a name, so a stream that
+arrives already labelled can ask for them.
 """
 
 # %%
@@ -104,6 +106,7 @@ import torch
 from torchsim.sequence import (
     compose,
     Delay,
+    Dephase,
     EpgEngine,
     EventAction,
     Excitation,
@@ -114,6 +117,8 @@ from torchsim.sequence import (
     Refocusing,
     register_operator,
     SequenceDescription,
+    SSFPEchoReadout,
+    SSFPFidReadout,
     TissueProperties,
 )
 
@@ -230,6 +235,131 @@ print(
 # that follows it, by more for the longer preparations that leave less behind.
 
 # %%
+# A readout of your own
+# ---------------------
+# The shipped readouts differ only in what they play around the sample. An
+# unbalanced train winds every order on once per repetition, so a sample taken
+# *before* that winding is a free induction decay after the pulse just played,
+# and a sample taken *after* it sits where the next pulse will refocus the
+# previous excitation -- an echo, and far more strongly T2-weighted.
+#
+# TorchSim ships each of those separately. Taking both in one repetition is a
+# double-echo steady state, and writing it is putting the winding between two
+# samples rather than on one side of them.
+
+
+def dess_readout(phase_rad=0.0, *, duration_s=0.0):
+    """Return the two samples an unbalanced repetition can carry.
+
+    Parameters
+    ----------
+    phase_rad : float, optional
+        The receiver phase both samples are taken at.
+    duration_s : float, optional
+        What is left of the repetition after the second sample.
+    """
+    return module(
+        Readout(phase_rad),
+        Dephase(),
+        Readout(phase_rad),
+        Delay(duration_s),
+        duration_s=duration_s,
+    )
+
+
+# %%
+#
+# Whether that is the right arrangement is not a matter of opinion: the first
+# sample has to be what an SSFP-FID train records and the second what an
+# SSFP-Echo train records, since those are the same two samples taken one at a
+# time. So the check is to run all three.
+#
+FLIP_DEG, TR_S, REPETITIONS = 30.0, 20e-3, 64
+T2_MS = torch.tensor([40.0, 80.0, 160.0])
+
+
+def unbalanced_train(readout):
+    """Return a steady-state train ending each repetition in ``readout``."""
+    modules = []
+    for _ in range(REPETITIONS):
+        modules.append(Excitation(torch.deg2rad(torch.tensor(FLIP_DEG))))
+        modules.append(readout(duration_s=TR_S))
+    events, duration_s = compose(*modules)
+    return SequenceDescription(
+        subsequence_index=0,
+        tr_duration_us=1e6 * duration_s,
+        events=events,
+        rf_definitions={0: ideal_rf_definition()},
+    )
+
+
+def played(readout, t1_ms=1000.0):
+    """Return what one train records, over the three T2 values."""
+    tissue = TissueProperties(t1_ms=t1_ms, t2_ms=T2_MS)
+    return EpgEngine().simulate(unbalanced_train(readout), tissue, nstates=24).signal
+
+
+both = played(dess_readout)
+fid, echo = both[..., 0::2], both[..., 1::2]
+
+# sphinx_gallery_start_ignore
+print(
+    "  first sample against ssfp-fid-readout:  "
+    f"{float((fid - played(SSFPFidReadout)).abs().max()):.1e}"
+)
+print(
+    "  second sample against ssfp-echo-readout:"
+    f"{float((echo - played(SSFPEchoReadout)).abs().max()):.1e}"
+)
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# Both exactly, which is the whole claim: two samples in one repetition, and
+# each is the sample the sequence that takes it alone would have recorded.
+#
+# What it is for is the ratio between them. The echo has spent a further
+# repetition in the transverse plane, so it carries T2 where the free induction
+# decay carries a mixture -- and the ratio of the two is a T2 contrast that
+# needs no separate measurement to normalize.
+#
+ratios = {
+    t1_ms: (
+        played(dess_readout, t1_ms)[..., 1::2][:, -1].abs()
+        / played(dess_readout, t1_ms)[..., 0::2][:, -1].abs()
+    )
+    for t1_ms in (600.0, 1000.0, 2000.0)
+}
+
+# sphinx_gallery_start_ignore
+figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.6))
+for row, t2 in enumerate(T2_MS):
+    axes[0].plot(abs(fid[row]), label=f"T2 = {float(t2):.0f} ms")
+    axes[0].plot(abs(echo[row]), "--", color=f"C{row}")
+axes[0].set(
+    xlabel="repetition",
+    ylabel="signal magnitude [a.u.]",
+    title="the two samples (echo dashed)",
+)
+for t1_ms, ratio in ratios.items():
+    axes[1].plot(T2_MS.numpy(), ratio.numpy(), "o-", label=f"T1 = {t1_ms:.0f} ms")
+axes[1].set(xlabel="T2 [ms]", ylabel="echo / free induction decay", title="the ratio")
+for axis in axes:
+    axis.grid(alpha=0.3)
+key(axes, ncols=3)
+
+spread = max(float(r[0]) for r in ratios.values()) - min(
+    float(r[0]) for r in ratios.values()
+)
+print(f"  at T2 = 40 ms the ratio moves {spread:.2f} over a 3.3x range in T1")
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# The ratio rises with T2 at every T1, and moves far less with T1 than with
+# T2 -- which is what makes it usable, and why a DESS T2 measurement at a
+# larger flip angle wants T1 known rather than assumed away.
+#
 # Reaching it by name
 # -------------------
 # Events form a stream, and a stream can come from somewhere other than a
@@ -238,6 +368,7 @@ print(
 # the caller keeping a mapping of its own.
 #
 register_operator("t2-prep", t2_preparation)
+register_operator("dess-readout", dess_readout)
 
 built = operator("t2-prep")(60e-3)
 

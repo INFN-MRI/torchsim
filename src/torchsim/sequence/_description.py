@@ -686,6 +686,134 @@ def decompress_shape(
     return (np.cumsum(delta, dtype=np.float32) * scale).astype(np.float32)
 
 
+def rf_definition(
+    waveform: Any,
+    *,
+    dwell_s: float,
+    bandwidth_hz: float = 0.0,
+    definition_id: int = 0,
+    band_frequency_offsets_hz: Any = None,
+    band_bandwidth_hz: float | None = None,
+    rf_raster_time_s: float = 1e-6,
+) -> RfDefinition:
+    """Return the definition of a pulse from the envelope a scanner plays.
+
+    The envelope is whatever a designer or a Pulseq block hands over -- a
+    complex waveform on a uniform raster, in any amplitude units, one row per
+    transmit channel where there is more than one. What it is scaled to does
+    not matter and must not be relied on: it is rescaled here so that its
+    integral is ``1 / (2 pi)`` seconds, which is what makes an event's
+    amplitude, written in radians, the flip that event turns. A pulse handed
+    over peak-normalized and left that way turns a fraction of a degree and
+    returns a signal of nothing, which is the one mistake this exists to stop.
+
+    The pulse's own phase is kept rather than divided out, so a linear-phase
+    pulse keeps the axis it turns about.
+
+    Parameters
+    ----------
+    waveform : array-like
+        The complex envelope, ``(samples,)`` or ``(channels, samples)``.
+    dwell_s : float
+        How long one sample is held, in seconds.
+    bandwidth_hz : float, optional
+        The pulse's bandwidth, which the slice select is quoted against. Zero
+        -- the default -- is a pulse that selects nothing and stays on the
+        instant operator, and a non-zero one is what makes a pulse slice
+        selective. There is no separate flag for that, here or in the stream a
+        description arrives on.
+    definition_id : int, optional
+        The identifier events name this pulse by.
+    band_frequency_offsets_hz : sequence of float, optional
+        Where each band sits, for a multiband pulse. One band at zero when not
+        given.
+    band_bandwidth_hz : float, optional
+        The bandwidth of one band, defaulting to ``bandwidth_hz``.
+    rf_raster_time_s : float, optional
+        The raster the sample times are written against, which is the one the
+        run will read them back with. Sample times are carried in units of it
+        rather than in seconds, so a pulse whose dwell is not the raster still
+        says how long it lasts.
+
+    Returns
+    -------
+    RfDefinition
+        The pulse, scaled so an event amplitude in radians is a flip in
+        radians.
+
+    Raises
+    ------
+    ValueError
+        If the envelope is empty, if ``dwell_s`` is not positive, or if the
+        waveform integrates to nothing and so has no flip angle to be read
+        against.
+    """
+    samples = np.asarray(waveform)
+    if samples.ndim == 1:
+        samples = samples[None, :]
+    if samples.ndim != 2 or samples.size == 0:
+        raise ValueError(
+            "an RF envelope is (samples,) or (channels, samples), and not empty"
+        )
+    if not dwell_s > 0.0:
+        raise ValueError(f"dwell_s must be positive, not {dwell_s!r}")
+
+    if not rf_raster_time_s > 0.0:
+        raise ValueError(f"rf_raster_time_s must be positive, not {rf_raster_time_s!r}")
+    count = samples.shape[-1]
+    # In units of the raster, which is how a description carries sample times
+    # and how a run reads them back.
+    times = RfShape(
+        count,
+        (np.arange(count, dtype=np.float64) * dwell_s / rf_raster_time_s).astype(
+            np.float32
+        ),
+    )
+
+    def shapes(values: np.ndarray) -> Any:
+        rows = tuple(RfShape(count, row.astype(np.float32)) for row in values)
+        return rows[0] if len(rows) == 1 else rows
+
+    def built(values: np.ndarray, **extra: Any) -> RfDefinition:
+        return RfDefinition(
+            id=definition_id,
+            bandwidth_hz=float(bandwidth_hz),
+            num_bands=len(offsets),
+            band_frequency_offsets_hz=offsets,
+            band_bandwidth_hz=float(
+                bandwidth_hz if band_bandwidth_hz is None else band_bandwidth_hz
+            ),
+            magnitude=shapes(np.abs(values)),
+            phase=shapes(np.angle(values) / (2.0 * np.pi)),
+            time=times,
+            **extra,
+        )
+
+    offsets = (
+        (0.0,)
+        if band_frequency_offsets_hz is None
+        else tuple(float(value) for value in band_frequency_offsets_hz)
+    )
+    if not 1 <= len(offsets) <= 8:
+        raise ValueError(
+            f"a pulse carries one to eight bands, not {len(offsets)}: that is "
+            f"how many a description has room for"
+        )
+    # Scaled against the integral the definition itself reads, rather than one
+    # taken here: the two would have to agree about the quadrature and about
+    # what the last sample's duration is, and only one of them decides.
+    area = abs(
+        built(samples, total_b1sq_power=0.0).integral(rf_raster_time_s=rf_raster_time_s)
+    )
+    if area <= 0.0:
+        raise ValueError(
+            "this envelope integrates to nothing, so it has no flip angle to "
+            "be read against"
+        )
+    scaled = samples / (2.0 * np.pi * area)
+    return built(scaled, total_b1sq_power=float((np.abs(scaled) ** 2).sum() * dwell_s))
+
+
 def ideal_rf_definition(definition_id: int = 0) -> RfDefinition:
     """Return the definition of a pulse that turns instantly and selects nothing.
 

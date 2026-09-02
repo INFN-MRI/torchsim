@@ -26,6 +26,23 @@ parameter columns as a tensor rather than named maps. Every method is
 an {class}`Estimator`, which is where all of that lives; a method itself is
 only what its two tensor steps do, so writing another one is subclassing it.
 
+`map(volume, uncertainty=True)` returns a second set of maps beside the first:
+the standard deviation the noise the fit was told about leaves on each answer,
+which is also {meth}`~PERK.uncertainty_of` on its own. Not every method has one
+to state. {class}`PERK` measures it, by adding that noise to the fingerprint
+its answer predicts a couple of dozen times and spreading the estimates --
+mapping is a matrix multiply, so this costs a couple of dozen of those and
+nothing else. {class}`NonlinearLeastSquares` reports the standard error of its
+own fit, the inverse Fisher matrix at the solution. {class}`DictionaryMatcher`
+and {class}`LookupTable` answer with a grid point, which does not move a little
+when the noise does, and say so rather than inventing a number.
+
+What comes back is a spread and not an error: a method that is biased is biased
+alike in every realization, so repeating the measurement never reveals that
+part. Read against {func}`crlb`, the lowest standard deviation an unbiased
+estimate could reach on this sequence, it separates what the acquisition cannot
+deliver from what the method is not extracting.
+
 {class}`DictionaryMatcher` and {class}`PERK` honour {func}`execution`, so a
 volume larger than a card is streamed through it and a second card halves the
 work. `PERK(..., stream=True)` does the same for training: the dictionary is

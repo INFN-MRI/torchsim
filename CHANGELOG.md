@@ -2,7 +2,58 @@
 
 ## Unreleased
 
+### Added
+
+- **An estimator states how sure it is.** `map(volume, uncertainty=True)`
+  returns the standard deviation the noise leaves on each map beside the maps,
+  and `uncertainty_of` asks for it alone. PERK measures it rather than
+  approximating it: a kernel regression is smooth but not linear over a
+  realistic noise level, and a derivative taken at the measurement understates
+  the spread by tens of percent, while mapping again is a matrix multiply. The
+  noise is drawn on the fingerprint the answer predicts, in the measurement's
+  own domain, so a scan is not charged twice for the realization it already
+  carries nor for an imaginary part it does not have.
+  `NonlinearLeastSquares` reports the standard error of its own fit, the
+  inverse Fisher matrix at the solution. A method whose answer is a grid point
+  says it has none rather than inventing one.
+
+- **`crlb` can report an unidentifiable voxel instead of refusing.**
+  `singular="infinite"` answers with an infinite variance where the Fisher
+  matrix is singular, so one voxel of background does not stop a map from being
+  read. The default still refuses, which is what a design being scored wants.
+
+### Changed
+
+- **The PERK example says how sure it is.** The regression maps a slice in
+  hundredths of a second, so the estimator's noise sensitivity is answered by
+  running it: two dozen noise realizations of the same measurement, mapped
+  each, and the spread taken per voxel. Beside it is the Cramer-Rao bound at
+  the true relaxation times, which separates what the train cannot deliver from
+  what the regression is not extracting, and the bias, which is the term
+  repeating the measurement never reveals.
+
+- **The framework gallery runs one page per level.** Running a sequence and
+  differentiating it; the physics a model can carry, which is the transmit
+  array, off resonance, an imperfect inversion, two free pools that exchange, a
+  bound pool, both together, diffusion, flow and the steady state a repeated
+  train settles into; writing a signal model, checked against saturation
+  recovery's closed form and read back from a description that arrived; and
+  writing an operator, which is now a preparation and a readout that takes both
+  samples an unbalanced repetition can carry.
+
 ### Fixed
+
+- **A tabulated pulse is referenced to its own middle.** The state machine's
+  pulse is instantaneous, so the rotation a shaped pulse is integrated into has
+  to be the one an event sitting at the middle of it performs. Composed to the
+  end of the pulse instead, it carries the turn the slice-select gradient winds
+  across the slice -- the turn the rephasing gradient rewinds -- and that turn
+  grows linearly with position, so averaging over the slice cancelled the
+  signal rather than rolling it off: a shaped 90 degree excitation across a
+  fast spin echo lost 96% of its signal where the profile costs 36%. The table
+  is now pinned in the small-tip limit against the Fourier transform of the
+  envelope, which is real for a symmetric pulse and so leaves one phase
+  everywhere along the slice.
 
 - **The real kernels take two events to an iteration.** A repetition is several
   events -- a pulse, a sample, an interval -- so the event loop runs longer than

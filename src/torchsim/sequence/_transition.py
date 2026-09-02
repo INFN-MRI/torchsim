@@ -510,6 +510,11 @@ def dynamic_pair(
             yield driven * (sensitivities @ column)
 
     a, b = compose_spinor(field(), _longitudinal(detune, placed, steps))
+    if placed is not None:
+        # Referenced to the middle of the pulse, as a table is and for the same
+        # reason: the event this stands in for is instantaneous, so the turn
+        # the slice-select gradient leaves belongs either side of it.
+        a = a * torch.exp(0.5j * (placed * steps.sum()).to(torch.complex128))
     return a.to(torch.complex64), b.to(torch.complex64)
 
 
@@ -582,6 +587,9 @@ def transition_table(
     # thicknesses times bandwidth is the offset in Hz.
     rate = 2.0 * torch.pi * float(definition.bandwidth_hz) * positions
 
+    # The turn that gradient leaves a spin holding over the whole pulse.
+    carried = (rate * steps.sum()).to(torch.complex128)
+
     def integrate(flip: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """The pair the whole pulse leaves, at every (position, flip)."""
         wide = (positions.numel(), flip.numel())
@@ -592,7 +600,15 @@ def transition_table(
         )
         if not isinstance(turn_z, torch.Tensor):
             turn_z = (turn.expand(wide) for turn in turn_z)
-        return compose_spinor(weight[:, None, None] * flip, turn_z)
+        a, b = compose_spinor(weight[:, None, None] * flip, turn_z)
+        # Referenced to the middle of the pulse, because that is where the
+        # instantaneous event the table stands in for sits. What a spin accrues
+        # under the slice-select gradient either side of that instant belongs
+        # to the gradient -- and is what the rephaser rewinds -- so a rotation
+        # referenced to the end of the pulse carries a phase that grows across
+        # the slice, and averaging over the slice then cancels the signal
+        # rather than shaping it.
+        return a * torch.exp(0.5j * carried)[:, None].expand(wide), b
 
     values, slopes = torch.func.jvp(integrate, (theta,), (torch.ones_like(theta),))
     return TransitionTable(
