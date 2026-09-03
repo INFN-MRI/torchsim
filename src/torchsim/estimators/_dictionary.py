@@ -35,12 +35,19 @@ class MatchResult:
         ``(..., candidates)`` -- the complex amplitude the measurement is of
         the atom, which is the least-squares scale and carries the proton
         density and the receive phase.
+    densities : torch.Tensor
+        ``(..., candidates)`` -- the size of that amplitude, which is the
+        proton density. Equal to ``scales.abs()``, and read off the score and
+        the atom's own length rather than by touching the atom: a match scores
+        ``|<y_hat, a_hat>|``, so multiplying by the measurement's length and
+        dividing by the atom's is the least-squares scale already.
     """
 
     parameters: torch.Tensor | None
     indices: torch.Tensor
     scores: torch.Tensor
     scales: torch.Tensor
+    densities: torch.Tensor
 
 
 class DictionaryMatcher(Estimator):
@@ -216,7 +223,21 @@ class DictionaryMatcher(Estimator):
         result = self.match(signals)
         if result.parameters is None:
             return result.indices[..., 0]
-        return result.parameters[..., 0, :]
+        if not self._unknown:
+            # Fitted from bare arrays, so the columns are the caller's and an
+            # unnamed one appended to them would be a surprise.
+            return result.parameters[..., 0, :]
+        return torch.cat(
+            (result.parameters[..., 0, :], result.densities[..., :1]), dim=-1
+        )
+
+    def _extra_maps(
+        self, measured: torch.Tensor, values: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """The proton density, which the match worked out on its way."""
+        if values.shape[-1] <= len(self._unknown):
+            return {}
+        return {"M0": values[..., len(self._unknown)]}
 
     def _placed(self, signals: torch.Tensor) -> tuple[torch.Tensor, ...] | None:
         """Match under the execution policy, or ``None`` if none applies.
@@ -345,7 +366,12 @@ class DictionaryMatcher(Estimator):
             indices, scores = match_in_groups(
                 normalized_signals, self._grouping, self.top_k, self.prune
             )
-            return (indices, scores, *self._scaled(signals, indices))
+            return (
+                indices,
+                scores,
+                self._density(signal_norm, scores, indices),
+                *self._scaled(signals, indices),
+            )
 
         score_chunks = []
         index_chunks = []
@@ -372,7 +398,28 @@ class DictionaryMatcher(Estimator):
 
         scores = torch.cat(score_chunks, dim=0)
         indices = torch.cat(index_chunks, dim=0)
-        return (indices, scores, *self._scaled(signals, indices))
+        return (
+            indices,
+            scores,
+            self._density(signal_norm, scores, indices),
+            *self._scaled(signals, indices),
+        )
+
+    def _density(
+        self,
+        signal_norm: torch.Tensor,
+        scores: torch.Tensor,
+        indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """The proton density, from the score and the atoms' own lengths.
+
+        The search normalized both sides, so the score is a cosine and the
+        sizes it divided out are the two norms. One of them is the
+        measurement's and the other is stored per atom, which is a number each
+        rather than a signal each -- so putting the scale back costs no atom.
+        """
+        lengths = self.dictionary_power[indices].sqrt()
+        return signal_norm[:, None] * scores / lengths
 
     def _scaled(
         self, signals: torch.Tensor, indices: torch.Tensor
@@ -400,11 +447,11 @@ class DictionaryMatcher(Estimator):
 
     def _shaped(
         self,
-        found: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+        found: tuple[torch.Tensor, ...],
         sample_shape: torch.Size,
     ) -> MatchResult:
         """One flat match, given the voxel shape it came from."""
-        indices, scores, scales, matched = found
+        indices, scores, densities, scales, matched = found
         output_shape = (*sample_shape, self.top_k)
         return MatchResult(
             parameters=None
@@ -413,6 +460,7 @@ class DictionaryMatcher(Estimator):
             indices=indices.reshape(output_shape),
             scores=scores.reshape(output_shape),
             scales=scales.reshape(output_shape),
+            densities=densities.reshape(output_shape),
         )
 
 

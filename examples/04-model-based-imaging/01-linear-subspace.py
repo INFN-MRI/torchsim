@@ -244,10 +244,10 @@ T2_true = torch.where(
 # disagree.
 #
 TE = torch.linspace(10.0, 150.0, ECHOES)
-acquisition = MultiEchoSimulator(TE=TE)
+simulator = MultiEchoSimulator(TE=TE)
 
 images = (
-    torch.as_tensor(acquisition.to(device).simulate(T2=T2_true)).to(torch.complex64)
+    torch.as_tensor(simulator.to(device).simulate(T2=T2_true)).to(torch.complex64)
     * M0_true.to(torch.complex64)[..., None]
 )
 
@@ -355,7 +355,7 @@ bar.ax.set_visible(False)
 # read off the basis rather than assumed.
 #
 grid = torch.linspace(20.0, 400.0, 500)
-mapping = DictionaryMatcher(acquisition).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
+mapping = DictionaryMatcher(simulator).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
 
 # sphinx_gallery_start_ignore
 print(f"rank {RANK} of {ECHOES} contrasts keeps {mapping.subspace.retained:.6f}")

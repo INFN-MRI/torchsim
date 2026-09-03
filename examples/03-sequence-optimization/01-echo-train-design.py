@@ -6,7 +6,7 @@ Designing echo trains for image quality
 Most sequences are not measuring anything. A 3D turbo spin echo of a knee has
 to produce a *picture*, and what it is designed for is sharpness and contrast
 rather than for how tightly a relaxation time can be pinned down. The cost
-says which of the two it is; the acquisition, the bounded parameters and the
+says which of the two it is; the simulator, the bounded parameters and the
 loop are the same either way.
 
 Long echo trains are efficient and blurry. T2 decay across the train modulates

@@ -4,6 +4,24 @@
 
 ### Changed
 
+- **A stream is read through the simulator you hand it to.** The MRD transport
+  carries RF pulses and ADC windows and no gradients, so a description says
+  what was played and not how the sequence dephased between one event and the
+  next. That belongs to the sequence family: a refocused train crushes either
+  side of its refocusing pulses, an unbalanced one winds an order after every
+  sample, a spoiled one discards the transverse states.
+  `FSESimulator.from_description(stream)` now re-emits the events through that
+  model's own operators, so naming the simulator is what says which reading
+  the events get -- and it is the only thing left to say, since echo spacing,
+  train length, flip angles and pulse shapes are all in the stream.
+
+  Previously `from_description` trusted an action word on each event, which a
+  description built by `describe()` carries and one decoded from MRD does not.
+  On a 60 degree refocused train the difference between the two readings is
+  150% of the peak; at 180 degrees it is nothing, which is why it went unseen.
+  A description that was laid down by a model's own operators re-emits to
+  itself event for event.
+
 - **Naming a tissue property is how its physics is asked for.** Every field a
   voxel has now has one public name, shared by every model, and a simulator
   accepts all of them whether or not it declares them --
@@ -26,6 +44,29 @@
   afterwards with nothing asked of the caller.
 
 ### Added
+
+- **A dictionary match answers with M0.** It was already working the density
+  out and discarding it, by gathering the matched atoms and projecting onto
+  them. Matching normalizes both sides, so the score is a cosine and the
+  scale is the measurement's length times the score over the atom's length --
+  one number per atom, stored at fit. `MatchResult` carries it as `densities`,
+  equal to `scales.abs()` to float32 round-off and computed without touching
+  an atom, and `map()` returns it as `M0`.
+
+- **PERK answers with M0, and with what it is wrong by.** Normalized features
+  carry no amplitude, so the density was being recovered afterwards by
+  simulating a fingerprint at the estimate and projecting onto it. The
+  regression now learns one over the length of that fingerprint as one more
+  row of the same linear solve -- the parameter rows are unchanged, bit for
+  bit -- and the measurement's own length is the density. On a graded phantom
+  it beats the projection it replaces, 0.4% against 6.2% median error, because
+  the projection inherits the relaxation-time error while a norm averages the
+  noise over the whole train.
+
+  The uncertainty is learned the same way, by regressing what the fitted
+  estimator was wrong by on its own features, so `map(uncertainty=True)` is a
+  matrix multiply rather than two dozen reruns of the volume. It costs a
+  second walk of the training source; `uncertainty=False` declines it.
 
 - **`description(*operators)`** lays operators out and returns the description
   they make, so assembling a sequence by hand is one call rather than

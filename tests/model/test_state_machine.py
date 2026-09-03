@@ -126,15 +126,48 @@ def test_a_protocol_with_no_layout_says_so() -> None:
 
 
 def test_a_description_handed_over_whole_skips_the_layout() -> None:
-    """The path a stream from a scanner takes: the events are already concrete."""
+    """The path a stream from a scanner takes.
+
+    No layout is walked and no sequence parameter is named again: what arrives
+    is played back through the same handlers that would have laid it down, so
+    the answer is the one the protocol itself gives.
+    """
     protocol = _with(UNBALANCED)
     described = protocol.describe(flip=FLIP, TR=10.0)
 
     handed = Simulator.from_description(described, protocol.model, states=8)
     assert torch.equal(handed.simulate(**TISSUE), protocol.simulate(**TISSUE))
 
-    # And it is the stream that was given, not one rebuilt from a layout.
-    assert handed.describe() is described
+    # Re-emitted through the model's own operators, and the same stream comes
+    # back: every event of the same kind, at the same instant, dephasing alike.
+    again = handed.describe()
+    assert len(again.events) == len(described.events)
+    for was, now in zip(described.events, again.events, strict=True):
+        assert was.type is now.type
+        assert was.action is now.action
+        assert float(was.timestamp_us) == pytest.approx(float(now.timestamp_us))
+
+
+def test_which_simulator_reads_a_stream_is_what_decides_the_dephasing() -> None:
+    """Because the transport carries none of it.
+
+    A description says a pulse was played and a window was opened; the
+    gradients between them are not on the wire. They belong to the sequence
+    family, and the family is the simulator the stream is handed to -- so the
+    same events read as a refocused train and as an unbalanced one have to
+    give different answers, or the choice was doing nothing.
+    """
+    refocused = _with(REFOCUSED)
+    described = refocused.describe(flip=FLIP, TR=10.0)
+
+    as_refocused = Simulator.from_description(described, refocused.model, states=8)
+    as_unbalanced = Simulator.from_description(
+        described, _with(UNBALANCED).model, states=8
+    )
+
+    one = as_refocused.simulate(**TISSUE)
+    other = as_unbalanced.simulate(**TISSUE)
+    assert float((one - other).abs().max() / one.abs().max()) > 0.1
 
 
 def test_a_handed_over_description_agrees_with_the_engine_directly() -> None:

@@ -26,22 +26,35 @@ parameter columns as a tensor rather than named maps. Every method is
 an {class}`Estimator`, which is where all of that lives; a method itself is
 only what its two tensor steps do, so writing another one is subclassing it.
 
-`map(volume, uncertainty=True)` returns a second set of maps beside the first:
-the standard deviation the noise the fit was told about leaves on each answer,
-which is also {meth}`~PERK.uncertainty_of` on its own. Not every method has one
-to state. {class}`PERK` measures it, by adding that noise to the fingerprint
-its answer predicts a couple of dozen times and spreading the estimates --
-mapping is a matrix multiply, so this costs a couple of dozen of those and
-nothing else. {class}`NonlinearLeastSquares` reports the standard error of its
-own fit, the inverse Fisher matrix at the solution. {class}`DictionaryMatcher`
-and {class}`LookupTable` answer with a grid point, which does not move a little
+`map(volume, uncertainty=True)` returns a second set of maps: how far the
+answer is expected to sit from the truth, which is also
+{meth}`~PERK.uncertainty_of` on its own. {class}`PERK` learns it while it
+fits, by regressing what its own answers were wrong by on the same features,
+so reporting one is a matrix multiply rather than a rerun; it costs a second
+walk of the training source, which `PERK(..., uncertainty=False)` declines.
+{class}`NonlinearLeastSquares` reports the standard error of its own fit, the
+inverse Fisher matrix at the solution. {class}`DictionaryMatcher` and
+{class}`LookupTable` answer with a grid point, which does not move a little
 when the noise does, and say so rather than inventing a number.
 
-What comes back is a spread and not an error: a method that is biased is biased
-alike in every realization, so repeating the measurement never reveals that
-part. Read against {func}`crlb`, the lowest standard deviation an unbiased
-estimate could reach on this sequence, it separates what the acquisition cannot
-deliver from what the method is not extracting.
+What PERK reports is the whole error and not the noise alone: a regression
+trained on a prior answers with the prior where the data is weak, and is wrong
+that way in every realization. Read against {func}`crlb`, the lowest standard
+deviation an unbiased estimate could reach on this sequence, the gap is what
+the method is losing rather than what the acquisition cannot deliver. It is
+learned at the signal amplitude the training set was simulated at, so a
+measurement scaled well away from that is outside what it can speak for.
+
+Both also answer with **M0**, and neither simulates a fingerprint to do it.
+A match normalizes both sides, so its score is a cosine: the measurement's own
+length times the score, divided by the atom's length -- one number stored per
+atom -- is the least-squares scale already, and
+{attr}`MatchResult.densities <MatchResult>` is that, equal to `scales.abs()`
+without touching an atom. `PERK(..., normalize=True)` learns the same quantity
+instead: normalized features carry no amplitude, so what the regression is
+taught alongside the relaxation times is one over the length of the
+fingerprint they imply. It is one more row in the same linear solve, and the
+parameter rows come out unchanged.
 
 {class}`DictionaryMatcher` and {class}`PERK` honour {func}`execution`, so a
 volume larger than a card is streamed through it and a second card halves the

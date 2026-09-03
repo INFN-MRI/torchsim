@@ -525,11 +525,13 @@ class Estimator(torch.nn.Module):
                 for column, name in enumerate(self._unknown)
             }
 
+        maps = laid_out(values) | {
+            name: value.reshape(shape).to(home)
+            for name, value in self._extra_maps(signals, values).items()
+        }
         if not uncertainty:
-            return laid_out(values)
-        return laid_out(values), laid_out(
-            self._spread(seen, columns, values, measured=signals)
-        )
+            return maps
+        return maps, laid_out(self._spread(seen, columns, values, measured=signals))
 
     def _spread(
         self,
@@ -572,6 +574,12 @@ class Estimator(torch.nn.Module):
     ) -> torch.Tensor:
         """Estimate ``(..., unknowns)`` from plain tensors."""
         raise NotImplementedError
+
+    def _extra_maps(
+        self, measured: torch.Tensor, values: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Maps a method answers for besides the properties it was asked for."""
+        return {}
 
     def _uncertainty_arrays(
         self,

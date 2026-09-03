@@ -88,7 +88,7 @@ class PERK(Estimator):
         complex_mode: Literal["cartesian", "magnitude"] = "cartesian",
         normalize: bool = False,
         stream: bool = False,
-        uncertainty_draws: int = 24,
+        uncertainty: bool = True,
     ) -> None:
         super().__init__(acquisition)
         self.feature_seed = feature_seed
@@ -106,10 +106,7 @@ class PERK(Estimator):
         self.chunk_size = int(chunk_size)
         self.complex_mode = complex_mode
         self.normalize = bool(normalize)
-        self.uncertainty_draws = int(uncertainty_draws)
-        # Fixed once, so that asking the same estimator twice gives the same
-        # answer. Reproducible across runs exactly when the features are.
-        self._spread_seed = _random_seed(feature_seed) + 1
+        self.uncertainty = bool(uncertainty)
         self._requested_length_scale = length_scale
         self.register_buffer("frequency", torch.empty(0))
         # The same frequencies laid out for the host kernel's inner loop.
@@ -118,6 +115,8 @@ class PERK(Estimator):
         self.register_buffer("feature_mean", torch.empty(0))
         self.register_buffer("parameter_mean", torch.empty(0))
         self.register_buffer("weight", torch.empty(0))
+        self.register_buffer("spread_mean", torch.empty(0))
+        self.register_buffer("spread_weight", torch.empty(0))
         self.register_buffer("length_scale", torch.empty(0))
         # Copies of the fitted tensors, one per device a mapping has reached.
         self._replicas: dict[str, tuple[torch.Tensor, ...]] = {}
@@ -181,7 +180,7 @@ class PERK(Estimator):
                         complex_mode=self.complex_mode,
                         normalize=self.normalize,
                     ),
-                    parameters[start:stop],
+                    self._targets(parameters[start:stop], signal_chunk),
                 )
 
         return self._fit_batches(batches, sample_count)
@@ -236,7 +235,7 @@ class PERK(Estimator):
                         complex_mode=self.complex_mode,
                         normalize=self.normalize,
                     ),
-                    parameters[start:stop],
+                    self._targets(parameters[start:stop], signals),
                 )
 
         self._fit_batches(batches, samples)
@@ -289,80 +288,68 @@ class PERK(Estimator):
         *,
         measured: torch.Tensor,
     ) -> torch.Tensor:
-        """The spread the noise leaves on the estimate, by running it.
+        """The spread of the answer, from the regression's own second moment.
 
-        A kernel regression is smooth but not linear over a realistic noise
-        level -- the features are cosines, and at the noise the method was
-        trained for they turn far enough that a derivative taken at the
-        measurement understates the spread by tens of percent. Mapping is a
-        matrix multiply, though, so the spread is measured rather than
-        approximated: the noise is drawn :attr:`uncertainty_draws` times and
-        the estimates it produces are spread.
+        A kernel ridge regression predicts the mean of the target given the
+        features. Run against the target's *square* it predicts the second
+        moment, and the difference of the two is the variance of the target
+        given the features -- which is the spread of this estimate, over the
+        prior it was trained on and the noise it was trained at.
 
-        Two things decide what that number means. The noise is added to the
-        fingerprint the answer predicts, scaled to the measurement, rather than
-        to the measurement itself -- a measurement already carries one
-        realization, and drawing on top of it would report the spread at more
-        noise than the scan has. And it is added in the measurement's own
-        domain, before any basis and with its own realness, so data that
-        carries no imaginary part is not charged for noise on one.
+        So there is nothing to repeat: one more matrix multiply per voxel, at
+        the same features the answer was read from.
         """
-        scale = torch.as_tensor(
-            self.noise_std, dtype=torch.float32, device=measured.device
-        )
-        if not torch.any(scale != 0) or self.uncertainty_draws < 2:
-            return torch.zeros_like(values)
-        generator = _generator(measured.device, self._spread_seed)
-        centre = self._predicted(measured, known, values)
-        drawn = torch.stack(
-            [
-                self._estimate_arrays(
-                    self._as_seen(
-                        _add_noise(centre, self.noise_std, generator=generator)
-                    ),
-                    known,
-                )
-                for _ in range(self.uncertainty_draws)
-            ]
-        )
-        return drawn.std(dim=0)
-
-    def _predicted(
-        self,
-        measured: torch.Tensor,
-        known: torch.Tensor | None,
-        values: torch.Tensor,
-    ) -> torch.Tensor:
-        """The measurement the estimate implies, in the domain the noise is in.
-
-        The scale is the one the measurement is of the predicted fingerprint,
-        which is the projection this estimator never solves for. Where there is
-        no sequence to predict from, the measurement stands in for its own
-        prediction and the number is the spread of a rescan.
-        """
-        if self.acquisition is None or not self._unknown:
-            return measured
-        acquisition = self.acquisition
-        if known is not None:
-            acquisition = acquisition.bind(
-                **{name: known[:, index] for index, name in enumerate(self.known)}
+        if self.spread_weight.numel() == 0:
+            raise NotImplementedError(
+                "this PERK was fitted with uncertainty=False, so what it is "
+                "wrong by was never learned; fit again with the default"
             )
-        predicted = torch.as_tensor(
-            acquisition.simulate(
-                **{name: values[..., i] for i, name in enumerate(self._unknown)}
-            ),
-            device=measured.device,
+        # For an error that is roughly Gaussian, the mean absolute value is
+        # sqrt(2 / pi) of the standard deviation, which is what is reported.
+        spread = self._departure(signals, known).clamp_min(0.0) * math.sqrt(
+            0.5 * math.pi
         )
-        if not torch.is_complex(measured) and torch.is_complex(predicted):
-            predicted = predicted.real
-        weight = (predicted.conj() * measured).sum(-1) / predicted.abs().square().sum(
-            -1
-        ).clamp_min(torch.finfo(torch.float32).eps)
-        return predicted * weight[..., None].to(predicted.dtype)
+        return spread[..., : len(self._unknown)] if self._unknown else spread
 
-    def _as_seen(self, contrasts: torch.Tensor) -> torch.Tensor:
-        """Contrasts in the basis the estimator was fitted in, if there is one."""
-        return contrasts if self.subspace is None else self.subspace.project(contrasts)
+    def _departure(
+        self, signals: torch.Tensor, known: torch.Tensor | None
+    ) -> torch.Tensor:
+        """The predicted absolute error of the answer, voxel by voxel."""
+        signals = torch.as_tensor(signals, device=self.frequency.device)
+        shape = signals.shape[:-1]
+        count = math.prod(shape) if shape else 1
+        inputs = _feature_matrix(
+            signals.reshape(count, signals.shape[-1]),
+            known,
+            count,
+            complex_mode=self.complex_mode,
+            normalize=self.normalize,
+        )
+        outputs = [
+            self.spread_mean
+            + (_rff(chunk, self.frequency, self.phase) - self.feature_mean)
+            @ self.spread_weight.mT
+            for chunk in inputs.split(self.chunk_size)
+        ]
+        return torch.cat(outputs, dim=0).reshape(*shape, -1)
+
+    def _extra_maps(
+        self, measured: torch.Tensor, values: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """The proton density, which the regression answered for along the way.
+
+        The features are blind to amplitude, so what was learned is one over
+        the length of the fingerprint the relaxation times imply. Multiplying
+        by the length the measurement actually has is the density, and no
+        forward simulation is involved.
+        """
+        if not self.normalize or values.shape[-1] <= len(self._unknown):
+            return {}
+        measured = torch.as_tensor(measured)
+        lengths = torch.linalg.vector_norm(
+            measured.reshape(int(values.shape[0]), -1), dim=-1
+        )
+        return {"M0": lengths.to(values) * values[..., len(self._unknown)]}
 
     def _placed(self, inputs: torch.Tensor) -> tuple[torch.Tensor, ...] | None:
         """Run under the execution policy, or ``None`` if none applies.
@@ -479,6 +466,63 @@ class PERK(Estimator):
             )
         )
 
+    def _targets(self, parameters: torch.Tensor, signals: torch.Tensor) -> torch.Tensor:
+        """The regression's targets: the parameters, and the scale if it is lost.
+
+        Normalized features carry no amplitude, so the density a measurement is
+        of its own fingerprint is regressed alongside the relaxation times
+        rather than recovered afterwards by simulating one. A fit from bare
+        arrays answers in the caller's own columns and gets no extra one.
+        """
+        if not self.normalize or not self._unknown:
+            return parameters
+        return torch.cat(
+            (parameters, _reciprocal_norm(signals, parameters.shape[0]).to(parameters)),
+            dim=-1,
+        )
+
+    def _fit_spread(
+        self,
+        batches: Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]],
+        sample_count: int,
+        *,
+        covariance: torch.Tensor,
+        feature_mean: torch.Tensor,
+        parameter_mean: torch.Tensor,
+        weight: torch.Tensor,
+        frequency: torch.Tensor,
+        phase: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Regress the squared error of the fitted estimator on its features.
+
+        What comes back predicts, for a measurement, the mean squared distance
+        between the answer and the truth -- the whole of it, the part the noise
+        moves and the part the prior pulls, since a regression trained on a
+        prior is wrong in the same direction every time and repeating a scan
+        would never show it.
+        """
+        residual_sum = torch.zeros_like(parameter_mean)
+        residual_cross = torch.zeros_like(weight, dtype=torch.float64)
+        for inputs, targets in batches():
+            inputs = inputs.to(covariance.device, torch.float32)
+            targets = targets.to(covariance.device, torch.float64)
+            features = _rff(
+                inputs, frequency.to(inputs.device), phase.to(inputs.device)
+            )
+            features = features.to(torch.float64)
+            predicted = parameter_mean + (features - feature_mean) @ weight.mT
+            # The absolute residual, not its square: a squared residual has a
+            # tail heavy enough that a regression over it is mostly noise,
+            # while |r| is well behaved and carries the same scale.
+            residual = (targets - predicted).abs()
+            residual_sum += residual.sum(dim=0)
+            residual_cross += residual.mT @ features
+        spread_mean = residual_sum / sample_count
+        cross = (
+            residual_cross - sample_count * torch.outer(spread_mean, feature_mean)
+        ) / (sample_count - 1)
+        return spread_mean, torch.linalg.solve(covariance, cross.mT).mT
+
     def _fit_batches(
         self,
         batches: Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]],
@@ -561,6 +605,27 @@ class PERK(Estimator):
         covariance.diagonal().add_(self.regularization)
         weight = torch.linalg.solve(covariance, cross_covariance.mT).mT
 
+        # What the answer is wrong by, regressed the same way. The residual is
+        # known only once the first solve is done, so this is a second walk of
+        # the same source -- and it is the residual rather than the target's
+        # second moment because a squared residual cannot be negative, while
+        # the difference of two independently regularized regressions can be,
+        # and is exactly where a variance is wanted.
+        spread_mean, spread_weight = (
+            self._fit_spread(
+                batches,
+                sample_count,
+                covariance=covariance,
+                feature_mean=feature_mean,
+                parameter_mean=parameter_mean,
+                weight=weight,
+                frequency=frequency,
+                phase=phase,
+            )
+            if self.uncertainty
+            else (torch.zeros(0), torch.zeros(0))
+        )
+
         # Where the fit ran was a speed decision; where the estimator lives
         # is the caller's, so it comes back beside the data it was given.
         self._replicas = {}
@@ -569,7 +634,9 @@ class PERK(Estimator):
         self.phase = phase.to(home)
         self.feature_mean = feature_mean.to(torch.float32).to(home)
         self.parameter_mean = parameter_mean.to(torch.float32).to(home)
+        self.spread_mean = spread_mean.to(torch.float32).to(home)
         self.weight = weight.to(torch.float32).to(home)
+        self.spread_weight = spread_weight.to(torch.float32).to(home)
         self.length_scale = length_scale.to(home)
         return self
 
@@ -778,6 +845,19 @@ def _feature_matrix(
     if torch.is_complex(known):
         known = torch.view_as_real(known).reshape(sample_count, -1)
     return torch.cat((signals, known.to(torch.float32)), dim=-1)
+
+
+def _reciprocal_norm(signals: torch.Tensor, sample_count: int) -> torch.Tensor:
+    """One over the length of each training signal, as a target column.
+
+    Normalizing the features throws the scale away, which is what makes the
+    regression blind to the proton density. It is not lost, though: the length
+    of a fingerprint simulated at unit density is a function of the relaxation
+    times, so the regression can learn its reciprocal alongside them and the
+    measurement's own length is the scale it was missing.
+    """
+    lengths = torch.linalg.vector_norm(signals.reshape(sample_count, -1), dim=-1)
+    return lengths.clamp_min(torch.finfo(torch.float32).eps).reciprocal()[:, None]
 
 
 def _rff(

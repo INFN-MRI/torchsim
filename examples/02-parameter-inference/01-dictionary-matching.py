@@ -249,7 +249,7 @@ TI_MS = 20.0
 repetition = torch.arange(CONTRASTS, dtype=torch.float32)
 flip = 10.0 + 50.0 * torch.sin(torch.pi * repetition / CONTRASTS) ** 2
 
-acquisition = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
+simulator = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
 
 # %%
 #
@@ -258,7 +258,7 @@ acquisition = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
 # back real to within 3e-8, which halves both the dictionary and the
 # arithmetic that searches it.
 #
-fingerprints = acquisition.simulate(
+fingerprints = simulator.simulate(
     T1=torch.tensor([500.0, 833.0, 2569.0]), T2=torch.tensor([70.0, 83.0, 329.0])
 ).real
 
@@ -288,7 +288,7 @@ truth = {
     "T2": torch.as_tensor(T2_true[mask].copy()),
 }
 density = torch.as_tensor(M0_true[mask].copy())
-clean = acquisition.simulate(**truth).real * density[:, None]
+clean = simulator.simulate(**truth).real * density[:, None]
 generator = torch.Generator().manual_seed(42)
 measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 
@@ -329,7 +329,7 @@ def log_uniform(low, high, count):
 # The problem, stated once
 # ------------------------
 #
-# What is unknown, over what range, from what acquisition, at what noise level.
+# What is unknown, over what range, from what simulator, at what noise level.
 # The method that fills it in is a separate choice, and the only thing that
 # changes between the answers below.
 #
@@ -353,7 +353,7 @@ prior = torch.Generator().manual_seed(11)
 # and back.
 #
 training_signals, _, _ = (
-    DictionaryMatcher(acquisition)
+    DictionaryMatcher(simulator)
     .fit(
         T1=log_uniform(*T1_RANGE, SAMPLES),
         T2=log_uniform(*T2_RANGE, SAMPLES),
@@ -408,7 +408,7 @@ grid_t1, grid_t2 = torch.meshgrid(T1_GRID, T2_GRID, indexing="ij")
 ATOMS = grid_t1.numel()
 start = time.perf_counter()
 # sphinx_gallery_end_ignore
-full = DictionaryMatcher(acquisition).fit(
+full = DictionaryMatcher(simulator).fit(
     T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), seed=0
 )
 
@@ -434,7 +434,7 @@ full_model = footprint(full)
 # sphinx_gallery_start_ignore
 start = time.perf_counter()
 # sphinx_gallery_end_ignore
-low = DictionaryMatcher(acquisition).fit(
+low = DictionaryMatcher(simulator).fit(
     T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), seed=0, rank=RANK
 )
 
@@ -463,7 +463,7 @@ GROUPS = 32
 # sphinx_gallery_start_ignore
 start = time.perf_counter()
 # sphinx_gallery_end_ignore
-grouped = DictionaryMatcher(acquisition, groups=GROUPS).fit(
+grouped = DictionaryMatcher(simulator, groups=GROUPS).fit(
     T1=grid_t1.reshape(-1),
     T2=grid_t2.reshape(-1),
     seed=0,
@@ -499,7 +499,7 @@ print(
 
 def proton_density(maps):
     """The scale the measurement is, of the fingerprint the answer predicts."""
-    predicted = acquisition.simulate(T1=maps["T1"], T2=maps["T2"]).real
+    predicted = simulator.simulate(T1=maps["T1"], T2=maps["T2"]).real
     return (predicted * measured).sum(-1) / predicted.square().sum(-1).clamp_min(1e-12)
 
 

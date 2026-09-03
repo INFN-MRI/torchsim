@@ -170,7 +170,7 @@ from torchsim.simulators import SPGRSimulator, bSSFPSimulator
 # The two sequences
 # -----------------
 #
-# A design problem is stated in three pieces. The acquisition is a simulator
+# A design problem is stated in three pieces. The simulator is a simulator
 # with the tissue it is being designed for already fixed on it, so only the
 # parameters under design are left to give. Both sequences here are closed
 # forms, and they are constructed and asked exactly as a state-machine
@@ -204,10 +204,10 @@ ssfp = bSSFPSimulator(TE=2.5, TR=5.0, T1=T1_MS, T2=T2_MS, M0=1.0, B0=0.0)
 JOINT = ("T1", "T2", "M0", "B0")
 
 
-def rows(acquisition, **design):
+def rows(simulator, **design):
     """The Jacobian rows for every joint parameter, zero where the block is blind."""
-    present = [name for name in JOINT if name in acquisition.exposes]
-    _, jacobian = acquisition.jacobian(present, **design)
+    present = [name for name in JOINT if name in simulator.exposes]
+    _, jacobian = simulator.jacobian(present, **design)
     placed = jacobian.new_zeros(jacobian.shape[:-2] + (len(JOINT), jacobian.shape[-1]))
     where = torch.tensor([JOINT.index(name) for name in present])
     return placed.index_copy(-2, where, jacobian)
@@ -346,16 +346,16 @@ key(figure, ncols=2)
 sweep = torch.linspace(1.0, 70.0, 200)
 figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.6))
 
-for axis, acquisition, start_angles, designed, title in (
+for axis, simulator, start_angles, designed, title in (
     (axes[0], spgr, spgr_start, spgr_designed, "SPGR"),
     (axes[1], ssfp, ssfp_start, ssfp_designed, "bSSFP"),
 ):
-    curve = acquisition.simulate(flip=sweep).abs()
+    curve = simulator.simulate(flip=sweep).abs()
     axis.plot(sweep, curve[0], label="T1/T2 = 830/80 ms")
     axis.plot(sweep, curve[1], label="T1/T2 = 1330/110 ms")
-    sampled = acquisition.simulate(flip=start_angles).abs()
+    sampled = simulator.simulate(flip=start_angles).abs()
     axis.plot(start_angles, sampled[0], "o", color="grey", label="start")
-    sampled = acquisition.simulate(flip=designed).abs()
+    sampled = simulator.simulate(flip=designed).abs()
     axis.plot(designed, sampled[0], "*", ms=14, color="crimson", label="designed")
     axis.set(xlabel="Flip angle [deg]", ylabel="|signal|", title=title)
     axis.grid(alpha=0.3)

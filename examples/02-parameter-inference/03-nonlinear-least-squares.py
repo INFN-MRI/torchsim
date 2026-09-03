@@ -240,9 +240,9 @@ TE = torch.linspace(10.0, 200.0, ECHOES)
 NOISE_STD = 0.005
 FLOOR = 0.05
 
-acquisition = MultiEchoSimulator(TE=TE)
+simulator = MultiEchoSimulator(TE=TE)
 
-clean = acquisition.simulate(T2=truth, M0=density, offset=FLOOR)
+clean = simulator.simulate(T2=truth, M0=density, offset=FLOOR)
 generator = torch.Generator().manual_seed(42)
 measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 
@@ -256,7 +256,7 @@ measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 # sphinx_gallery_start_ignore
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 4.76))
 for value, name in ((70.0, "white matter"), (110.0, "grey matter"), (300.0, "CSF")):
-    decay = acquisition.simulate(T2=value, M0=1.0, offset=FLOOR)
+    decay = simulator.simulate(T2=value, M0=1.0, offset=FLOOR)
     axis.semilogy(
         TE.numpy(), decay.numpy(), "-o", ms=3, label=f"{name}, T2 {value:.0f} ms"
     )
@@ -303,7 +303,7 @@ def error(estimate, reference):
 # The fit
 # -------
 #
-# What is unknown, over what range, from what acquisition, at what noise level
+# What is unknown, over what range, from what simulator, at what noise level
 # -- and then :class:`~torchsim.NonlinearLeastSquares` to fill it in. Every
 # voxel steps together in the same pass, carries its own damping, accepts or
 # rejects on its own, and drops out when it has converged.
@@ -316,7 +316,7 @@ def error(estimate, reference):
 BOUNDS = {"T2": (10.0, 500.0), "M0": (0.1, 2.0), "offset": (0.0, 0.2)}
 START = {"T2": 100.0, "M0": 1.0, "offset": 0.02}
 
-fit = NonlinearLeastSquares(acquisition, bounds=BOUNDS, initial=START).fit(
+fit = NonlinearLeastSquares(simulator, bounds=BOUNDS, initial=START).fit(
     BOUNDS, noise_std=NOISE_STD, seed=0
 )
 
@@ -330,7 +330,7 @@ def fitted(unknown):
     if "offset" in held:
         held["offset"] = FLOOR
     problem = NonlinearLeastSquares(
-        acquisition.bind(**held),
+        simulator.bind(**held),
         bounds={name: BOUNDS[name] for name in unknown},
         initial={name: START[name] for name in unknown},
     )
@@ -369,7 +369,7 @@ print(
 #
 T2_GRID = torch.logspace(1.0, np.log10(500.0), 400)
 
-match = DictionaryMatcher(acquisition.bind(M0=1.0, offset=0.0)).fit(T2=T2_GRID, seed=0)
+match = DictionaryMatcher(simulator.bind(M0=1.0, offset=0.0)).fit(T2=T2_GRID, seed=0)
 
 # %%
 #
@@ -379,7 +379,7 @@ match = DictionaryMatcher(acquisition.bind(M0=1.0, offset=0.0)).fit(T2=T2_GRID, 
 offsets = torch.linspace(0.0, 0.15, 40)
 grid_t2, grid_offset = torch.meshgrid(T2_GRID, offsets, indexing="ij")
 
-wide = DictionaryMatcher(acquisition.bind(M0=1.0)).fit(
+wide = DictionaryMatcher(simulator.bind(M0=1.0)).fit(
     T2=grid_t2.reshape(-1), offset=grid_offset.reshape(-1), seed=0
 )
 
@@ -388,13 +388,13 @@ wide = DictionaryMatcher(acquisition.bind(M0=1.0)).fit(
 def matched(floors):
     """Fit a matcher over T2, and over this many values of the offset."""
     if floors == 1:
-        problem = DictionaryMatcher(acquisition.bind(M0=1.0, offset=0.0))
+        problem = DictionaryMatcher(simulator.bind(M0=1.0, offset=0.0))
         ranges = {"T2": T2_GRID}
         atoms = T2_GRID.numel()
     else:
         offsets = torch.linspace(0.0, 0.15, floors)
         grid_t2, grid_offset = torch.meshgrid(T2_GRID, offsets, indexing="ij")
-        problem = DictionaryMatcher(acquisition.bind(M0=1.0))
+        problem = DictionaryMatcher(simulator.bind(M0=1.0))
         ranges = {
             "T2": grid_t2.reshape(-1),
             "offset": grid_offset.reshape(-1),

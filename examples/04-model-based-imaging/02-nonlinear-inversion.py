@@ -247,10 +247,10 @@ T2_true = torch.where(
 # it wherever the maps are, so nothing here has to be moved by hand.
 #
 TE = torch.linspace(10.0, 150.0, ECHOES)
-acquisition = MultiEchoSimulator(TE=TE)
+simulator = MultiEchoSimulator(TE=TE)
 
 images = (
-    torch.as_tensor(acquisition.to(device).simulate(T2=T2_true)).to(torch.complex64)
+    torch.as_tensor(simulator.to(device).simulate(T2=T2_true)).to(torch.complex64)
     * M0_true.to(torch.complex64)[..., None]
 )
 
@@ -358,7 +358,7 @@ bar.ax.set_visible(False)
 # The nonlinear route below has no such step. Its answer *is* the maps.
 #
 grid = torch.linspace(20.0, 400.0, 500)
-mapping = DictionaryMatcher(acquisition).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
+mapping = DictionaryMatcher(simulator).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
 
 # sphinx_gallery_start_ignore
 print(f"rank {RANK} of {ECHOES} contrasts keeps {mapping.subspace.retained:.6f}")
@@ -433,7 +433,7 @@ report("adjoint per echo", clock() - started, adjoint)
 # An equality constraint, were there one, would be written into the model
 # instead -- see :class:`~torchsim.recon.ModelOperator`.
 #
-operator = ModelOperator(acquisition, "T2", bounds={"T2": (20.0, 400.0)})
+operator = ModelOperator(simulator, "T2", bounds={"T2": (20.0, 400.0)})
 
 # The amplitude starts from the first gridded echo, which is nearly free and
 # is most of what makes the first Newton step sensible.

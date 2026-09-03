@@ -1,18 +1,14 @@
 """
 ======================
-Writing a new operator
+Writing a New Operator
 ======================
 
-An operator is one module of a sequence -- a pulse, a Readout, a Delay, a whole
-preparation -- that knows what it plays and how long it holds the timeline.
-Writing a new one is writing a Python function that returns events, and it
-reaches the fused kernels with no change to them: no Triton, no C++.
+The scope of this notebook is to show how to add a sequence module TorchSim
+does not ship -- a preparation, or a readout -- without touching a kernel.
 
-This example builds two. A T2 preparation, checked against the decay it is
-supposed to impose; and a readout that takes two samples per repetition where
-the shipped ones take one, checked against the two shipped readouts it has to
-reproduce at once. Both are then registered under a name, so a stream that
-arrives already labelled can ask for them.
+An operator is a Python function that returns events and says how long it
+holds the timeline. Two are written here: a T2 preparation, and a readout that
+takes both samples an unbalanced repetition can carry.
 """
 
 # %%
@@ -121,8 +117,8 @@ from torchsim.sequence import (
 )
 
 # %%
-# Composing one out of the ones that exist
-# ----------------------------------------
+# Composing existing operators
+# ----------------------------
 # A T2 preparation tips the magnetization into the transverse plane, lets it
 # decay for a chosen time about a Refocusing pulse, tips what is left back
 # along z, and spoils whatever did not come back.
@@ -181,8 +177,8 @@ def prepared_train(prep_s, echo_spacing_s, echoes):
 
 
 # %%
-# Does it do what it says?
-# ------------------------
+# Checking the weighting
+# ----------------------
 # A preparation is worth only as much as the weighting it imposes, so we check
 # it rather than assert it: sweep the preparation time and hold the first
 # recorded echo against ``exp(-TE / T2)``, which is what a T2 preparation is
@@ -227,8 +223,8 @@ print(
 # that follows it, by more for the longer preparations that leave less behind.
 
 # %%
-# A readout of your own
-# ---------------------
+# A custom readout
+# ----------------
 # The shipped readouts differ only in what they play around the sample. An
 # unbalanced train winds every order on once per repetition, so a sample taken
 # *before* that winding is a free induction decay after the pulse just played,
@@ -353,7 +349,7 @@ print(f"  at T2 = 40 ms the ratio moves {spread:.2f} over a 3.3x range in T1")
 # T2 -- which is what makes it usable, and why a DESS T2 measurement at a
 # larger flip angle wants T1 known rather than assumed away.
 #
-# Reaching it by name
+# Registering by name
 # -------------------
 # Events form a stream, and a stream can come from somewhere other than a
 # builder -- an MRD file, a protocol exporter, any generator that names what it
@@ -370,8 +366,8 @@ print("registered:", built.duration_s, "s,", len(built.emit(0.0)), "events")
 # sphinx_gallery_end_ignore
 
 # %%
-# What an operator cannot say
-# ---------------------------
+# Limits
+# ------
 # The vocabulary is the three event types, the four dephasing actions and the
 # RF and ADC roles -- so a preparation, a Readout, a shaped or per-channel
 # pulse is written here and reaches the kernels unchanged.

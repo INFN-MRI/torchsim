@@ -1,23 +1,15 @@
 """
-=========================================
-More than T1 and T2: the physics on offer
-=========================================
+================
+Expanded Physics
+================
 
-Two relaxation times describe a single pool of water in a uniform field, and
-almost nothing in a scanner is that. The transmit field varies across the head
-and is produced by an array; water sits in more than one compartment and moves
-between them; some protons are bound so tightly that no readout ever sees them;
-spins diffuse and flow; the field is off resonance.
+The scope of this notebook is to show the physics a simulator can carry beyond
+T1 and T2: the transmit field and the array that produces it, off resonance,
+an imperfect inversion, a second exchanging pool, a bound pool, diffusion and
+flow, and the shaped pulse a scanner actually plays.
 
-Every one of those is a term the kernels already carry and skip. Naming the
-property in a call is what turns it on, and what a voxel is not given costs
-nothing -- so this page is a tour of the vocabulary, one effect at a time, each
-shown on the sequence where it is easiest to see and checked against something
-that was already true of it.
-
-The pulse a scanner actually plays comes into it too: a shaped, slice-selective
-excitation does not turn the same angle everywhere in the slice, and that is
-neither a scaling nor a nuisance.
+Each term is a tissue property. Naming one in a call is what turns it on, and
+what a voxel is not given costs nothing.
 """
 
 # %%
@@ -28,8 +20,7 @@ neither a scaling nor a nuisance.
 
 # %%
 #
-# Nothing here builds a model. A simulator that ships is handed more of the
-# tissue than it declares, and answers.
+# Every simulator accepts any tissue property, whether or not it declares one.
 #
 
 # sphinx_gallery_start_ignore
@@ -119,14 +110,13 @@ from torchsim.model import BALANCED, SPOILED
 from torchsim.simulators import FSESimulator, MRFSimulator
 
 # %%
-# One train, played throughout
-# ----------------------------
+# The train used throughout
+# -------------------------
 #
-# Four hundred repetitions after an inversion, at a fixed repetition time and a
-# flip angle that rises and falls smoothly. A fingerprinting train drives every
-# coherence pathway hard, which is what makes it a good place to watch a term
-# being switched on. Where an effect needs a different readout to show at all,
-# only the readout changes and it is said so.
+# An inversion-prepared fingerprinting train: four hundred repetitions at a
+# fixed TR, with a flip angle that rises and falls smoothly. It drives every
+# coherence pathway, so most terms below can be shown on it. Where a term needs
+# a different readout to be visible, only the readout is changed.
 #
 FLIP_DEG = np.concatenate((np.linspace(5.0, 55.0, 200), np.linspace(55.0, 5.0, 200)))
 TRAIN = dict(flip=FLIP_DEG, TR=10.0, TI=20.0, states=20)
@@ -149,14 +139,13 @@ print(f"  the sequence is written in: {', '.join(fingerprinting.variables)}")
 # sphinx_gallery_end_ignore
 
 # %%
-# The flip angle a voxel really turns
-# -----------------------------------
+# Transmit field
+# --------------
 #
-# ``B1`` scales it. A fingerprinting train is sensitive to that in a way a
-# single contrast is not: the nominal angle changes every repetition, so a
-# transmit error distorts the trajectory rather than scaling it. That is what
-# makes B1 estimable alongside the relaxation times, and what makes ignoring it
-# a bias in both.
+# ``B1`` scales the flip angle a voxel turns. Because the nominal angle changes
+# every repetition, a transmit error distorts the trajectory rather than
+# scaling it -- which is what makes B1 estimable alongside T1 and T2, and what
+# makes ignoring it a bias in both.
 #
 transmit = torch.tensor([0.7, 0.85, 1.0, 1.15])
 scaled = fingerprinting.simulate(**WATER, B1=transmit)
@@ -175,19 +164,17 @@ key(axis, ncols=4)
 # sphinx_gallery_end_ignore
 
 # %%
-# Eight coils making one field
-# ----------------------------
+# Transmit array and RF shim
+# --------------------------
 #
-# On a parallel-transmit system that field is what several channels put on the
-# voxel together, so a voxel's transmit is a complex sum rather than a number.
-# ``B1`` and ``B1phase`` then carry one row per channel, and a
-# :class:`~torchsim.ShimDefinition` says how hard each channel is driven and at
-# what phase.
+# On a parallel-transmit system the field is the complex sum of what several
+# channels put on the voxel. ``B1`` and ``B1phase`` then carry one row per
+# channel, and a :class:`~torchsim.ShimDefinition` gives the amplitude and
+# phase each channel is driven at.
 #
-# The check that matters is cancellation. Four channels whose sensitivities sit
-# a quarter turn apart, all driven alike, put nothing on the voxel at all.
-# Adding magnitudes and phases separately cannot produce that, which is why the
-# array is resolved into the field before the state machine sees it.
+# Four channels whose sensitivities sit a quarter turn apart, driven alike,
+# cancel exactly. The array is summed as a complex field before the state
+# machine sees it, so a single pair of per-voxel buffers reaches the kernels.
 #
 CHANNELS, VOXELS = 4, 3
 sensitivity = torch.full((CHANNELS, VOXELS), 1.0 / CHANNELS)
@@ -264,25 +251,22 @@ key(axis, ncols=3)
 
 # %%
 #
-# A shim belongs to the *pulse*, not to the sequence: an event names the shim
-# it is driven on, so an excitation and a refocusing pulse can sit on different
-# ones. What every backend and every derivative sees is still the two per-voxel
-# buffers, so nothing downstream knows that channels exist.
+# A shim belongs to the pulse rather than to the sequence: each RF event names
+# the shim it is driven on, so an excitation and a refocusing pulse can use
+# different ones.
 #
 # %%
-# The pulse the scanner actually plays
-# -----------------------------------
+# Shaped RF pulse and slice profile
+# ---------------------------------
 #
-# Everything above turned instantly. A real excitation is a shaped waveform
-# played under a slice-selection gradient, and what it does depends on where in
-# the slice a spin sits: the angle it turns at the edge is not the angle it
-# turns at the centre. That is a Bloch response, not a scaling, so it cannot be
-# folded into the flip angle -- the pulse has to be integrated.
+# The pulses above are instantaneous. A real slice-selective excitation turns a
+# different angle at each position in the slice, and because that is a Bloch
+# response rather than a scaling, it cannot be folded into the flip angle: the
+# pulse must be integrated.
 #
-# TorchSim takes the envelope itself: the complex waveform, one row per
-# transmit channel, which is what comes off a Pulseq block or an MRD sequence
-# description. This one is an SLR 90 degree pulse, 2 ms long over a 5 mm slice,
-# designed elsewhere and saved beside this file.
+# TorchSim takes the complex envelope, one row per transmit channel, as it
+# comes off a Pulseq block or an MRD sequence description. This one is an SLR
+# 90 degree pulse, 2 ms long over a 5 mm slice, saved beside this file.
 #
 
 # sphinx_gallery_start_ignore
@@ -298,10 +282,9 @@ excitation = torchsim.rf_definition(
 
 # %%
 #
-# ``pulse`` is what the events drive and ``across_slice`` how many positions to
-# work it out at. Leave the second off and the pulse is evaluated at the slice
-# centre alone, which is the hard-pulse answer -- so the two together separate
-# what the shape does from where in the slice you stand.
+# ``pulse`` is the waveform the RF events drive; ``across_slice`` is how many
+# positions to integrate it at. Without the second, the pulse is evaluated at
+# the slice centre only, which reproduces the hard-pulse answer.
 #
 REFOCUSED = dict(ESP=5.0, TR=3000.0, T1=830.0, T2=80.0, states=48)
 angles = torch.full((48,), 150.0)
@@ -314,9 +297,8 @@ across = FSESimulator(**REFOCUSED, pulse=excitation, across_slice=21).simulate(
 
 # %%
 #
-# The flip a spin turns, position by position, is what the table holds. It is
-# flat across the passband and falls away outside it, and that shape is the
-# whole of what a slice profile is.
+# The table holds the flip a spin turns at each position: flat across the
+# passband and falling away outside it.
 #
 
 # sphinx_gallery_start_ignore
@@ -356,26 +338,22 @@ print(
 
 # %%
 #
-# The shaped pulse at the centre is the hard-pulse answer, which is the check
-# that the envelope was scaled right. Averaged across the slice it is much
-# smaller, and for a refocused train that is not a scaling: the edges of the
-# slice see a smaller refocusing angle, which is a different balance of
-# coherence pathways rather than a weaker version of the same one. A fit that
-# assumed the nominal angle would read that as a tissue difference.
+# At the centre the shaped pulse reproduces the hard-pulse answer, which
+# confirms the envelope is scaled correctly. Averaged across the slice it is
+# much smaller, and for a refocused train the difference is not a scaling: the
+# slice edges see a smaller refocusing angle and therefore a different balance
+# of coherence pathways.
 #
-# Water in two places at once
-# ---------------------------
+# Exchange and magnetization transfer
+# -----------------------------------
 #
-# Tissue is not one pool. Myelin water sits beside the intra- and
-# extracellular water it exchanges with; protons bound to macromolecules have a
-# T2 of tens of microseconds and are gone before any readout, yet they exchange
-# with the water that is not. The first pool is recorded along with the free
-# water and the second is not, and that is the difference between them.
+# A second free pool -- myelin water beside intra- and extracellular water --
+# is recorded along with the first. A bound pool has a T2 of tens of
+# microseconds and is never recorded, but exchanges with the water that is.
 #
-# Five names say what an exchanging free pool is and three what a bound pool
-# is. Both are shown here on a spoiled train driven to its steady state, where
-# the two differ in *direction* rather than only in size, on the white matter
-# of Malik et al. (Magn. Reson. Med. 2018).
+# Five properties describe an exchanging free pool and three a bound pool. Both
+# are shown on a spoiled train driven to steady state, using the white matter
+# models of Malik et al. (Magn. Reson. Med. 2018).
 #
 REPETITIONS, TR_MS, SPOILED_FLIP, SPOILING_STEP = 200, 5.0, 10.0, 117.0
 index = np.arange(REPETITIONS)
@@ -399,10 +377,8 @@ with_bound = spoiled.simulate(**WHITE_MATTER, bound_fraction=0.117, **BOUND)
 
 # %%
 #
-# A fraction is a tissue property, so sweeping it is one call over a voxel axis
-# rather than a loop over sequences. At a fraction of nothing both have to land
-# back on the single-pool answer, which is the check that they are the same
-# sequence.
+# The pool fraction is a tissue property, so sweeping it is one call over a
+# voxel axis. At zero fraction both must return the single-pool answer.
 #
 fractions = torch.linspace(0.0, 0.3, 31)
 free_sweep = spoiled.simulate(**WHITE_MATTER, poolB_fraction=fractions, **FREE)
@@ -451,14 +427,12 @@ print(
 
 # %%
 #
-# They move the signal in opposite directions, and that is the whole reason for
-# keeping them apart. A second free pool is recorded along with the first, so
-# filling it raises the signal; a bound pool is not, so filling it parks
-# magnetization where no readout will find it and the signal falls.
+# The two move the signal in opposite directions: filling a second free pool
+# raises it, since that pool is recorded too, while filling a bound pool lowers
+# it, since the magnetization parked there is never read.
 #
-# The declarations are independent, so a voxel can have both -- two free pools
-# exchanging with each other and a bound pool exchanging with them. Nothing is
-# written to combine them; it is eight names in one call.
+# The properties are independent, so a voxel can carry both -- eight names in
+# one call.
 #
 three_pool = spoiled.simulate(
     **WHITE_MATTER, poolB_fraction=0.2, **FREE, bound_fraction=0.117, **BOUND
@@ -471,18 +445,13 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-# Where the field is not what it should be
-# ----------------------------------------
+# Off resonance
+# -------------
 #
-# ``B0`` turns the transverse states between one event and the next. Whether
-# that reaches the signal is a question about the sequence rather than about
-# the field: a train that dephases by a whole configuration order every
-# repetition separates the orders completely and comes back insensitive to it,
-# while a balanced train keeps them together and bands.
-#
-# So the demonstration is balanced -- the readout is the only thing that
-# changes -- and the bands sit where a balanced train puts them, ``1 / TR``
-# apart.
+# ``B0`` turns the transverse states between events. Whether that reaches the
+# signal depends on the sequence: a train that dephases by a whole
+# configuration order every repetition separates the orders and is insensitive to
+# it, while a balanced train bands. Only the readout is changed below.
 #
 BALANCED_TR_MS = 10.0
 offsets_hz = torch.linspace(-150.0, 150.0, 121)
@@ -510,13 +479,12 @@ print(f"  nulls sit {1e3 / BALANCED_TR_MS:.0f} Hz apart, which is 1 / TR")
 # sphinx_gallery_end_ignore
 
 # %%
-# An inversion that does not quite invert
-# ---------------------------------------
+# Inversion efficiency
+# --------------------
 #
-# ``inv_efficiency`` is how much of the magnetization the inversion pulse
-# actually turns over -- a property of the pulse and the transmit field rather
-# than of the tissue. It enters where the inversion does, at the front of the
-# train, on the repetitions whose contrast the inversion exists to create.
+# ``inv_efficiency`` is the fraction of magnetization the inversion pulse
+# turns over. It affects the front of the train, where the inversion sets the
+# contrast.
 #
 efficiencies = torch.tensor([1.0, 0.9, 0.8])
 inverted = fingerprinting.simulate(**WATER, inv_efficiency=efficiencies)
@@ -542,16 +510,15 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-# Spins that will not hold still
-# ------------------------------
+# Diffusion and flow
+# ------------------
 #
-# Diffusion and flow are read off the same thing -- what a gradient has wound
-# onto a configuration order -- so both need the sequence to say how much
-# winding an order stands for. That is two arguments to the simulator rather
-# than two tissue fields: ``crusher_dephasing_rad``, the turn one crusher puts
-# across a voxel, and ``voxel_size_m``, the distance it puts it across. Without
-# them an order is a bookkeeping index with no physical extent, and a voxel
-# given a diffusivity or a velocity is attenuated by nothing at all.
+# Both are read off the winding a gradient has put on a configuration order, so
+# the sequence must say how much winding an order stands for. That is two
+# simulator arguments rather than tissue properties: ``crusher_dephasing_rad``,
+# the turn one crusher puts across a voxel, and ``voxel_size_m``, the distance
+# it puts it across. Without them an order has no physical extent and neither
+# term does anything.
 #
 MOMENT = dict(crusher_dephasing_rad=4.0 * math.pi, voxel_size_m=1e-3)
 moving = MRFSimulator(**TRAIN, **MOMENT)
@@ -563,9 +530,8 @@ flowing = moving.simulate(**WATER, v=velocities)
 
 # %%
 #
-# A fingerprinting train is only mildly diffusion-weighted, so what is drawn is
-# the ratio to a voxel that does not diffuse. Flow is a large enough effect to
-# read off the train itself.
+# The train is only mildly diffusion-weighted, so diffusion is drawn as a ratio
+# to a voxel that does not diffuse. Flow is large enough to read directly.
 #
 
 # sphinx_gallery_start_ignore
@@ -619,14 +585,12 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-# What naming a property costs
-# ----------------------------
+# What an unused property costs
+# -----------------------------
 #
-# Nothing, until a voxel is given a value at which the term does something. A
-# property held where it has no effect -- unit transmit, no off resonance, an
-# empty pool -- is reported absent and its term stays out of the kernel that is
-# compiled and run. So a call naming every field on this page, none of them
-# given a value that matters, costs what the two-parameter call costs.
+# Nothing. A property held at the value where it has no effect -- unit
+# transmit, no off resonance, an empty pool -- is reported absent, and its term
+# is left out of the kernel that is compiled and run.
 #
 idle = fingerprinting.simulate(
     **WATER,
@@ -647,6 +611,6 @@ print(
 
 # %%
 #
-# What is left is the vocabulary itself. Every term here is one the kernels
-# carry; a term they do not -- a third free pool, a gradient moment that varies
-# down the train -- is a change to the engine rather than to a name in a call.
+# Every term above is one the kernels already carry. A term they do not -- a
+# third free pool, a gradient moment that varies down the train -- is a change
+# to the engine rather than a name in a call.

@@ -335,12 +335,12 @@ for k, name in enumerate(NAMES):
 # is a few seconds rather than an afternoon.
 #
 schedule = 5.0 + 55.0 * torch.sin(torch.linspace(0.0, 4 * torch.pi, FRAMES)).abs()
-acquisition = MRFSimulator(TR=12.0, TI=20.0, T1=class_T1, T2=class_T2)
+simulator = MRFSimulator(TR=12.0, TI=20.0, T1=class_T1, T2=class_T2)
 
 # sphinx_gallery_start_ignore
 started = time.perf_counter()
 # sphinx_gallery_end_ignore
-per_class = torch.as_tensor(acquisition.simulate(flip=schedule))
+per_class = torch.as_tensor(simulator.simulate(flip=schedule))
 
 # sphinx_gallery_start_ignore
 print(

@@ -247,7 +247,7 @@ PROTOCOL = dict(
 )
 INVERSION_EFFICIENCY = 0.96
 
-acquisition = MP2RAGESimulator(**PROTOCOL, inv_efficiency=INVERSION_EFFICIENCY)
+simulator = MP2RAGESimulator(**PROTOCOL, inv_efficiency=INVERSION_EFFICIENCY)
 
 # %%
 #
@@ -276,13 +276,13 @@ def unified(blocks):
 # actually invert is a number rather than an assumption.
 #
 sweep = torch.arange(50.0, 6000.0, 10.0)
-curve = unified(acquisition.simulate(T1=sweep, M0=1.0))
+curve = unified(simulator.simulate(T1=sweep, M0=1.0))
 
 # sphinx_gallery_start_ignore
 turning = int(curve.argmin()) if curve[0] > curve[-1] else int(curve.argmax())
 
 figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3))
-blocks = acquisition.simulate(T1=sweep, M0=1.0)
+blocks = simulator.simulate(T1=sweep, M0=1.0)
 axes[0].plot(
     sweep.numpy(), blocks[:, 0].numpy(), label=f"TI = {PROTOCOL['TI'][0]:.0f} ms"
 )
@@ -311,7 +311,7 @@ key(axes[0], ncols=2)
 # Both blocks, at the true T1 and proton density of every brain voxel, with
 # noise at half a percent of the peak magnetization.
 #
-clean = acquisition.simulate(T1=truth, M0=density)
+clean = simulator.simulate(T1=truth, M0=density)
 NOISE_STD = float(0.005 * clean.abs().max())
 
 generator = torch.Generator().manual_seed(42)
@@ -344,7 +344,7 @@ def mapped(problem, passes=3):
 def estimated(make, points):
     """Fit this method over a grid of this many points, then map the slice."""
     grid = torch.linspace(50.0, 6000.0, points)
-    problem = make(acquisition.bind(M0=1.0))
+    problem = make(simulator.bind(M0=1.0))
     start = time.perf_counter()
     problem.fit(T1=grid, seed=0)
     training = time.perf_counter() - start
@@ -374,11 +374,11 @@ def error(estimate, reference):
 #
 grid = torch.linspace(50.0, 6000.0, 60)
 
-table = LookupTable(acquisition.bind(M0=1.0), combine=unified).fit(T1=grid, seed=0)
+table = LookupTable(simulator.bind(M0=1.0), combine=unified).fit(T1=grid, seed=0)
 
 maps = table.map(measured)  # {"T1": ...}, one value per voxel
 
-match = DictionaryMatcher(acquisition.bind(M0=1.0)).fit(T1=grid, seed=0)
+match = DictionaryMatcher(simulator.bind(M0=1.0)).fit(T1=grid, seed=0)
 
 # %%
 #
@@ -486,7 +486,7 @@ print(
 
 def proton_density(maps):
     """The scale the measurement is, of the blocks the answer predicts."""
-    predicted = acquisition.simulate(T1=maps["T1"], M0=1.0)
+    predicted = simulator.simulate(T1=maps["T1"], M0=1.0)
     return (predicted * measured).sum(-1) / predicted.square().sum(-1).clamp_min(1e-12)
 
 

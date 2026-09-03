@@ -1,25 +1,17 @@
 """
 ======================
-Writing a signal model
+Writing a Signal Model
 ======================
 
-A signal model is written in two pieces. The **physics** says what a
-voxel holds -- which tissue properties are exposed, and so which physics the
-kernels carry -- and what each kind of event does to it. A **simulator** says
-what order the events are played in. Everything else -- which kernel runs, how
-the work is cut across memory and devices, how derivatives are taken --
-follows from those two and is not yours to write.
+The scope of this notebook is to show how to write a simulator TorchSim does
+not ship, using the operators it does.
 
-Everything else the base class already does. It resolves the layout into an
-event stream and rebinds values onto it, it holds the forward- and reverse-mode
-derivatives, it places the work on a device and cuts it across memory, and it
-reads a sequence back from a description a scanner streamed. None of that is
-written per model.
-
-This example builds an inversion-prepared SSFP fingerprinting sequence out of
-the operators TorchSim ships, checks a second one against the closed form it
-has an answer for, differentiates both, and wraps the result in the function a
-caller would rather have.
+A signal model is two pieces: a **physics**, which says which tissue
+properties the model is written in and what each kind of event does, and a
+**simulator**, which says what order the events are played in. The base class
+supplies the rest -- it resolves the layout into an event stream, rebinds
+values onto it, holds the derivatives, places the work on a device, and reads
+a sequence back from a description a scanner streamed.
 """
 
 # %%
@@ -128,8 +120,8 @@ from torchsim.model import (
 from torchsim.sequence import EventType
 
 # %%
-# Saying what the events do
-# -------------------------
+# The physics
+# -----------
 # A :class:`~torchsim.model.SpinPhysics` is the physics. ``properties``
 # maps the name a caller uses to the tissue field it fills, so the model keeps
 # the vocabulary your protocol is written in while the engine keeps its own.
@@ -150,8 +142,8 @@ physics = SpinPhysics(
 )
 
 # %%
-# The operators a layout is written from
-# --------------------------------------
+# The built-in operators
+# ----------------------
 # A layout does not write events. It writes **operators** -- one module of a
 # sequence each, knowing what it plays and how long it holds the timeline --
 # and TorchSim ships the ordinary ones: the pulses, the two ways of waiting,
@@ -170,8 +162,8 @@ for name in operator_names():
 # sphinx_gallery_end_ignore
 
 # %%
-# Saying what order they play in
-# ------------------------------
+# The layout
+# ----------
 # An :class:`~torchsim.model.Simulator` is the protocol. You do not
 # write timestamps: ``layout`` returns the *operators* of one repetition in
 # order, and the simulator turns the span each one holds into the timestamps a
@@ -236,8 +228,8 @@ plt.ylabel("signal magnitude [a.u.]")
 # sphinx_gallery_end_ignore
 
 # %%
-# Derivatives with respect to tissue: forward mode
-# ------------------------------------------------
+# Derivatives
+# -----------
 # A Bloch simulation records far more samples than it takes parameters, so a
 # derivative with respect to tissue is cheapest taken forwards: one directional
 # derivative per property yields every voxel's derivative at once, and the cost
@@ -258,7 +250,7 @@ plt.ylabel("signal jacobian [a.u.]")
 # %%
 # Derivatives with respect to the sequence: reverse mode
 # ------------------------------------------------------
-# The acquisition optimization problem runs the other way: one scalar cost,
+# The simulator optimization problem runs the other way: one scalar cost,
 # many sequence parameters. That is reverse mode, and it is deliberately not
 # wrapped -- build a cost on the signal and call ``backward()``. The engine
 # reads which of its inputs carry a gradient and picks its kernel from that, so
@@ -277,8 +269,8 @@ plt.ylabel("d(loss) / d(flip) [1/deg]")
 # sphinx_gallery_end_ignore
 
 # %%
-# Asking for more physics
-# -----------------------
+# More physics
+# ------------
 # ``properties`` is the vocabulary this model's *protocol* is written in, not
 # a list of what a voxel may have. Every field a voxel has can be given to any
 # simulator, and giving one is what turns its term on -- so a second exchanging
@@ -305,8 +297,8 @@ print(
 # :ref:`the expanded-physics example
 # <sphx_glr_generated_autoexamples_01-framework_02-expanded-physics.py>`.
 #
-# Checking one against an answer that was already written down
-# ------------------------------------------------------------
+# Checking against a closed form
+# -------------------------------
 # A fingerprinting train has no closed form to check against, so here is a
 # second simulator that does. Saturation recovery destroys whatever
 # magnetization was there, waits, and reads what has come back -- and what it
@@ -401,8 +393,8 @@ key(axis, ncols=3)
 # sphinx_gallery_end_ignore
 
 # %%
-# What the layout actually laid down
-# ----------------------------------
+# Inspecting the event stream
+# ---------------------------
 # :meth:`~torchsim.model.Simulator.describe` returns the event stream, which is
 # the same object a sequence arriving from a scanner is read into: a timestamp
 # and an action word on every event. It is worth looking at once, because a
@@ -443,8 +435,8 @@ key(axis, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
-# A sequence that arrives rather than being written
-# -------------------------------------------------
+# Building one from a description
+# -------------------------------
 # The stream runs both ways. A description that came from somewhere else -- an
 # MRD file, a Pulseq export, a scanner's own sequence description -- is a
 # simulator through :meth:`~torchsim.model.Simulator.from_description`, which

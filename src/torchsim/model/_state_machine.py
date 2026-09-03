@@ -56,6 +56,7 @@ import torch
 from ..sequence import (
     Delay,
     EpgEngine,
+    EventType,
     Excitation,
     FSEReadout,
     Inversion,
@@ -63,8 +64,10 @@ from ..sequence import (
     Readout,
     Refocusing,
     RfDefinition,
+    RfUse,
     Saturation,
     SequenceDescription,
+    SequenceEvent,
     SPGRReadout,
     SSFPFidReadout,
     TissueProperties,
@@ -98,6 +101,78 @@ RUN_SETTINGS = (
 # named here because a packing resolved against one is not valid against
 # another.
 _RF_RASTER_TIME_S = 1e-6
+
+
+def realised(
+    description: SequenceDescription, physics: SpinPhysics
+) -> SequenceDescription:
+    """An arriving event stream, re-emitted through a model's own handlers.
+
+    The transport carries RF pulses and ADC windows and no gradients, so a
+    description that arrives says what was played and not how the sequence
+    dephased between one event and the next. That belongs to the sequence
+    family rather than to the stream, and it is what the operators hold: a
+    refocusing pulse brings its crusher pair, an unbalanced sample winds an
+    order after it, a spoiled one discards the transverse states.
+
+    So each event is played back through the operator its kind and its RF use
+    name, at the timestamp it arrived with. A pulse whose use is one the
+    handlers have no reading for -- a preparation, or an untagged one -- is
+    emitted as it stands, with no gradient behaviour added, since guessing one
+    is how a stream comes back as the wrong sequence.
+    """
+    parts: list[tuple[Any, Any]] = []
+    for event in description.events:
+        when = float(event.timestamp_us) * 1e-6
+        if event.type is EventType.RF:
+            parts.append((when, _rf_operator(event, physics.operators)))
+        elif event.type is EventType.ADC:
+            parts.append((when, _adc_operator(event, physics.operators)))
+    if not parts:
+        return description
+    events, _played_s = compose(*parts)
+    return replace(description, events=events)
+
+
+def _accepted(handler: Any, **offered: Any) -> dict[str, Any]:
+    """The offered arguments this handler has somewhere to put.
+
+    The handlers differ in what a stream can tell them: a readout that fixes
+    the role it records at takes none, an inversion is a pulse whose flip is
+    its own. Passing what a handler does not take is how a stream that carries
+    more than one family of sequence stops working on the second one.
+    """
+    from inspect import signature
+
+    takes = signature(handler).parameters
+    return {name: value for name, value in offered.items() if name in takes}
+
+
+def _adc_operator(event: SequenceEvent, operators: EventOperators) -> Any:
+    """The sample this model's readout makes of an ADC window."""
+    return operators.readout(
+        event.adc_phase_rad,
+        **_accepted(operators.readout, role=event.adc_role, is_echo=event.is_echo),
+    )
+
+
+def _rf_operator(event: SequenceEvent, operators: EventOperators) -> Any:
+    """The operator a pulse's own ``use`` tag names."""
+    handler = {
+        RfUse.REFOCUSING: operators.refocusing,
+        RfUse.INVERSION: operators.inversion,
+        RfUse.SATURATION: operators.saturation,
+    }.get(event.rf_use, operators.excitation)
+    offered = _accepted(
+        handler,
+        flip_rad=event.rf_amplitude_hz,
+        phase_rad=event.rf_phase_rad,
+        definition_id=event.rf_definition_id,
+        frequency_hz=event.rf_frequency_hz,
+        offset_hz=event.rf_frequency_hz,
+        shim_id=event.rf_shim_id,
+    )
+    return handler(**offered)
 
 
 def replace_pulse(simulator: Simulator, pulse: RfDefinition) -> Simulator:
@@ -533,17 +608,55 @@ class Simulator(SignalModel):
     def from_description(
         cls,
         description: SequenceDescription,
-        model: SpinPhysics,
+        model: SpinPhysics | None = None,
         **settings: Any,
     ) -> Simulator:
         """Return a simulator over a stream someone else assembled.
 
-        The events are already concrete -- they carry their own action word --
-        so no layout is walked and no trigger is applied. This is the path a
-        description arriving from a scanner takes.
+        This is the path a description arriving from a scanner takes:
+        ``FSESimulator.from_description(stream)`` says the events are to be
+        read as a refocused train, and the only thing left to give is the
+        tissue. Echo spacing, echo train length, flip angles and pulse shapes
+        are in the stream and are not named again.
+
+        Which simulator you call it on is the whole of what you choose, and it
+        matters. A description says what was played -- an RF pulse, tagged with
+        the use its designer gave it, and an ADC window -- and says nothing
+        about the gradients between them, because the transport carries none.
+        The dephasing lives in the handlers instead: a
+        :func:`~torchsim.SSFPFidReadout` winds one order after every sample, a
+        :func:`~torchsim.SSFPEchoReadout` winds it before, a
+        :func:`~torchsim.SPGRReadout` spoils, and a refocusing pulse is
+        crushed either side. So the events are re-emitted through this model's
+        own operators rather than taken as they arrive.
+
+        Parameters
+        ----------
+        description : SequenceDescription
+            The stream, as the MRD client decodes it or a Pulseq design
+            exports it.
+        model : SpinPhysics, optional
+            The physics to read it with. Defaults to this simulator's own,
+            which is what naming a concrete one is for.
+        settings : Any, optional
+            Run settings and tissue, as the constructor takes them.
+
+        Raises
+        ------
+        ValueError
+            If called on a simulator that declares no physics and none is
+            given, since there would be nothing to read the events with.
         """
-        simulator = _Described(model=model, **settings)
-        simulator._described = description
+        physics = model if model is not None else cls.model
+        if not physics.properties:
+            raise ValueError(
+                "from_description reads a stream with a model's operators, so "
+                "call it on the simulator whose sequence it is -- "
+                "FSESimulator.from_description(...) for a refocused train -- "
+                "or pass model="
+            )
+        simulator = _Described(model=physics, **settings)
+        simulator._described = realised(description, physics)
         return simulator
 
     # -- what a signal model owes -------------------------------------------

@@ -248,7 +248,7 @@ TI_MS = 20.0
 repetition = torch.arange(CONTRASTS, dtype=torch.float32)
 flip = 10.0 + 50.0 * torch.sin(torch.pi * repetition / CONTRASTS) ** 2
 
-acquisition = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
+simulator = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
 
 # %%
 #
@@ -257,7 +257,7 @@ acquisition = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
 # back real to within 3e-8, which halves both the dictionary and the
 # arithmetic that searches it.
 #
-fingerprints = acquisition.simulate(
+fingerprints = simulator.simulate(
     T1=torch.tensor([500.0, 833.0, 2569.0]), T2=torch.tensor([70.0, 83.0, 329.0])
 ).real
 
@@ -287,7 +287,7 @@ truth = {
     "T2": torch.as_tensor(T2_true[mask].copy()),
 }
 density = torch.as_tensor(M0_true[mask].copy())
-clean = acquisition.simulate(**truth).real * density[:, None]
+clean = simulator.simulate(**truth).real * density[:, None]
 generator = torch.Generator().manual_seed(42)
 measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 
@@ -328,7 +328,7 @@ def log_uniform(low, high, count):
 # The problem, stated once
 # ------------------------
 #
-# What is unknown, over what range, from what acquisition, at what noise level.
+# What is unknown, over what range, from what simulator, at what noise level.
 # The method that fills it in is a separate choice, and the only thing that
 # changes between the answers below.
 #
@@ -352,7 +352,7 @@ prior = torch.Generator().manual_seed(11)
 # projecting a trajectory through it and back -- a number, not an estimate.
 #
 training_signals, _, _ = (
-    PERK(acquisition)
+    PERK(simulator)
     .fit(
         T1=log_uniform(*T1_RANGE, SAMPLES),
         T2=log_uniform(*T2_RANGE, SAMPLES),
@@ -403,7 +403,7 @@ key(axis, ncols=2)
 
 FEATURES = 1000
 
-perk = PERK(acquisition, n_features=FEATURES, regularization=1e-6, normalize=True).fit(
+perk = PERK(simulator, n_features=FEATURES, regularization=1e-6, normalize=True).fit(
     T1=log_uniform(*T1_RANGE, SAMPLES),
     T2=log_uniform(*T2_RANGE, SAMPLES),
     noise_std=NOISE_STD,
@@ -420,7 +420,7 @@ def regressed(features):
     """Train a regression of this size, then map the slice."""
     start = time.perf_counter()
     problem = PERK(
-        acquisition, n_features=features, regularization=1e-6, normalize=True
+        simulator, n_features=features, regularization=1e-6, normalize=True
     ).fit(
         T1=log_uniform(*T1_RANGE, SAMPLES),
         T2=log_uniform(*T2_RANGE, SAMPLES),
@@ -455,7 +455,7 @@ grid_t1, grid_t2 = torch.meshgrid(T1_GRID, T2_GRID, indexing="ij")
 # sphinx_gallery_start_ignore
 start = time.perf_counter()
 # sphinx_gallery_end_ignore
-matched = DictionaryMatcher(acquisition).fit(
+matched = DictionaryMatcher(simulator).fit(
     T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), rank=RANK, seed=0
 )
 
@@ -474,25 +474,25 @@ print(
 # Proton density, for nothing extra
 # ---------------------------------
 #
-# Neither method estimates M0, and neither has to. Both answer with relaxation
-# times, and a fingerprint at those times is a shape the measurement is some
-# multiple of -- so the multiple is a projection, one inner product per voxel.
+# Neither method estimates M0 and neither simulates one to find it. Both throw
+# the amplitude away to compare shapes, and both know what they threw.
 #
-
-
-def proton_density(maps):
-    """The scale the measurement is, of the fingerprint the answer predicts."""
-    predicted = acquisition.simulate(T1=maps["T1"], T2=maps["T2"]).real
-    return (predicted * measured).sum(-1) / predicted.square().sum(-1).clamp_min(1e-12)
-
-
-M0_map = proton_density(maps)
+# A match normalizes the measurement and the atom, so its score is a cosine:
+# the measurement's own length, times the score, over the atom's length -- one
+# number stored per atom -- is the scale already. PERK normalizes its features,
+# so it is taught one over the length of the fingerprint the relaxation times
+# imply, as one more row of the same linear solve.
+#
+# Either way it arrives in the maps.
+#
 
 # sphinx_gallery_start_ignore
 estimates = {
-    "match": (match_maps, proton_density(match_maps)),
-    "PERK": (perk_maps, proton_density(perk_maps)),
+    "match": (match_maps, match_maps["M0"]),
+    "PERK": (perk_maps, perk_maps["M0"]),
 }
+for name, (_found, density) in estimates.items():
+    print(f"  {name:6s} M0 median {float(density.median()):.4f}")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -607,122 +607,78 @@ for row, (name, reference, found) in enumerate(panels):
 # How sure is it?
 # ---------------
 #
-# A map without an error bar is an assertion. Asking for one is a keyword:
-# ``uncertainty=True`` returns the standard deviation the noise leaves on each
-# map beside the maps themselves, under the noise the fit was told about.
+# ``uncertainty=True`` returns a second set of maps: how far the answer is
+# expected to sit from the truth. PERK learns that at training, from the
+# residuals of its own fit, so reporting it is a matrix multiply rather than a
+# rerun of the volume.
 #
-# What PERK does to answer is run itself. Mapping the slice is a matrix
-# multiply and takes hundredths of a second, so rather than linearize -- which
-# at a realistic noise level understates the spread, because the features are
-# cosines and the noise turns them far enough to matter -- it adds the declared
-# noise a couple of dozen times over and spreads the answers.
-#
-maps, deviation = perk(measured, uncertainty=True)
+maps, spread = perk(measured, uncertainty=True)
 
 # %%
 #
-# What that spread should be compared against is the Cramer-Rao bound: the
-# lowest standard deviation any *unbiased* estimate could have from this train
-# at this noise level. It is a property of the acquisition rather than of the
-# method, so it says how much of the distance between the map and the truth the
-# sequence is responsible for.
+# What to read it against is the Cramer-Rao bound, the lowest standard
+# deviation an unbiased estimate could reach from this train at this noise. It
+# is a property of the simulator, so the gap between the two is what the
+# method is losing rather than what the sequence cannot deliver.
 #
-# The bound is read off the Jacobian at the true relaxation times, scaled by
-# the proton density each voxel actually has -- a voxel with half the
-# magnetization carries half the signal and so twice the standard deviation.
-#
-_, sensitivity = acquisition.jacobian("T1 T2".split(), **truth)
+_signal, sensitivity = simulator.jacobian("T1 T2".split(), **truth)
 sensitivity = sensitivity.real * density[:, None, None]
-floor = torchsim.crlb(
-    sensitivity, noise_variance=NOISE_STD**2, singular="infinite"
-).sqrt()
-bound = {"T1": floor[:, 0], "T2": floor[:, 1]}
-
-# %%
-#
-# And the third term, which neither of those contains: the bias. A regression
-# trained on a prior answers with the prior where the data is weak, and that
-# error is the same in every noise realization -- so repeating the measurement
-# never reveals it and the spread does not contain it.
-#
-bias = {name: maps[name] - truth[name] for name in truth}
+floor = torchsim.crlb(sensitivity, noise_variance=NOISE_STD**2, singular="infinite")
+bound = {"T1": floor[:, 0].sqrt(), "T2": floor[:, 1].sqrt()}
 
 # sphinx_gallery_start_ignore
-print(
-    f"{'':<10}{'PERK spread':>14}{'CRLB':>10}{'|bias|':>10}   (median over the brain)"
-)
+relative = {name: 100.0 * spread[name] / maps[name].clamp_min(1e-6) for name in bound}
+
+print(f"{'':<6}{'PERK':>10}{'CRLB':>10}{'PERK':>9}   (median over the brain)")
 for name in ("T1", "T2"):
     print(
-        f"{name:<10}{float(deviation[name].median()):11.1f} ms"
+        f"{name:<6}{float(spread[name].median()):7.1f} ms"
         f"{float(bound[name].median()):7.1f} ms"
-        f"{float(bias[name].abs().median()):7.1f} ms"
-    )
-
-bands = (
-    ("white matter", truth["T1"] < 1000.0),
-    ("grey matter", (truth["T1"] >= 1000.0) & (truth["T1"] < 2000.0)),
-    ("CSF", truth["T1"] >= 2000.0),
-)
-print()
-print(
-    f"{'':<14}{'voxels':>8}{'T1 spread':>12}{'T1 CRLB':>10}"
-    f"{'T2 spread':>12}{'T2 CRLB':>10}"
-)
-for label, where in bands:
-    print(
-        f"{label:<14}{int(where.sum()):8d}"
-        f"{float(deviation['T1'][where].median()):9.1f} ms"
-        f"{float(bound['T1'][where].median()):7.1f} ms"
-        f"{float(deviation['T2'][where].median()):9.1f} ms"
-        f"{float(bound['T2'][where].median()):7.1f} ms"
+        f"{float(relative[name].median()):8.1f}%"
     )
 
 figure, axes = canvas(2, 3, mask.shape)
 for row, name in enumerate(("T1", "T2")):
-    columns = (
-        ("PERK spread", deviation[name]),
-        ("CRLB", bound[name]),
-        ("|bias|", bias[name].abs()),
-    )
+    cmap, _limits, label = STYLE[name]
+    absolute = (("PERK", spread[name]), ("CRLB", bound[name]))
     top = max(
-        float(np.percentile(values.numpy(force=True), 98)) for _, values in columns
+        float(np.percentile(values.numpy(force=True), 98)) for _, values in absolute
     )
-    for column, (title, values) in enumerate(columns):
+    for column, (title, values) in enumerate(absolute):
         handle = panel(
             axes[row, column],
             painted(values),
-            "inferno",
+            cmap,
             (0.0, top or 1.0),
             title=title if row == 0 else None,
-            ylabel=STYLE[name][2] if column == 0 else None,
+            ylabel=label if column == 0 else None,
         )
-    scalebar(handle, axes[row], "ms")
+    figure.colorbar(handle, ax=axes[row, :2], label="ms", shrink=0.92, aspect=20)
+    share = panel(
+        axes[row, 2],
+        painted(relative[name]),
+        cmap,
+        (0.0, float(np.percentile(relative[name].numpy(force=True), 98)) or 1.0),
+        title="PERK, relative" if row == 0 else None,
+    )
+    figure.colorbar(share, ax=axes[row, 2], label="%", shrink=0.92, aspect=20)
 # sphinx_gallery_end_ignore
 
 # %%
 #
-# The three panels are on one scale per parameter, which is what makes them
-# worth putting beside each other.
+# Each row is drawn in its own parameter's colormap and on its own scale: the
+# two absolute panels share one, and the third is the same spread as a
+# percentage of the relaxation time it belongs to, which is what says whether
+# an error bar of ten milliseconds is tight or hopeless.
 #
-# The spread follows the sequence. It is smallest in white matter, larger in
-# grey, and largest in CSF -- and the bound moves the same way, because a long
-# T1 is what this train resolves least. A wide error bar in the ventricles is
-# the acquisition saying so, not the regression failing.
+# Both are largest in CSF, whose long T1 this train resolves least, so a wide
+# error bar in the ventricles is the simulator saying so. The distance
+# between them is not: T1 sits within a small multiple of the bound, T2
+# several times above it, and it is T2 whose error moved when the feature
+# count was swept. One of those is a sequence to redesign and the other a
+# regression to enlarge.
 #
-# What the two parameters do not share is how far above the bound they sit. T1
-# is estimated to within a small multiple of what the train allows; T2 is
-# several times worse than allowed, and it is T2 whose error moves when the
-# feature count is swept. The bound separates those two statements: one is a
-# sequence to redesign, the other a regression to enlarge.
-#
-# The bias is the term to keep in view. It is the size of the spread here, and
-# no amount of repeating the scan would show it -- which is why the map beside
-# the truth, further up, is not replaced by the map beside its error bar.
-#
-# A method whose answer is a grid point has no such number to state. Asking a
-# :class:`~torchsim.DictionaryMatcher` for one says so rather than inventing
-# it: a match moves in steps, so the noise does not move it a little.
-# :class:`~torchsim.NonlinearLeastSquares` does state one, and there it is the
-# standard error the fit reports -- the inverse Fisher matrix at the solution,
-# which is the bound above read at the answer rather than at a truth nobody
-# has.
+# What the number is not is the noise alone. A regression trained on a prior
+# answers with the prior where the data is weak, and it is wrong the same way
+# in every realization -- so this includes that, and repeating the scan would
+# never have shown it.

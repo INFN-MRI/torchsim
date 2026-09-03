@@ -96,9 +96,9 @@ def test_a_streaming_fit_chunks_generation() -> None:
     parameter = torch.linspace(0.1, 1.0, 65)
     seen: list[int] = []
 
-    estimator = PERK(_Counted(seen), n_features=32, feature_seed=1, stream=True).fit(
-        x=parameter, chunk=16
-    )
+    estimator = PERK(
+        _Counted(seen), n_features=32, feature_seed=1, stream=True, uncertainty=False
+    ).fit(x=parameter, chunk=16)
 
     assert estimator.fitted
     # One pass to read the kernel width off the inputs, one to fit.
@@ -117,11 +117,32 @@ def test_a_given_length_scale_costs_one_pass() -> None:
     seen: list[int] = []
 
     estimator = PERK(
-        _Counted(seen), n_features=32, feature_seed=1, length_scale=0.5, stream=True
+        _Counted(seen),
+        n_features=32,
+        feature_seed=1,
+        length_scale=0.5,
+        stream=True,
+        uncertainty=False,
     ).fit(x=parameter, chunk=16)
 
     assert estimator.fitted
     assert seen == [16, 16, 16, 16, 1]
+
+
+def test_learning_what_the_answer_is_wrong_by_costs_a_second_pass() -> None:
+    """Because the residual is not known until the first solve is done.
+
+    That is the whole price of the error bar, and it is paid at training: what
+    :meth:`map` then does to report one is a matrix multiply, not a rerun.
+    """
+    parameter = torch.linspace(0.1, 1.0, 65)
+    seen: list[int] = []
+
+    PERK(
+        _Counted(seen), n_features=32, feature_seed=1, length_scale=0.5, stream=True
+    ).fit(x=parameter, chunk=16)
+
+    assert seen == [16, 16, 16, 16, 1] * 2
 
 
 def test_the_merged_pass_gives_the_covariance_it_would_have_centred() -> None:

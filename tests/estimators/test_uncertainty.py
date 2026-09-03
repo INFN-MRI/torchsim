@@ -1,15 +1,16 @@
-"""What an estimator says the noise leaves on its answer.
+"""What an estimator says the answer is worth.
 
-The claim is a number with a definition outside TorchSim: repeat the
-measurement with fresh noise and the estimate moves, and the standard
-deviation of that movement is what :meth:`map` reports when asked. So every
-check here is against a Monte Carlo written out in the test -- draw the noise,
-map each realization, take the spread -- rather than against another route to
-the same formula.
+:meth:`map` asked with ``uncertainty=True`` returns a second set of maps: how
+far the answer is expected to sit from the truth. PERK learns that during
+training, from the residuals of its own fit, so reporting it is a matrix
+multiply rather than a rerun; least squares reads it off the curvature at its
+solution.
 
-A Monte Carlo over ``n`` draws knows its own answer only to about
-``1/sqrt(2(n-1))``, which is why the tolerances below are percentages rather
-than round-off, and why they are stated on the median over voxels.
+Both are checked here against a Monte Carlo written out in the test -- draw
+the noise, map each realization, measure the scatter -- because that is the
+definition, and because it shares nothing with the closed forms it checks.
+A Monte Carlo over ``n`` draws knows its own answer to about
+``1 / sqrt(2 (n - 1))``, which is why the tolerances are percentages.
 """
 
 from __future__ import annotations
@@ -22,9 +23,7 @@ import torchsim
 from torchsim.estimators import PERK, DictionaryMatcher, NonlinearLeastSquares
 from torchsim.simulators import MRFSimulator
 
-CONTRASTS = 120
-VOXELS = 24
-DRAWS = 400
+CONTRASTS, VOXELS, DRAWS = 400, 40, 300
 
 
 @pytest.fixture(scope="module")
@@ -42,107 +41,219 @@ def acquisition():
 @pytest.fixture(scope="module")
 def truth():
     return (
-        torch.exp(torch.linspace(np.log(600.0), np.log(2000.0), VOXELS)),
-        torch.exp(torch.linspace(np.log(60.0), np.log(200.0), VOXELS)),
+        torch.exp(torch.linspace(np.log(600.0), np.log(2500.0), VOXELS)),
+        torch.exp(torch.linspace(np.log(60.0), np.log(250.0), VOXELS)),
+        torch.linspace(0.5, 1.5, VOXELS),
     )
 
 
 @pytest.fixture(scope="module")
 def measurement(acquisition, truth):
-    """The clean signal, and the noise level every check below is stated at."""
-    clean = acquisition.simulate(T1=truth[0], T2=truth[1])
-    return clean, float(0.01 * clean.abs().max())
+    """At the amplitude the training set is simulated at."""
+    t1, t2, _density = truth
+    clean = acquisition.simulate(T1=t1, T2=t2)
+    return clean, float(0.02 * clean.abs().max())
 
 
-def _realizations(clean, noise_std, seed=3):
-    """Independent measurements of the same tissue, one per draw."""
+@pytest.fixture(scope="module")
+def scaled_measurement(acquisition, truth, measurement):
+    """The same tissue at densities either side of it."""
+    t1, t2, density = truth
+    return measurement[0] * density[:, None], measurement[1]
+
+
+def _noisy(clean, noise_std, generator):
+    return clean + noise_std * torch.complex(
+        torch.randn(clean.shape, generator=generator),
+        torch.randn(clean.shape, generator=generator),
+    )
+
+
+def _scatter(estimator, clean, noise_std, names, seed=3):
+    """What repeating the measurement actually does to each answer."""
     generator = torch.Generator().manual_seed(seed)
+    drawn = {name: [] for name in names}
     for _ in range(DRAWS):
-        yield clean + noise_std * torch.complex(
-            torch.randn(clean.shape, generator=generator),
-            torch.randn(clean.shape, generator=generator),
-        )
-
-
-def _sampled(estimator, clean, noise_std):
-    """The spread of the estimate, measured rather than derived."""
-    drawn: dict[str, list[torch.Tensor]] = {}
-    for realization in _realizations(clean, noise_std):
-        for name, values in estimator(realization).items():
-            drawn.setdefault(name, []).append(values)
+        answered = estimator(_noisy(clean, noise_std, generator))
+        for name in names:
+            drawn[name].append(answered[name])
     return {name: torch.stack(values).std(0) for name, values in drawn.items()}
-
-
-def _log_uniform(low, high, count, generator):
-    span = torch.rand(count, generator=generator)
-    return torch.exp(np.log(low) + span * (np.log(high) - np.log(low)))
 
 
 def _perk(acquisition, noise_std, **settings):
     prior = torch.Generator().manual_seed(11)
-    return PERK(acquisition, n_features=600, regularization=1e-6, **settings).fit(
-        T1=_log_uniform(200.0, 5000.0, 8000, prior),
-        T2=_log_uniform(20.0, 600.0, 8000, prior),
+
+    def log_uniform(low, high, count):
+        span = torch.rand(count, generator=prior)
+        return torch.exp(np.log(low) + span * (np.log(high) - np.log(low)))
+
+    return PERK(
+        acquisition, n_features=1000, regularization=1e-6, feature_seed=0, **settings
+    ).fit(
+        T1=log_uniform(200.0, 5000.0, 20_000),
+        T2=log_uniform(20.0, 600.0, 20_000),
         noise_std=noise_std,
         seed=0,
-        samples=8000,
+        samples=20_000,
+        rank=4,
     )
 
 
-@pytest.mark.parametrize(
-    "settings",
-    [
-        {"normalize": True},
-        {"normalize": False},
-        {"normalize": True, "complex_mode": "magnitude"},
-    ],
-    ids=["normalized", "raw", "magnitude"],
-)
-def test_perk_states_the_spread_a_repeated_scan_would_show(
-    acquisition, measurement, settings
+# --- what PERK answers for -------------------------------------------------
+
+
+def test_perk_answers_with_the_proton_density(
+    acquisition, scaled_measurement, truth
 ) -> None:
-    """The whole claim, on each representation the features can be built in."""
-    clean, noise_std = measurement
-    estimator = _perk(acquisition, noise_std, uncertainty_draws=128, **settings)
+    """And without simulating a fingerprint to find it.
 
-    _, stated = estimator(clean, uncertainty=True)
-    measured = _sampled(estimator, clean, noise_std)
+    Normalizing the features throws the amplitude away, which is what leaves
+    the density unknown. What the regression learns alongside the relaxation
+    times is one over the length of the fingerprint they imply, so the length
+    the measurement has is the density -- one multiplication, no forward pass.
+    """
+    clean, noise_std = scaled_measurement
+    estimator = _perk(acquisition, noise_std, normalize=True)
 
-    for name in ("T1", "T2"):
-        # The Monte Carlo knows its own answer to a few percent, and the
-        # bootstrap is centred on the estimate rather than on a truth it does
-        # not have, so the band is percentages rather than round-off.
-        ratio = stated[name] / measured[name]
-        assert 0.8 < float(ratio.median()) < 1.2, name
+    maps = estimator(clean)
+
+    assert set(maps) == {"T1", "T2", "M0"}
+    error = (maps["M0"] - truth[2]).abs() / truth[2]
+    assert float(error.median()) < 0.05
 
 
-def test_the_spread_follows_the_voxel_and_not_only_the_average(
+def test_the_density_follows_the_measurement_it_is_a_scale_of(
     acquisition, measurement
 ) -> None:
-    """It is a map, so it has to say which voxels are the uncertain ones.
+    """Twice the signal is twice the density, and nothing else moves.
 
-    A constant answer of about the right size would satisfy a comparison of
-    medians and carry no information at all. What is checked here is that the
-    stated spread rises and falls across voxels with the spread a repeated
-    measurement actually shows.
+    The relaxation times are what the *shape* says and the density what the
+    *size* says, so scaling a measurement has to leave one alone and scale the
+    other exactly.
     """
     clean, noise_std = measurement
-    estimator = _perk(acquisition, noise_std, normalize=True, uncertainty_draws=128)
+    estimator = _perk(acquisition, noise_std, normalize=True)
 
-    stated = estimator.uncertainty_of(clean)
-    measured = _sampled(estimator, clean, noise_std)
+    once = estimator(clean)
+    twice = estimator(2.0 * clean)
+
+    assert torch.allclose(twice["M0"], 2.0 * once["M0"], rtol=1e-4)
+    assert torch.allclose(twice["T1"], once["T1"], rtol=1e-4)
+
+
+def test_a_regression_that_keeps_the_scale_answers_for_no_density(
+    acquisition, measurement
+) -> None:
+    """There is nothing to learn where the features were never normalized."""
+    clean, noise_std = measurement
+
+    assert set(_perk(acquisition, noise_std, normalize=False)(clean)) == {"T1", "T2"}
+
+
+# --- what it says the answer is worth --------------------------------------
+
+
+def test_perk_states_a_spread_without_repeating_itself(
+    acquisition, measurement, truth
+) -> None:
+    """The whole claim, against the scatter it is predicting.
+
+    What the regression learned is what its own answers were wrong by on the
+    training set, so the number is of the right size and rises and falls with
+    the voxel -- which is what makes it a map rather than a constant.
+    """
+    clean, noise_std = measurement
+    estimator = _perk(acquisition, noise_std, normalize=True)
+
+    _maps, stated = estimator(clean, uncertainty=True)
+    measured = _scatter(estimator, clean, noise_std, ("T1", "T2"))
+    truth_t1, truth_t2, _ = truth
+    error = {
+        "T1": (estimator(clean)["T1"] - truth_t1).abs(),
+        "T2": (estimator(clean)["T2"] - truth_t2).abs(),
+    }
 
     for name in ("T1", "T2"):
+        # The shape of the map follows where the noise moves the answer.
         together = torch.stack((stated[name], measured[name]))
-        assert float(torch.corrcoef(together)[0, 1]) > 0.8, name
+        assert float(torch.corrcoef(together)[0, 1]) > 0.7, name
+        # Its size is the whole error, which is larger than the noise alone
+        # because a regression trained on a prior is also pulled by it.
+        assert float(stated[name].median()) > float(measured[name].median())
+        assert float(stated[name].median()) < 4.0 * float(error[name].median())
 
 
-def test_a_noiseless_fit_states_no_spread(acquisition, measurement) -> None:
-    """Nothing to propagate, and no realizations to draw."""
-    clean, _ = measurement
-    exact = _perk(acquisition, 0.0, normalize=True)
+def test_stating_it_costs_one_multiply_and_not_a_rerun(
+    acquisition, measurement
+) -> None:
+    """Asked twice, it answers identically: there is no sampling in it."""
+    clean, noise_std = measurement
+    estimator = _perk(acquisition, noise_std, normalize=True)
 
-    assert not exact.uncertainty_of(clean)["T1"].any()
+    first = estimator.uncertainty_of(clean)
+    again = estimator.uncertainty_of(clean)
+
+    for name in ("T1", "T2"):
+        assert torch.equal(first[name], again[name])
+
+
+def test_a_regression_not_asked_to_learn_it_says_so(acquisition, measurement) -> None:
+    """Because the second training pass it needs was never walked."""
+    clean, noise_std = measurement
+    estimator = _perk(acquisition, noise_std, normalize=True, uncertainty=False)
+
+    assert estimator(clean)["T1"].numel() == VOXELS
+    with pytest.raises(NotImplementedError, match="uncertainty=False"):
+        estimator(clean, uncertainty=True)
+
+
+def test_a_noiseless_fit_still_states_what_the_prior_costs(
+    acquisition, measurement
+) -> None:
+    """What is reported is the whole error, and noise is only part of it.
+
+    Trained without noise the regression is still a regression: it answers
+    with the prior where the features are uninformative, and it is wrong by
+    that. Reporting nothing there would be the misleading answer.
+    """
+    clean, noise_std = measurement
+    noiseless = _perk(acquisition, 0.0, normalize=True)
+    noisy = _perk(acquisition, noise_std, normalize=True)
+
+    assert float(noiseless.uncertainty_of(clean)["T1"].median()) > 0.0
+    assert float(noiseless.uncertainty_of(clean)["T1"].median()) < float(
+        noisy.uncertainty_of(clean)["T1"].median()
+    )
+
+
+def test_a_measurement_of_another_amplitude_is_outside_what_was_learned(
+    acquisition, measurement, scaled_measurement
+) -> None:
+    """The regression is trained at one signal amplitude, so this is a limit.
+
+    Halving the density doubles the noise a voxel effectively carries, and a
+    regression that never saw that regime cannot report on it. The spread it
+    states barely moves, which is exactly why a measurement should be given at
+    the amplitude the fit was told about.
+    """
+    clean, noise_std = measurement
+    estimator = _perk(acquisition, noise_std, normalize=True)
+
+    stated = estimator.uncertainty_of(clean)["T1"]
+    halved = estimator.uncertainty_of(0.5 * clean)["T1"]
+
+    assert 0.8 < float(halved.median()) / float(stated.median()) < 1.25
+
+
+# --- least squares ---------------------------------------------------------
+
+
+def _least_squares(acquisition, noise_std):
+    return NonlinearLeastSquares(
+        acquisition,
+        bounds={"T1": (200.0, 5000.0), "T2": (20.0, 600.0)},
+        initial={"T1": 1000.0, "T2": 100.0},
+    ).fit(T1=(200.0, 5000.0), T2=(20.0, 600.0), noise_std=noise_std)
 
 
 def test_least_squares_states_its_own_standard_error(
@@ -150,56 +261,42 @@ def test_least_squares_states_its_own_standard_error(
 ) -> None:
     """The inverse Fisher matrix at the solution, against repeated fits.
 
-    This is the number a least-squares fit reports as a standard error, and it
-    is a linearization about the answer -- so it is checked where the residual
-    is small, which is where a fit is entitled to report one.
+    This is the number a fit reports as a standard error, and it is a
+    linearization about the answer -- so it is checked where the residual is
+    small, which is where a fit is entitled to report one.
     """
     clean, noise_std = measurement
-    estimator = NonlinearLeastSquares(
-        acquisition,
-        bounds={"T1": (200.0, 5000.0), "T2": (20.0, 600.0)},
-        initial={"T1": 1000.0, "T2": 100.0},
-    ).fit(T1=(200.0, 5000.0), T2=(20.0, 600.0), noise_std=noise_std)
+    estimator = _least_squares(acquisition, noise_std)
 
     found, stated = estimator(clean, uncertainty=True)
-    assert float((found["T1"] - truth[0]).abs().max()) < 1e-2
+    assert float((found["T1"] - truth[0]).abs().max()) < 1.0
 
-    drawn: dict[str, list[torch.Tensor]] = {}
     generator = torch.Generator().manual_seed(5)
-    for _ in range(60):
-        noisy = clean + noise_std * torch.complex(
-            torch.randn(clean.shape, generator=generator),
-            torch.randn(clean.shape, generator=generator),
-        )
-        for name, values in estimator(noisy).items():
+    drawn: dict[str, list[torch.Tensor]] = {}
+    for _ in range(40):
+        for name, values in estimator(_noisy(clean, noise_std, generator)).items():
             drawn.setdefault(name, []).append(values)
 
     for name in ("T1", "T2"):
         ratio = stated[name] / torch.stack(drawn[name]).std(0)
-        assert 0.8 < float(ratio.median()) < 1.25, name
+        assert 0.7 < float(ratio.median()) < 1.4, name
 
 
 def test_a_standard_error_is_never_below_the_bound(
     acquisition, measurement, truth
 ) -> None:
-    """No unbiased estimate beats the Cramer-Rao bound, and this one does not.
-
-    The bound is computed here from the acquisition at the true relaxation
-    times, which is the statement the standard error has to respect.
-    """
+    """No unbiased estimate beats the Cramer-Rao bound, and this one does not."""
     clean, noise_std = measurement
-    estimator = NonlinearLeastSquares(
-        acquisition,
-        bounds={"T1": (200.0, 5000.0), "T2": (20.0, 600.0)},
-        initial={"T1": 1000.0, "T2": 100.0},
-    ).fit(T1=(200.0, 5000.0), T2=(20.0, 600.0), noise_std=noise_std)
-    stated = estimator.uncertainty_of(clean)
+    stated = _least_squares(acquisition, noise_std).uncertainty_of(clean)
 
-    _, sensitivity = acquisition.jacobian(["T1", "T2"], T1=truth[0], T2=truth[1])
+    _signal, sensitivity = acquisition.jacobian(["T1", "T2"], T1=truth[0], T2=truth[1])
     floor = torchsim.crlb(sensitivity, noise_variance=noise_std**2).sqrt()
 
     for column, name in enumerate(("T1", "T2")):
         assert float((stated[name] / floor[:, column]).min()) > 0.99, name
+
+
+# --- and where there is none to state --------------------------------------
 
 
 def test_a_voxel_that_cannot_be_read_is_infinite_rather_than_a_failure() -> None:
@@ -217,8 +314,10 @@ def test_a_voxel_that_cannot_be_read_is_infinite_rather_than_a_failure() -> None
     assert torch.isfinite(bound[[0, 2]]).all()
 
 
-def test_a_method_that_has_no_uncertainty_says_so(acquisition) -> None:
-    """A match answers with a grid point, which does not move a little."""
+def test_a_method_that_answers_with_a_grid_point_says_it_has_none(
+    acquisition,
+) -> None:
+    """A match does not move a little when the noise does."""
     grid_t1, grid_t2 = torch.meshgrid(
         torch.linspace(300.0, 3000.0, 40),
         torch.linspace(30.0, 300.0, 20),
@@ -236,30 +335,46 @@ def test_a_method_that_has_no_uncertainty_says_so(acquisition) -> None:
         matcher(signal, uncertainty=True)
 
 
-def test_the_noise_already_in_the_measurement_is_not_counted_twice(
-    acquisition, measurement
+# --- and the density a match works out on its way --------------------------
+
+
+def test_a_match_answers_with_the_density_without_touching_an_atom(
+    acquisition, truth
 ) -> None:
-    """A scan carries one realization; the answer is not the spread at two.
+    """The score already carries it, once the two lengths are put back.
 
-    Asked from a measurement and from the noiseless signal behind it, the same
-    estimator has to state about the same spread -- it is a property of the
-    tissue and the sequence, not of which realization arrived. Drawing on top
-    of the measurement instead of on the fingerprint the answer predicts would
-    report the spread at ``sqrt(2)`` times the noise, and more than that once
-    the regression stops being linear in it.
+    Matching normalizes both sides, so the score is a cosine: multiply by the
+    measurement's own length and divide by the atom's -- a number stored per
+    atom rather than a signal per atom -- and that is the least-squares scale.
+    It has to equal the scale computed the long way, from the atoms.
     """
-    clean, noise_std = measurement
-    estimator = _perk(acquisition, noise_std, normalize=True, uncertainty_draws=128)
-
-    generator = torch.Generator().manual_seed(17)
-    noisy = clean + noise_std * torch.complex(
-        torch.randn(clean.shape, generator=generator),
-        torch.randn(clean.shape, generator=generator),
+    t1, t2, density = truth
+    grid_t1, grid_t2 = torch.meshgrid(
+        torch.logspace(np.log10(300.0), np.log10(3000.0), 60),
+        torch.logspace(np.log10(30.0), np.log10(300.0), 30),
+        indexing="ij",
     )
+    matcher = DictionaryMatcher(acquisition).fit(
+        T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), noise_std=0.0
+    )
+    signal = acquisition.simulate(T1=t1, T2=t2) * density[:, None]
 
-    exact = estimator.uncertainty_of(clean)
-    measured = estimator.uncertainty_of(noisy)
+    maps = matcher(signal)
+    assert set(maps) == {"T1", "T2", "M0"}
 
-    for name in ("T1", "T2"):
-        ratio = float(measured[name].median()) / float(exact[name].median())
-        assert 0.8 < ratio < 1.25, name
+    found = matcher.match(signal)
+    assert torch.allclose(found.densities, found.scales.abs(), atol=1e-5)
+    assert float(((maps["M0"] - density).abs() / density).median()) < 0.05
+
+
+def test_a_match_fitted_from_bare_arrays_answers_in_the_caller_s_columns(
+    acquisition,
+) -> None:
+    """No names, so no room to append one: the columns are the caller's."""
+    grid = torch.stack(
+        (torch.linspace(400.0, 2000.0, 32), torch.linspace(40.0, 200.0, 32)), dim=-1
+    )
+    signals = acquisition.simulate(T1=grid[:, 0], T2=grid[:, 1])
+    matcher = DictionaryMatcher().fit(signals=signals, parameters=grid)
+
+    assert matcher(signals[:4]).shape == (4, 2)

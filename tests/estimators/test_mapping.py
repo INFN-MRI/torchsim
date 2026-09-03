@@ -77,7 +77,8 @@ def test_the_maps_come_back_named_and_shaped_like_the_volume(make) -> None:
 
     maps = mapping(volume)
 
-    assert set(maps) == {"T1", "T2"}
+    # A method that works out the proton density on its way answers with it.
+    assert {"T1", "T2"} <= set(maps) <= {"T1", "T2", "M0"}
     assert all(value.shape == (2, 3, 4) for value in maps.values())
 
 
