@@ -2,7 +2,39 @@
 
 ## Unreleased
 
+### Changed
+
+- **Naming a tissue property is how its physics is asked for.** Every field a
+  voxel has now has one public name, shared by every model, and a simulator
+  accepts all of them whether or not it declares them --
+  `MRFSimulator(...).simulate(T1=..., T2=..., B0=40.0)` turns on the
+  off-resonance term. A model's `properties` mapping is still what a protocol
+  is *written* in, and still wins where it renames a field, but reaching a
+  second pool or a diffusivity no longer means rebuilding the model around it
+  with `dataclasses.replace`. `accepts` reports the whole vocabulary and
+  `variables` reports the sequence arguments, read off the layout.
+
+- **A shaped pulse is given as the pulse.** `pulse=` puts an
+  `RfDefinition` on the events that drive it and `across_slice=` says how many
+  positions to work it out at, on the constructor, on `bind`, or at the call --
+  all three the same answer. `slice_profile=` is gone, and `across_slice` takes
+  a count where it used to take an object; an array is still refused, because
+  a response is not proportional to the pulse driving it.
+
+- **`resolved()` is gone.** It set a flag the constructor already defaulted to,
+  so a simulator resolves its structure the first time it runs and rebinds
+  afterwards with nothing asked of the caller.
+
 ### Added
+
+- **`description(*operators)`** lays operators out and returns the description
+  they make, so assembling a sequence by hand is one call rather than
+  `compose` plus a five-field constructor.
+
+- **A cross-check against epgpy**, a second EPG implementation sharing no code
+  with this one. A refocused train agrees echo for echo to 1e-5 at 180, 120
+  and 60 degrees, and two hundred repetitions of a quadratically spoiled train
+  to 1e-3. Skipped unless epgpy is installed by hand; it is not on PyPI.
 
 - **An estimator states how sure it is.** `map(volume, uncertainty=True)`
   returns the standard deviation the noise leaves on each map beside the maps,

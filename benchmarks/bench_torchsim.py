@@ -61,7 +61,6 @@ def main() -> None:
 
     # The structure is resolved once; the timed calls rebind values onto it.
     start = time.perf_counter()
-    sequence = sequence.resolved()
     if args.mode == "jacobian":
         sequence.jacobian(diff, T1=T1[:1], T2=T2[:1])
     else:

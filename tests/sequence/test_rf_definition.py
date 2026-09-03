@@ -64,7 +64,7 @@ def _tissue():
 def _signal(description, profile=None):
     return (
         EpgEngine()
-        .simulate(description, _tissue(), slice_profile=profile, nstates=STATES)
+        .simulate(description, _tissue(), across_slice=profile, nstates=STATES)
         .signal
     )
 

@@ -114,10 +114,37 @@ def test_a_model_declaring_unknown_tissue_says_so() -> None:
         Wrong(**SEQUENCE).simulate(T1=T1, T2=T2)
 
 
-def test_differentiating_something_the_model_does_not_expose_says_so() -> None:
-    """``diff`` names a property, so a name it does not expose is an error."""
-    with pytest.raises(ValueError, match="is not a property"):
+def test_differentiating_a_property_the_call_did_not_give_says_so() -> None:
+    """Forward mode differentiates what a voxel was actually given.
+
+    Every field a voxel has can be named, so the error is not that the model
+    has never heard of the property -- it is that this call left it out, and
+    there is nothing to take a derivative along.
+    """
+    with pytest.raises(ValueError, match="is not among the properties"):
         Relaxation(**SEQUENCE).jacobian("B1", T1=T1, T2=T2)
+
+
+def test_a_property_the_model_never_declared_is_still_given_and_differentiated() -> (
+    None
+):
+    """Naming it is asking for it: the model is not rebuilt around it.
+
+    ``Relaxation`` declares T1 and T2. Handing it a transmit scaling has to
+    reach the pulses -- a smaller flip is a smaller signal -- and has to be
+    differentiable, without the model being reconstructed to admit it.
+    """
+    model = Relaxation(**SEQUENCE)
+    assert "B1" not in model.exposes
+    assert "B1" in model.accepts
+
+    full = model.simulate(T1=T1, T2=T2)
+    scaled = model.simulate(T1=T1, T2=T2, B1=0.6)
+    assert float((scaled - full).abs().max()) > 1e-3
+
+    _signal, slope = model.jacobian("B1", T1=T1, T2=T2, B1=0.9)
+    assert torch.isfinite(slope).all()
+    assert float(slope.abs().max()) > 0.0
 
 
 @pytest.mark.parametrize(
@@ -167,3 +194,20 @@ def test_a_cost_differentiates_back_to_the_sequence() -> None:
     signal.abs().square().sum().backward()
     assert flip.grad is not None
     assert float(flip.grad.abs().max()) > 0.0
+
+
+def test_a_simulator_says_what_it_is_written_in() -> None:
+    """Two vocabularies, and a name for each.
+
+    ``variables`` is the sequence -- flip angles, spacings, times -- and is
+    read off the layout, so it cannot drift from what the layout takes.
+    ``exposes`` is what the model declares about the tissue and ``accepts`` is
+    every field a voxel has, since naming one is how its physics is asked for.
+    """
+    model = Relaxation(**SEQUENCE)
+
+    assert "T1" in model.exposes and "T1" in model.accepts
+    assert set(model.exposes) <= set(model.accepts)
+    assert "B0" in model.accepts and "B0" not in model.exposes
+    assert not set(model.variables) & set(model.accepts)
+    assert all(isinstance(name, str) for name in model.variables)

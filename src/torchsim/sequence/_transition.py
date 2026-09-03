@@ -705,6 +705,36 @@ def exact_slice_profile(
     )
 
 
+def across_the_slice(asked: Any) -> ExactSliceProfile | None:
+    """Where across the slice to work a shaped pulse out, from what was asked.
+
+    How many positions to sample is the common way to ask and is spelled as
+    one; :func:`exact_slice_profile` is there for the rest -- which positions,
+    how wide, how finely to tabulate -- and passes through.
+
+    Nothing else is taken. A response is not proportional to the pulse driving
+    it, so an array of flip-angle scalings is not a slice profile, and it is
+    close enough to a list of positions that guessing between them would
+    sometimes be wrong in silence.
+
+    Raises
+    ------
+        TypeError: if ``asked`` is neither a count nor a profile.
+    """
+    if asked is None or isinstance(asked, ExactSliceProfile):
+        return asked
+    if isinstance(asked, bool) or not isinstance(asked, int):
+        raise TypeError(
+            f"across_slice says where across the slice to integrate the "
+            f"sequence's own pulse: how many positions, or "
+            f"exact_slice_profile() to say which. Got {type(asked).__name__}. "
+            f"An array of flip-angle scalings treats a Bloch response as "
+            f"proportional to the pulse driving it, which it is not; give the "
+            f"RF definition its waveform instead"
+        )
+    return exact_slice_profile(asked)
+
+
 @dataclass(frozen=True)
 class SliceTables:
     """The tables a sequence reads, and which pulse reads which.

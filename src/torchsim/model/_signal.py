@@ -45,6 +45,7 @@ from typing import Any
 import torch
 
 from ..sequence._array import as_torch, brought, is_array, like
+from ..sequence._parameters import PUBLIC_PROPERTIES
 
 _NOTHING: Mapping[str, Any] = MappingProxyType({})
 
@@ -100,6 +101,17 @@ class SignalModel(ABC):
     def exposes(self) -> tuple[str, ...]:
         """The property names this model declares, in its own order."""
         return tuple(self.properties)
+
+    @property
+    def accepts(self) -> tuple[str, ...]:
+        """Every property name a call may use: what is declared, and the rest.
+
+        A model declares the vocabulary its protocol is written in, and a voxel
+        has more fields than any one model names. Both are accepted, so asking
+        for off-resonance or a second pool is giving one a value rather than
+        rebuilding the model around it.
+        """
+        return tuple(dict.fromkeys((*self.exposes, *PUBLIC_PROPERTIES)))
 
     def bind(self, **values: Any) -> Any:
         """This model with more arguments fixed on it, or some of them changed.
@@ -189,7 +201,10 @@ class SignalModel(ABC):
         for name in names:
             if name not in held:
                 raise ValueError(
-                    f"{name!r} is not a property {type(self).__name__} exposes"
+                    f"{name!r} is not among the properties this call gave "
+                    f"{type(self).__name__}: {sorted(held)}. Forward mode "
+                    f"differentiates a property the tissue carries; for a "
+                    f"sequence argument, build a cost and call backward()."
                 )
             if not torch.is_floating_point(held[name]):
                 raise ValueError(f"{name!r} does not carry a derivative")
@@ -249,8 +264,8 @@ class SignalModel(ABC):
         }
 
     def _split(self, values: Mapping[str, Any]) -> tuple[dict, dict]:
-        """Tell the declared property arguments from the sequence ones."""
-        declared = self.exposes
+        """Tell the property arguments from the sequence ones."""
+        declared = self.accepts
         held = {name: as_torch(values[name]) for name in declared if name in values}
         sequence = {
             name: value for name, value in values.items() if name not in declared

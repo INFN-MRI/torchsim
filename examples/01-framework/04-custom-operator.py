@@ -104,19 +104,17 @@ def key(axes, ncols=1):
 import torch
 
 from torchsim.sequence import (
-    compose,
     Delay,
     Dephase,
+    description,
     EpgEngine,
     EventAction,
     Excitation,
-    ideal_rf_definition,
     module,
     operator,
     Readout,
     Refocusing,
     register_operator,
-    SequenceDescription,
     SSFPEchoReadout,
     SSFPFidReadout,
     TissueProperties,
@@ -179,13 +177,7 @@ def prepared_train(prep_s, echo_spacing_s, echoes):
         modules.append(Refocusing(torch.pi, 0.5 * torch.pi))
         modules.append(Delay(0.5 * echo_spacing_s))
         modules.append(Readout(0.5 * torch.pi))
-    events, duration_s = compose(*modules)
-    return SequenceDescription(
-        subsequence_index=0,
-        tr_duration_us=1e6 * duration_s,
-        events=events,
-        rf_definitions={0: ideal_rf_definition()},
-    )
+    return description(*modules)
 
 
 # %%
@@ -284,13 +276,7 @@ def unbalanced_train(readout):
     for _ in range(REPETITIONS):
         modules.append(Excitation(torch.deg2rad(torch.tensor(FLIP_DEG))))
         modules.append(readout(duration_s=TR_S))
-    events, duration_s = compose(*modules)
-    return SequenceDescription(
-        subsequence_index=0,
-        tr_duration_us=1e6 * duration_s,
-        events=events,
-        rf_definitions={0: ideal_rf_definition()},
-    )
+    return description(*modules)
 
 
 def played(readout, t1_ms=1000.0):
@@ -332,21 +318,28 @@ ratios = {
 }
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.6))
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
 for row, t2 in enumerate(T2_MS):
-    axes[0].plot(abs(fid[row]), label=f"T2 = {float(t2):.0f} ms")
-    axes[0].plot(abs(echo[row]), "--", color=f"C{row}")
-axes[0].set(
+    axis.plot(abs(fid[row]), color=f"C{row}", label=f"T2 = {float(t2):.0f} ms")
+    axis.plot(abs(echo[row]), "--", color=f"C{row}")
+axis.set(
     xlabel="repetition",
     ylabel="signal magnitude [a.u.]",
-    title="the two samples (echo dashed)",
+    title="the two samples one repetition takes (echo dashed)",
 )
+axis.grid(alpha=0.3)
+key(axis, ncols=3)
+
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
 for t1_ms, ratio in ratios.items():
-    axes[1].plot(T2_MS.numpy(), ratio.numpy(), "o-", label=f"T1 = {t1_ms:.0f} ms")
-axes[1].set(xlabel="T2 [ms]", ylabel="echo / free induction decay", title="the ratio")
-for axis in axes:
-    axis.grid(alpha=0.3)
-key(axes, ncols=3)
+    axis.plot(T2_MS.numpy(), ratio.numpy(), "o-", label=f"T1 = {t1_ms:.0f} ms")
+axis.set(
+    xlabel="T2 [ms]",
+    ylabel="echo / free induction decay",
+    title="their ratio rises with T2, and moves far less with T1",
+)
+axis.grid(alpha=0.3)
+key(axis, ncols=3)
 
 spread = max(float(r[0]) for r in ratios.values()) - min(
     float(r[0]) for r in ratios.values()

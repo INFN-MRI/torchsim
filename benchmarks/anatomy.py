@@ -171,19 +171,19 @@ def _structure(
         ),
     )
 
-    print("What resolving a structure costs, and what a bound call saves")
+    print("What building a simulator costs, and what holding one saves")
     print(
-        f"{'sequence':>32s}  {'resolve (s)':>11s}  {'bound (ms)':>10s}  "
-        f"{'unresolved (ms)':>15s}"
+        f"{'sequence':>32s}  {'build (s)':>11s}  {'held (ms)':>10s}  "
+        f"{'rebuilt (ms)':>15s}"
     )
     for label, build, extra in sequences:
         start = time.perf_counter()
-        resolved = build().resolved()
-        resolved.simulate(T1=T1, T2=T2, **extra)
+        held_simulator = build()
+        held_simulator.simulate(T1=T1, T2=T2, **extra)
         synchronize()
         cost = time.perf_counter() - start
         bound = best(
-            lambda s=resolved, e=extra: s.simulate(T1=T1, T2=T2, **e),
+            lambda s=held_simulator, e=extra: s.simulate(T1=T1, T2=T2, **e),
             args.repeats,
             synchronize,
         )
@@ -194,9 +194,9 @@ def _structure(
         )
         print(f"{label:>32s}  {cost:11.2f}  {bound * 1e3:10.2f}  {loose * 1e3:15.2f}")
     print(
-        "\n  A dictionary sweep, a fit or a design loop pays the resolve once and\n"
-        "  the bound column on every call after it. A single curve pays the\n"
-        "  resolve for nothing.\n"
+        "\n  A dictionary sweep, a fit or a design loop builds once and pays the\n"
+        "  held column on every call after it. A single curve pays the build\n"
+        "  for nothing.\n"
     )
 
 
@@ -230,7 +230,6 @@ def main() -> None:
         sequence = MRFSimulator(flip=flip, TR=10.0, states=orders)
         if device.type != "cpu":
             sequence = sequence.to(device)
-        sequence = sequence.resolved()
         seconds = best(
             lambda s=sequence: s.simulate(T1=T1, T2=T2), args.repeats, synchronize
         )
@@ -266,7 +265,6 @@ def main() -> None:
         sequence = FSESimulator(ESP=5.0, TR=3000.0, states=32, exc_phase=exc_phase)
         if device.type != "cpu":
             sequence = sequence.to(device)
-        sequence = sequence.resolved()
         timings[label] = best(
             lambda s=sequence: s.simulate(flip=echo_train, T1=T1, T2=T2),
             args.repeats,
@@ -283,7 +281,6 @@ def main() -> None:
         sequence = FSESimulator(ESP=5.0, TR=3000.0, states=32, exc_phase=exc_phase)
         if device.type != "cpu":
             sequence = sequence.to(device)
-        sequence = sequence.resolved()
         forward = best(
             lambda s=sequence: s.simulate(flip=echo_train, T1=T1, T2=T2),
             args.repeats,

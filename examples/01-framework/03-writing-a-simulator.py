@@ -108,7 +108,6 @@ def key(axes, ncols=1):
 
 
 # sphinx_gallery_end_ignore
-from dataclasses import replace
 
 import numpy as np
 import torch
@@ -280,22 +279,18 @@ plt.ylabel("d(loss) / d(flip) [1/deg]")
 # %%
 # Asking for more physics
 # -----------------------
-# A field the model does not name is a term the kernels leave out, so more
-# physics is a longer ``properties`` map and nothing else:
+# ``properties`` is the vocabulary this model's *protocol* is written in, not
+# a list of what a voxel may have. Every field a voxel has can be given to any
+# simulator, and giving one is what turns its term on -- so a second exchanging
+# pool is four more names in the call and nothing in the model:
 #
-exchanging = replace(
-    physics,
-    properties={
-        "T1": "t1_ms",
-        "T2": "t2_ms",
-        "fB": "pool_b_fraction",
-        "kB": "pool_b_exchange_hz",
-        "T1B": "t1_pool_b_ms",
-        "T2B": "t2_pool_b_ms",
-    },
-)
-two_pool = SSFPMRF(model=exchanging, flip=flip, TR=10.0, TI=20.0).simulate(
-    T1=1000.0, T2=100.0, fB=0.2, kB=20.0, T1B=500.0, T2B=20.0
+two_pool = sequence.simulate(
+    T1=1000.0,
+    T2=100.0,
+    poolB_fraction=0.2,
+    poolB_exchange=20.0,
+    poolB_T1=500.0,
+    poolB_T2=20.0,
 )
 
 # sphinx_gallery_start_ignore
@@ -311,7 +306,7 @@ print(
 # <sphx_glr_generated_autoexamples_01-framework_02-expanded-physics.py>`.
 #
 # Checking one against an answer that was already written down
-# -----------------------------------------------------------
+# ------------------------------------------------------------
 # A fingerprinting train has no closed form to check against, so here is a
 # second simulator that does. Saturation recovery destroys whatever
 # magnetization was there, waits, and reads what has come back -- and what it

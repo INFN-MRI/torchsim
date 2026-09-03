@@ -103,15 +103,14 @@ def key(axes, ncols=1):
 # sphinx_gallery_end_ignore
 import math
 import time
-from dataclasses import replace
 from functools import partial
-from pathlib import Path
 
 import numpy as np
 import torch
 
 import torchsim
 from torchsim.model import Simulator
+from torchsim.sequence import EventType
 from torchsim.simulators import FSESimulator
 
 # %%
@@ -405,25 +404,25 @@ for orders in (4, 10, 16, 32, 48):
 
 # %%
 #
-# ``resolve`` is what makes a loop worth writing as an object. The structure of
-# a sequence -- the order of its events, which of them record, how far it winds
-# -- is settled once and the numbers are rebound onto it afterwards, so a sweep
-# that changes only flip angles never walks the stream again. What that is
-# worth grows with the sequence: a 48-echo train is the modest end of it, and
-# a 500-repetition fingerprinting schedule is where it decides whether a
-# dictionary sweep takes minutes or hours.
+# A simulator is worth holding on to. The structure of a sequence -- the order
+# of its events, which of them record, how far it winds -- is settled the first
+# time it runs and the numbers are rebound onto it afterwards, so a sweep that
+# changes only flip angles never walks the event stream again. That happens by
+# itself; what it is worth grows with the sequence, and a 500-repetition
+# fingerprinting schedule is where it decides whether a dictionary sweep takes
+# minutes or hours.
 #
 held = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS)
-rebuilt = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, resolve=False)
+rebuilt = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS)
 
-# sphinx_gallery_start_ignore
-for name, shots in (("held", held), ("rebuilt", rebuilt)):
-    shots.simulate(flip=flip)  # the first call is where resolving happens
+for name, simulator in (("held", held), ("rebuilt anew", rebuilt)):
+    simulator.simulate(flip=flip)  # the first call is where the structure is read
     start = time.perf_counter()
     for _ in range(20):
-        shots.simulate(flip=flip)
-    print(f"  {name:8s} {1e3 * (time.perf_counter() - start) / 20:6.2f} ms a call")
-# sphinx_gallery_end_ignore
+        if name != "held":
+            simulator = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS)
+        simulator.simulate(flip=flip)
+    print(f"  {name:14s} {1e3 * (time.perf_counter() - start) / 20:6.2f} ms a call")
 
 # %%
 #
@@ -436,181 +435,223 @@ for name, shots in (("held", held), ("rebuilt", rebuilt)):
 with torchsim.execution("cpu"):
     on_the_host = acquisition.simulate(flip=flip)
 
-# sphinx_gallery_start_ignore
 print(
     f"  forced onto the host, agrees to {float((on_the_host - signal_ref).abs().max()):.1e}"
 )
-if torch.cuda.is_available():
-    with torchsim.execution("cuda", stream=True, budget_bytes=1 << 28):
-        streamed = acquisition.simulate(flip=flip)
-    print(
-        f"  streamed through a card, agrees to {float((streamed.cpu() - signal_ref).abs().max()):.1e}"
-    )
-else:
-    print("  no card here, so the streamed comparison is skipped")
-# sphinx_gallery_end_ignore
 
 # %%
 #
 # ``stream`` and ``budget_bytes`` are for a volume rather than a dictionary:
 # the first insists the run be cut into chunks even where it would have fit,
 # the second caps what a chunk may hold. A whole-brain map at a hundred
-# thousand voxels is the case they exist for.
+# thousand voxels is the case they exist for, and it is written like this:
 #
-# ``repetitions`` is the fourth, and it belongs with the physics rather than
-# with the machine: one playing is the transient a scanner plays once, and
-# ``"auto"`` reads off the state the sequence settles into instead. The next
-# example is where that matters.
-#
+if torch.cuda.is_available():
+    with torchsim.execution("cuda", stream=True, budget_bytes=1 << 28):
+        streamed = acquisition.simulate(flip=flip)
+    agreement = float((streamed.cpu() - signal_ref).abs().max())
+    print(f"  streamed through a card in 256 MiB chunks, agrees to {agreement:.1e}")
+else:
+    print("  no card here, so the streamed run is skipped")
 
+# The state a scanner is really in
+# --------------------------------
+#
+# Everything so far started from equilibrium. A scanner does not: it plays the
+# train over and over, and what it records is the state the train has settled
+# into. Reaching that by playing it out is hundreds of repetitions, every one
+# of them the full cost of the sequence.
+#
+# ``repetitions="auto"`` reads the limit off a handful of playings instead. A
+# settled signal is a constant plus decaying modes, so finitely many terms fix
+# where it is going, and the answer is the one that running there arrives at.
+#
+settling = FSESimulator(ESP=ESP_MS, TR=500.0, T1=T1_MS, T2=T2_MS, states=20)
+first_pass = settling.simulate(flip=flip)
+settled = settling.simulate(flip=flip, repetitions="auto")
+played_out = settling.simulate(flip=flip, repetitions=200)
 
-# %%
-#
-# The pulse the scanner actually plays
-# ------------------------------------
-#
-# Everything above turned instantly. A real excitation is a shaped waveform
-# under a selection gradient, and what it does depends on where in the slice a
-# spin sits: the flip it turns at the edge is not the flip it turns at the
-# centre, so the signal a voxel gives is the average over the slice rather than
-# the nominal angle.
-#
-# TorchSim takes the envelope itself -- the complex waveform, one row per
-# transmit channel, exactly what comes off a Pulseq block or an MRD sequence
-# description. This one is an SLR 90 degree pulse, 2 ms long over a 5 mm slice,
-# designed elsewhere and saved beside this file so nothing here depends on a
-# pulse designer.
-#
-pulse = np.load(Path(__file__).parent / "data" / "slr90.npz")
-excitation = torchsim.rf_definition(
-    pulse["samples"],
-    dwell_s=float(pulse["dwell_s"]),
-    bandwidth_hz=float(pulse["bandwidth_hz"]),
-)
-
-# %%
-#
-# The amplitude a caller writes is in radians and the flip is what the pulse
-# turns, so the envelope is rescaled to make those the same thing. That is the
-# one thing to get right: a waveform left peak-normalized integrates to
-# something else entirely and turns a fraction of a degree, which comes back as
-# a signal of nothing rather than as an error.
-#
-# sphinx_gallery_start_ignore
-turned, _axis = excitation.flip_angle(torch.pi / 2)
-print(f"  an amplitude of pi/2 turns {float(np.real(turned)):.6f} rad")
+print(f"  one playing          {float(first_pass[0].abs().max()):.5f}")
+print(f'  repetitions="auto"   {float(settled[0].abs().max()):.5f}')
+print(f"  200 playings         {float(played_out[0].abs().max()):.5f}")
 print(
-    f"  bandwidth {excitation.bandwidth_hz:.0f} Hz over a "
-    f"{1e3 * float(pulse['thickness_m']):.0f} mm slice, so it selects"
+    "  the last two agree to "
+    f"{float((settled - played_out).abs().max() / played_out.abs().max()):.1e}"
 )
-print(f"  and so the kernels read it as {excitation.rf_mode().name}")
-# sphinx_gallery_end_ignore
 
 # %%
 #
-# A model names the pulses its events drive, so giving a simulator this one is
-# replacing the definition its excitation reads. ``slice_profile`` then says
-# where across the slice to work the rotation out; leave it off and the pulse
-# is evaluated at the slice centre alone, which is the hard-pulse answer.
-#
-shaped = replace(FSESimulator.model, definitions={excitation.id: excitation})
-protocol = dict(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, states=48)
-
-centre_only = FSESimulator(model=shaped, **protocol).simulate(flip=flip)
-across_slice = FSESimulator(
-    model=shaped, slice_profile=torchsim.exact_slice_profile(21, extent=1.2), **protocol
-).simulate(flip=flip)
-
-# sphinx_gallery_start_ignore
-print(f"  at the slice centre    {float(centre_only[0].abs().max()):.4f}")
-print(f"  averaged over the slice {float(across_slice[0].abs().max()):.4f}")
-print(
-    f"  the profile costs      "
-    f"{100 * (1 - float(across_slice[0].abs().max()) / float(centre_only[0].abs().max())):.1f}% of the signal"
-)
-# sphinx_gallery_end_ignore
-
-# %%
-#
-# The gap is the slice profile, and it is not a scaling: the edges of the slice
-# see a smaller flip, which for a refocused train is a different pathway
-# balance rather than a smaller version of the same one. A fit that assumed the
-# nominal angle would read that as a tissue difference.
+# The first playing is wrong by a fraction that a short TR makes large, which
+# is what a simulation of a steady-state sequence gets wrong if it starts from
+# equilibrium and stops. Every shipped simulator takes the setting, and it
+# costs a fraction of what running there costs.
 #
 
-# sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.2))
-envelope = pulse["samples"]
-time_ms = 1e3 * np.arange(envelope.size) * float(pulse["dwell_s"])
-axes[0].plot(time_ms, np.abs(envelope) / np.abs(envelope).max(), "-k", lw=1.5)
-axes[0].set(xlabel="Time [ms]", ylabel="|B1| (normalized)", title="the SLR envelope")
-for values, style, label in (
-    (centre_only, "-k", "slice centre"),
-    (across_slice, "--r", "averaged over the slice"),
-):
-    axes[1].plot(values[0].abs().numpy(), style, lw=2, label=label)
-axes[1].set(xlabel="Echo", ylabel="|signal|", title="white matter")
-for axis in axes:
-    axis.grid(alpha=0.3)
-key(axes[1])
-# sphinx_gallery_end_ignore
-
-# %%
-#
-# A stream carries the same three things this constructor takes -- the
-# waveform, its bandwidth and where each band sits -- and nothing that says
-# "selective": a pulse is selective exactly when it declares a bandwidth, which
-# is what puts it on the tabulated rotation rather than the instant one. Give
-# ``rf_raster_time_s`` where the pulse is not written on the run's own raster,
-# since sample times travel in units of it.
-#
 
 # %%
 #
 # A sequence someone else assembled
 # ---------------------------------
 #
-# Nothing above required TorchSim to have written the sequence. A description
-# is a list of events with timestamps, and a stream that arrives already
-# labelled -- from an MRD file, from Pulseq, from any generator that names what
-# it plays -- is turned into one by looking each name up in the operator
-# registry.
+# Nothing above required TorchSim to have written the sequence. What a
+# simulator lays down, what a Pulseq design exports and what the scanner
+# streams back are one object: a **sequence description**, and it is small
+# enough to read.
 #
-print("operators reachable by name:", ", ".join(torchsim.operator_names()))
+# It is a repetition's worth of events, the pulses those events drive, and the
+# transmit shims they are driven on. An event is one of three things -- time
+# passing, an RF pulse, an ADC window -- a timestamp in microseconds, and the
+# handful of numbers that kind of event carries.
+#
+described = acquisition.describe(flip=flip, ESP=ESP_MS, TR=3000.0)
 
-# %%
-#
-# The same refocused train as above, written as the stream a converter would
-# hand over: a name, when it is played, and the parameters it carries.
-#
-ESP_S = ESP_MS * 1e-3
-stream = [("excitation", 0.0, {"flip_rad": math.pi / 2, "phase_rad": math.pi / 2})]
-for index in range(ECHOES):
-    echo_s = (index + 1) * ESP_S
-    stream.append(
-        (
-            "refocusing",
-            echo_s - 0.5 * ESP_S,
-            {"flip_rad": math.radians(60.0), "phase_rad": 0.0},
+# sphinx_gallery_start_ignore
+print(
+    f"  {len(described.events)} events over "
+    f"{described.tr_duration_us * 1e-3:.0f} ms, "
+    f"{len(described.rf_definitions)} pulse shape, "
+    f"{len(described.shim_definitions)} shims"
+)
+for event in described.events[:4]:
+    print(
+        f"    {event.type.name:<4s} at {event.timestamp_us / 1000:7.2f} ms   "
+        + (
+            f"{event.rf_use.name.lower()}, "
+            f"{np.degrees(float(event.rf_amplitude_hz)):.0f} deg"
+            if event.type is EventType.RF
+            else f"{event.adc_role.name.lower()}"
+            if event.type is EventType.ADC
+            else f"{event.action.name.lower()}"
         )
     )
-    stream.append(("readout", echo_s, {"phase_rad": 0.0}))
+# sphinx_gallery_end_ignore
 
-events, _played_s = torchsim.compose(
-    *((at, torchsim.operator(name)(**params)) for name, at, params in stream)
+# %%
+#
+# On the wire those numbers are positional -- the scanner sends a flat row per
+# event -- and in Python they are named. ``event.rf_use`` is the Pulseq tag the
+# designer wrote, ``event.rf_amplitude_hz`` the flip in radians, and
+# ``event.adc_role`` says whether a window is the centre of an echo. Nothing
+# has to be inferred from timing.
+#
+
+# sphinx_gallery_start_ignore
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
+axis.axis("off")
+axis.set(xlim=(0, 1), ylim=(0, 1))
+
+
+def _box(x, y, text, colour, size=13.0):
+    axis.text(
+        x,
+        y,
+        text,
+        ha="center",
+        va="center",
+        fontsize=size,
+        color="white",
+        bbox=dict(boxstyle="round,pad=0.5", facecolor=colour, edgecolor="none"),
+    )
+
+
+def _arrow(start_at, end_at, label=None, side="right"):
+    axis.annotate(
+        "",
+        xy=end_at,
+        xytext=start_at,
+        arrowprops=dict(arrowstyle="-|>", color="0.45", lw=1.8, shrinkA=2, shrinkB=2),
+    )
+    if label:
+        middle = ((start_at[0] + end_at[0]) / 2, (start_at[1] + end_at[1]) / 2)
+        axis.text(
+            middle[0] + (0.015 if side == "right" else -0.015),
+            middle[1],
+            label,
+            ha="left" if side == "right" else "right",
+            va="center",
+            fontsize=11.5,
+            color="0.35",
+            style="italic",
+        )
+
+
+_box(0.22, 0.92, "a Pulseq design\n.seq, or a script", "tab:blue")
+_box(
+    0.78,
+    0.92,
+    "the scanner's SEQDESC stream\nwaveforms 999 / 1000 / 1002 / 1005",
+    "tab:orange",
+    11.5,
 )
-described = torchsim.SequenceDescription(
-    subsequence_index=0,
-    tr_duration_us=3000e3,
-    events=events,
-    rf_definitions={0: torchsim.ideal_rf_definition(0)},
+_box(0.50, 0.46, "SequenceDescription", "0.25", 15.0)
+axis.text(
+    0.50,
+    0.32,
+    "events  ·  rf_definitions  ·  shim_definitions",
+    ha="center",
+    fontsize=11.5,
+    color="0.35",
+)
+_box(0.50, 0.12, "Simulator.from_description", "tab:green", 14.0)
+_arrow((0.22, 0.80), (0.44, 0.56), "sequence_descriptor()", side="left")
+_arrow((0.78, 0.80), (0.56, 0.56), "decode_sequence_description()", side="right")
+_arrow((0.50, 0.27), (0.50, 0.19))
+
+figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.2))
+FIRST = 6
+shown = [e for e in described.events if e.timestamp_us <= FIRST * ESP_MS * 1000.0]
+for event in shown:
+    when = float(event.timestamp_us) / 1000.0
+    if event.type is EventType.RF:
+        axis.vlines(
+            when, 0.0, np.degrees(float(event.rf_amplitude_hz)), color="crimson", lw=2.5
+        )
+    elif event.type is EventType.ADC:
+        axis.plot(when, 0.0, "v", color="tab:blue", ms=9)
+axis.plot([], [], color="crimson", lw=2.5, label="RF, height is the flip")
+axis.plot([], [], "v", color="tab:blue", ms=9, label="ADC")
+axis.set(
+    xlabel="time [ms]",
+    ylabel="flip angle [deg]",
+    title=f"the first {FIRST} echoes of the description above",
+    ylim=(-8, 105),
+)
+axis.grid(alpha=0.3)
+key(axis, ncols=2)
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# In practice a description is never typed out -- the scanner computes it from
+# the sequence file, and a Pulseq design exports it. But it is worth writing
+# one by hand once, because that is what shows there is nothing else in it:
+# :func:`~torchsim.description` lays operators out and fills in the rest.
+#
+by_hand = torchsim.description(
+    torchsim.Excitation(math.pi / 2, math.pi / 2),
+    *[
+        part
+        for _ in range(ECHOES)
+        for part in (
+            torchsim.Delay(0.5 * ESP_MS * 1e-3),
+            torchsim.Refocusing(math.radians(60.0), 0.0),
+            torchsim.Delay(0.5 * ESP_MS * 1e-3),
+            torchsim.Readout(0.0),
+        )
+    ],
+)
+
+print(
+    f"  written by hand: {len(by_hand.events)} events over "
+    f"{by_hand.tr_duration_us * 1e-3:.0f} ms"
 )
 
 # %%
 #
-# :meth:`~torchsim.model.Simulator.from_description` runs it. The events are
+# :meth:`~torchsim.model.Simulator.from_description` runs one. The events are
 # already concrete -- each carries the action word that says whether it winds,
-# spoils or records -- so no layout is walked and nothing is inferred.
+# spoils or records -- so no layout is walked and nothing is inferred. What the
+# model supplies is only the vocabulary the tissue is written in.
 #
 from_stream = Simulator.from_description(
     described, acquisition.model, states=10, T1=T1_MS, T2=T2_MS
@@ -625,9 +666,7 @@ streamed_signal = from_stream.simulate()
 _, streamed_dT2 = from_stream.jacobian("T2")
 
 # sphinx_gallery_start_ignore
-print(
-    f"  {len(events)} events, signal {tuple(streamed_signal.shape)}, dT2 {tuple(streamed_dT2.shape)}"
-)
+print(f"  signal {tuple(streamed_signal.shape)}, dT2 {tuple(streamed_dT2.shape)}")
 # sphinx_gallery_end_ignore
 
 # %%
@@ -636,21 +675,21 @@ print(
 # description carries the events, and a simulator may carry physics *around*
 # them. :class:`~torchsim.simulators.FSESimulator` folds in the recovery
 # between one train and the next in closed form, which is not an event and so
-# is not in the stream. The train itself agrees; the driven equilibrium the
-# shipped object adds does not come along.
+# is not in the stream. The shape of the train is the same; the driven
+# equilibrium the shipped object adds does not come along.
 #
 
 # sphinx_gallery_start_ignore
 figure, axis = plt.subplots(1, 1, figsize=(PAGE_WIDTH, 3.2))
 axis.plot(signal_ref[0].abs().numpy(), "-k", lw=2, label="FSESimulator")
 axis.plot(
-    streamed_signal[0].abs().numpy(), "--r", lw=2, label="from a described stream"
+    streamed_signal[0].abs().numpy(), "--r", lw=2, label="from the description alone"
 )
 axis.set(
     xlabel="Echo", ylabel="|signal|", title="white matter, the same train both ways"
 )
 axis.grid(alpha=0.3)
-key(axis)
+key(axis, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%

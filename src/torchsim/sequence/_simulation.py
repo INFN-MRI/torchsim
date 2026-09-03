@@ -36,7 +36,7 @@ from ._parameters import (
     wants_bound_pool,
     wants_exchange_pool,
 )
-from ._transition import ExactSliceProfile
+from ._transition import ExactSliceProfile, across_the_slice
 from ._transmit import shim_rows, transmit_field
 
 RecordMode = Literal["all", "acquired", "echo"]
@@ -328,7 +328,7 @@ class EpgEngine:
         repetitions: int | str = 1,
         record: RecordMode = "all",
         nstates: int | None = None,
-        slice_profile: ExactSliceProfile | None = None,
+        across_slice: ExactSliceProfile | None = None,
         rf_raster_time_s: float = 1e-6,
         device: torch.device | str | None = None,
         events: Any = None,
@@ -358,7 +358,7 @@ class EpgEngine:
                 tissue,
                 record=record,
                 nstates=nstates,
-                slice_profile=slice_profile,
+                across_slice=across_slice,
                 rf_raster_time_s=rf_raster_time_s,
                 device=device,
             )
@@ -416,16 +416,7 @@ class EpgEngine:
         if nstates < 1:
             raise ValueError("nstates must be positive")
 
-        if slice_profile is not None and not isinstance(
-            slice_profile, ExactSliceProfile
-        ):
-            raise TypeError(
-                "slice_profile says where across the slice to integrate the "
-                "sequence's own pulse -- ask for it with exact_slice_profile(). "
-                "A tensor of flip-angle scalings treats a Bloch response as "
-                "proportional to the pulse driving it, which it is not; give "
-                "the RF definition its waveform instead"
-            )
+        across_slice = across_the_slice(across_slice)
         accelerated = simulate_native(
             description,
             prepared,
@@ -433,7 +424,7 @@ class EpgEngine:
             repetitions=repetitions,
             record=record,
             nstates=nstates,
-            slice_profile=slice_profile,
+            slice_profile=across_slice,
             rf_raster_time_s=rf_raster_time_s,
             lineshape=_absorption_table(description, b0, where) if bound_pool else None,
             exchanging=exchange_pool,
@@ -458,7 +449,7 @@ def simulate_subspace(
     repetitions: int = 1,
     record: RecordMode = "all",
     nstates: int | None = None,
-    slice_profile: ExactSliceProfile | None = None,
+    across_slice: ExactSliceProfile | None = None,
     rf_raster_time_s: float = 1e-6,
     device: torch.device | str | None = None,
 ) -> Subspace:
@@ -469,7 +460,7 @@ def simulate_subspace(
         repetitions=repetitions,
         record=record,
         nstates=nstates,
-        slice_profile=slice_profile,
+        across_slice=across_slice,
         rf_raster_time_s=rf_raster_time_s,
         device=device,
     )

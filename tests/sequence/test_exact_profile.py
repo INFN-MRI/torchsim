@@ -78,7 +78,7 @@ def _signal(description, profile=None, tissue=None):
         .simulate(
             description,
             _tissue() if tissue is None else tissue,
-            slice_profile=profile,
+            across_slice=profile,
             nstates=STATES,
         )
         .signal
@@ -196,7 +196,7 @@ def test_the_card_reads_each_shape_the_host_reads() -> None:
         .simulate(
             mixed,
             tissue,
-            slice_profile=profile,
+            across_slice=profile,
             nstates=STATES,
             device="cuda",
         )
@@ -261,6 +261,9 @@ def test_a_flip_angle_scaling_is_refused() -> None:
     """
     with pytest.raises(TypeError, match="exact_slice_profile"):
         _signal(_describe(), torch.linspace(0.4, 1.0, 5))
+
+    # A count is how the common case is asked for, and it is not refused.
+    assert _signal(_describe(), 5).shape == _signal(_describe()).shape
 
 
 def test_the_table_lays_its_copies_out_voxel_major() -> None:

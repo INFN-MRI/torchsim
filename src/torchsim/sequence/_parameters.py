@@ -191,6 +191,31 @@ SAMPLE_NAMES: tuple[str, ...] = tuple(parameter.name for parameter in SAMPLE_PAR
 PROPERTY_PARAMETERS: tuple[Parameter, ...] = (*TISSUE_PARAMETERS, *SAMPLE_PARAMETERS)
 PROPERTY_NAMES: tuple[str, ...] = (*TISSUE_NAMES, *SAMPLE_NAMES)
 
+# What a caller writes for each tissue field. This is the vocabulary a
+# protocol is stated in: naming one of these in a call is what asks for its
+# physics, so a model need not declare a property to be given one. A model's
+# own ``properties`` mapping still wins where it renames a field.
+PUBLIC_PROPERTIES: dict[str, str] = {
+    "T1": "t1_ms",
+    "T2": "t2_ms",
+    "M0": "m0",
+    "B1": "b1",
+    "B1phase": "b1_phase_rad",
+    "B0": "b0_hz",
+    "inv_efficiency": "inversion_efficiency",
+    "T2prime": "t2_prime_ms",
+    "D": "diffusion_um2_per_ms",
+    "v": "velocity_m_per_s",
+    "bound_fraction": "bound_fraction",
+    "bound_exchange": "bound_exchange_hz",
+    "bound_T1": "t1_bound_ms",
+    "poolB_fraction": "pool_b_fraction",
+    "poolB_exchange": "pool_b_exchange_hz",
+    "poolB_T1": "t1_pool_b_ms",
+    "poolB_T2": "t2_pool_b_ms",
+    "poolB_shift": "pool_b_shift_hz",
+}
+
 # Which tissue buffers hold a row per shim.
 TRANSMIT_INPUTS: tuple[int, ...] = tuple(
     index for index, parameter in enumerate(TISSUE_PARAMETERS) if parameter.transmit

@@ -47,7 +47,7 @@ __all__ = [
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from copy import copy as shallow_copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
@@ -74,8 +74,9 @@ from ..sequence import (
     ideal_rf_definition,
 )
 from ..sequence._array import brought, is_array, read
-from ..sequence._parameters import PROPERTY_NAMES
+from ..sequence._parameters import PROPERTY_NAMES, PUBLIC_PROPERTIES
 from ..sequence._simulation import RecordMode, target_device
+from ..sequence._transition import across_the_slice
 from ._binding import Packing, bind, run_key
 from ._signal import SignalModel, _moved
 
@@ -89,13 +90,27 @@ RUN_SETTINGS = (
     "record",
     "device",
     "execution",
-    "slice_profile",
+    "pulse",
+    "across_slice",
 )
 
 # The raster :class:`~torchsim.sequence.EpgEngine` reads a pulse's shape on,
 # named here because a packing resolved against one is not valid against
 # another.
 _RF_RASTER_TIME_S = 1e-6
+
+
+def replace_pulse(simulator: Simulator, pulse: RfDefinition) -> Simulator:
+    """A copy of ``simulator`` whose events drive ``pulse``.
+
+    The shipped operators name definition zero, so substituting there is what
+    makes a shaped pulse the one they play.
+    """
+    held = shallow_copy(simulator)
+    held.model = replace(simulator.model, definitions={0: replace(pulse, id=0)})
+    held._packing = None
+    held._described = None
+    return held
 
 
 @dataclass(frozen=True)
@@ -199,8 +214,15 @@ class SpinPhysics:
 
     @property
     def fields(self) -> dict[str, str | None]:
-        """The public-name to tissue-field map, checked against the tissue."""
-        pairs = dict(self.properties)
+        """The public-name to tissue-field map, checked against the tissue.
+
+        Every field a voxel has can be named, whether or not this model asked
+        for it: the vocabulary is the same for all of them, and giving a value
+        is what turns a term on. What ``properties`` adds is a model's own
+        spelling -- a name of its own for a field, or a name it answers to and
+        the tissue does not.
+        """
+        pairs = {**PUBLIC_PROPERTIES, **self.properties}
         unknown = {field for field in pairs.values() if field is not None}
         unknown |= set(self.fixed)
         unknown -= set(PROPERTY_NAMES)
@@ -254,7 +276,8 @@ class Simulator(SignalModel):
         repetitions: int | str | None = None,
         record: RecordMode = "all",
         execution: str | torch.device | Sequence[Any] | None = None,
-        slice_profile: Any = None,
+        pulse: RfDefinition | None = None,
+        across_slice: Any = None,
         resolve: bool = True,
         crusher_dephasing_rad: float = 0.0,
         voxel_size_m: float | None = None,
@@ -299,6 +322,8 @@ class Simulator(SignalModel):
             property to fix, under the names :attr:`properties` declares.
         """
         self.model = model if model is not None else type(self).model
+        if pulse is not None:
+            self.model = replace(self.model, definitions={0: replace(pulse, id=0)})
         # Bound here rather than looked up per event: after this, what the
         # protocol produces is an ordinary description and no trigger is
         # consulted again.
@@ -310,7 +335,7 @@ class Simulator(SignalModel):
         )
         self.record = record
         self.execution = execution
-        self.slice_profile = slice_profile
+        self.across_slice = across_the_slice(across_slice)
         self.crusher_dephasing_rad = crusher_dephasing_rad
         self.voxel_size_m = voxel_size_m
         self._resolving = bool(resolve)
@@ -321,7 +346,7 @@ class Simulator(SignalModel):
         self._brought = brought(protocol.values())
         # Split the way a call is split, so the constructor takes exactly what
         # simulate() takes and fixes it.
-        declared = set(self.exposes)
+        declared = set(self.accepts)
         self.bound = self._fix(
             {name: value for name, value in protocol.items() if name in declared}
         )
@@ -334,26 +359,42 @@ class Simulator(SignalModel):
         )
         self._described: SequenceDescription | None = None
 
-    def resolved(self) -> Simulator:
-        """Return a copy that resolves its structure once and rebinds values.
+    def bind(self, **values: Any) -> Simulator:
+        """This simulator with more fixed on it, values or settings alike.
 
-        A protocol called many times with the same arguments and different
-        numbers -- a design loop, a dictionary sweep -- otherwise rebuilds the
-        same event stream every call, which on a small problem costs an order
-        of magnitude more than the kernels. This says the structure is fixed,
-        so it is walked once and each call rebinds only the values; see
-        :mod:`torchsim.model._binding` for what that can and cannot follow.
-
-        The answer agrees with the ordinary path to float32 round-off rather
-        than to the bit, because the same product is formed in a different
-        order. Anything the map cannot follow simply is not bound, and the
-        copy behaves as this one does.
+        A property or a protocol argument is held for the next call; a setting
+        -- the pulse the events drive, where across the slice to work it out,
+        how many orders to carry -- is applied to the copy instead, because it
+        changes what is simulated rather than what is simulated with.
         """
-        copy = shallow_copy(self)
-        copy._resolving = True
-        copy._packing = None
-        copy._refused = []
-        return copy
+        settings = {name: values.pop(name) for name in RUN_SETTINGS if name in values}
+        held = super().bind(**values)
+        pulse = settings.pop("pulse", None)
+        if pulse is not None:
+            held = replace_pulse(held, pulse)
+        if "across_slice" in settings:
+            held.across_slice = across_the_slice(settings.pop("across_slice"))
+        for name, value in settings.items():
+            setattr(held, "states" if name == "nstates" else name, value)
+        return held
+
+    @property
+    def variables(self) -> tuple[str, ...]:
+        """The protocol arguments this simulator's layout takes.
+
+        What a sequence is written in, as against the tissue it is played on:
+        :attr:`exposes` and :attr:`accepts` name the properties, this names the
+        flip angles, spacings and times. Everything here can be fixed on the
+        constructor, given at the call, or carried as a tensor a cost is
+        differentiated back through.
+        """
+        from inspect import Parameter, signature
+
+        return tuple(
+            name
+            for name, parameter in signature(self.layout).parameters.items()
+            if parameter.kind not in (Parameter.VAR_KEYWORD, Parameter.VAR_POSITIONAL)
+        )
 
     def to(self, device: torch.device | str) -> Simulator:
         """This simulator, with everything it holds on ``device``.
@@ -389,12 +430,12 @@ class Simulator(SignalModel):
         repetitions: int | str,
         record: str,
         device: Any,
-        slice_profile: Any = None,
+        across_slice: Any = None,
     ) -> tuple[SequenceDescription, Any]:
         """The description to run, and its events already packed if they are."""
         if not self._resolving or self._described is not None:
             return self.describe(**played), None
-        if slice_profile is not None:
+        if across_slice is not None:
             # A packing holds the event stream and not the table a pulse is
             # integrated over, so a profiled run walks the description instead
             # of rebinding onto a packing that has no table in it.
@@ -522,7 +563,7 @@ class Simulator(SignalModel):
             "device": given.pop("device", None),
         }
         target = given.pop("execution", self.execution)
-        profile = given.pop("slice_profile", self.slice_profile)
+        profile = across_the_slice(given.pop("across_slice", None)) or self.across_slice
         played = self.played(**given)
         tissue = self.model.tissue(properties)
         described, events = self._structure(
@@ -531,7 +572,7 @@ class Simulator(SignalModel):
             repetitions=settings["repetitions"],
             record=settings["record"],
             device=settings["device"],
-            slice_profile=profile,
+            across_slice=profile,
         )
         block = nullcontext() if target is None else execution(target)
         with block:
@@ -542,7 +583,7 @@ class Simulator(SignalModel):
                     tissue,
                     nstates=states,
                     events=events,
-                    slice_profile=profile,
+                    across_slice=profile,
                     **settings,
                 )
                 .signal

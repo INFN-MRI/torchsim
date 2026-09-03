@@ -1392,7 +1392,7 @@ def test_a_dynamic_pulse_is_integrated_across_the_slice():
             split,
             tissue,
             nstates=8,
-            slice_profile=exact_slice_profile(9, extent=2.0),
+            across_slice=exact_slice_profile(9, extent=2.0),
         )
         .signal
     )

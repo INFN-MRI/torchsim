@@ -9,6 +9,8 @@ that silently was not built.
 
 from __future__ import annotations
 
+from copy import copy
+
 import pytest
 import torch
 
@@ -135,7 +137,7 @@ def test_a_resolved_simulator_answers_what_the_plain_one_does(
 ) -> None:
     """Forward and backward, at values neither one was built at."""
     moved = {name: value * 0.9 for name, value in design.items()}
-    resolved = simulator.resolved()
+    resolved = copy(simulator)
     resolved.simulate(**design, **tissue)
 
     plain_design = {
@@ -163,7 +165,7 @@ def test_a_resolved_simulator_stops_packing(packings) -> None:
     and one that was never built is exactly what a regression here looks
     like.
     """
-    resolved = FSESimulator(ESP=5.0, TR=3000.0, states=10).resolved()
+    resolved = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     flip = torch.full((16,), 120.0)
     resolved.simulate(flip=flip, **TISSUE)
     packings.clear()
@@ -191,7 +193,7 @@ def test_a_protocol_value_that_is_not_an_array_rebuilds(packings) -> None:
     Keyed by shape alone it would be reused, and the answer would be the old
     echo spacing's.
     """
-    resolved = FSESimulator(ESP=5.0, TR=3000.0, states=10).resolved()
+    resolved = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     flip = torch.full((16,), 120.0)
     resolved.simulate(flip=flip, **TISSUE)
     packings.clear()
@@ -207,7 +209,7 @@ def test_a_protocol_value_that_is_not_an_array_rebuilds(packings) -> None:
 
 def test_a_train_of_a_different_length_rebuilds() -> None:
     """A shape is part of the key, so a new one is a new structure."""
-    resolved = FSESimulator(ESP=5.0, TR=3000.0, states=10).resolved()
+    resolved = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     plain = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     resolved.simulate(flip=torch.full((16,), 120.0), **TISSUE)
 
@@ -246,7 +248,7 @@ def test_a_layout_the_map_cannot_follow_is_refused(protocol, packings) -> None:
     Both refusals are checked by the route as well as the answer: a map that
     was quietly built and quietly wrong would agree at the point it was read.
     """
-    resolved = protocol(ESP=5.0, TR=3000.0, states=10).resolved()
+    resolved = protocol(ESP=5.0, TR=3000.0, states=10)
     plain = protocol(ESP=5.0, TR=3000.0, states=10)
     flip = torch.linspace(90.0, 150.0, 16)
     resolved.simulate(flip=flip, **TISSUE)
@@ -263,7 +265,7 @@ def test_a_layout_the_map_cannot_follow_is_refused(protocol, packings) -> None:
 
 def test_a_refusal_is_not_retried_every_call(packings) -> None:
     """Discovery costs three packings, so a layout it cannot follow pays once."""
-    resolved = _Squared(ESP=5.0, TR=3000.0, states=10).resolved()
+    resolved = _Squared(ESP=5.0, TR=3000.0, states=10)
     flip = torch.full((16,), 120.0)
     resolved.simulate(flip=flip, **TISSUE)
     packings.clear()
@@ -287,7 +289,7 @@ def test_a_simulator_holding_a_description_is_left_alone(packings) -> None:
     description = builder.describe(**builder.played(flip=torch.full((8,), 120.0)))
     settings = {"model": builder.model, "states": 10}
     plain = Bare.from_description(description, **settings)
-    handed = Bare.from_description(description, **settings).resolved()
+    handed = Bare.from_description(description, **settings)
 
     answer = handed.simulate(**TISSUE)
 
@@ -307,7 +309,7 @@ def test_a_design_on_the_host_runs_against_a_card() -> None:
     simulator = FSESimulator(ESP=5.0, TR=3000.0, states=10, device="cuda")
     flip = torch.full((4, 24), 120.0, requires_grad=True)
 
-    resolved = simulator.resolved()
+    resolved = copy(simulator)
     signal = resolved.simulate(flip=flip, **tissue)
     signal.abs().sum().backward()
 
@@ -329,15 +331,14 @@ def test_a_train_masked_to_zero_is_refused(packings) -> None:
     """
     grid = torch.arange(1, 25, dtype=torch.float32)
     ends = torch.tensor([[8.0], [16.0], [24.0]])
-    simulator = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     acquired = (grid <= ends).to(torch.float32)
 
-    zeroed = simulator.resolved()
+    zeroed = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     zeroed.simulate(flip=torch.full((3, 24), 120.0) * acquired, **TISSUE)
     assert zeroed._packing is None
     assert len(zeroed._refused) == 1
 
-    floored = simulator.resolved()
+    floored = FSESimulator(ESP=5.0, TR=3000.0, states=10)
     answer = floored.simulate(
         flip=torch.full((3, 24), 120.0) * acquired.clamp_min(1e-6), **TISSUE
     )
@@ -402,7 +403,7 @@ def test_a_schedule_that_moves_its_timing_answers_what_the_plain_one_does() -> N
         "TR": torch.linspace(9.0, 14.0, 24),
     }
     simulator = MRFSimulator(TI=20.0, states=10)
-    resolved = simulator.resolved()
+    resolved = copy(simulator)
     resolved.simulate(**design, **TISSUE)
 
     moved = {name: value * 0.9 + 0.5 for name, value in design.items()}
