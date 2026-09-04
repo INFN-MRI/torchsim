@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "EventType",
     "SequenceDescription",
     "ShimDefinition",
     "execution",
@@ -37,7 +36,7 @@ from ._calibration import calibrate  # noqa: F401
 from ._description import (
     AdcRole,  # noqa: F401
     EventAction,  # noqa: F401
-    EventType,
+    EventType,  # noqa: F401
     RfDefinition,  # noqa: F401
     RfMode,  # noqa: F401
     RfShape,  # noqa: F401

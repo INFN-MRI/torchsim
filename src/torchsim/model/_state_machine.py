@@ -116,7 +116,11 @@ def realised(
     order after it, a spoiled one discards the transverse states.
 
     So each event is played back through the operator its kind and its RF use
-    name, at the timestamp it arrived with. A pulse whose use is one the
+    name, at the timestamp it arrived with. A gradient hangs off a pulse or a
+    sample, which is what the wire carries; one standing on its own -- the
+    spoiler of a preparation written by hand -- has no handler to reinstate it
+    and does not survive, because an arriving stream could not have held it
+    either. A pulse whose use is one the
     handlers have no reading for -- a preparation, or an untagged one -- is
     emitted as it stands, with no gradient behaviour added, since guessing one
     is how a stream comes back as the wrong sequence.

@@ -31,7 +31,6 @@ What an event may be, and what it does when it is reached.
    :toctree: ../generated
    :nosignatures:
 
-   EventType
    ShimDefinition
 ```
 

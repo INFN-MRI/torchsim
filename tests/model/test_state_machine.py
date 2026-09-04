@@ -226,3 +226,43 @@ def test_the_definitions_come_from_the_model() -> None:
     described = _with(UNBALANCED).describe(flip=FLIP, TR=10.0)
     assert set(described.rf_definitions) == {0}
     assert described.rf_definitions[0] == ideal_rf_definition()
+
+
+def test_a_gradient_standing_on_its_own_does_not_survive_the_round_trip() -> None:
+    """The limit of reading a stream through handlers.
+
+    A handler reinstates what a pulse or a sample implies -- crushers around a
+    refocusing pulse, a winding after an unbalanced sample -- which is exactly
+    what the transport drops. A preparation's own spoiler is neither a pulse
+    nor a sample, so nothing reinstates it, and a stream arriving from a
+    scanner could not have carried it either.
+    """
+    from torchsim import Delay, Excitation, Spoil
+    from torchsim.model._state_machine import realised
+    from torchsim.sequence import EventAction
+
+    class Prepared(Simulator):
+        model = _with(SPOILED).model
+        states = 1
+
+        def layout(self, *, TS, flip):
+            parts = []
+            for wait in torch.atleast_1d(torch.as_tensor(TS)) * 1e-3:
+                parts += [
+                    Excitation(0.5 * torch.pi) @ Spoil(),
+                    Delay(wait),
+                    self.operators.excitation(torch.deg2rad(torch.as_tensor(flip))),
+                    self.operators.readout(0.0),
+                ]
+            return parts
+
+    protocol = Prepared(TS=torch.tensor([100.0, 400.0]), flip=10.0, **TISSUE)
+    described = protocol.describe(TS=torch.tensor([100.0, 400.0]), flip=10.0)
+
+    def spoilers(stream):
+        return [e for e in stream.events if e.action is EventAction.SPOIL_AFTER]
+
+    # Two per block: the preparation's own, and the one the spoiled readout
+    # brings with it. Only the readout's is reinstated.
+    assert len(spoilers(described)) == 4
+    assert len(spoilers(realised(described, protocol.model))) == 2

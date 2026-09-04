@@ -690,6 +690,60 @@ class SequenceDescription:
             voxel_size_m=voxel_size_m,
         )
 
+    def plot(self, axis: Any = None, *, upto_s: float | None = None) -> Any:
+        """Draw the stream: pulses as stems, samples as markers.
+
+        What a layout actually laid down, which is easier to check here than
+        in the signal it produces. A pulse's stem is as tall as the angle it
+        turns.
+
+        Parameters
+        ----------
+        axis : matplotlib.axes.Axes, optional
+            Where to draw. A new figure when not given.
+        upto_s : float, optional
+            Stop after this much of the stream, for a repetition long enough
+            that all of it is a smear.
+
+        Returns
+        -------
+            The axis drawn on.
+
+        Raises
+        ------
+            ImportError: if matplotlib is not installed, which is not a
+                dependency of this package.
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as reason:  # pragma: no cover - depends on the env
+            raise ImportError(
+                "plotting a description needs matplotlib, which torchsim does "
+                "not depend on; pip install matplotlib"
+            ) from reason
+
+        axis = plt.subplots()[1] if axis is None else axis
+        limit = float("inf") if upto_s is None else upto_s * 1e6
+        for event in self.events:
+            when = float(event.timestamp_us)
+            if when > limit:
+                break
+            if event.type is EventType.RF:
+                axis.vlines(
+                    when / 1000.0,
+                    0.0,
+                    float(event.rf_amplitude_hz) * 180.0 / np.pi,
+                    color="crimson",
+                    lw=2.5,
+                )
+            elif event.type is EventType.ADC:
+                axis.plot(when / 1000.0, 0.0, "v", color="tab:blue", ms=9)
+        axis.plot([], [], color="crimson", lw=2.5, label="RF, height is the flip")
+        axis.plot([], [], "v", color="tab:blue", ms=9, label="ADC")
+        axis.set(xlabel="time [ms]", ylabel="flip angle [deg]")
+        axis.grid(alpha=0.3)
+        return axis
+
     @property
     def adc_events(self) -> tuple[SequenceEvent, ...]:
         """Return ADC events in state-machine order."""

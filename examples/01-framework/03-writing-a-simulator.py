@@ -119,7 +119,6 @@ from torchsim.model import (
     Simulator,
     SpinPhysics,
 )
-from torchsim.sequence import EventType
 
 # %%
 # Physics
@@ -412,46 +411,31 @@ print(
 )
 
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.2))
-for event in description.events:
-    when = float(event.timestamp_us) * 1e-3
-    if event.type is EventType.RF:
-        axis.vlines(
-            when,
-            0.0,
-            float(event.rf_amplitude_hz) * 180.0 / torch.pi,
-            color="crimson",
-            lw=2,
-        )
-    elif event.type is EventType.ADC:
-        axis.plot(when, 0.0, "v", color="tab:blue", ms=7)
-axis.plot([], [], color="crimson", lw=2, label="RF, height is the flip angle")
-axis.plot([], [], "v", color="tab:blue", ms=7, label="ADC")
-axis.set(
-    xlabel="time [ms]",
-    ylabel="flip angle [deg]",
-    title="one saturate-wait-read block per saturation time",
-    ylim=(-8, 100),
-)
-axis.grid(alpha=0.3)
+description.plot(axis)
+axis.set(title="one saturate-wait-read block per saturation time", ylim=(-8, 100))
 key(axis, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
 # Building from a description
 # ---------------------------
-# The stream runs both ways. A description that came from somewhere else -- an
-# MRD file, a Pulseq export, a scanner's own sequence description -- is a
-# simulator through :meth:`~torchsim.model.Simulator.from_description`, which
-# takes the events as they arrive and the physics you want them read with.
+# A description that came from somewhere else -- an MRD file, a Pulseq export,
+# a scanner's own stream -- becomes a simulator through
+# :meth:`~torchsim.model.Simulator.from_description`. No layout is walked: the
+# events are re-emitted through this model's handlers, which is what puts the
+# gradients back that the transport does not carry.
 #
-# Nothing about the layout is consulted: the events already say what they play,
-# so what a model supplies is the vocabulary the tissue is written in.
+# It does not reproduce this sequence exactly, and the gap is the lesson. A
+# handler reinstates what a pulse or a sample implies; the spoiler inside the
+# saturation block is neither, so nothing reinstates it -- and a stream
+# arriving from a scanner could not have carried it either. A preparation that
+# has to survive the round trip belongs in a pulse the wire can name.
 #
 arrived = Simulator.from_description(description, SaturationRecovery.model, states=1)
 
 # sphinx_gallery_start_ignore
 print(
-    "  the same stream, run as if it had arrived, agrees to "
+    "  the same stream, read back through the handlers, differs by "
     f"{float((arrived.simulate(T1=830.0, T2=80.0, M0=1.0).abs() - recovered).abs().max()):.1e}"
 )
 # sphinx_gallery_end_ignore

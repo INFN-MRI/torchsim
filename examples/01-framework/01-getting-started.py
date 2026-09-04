@@ -92,11 +92,9 @@ def key(axes, ncols=1):
 import math
 import time
 
-import numpy as np
 import torch
 
 import torchsim
-from torchsim.sequence import EventType
 from torchsim.simulators import FSESimulator
 
 # %%
@@ -366,27 +364,13 @@ print(
     f"{len(described.rf_definitions)} pulse shape, "
     f"{len(described.shim_definitions)} shims"
 )
-for event in described.events[:4]:
-    print(
-        f"    {event.type.name:<4s} at {event.timestamp_us / 1000:7.2f} ms   "
-        + (
-            f"{event.rf_use.name.lower()}, "
-            f"{np.degrees(float(event.rf_amplitude_hz)):.0f} deg"
-            if event.type is EventType.RF
-            else f"{event.adc_role.name.lower()}"
-            if event.type is EventType.ADC
-            else f"{event.action.name.lower()}"
-        )
-    )
 # sphinx_gallery_end_ignore
 
 # %%
 #
-# On the wire those numbers are positional -- the scanner sends a flat row per
-# event -- and in Python they are named. ``event.rf_use`` is the Pulseq tag the
-# designer wrote, ``event.rf_amplitude_hz`` the flip in radians, and
-# ``event.adc_role`` says whether a window is the centre of an echo. Nothing
-# has to be inferred from timing.
+# You do not have to read it. ``describe`` here only shows what a stream looks
+# like; :meth:`~torchsim.SequenceDescription.plot` draws one, which is the way
+# to check that a layout laid down what you meant.
 #
 
 # sphinx_gallery_start_ignore
@@ -453,24 +437,8 @@ _arrow((0.50, 0.27), (0.50, 0.19))
 
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.2))
 FIRST = 6
-shown = [e for e in described.events if e.timestamp_us <= FIRST * ESP_MS * 1000.0]
-for event in shown:
-    when = float(event.timestamp_us) / 1000.0
-    if event.type is EventType.RF:
-        axis.vlines(
-            when, 0.0, np.degrees(float(event.rf_amplitude_hz)), color="crimson", lw=2.5
-        )
-    elif event.type is EventType.ADC:
-        axis.plot(when, 0.0, "v", color="tab:blue", ms=9)
-axis.plot([], [], color="crimson", lw=2.5, label="RF, height is the flip")
-axis.plot([], [], "v", color="tab:blue", ms=9, label="ADC")
-axis.set(
-    xlabel="time [ms]",
-    ylabel="flip angle [deg]",
-    title=f"the first {FIRST} echoes of the description above",
-    ylim=(-8, 105),
-)
-axis.grid(alpha=0.3)
+described.plot(axis, upto_s=FIRST * ESP_MS * 1e-3)
+axis.set(title=f"the first {FIRST} echoes of the description above", ylim=(-8, 105))
 key(axis, ncols=2)
 # sphinx_gallery_end_ignore
 
