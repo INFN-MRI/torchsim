@@ -414,6 +414,7 @@ report("iterative per echo", clock() - started, separate)
 # there is nothing to converge to that the density-weighted adjoint has not
 # found. Accuracy comes from a constraint across the echoes.
 #
+
 # %%
 #
 # Subspace reconstruction
@@ -463,11 +464,12 @@ report("iterative subspace", clock() - started, linear)
 #
 
 # sphinx_gallery_start_ignore
+# Panels are a quarter of the page wide, so the titles are the short names.
 shown = (
     ("truth", T2_true),
-    ("adjoint per echo", adjoint),
-    ("iterative per echo", separate),
-    ("iterative subspace", linear),
+    ("adjoint", adjoint),
+    ("iterative", separate),
+    ("subspace", linear),
 )
 
 cmap, limits, label = STYLE["T2"]

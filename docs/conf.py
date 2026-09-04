@@ -58,7 +58,16 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "build", "Thumbs.db", ".DS_Store"]
+# The gallery headers are Markdown pulled into a generated index.rst by an
+# include, so they are copied beside it -- and must not also be built as pages
+# of their own, or every label in them is defined twice.
+exclude_patterns = [
+    "_build",
+    "build",
+    "Thumbs.db",
+    ".DS_Store",
+    "**/_gallery_header.md",
+]
 
 # -- Options for MyST --------------------------------------------------------
 
@@ -126,6 +135,9 @@ sphinx_gallery_conf = {
     "nested_sections": True,
     "subsection_order": ExplicitOrder(GALLERY_SECTIONS),
     "within_subsection_order": "FileNameSortKey",
+    # The gallery header is written in Markdown and pulled into the
+    # generated index.rst by an include; the file has to travel with it.
+    "copyfile_regex": r".*\.md",
     "binder": {
         "org": "infn-mri",
         "repo": "torchsim",

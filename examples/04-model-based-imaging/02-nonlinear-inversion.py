@@ -512,7 +512,7 @@ print(
 # sphinx_gallery_start_ignore
 shown = (
     ("truth", T2_true),
-    ("adjoint per echo", adjoint),
+    ("adjoint", adjoint),
     ("model-based", modelled),
 )
 

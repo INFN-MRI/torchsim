@@ -495,6 +495,7 @@ print(
 # is what the scanner gives, artefacts and all, and the target is the curve
 # underneath.
 #
+
 # %%
 #
 # Phantom summary

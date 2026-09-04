@@ -117,22 +117,31 @@ exists on one side and not the other is a bug in whichever side is missing it.
 
 ## Documentation
 
-The pages under `docs/` are **MyST Markdown**, built by Sphinx. Two things stay
-reStructuredText because the tooling requires it, and converting them breaks
-the build:
+The pages under `docs/` are **MyST Markdown**, built by Sphinx. One thing stays
+reStructuredText because the tooling requires it:
 
-- `examples/**/README.rst` — sphinx-gallery concatenates a gallery header
-  **verbatim** into a generated `index.rst`. It will happily *find* a
-  `README.md`, because it looks for the header over Sphinx's own
-  `source_suffix` and `myst_parser` puts `.md` in there, and the build then
-  succeeds with no warning — but the markdown is pasted into an `.rst` file,
-  so `# Examples` becomes a comment, the page loses its title and inherits the
-  first subsection's, and a MyST label prints as literal text. Do not be
-  fooled by the build passing; open the page.
 - `docs/_templates/autosummary/*.rst` — `sphinx.ext.autosummary` writes its
   stubs with a hardcoded `.rst` suffix and finds its directives by regex over
   raw source lines, which is also why the API pages hold their `autosummary`
   and `currentmodule` directives inside `{eval-rst}` blocks.
+
+**A gallery header is Markdown behind a one-line shim.** sphinx-gallery pastes
+the header *verbatim* into a generated `index.rst`, so a `README.md` handed to
+it directly is parsed as reStructuredText: the build succeeds with no warning
+and the page silently loses its title, inherits the first subsection's, and
+prints MyST labels as literal text. The working arrangement is a `README.rst`
+holding nothing but
+
+```rst
+.. include:: _gallery_header.md
+   :parser: myst_parser.sphinx_
+```
+
+with the prose in `_gallery_header.md` beside it. Two settings make that work
+and both are load-bearing: `copyfile_regex` in `sphinx_gallery_conf` carries
+the `.md` into the output directory so the include resolves, and
+`exclude_patterns` keeps Sphinx from also building it as a page of its own,
+which would define every label in it twice.
 
 ### The gallery's prose
 

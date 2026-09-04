@@ -255,6 +255,7 @@ key(axis, ncols=3)
 # the shim it is driven on, so an excitation and a refocusing pulse can use
 # different ones.
 #
+
 # %%
 # Shaped RF pulse and slice profile
 # ---------------------------------
