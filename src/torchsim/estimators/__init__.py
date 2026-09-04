@@ -26,12 +26,11 @@ __all__ = [
     "DictionaryMatcher",
     "Estimator",
     "LookupTable",
-    "MatchResult",
     "NonlinearLeastSquares",
     "PERK",
 ]
 
-from ._dictionary import DictionaryMatcher, MatchResult
+from ._dictionary import DictionaryMatcher, MatchResult  # noqa: F401
 from ._lookup import LookupTable
 from ._mapping import Estimator
 from ._nlls import NonlinearLeastSquares

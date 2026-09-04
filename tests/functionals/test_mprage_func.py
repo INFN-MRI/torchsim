@@ -1,6 +1,8 @@
 """MPRAGE tests."""
 
-from torchsim import mprage_sim
+from torchsim import (
+    mprage_sim,
+)
 
 
 def test_scalar_forward():

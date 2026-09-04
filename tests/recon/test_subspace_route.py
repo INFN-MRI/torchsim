@@ -6,7 +6,9 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import Subspace
+from torchsim import (
+    Subspace,
+)
 from torchsim.estimators import DictionaryMatcher
 from torchsim.simulators import MultiEchoSimulator
 

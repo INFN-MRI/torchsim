@@ -289,7 +289,7 @@ Worth knowing before you plan around it:
   over slice position and effective flip angle [^3], read back by cubic
   Hermite interpolation -- the flip angle and the transmit scaling enter only through
   their product, and the RF phase factors out, which is what keeps that table
-  small. Ask for it with {func}`~torchsim.exact_slice_profile`.
+  small. Ask for it with `across_slice=`.
 - **Three pools with two different second pools** are carried, but a tissue
   cannot declare more than a voxel's worth of magnetization between them.
 

@@ -25,12 +25,14 @@ import pytest
 from torchsim import (
     Delay,
     Dephase,
-    EpgEngine,
     Excitation,
     Readout,
     Refocusing,
+    SequenceDescription,
+)
+from torchsim.sequence import (
+    EpgEngine,
     TissueProperties,
-    description,
 )
 
 epgpy = pytest.importorskip("epgpy", reason="the cross-check needs epgpy")
@@ -43,7 +45,7 @@ def _torchsim(parts, nstates=ORDERS):
     signal = (
         EpgEngine()
         .simulate(
-            description(*parts),
+            SequenceDescription.from_operators(*parts),
             TissueProperties(t1_ms=T1_MS, t2_ms=T2_MS),
             nstates=nstates,
         )

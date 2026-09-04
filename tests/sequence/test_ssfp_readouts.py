@@ -18,10 +18,12 @@ import numpy as np
 import pytest
 
 from torchsim import (
-    EpgEngine,
     SequenceDescription,
     SSFPEchoReadout,
     SSFPFidReadout,
+)
+from torchsim.sequence import (
+    EpgEngine,
     TissueProperties,
     ideal_rf_definition,
 )
@@ -126,7 +128,10 @@ def test_the_first_repetition_has_no_echo_to_read():
 
 
 def test_it_is_reachable_by_name():
-    from torchsim import operator, operator_names
+    from torchsim.sequence import (
+        operator,
+        operator_names,
+    )
 
     assert "ssfp-echo-readout" in operator_names()
     assert operator("ssfp-echo-readout") is SSFPEchoReadout

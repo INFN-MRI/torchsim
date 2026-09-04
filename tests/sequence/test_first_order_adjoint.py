@@ -12,8 +12,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import fse_description
-from torchsim.sequence import _accelerators
+from torchsim.sequence import (
+    _accelerators,
+    fse_description,
+)
 from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed_vjp,

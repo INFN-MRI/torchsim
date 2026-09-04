@@ -3,7 +3,9 @@
 import numpy as np
 from pytest import fixture
 
-from torchsim import mrf_sim
+from torchsim import (
+    mrf_sim,
+)
 
 
 @fixture

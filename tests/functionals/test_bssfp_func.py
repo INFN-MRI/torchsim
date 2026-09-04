@@ -3,7 +3,9 @@
 import numpy as np
 from pytest import fixture
 
-from torchsim import bssfp_sim
+from torchsim import (
+    bssfp_sim,
+)
 
 
 @fixture

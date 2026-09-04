@@ -17,6 +17,7 @@ __all__ = [
     "ideal_rf_definition",
 ]
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum, IntFlag
 from typing import Any
@@ -634,6 +635,60 @@ class SequenceDescription:
     shim_definitions: dict[int, ShimDefinition] = field(default_factory=dict)
     crusher_dephasing_rad: float = 0.0
     voxel_size_m: float | None = None
+
+    @classmethod
+    def from_operators(
+        cls,
+        *parts: Any,
+        rf_definitions: Mapping[int, RfDefinition] | None = None,
+        shim_definitions: Mapping[int, ShimDefinition] | None = None,
+        subsequence_index: int = 0,
+        crusher_dephasing_rad: float = 0.0,
+        voxel_size_m: float | None = None,
+        start_s: Any = 0.0,
+    ) -> SequenceDescription:
+        """Lay operators out end to end and return the stream they make.
+
+        The other way in besides a scanner: what a sequence written here plays,
+        in the same object one that arrived would be read into.
+
+        Parameters
+        ----------
+        parts : Operator, optional
+            The operators, in the order they play.
+        rf_definitions : mapping, optional
+            The pulses the events drive, by id. One ideal pulse under id zero
+            when not given, which is what an operator naming no shape asks for.
+        shim_definitions : mapping, optional
+            The transmit shims the pulses are driven on, by id.
+        subsequence_index : int, optional
+            Which subsequence of a scan this is.
+        crusher_dephasing_rad : float, optional
+            The turn one crusher puts across a voxel. Diffusion and flow are
+            read off it and are zero without it.
+        voxel_size_m : float, optional
+            The distance that turn is put across.
+        start_s : float or torch.Tensor, optional
+            When the first operator starts.
+
+        Returns
+        -------
+            The stream, lasting as long as the operators laid out end to end.
+        """
+        from ._operators import compose
+
+        events, duration_s = compose(*parts, start_s=start_s)
+        return cls(
+            subsequence_index=subsequence_index,
+            tr_duration_us=1e6 * duration_s,
+            events=events,
+            rf_definitions=dict(
+                {0: ideal_rf_definition()} if rf_definitions is None else rf_definitions
+            ),
+            shim_definitions=dict(shim_definitions or {}),
+            crusher_dephasing_rad=crusher_dephasing_rad,
+            voxel_size_m=voxel_size_m,
+        )
 
     @property
     def adc_events(self) -> tuple[SequenceEvent, ...]:

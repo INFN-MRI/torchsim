@@ -165,7 +165,9 @@ import numpy as np
 import torch
 
 import torchsim
-from torchsim import Subspace
+from torchsim import (
+    Subspace,
+)
 from torchsim.estimators import PERK, DictionaryMatcher
 from torchsim.simulators import MRFSimulator
 

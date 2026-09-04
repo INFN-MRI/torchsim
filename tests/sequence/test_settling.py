@@ -17,13 +17,15 @@ import pytest
 import torch
 
 from torchsim import (
-    EpgEngine,
     SequenceDescription,
+)
+from torchsim.sequence import (
+    EpgEngine,
     TissueProperties,
+    _builders,
     ideal_rf_definition,
     operator,
 )
-from torchsim.sequence import _builders
 from torchsim.sequence._operators import Excitation, compose
 from torchsim.sequence._settling import settled
 

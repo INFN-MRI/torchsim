@@ -22,6 +22,5 @@ precision-driven design minimizes.
 
    Bounded
    SequenceDesign
-   SequenceOptimization
    crlb
 ```

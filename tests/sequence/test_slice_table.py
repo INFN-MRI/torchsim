@@ -18,7 +18,10 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import TissueProperties, fse_description
+from torchsim.sequence import (
+    TissueProperties,
+    fse_description,
+)
 from torchsim.sequence._accelerators import (
     _pack_events,
     _run_packed,

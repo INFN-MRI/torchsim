@@ -10,7 +10,10 @@ from unittest import mock
 import pytest
 import torch
 
-from torchsim import EpgEngine, fse_description
+from torchsim.sequence import (
+    EpgEngine,
+    fse_description,
+)
 from torchsim.sequence import _accelerators as accelerators
 from torchsim.sequence._accelerators import (
     _one_axis,
@@ -637,7 +640,9 @@ def test_an_adjoint_that_stays_in_the_subspace_reaches_the_real_kernel():
 
 def _forward_over_reverse(atoms):
     """A directional derivative, differentiated: what backward fuses."""
-    from torchsim import EpgEngine
+    from torchsim.sequence import (
+        EpgEngine,
+    )
     from torchsim.sequence._simulation import TissueProperties
 
     generator = torch.Generator().manual_seed(0)
@@ -835,7 +840,9 @@ def test_the_device_adjoint_stops_short_of_the_forward_over_reverse_pass(
 
 def _spoiled_axis(phases_rad):
     """The verdict and the signal for an unbalanced train of the given phases."""
-    from torchsim import mrf_description
+    from torchsim.sequence import (
+        mrf_description,
+    )
 
     flip = torch.deg2rad(torch.linspace(5.0, 60.0, ECHOES))
     description = mrf_description(flip, 10e-3, phases_rad=phases_rad)

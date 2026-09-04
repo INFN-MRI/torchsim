@@ -100,9 +100,9 @@ def key(axes, ncols=1):
 import torch
 
 from torchsim.sequence import (
+    SequenceDescription,
     Delay,
     Dephase,
-    description,
     EpgEngine,
     EventAction,
     Excitation,
@@ -173,7 +173,7 @@ def prepared_train(prep_s, echo_spacing_s, echoes):
         modules.append(Refocusing(torch.pi, 0.5 * torch.pi))
         modules.append(Delay(0.5 * echo_spacing_s))
         modules.append(Readout(0.5 * torch.pi))
-    return description(*modules)
+    return SequenceDescription.from_operators(*modules)
 
 
 # %%
@@ -272,7 +272,7 @@ def unbalanced_train(readout):
     for _ in range(REPETITIONS):
         modules.append(Excitation(torch.deg2rad(torch.tensor(FLIP_DEG))))
         modules.append(readout(duration_s=TR_S))
-    return description(*modules)
+    return SequenceDescription.from_operators(*modules)
 
 
 def played(readout, t1_ms=1000.0):

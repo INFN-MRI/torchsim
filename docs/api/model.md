@@ -44,8 +44,6 @@ copy, and a call overrides either.
 
    SignalModel
    Simulator
-   SpinPhysics
-   EventOperators
 ```
 
 ## Operator sets

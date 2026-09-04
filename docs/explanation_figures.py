@@ -25,9 +25,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-import torchsim
 from torchsim.model import SPOILED, Simulator, SpinPhysics
-from torchsim.sequence import Delay, Excitation, SPGRReadout
+from torchsim.sequence import Delay, EventAction, Excitation, SPGRReadout
 from torchsim.simulators import FSESimulator, MRFSimulator, SPGRSimulator
 
 #: Drawn at the width of the documentation column, so nothing is scaled on the
@@ -715,7 +714,7 @@ def event_stream():
             label=label if label not in seen else None,
         )
         seen.add(label)
-        action = torchsim.EventAction(int(event.action))
+        action = EventAction(int(event.action))
         if action:
             axis.text(
                 time_ms,

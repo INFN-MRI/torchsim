@@ -5,13 +5,12 @@ from __future__ import annotations
 __all__ = [
     "Bounded",
     "SequenceDesign",
-    "SequenceOptimization",
     "crlb",
 ]
 
 from ._design import (
     Bounded,
     SequenceDesign,
-    SequenceOptimization,
+    SequenceOptimization,  # noqa: F401
     crlb,
 )

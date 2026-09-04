@@ -105,7 +105,14 @@ import numpy as np
 import torch
 
 import torchsim
-from torchsim import EpgEngine, ShimDefinition, TissueProperties, fse_description
+from torchsim import (
+    ShimDefinition,
+)
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    fse_description,
+)
 from torchsim.model import BALANCED, SPOILED
 from torchsim.simulators import FSESimulator, MRFSimulator
 

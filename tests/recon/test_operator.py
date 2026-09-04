@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Subspace, execution
+from torchsim import (
+    Subspace,
+    execution,
+)
 from torchsim.recon import ModelOperator
 from torchsim.simulators import FSESimulator, MultiEchoSimulator
 

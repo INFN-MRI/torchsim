@@ -108,6 +108,8 @@ from torchsim import (
     Delay,
     Excitation,
     Spoil,
+)
+from torchsim.sequence import (
     module,
     operator_names,
 )

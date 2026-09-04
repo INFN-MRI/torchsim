@@ -49,7 +49,7 @@ Both also answer with **M0**, and neither simulates a fingerprint to do it.
 A match normalizes both sides, so its score is a cosine: the measurement's own
 length times the score, divided by the atom's length -- one number stored per
 atom -- is the least-squares scale already, and
-{attr}`MatchResult.densities <MatchResult>` is that, equal to `scales.abs()`
+a match's `densities` is that, equal to `scales.abs()`
 without touching an atom. `PERK(..., normalize=True)` learns the same quantity
 instead: normalized features carry no amplitude, so what the regression is
 taught alongside the relaxation times is one over the length of the
@@ -115,7 +115,6 @@ removes.
    :nosignatures:
 
    DictionaryMatcher
-   MatchResult
    LookupTable
    NonlinearLeastSquares
    PERK

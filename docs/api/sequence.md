@@ -20,8 +20,6 @@ This page is the description and what it is assembled from. Running one is on
    :nosignatures:
 
    SequenceDescription
-   SequenceEvent
-   TissueProperties
 ```
 
 ### Event vocabulary
@@ -34,14 +32,7 @@ What an event may be, and what it does when it is reached.
    :nosignatures:
 
    EventType
-   EventAction
-   AdcRole
-   RfDefinition
-   RfMode
-   RfShape
-   RfUse
    ShimDefinition
-   decompress_shape
 ```
 
 ## Operators
@@ -56,8 +47,6 @@ events; it reaches the fused kernels with no change to them.
    :nosignatures:
 
    Operator
-   compose
-   module
    Excitation
    Refocusing
    Inversion
@@ -71,10 +60,6 @@ events; it reaches the fused kernels with no change to them.
    SSFPEchoReadout
    SPGRReadout
    FSEReadout
-   ideal_rf_definition
-   register_operator
-   operator
-   operator_names
 ```
 
 ## Builders
@@ -86,9 +71,4 @@ Whole sequences, assembled from the operators above.
    :toctree: ../generated
    :nosignatures:
 
-   fse_description
-   spgr_description
-   mprage_description
-   mpnrage_description
-   mrf_description
 ```

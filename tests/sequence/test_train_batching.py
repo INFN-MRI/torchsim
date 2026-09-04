@@ -8,7 +8,11 @@ reached for by size, so the threshold is pinned rather than relied on.
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    fse_description,
+)
 from torchsim.sequence._accelerators import _pack_events, _run_packed, _run_packed_vjp
 from torchsim.sequence._parameters import TISSUE_COUNT
 from torchsim.sequence._simulation import _prepare_tissue

@@ -18,11 +18,13 @@ import pytest
 import torch
 
 from torchsim import (
+    rf_definition,
+)
+from torchsim.sequence import (
     EpgEngine,
     RfMode,
     exact_slice_profile,
     fse_description,
-    rf_definition,
 )
 from torchsim.sequence._simulation import TissueProperties
 

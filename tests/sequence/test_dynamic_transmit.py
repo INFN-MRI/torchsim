@@ -1801,7 +1801,9 @@ class _Elsewhere:
 
 
 def _streamed(monkeypatch):
-    from torchsim import _execution
+    from torchsim import (
+        _execution,
+    )
 
     monkeypatch.setattr(_execution, "_OFFLOAD", _Elsewhere())
 

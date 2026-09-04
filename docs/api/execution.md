@@ -16,7 +16,7 @@ cards as there are -- and it is stated once, around the call.
 
 ## The engine
 
-{class}`EpgEngine` runs a {class}`SequenceDescription` directly, which is what
+The engine runs a {class}`SequenceDescription` directly, which is what
 you reach for when a builder or an interpreter handed you a description rather
 than a simulator. A {class}`~torchsim.model.Simulator` wraps it and is how a
 sequence is usually written; see {doc}`model`.
@@ -26,8 +26,6 @@ sequence is usually written; see {doc}`model`.
    :toctree: ../generated
    :nosignatures:
 
-   EpgEngine
-   SimulationResult
 ```
 
 ## Transmit calibration
@@ -41,9 +39,6 @@ across the slice.
    :toctree: ../generated
    :nosignatures:
 
-   calibrate
-   exact_slice_profile
-   ExactSliceProfile
 ```
 
 ## Where the work runs
@@ -55,7 +50,6 @@ across the slice.
 
    execution
    offload
-   distribute
 ```
 
 ## Utilities

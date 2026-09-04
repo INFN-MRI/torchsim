@@ -5,14 +5,15 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import (
+from torchsim.sequence import (
+    EpgEngine,
     TissueProperties,
+    _accelerators,
     fse_description,
     mprage_description,
     mrf_description,
     spgr_description,
 )
-from torchsim.sequence import EpgEngine, _accelerators
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _NativeEpg,

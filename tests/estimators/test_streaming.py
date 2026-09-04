@@ -11,7 +11,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import PERK, DictionaryMatcher
+from torchsim import (
+    PERK,
+    DictionaryMatcher,
+)
 from torchsim.estimators import _perk
 from torchsim.sequence import execution
 from torchsim.simulators import MRFSimulator

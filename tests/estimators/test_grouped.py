@@ -220,7 +220,9 @@ def test_grouping_composes_with_a_temporal_subspace(fingerprints, measured) -> N
     other, and the answer is the one the compressed dictionary gives without
     grouping -- the grouping must not add error of its own.
     """
-    from torchsim import Subspace
+    from torchsim import (
+        Subspace,
+    )
 
     atoms, grid = fingerprints
     subspace = Subspace.fit(atoms, 8)
@@ -245,7 +247,9 @@ def test_clustering_happens_inside_the_global_basis(fingerprints) -> None:
     leaving the space the measurement is in. Everything stays at the rank the
     dictionary was compressed to.
     """
-    from torchsim import Subspace
+    from torchsim import (
+        Subspace,
+    )
 
     atoms, _ = fingerprints
     compressed = Subspace.fit(atoms, 4).project(atoms)

@@ -16,15 +16,16 @@ import torch
 
 from torchsim import (
     Delay,
-    EpgEngine,
     Excitation,
     Readout,
     Refocusing,
     SequenceDescription,
     ShimDefinition,
+)
+from torchsim.sequence import (
+    EpgEngine,
     TissueProperties,
     compose,
-    description,
     ideal_rf_definition,
 )
 
@@ -59,7 +60,9 @@ def test_the_short_way_is_the_long_way() -> None:
     )
 
     engine = EpgEngine()
-    short = engine.simulate(description(*parts), _tissue(), nstates=8).signal
+    short = engine.simulate(
+        SequenceDescription.from_operators(*parts), _tissue(), nstates=8
+    ).signal
     long = engine.simulate(written_out, _tissue(), nstates=8).signal
 
     assert short.shape == (1, ECHOES)
@@ -68,7 +71,7 @@ def test_the_short_way_is_the_long_way() -> None:
 
 def test_what_is_not_named_means_nothing_is_there() -> None:
     """An empty shim table, no gradient moment, and one ideal pulse."""
-    built = description(*_modules())
+    built = SequenceDescription.from_operators(*_modules())
 
     assert built.shim_definitions == {}
     assert built.crusher_dephasing_rad == 0.0
@@ -82,13 +85,15 @@ def test_the_repetition_lasts_as_long_as_the_operators_do() -> None:
     parts = _modules()
     _events, duration_s = compose(*parts)
 
-    assert description(*parts).tr_duration_us == pytest.approx(1e6 * duration_s)
+    assert SequenceDescription.from_operators(*parts).tr_duration_us == pytest.approx(
+        1e6 * duration_s
+    )
 
 
 def test_what_is_named_is_carried() -> None:
     """A pulse, a shim and a gradient moment reach the description."""
     shim = ShimDefinition(3, (1.0, 1.0), (0.0, math.pi))
-    built = description(
+    built = SequenceDescription.from_operators(
         *_modules(),
         rf_definitions={7: ideal_rf_definition(7)},
         shim_definitions={3: shim},

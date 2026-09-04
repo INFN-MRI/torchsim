@@ -10,7 +10,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import Subspace
+from torchsim import (
+    Subspace,
+)
 from torchsim.simulators import FSESimulator
 
 RANKS = (1, 2, 4, 8)

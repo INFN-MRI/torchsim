@@ -14,7 +14,11 @@ from dataclasses import replace
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    fse_description,
+)
 from torchsim.sequence._parameters import (
     TISSUE_NAMES,
     TISSUE_PARAMETERS,

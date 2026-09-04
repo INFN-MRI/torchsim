@@ -48,7 +48,7 @@ __all__ = [
     "register_operator",
 ]
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,9 +59,7 @@ from ._description import (
     EventAction,
     EventType,
     RfUse,
-    SequenceDescription,
     SequenceEvent,
-    ideal_rf_definition,
 )
 
 # Seconds to the microseconds a description timestamps in.
@@ -85,59 +83,14 @@ class Operator:
     emit: Callable[[Any], tuple[SequenceEvent, ...]]
     duration_s: Any = 0.0
 
+    def __matmul__(self, other: Operator) -> Operator:
+        """``a @ b``: the two played back to back, as one operator.
 
-def description(
-    *parts: Operator | tuple[Any, Operator],
-    rf_definitions: Mapping[int, Any] | None = None,
-    shim_definitions: Mapping[int, Any] | None = None,
-    subsequence_index: int = 0,
-    crusher_dephasing_rad: float = 0.0,
-    voxel_size_m: float | None = None,
-    start_s: Any = 0.0,
-) -> SequenceDescription:
-    """Lay operators out and return the description they make.
-
-    :func:`compose` returns events and a span; this puts them in the object a
-    simulation is run from, so that assembling a sequence out of operators is
-    one call.
-
-    Parameters
-    ----------
-    parts : Operator or tuple, optional
-        The operators, in the order they play, as :func:`compose` takes them.
-    rf_definitions : mapping, optional
-        The pulses the events drive, by id. One ideal pulse under id zero when
-        not given, which is what an operator that names no shape asks for.
-    shim_definitions : mapping, optional
-        The transmit shims the pulses are driven on, by id. None when not
-        given, which is one channel at unit weight.
-    subsequence_index : int, optional
-        Which subsequence of a scan this is.
-    crusher_dephasing_rad : float, optional
-        The turn one crusher puts across a voxel. Diffusion and flow are read
-        off it, and are zero without it.
-    voxel_size_m : float, optional
-        The distance that turn is put across.
-    start_s : float or torch.Tensor, optional
-        When the first operator starts.
-
-    Returns
-    -------
-        The description, with the repetition lasting as long as the operators
-        laid out end to end.
-    """
-    events, duration_s = compose(*parts, start_s=start_s)
-    return SequenceDescription(
-        subsequence_index=subsequence_index,
-        tr_duration_us=1e6 * duration_s,
-        events=events,
-        rf_definitions=dict(
-            {0: ideal_rf_definition()} if rf_definitions is None else rf_definitions
-        ),
-        shim_definitions=dict(shim_definitions or {}),
-        crusher_dephasing_rad=crusher_dephasing_rad,
-        voxel_size_m=voxel_size_m,
-    )
+        The same thing :func:`module` does for a list, spelled for the common
+        case of joining two -- a sample and the gradient after it, a pulse and
+        its crusher -- so a handler reads as the composition it is.
+        """
+        return module(self, other, duration_s=self.duration_s + other.duration_s)
 
 
 def compose(

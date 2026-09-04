@@ -50,10 +50,7 @@ the layout it reads.
    :nosignatures:
 
    GaussNewton
-   Schedule
    TrustRegion
-   Linearization
-   Solution
 ```
 
 ## Linear solvers
@@ -65,7 +62,6 @@ the layout it reads.
 
    direct
    iterative
-   LeastSquares
 ```
 
 ## The temporal basis
@@ -80,5 +76,4 @@ serves a subspace reconstruction here and the estimators on {doc}`estimators`.
    :nosignatures:
 
    Subspace
-   simulate_subspace
 ```

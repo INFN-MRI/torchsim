@@ -10,7 +10,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import PERK, DictionaryMatcher, Estimator
+from torchsim import (
+    PERK,
+    DictionaryMatcher,
+    Estimator,
+)
 from torchsim.simulators import FSESimulator, MRFSimulator
 
 ECHOES = 32

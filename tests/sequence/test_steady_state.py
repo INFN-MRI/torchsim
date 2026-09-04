@@ -18,8 +18,11 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties
-from torchsim.sequence import _builders
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    _builders,
+)
 
 FLIP_DEG, TR_S, TE_S = 20.0, 10e-3, 4e-3
 

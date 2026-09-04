@@ -79,7 +79,9 @@ def install(poison: bool = False) -> None:
 
 
 def _tissue(voxels: int) -> tuple[torch.Tensor, ...]:
-    from torchsim import TissueProperties
+    from torchsim.sequence import (
+        TissueProperties,
+    )
     from torchsim.sequence._simulation import _prepare_tissue
 
     prepared, _, _ = _prepare_tissue(
@@ -708,8 +710,11 @@ def _narrowed(voxels: int, states: int) -> None:
     install()
     import math
 
-    from torchsim import TissueProperties
-    from torchsim.sequence import _builders, _epg_triton
+    from torchsim.sequence import (
+        TissueProperties,
+        _builders,
+        _epg_triton,
+    )
     from torchsim.sequence._accelerators import real_subspace_axis
     from torchsim.sequence._parameters import TISSUE_NAMES, features_of
     from torchsim.sequence._simulation import _prepare_tissue

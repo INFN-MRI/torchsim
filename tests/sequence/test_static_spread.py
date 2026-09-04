@@ -19,8 +19,11 @@ import numpy as np
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties
-from torchsim.sequence import _builders
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    _builders,
+)
 from torchsim.sequence._description import (
     AdcRole,
     SequenceDescription,

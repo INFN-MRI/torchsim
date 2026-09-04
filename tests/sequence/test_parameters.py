@@ -11,8 +11,12 @@ import dataclasses
 
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
-from torchsim.sequence import _accelerators
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    _accelerators,
+    fse_description,
+)
 from torchsim.sequence._accelerators import _pack_events
 from torchsim.sequence._parameters import (
     EVENT_PARAMETERS,

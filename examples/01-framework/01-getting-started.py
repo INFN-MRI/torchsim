@@ -478,9 +478,9 @@ key(axis, ncols=2)
 #
 # A description normally arrives; it is not typed. Writing one by hand once is
 # worth it only to see that there is nothing else in it --
-# :func:`~torchsim.description` lays operators out and fills in the rest.
+# :meth:`~torchsim.SequenceDescription.from_operators` lays them out.
 #
-by_hand = torchsim.description(
+by_hand = torchsim.SequenceDescription.from_operators(
     torchsim.Excitation(math.pi / 2, math.pi / 2),
     *[
         part

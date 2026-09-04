@@ -9,7 +9,11 @@ off the description like everything else, so a description assembled by hand
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    fse_description,
+)
 from torchsim.sequence._description import RfUse
 
 ECHOES = 8

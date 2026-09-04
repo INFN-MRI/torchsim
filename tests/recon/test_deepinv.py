@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import execution
+from torchsim import (
+    execution,
+)
 from torchsim.recon import ModelOperator
 from torchsim.simulators import MultiEchoSimulator
 

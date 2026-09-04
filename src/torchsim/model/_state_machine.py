@@ -188,6 +188,17 @@ def replace_pulse(simulator: Simulator, pulse: RfDefinition) -> Simulator:
     return held
 
 
+#: The kinds of event a model says what to do with.
+_HANDLER_SLOTS = (
+    "excitation",
+    "refocusing",
+    "inversion",
+    "saturation",
+    "readout",
+    "delay",
+)
+
+
 @dataclass(frozen=True)
 class EventOperators:
     """Which operator plays each kind of event.
@@ -342,6 +353,32 @@ class Simulator(SignalModel):
     # once and never again; a sequence whose own physics says otherwise
     # overrides this.
     repetitions: int = 1
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Read handlers named in the class body into the model.
+
+        A subclass may say what plays each kind of event by naming it, which
+        is the shortest way to write a sequence family:
+
+        .. code-block:: python
+
+            class SSFPMRF(Simulator):
+                excitation = Excitation
+                readout = SSFPFidReadout
+
+        Anything not named keeps what the base class had, and a ``model``
+        given outright still wins, which is what a sequence needs when it also
+        fixes tissue or carries a pulse shape.
+        """
+        super().__init_subclass__(**kwargs)
+        named = {
+            slot: cls.__dict__[slot] for slot in _HANDLER_SLOTS if slot in cls.__dict__
+        }
+        if not named or "model" in cls.__dict__:
+            return
+        cls.model = replace(cls.model, operators=replace(cls.model.operators, **named))
+        for slot in named:
+            delattr(cls, slot)
 
     def __init__(
         self,

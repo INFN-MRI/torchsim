@@ -19,7 +19,11 @@ from dataclasses import replace
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    fse_description,
+)
 from torchsim.sequence._accelerators import (
     _across_the_table,
     _pack_events,

@@ -12,8 +12,12 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import EpgEngine, TissueProperties, fse_description
-from torchsim.sequence import _accelerators
+from torchsim.sequence import (
+    EpgEngine,
+    TissueProperties,
+    _accelerators,
+    fse_description,
+)
 from torchsim.sequence._parameters import (
     FEATURE_BITS,
     Geometry,

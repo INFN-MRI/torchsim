@@ -12,7 +12,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from torchsim import TissueProperties, fse_description
+from torchsim.sequence import (
+    TissueProperties,
+    fse_description,
+)
 from torchsim.sequence._accelerators import (
     NO_GEOMETRY,
     _NativeEpg,
