@@ -134,6 +134,29 @@ the build:
   raw source lines, which is also why the API pages hold their `autosummary`
   and `currentmodule` directives inside `{eval-rst}` blocks.
 
+### The gallery's prose
+
+`~/.claude/CLAUDE.md` carries the rules for explanatory prose and they bind
+here. Two things are specific to this gallery.
+
+**`examples/01-framework/01-getting-started.py` is the register.** Match it:
+a docstring that opens "The scope of this notebook is to…", section titles that
+are plain noun phrases naming the operation — *Forward simulation*, *Approaching
+steady state*, *Performance tweaking*, *Functional wrapper* — and bodies that
+state the thing once, in the second person or the declarative, with no
+rhetorical scaffolding around it.
+
+**Every notebook has one scope and stays inside it.** A dictionary match is the
+subject of `02-parameter-inference/01`; a notebook that needs one as a baseline
+fits it in a hidden cell and gives it a row in a table, not a section. Reverse-
+mode derivatives and Cramér–Rao bounds belong to `03-sequence-optimization`, not
+to the getting-started page.
+
+**Show the API and hide the plotting.** `sphinx_gallery_start_ignore` is for
+figure code and print formatting. A cell a reader would type themselves —
+`execution(...)`, `stream=`, `budget_bytes=`, a `description(...)` built by hand
+— is visible even when its output is not interesting.
+
 The figures on the explanation pages are simulated at build time by
 `docs/explanation_figures.py`, so a figure cannot outlive the behaviour it
 shows. To add one, write a function that returns a Matplotlib figure, register
