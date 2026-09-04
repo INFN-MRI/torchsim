@@ -110,8 +110,8 @@ from torchsim.model import BALANCED, SPOILED
 from torchsim.simulators import FSESimulator, MRFSimulator
 
 # %%
-# The train used throughout
-# -------------------------
+# Test sequence
+# -------------
 #
 # An inversion-prepared fingerprinting train: four hundred repetitions at a
 # fixed TR, with a flip angle that rises and falls smoothly. It drives every
@@ -585,8 +585,8 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-# What an unused property costs
-# -----------------------------
+# Cost of an unused property
+# --------------------------
 #
 # Nothing. A property held at the value where it has no effect -- unit
 # transmit, no off resonance, an empty pool -- is reported absent, and its term

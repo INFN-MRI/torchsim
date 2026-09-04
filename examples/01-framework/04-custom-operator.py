@@ -157,8 +157,8 @@ def t2_preparation(echo_time_s, *, spoil_s=2e-3):
 
 
 # %%
-# Using it
-# --------
+# Using the operator
+# ------------------
 # The preparation goes at the front of an ordinary refocused train, and
 # :func:`~torchsim.sequence.compose` lays the two out end to end. The
 # preparation leaves the weighted magnetization along z, so the train excites
@@ -177,8 +177,8 @@ def prepared_train(prep_s, echo_spacing_s, echoes):
 
 
 # %%
-# Checking the weighting
-# ----------------------
+# Validation
+# ----------
 # A preparation is worth only as much as the weighting it imposes, so we check
 # it rather than assert it: sweep the preparation time and hold the first
 # recorded echo against ``exp(-TE / T2)``, which is what a T2 preparation is
@@ -223,8 +223,8 @@ print(
 # that follows it, by more for the longer preparations that leave less behind.
 
 # %%
-# A custom readout
-# ----------------
+# Custom readout
+# --------------
 # The shipped readouts differ only in what they play around the sample. An
 # unbalanced train winds every order on once per repetition, so a sample taken
 # *before* that winding is a free induction decay after the pulse just played,
@@ -349,8 +349,8 @@ print(f"  at T2 = 40 ms the ratio moves {spread:.2f} over a 3.3x range in T1")
 # T2 -- which is what makes it usable, and why a DESS T2 measurement at a
 # larger flip angle wants T1 known rather than assumed away.
 #
-# Registering by name
-# -------------------
+# Registration by name
+# --------------------
 # Events form a stream, and a stream can come from somewhere other than a
 # builder -- an MRD file, a protocol exporter, any generator that names what it
 # plays. Registering the operator is what lets such a stream ask for it without

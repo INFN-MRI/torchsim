@@ -471,8 +471,8 @@ print(
 
 # %%
 #
-# Proton density, for nothing extra
-# ---------------------------------
+# Proton density
+# --------------
 #
 # Neither method estimates M0 and neither simulates one to find it. Both throw
 # the amplitude away to compare shapes, and both know what they threw.
@@ -604,8 +604,8 @@ for row, (name, reference, found) in enumerate(panels):
 
 # %%
 #
-# How sure is it?
-# ---------------
+# Uncertainty
+# -----------
 #
 # ``uncertainty=True`` returns a second set of maps: how far the answer is
 # expected to sit from the truth. PERK learns that at training, from the

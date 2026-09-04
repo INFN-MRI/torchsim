@@ -120,8 +120,8 @@ from torchsim.model import (
 from torchsim.sequence import EventType
 
 # %%
-# The physics
-# -----------
+# Physics
+# -------
 # A :class:`~torchsim.model.SpinPhysics` is the physics. ``properties``
 # maps the name a caller uses to the tissue field it fills, so the model keeps
 # the vocabulary your protocol is written in while the engine keeps its own.
@@ -142,8 +142,8 @@ physics = SpinPhysics(
 )
 
 # %%
-# The built-in operators
-# ----------------------
+# Built-in operators
+# ------------------
 # A layout does not write events. It writes **operators** -- one module of a
 # sequence each, knowing what it plays and how long it holds the timeline --
 # and TorchSim ships the ordinary ones: the pulses, the two ways of waiting,
@@ -162,8 +162,8 @@ for name in operator_names():
 # sphinx_gallery_end_ignore
 
 # %%
-# The layout
-# ----------
+# Layout
+# ------
 # An :class:`~torchsim.model.Simulator` is the protocol. You do not
 # write timestamps: ``layout`` returns the *operators* of one repetition in
 # order, and the simulator turns the span each one holds into the timestamps a
@@ -192,8 +192,8 @@ class SSFPMRF(Simulator):
 
 
 # %%
-# Running it
-# ----------
+# Running the simulator
+# ---------------------
 # Property and sequence arguments are given together and told apart by
 # ``properties``. A scalar property is one voxel; an array is a map, and every
 # voxel runs at once.
@@ -269,8 +269,8 @@ plt.ylabel("d(loss) / d(flip) [1/deg]")
 # sphinx_gallery_end_ignore
 
 # %%
-# More physics
-# ------------
+# Additional physics
+# ------------------
 # ``properties`` is the vocabulary this model's *protocol* is written in, not
 # a list of what a voxel may have. Every field a voxel has can be given to any
 # simulator, and giving one is what turns its term on -- so a second exchanging
@@ -297,8 +297,8 @@ print(
 # :ref:`the expanded-physics example
 # <sphx_glr_generated_autoexamples_01-framework_02-expanded-physics.py>`.
 #
-# Checking against a closed form
-# -------------------------------
+# Validation against a closed form
+# ---------------------------------
 # A fingerprinting train has no closed form to check against, so here is a
 # second simulator that does. Saturation recovery destroys whatever
 # magnetization was there, waits, and reads what has come back -- and what it
@@ -435,8 +435,8 @@ key(axis, ncols=2)
 # sphinx_gallery_end_ignore
 
 # %%
-# Building one from a description
-# -------------------------------
+# Building from a description
+# ---------------------------
 # The stream runs both ways. A description that came from somewhere else -- an
 # MRD file, a Pulseq export, a scanner's own sequence description -- is a
 # simulator through :meth:`~torchsim.model.Simulator.from_description`, which
@@ -455,8 +455,8 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-# A functional wrapper
-# --------------------
+# Functional wrapper
+# ------------------
 # The shipped models come with one, and yours can too:
 
 

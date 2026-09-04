@@ -163,12 +163,11 @@ signal, dT2 = simulator.jacobian("T2", flip=flip)  # dT2 is (3, 48) too
 # Here you can see a comparison with finite differences derivatives:
 #
 STEP_MS = 1.0
-moved = simulator.simulate(flip=flip, T2=T2_MS + STEP_MS)
-finite = (moved - signal) / STEP_MS
-
-discrepancy = (dT2 - finite).abs().max() / dT2.abs().max()
+signal_plus = simulator.simulate(flip=flip, T2=T2_MS + STEP_MS)
+dT2_finite = (signal_plus - signal) / STEP_MS
 
 # sphinx_gallery_start_ignore
+discrepancy = (dT2 - dT2_finite).abs().max() / dT2.abs().max()
 print(f"largest disagreement with a {STEP_MS} ms step: {float(discrepancy):.2e}")
 # sphinx_gallery_end_ignore
 
@@ -192,6 +191,7 @@ first_pass = settling.simulate(flip=flip)
 settled = settling.simulate(flip=flip, repetitions="auto")
 played_out = settling.simulate(flip=flip, repetitions=200)
 
+# sphinx_gallery_start_ignore
 print(f"  one playing          {float(first_pass[0].abs().max()):.5f}")
 print(f'  repetitions="auto"   {float(settled[0].abs().max()):.5f}')
 print(f"  200 playings         {float(played_out[0].abs().max()):.5f}")
@@ -199,6 +199,7 @@ print(
     "  the last two agree to "
     f"{float((settled - played_out).abs().max() / played_out.abs().max()):.1e}"
 )
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -211,8 +212,8 @@ print(
 
 # %%
 #
-# The same thing in one call
-# --------------------------
+# Functional wrapper
+# ------------------
 #
 # Every sequence that ships also has a function, for the case where there is
 # nothing to reuse: it takes the protocol and the tissue together, returns the
@@ -258,12 +259,19 @@ signal_ref = simulator.simulate(flip=flip)
 converged = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, states=64).simulate(
     flip=flip
 )
-for orders in (4, 10, 16, 32, 48):
-    truncated = FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, states=orders)
-    drift = float((truncated.simulate(flip=flip) - converged).abs().max())
+ORDERS = (4, 10, 16, 32, 48)
+truncated = [
+    FSESimulator(ESP=ESP_MS, TR=3000.0, T1=T1_MS, T2=T2_MS, states=orders)
+    for orders in ORDERS
+]
+
+# sphinx_gallery_start_ignore
+for orders, sequence in zip(ORDERS, truncated, strict=True):
+    drift = float((sequence.simulate(flip=flip) - converged).abs().max())
     print(
         f"  {orders:2d} orders   {drift / float(converged.abs().max()):.1e} from converged"
     )
+# sphinx_gallery_end_ignore
 
 # %%
 #
