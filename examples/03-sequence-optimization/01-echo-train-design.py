@@ -119,8 +119,8 @@ from torchsim.simulators import FSESimulator
 
 # %%
 #
-# The tissues
-# -----------
+# Tissues
+# -------
 #
 # A PD-weighted knee protocol is read for the separation between fluid and
 # cartilage, so the design is for all three tissues at once. Designing for one
@@ -135,8 +135,8 @@ CARTILAGE, MUSCLE, FLUID = 0, 1, 2
 
 # %%
 #
-# What blurring is, here
-# ----------------------
+# Blurring
+# --------
 #
 # With the echo index running along one k-space direction, the magnitude of
 # the echo train *is* the k-space modulation, and the width of its Fourier
@@ -392,8 +392,8 @@ axes[2].set_box_aspect(1)
 
 # %%
 #
-# What that looks like
-# --------------------
+# Optimized schedule
+# ------------------
 #
 # A blur measured in pixels is a number, and the thing it is a number about is
 # an image. Since the echo index runs along one k-space direction, forming that

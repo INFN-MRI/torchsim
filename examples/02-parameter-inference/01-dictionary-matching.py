@@ -177,8 +177,8 @@ from torchsim.simulators import MRFSimulator
 
 # %%
 #
-# A brain to map
-# --------------
+# Phantom
+# -------
 #
 # The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
 # through the lateral ventricles, carrying CSF, grey matter, white matter and
@@ -234,8 +234,8 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 
 # %%
 #
-# The train
-# ---------
+# Sequence
+# --------
 #
 # Four hundred repetitions after an inversion, at a fixed repetition time and a
 # flip angle that varies smoothly along the train. Smooth is the point: a
@@ -326,8 +326,8 @@ def log_uniform(low, high, count):
 
 # %%
 #
-# The problem, stated once
-# ------------------------
+# Problem statement
+# -----------------
 #
 # What is unknown, over what range, from what simulator, at what noise level.
 # The method that fills it in is a separate choice, and the only thing that
@@ -344,8 +344,8 @@ prior = torch.Generator().manual_seed(11)
 
 # %%
 #
-# How many directions does the train actually span?
-# -------------------------------------------------
+# Subspace rank
+# -------------
 #
 # Fit a basis to a set of simulated trajectories and read off how much of their
 # energy each rank keeps. This is not an estimate: one minus the fraction is
@@ -392,8 +392,8 @@ key(axis, ncols=2)
 # the noise puts in. There is nothing to be gained by keeping more, and every
 # contrast dropped is arithmetic that neither training nor matching has to do.
 #
-# The dictionary
-# --------------
+# Dictionary
+# ----------
 #
 # A dictionary must span the parameters jointly, so its size is the product of
 # the grids -- twenty thousand atoms for two parameters on a grid fine enough
@@ -422,8 +422,8 @@ full_model = footprint(full)
 
 # %%
 #
-# Matching in the basis
-# ---------------------
+# Matching in the subspace
+# ------------------------
 #
 # ``rank`` is the whole change: the dictionary is fitted, projected and stored
 # in four directions instead of four hundred, and the measurement is projected
@@ -446,8 +446,8 @@ low_model = footprint(low)
 
 # %%
 #
-# Clustering the dictionary
-# -------------------------
+# Clustered dictionary
+# --------------------
 #
 # Compressing shortened every inner product. Grouping cuts how many are taken:
 # neighbouring tissues make nearly parallel signals, so the atoms cluster, and
@@ -487,8 +487,8 @@ print(
 
 # %%
 #
-# Proton density, for nothing extra
-# ---------------------------------
+# Proton density
+# --------------
 #
 # The match answers with relaxation times, and a fingerprint at those times is
 # a shape the measurement is some multiple of -- so the multiple is a
@@ -515,8 +515,8 @@ estimates = {
 
 # %%
 #
-# What it cost, and what it got
-# -----------------------------
+# Cost and accuracy
+# -----------------
 #
 # Best of three passes each, after one warm-up that leaves out the measurement
 # :func:`~torchsim.execution` makes the first time it meets a workload. The
@@ -576,8 +576,8 @@ for key, name, training, timing, model, peak in rows:
 
 # %%
 #
-# The maps
-# --------
+# Maps
+# ----
 #
 
 

@@ -555,8 +555,8 @@ key(axis, ncols=2)
 
 # %%
 #
-# Where this goes
-# ---------------
+# Next steps
+# ----------
 #
 # The derivative with respect to tissue is what a fit descends and what a
 # model-based reconstruction pushes through an encoding operator; the parameter

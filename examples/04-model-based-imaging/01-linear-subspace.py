@@ -185,8 +185,8 @@ backend = "cufinufft" if on_gpu else "finufft"
 
 # %%
 #
-# A brain with a known answer
-# ---------------------------
+# Phantom
+# -------
 #
 # The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
 # through the lateral ventricles, resampled to the matrix reconstructed here.
@@ -235,8 +235,8 @@ T2_true = torch.where(
 
 # %%
 #
-# What the scanner played
-# -----------------------
+# Sequence and sampling
+# ---------------------
 #
 # A multi-echo spin echo, read out on a golden-angle radial trajectory that
 # rotates between echoes. Sixteen spokes per echo across a 96-sample matrix is
@@ -343,7 +343,7 @@ bar.ax.set_visible(False)
 
 # %%
 #
-# The estimator, and the basis
+# Estimator and subspace basis
 # ----------------------------
 #
 # One :class:`~torchsim.DictionaryMatcher` states the problem, and it serves
@@ -388,7 +388,7 @@ def report(name, seconds, found):
 
 # %%
 #
-# Reconstruct each contrast, then fit
+# Contrast-by-contrast reconstruction
 # -----------------------------------
 #
 # The conventional pipeline, in its two usual forms. Gridding is the adjoint
@@ -434,8 +434,8 @@ report("iterative per echo", clock() - started, separate)
 #
 # %%
 #
-# Reconstruct the coefficients instead
-# ------------------------------------
+# Subspace reconstruction
+# -----------------------
 #
 # The signal is written in the basis fitted above and the *coefficients* are
 # reconstructed, three of them instead of eight images. Now the echoes
@@ -477,8 +477,8 @@ report("iterative subspace", clock() - started, linear)
 
 # %%
 #
-# The maps
-# --------
+# Maps
+# ----
 #
 # The subspace is the only one of the three that constrains the echoes against
 # one another, and it lands at about half the error of either route that
@@ -512,8 +512,8 @@ scalebar(error, axes[1, 1:], f"|error|, {label}")
 
 # %%
 #
-# Where a subspace stops being cheap
-# ----------------------------------
+# Limits
+# ------
 #
 # Eight echoes of a single exponential are the case a subspace is best at:
 # three directions hold essentially all of the signal, and what is left for

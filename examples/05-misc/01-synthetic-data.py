@@ -187,8 +187,8 @@ backend = "cufinufft" if on_gpu else "finufft"
 
 # %%
 #
-# A subject
-# ---------
+# Subject
+# -------
 #
 # One IXI subject, through torchio: a T1-weighted volume acquired at 1.5 T.
 #
@@ -324,8 +324,8 @@ for k, name in enumerate(NAMES):
 
 # %%
 #
-# One simulation per class
-# ------------------------
+# Simulation per class
+# --------------------
 #
 # The fingerprinting train: an inversion, then four hundred repetitions whose
 # flip angle sweeps. :class:`~torchsim.simulators.MRFSimulator` takes arrays of
@@ -351,8 +351,8 @@ print(
 
 # %%
 #
-# The whole brain
-# ---------------
+# Whole-brain volume
+# ------------------
 #
 # A voxel that is part grey matter and part CSF produces the **sum of what the
 # two do**, weighted by how much of each is there -- never the signal of their
@@ -376,8 +376,8 @@ truth_T2 = (fractions @ class_T2) / share * brain
 
 # %%
 #
-# Coils, and the encoding
-# -----------------------
+# Coils and encoding
+# ------------------
 #
 # Birdcage sensitivities from SigPy, then one spiral arm per frame, rotated by
 # the golden angle. A single arm of 768 samples against a 128 x 128 matrix is
@@ -457,8 +457,8 @@ axis.set_box_aspect(1)
 
 # %%
 #
-# Back again
-# ----------
+# Reconstruction
+# --------------
 #
 # Adjoint per frame, then a sensitivity-weighted coil combination -- which is
 # available here because the maps are known, this being a phantom. A real
@@ -481,8 +481,8 @@ print(f"adjoint and combine {time.perf_counter() - started:.1f}s")
 
 # %%
 #
-# The pair
-# --------
+# Data pair
+# ---------
 #
 # One frame of this is a mess, and that is not a failure. Each frame is one
 # spiral arm, so the aliasing is worse than the signal; what survives is the
@@ -521,8 +521,8 @@ print(
 #
 # %%
 #
-# What the phantom is
-# -------------------
+# Phantom summary
+# ---------------
 #
 
 # sphinx_gallery_start_ignore
@@ -538,8 +538,8 @@ for axis, name, values in (
 
 # %%
 #
-# ...and what the pair looks like
-# -------------------------------
+# Inspecting the pair
+# -------------------
 #
 
 # sphinx_gallery_start_ignore
@@ -607,8 +607,8 @@ with tempfile.TemporaryDirectory() as folder:
 
 # %%
 #
-# Toward a command-line tool
-# --------------------------
+# Command-line use
+# ----------------
 #
 # Everything above is fixed except its inputs, and there are three:
 #

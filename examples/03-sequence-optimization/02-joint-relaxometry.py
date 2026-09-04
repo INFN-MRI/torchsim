@@ -167,8 +167,8 @@ from torchsim.simulators import SPGRSimulator, bSSFPSimulator
 
 # %%
 #
-# The two sequences
-# -----------------
+# Sequences
+# ---------
 #
 # A design problem is stated in three pieces. The simulator is a simulator
 # with the tissue it is being designed for already fixed on it, so only the
@@ -188,8 +188,8 @@ ssfp = bSSFPSimulator(TE=2.5, TR=5.0, T1=T1_MS, T2=T2_MS, M0=1.0, B0=0.0)
 
 # %%
 #
-# The cost
-# --------
+# Cost
+# ----
 #
 # Four parameters are estimated jointly: T1, T2, the proton density and the
 # off-resonance. The last two are nuisances -- they have to be estimated
@@ -240,8 +240,8 @@ def precision(spgr_flip, ssfp_flip):
 
 # %%
 #
-# The design
-# ----------
+# Design
+# ------
 #
 # Four acquisitions of each kind, starting from a spread of angles. The limits
 # are what the scanner will play, and they are enforced exactly -- no iterate
@@ -287,8 +287,8 @@ print(f"designed in {design_time:.1f} s")
 
 # %%
 #
-# The schedule
-# ------------
+# Optimized schedule
+# ------------------
 #
 # What a scanner is actually handed: eight acquisitions, four spoiled and four
 # balanced, each with a flip angle and nothing else changing between them. This
@@ -324,7 +324,7 @@ key(figure, ncols=2)
 
 # %%
 #
-# Where the angles went
+# Optimized flip angles
 # ---------------------
 #
 # The design collapses eight distinct angles onto three, and repeats them.
@@ -368,8 +368,8 @@ axes[2].grid(alpha=0.3)
 
 # %%
 #
-# What that means for the maps
-# ----------------------------
+# Effect on the maps
+# ------------------
 #
 # A bound is a promise about variance, and the place to cash it is a brain.
 # The phantom is the one the parameter-inference examples map -- BrainWeb

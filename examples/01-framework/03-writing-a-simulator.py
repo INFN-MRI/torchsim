@@ -228,8 +228,8 @@ plt.ylabel("signal magnitude [a.u.]")
 # sphinx_gallery_end_ignore
 
 # %%
-# Derivatives
-# -----------
+# Forward-mode derivatives
+# ------------------------
 # A Bloch simulation records far more samples than it takes parameters, so a
 # derivative with respect to tissue is cheapest taken forwards: one directional
 # derivative per property yields every voxel's derivative at once, and the cost
@@ -248,8 +248,8 @@ plt.ylabel("signal jacobian [a.u.]")
 # sphinx_gallery_end_ignore
 
 # %%
-# Derivatives with respect to the sequence: reverse mode
-# ------------------------------------------------------
+# Reverse-mode derivatives
+# ------------------------
 # The simulator optimization problem runs the other way: one scalar cost,
 # many sequence parameters. That is reverse mode, and it is deliberately not
 # wrapped -- build a cost on the signal and call ``backward()``. The engine

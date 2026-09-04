@@ -185,8 +185,8 @@ backend = "cufinufft" if on_gpu else "finufft"
 
 # %%
 #
-# A brain with a known answer
-# ---------------------------
+# Phantom
+# -------
 #
 # The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
 # through the lateral ventricles, resampled to the matrix reconstructed here.
@@ -235,8 +235,8 @@ T2_true = torch.where(
 
 # %%
 #
-# What the scanner played
-# -----------------------
+# Sequence and sampling
+# ---------------------
 #
 # A multi-echo spin echo, read out on a golden-angle radial trajectory that
 # rotates between echoes. Sixteen spokes per echo across a 96-sample matrix is
@@ -346,8 +346,8 @@ bar.ax.set_visible(False)
 
 # %%
 #
-# The estimator the baseline needs
-# --------------------------------
+# Estimator for the baseline
+# --------------------------
 #
 # The route this is measured against reconstructs images and then fits them,
 # so it needs an estimator. One :class:`~torchsim.DictionaryMatcher` states that
@@ -391,8 +391,8 @@ def report(name, seconds, found):
 
 # %%
 #
-# The baseline: reconstruct each contrast, then fit
-# -------------------------------------------------
+# Baseline reconstruction
+# -----------------------
 #
 # The conventional pipeline, in its cheapest form. Gridding is the adjoint
 # operator with a density weighting -- one pass, smooth, and biased -- and the
@@ -416,8 +416,8 @@ report("adjoint per echo", clock() - started, adjoint)
 
 # %%
 #
-# The nonlinear model
-# -------------------
+# Nonlinear model
+# ---------------
 #
 # The signal model stays inside the forward operator and the maps are solved
 # for against k-space directly. Two things are declared and nothing else:
@@ -473,8 +473,8 @@ print(
 
 # %%
 #
-# Where the time goes
-# -------------------
+# Timing
+# ------
 #
 # Each conjugate-gradient step costs one product with the Jacobian and one
 # with its adjoint, and each of those is the encoding operator once and the
@@ -526,8 +526,8 @@ print(
 
 # %%
 #
-# The maps
-# --------
+# Maps
+# ----
 #
 
 # sphinx_gallery_start_ignore
@@ -555,8 +555,8 @@ scalebar(error, axes[1, 1:], f"|error|, {label}")
 
 # %%
 #
-# Writing a different one
-# -----------------------
+# Writing a different model
+# -------------------------
 #
 # Nothing above is about T2. The model is the only thing that names a
 # relaxation time, and it is an ordinary

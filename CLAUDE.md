@@ -117,19 +117,22 @@ exists on one side and not the other is a bug in whichever side is missing it.
 
 ## Documentation
 
-The pages under `docs/` are **MyST Markdown**, built by Sphinx. One thing stays
-reStructuredText because the tooling requires it, and converting it breaks the
-build:
+The pages under `docs/` are **MyST Markdown**, built by Sphinx. Two things stay
+reStructuredText because the tooling requires it, and converting them breaks
+the build:
 
+- `examples/**/README.rst` — sphinx-gallery concatenates a gallery header
+  **verbatim** into a generated `index.rst`. It will happily *find* a
+  `README.md`, because it looks for the header over Sphinx's own
+  `source_suffix` and `myst_parser` puts `.md` in there, and the build then
+  succeeds with no warning — but the markdown is pasted into an `.rst` file,
+  so `# Examples` becomes a comment, the page loses its title and inherits the
+  first subsection's, and a MyST label prints as literal text. Do not be
+  fooled by the build passing; open the page.
 - `docs/_templates/autosummary/*.rst` — `sphinx.ext.autosummary` writes its
   stubs with a hardcoded `.rst` suffix and finds its directives by regex over
   raw source lines, which is also why the API pages hold their `autosummary`
   and `currentmodule` directives inside `{eval-rst}` blocks.
-
-A gallery header may be either. sphinx-gallery looks for `README.[ext]` over
-`.txt` plus whatever Sphinx has as `source_suffix`, and `myst_parser` puts
-`.md` in there — so `examples/README.md` renders, and the section headers
-beside it are `.rst` only because nobody has converted them.
 
 The figures on the explanation pages are simulated at build time by
 `docs/explanation_figures.py`, so a figure cannot outlive the behaviour it

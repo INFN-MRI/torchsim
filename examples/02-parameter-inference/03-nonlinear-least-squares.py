@@ -177,8 +177,8 @@ from torchsim.simulators import MultiEchoSimulator
 
 # %%
 #
-# A brain to map
-# --------------
+# Phantom
+# -------
 #
 # The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
 # through the lateral ventricles, carrying CSF, grey matter, white matter and
@@ -227,8 +227,8 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 
 # %%
 #
-# The measurement, and the floor it sits on
-# -----------------------------------------
+# Measurement and noise floor
+# ---------------------------
 #
 # Sixteen echoes out to 200 ms. The decay is scaled by the proton density and
 # offset by a constant: a magnitude reconstruction rectifies the noise, so what
@@ -300,8 +300,8 @@ def error(estimate, reference):
 
 # %%
 #
-# The fit
-# -------
+# Nonlinear fit
+# -------------
 #
 # What is unknown, over what range, from what simulator, at what noise level
 # -- and then :class:`~torchsim.NonlinearLeastSquares` to fill it in. Every
@@ -357,8 +357,8 @@ print(
 
 # %%
 #
-# The match
-# ---------
+# Dictionary match
+# ----------------
 #
 # The same problem given to a dictionary. Its grid does not need a proton
 # density: a match normalizes both sides, so any positive scale is matched for
@@ -413,8 +413,8 @@ matches = {floors: matched(floors) for floors in FLOOR_VALUES}
 
 # %%
 #
-# What it cost, and what it got
-# -----------------------------
+# Cost and accuracy
+# -----------------
 #
 # Best of three passes each, after one warm-up that leaves out the measurement
 # :func:`~torchsim.execution` makes the first time it meets a workload. The
@@ -461,8 +461,8 @@ for name, training, timing, model, peak, found in (
 
 # %%
 #
-# Reading the table
-# -----------------
+# Interpretation
+# --------------
 #
 # The first row is the trap. A T2-only match is the quickest thing here and it
 # is wrong by an order of magnitude more than anything else, because the model
@@ -512,8 +512,8 @@ key(figure, ncols=2)
 
 # %%
 #
-# The maps
-# --------
+# Maps
+# ----
 #
 
 
@@ -548,8 +548,8 @@ scalebar(error, axes[1, 1:], f"|error|, {label}")
 
 # %%
 #
-# Where a fit is the wrong choice
-# -------------------------------
+# Limits
+# ------
 #
 # It has no guarantee. The fit above started every voxel at 100 ms and landed
 # on the right answer everywhere, which is a property of an exponential and not

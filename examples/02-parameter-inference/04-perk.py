@@ -176,8 +176,8 @@ from torchsim.simulators import MRFSimulator
 
 # %%
 #
-# A brain to map
-# --------------
+# Phantom
+# -------
 #
 # The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
 # through the lateral ventricles, carrying CSF, grey matter, white matter and
@@ -233,8 +233,8 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 
 # %%
 #
-# The train
-# ---------
+# Sequence
+# --------
 #
 # Four hundred repetitions after an inversion, at a fixed repetition time and a
 # flip angle that varies smoothly along the train. Smooth is the point: a
@@ -325,8 +325,8 @@ def log_uniform(low, high, count):
 
 # %%
 #
-# The problem, stated once
-# ------------------------
+# Problem statement
+# -----------------
 #
 # What is unknown, over what range, from what simulator, at what noise level.
 # The method that fills it in is a separate choice, and the only thing that
@@ -343,8 +343,8 @@ prior = torch.Generator().manual_seed(11)
 
 # %%
 #
-# The basis the regression works in
-# ---------------------------------
+# Subspace basis
+# --------------
 #
 # Four hundred contrasts of a relaxation-driven train do not span four hundred
 # directions. Fitting a basis to simulated trajectories says how many they do
@@ -391,8 +391,8 @@ key(axis, ncols=2)
 # Both methods below are given that same basis, so what the table compares is
 # the estimator rather than the compression.
 #
-# Training a regression
-# ---------------------
+# Training
+# --------
 #
 # The training set is drawn from the prior, not from a grid: twenty thousand
 # parameter pairs spread logarithmically over the ranges, simulated and given
@@ -440,8 +440,8 @@ perk_maps, perk_training, perk_mapping, perk_model, perk_peak = regressions[FEAT
 
 # %%
 #
-# A dictionary, for scale
-# -----------------------
+# Dictionary baseline
+# -------------------
 #
 # The same problem given to a compressed dictionary match over a grid fine
 # enough that the grid spacing is not what limits the answer. Two parameters is
@@ -497,8 +497,8 @@ for name, (_found, density) in estimates.items():
 
 # %%
 #
-# What it cost, and what it got
-# -----------------------------
+# Cost and accuracy
+# -----------------
 #
 # Best of three passes each, after one warm-up that leaves out the measurement
 # :func:`~torchsim.execution` makes the first time it meets a workload. The
@@ -541,8 +541,8 @@ for name, training, timing, model, peak, found in rows:
 
 # %%
 #
-# The maps
-# --------
+# Maps
+# ----
 #
 
 

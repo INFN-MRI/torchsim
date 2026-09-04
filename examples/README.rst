@@ -1,6 +1,7 @@
-(general_examples)=
+.. _general_examples:
 
-# Examples
+Examples
+========
 
 Worked examples, grouped by what you are trying to do.
 

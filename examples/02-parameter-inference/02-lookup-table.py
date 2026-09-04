@@ -176,8 +176,8 @@ from torchsim.simulators import MP2RAGESimulator
 
 # %%
 #
-# A brain to map
-# --------------
+# Phantom
+# -------
 #
 # The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
 # through the lateral ventricles, carrying CSF, grey matter, white matter and
@@ -229,8 +229,8 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 
 # %%
 #
-# The protocol
-# ------------
+# Protocol
+# --------
 #
 # One inversion, two spoiled gradient-echo blocks read at two inversion times.
 # Both blocks sample the centre of k-space of their own shot train, so what a
@@ -251,8 +251,8 @@ simulator = MP2RAGESimulator(**PROTOCOL, inv_efficiency=INVERSION_EFFICIENCY)
 
 # %%
 #
-# The curve
-# ---------
+# Signal curve
+# ------------
 #
 # Neither block on its own says T1: both are scaled by the proton density and
 # by the receive gain. Their *unified* combination divides that scale out, and
@@ -305,8 +305,8 @@ key(axes[0], ncols=2)
 
 # %%
 #
-# The measurement
-# ---------------
+# Measurement
+# -----------
 #
 # Both blocks, at the true T1 and proton density of every brain voxel, with
 # noise at half a percent of the peak magnetization.
@@ -361,8 +361,8 @@ def error(estimate, reference):
 
 # %%
 #
-# Two estimators over the same points
-# -----------------------------------
+# Two estimators
+# --------------
 #
 # Both methods are given the same T1 grid. The match compares the two-block
 # signal against every atom and takes the nearest; the table reduces both
@@ -452,8 +452,8 @@ key(figure, ncols=2)
 
 # %%
 #
-# The maps
-# --------
+# Maps
+# ----
 #
 # At the point count each method needs: the table at sixty, the match at a grid
 # fine enough that the grid is no longer what limits it.
