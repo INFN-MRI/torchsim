@@ -3,22 +3,19 @@
 Synthetic MR fingerprinting
 =============================
 
-Training a reconstruction needs pairs: what the scanner would measure, and
-what the answer is. Neither is available together from a real scan, so both
-are made.
+The scope of this notebook is to build a training pair end to end: what a
+scanner would measure from a fingerprinting exam, and the maps it came from.
 
-This example builds one, end to end. A subject is segmented into tissue
-classes; each class is given an M0, a T1 and a T2; **one voxel per class** is
-simulated by extended phase graphs; every voxel of a class is handed its
-class's signal evolution; the volume is weighted by birdcage coil
+A subject is segmented into tissue classes; each class is given an M0, a T1 and
+a T2; one voxel per class is simulated by extended phase graphs; every voxel of
+a class is handed its class's evolution; the volume is weighted by birdcage
 sensitivities and pushed through a frame-wise non-uniform Fourier transform;
-and the k-space that comes out is brought back and coil-combined. The
-undersampled series and the fully sampled one it came from are the pair. The
-ground-truth maps and the segmentation go with them.
+the k-space is brought back and coil-combined. The undersampled series and the
+fully sampled one are the pair, with the ground-truth maps and the
+segmentation.
 
-Only the third step is TorchSim's. The phantom, the coils and the encoding are
-torchio, deepmriprep, SigPy and mri-nufft, and the pipeline is mostly a matter
-of handing each of them the right array.
+Only the simulation is TorchSim's. The phantom, the coils and the encoding come
+from torchio, deepmriprep, SigPy and mri-nufft.
 """
 
 # %%
@@ -190,17 +187,12 @@ backend = "cufinufft" if on_gpu else "finufft"
 # Subject
 # -------
 #
-# One IXI subject, through torchio: a T1-weighted volume acquired at 1.5 T.
+# One IXI subject through torchio: a T1-weighted volume at 1.5 T, and the only
+# measurement this notebook starts from. The segmentation reads it; a table
+# supplies the tissue properties a contrast cannot give.
 #
-# That volume is the single measurement this example starts from. The
-# segmentation below reads it, and a table supplies the tissue properties a
-# contrast cannot give -- which is the split a digital twin usually lives
-# with: what the data says, and what a table says.
-#
-# ``download=True`` fetches the archive the first time and skips it
-# afterwards; it is a few hundred MB. It lands in a cache under the home
-# directory, so that where this script is run from does not decide whether it
-# downloads again.
+# ``download=True`` fetches the archive once, a few hundred MB, into a cache
+# under the home directory.
 #
 CACHE = Path.home() / ".cache" / "torchsim" / "ixi-tiny"
 subject = tio.datasets.IXITiny(str(CACHE), download=True)[0]
@@ -224,13 +216,9 @@ def slab(image):
 # --------------
 #
 # ``deepmriprep`` segments the head into grey matter, white matter and CSF with
-# a U-Net, in torch and on the same card everything else here runs on. It is
-# trained on T1-weighted data, which is what the subject arrived as.
-#
-# What comes back is what matters: three *probability* maps rather than one
-# label per voxel. A brain at this resolution is full of voxels that are part
-# one tissue and part another, and a segmentation that says so is the
-# difference between a phantom with partial volume in it and one without.
+# a U-Net, in torch and on the same card as everything else. It returns three
+# probability maps rather than one label per voxel, which is the difference
+# between a phantom with partial volume in it and one without.
 #
 NAMES = ("grey matter", "white matter", "CSF")
 
@@ -293,16 +281,11 @@ scalebar(handle, axes[0, 1:], "probability")
 
 # %%
 #
-# Each class is now given the three numbers a simulation needs, all three
-# tabulated at 1.5 T.
-#
-# None of them could be read off this subject: a T1-weighted volume is a
-# contrast, not a map of anything, and nothing in it fixes the scale that
-# would turn one into the other. The segmentation is what the measurement
-# supplies -- where each tissue is, and in what proportion; the table is what
-# every tissue of that class is taken to be. A tool with a relaxometry
-# protocol and a proton-density volume behind it would fill this table from
-# the data instead.
+# Each class is given the three numbers a simulation needs, tabulated at 1.5 T.
+# None could be read off this subject: a T1-weighted volume is a contrast, not
+# a map. The measurement supplies where each tissue is and in what proportion;
+# the table supplies what each class is taken to be. A relaxometry protocol on
+# the same subject would fill the table from data instead.
 #
 NAMES_M0 = torch.tensor([0.80, 0.70, 1.00])  # relative proton density
 NAMES_T1 = torch.tensor([1100.0, 650.0, 4000.0])  # ms, at 1.5 T
@@ -327,12 +310,10 @@ for k, name in enumerate(NAMES):
 # Simulation per class
 # --------------------
 #
-# The fingerprinting train: an inversion, then four hundred repetitions whose
-# flip angle sweeps. :class:`~torchsim.simulators.MRFSimulator` takes arrays of
-# tissue properties, so the whole tissue table is one call -- **three extended
-# phase graph runs, not sixteen thousand.** That is the saving a segmented
-# phantom exists for, and it is why a thousand-frame train over a whole volume
-# is a few seconds rather than an afternoon.
+# An inversion, then four hundred repetitions whose flip angle sweeps.
+# :class:`~torchsim.simulators.MRFSimulator` takes arrays of tissue properties,
+# so the whole table is one call: three extended phase graph runs rather than
+# sixteen thousand.
 #
 schedule = 5.0 + 55.0 * torch.sin(torch.linspace(0.0, 4 * torch.pi, FRAMES)).abs()
 simulator = MRFSimulator(TR=12.0, TI=20.0, T1=class_T1, T2=class_T2)
@@ -354,15 +335,13 @@ print(
 # Whole-brain volume
 # ------------------
 #
-# A voxel that is part grey matter and part CSF produces the **sum of what the
-# two do**, weighted by how much of each is there -- never the signal of their
-# averaged relaxation times. So the mixing happens on the signals, which is one
-# matrix product against the per-class evolutions and is the whole of step
-# four.
+# A voxel that is part grey matter and part CSF produces the sum of what the
+# two do, weighted by how much of each is present -- not the signal of their
+# averaged relaxation times. The mixing happens on the signals, which is one
+# matrix product against the per-class evolutions.
 #
-# Averaging the parameters and simulating once is the tempting mistake, and it
-# is wrong wherever a voxel is not pure: an inversion-prepared train is
-# markedly nonlinear in T1.
+# Averaging the parameters and simulating once is wrong wherever a voxel is not
+# pure: an inversion-prepared train is markedly nonlinear in T1.
 #
 weights = (fractions * class_M0).to(per_class.dtype)
 series = (weights @ per_class) * brain[..., None]
@@ -379,10 +358,9 @@ truth_T2 = (fractions @ class_T2) / share * brain
 # Coils and encoding
 # ------------------
 #
-# Birdcage sensitivities from SigPy, then one spiral arm per frame, rotated by
+# Birdcage sensitivities from SigPy, then one spiral arm per frame rotated by
 # the golden angle. A single arm of 768 samples against a 128 x 128 matrix is
-# twenty-one-fold undersampled -- which is not an approximation of MRF, it is
-# how MRF is run.
+# twenty-one-fold undersampled, which is how MRF is run.
 #
 sensitivities = torch.as_tensor(smri.birdcage_maps((COILS, SIZE, SIZE))).to(
     torch.complex64
@@ -419,9 +397,8 @@ print(f"forward NUFFT {time.perf_counter() - started:.1f}s -> {tuple(kspace.shap
 
 # %%
 #
-# What the encoding is: eight birdcage sensitivities, and one spiral arm per
-# frame rotated by the golden angle so that consecutive frames sample different
-# parts of k-space.
+# Eight birdcage sensitivities, and one spiral arm per frame rotated so that
+# consecutive frames sample different parts of k-space.
 #
 
 # sphinx_gallery_start_ignore
@@ -460,9 +437,8 @@ axis.set_box_aspect(1)
 # Reconstruction
 # --------------
 #
-# Adjoint per frame, then a sensitivity-weighted coil combination -- which is
-# available here because the maps are known, this being a phantom. A real
-# pipeline would estimate them.
+# Adjoint per frame, then a sensitivity-weighted coil combination, available
+# here because the maps are known. A real pipeline would estimate them.
 #
 
 # sphinx_gallery_start_ignore
@@ -484,9 +460,9 @@ print(f"adjoint and combine {time.perf_counter() - started:.1f}s")
 # Data pair
 # ---------
 #
-# One frame of this is a mess, and that is not a failure. Each frame is one
-# spiral arm, so the aliasing is worse than the signal; what survives is the
-# **time course**, and that is what a fingerprinting reconstruction reads.
+# Each frame is one spiral arm, so the aliasing is worse than the signal. What
+# survives is the time course, and that is what a fingerprinting reconstruction
+# reads.
 #
 
 # sphinx_gallery_start_ignore
@@ -515,9 +491,9 @@ print(
 # %%
 #
 # Fifty percent wrong frame by frame, and the fingerprints still line up above
-# 0.86 for nine voxels in ten. That gap is the whole premise of the method,
-# and it is why the pair is worth training on: the input is what the scanner
-# gives, artefacts and all, and the target is the curve underneath it.
+# 0.86 for nine voxels in ten. That gap is the premise of the method: the input
+# is what the scanner gives, artefacts and all, and the target is the curve
+# underneath.
 #
 # %%
 #
@@ -576,12 +552,9 @@ for panel in axes.ravel():
 # Exporting
 # ---------
 #
-# The pair, the ground truth, the segmentation, and the schedule and
-# trajectory that produced them -- everything needed to reproduce the input or
-# to score a reconstruction against it.
-#
-# It goes to a temporary directory here, because a documentation build should
-# not leave an archive behind. A tool would write where it was told to.
+# The pair, the ground truth, the segmentation, and the schedule and trajectory
+# that produced them. It goes to a temporary directory here so that a
+# documentation build leaves no archive behind.
 #
 contents = {
     "undersampled": undersampled.cpu().numpy(),
@@ -610,7 +583,7 @@ with tempfile.TemporaryDirectory() as folder:
 # Command-line use
 # ----------------
 #
-# Everything above is fixed except its inputs, and there are three:
+# Everything above is fixed except three inputs:
 #
 # * **a T1-weighted NIfTI**, which replaces the torchio subject and is what
 #   the segmentation was trained on, so the CSF map stops being the weak one;
@@ -618,7 +591,6 @@ with tempfile.TemporaryDirectory() as folder:
 #   instead of the spiral and the sine generated here;
 # * **an output path**, replacing the temporary directory.
 #
-# The tissue table is the one thing that needs deciding rather than reading. A
-# real relaxometry protocol on the same subject would fill it from the data --
-# which is what the parameter-inference examples do, and where a pipeline like
-# this one would get its numbers.
+# The tissue table is the one thing decided rather than read. A relaxometry
+# protocol on the same subject would fill it from data, which is what the
+# parameter-inference notebooks do.

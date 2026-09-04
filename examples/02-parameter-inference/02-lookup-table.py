@@ -3,20 +3,14 @@
 MP2RAGE lookup table
 ====================
 
-A dictionary spans the parameters jointly, and its size is the product of the
-grids. With a single unknown that product is one grid, and the dictionary
-degenerates: the atoms lie on a *curve* rather than filling a space, and the
-nearest one is found by looking along it.
+The scope of this notebook is to map T1 from a two-block MP2RAGE, by
+interpolating along a curve and by matching the same curve, and to sweep the
+number of points to show which of the two is limited by it.
 
-Once the atoms are on a curve, interpolating between the two nearest costs
-nothing and removes the grid spacing from the answer entirely -- which is the
-only thing a matched estimate was limited by once the signal is fit to be
-matched at all. That is what :class:`~torchsim.LookupTable` does, and it is how
-an MP2RAGE T1 map is made.
-
-This example maps a BrainWeb slice from a two-block MP2RAGE, by interpolation
-and by matching the same curve, and sweeps the number of points to show which
-of the two is limited by it.
+With a single unknown a dictionary degenerates: the atoms lie on a curve rather
+than filling a space. Interpolating between the two nearest then costs nothing
+and takes the grid spacing out of the answer, which is what
+:class:`~torchsim.LookupTable` does.
 """
 
 # %%
@@ -179,17 +173,11 @@ from torchsim.simulators import MP2RAGESimulator
 # Phantom
 # -------
 #
-# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
-# through the lateral ventricles, carrying CSF, grey matter, white matter and
-# the glial matter between them. BrainWeb publishes it as *fuzzy* memberships:
-# every voxel holds a fraction of each tissue rather than a label, and
-# weighting the relaxation times BrainWeb tabulates by those fractions gives
-# the maps below.
-#
-# The fractions matter more than the anatomy. A third of these brain voxels
-# are mixtures of two tissues or more, so the truth is a continuum rather than
-# four values, and an estimator cannot do well merely by having seen the right
-# four answers.
+# BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
+# ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
+# voxel holds a fraction of each tissue, and the relaxation times are weighted
+# by those fractions. A third of the voxels are mixtures, so the truth is a
+# continuum and not four values.
 #
 
 # sphinx_gallery_start_ignore
@@ -233,10 +221,9 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 # --------
 #
 # One inversion, two spoiled gradient-echo blocks read at two inversion times.
-# Both blocks sample the centre of k-space of their own shot train, so what a
-# voxel contributes is two numbers -- and T1 is the only tissue property that
-# moves them, because the train spoils after every readout and nothing
-# transverse survives an interval.
+# Each block samples the centre of k-space of its own shot train, so a voxel
+# contributes two numbers. The train spoils after every readout, so T1 is the
+# only tissue property that moves them.
 #
 PROTOCOL = dict(
     TI=(800.0, 2700.0),
@@ -254,12 +241,10 @@ simulator = MP2RAGESimulator(**PROTOCOL, inv_efficiency=INVERSION_EFFICIENCY)
 # Signal curve
 # ------------
 #
-# Neither block on its own says T1: both are scaled by the proton density and
-# by the receive gain. Their *unified* combination divides that scale out, and
-# what is left is a number between -0.5 and 0.5 that depends on T1 alone.
-#
-# Which combination makes a curve monotonic is a property of the sequence
-# rather than of the table, so it is handed over rather than assumed.
+# Neither block alone says T1: both carry the proton density and the receive
+# gain. The unified combination divides that scale out, leaving a number
+# between -0.5 and 0.5 that depends on T1 alone. Which combination is monotonic
+# belongs to the sequence, so it is given rather than assumed.
 #
 
 
@@ -270,10 +255,9 @@ def unified(blocks):
 
 # %%
 #
-# The curve is not monotonic over every T1, and where it turns back on itself
-# it has no inverse. :class:`~torchsim.LookupTable` keeps the longest
-# monotonic run and reports what it spans, so the range the protocol can
-# actually invert is a number rather than an assumption.
+# The curve is not monotonic over every T1, and where it turns back it has no
+# inverse. The table keeps the longest monotonic run and reports what it spans,
+# so the invertible range is a number rather than an assumption.
 #
 sweep = torch.arange(50.0, 6000.0, 10.0)
 curve = unified(simulator.simulate(T1=sweep, M0=1.0))
@@ -364,13 +348,10 @@ def error(estimate, reference):
 # Two estimators
 # --------------
 #
-# Both methods are given the same T1 grid. The match compares the two-block
-# signal against every atom and takes the nearest; the table reduces both
-# blocks to the unified number and interpolates along the curve, so ``combine``
-# is the whole of what it needs to be told.
-#
-# Neither is told the range in advance -- what the table can invert falls out
-# of the curve, and where the match saturates falls out of the grid.
+# Both are given the same T1 grid. The match scores the two-block signal
+# against every atom and takes the nearest; the table reduces both blocks to
+# the unified number and interpolates along the curve, so ``combine`` is all it
+# is told. Neither is given the range in advance.
 #
 grid = torch.linspace(50.0, 6000.0, 60)
 
@@ -382,9 +363,8 @@ match = DictionaryMatcher(simulator.bind(M0=1.0)).fit(T1=grid, seed=0)
 
 # %%
 #
-# Sweeping the grid the two are given says how much of the difference is the
-# method and how much is the sampling. Times are the best of three passes over
-# the slice.
+# Sweeping the grid separates the method from the sampling. Times are the best
+# of three passes over the slice.
 #
 
 # sphinx_gallery_start_ignore
@@ -411,16 +391,13 @@ for points in POINTS:
 
 # %%
 #
-# The table is at its floor from the coarsest grid tried and does not move
-# again. The match starts an order of magnitude worse and climbs to the same
-# place, and everything it spends getting there is spent on the grid: the
-# search is one comparison per atom per voxel, so its time grows with the point
-# count while the table's binary search grows with the logarithm of it.
+# The table is at its floor from the coarsest grid and does not move again. The
+# match starts an order of magnitude worse and climbs to the same place, paying
+# for it in points: its search is one comparison per atom per voxel, where the
+# table's binary search grows with the logarithm.
 #
-# The floor both arrive at is the noise, which is what is left once the grid is
-# gone. That is the claim, and it is narrower than "interpolation is more
-# accurate": a fine enough grid matches a table exactly, and the table's
-# advantage is that it never had to be told how fine.
+# The floor both reach is the noise. A fine enough grid matches a table
+# exactly; the table's advantage is that it was never told how fine.
 #
 
 # sphinx_gallery_start_ignore
@@ -455,8 +432,8 @@ key(figure, ncols=2)
 # Maps
 # ----
 #
-# At the point count each method needs: the table at sixty, the match at a grid
-# fine enough that the grid is no longer what limits it.
+# At the point count each needs: the table at sixty, the match at a grid fine
+# enough not to limit it.
 #
 
 # sphinx_gallery_start_ignore
@@ -478,9 +455,9 @@ print(
 
 # %%
 #
-# Neither method estimates M0, and neither has to. Both answer with a T1, and
-# the two blocks that T1 predicts are a shape the measurement is some multiple
-# of -- so the multiple is a projection, one inner product per voxel.
+# Neither estimates M0. Both answer with a T1, and the two blocks it predicts
+# are a shape the measurement is a multiple of, so the multiple is one inner
+# product per voxel.
 #
 
 

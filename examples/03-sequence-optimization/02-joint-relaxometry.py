@@ -3,16 +3,14 @@
 Designing a joint relaxometry protocol
 =========================================
 
-DESPOT estimates T1 from a set of spoiled gradient-echo acquisitions at
-different flip angles and T2 from a set of balanced SSFP acquisitions. Fitting
-them jointly rather than one after the other uses all the data for both
-parameters, and then the flip angles themselves can be chosen to make the joint
-estimate as precise as possible [1]_.
+The scope of this notebook is to choose the flip angles of a DESPOT protocol
+so that a joint fit of T1 and T2 is as precise as possible [1]_.
 
-The cost here is a Cramer-Rao bound: the lowest variance an unbiased estimate
-of T1 and T2 can have, given the derivative of each sequence's signal with
-respect to every parameter being estimated. Minimizing it chooses where on each
-signal curve the scan time is spent.
+DESPOT estimates T1 from spoiled gradient-echo scans at different flip angles
+and T2 from balanced SSFP scans. Fitting them jointly uses all the data for
+both parameters. The cost is a Cramer-Rao bound: the lowest variance an
+unbiased estimate can have, given the derivative of each signal with respect to
+every parameter estimated.
 
 """
 
@@ -170,11 +168,10 @@ from torchsim.simulators import SPGRSimulator, bSSFPSimulator
 # Sequences
 # ---------
 #
-# A design problem is stated in three pieces. The simulator is a simulator
-# with the tissue it is being designed for already fixed on it, so only the
-# parameters under design are left to give. Both sequences here are closed
-# forms, and they are constructed and asked exactly as a state-machine
-# sequence would be.
+# A design problem is three pieces, and the first is a simulator with the
+# tissue it is designed for already fixed on it, so only the parameters under
+# design are left to give. Both sequences here are closed forms, constructed
+# and called exactly as a state-machine sequence would be.
 #
 
 # White and grey matter at 3 T -- the design is for both at once.
@@ -192,14 +189,12 @@ ssfp = bSSFPSimulator(TE=2.5, TR=5.0, T1=T1_MS, T2=T2_MS, M0=1.0, B0=0.0)
 # ----
 #
 # Four parameters are estimated jointly: T1, T2, the proton density and the
-# off-resonance. The last two are nuisances -- they have to be estimated
-# because they affect the data, but the design is not for them.
+# off-resonance. The last two are nuisances, estimated because they affect the
+# data rather than because the design is for them.
 #
-# The two sequences do not carry the same information, and neither does this
-# implementation pretend they do: the spoiled steady state written in closed
-# form depends on T2\* rather than T2, so its T2 row is exactly zero. That is
-# the structure of joint relaxometry rather than a limitation -- each block is
-# blind to something, and the Fisher matrix adds them up.
+# The two sequences carry different information. The spoiled steady state in
+# closed form depends on T2\* rather than T2, so its T2 row is exactly zero.
+# Each block is blind to something and the Fisher matrix adds them up.
 #
 JOINT = ("T1", "T2", "M0", "B0")
 
@@ -223,11 +218,10 @@ def bounds(spgr_flip, ssfp_flip):
 
 # %%
 #
-# The cost is the whole of what makes this problem this problem, and it is
-# four lines. Dividing each bound by its own parameter squared makes the two
-# terms dimensionless, so a 100 ms T2 and a 1000 ms T1 are weighted by how
-# well they are known rather than by how large they are; the logarithm makes
-# the gradient relative, so the design does not depend on the noise level.
+# Dividing each bound by its own parameter squared makes the terms
+# dimensionless, so a 100 ms T2 and a 1000 ms T1 are weighted by how well they
+# are known rather than by how large they are. The logarithm makes the gradient
+# relative, so the design does not depend on the noise level.
 #
 
 
@@ -243,9 +237,8 @@ def precision(spgr_flip, ssfp_flip):
 # Design
 # ------
 #
-# Four acquisitions of each kind, starting from a spread of angles. The limits
-# are what the scanner will play, and they are enforced exactly -- no iterate
-# is ever outside them.
+# Four scans of each kind, starting from a spread of angles. The limits are
+# what the scanner will play and are enforced exactly.
 #
 spgr_start = torch.tensor([2.0, 4.0, 8.0, 16.0])
 ssfp_start = torch.tensor([10.0, 20.0, 40.0, 60.0])
@@ -265,8 +258,8 @@ ssfp_designed = result.parameters["ssfp_flip"]
 
 # %%
 #
-# What it buys, as the number a spectroscopist would quote: the standard
-# deviation of each estimate as a percentage of the value itself.
+# What it buys, as the standard deviation of each estimate in percent of the
+# value itself.
 #
 
 # sphinx_gallery_start_ignore
@@ -290,9 +283,8 @@ print(f"designed in {design_time:.1f} s")
 # Optimized schedule
 # ------------------
 #
-# What a scanner is actually handed: eight acquisitions, four spoiled and four
-# balanced, each with a flip angle and nothing else changing between them. This
-# is the protocol table a radiographer would read, before and after.
+# What the scanner is handed: eight scans, four spoiled and four balanced, each
+# differing only in flip angle. Before and after.
 #
 
 # sphinx_gallery_start_ignore
@@ -327,19 +319,16 @@ key(figure, ncols=2)
 # Optimized flip angles
 # ---------------------
 #
-# The design collapses eight distinct angles onto three, and repeats them.
-# That is what an optimal design does: the information sits at a few places on
-# each curve, and the best use of a fixed number of acquisitions is to spend
-# them there rather than to sample the curve evenly.
+# The design collapses eight distinct angles onto three and repeats them. The
+# information sits at a few places on each curve, and a fixed number of scans
+# is best spent there rather than sampling the curve evenly.
 #
-# Where those places are is worth reading off the figure. The SPGR angle lands
-# above the Ernst angle of both tissues, on the side where the curve separates
-# the two T1 values most sharply -- the peak itself is where the signal is
-# largest and where it says least. The two bSSFP angles sit either side of the
-# steady-state maximum, which is what makes the pair sensitive to T2. The
-# upper one is against its limit rather than at an interior optimum, so
-# raising the limit would move it; that limit is a real one, being what the
-# deposited RF power allows.
+# The SPGR angle lands above the Ernst angle of both tissues, where the curve
+# separates the two T1 values most sharply; the peak itself is where the signal
+# is largest and says least. The two bSSFP angles sit either side of the
+# steady-state maximum, which is what makes the pair sensitive to T2. The upper
+# one is against its limit rather than at an interior optimum, and that limit
+# is what the deposited RF power allows.
 #
 
 # sphinx_gallery_start_ignore
@@ -371,12 +360,10 @@ axes[2].grid(alpha=0.3)
 # Effect on the maps
 # ------------------
 #
-# A bound is a promise about variance, and the place to cash it is a brain.
-# The phantom is the one the parameter-inference examples map -- BrainWeb
-# subject 0, slice 90, whose fuzzy tissue memberships give a T1, a T2 and a
-# proton density that are known at every voxel, mixtures included -- so both
-# protocols can be played on it and the answers compared against something
-# rather than against each other.
+# The phantom is the one the parameter-inference examples map: BrainWeb
+# subject 0, slice 90, whose fuzzy memberships give a T1, a T2 and a proton
+# density known at every voxel. Both protocols are played on it and compared
+# against the truth rather than against each other.
 #
 
 # sphinx_gallery_start_ignore
@@ -427,11 +414,11 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 
 # %%
 #
-# The two blocks are one experiment, so they are fitted as one: a
+# The two blocks are one experiment and are fitted as one: a
 # :class:`~torchsim.model.SignalModel` that plays each and concatenates what
-# they record. The fit has to be the one thing that does not differ between the
-# protocols, so it is the same nonlinear least squares over the same four
-# unknowns, started from the same guess.
+# they record. The fit is the one thing held fixed between the protocols --
+# the same nonlinear least squares over the same four unknowns, from the same
+# guess.
 #
 from torchsim.estimators import NonlinearLeastSquares
 from torchsim.model import SignalModel
@@ -462,9 +449,8 @@ class JointRelaxometry(SignalModel):
 
 # %%
 #
-# The noise is independent on the real and the imaginary channel, each at the
-# standard deviation the bound was computed with -- which is what makes the two
-# comparable at all.
+# The noise is independent on the real and imaginary channels, each at the
+# standard deviation the bound was computed with.
 #
 UNKNOWN = {
     "T1": (200.0, 5000.0),
@@ -517,10 +503,9 @@ print(f"{2 * int(mask.sum())} joint fits in {before_seconds + after_seconds:.1f}
 
 # %%
 #
-# The bound was computed for two tissues; the slice has thousands. Evaluating
-# it at every voxel's own relaxation times turns it from a number about white
-# and grey matter into a *predicted* precision map, which is what the measured
-# error is then read against.
+# The bound was computed for two tissues; the slice has thousands. Evaluated at
+# every voxel's own relaxation times it becomes a predicted precision map,
+# which is what the measured error is read against.
 #
 
 
@@ -552,14 +537,13 @@ expected = {
 
 # %%
 #
-# What the design bought, over the brain rather than over two tissues. No
-# unbiased estimator can beat the bound and a good one comes close to it, so
-# the two columns agreeing is the check that the design optimized the right
-# thing.
+# What the design bought, over the brain rather than two tissues. No unbiased
+# estimator beats the bound and a good one approaches it, so the two columns
+# agreeing is the check that the design optimized the right thing.
 #
-# Both are root-mean-square over the brain, because a bound is a standard
-# deviation: the median of an absolute error is about two thirds of one, and
-# comparing the two would flatter the estimator by exactly that factor.
+# Both are root-mean-square, because a bound is a standard deviation: the
+# median absolute error is about two thirds of one and would flatter the
+# estimator by that factor.
 #
 
 # sphinx_gallery_start_ignore
@@ -583,9 +567,8 @@ for label, maps in found.items():
 
 # %%
 #
-# The maps, and the error each protocol leaves. The designed protocol is not a
-# different picture -- it is the same picture with less noise in it, which is
-# what a precision design buys and all it buys.
+# The maps, and the error each protocol leaves. The designed protocol gives the
+# same picture with less noise in it, which is what a precision design buys.
 #
 
 

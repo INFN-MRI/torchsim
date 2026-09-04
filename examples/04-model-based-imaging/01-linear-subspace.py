@@ -3,22 +3,16 @@
 Reconstructing in a linear subspace
 ==============================================
 
-A quantitative scan is usually reconstructed twice: once to make one image per
-contrast, and again -- voxel by voxel -- to turn those images into parameter
-maps. The first step has no idea what the second one is for, so it spends its
-effort recovering eight images when the answer is two numbers per voxel, and it
-recovers each of them from its own undersampled data with no help from the
-others.
+The scope of this notebook is to reconstruct one undersampled radial multi-echo
+spin echo three ways -- gridding, conjugate gradients per echo, and a linear
+subspace -- and to report what each costs and gets wrong.
 
-A **linear subspace** removes both problems without leaving linear algebra. The
-signals a train can produce span far fewer directions than it has contrasts, so
-writing the series in that basis and reconstructing the *coefficients* both
-shortens the unknown and ties the echoes together. There are no local minima and
-no starting guess: it is a least-squares problem like any other.
-
-This example reconstructs one undersampled radial multi-echo spin echo three
-ways -- gridding, conjugate gradients per echo, and a subspace -- and reports
-what each costs and what each gets wrong.
+A quantitative scan is usually reconstructed twice: once per contrast, then
+voxel by voxel into maps. The first step recovers eight images when the answer
+is two numbers per voxel, each from its own undersampled data. A subspace
+removes both problems without leaving linear algebra: the signals span far
+fewer directions than there are contrasts, so reconstructing the coefficients
+shortens the unknown and ties the echoes together.
 """
 
 # %%
@@ -188,13 +182,10 @@ backend = "cufinufft" if on_gpu else "finufft"
 # Phantom
 # -------
 #
-# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
-# through the lateral ventricles, resampled to the matrix reconstructed here.
-# BrainWeb publishes it as *fuzzy* memberships, so a voxel carries a fraction
-# of CSF, grey matter, white matter and glial matter rather than a label, and
-# weighting the tabulated relaxation times by those fractions gives a T2 map
-# whose mixed voxels sit between the pure ones -- an answer that is known
-# everywhere, mixtures included.
+# BrainWeb subject 0, slice 90, resampled to the matrix reconstructed here.
+# BrainWeb publishes fuzzy memberships rather than labels, so weighting the
+# tabulated relaxation times by them gives a T2 map whose mixed voxels sit
+# between the pure ones, known everywhere.
 #
 
 # sphinx_gallery_start_ignore
@@ -238,10 +229,9 @@ T2_true = torch.where(
 # Sequence and sampling
 # ---------------------
 #
-# A multi-echo spin echo, read out on a golden-angle radial trajectory that
-# rotates between echoes. Sixteen spokes per echo across a 96-sample matrix is
-# roughly ninefold undersampled, which is where the three routes start to
-# disagree.
+# A multi-echo spin echo on a golden-angle radial trajectory that rotates
+# between echoes. Sixteen spokes per echo across a 96-sample matrix is roughly
+# ninefold undersampled, which is where the routes disagree.
 #
 TE = torch.linspace(10.0, 150.0, ECHOES)
 simulator = MultiEchoSimulator(TE=TE)
@@ -300,11 +290,10 @@ print(f"{SPOKES} spokes per echo: {undersampling:.0f}x undersampled")
 
 # %%
 #
-# The object, and how it is sampled. The maps on the left are what every route
-# below is trying to recover; the spokes on the right are all that is measured
-# of them -- one echo's worth, rotated by the golden angle from the echo before
-# it, so the echoes together cover k-space more evenly than any one of them
-# does.
+# The maps on the left are what every route recovers; the spokes on the right
+# are all that is measured of them, one echo's worth, rotated by the golden
+# angle from the echo before, so the echoes together cover k-space more evenly
+# than any one does.
 #
 
 # sphinx_gallery_start_ignore
@@ -346,13 +335,11 @@ bar.ax.set_visible(False)
 # Estimator and subspace basis
 # ----------------------------
 #
-# One :class:`~torchsim.DictionaryMatcher` states the problem, and it serves
-# every route below. Asking it for a rank fits a temporal basis to the training
-# signals: that basis is what the subspace reconstruction is given, and the
-# coefficients it returns come straight back to the same mapping.
-#
-# Three directions hold essentially all of an eight-echo exponential, which is
-# read off the basis rather than assumed.
+# One :class:`~torchsim.DictionaryMatcher` states the problem and serves every
+# route. Asking it for a rank fits a temporal basis to the training signals;
+# that basis is what the subspace reconstruction is given, and the coefficients
+# it returns come back to the same mapping. Three directions hold essentially
+# all of an eight-echo exponential, read off the basis rather than assumed.
 #
 grid = torch.linspace(20.0, 400.0, 500)
 mapping = DictionaryMatcher(simulator).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
@@ -391,13 +378,10 @@ def report(name, seconds, found):
 # Contrast-by-contrast reconstruction
 # -----------------------------------
 #
-# The conventional pipeline, in its two usual forms. Gridding is the adjoint
-# operator with a density weighting -- one pass, smooth, and biased. Iterating
-# instead solves each echo's own least-squares problem, which is what a
-# CG-SENSE reconstruction does.
-#
-# Both are given the same estimator afterwards, so what is being compared is
-# the reconstruction and not the fit.
+# The conventional pipeline in its two usual forms. Gridding is the adjoint
+# with a density weighting: one pass, smooth, biased. Iterating instead solves
+# each echo's own least-squares problem, as CG-SENSE does. Both are given the
+# same estimator afterwards, so what is compared is the reconstruction.
 #
 
 # sphinx_gallery_start_ignore
@@ -425,32 +409,25 @@ report("iterative per echo", clock() - started, separate)
 
 # %%
 #
-# Iterating gains nothing here, and the reason is worth stating: sixteen
-# spokes of 192 samples is 3072 measurements against 9216 unknowns, so each
-# echo on its own is an underdetermined problem and there is nothing to
-# converge *to* that the density-weighted adjoint has not already found. What
-# buys accuracy is a constraint that reaches across the echoes -- which is
-# what both remaining routes are.
+# Iterating gains nothing here. Sixteen spokes of 192 samples is 3072
+# measurements against 9216 unknowns, so each echo alone is underdetermined and
+# there is nothing to converge to that the density-weighted adjoint has not
+# found. Accuracy comes from a constraint across the echoes.
 #
 # %%
 #
 # Subspace reconstruction
 # -----------------------
 #
-# The signal is written in the basis fitted above and the *coefficients* are
-# reconstructed, three of them instead of eight images. Now the echoes
-# constrain one another, and the problem is 3072 measurements against 3456
-# unknowns rather than eight separate underdetermined ones. It stays linear,
-# so it has no local minima and no starting guess.
+# The signal is written in the basis fitted above and three coefficients are
+# reconstructed instead of eight images. The echoes now constrain one another
+# and the problem is 3072 measurements against 3456 unknowns. It stays linear,
+# so there are no local minima and no starting guess.
 #
 # ``mapping.subspace.modes`` hands the basis over in the layout mri-nufft's
-# subspace operator reads -- rank first, plain transpose -- and
-# ``from_coefficients`` takes what comes back without projecting it a second
-# time. The solver is the same one route one used, on a different operator.
-#
-# One operator serves every echo here, which the subspace structure is what
-# allows: a single coefficient image is transformed once against all the
-# echoes' samples together.
+# subspace operator reads, and ``from_coefficients`` takes what comes back
+# without projecting a second time. The solver is the one the first route used,
+# on a different operator, and one operator now serves every echo.
 #
 flat = build(
     trajectory.reshape(-1, 2), (SIZE, SIZE), n_coils=1, squeeze_dims=False, density=True
@@ -480,10 +457,9 @@ report("iterative subspace", clock() - started, linear)
 # Maps
 # ----
 #
-# The subspace is the only one of the three that constrains the echoes against
-# one another, and it lands at about half the error of either route that
-# reconstructs each contrast on its own -- in a fraction of the time, because
-# one operator serves every echo.
+# The subspace is the only route that constrains the echoes against one
+# another, and it lands at about half the error of either per-contrast route,
+# in a fraction of the time.
 #
 
 # sphinx_gallery_start_ignore
@@ -515,19 +491,16 @@ scalebar(error, axes[1, 1:], f"|error|, {label}")
 # Limits
 # ------
 #
-# Eight echoes of a single exponential are the case a subspace is best at:
-# three directions hold essentially all of the signal, and what is left for
-# anything more elaborate to recover is close to nothing.
+# Eight echoes of a single exponential is the case a subspace is best at: three
+# directions hold essentially all of the signal.
 #
 # Two things break that. A phase-modulated signal -- a balanced steady state
-# through a field map, a fingerprinting train with a varying RF phase -- needs
-# tens of components rather than three, and the coefficient problem stops being
-# smaller than the image problem. And a model with several parameters has no
-# small basis at all, because the basis has to span the *product* of the
-# ranges. In both cases the model itself has to go inside the operator, which
-# is the nonlinear route.
+# through a field map, a fingerprinting train with varying RF phase -- needs
+# tens of components, and the coefficient problem stops being smaller than the
+# image problem. A model with several parameters has no small basis at all,
+# because the basis must span the product of the ranges. Both cases put the
+# model inside the operator, which is the nonlinear route.
 #
-# The rank is not a guess either way. :attr:`~torchsim.Subspace.retained` says
-# what a basis keeps before anything is projected through it, so how well a
-# subspace can possibly do is known before the reconstruction is run.
+# The rank is not a guess: :attr:`~torchsim.Subspace.retained` says what a
+# basis keeps before anything is projected through it.
 #

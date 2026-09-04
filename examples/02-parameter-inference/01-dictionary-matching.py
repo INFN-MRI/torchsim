@@ -3,20 +3,15 @@
 Dictionary matching
 ===================
 
-MR fingerprinting drives the sequence hard on purpose. The flip angle changes
-every repetition, so a voxel never reaches a steady state and its signal over
-the train is a trajectory rather than a contrast -- one that depends on T1 and
-T2 differently enough that both can be read from it at once.
+The scope of this notebook is to map a brain slice by exhaustive dictionary
+matching, and to show the two ways of making that affordable: working in the
+low-rank basis the train spans, and clustering the dictionary so that most
+atoms are never scored.
 
-Reading them back is where the cost is. A dictionary has to span every
-combination of the parameters, so its size is the *product* of the grids, and
-each atom is as long as the train. This example maps a brain slice from a
-four-hundred-contrast train by exhaustive matching, and then relieves that cost
-twice over: once by working in the low-rank basis the train actually spans, and
-once by clustering the dictionary so that most atoms are never scored.
-
-The two savings are independent and they multiply. What each costs in time and
-in memory, and what each gets wrong, is read off the same slice.
+A dictionary spans every combination of the parameters, so its size is the
+product of the grids and each atom is as long as the train. The two savings are
+independent and multiply; what each costs and what each gets wrong is read off
+the same slice.
 """
 
 # %%
@@ -180,17 +175,11 @@ from torchsim.simulators import MRFSimulator
 # Phantom
 # -------
 #
-# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
-# through the lateral ventricles, carrying CSF, grey matter, white matter and
-# the glial matter between them. BrainWeb publishes it as *fuzzy* memberships:
-# every voxel holds a fraction of each tissue rather than a label, and
-# weighting the relaxation times BrainWeb tabulates by those fractions gives
-# the maps below.
-#
-# The fractions matter more than the anatomy. A third of these brain voxels
-# are mixtures of two tissues or more, so the truth is a continuum rather than
-# four values, and an estimator cannot do well merely by having seen the right
-# four answers.
+# BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
+# ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
+# voxel holds a fraction of each tissue, and the relaxation times are weighted
+# by those fractions. A third of the voxels are mixtures, so the truth is a
+# continuum and not four values.
 #
 
 # sphinx_gallery_start_ignore
@@ -238,9 +227,8 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 # --------
 #
 # Four hundred repetitions after an inversion, at a fixed repetition time and a
-# flip angle that varies smoothly along the train. Smooth is the point: a
-# schedule that jumped about would give trajectories that differ by noise
-# rather than by physics.
+# flip angle that varies smoothly along the train. A schedule that jumped about
+# would give trajectories differing by noise rather than by physics.
 #
 CONTRASTS = 400
 TR_MS = 10.0
@@ -253,9 +241,8 @@ simulator = MRFSimulator(flip=flip, TR=TR_MS, TI=TI_MS, states=20, M0=1.0)
 
 # %%
 #
-# The readouts wind the states on rather than rewinding them, so nothing
-# returns transverse magnetization to the imaginary axis: the trajectory comes
-# back real to within 3e-8, which halves both the dictionary and the
+# The readouts wind the states on rather than rewinding them, so the trajectory
+# comes back real to within 3e-8. That halves both the dictionary and the
 # arithmetic that searches it.
 #
 fingerprints = simulator.simulate(
@@ -276,10 +263,9 @@ key(axes[1], ncols=3)
 
 # %%
 #
-# The measurement, with noise at 2% of the peak fingerprint. One number sets
-# it, and the same number is what the estimators are told to expect -- an
-# estimator trained for more noise than the scan has learns to distrust the
-# data and answers with the prior instead.
+# The measurement, with noise at 2% of the peak fingerprint. The estimators are
+# told the same number: one trained for more noise than the scan has learns to
+# distrust the data and answers with the prior.
 #
 NOISE_STD = float(0.02 * fingerprints.max())
 
@@ -329,13 +315,10 @@ def log_uniform(low, high, count):
 # Problem statement
 # -----------------
 #
-# What is unknown, over what range, from what simulator, at what noise level.
-# The method that fills it in is a separate choice, and the only thing that
-# changes between the answers below.
-#
-# Both relaxation times span more than a decade, so the prior is drawn
-# logarithmically: sampling uniformly would spend most of the budget on long
-# T1, where the trajectories are nearly parallel and carry little information.
+# What is unknown, over what range, and at what noise level. Both relaxation
+# times span more than a decade, so the grid is logarithmic: uniform spacing
+# would spend most of it on long T1, where the trajectories are nearly
+# parallel.
 #
 T1_RANGE = (200.0, 5000.0)
 T2_RANGE = (20.0, 600.0)
@@ -347,10 +330,9 @@ prior = torch.Generator().manual_seed(11)
 # Subspace rank
 # -------------
 #
-# Fit a basis to a set of simulated trajectories and read off how much of their
-# energy each rank keeps. This is not an estimate: one minus the fraction is
-# the relative squared error of projecting those trajectories through the basis
-# and back.
+# A basis fitted to simulated trajectories says how much of their energy each
+# rank keeps. One minus that fraction is the relative squared error of
+# projecting through the basis and back.
 #
 training_signals, _, _ = (
     DictionaryMatcher(simulator)
@@ -388,17 +370,16 @@ key(axis, ncols=2)
 
 # %%
 #
-# Four directions out of four hundred already leave less outside the basis than
-# the noise puts in. There is nothing to be gained by keeping more, and every
-# contrast dropped is arithmetic that neither training nor matching has to do.
+# Four directions out of four hundred leave less outside the basis than the
+# noise puts in, and every contrast dropped is arithmetic the match avoids.
 #
 # Dictionary
 # ----------
 #
-# A dictionary must span the parameters jointly, so its size is the product of
-# the grids -- twenty thousand atoms for two parameters on a grid fine enough
-# that the grid spacing is not what limits the answer. A third parameter would
-# multiply it again, which is the pressure everything below is relieving.
+# The dictionary spans the parameters jointly, so its size is the product of
+# the grids: twenty thousand atoms for two parameters, on a grid fine enough
+# that the spacing is not what limits the answer. A third parameter multiplies
+# it again.
 #
 T1_GRID = torch.logspace(np.log10(T1_RANGE[0]), np.log10(T1_RANGE[1]), 200)
 T2_GRID = torch.logspace(np.log10(T2_RANGE[0]), np.log10(T2_RANGE[1]), 100)
@@ -425,10 +406,9 @@ full_model = footprint(full)
 # Matching in the subspace
 # ------------------------
 #
-# ``rank`` is the whole change: the dictionary is fitted, projected and stored
+# ``rank`` is the whole change. The dictionary is fitted, projected and stored
 # in four directions instead of four hundred, and the measurement is projected
-# the same way before it is scored. Everything else about the problem is
-# identical.
+# the same way before scoring.
 #
 
 # sphinx_gallery_start_ignore
@@ -449,14 +429,13 @@ low_model = footprint(low)
 # Clustered dictionary
 # --------------------
 #
-# Compressing shortened every inner product. Grouping cuts how many are taken:
-# neighbouring tissues make nearly parallel signals, so the atoms cluster, and
-# a voxel matched against one representative signal per group can rule out most
-# of the groups before scoring a single atom inside them.
+# Compressing shortened every inner product; grouping cuts how many are taken.
+# Neighbouring tissues give nearly parallel signals, so the atoms cluster, and
+# a voxel scored against one representative per group rules out most groups
+# before any atom inside them is touched.
 #
-# The clustering happens *in the compressed basis* -- compress first, then
-# cluster -- so a group is entered without leaving the space the measurement is
-# already in. The two savings are independent and multiply.
+# The clustering is done in the compressed basis, so a group is entered without
+# leaving the space the measurement is already in.
 #
 GROUPS = 32
 
@@ -485,31 +464,13 @@ print(
 )
 # sphinx_gallery_end_ignore
 
-# %%
-#
-# Proton density
-# --------------
-#
-# The match answers with relaxation times, and a fingerprint at those times is
-# a shape the measurement is some multiple of -- so the multiple is a
-# projection, one inner product per voxel. It is the same step that turns an
-# MP2RAGE T1 map into an M0 map.
-#
-
-
-def proton_density(maps):
-    """The scale the measurement is, of the fingerprint the answer predicts."""
-    predicted = simulator.simulate(T1=maps["T1"], T2=maps["T2"]).real
-    return (predicted * measured).sum(-1) / predicted.square().sum(-1).clamp_min(1e-12)
-
-
-M0_map = proton_density(maps)
-
 # sphinx_gallery_start_ignore
+# The match works the density out on its way -- the score is a cosine, so the
+# measurement's length over the atom's is the scale -- and returns it as M0.
 estimates = {
-    "full": (full_maps, proton_density(full_maps)),
-    f"rank {RANK}": (low_maps, proton_density(low_maps)),
-    "+ groups": (group_maps, proton_density(group_maps)),
+    "full": (full_maps, full_maps["M0"]),
+    f"rank {RANK}": (low_maps, low_maps["M0"]),
+    "+ groups": (group_maps, group_maps["M0"]),
 }
 # sphinx_gallery_end_ignore
 
@@ -518,11 +479,9 @@ estimates = {
 # Cost and accuracy
 # -----------------
 #
-# Best of three passes each, after one warm-up that leaves out the measurement
-# :func:`~torchsim.execution` makes the first time it meets a workload. The
-# **model** is what the fitted estimator carries between volumes; the **peak**
-# is the high-water mark on the card while the slice was mapped, which is what
-# decides whether a whole volume fits or has to be streamed.
+# Best of three passes each, after a warm-up. **model** is what the fitted
+# estimator carries between volumes; **peak** is the high-water mark on the
+# card, which decides whether a volume fits or has to be streamed.
 #
 
 

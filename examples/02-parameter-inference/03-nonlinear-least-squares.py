@@ -3,21 +3,16 @@
 T2 mapping by nonlinear least squares
 =====================================
 
-A dictionary is a sampling of the model, and its size is the product of the
-grids it samples. A nonlinear fit walks downhill on the model itself, so a
-parameter costs it one more column of the Jacobian rather than one more factor
-in a product. What it gives up is the guarantee: it finds a local minimum of
-the residual, and which one depends on where it started.
+The scope of this notebook is to map T2 from a multi-echo spin echo by
+nonlinear least squares, and to compare it against a dictionary match on the
+same slice.
 
-This example maps T2 from a multi-echo spin echo, and the parameter that
-decides the comparison is a nuisance. A magnitude reconstruction sits on a
-noise floor, so the decay does not go to zero -- and unlike the proton density,
-which divides out of a normalized match for free, a constant added to the decay
-does not. Ignore it and the T2 is biased; put it on the grid and the grid
-multiplies.
-
-Both routes map the same BrainWeb slice, and both report what they cost in time
-and in peak memory.
+What decides the comparison is a nuisance parameter. A magnitude
+reconstruction sits on a noise floor, so the decay does not reach zero, and
+unlike the proton density that offset does not divide out of a normalized
+match. Ignore it and T2 is biased; put it on the grid and the grid multiplies.
+A fit pays one more column of the Jacobian instead, and gives up the guarantee
+that it found the global minimum.
 """
 
 # %%
@@ -180,17 +175,11 @@ from torchsim.simulators import MultiEchoSimulator
 # Phantom
 # -------
 #
-# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
-# through the lateral ventricles, carrying CSF, grey matter, white matter and
-# the glial matter between them. BrainWeb publishes it as *fuzzy* memberships:
-# every voxel holds a fraction of each tissue rather than a label, and
-# weighting the relaxation times BrainWeb tabulates by those fractions gives
-# the maps below.
-#
-# The fractions matter more than the anatomy. A third of these brain voxels
-# are mixtures of two tissues or more, so the truth is a continuum rather than
-# four values, and an estimator cannot do well merely by having seen the right
-# four answers.
+# BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
+# ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
+# voxel holds a fraction of each tissue, and the relaxation times are weighted
+# by those fractions. A third of the voxels are mixtures, so the truth is a
+# continuum and not four values.
 #
 
 # sphinx_gallery_start_ignore
@@ -230,10 +219,10 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 # Measurement and noise floor
 # ---------------------------
 #
-# Sixteen echoes out to 200 ms. The decay is scaled by the proton density and
-# offset by a constant: a magnitude reconstruction rectifies the noise, so what
-# the late echoes measure is not zero but the noise floor, and a fit that does
-# not say so will absorb it into T2.
+# Sixteen echoes out to 200 ms, scaled by the proton density and offset by a
+# constant. A magnitude reconstruction rectifies the noise, so the late echoes
+# measure the floor rather than zero, and a fit that does not model it absorbs
+# it into T2.
 #
 ECHOES = 16
 TE = torch.linspace(10.0, 200.0, ECHOES)
@@ -248,9 +237,8 @@ measured = clean + NOISE_STD * torch.randn(clean.shape, generator=generator)
 
 # %%
 #
-# Three decays and what the floor does to them. The short-T2 voxel is on the
-# floor by the fourth echo, so most of its train says nothing about T2 and
-# everything about the offset; the long-T2 one never gets there.
+# The short-T2 voxel is on the floor by the fourth echo, so most of its train
+# says nothing about T2; the long-T2 one never reaches it.
 #
 
 # sphinx_gallery_start_ignore
@@ -303,15 +291,13 @@ def error(estimate, reference):
 # Nonlinear fit
 # -------------
 #
-# What is unknown, over what range, from what simulator, at what noise level
-# -- and then :class:`~torchsim.NonlinearLeastSquares` to fill it in. Every
-# voxel steps together in the same pass, carries its own damping, accepts or
-# rejects on its own, and drops out when it has converged.
+# What is unknown, over what range, and at what noise level. Every voxel steps
+# together in the same pass, carries its own damping, accepts or rejects on its
+# own, and drops out when it converges.
 #
-# The bounds are not clipping. A bound is kept by fitting a transformed
-# variable, so no iterate ever leaves the interval and the bound cannot be
-# sitting exactly on the answer -- which also puts every parameter on the same
-# scale whatever its units, and that is what the damping term assumes.
+# The bounds are not clipping. Each is kept by fitting a transformed variable,
+# so no iterate leaves the interval and no bound sits on the answer. That also
+# puts every parameter on one scale, which is what the damping assumes.
 #
 BOUNDS = {"T2": (10.0, 500.0), "M0": (0.1, 2.0), "offset": (0.0, 0.2)}
 START = {"T2": 100.0, "M0": 1.0, "offset": 0.02}
@@ -360,12 +346,10 @@ print(
 # Dictionary match
 # ----------------
 #
-# The same problem given to a dictionary. Its grid does not need a proton
-# density: a match normalizes both sides, so any positive scale is matched for
-# free, and one parameter of the three is gone before the grid is built.
-#
-# The offset is not so kind. It survives normalization, so a match that wants
-# to model it has to put it on the grid -- and the grid is then the product.
+# The same problem given to a dictionary. Its grid needs no proton density: a
+# match normalizes both sides, so any positive scale is free and one of the
+# three parameters is gone before the grid is built. The offset survives
+# normalization, so modelling it means putting it on the grid.
 #
 T2_GRID = torch.logspace(1.0, np.log10(500.0), 400)
 
@@ -373,8 +357,7 @@ match = DictionaryMatcher(simulator.bind(M0=1.0, offset=0.0)).fit(T2=T2_GRID, se
 
 # %%
 #
-# To model the floor the match has to put it on the grid, and the grid is then
-# the product of the two.
+# With the floor on the grid, the grid is the product of the two.
 #
 offsets = torch.linspace(0.0, 0.15, 40)
 grid_t2, grid_offset = torch.meshgrid(T2_GRID, offsets, indexing="ij")
@@ -416,10 +399,9 @@ matches = {floors: matched(floors) for floors in FLOOR_VALUES}
 # Cost and accuracy
 # -----------------
 #
-# Best of three passes each, after one warm-up that leaves out the measurement
-# :func:`~torchsim.execution` makes the first time it meets a workload. The
-# **model** is what the fitted estimator carries between volumes; the **peak**
-# is the high-water mark on the card while the slice was mapped.
+# Best of three passes each, after a warm-up. **model** is what the fitted
+# estimator carries between volumes; **peak** is the high-water mark on the
+# card while the slice was mapped.
 #
 
 # sphinx_gallery_start_ignore
@@ -464,24 +446,21 @@ for name, training, timing, model, peak, found in (
 # Interpretation
 # --------------
 #
-# The first row is the trap. A T2-only match is the quickest thing here and it
-# is wrong by an order of magnitude more than anything else, because the model
-# it matched against was not the model that produced the data. Nothing about
-# the estimator says so -- the residual it minimized is small, and it is small
+# The first row is the trap. A T2-only match is the quickest thing here and the
+# most wrong, because the model it matched was not the model that produced the
+# data. Nothing in the estimator says so: the residual it minimized is small,
 # at the wrong T2.
 #
-# Once the offset is on the grid the match recovers, and the cost of recovering
-# is the whole point: ten values of one nuisance is ten times the atoms, and
-# the memory follows, for a parameter that took the fit one more column and no
-# more storage at all. The peak stops climbing at the top of the sweep only
-# because streaming has taken over and is sizing its chunk to a budget.
+# With the offset on the grid the match recovers, and the cost of recovering is
+# the point: ten values of one nuisance is ten times the atoms and ten times
+# the memory, for a parameter that cost the fit one column. The peak stops
+# climbing at the top of the sweep only because streaming has taken over.
 #
-# The fit is the slower of the two in wall clock, and on this problem it stays
-# that way: a Levenberg-Marquardt loop is tens of passes over the model where a
-# match is one pass over the atoms. What does not happen to it is growth. Every
-# nuisance the scale does not divide out multiplies the grid again and adds one
-# column to the Jacobian, so where the two cross is arithmetic rather than
-# opinion -- and the memory has crossed already.
+# The fit is the slower of the two in wall clock and stays that way here: a
+# Levenberg-Marquardt loop is tens of passes where a match is one. What it does
+# not do is grow. Each nuisance multiplies the grid again and adds one column
+# to the Jacobian, so where the two cross is arithmetic; the memory has crossed
+# already.
 #
 
 # sphinx_gallery_start_ignore
@@ -551,16 +530,14 @@ scalebar(error, axes[1, 1:], f"|error|, {label}")
 # Limits
 # ------
 #
-# It has no guarantee. The fit above started every voxel at 100 ms and landed
-# on the right answer everywhere, which is a property of an exponential and not
-# of nonlinear least squares: the residual of a single decay has one minimum,
-# so where it starts does not matter. A model whose residual has several -- a
-# fingerprinting train, a fat-water fit at a wrong initial field map -- can be
-# started in the wrong basin and stay there, and a match cannot, because it
+# There is no guarantee. The fit started every voxel at 100 ms and landed on
+# the right answer everywhere, which is a property of an exponential: the
+# residual of a single decay has one minimum. A model whose residual has
+# several -- a fingerprinting train, a fat-water fit at a wrong field map --
+# can be started in the wrong basin and stay there. A match cannot, because it
 # scores every atom.
 #
-# Equality constraints belong in the model rather than in the bounds. A fit
-# where two fractions must sum to one is written with one of them as the
-# unknown and the other as ``1 - f`` inside the model, so the constraint holds
-# identically at every iterate rather than being restored after each.
+# Equality constraints belong in the model, not in the bounds. Two fractions
+# that must sum to one are written with one as the unknown and the other as
+# ``1 - f`` inside the model, so the constraint holds at every iterate.
 #

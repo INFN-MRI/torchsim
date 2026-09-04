@@ -3,22 +3,15 @@
 Designing echo trains for image quality
 =======================================
 
-Most sequences are not measuring anything. A 3D turbo spin echo of a knee has
-to produce a *picture*, and what it is designed for is sharpness and contrast
-rather than for how tightly a relaxation time can be pinned down. The cost
-says which of the two it is; the simulator, the bounded parameters and the
-loop are the same either way.
+The scope of this notebook is to design refocusing flip angles for image
+quality rather than for precision: first a single echo train, then a whole
+segmented 3D protocol in which each shot carries its own repetition time, echo
+train length and angles.
 
-Long echo trains are efficient and blurry. T2 decay across the train modulates
-k-space, and that modulation is a point spread function -- so the refocusing
-flip angles, which control how fast the train decays, control the resolution
-of the image [1]_.
-
-This example designs two things. The first is a single echo train, which is
-the smallest problem of this kind and takes a fraction of a second. The second
-is a whole segmented protocol, in which every shot carries its own repetition
-time, its own echo train length and its own flip angles, chosen by where in
-k-space that shot samples [2]_.
+T2 decay across a long train modulates k-space, and that modulation is a point
+spread function, so the refocusing angles control the resolution of the image
+[1]_. Only the cost distinguishes this from a precision design; the simulator,
+the bounded parameters and the loop are the same.
 
 """
 
@@ -178,17 +171,14 @@ def blur(signal, acquired):
 # One train
 # =========
 #
-# A 120-echo train has 120 flip angles, but they are not 120 independent
-# choices. What a radiologist and a scanner both care about are three of them:
-# the **minimum** angle, which sets how much the train is spoiled by flow and
-# motion; the angle at the **centre of k-space**, which sets the signal the
-# image contrast is made of; and the **maximum**, which is what the deposited
-# RF power limits.
+# A 120-echo train has 120 angles but three degrees of freedom: the
+# **minimum**, which sets how much the train is spoiled by flow and motion; the
+# angle at the **centre of k-space**, which sets the image contrast; and the
+# **maximum**, which the deposited RF power limits.
 #
-# The train is blended smoothly between those three: it starts at the maximum,
-# drops to the minimum as the pseudo steady state is established, passes
-# through the centre-of-k-space angle where k-space is sampled, and ramps back
-# to the maximum at the end of the train.
+# The train blends between them: it starts at the maximum, drops to the minimum
+# as the pseudo steady state is established, passes through the centre-of-
+# k-space angle where k-space is sampled, and ramps back up.
 #
 ESP_MS = 5.0
 ECHOES = 120
@@ -281,10 +271,9 @@ def single_train(control):
 
 # %%
 #
-# The train starts from a conventional prescription -- a 50 degree minimum, a
-# 90 degree centre-of-k-space angle and a 150 degree maximum. The limits are
-# what the scanner will play, and :class:`~torchsim.Bounded` holds them
-# exactly, so no iterate is ever outside them.
+# A conventional prescription to start from: 50 degree minimum, 90 degree
+# centre-of-k-space angle, 150 degree maximum. The limits are what the scanner
+# will play, and :class:`~torchsim.Bounded` holds them exactly.
 #
 design = SequenceDesign(single_train, control=Bounded(PRESCRIBED, LOWEST, HIGHEST))
 
@@ -395,18 +384,15 @@ axes[2].set_box_aspect(1)
 # Optimized schedule
 # ------------------
 #
-# A blur measured in pixels is a number, and the thing it is a number about is
-# an image. Since the echo index runs along one k-space direction, forming that
-# image is a multiplication: take each tissue's contribution to the object,
-# transform it along the phase-encode axis, weight every line by what the train
-# was at the echo that sampled it, and transform back. A tissue with a
-# fast-decaying train has its lines weighted down at the edges of k-space and
-# comes back smeared; one that holds up does not.
+# The echo index runs along one k-space direction, so forming the image is a
+# multiplication: transform each tissue's contribution along the phase-encode
+# axis, weight every line by the train at the echo that sampled it, and
+# transform back. A fast-decaying train weights the edges of k-space down and
+# comes back smeared.
 #
-# The phantom is a knee in cartoon: a cartilage band with a two-pixel joint
-# line through it, and four bars of fluid five, three, two and one pixels
-# thick. No noise is added, so nothing below is a noise realization -- what
-# differs between the two images is the train and only the train.
+# The phantom is a cartoon knee: a cartilage band with a two-pixel joint line,
+# and four fluid bars five, three, two and one pixels thick. No noise is added,
+# so what differs between the two images is the train alone.
 #
 
 # sphinx_gallery_start_ignore
@@ -465,10 +451,8 @@ scale = float(prescribed_image.max())
 # %%
 #
 # The joint line and the thin bars are where a point spread of a pixel or two
-# is decided. The ringing either side of every edge is the finite matrix rather
-# than the train -- a step edge sampled at 120 lines rings whatever weights
-# them -- and it is the *depth of the troughs between the bars* that the design
-# moves.
+# shows. The ringing at every edge is the finite matrix rather than the train;
+# what the design moves is the depth of the troughs between the bars.
 #
 
 # sphinx_gallery_start_ignore
@@ -517,17 +501,14 @@ axes[2].set_box_aspect(1)
 
 # %%
 #
-# What moved is sharpness, and the contrast the cost also asked for did not
-# have to be given up for it: the fluid-to-cartilage difference at the centre
-# of k-space is within a percent of where it started while the point spread
-# narrowed by nearly a fifth. That is what the power term is doing in the cost --
-# without it the design would buy sharpness by driving the whole train harder,
-# and the answer would be a train the scanner refuses.
+# Sharpness moved without giving up contrast: the fluid-to-cartilage
+# difference at the centre of k-space is within a percent of where it started
+# while the point spread narrowed by nearly a fifth. The power term is what
+# prevents the design buying sharpness by driving the train harder than the
+# scanner allows.
 #
-# The one-pixel bar is the honest limit. A point spread narrower than a pixel
-# is not a thing a design can buy, so what the last bar shows is how much of
-# its amplitude survives -- and a bar that is flattened in both images is
-# flattened by the matrix rather than by the train.
+# The one-pixel bar is the limit. A point spread narrower than a pixel is not
+# available, so a bar flattened in both images is flattened by the matrix.
 #
 
 # %%
@@ -535,16 +516,15 @@ axes[2].set_box_aspect(1)
 # A whole protocol
 # ================
 #
-# Segmented 3D TSE splits k-space over many shots, and the shots do not all do
-# the same job: the centre of k-space sets the contrast, the periphery sets
-# the sharpness. Giving each shot its own parameters rather than repeating one
-# train is what lets a protocol spend a long repetition time where contrast
-# comes from and a short one where it does not [2]_.
+# Segmented 3D TSE splits k-space over many shots, and they do not do the same
+# job: the centre sets contrast, the periphery sets sharpness. Giving each shot
+# its own parameters lets a protocol spend a long repetition time where
+# contrast comes from and a short one where it does not [2]_.
 #
-# The prescription is two sets of numbers -- what the sequence does at the
-# **centre** of k-space and what it does at the **periphery** -- and a cubic
-# transition builds every shot in between. The parameters that transition are
-# the repetition time, the echo train length, and the three control angles.
+# The prescription is two sets of numbers, at the **centre** and at the
+# **periphery**, and a cubic transition builds every shot between them. What
+# transitions is the repetition time, the echo train length and the three
+# control angles.
 #
 ESP_SPACE_MS = 3.5
 TE_MS = 28.0
@@ -574,15 +554,14 @@ def transition(centre, periphery):
 
 # %%
 #
-# Shots differ in **length**, and that is the point: the centre of k-space can
-# afford a long train because contrast is decided by one echo of it, while the
-# periphery wants a short one so that its k-space lines are not spread by T2
-# decay. A train that has ended is masked out of the padded echo axis.
+# Shots differ in length: the centre can afford a long train because contrast
+# is decided by one echo of it, while the periphery wants a short one so its
+# lines are not spread by T2 decay. A train that has ended is masked out of the
+# padded echo axis.
 #
-# A refocusing angle of exactly zero is a corner rather than a point -- what
-# reaches the scanner is a magnitude, which has no sign there -- so the mask
-# floors at a negligible angle. The train is cut at its length when the
-# sequence is written.
+# A refocusing angle of exactly zero is a corner, not a point -- what reaches
+# the scanner is a magnitude, which has no sign there -- so the mask floors at
+# a negligible angle.
 #
 FLOOR = 1e-6
 
@@ -601,11 +580,11 @@ def protocol(
 
 # %%
 #
-# The exam has to cover k-space, and that is what ties the two ends together.
-# A shot covers as many lines as its train is long, so the number of shots is
-# the lines to cover divided by the average train length, and the scan time is
-# that many shots at the average repetition time. Lengthening the trains at
-# the centre buys the repetition time there.
+# Covering k-space is what ties the two ends together. A shot covers as many
+# lines as its train is long, so the shot count is the lines divided by the
+# average train length and the scan time is that many shots at the average
+# repetition time. Lengthening the trains at the centre buys the repetition
+# time there.
 #
 
 
@@ -659,9 +638,8 @@ def image_quality(**design):
 
 # %%
 #
-# The design starts from the prescription the abstract reports: at the centre
-# of k-space a 45 echo train at a 1800 ms repetition time, and at the
-# periphery a 20 echo train at 150 ms.
+# Starting from the prescription the abstract reports: a 45 echo train at
+# 1800 ms at the centre, a 20 echo train at 150 ms at the periphery.
 #
 PRESCRIPTION = {
     "centre_control": Bounded(PRESCRIBED, LOWEST, HIGHEST),
@@ -690,9 +668,8 @@ print(
 
 # %%
 #
-# The prescription itself is worth reading first. Covering this matrix with
-# the trains it asks for takes a number of shots the design never chose --
-# it falls out of the arithmetic above -- and the abstract reports 586.
+# Covering this matrix with the trains the prescription asks for takes a shot
+# count that falls out of the arithmetic above; the abstract reports 586.
 #
 
 # sphinx_gallery_start_ignore
@@ -748,10 +725,10 @@ print(
 
 # %%
 #
-# The trains the transition produced, and what the exam gets for them. Each
-# curve is one sampled distance from the centre of k-space; the shots between
-# them are the same curve read at their own radius, which is what keeps
-# k-space free of the discontinuities that a shot-by-shot design would leave.
+# The trains the transition produced. Each curve is one sampled distance from
+# the centre of k-space; shots between them read the same curve at their own
+# radius, which keeps k-space free of the discontinuities a shot-by-shot design
+# would leave.
 #
 
 # sphinx_gallery_start_ignore

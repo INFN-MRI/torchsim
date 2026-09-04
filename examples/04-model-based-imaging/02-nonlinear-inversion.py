@@ -3,8 +3,12 @@
 Nonlinear inversion from k-space
 ==============================================
 
-Physics-based reconstruction removes the intermediate images altogether. The
-forward operator is written as a chain
+The scope of this notebook is to reconstruct T2 maps straight from k-space,
+with the signal model inside the forward operator, and to say where the time
+and the memory go.
+
+Physics-based reconstruction removes the intermediate images. The forward
+operator is a chain
 
 .. math::
 
@@ -17,12 +21,9 @@ one TorchSim supplies: :class:`~torchsim.recon.ModelOperator` turns any
 simulator into it, and the encoding comes from mri-nufft.
 
 Unlike a subspace this stays nonlinear, so it needs a starting guess and a loop
-around it -- and it pays for that with a model of any number of parameters,
-where a basis would have to span their product.
-
-This example reconstructs one undersampled radial multi-echo spin echo by
-iteratively regularized Gauss-Newton, against gridding as the baseline, and
-reports where the time and the memory actually go.
+around it, and it pays for that with a model of any number of parameters where
+a basis would have to span their product. The comparison here is against
+gridding, by iteratively regularized Gauss-Newton.
 
 Wang X, Tan Z, Scholand N, Roeloffs V, Uecker M. *Physics-based reconstruction
 methods for magnetic resonance imaging.* Phil Trans R Soc A 379:20200196
@@ -139,12 +140,9 @@ from brainweb_dl import get_mri
 # The Fourier encoding is not TorchSim's and never will be. ``mri-nufft``
 # supplies the radial trajectory and the non-uniform transform that plays it;
 # ``deepinv`` supplies the :class:`~deepinv.physics.LinearPhysics` base class
-# the encoding operator below is written against, and the linear solver a
-# Gauss-Newton step hands its linearized problem to.
-#
-# That base class is the whole of the adapter: anything exposing ``A`` and
-# ``A_adjoint`` composes with what TorchSim supplies, so the operator built a
-# few cells down is the only glue this integration needs.
+# the encoding operator is written against, and the linear solver a
+# Gauss-Newton step hands its linearized problem to. Anything exposing ``A``
+# and ``A_adjoint`` composes with what TorchSim supplies.
 #
 import mrinufft
 from deepinv.physics import LinearPhysics
@@ -188,13 +186,10 @@ backend = "cufinufft" if on_gpu else "finufft"
 # Phantom
 # -------
 #
-# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
-# through the lateral ventricles, resampled to the matrix reconstructed here.
-# BrainWeb publishes it as *fuzzy* memberships, so a voxel carries a fraction
-# of CSF, grey matter, white matter and glial matter rather than a label, and
-# weighting the tabulated relaxation times by those fractions gives a T2 map
-# whose mixed voxels sit between the pure ones -- an answer that is known
-# everywhere, mixtures included.
+# BrainWeb subject 0, slice 90, resampled to the matrix reconstructed here.
+# BrainWeb publishes fuzzy memberships rather than labels, so weighting the
+# tabulated relaxation times by them gives a T2 map whose mixed voxels sit
+# between the pure ones, known everywhere.
 #
 
 # sphinx_gallery_start_ignore
@@ -238,13 +233,10 @@ T2_true = torch.where(
 # Sequence and sampling
 # ---------------------
 #
-# A multi-echo spin echo, read out on a golden-angle radial trajectory that
-# rotates between echoes. Sixteen spokes per echo across a 96-sample matrix is
-# roughly ninefold undersampled, which is where the three routes start to
-# disagree.
-#
-# The protocol stays on the host. :class:`~torchsim.recon.ModelOperator` takes
-# it wherever the maps are, so nothing here has to be moved by hand.
+# A multi-echo spin echo on a golden-angle radial trajectory that rotates
+# between echoes. Sixteen spokes per echo across a 96-sample matrix is roughly
+# ninefold undersampled. The protocol stays on the host;
+# :class:`~torchsim.recon.ModelOperator` takes it wherever the maps are.
 #
 TE = torch.linspace(10.0, 150.0, ECHOES)
 simulator = MultiEchoSimulator(TE=TE)
@@ -303,11 +295,9 @@ print(f"{SPOKES} spokes per echo: {undersampling:.0f}x undersampled")
 
 # %%
 #
-# The object, and how it is sampled. The maps on the left are what every route
-# below is trying to recover; the spokes on the right are all that is measured
-# of them -- one echo's worth, rotated by the golden angle from the echo before
-# it, so the echoes together cover k-space more evenly than any one of them
-# does.
+# The maps on the left are what every route recovers; the spokes on the right
+# are all that is measured of them, one echo's worth, rotated by the golden
+# angle from the echo before.
 #
 
 # sphinx_gallery_start_ignore
@@ -349,13 +339,10 @@ bar.ax.set_visible(False)
 # Estimator for the baseline
 # --------------------------
 #
-# The route this is measured against reconstructs images and then fits them,
-# so it needs an estimator. One :class:`~torchsim.DictionaryMatcher` states that
-# problem, over a compressed basis because there is no reason to match at full
-# length: three directions hold essentially all of an eight-echo exponential,
-# which the basis reports rather than being assumed.
-#
-# The nonlinear route below has no such step. Its answer *is* the maps.
+# The baseline reconstructs images and then fits them, so it needs an
+# estimator, stated over a compressed basis: three directions hold essentially
+# all of an eight-echo exponential. The nonlinear route has no such step --
+# its answer is the maps.
 #
 grid = torch.linspace(20.0, 400.0, 500)
 mapping = DictionaryMatcher(simulator).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
@@ -394,15 +381,11 @@ def report(name, seconds, found):
 # Baseline reconstruction
 # -----------------------
 #
-# The conventional pipeline, in its cheapest form. Gridding is the adjoint
-# operator with a density weighting -- one pass, smooth, and biased -- and the
-# estimator above turns the eight images it produces into a T2 map.
-#
-# Sixteen spokes of 192 samples is 3072 measurements against 9216 unknowns, so
-# each echo on its own is an underdetermined problem: iterating instead of
-# gridding has nothing to converge *to* that the density-weighted adjoint has
-# not already found. What buys accuracy is a constraint that reaches across the
-# echoes, which is what the model below is.
+# Gridding is the adjoint with a density weighting -- one pass, smooth, biased
+# -- and the estimator above turns its eight images into a T2 map. Sixteen
+# spokes of 192 samples is 3072 measurements against 9216 unknowns, so each
+# echo alone is underdetermined and iterating has nothing to converge to.
+# Accuracy comes from a constraint across the echoes, which is the model.
 #
 
 # sphinx_gallery_start_ignore
@@ -420,18 +403,16 @@ report("adjoint per echo", clock() - started, adjoint)
 # ---------------
 #
 # The signal model stays inside the forward operator and the maps are solved
-# for against k-space directly. Two things are declared and nothing else:
+# for against k-space directly. Two things are declared:
 #
 # * **what is unknown** -- ``T2``, plus the complex amplitude the operator
 #   carries for it, which is proton density and receive phase together;
 # * **what T2 may be** -- a box bound, kept by solving for a transformed
-#   variable so no iterate is ever outside it. Under an encoding operator that
-#   matters more than in a fit: the model is evaluated at every voxel to
-#   predict every k-space sample, so one unphysical voxel corrupts the whole
-#   residual.
+#   variable so no iterate leaves it. That matters more here than in a fit:
+#   the model is evaluated at every voxel to predict every k-space sample, so
+#   one unphysical voxel corrupts the whole residual.
 #
-# An equality constraint, were there one, would be written into the model
-# instead -- see :class:`~torchsim.recon.ModelOperator`.
+# An equality constraint would be written into the model instead.
 #
 operator = ModelOperator(simulator, "T2", bounds={"T2": (20.0, 400.0)})
 
@@ -443,12 +424,11 @@ initial[0, ..., 2] = gridded[..., 0].imag
 
 # %%
 #
-# The loop is an iteratively regularized Gauss-Newton: linearize, solve the
-# linear problem that leaves, step, and lower the damping. TorchSim supplies
-# the loop and the derivative, and **not the linear solver** --
-# :func:`~torchsim.recon.iterative` hands the linearized problem to the same
-# deepinv routine the two routes above called directly. Swapping in a proximal
-# solver under a wavelet prior is a change to that one argument.
+# An iteratively regularized Gauss-Newton: linearize, solve, step, lower the
+# damping. TorchSim supplies the loop and the derivative but not the linear
+# solver -- :func:`~torchsim.recon.iterative` hands the linearized problem to
+# the same deepinv routine the baseline called. A proximal solver under a
+# wavelet prior is a change to that one argument.
 #
 
 # sphinx_gallery_start_ignore
@@ -476,16 +456,15 @@ print(
 # Timing
 # ------
 #
-# Each conjugate-gradient step costs one product with the Jacobian and one
-# with its adjoint, and each of those is the encoding operator once and the
-# model once. Timing the four separately says which half a faster
-# reconstruction would have to come from -- and on this problem they are
-# comparable, so the model is not something to optimize around.
+# Each conjugate-gradient step costs one product with the Jacobian and one with
+# its adjoint, and each is the encoding operator once and the model once.
+# Timing the four says which half a faster reconstruction would come from; here
+# they are comparable.
 #
-# Neither product builds the Jacobian. That is a memory argument rather than a
-# speed one: the blocks are ``voxels x channels x contrasts`` where a signal
-# is ``voxels x contrasts``, so what is not held is the channel count times
-# the signal, every iteration.
+# Neither product builds the Jacobian. That is a memory argument: the blocks
+# are ``voxels x channels x contrasts`` where a signal is ``voxels x
+# contrasts``, so what is not held is the channel count times the signal, every
+# iteration.
 #
 tangent = torch.randn_like(initial)
 predicted = operator.A_jvp(initial, tangent)
@@ -558,14 +537,9 @@ scalebar(error, axes[1, 1:], f"|error|, {label}")
 # Writing a different model
 # -------------------------
 #
-# Nothing above is about T2. The model is the only thing that names a
-# relaxation time, and it is an ordinary
-# :class:`~torchsim.model.SignalModel` -- the same object the fitting and
-# sequence-design examples use. Water-fat separation, T2* with a field map,
-# a Look-Locker inversion recovery: each is a different ``evaluate``, and the
-# operator, the loop and the encoding are unchanged.
-#
-# That is the contribution. A reconstruction library has to be told the
-# physics; here the physics is the part you write, and everything that
-# surrounds it already exists.
+# The model is the only thing above that names a relaxation time, and it is an
+# ordinary :class:`~torchsim.model.SignalModel` -- the same object the fitting
+# and sequence-design notebooks use. Water-fat separation, T2* with a field
+# map, a Look-Locker inversion recovery: each is a different ``evaluate``, and
+# the operator, the loop and the encoding are unchanged.
 #

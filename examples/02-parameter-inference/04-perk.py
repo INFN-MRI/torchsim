@@ -3,19 +3,14 @@
 PERK: kernel ridge regression
 =============================
 
-A dictionary spans the parameters jointly, so its size is the product of the
-grids and a third parameter multiplies it again. PERK never builds one. It is a
-kernel regression, trained on signals drawn from a prior rather than laid on a
-grid, and at inference it maps a signal onto a fixed set of random Fourier
-features and reads the answer off a linear combination of them -- so its cost
-per voxel is the same whatever the parameter space looks like.
+The scope of this notebook is to map a brain slice with PERK, to show what the
+size of the regression buys, and to read the error bar it reports.
 
-What that cost buys is set by how many features there are, and unlike a grid it
-is paid once, during training.
-
-This example maps a brain slice from a four-hundred-contrast MR fingerprinting
-train, sweeps the size of the regression, and puts a compressed dictionary match
-beside it so that the trade is a table rather than an argument.
+PERK never builds a dictionary. It is a kernel regression trained on signals
+drawn from a prior rather than laid on a grid, and at inference it projects a
+signal onto a fixed set of random Fourier features and reads the answer off a
+linear combination of them. Its cost per voxel does not depend on how many
+parameters are unknown, and the training is paid once.
 """
 
 # %%
@@ -179,17 +174,11 @@ from torchsim.simulators import MRFSimulator
 # Phantom
 # -------
 #
-# The phantom is BrainWeb subject 0, slice 90 -- an axial slice at 1 mm
-# through the lateral ventricles, carrying CSF, grey matter, white matter and
-# the glial matter between them. BrainWeb publishes it as *fuzzy* memberships:
-# every voxel holds a fraction of each tissue rather than a label, and
-# weighting the relaxation times BrainWeb tabulates by those fractions gives
-# the maps below.
-#
-# The fractions matter more than the anatomy. A third of these brain voxels
-# are mixtures of two tissues or more, so the truth is a continuum rather than
-# four values, and an estimator cannot do well merely by having seen the right
-# four answers.
+# BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
+# ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
+# voxel holds a fraction of each tissue, and the relaxation times are weighted
+# by those fractions. A third of the voxels are mixtures, so the truth is a
+# continuum and not four values.
 #
 
 # sphinx_gallery_start_ignore
@@ -237,9 +226,8 @@ figure.suptitle("BrainWeb subject 0, slice 90")
 # --------
 #
 # Four hundred repetitions after an inversion, at a fixed repetition time and a
-# flip angle that varies smoothly along the train. Smooth is the point: a
-# schedule that jumped about would give trajectories that differ by noise
-# rather than by physics.
+# flip angle that varies smoothly along the train. A schedule that jumped about
+# would give trajectories differing by noise rather than by physics.
 #
 CONTRASTS = 400
 TR_MS = 10.0
@@ -328,13 +316,10 @@ def log_uniform(low, high, count):
 # Problem statement
 # -----------------
 #
-# What is unknown, over what range, from what simulator, at what noise level.
-# The method that fills it in is a separate choice, and the only thing that
-# changes between the answers below.
-#
-# Both relaxation times span more than a decade, so the prior is drawn
-# logarithmically: sampling uniformly would spend most of the budget on long
-# T1, where the trajectories are nearly parallel and carry little information.
+# What is unknown, over what range, and at what noise level. Both relaxation
+# times span more than a decade, so the prior is drawn logarithmically:
+# uniform sampling would spend most of the budget on long T1, where the
+# trajectories are nearly parallel.
 #
 T1_RANGE = (200.0, 5000.0)
 T2_RANGE = (20.0, 600.0)
@@ -346,10 +331,9 @@ prior = torch.Generator().manual_seed(11)
 # Subspace basis
 # --------------
 #
-# Four hundred contrasts of a relaxation-driven train do not span four hundred
-# directions. Fitting a basis to simulated trajectories says how many they do
-# span, and one minus the energy it keeps is the relative squared error of
-# projecting a trajectory through it and back -- a number, not an estimate.
+# Four hundred contrasts do not span four hundred directions. A basis fitted to
+# simulated trajectories says how many they do span; one minus the energy it
+# keeps is the relative squared error of projecting through it and back.
 #
 training_signals, _, _ = (
     PERK(simulator)
@@ -387,17 +371,14 @@ key(axis, ncols=2)
 
 # %%
 #
-# Four directions already leave less outside the basis than the noise puts in.
-# Both methods below are given that same basis, so what the table compares is
-# the estimator rather than the compression.
+# Four directions leave less outside the basis than the noise puts in, so
+# rank 4 is used from here on.
 #
 # Training
 # --------
 #
-# The training set is drawn from the prior, not from a grid: twenty thousand
-# parameter pairs spread logarithmically over the ranges, simulated and given
-# the noise the scan has. Fitting is a linear solve against the features, and
-# it is the whole of what the method costs before it ever sees a voxel.
+# Twenty thousand parameter pairs drawn from the prior, simulated, and given
+# the noise the scan has. Fitting is a linear solve against the features.
 #
 
 
@@ -438,31 +419,26 @@ regressions = {features: regressed(features) for features in (500, 1000, 4000)}
 perk_maps, perk_training, perk_mapping, perk_model, perk_peak = regressions[FEATURES]
 # sphinx_gallery_end_ignore
 
-# %%
-#
-# Dictionary baseline
-# -------------------
-#
-# The same problem given to a compressed dictionary match over a grid fine
-# enough that the grid spacing is not what limits the answer. Two parameters is
-# the case least favourable to a regression, because it is the case where a
-# grid is still small.
-#
+# sphinx_gallery_start_ignore
+# A compressed dictionary match over a grid fine enough that the spacing is not
+# what limits it, kept only as the reference point in the table below. What a
+# match is and what it costs is the subject of the first example in this
+# section, not of this one.
 T1_GRID = torch.logspace(np.log10(T1_RANGE[0]), np.log10(T1_RANGE[1]), 200)
 T2_GRID = torch.logspace(np.log10(T2_RANGE[0]), np.log10(T2_RANGE[1]), 100)
 grid_t1, grid_t2 = torch.meshgrid(T1_GRID, T2_GRID, indexing="ij")
 
-# sphinx_gallery_start_ignore
 start = time.perf_counter()
-# sphinx_gallery_end_ignore
 matched = DictionaryMatcher(simulator).fit(
     T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), rank=RANK, seed=0
 )
-
-# sphinx_gallery_start_ignore
 match_training = time.perf_counter() - start
 match_maps, match_mapping, match_peak = mapped(matched)
 match_model = footprint(matched)
+estimates = {
+    "match": (match_maps, match_maps["M0"]),
+    "PERK": (perk_maps, perk_maps["M0"]),
+}
 print(
     f"dictionary: {grid_t1.numel()} atoms at rank {RANK}; "
     f"regression: {FEATURES} features from {SAMPLES} training draws"
@@ -471,39 +447,12 @@ print(
 
 # %%
 #
-# Proton density
-# --------------
-#
-# Neither method estimates M0 and neither simulates one to find it. Both throw
-# the amplitude away to compare shapes, and both know what they threw.
-#
-# A match normalizes the measurement and the atom, so its score is a cosine:
-# the measurement's own length, times the score, over the atom's length -- one
-# number stored per atom -- is the scale already. PERK normalizes its features,
-# so it is taught one over the length of the fingerprint the relaxation times
-# imply, as one more row of the same linear solve.
-#
-# Either way it arrives in the maps.
-#
-
-# sphinx_gallery_start_ignore
-estimates = {
-    "match": (match_maps, match_maps["M0"]),
-    "PERK": (perk_maps, perk_maps["M0"]),
-}
-for name, (_found, density) in estimates.items():
-    print(f"  {name:6s} M0 median {float(density.median()):.4f}")
-# sphinx_gallery_end_ignore
-
-# %%
-#
 # Cost and accuracy
 # -----------------
 #
-# Best of three passes each, after one warm-up that leaves out the measurement
-# :func:`~torchsim.execution` makes the first time it meets a workload. The
-# **model** is what the fitted estimator carries between volumes; the **peak**
-# is the high-water mark on the card while the slice was mapped.
+# Best of three passes each, after a warm-up. **model** is what the fitted
+# estimator carries between volumes; **peak** is the high-water mark on the
+# card while the slice was mapped. The dictionary row is the reference point.
 #
 
 
@@ -616,10 +565,9 @@ maps, spread = perk(measured, uncertainty=True)
 
 # %%
 #
-# What to read it against is the Cramer-Rao bound, the lowest standard
-# deviation an unbiased estimate could reach from this train at this noise. It
-# is a property of the simulator, so the gap between the two is what the
-# method is losing rather than what the sequence cannot deliver.
+# Read against the Cramer-Rao bound, the lowest standard deviation an unbiased
+# estimate could reach from this train at this noise. The bound belongs to the
+# sequence, so the gap is what the method loses.
 #
 _signal, sensitivity = simulator.jacobian("T1 T2".split(), **truth)
 sensitivity = sensitivity.real * density[:, None, None]
@@ -666,19 +614,16 @@ for row, name in enumerate(("T1", "T2")):
 
 # %%
 #
-# Each row is drawn in its own parameter's colormap and on its own scale: the
-# two absolute panels share one, and the third is the same spread as a
-# percentage of the relaxation time it belongs to, which is what says whether
-# an error bar of ten milliseconds is tight or hopeless.
+# Each row uses its own parameter's colormap. The two absolute panels share a
+# scale; the third is the same spread as a percentage of the relaxation time,
+# which is what says whether ten milliseconds is tight.
 #
-# Both are largest in CSF, whose long T1 this train resolves least, so a wide
-# error bar in the ventricles is the simulator saying so. The distance
+# Both are largest in CSF, whose long T1 this train resolves least. The gap
 # between them is not: T1 sits within a small multiple of the bound, T2
 # several times above it, and it is T2 whose error moved when the feature
-# count was swept. One of those is a sequence to redesign and the other a
-# regression to enlarge.
+# count was swept. One is a sequence to redesign, the other a regression to
+# enlarge.
 #
-# What the number is not is the noise alone. A regression trained on a prior
-# answers with the prior where the data is weak, and it is wrong the same way
-# in every realization -- so this includes that, and repeating the scan would
-# never have shown it.
+# The number is not the noise alone. A regression trained on a prior answers
+# with the prior where the data is weak, and is wrong the same way in every
+# realization, so repeating the scan would never show that part.
