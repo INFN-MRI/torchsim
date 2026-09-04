@@ -9,6 +9,7 @@ to, at the bit where they can.
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 import pytest
@@ -266,3 +267,34 @@ def test_a_gradient_standing_on_its_own_does_not_survive_the_round_trip() -> Non
     # brings with it. Only the readout's is reinstated.
     assert len(spoilers(described)) == 4
     assert len(spoilers(realised(described, protocol.model))) == 2
+
+
+def test_shim_definition_reaches_the_pulses():
+    """Two channels driven in anti-phase put nothing on a voxel that sums them.
+
+    The shim is a run setting rather than a property, so the check is that it
+    reaches the description a layout builds and, from there, the kernels: an
+    array whose sensitivities are alike cancels exactly when the drive is a
+    half turn apart, and does not when it is not.
+    """
+    from torchsim import ShimDefinition
+    from torchsim.simulators import FSESimulator
+
+    array = dict(
+        T1=torch.tensor([1000.0]),
+        T2=torch.tensor([100.0]),
+        B1=torch.ones(2, 1),
+        B1phase=torch.zeros(2, 1),
+    )
+
+    def played(phase_rad):
+        train = FSESimulator(
+            ESP=5.0,
+            flip=torch.full((4,), 150.0),
+            states=12,
+            shims={0: ShimDefinition(0, (0.5, 0.5), (0.0, phase_rad))},
+        )
+        return train.simulate(**array).abs()
+
+    assert torch.allclose(played(math.pi), torch.zeros(1, 4), atol=1e-6)
+    assert played(0.0).max() > 0.5

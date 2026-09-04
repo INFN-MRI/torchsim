@@ -68,6 +68,7 @@ from ..sequence import (
     Saturation,
     SequenceDescription,
     SequenceEvent,
+    ShimDefinition,
     SPGRReadout,
     SSFPFidReadout,
     TissueProperties,
@@ -94,6 +95,7 @@ RUN_SETTINGS = (
     "device",
     "execution",
     "pulse",
+    "shims",
     "across_slice",
 )
 
@@ -393,6 +395,7 @@ class Simulator(SignalModel):
         record: RecordMode = "all",
         execution: str | torch.device | Sequence[Any] | None = None,
         pulse: RfDefinition | None = None,
+        shims: Mapping[int, ShimDefinition] | None = None,
         across_slice: Any = None,
         resolve: bool = True,
         crusher_dephasing_rad: float = 0.0,
@@ -417,6 +420,10 @@ class Simulator(SignalModel):
             holds no structure fixed across calls.
         record:
             Which ADCs the signal holds.
+        shims:
+            The transmit shims the pulses are driven on, by id, for a layout
+            whose operators name a ``shim_id``. One channel driven alike when
+            not given.
         execution:
             Where to run -- ``"auto"`` to decide per call against what the
             devices have free, ``"cpu"``, or a device or list of devices.
@@ -451,6 +458,7 @@ class Simulator(SignalModel):
         )
         self.record = record
         self.execution = execution
+        self.shims = dict(shims) if shims else {}
         self.across_slice = across_the_slice(across_slice)
         self.crusher_dephasing_rad = crusher_dephasing_rad
         self.voxel_size_m = voxel_size_m
@@ -641,6 +649,7 @@ class Simulator(SignalModel):
             tr_duration_us=1e6 * self.repetition_s(played_s, **protocol),
             events=events,
             rf_definitions=dict(self.model.definitions),
+            shim_definitions=dict(self.shims),
             crusher_dephasing_rad=self.crusher_dephasing_rad,
             voxel_size_m=self.voxel_size_m,
         )
@@ -685,17 +694,16 @@ class Simulator(SignalModel):
         Raises
         ------
         ValueError
-            If called on a simulator that declares no physics and none is
-            given, since there would be nothing to read the events with.
+            If called on :class:`Simulator` itself, which names no handlers and
+            so says nothing about how the stream is to be read.
         """
-        physics = model if model is not None else cls.model
-        if not physics.properties:
+        if cls is Simulator and model is None:
             raise ValueError(
-                "from_description reads a stream with a model's operators, so "
-                "call it on the simulator whose sequence it is -- "
-                "FSESimulator.from_description(...) for a refocused train -- "
-                "or pass model="
+                "from_description reads a stream through a simulator's own "
+                "handlers, so call it on the simulator whose sequence it is -- "
+                "FSESimulator.from_description(...) for a refocused train"
             )
+        physics = model if model is not None else cls.model
         simulator = _Described(model=physics, **settings)
         simulator._described = realised(description, physics)
         return simulator

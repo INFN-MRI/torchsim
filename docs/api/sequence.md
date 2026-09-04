@@ -9,36 +9,19 @@ estimators and the sequence optimizer. A description is a list of events with
 the timing and the tissue interaction each one carries; nothing in it names a
 vendor or a device.
 
-This page is the description and what it is assembled from. Running one is on
-{doc}`execution`, and the temporal basis a run spans is on {doc}`recon`.
-
-## Description
-
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   SequenceDescription
-```
-
-### Event vocabulary
-
-What an event may be, and what it does when it is reached.
-
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   ShimDefinition
-```
+This page is the description and what it is assembled from. Writing a
+simulator out of these is on {doc}`model`, running one is on {doc}`execution`,
+and the temporal basis a run spans is on {doc}`recon`.
 
 ## Operators
 
-The modules a description is assembled from, and the registry that reaches one
-by name. Writing a new operator is writing a Python function that returns
-events; it reaches the fused kernels with no change to them.
+The modules a sequence is assembled from. An operator is a Python function
+returning the events it plays and how long it holds the timeline, and `@`
+composes two into one -- so a preparation or a readout TorchSim does not ship
+reaches the fused kernels with no change to them.
+
+The five readouts differ only in what they play around the sample, which is
+what separates a spoiled, an unbalanced, a balanced and a refocused train.
 
 ```{eval-rst}
 .. autosummary::
@@ -61,13 +44,34 @@ events; it reaches the fused kernels with no change to them.
    FSEReadout
 ```
 
-## Builders
+## Pulses and shims
 
-Whole sequences, assembled from the operators above.
+An ideal pulse turns the whole voxel through one angle. {func}`rf_definition`
+takes a complex envelope instead -- one row per transmit channel -- so a
+selective excitation is integrated over the slice rather than scaled, and
+{class}`ShimDefinition` gives the amplitude and phase each channel is driven
+at. A simulator takes them as `pulse=` and `shims=`.
 
 ```{eval-rst}
 .. autosummary::
    :toctree: ../generated
    :nosignatures:
 
+   rf_definition
+   ShimDefinition
+```
+
+## Description
+
+The event stream itself: what a layout composes to, and what a sequence
+arriving from a scanner is read into.
+{meth}`SequenceDescription.from_operators` builds one directly, and
+{meth}`~torchsim.model.Simulator.from_description` reads one back.
+
+```{eval-rst}
+.. autosummary::
+   :toctree: ../generated
+   :nosignatures:
+
+   SequenceDescription
 ```

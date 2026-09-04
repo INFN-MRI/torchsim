@@ -3,15 +3,13 @@
 Writing a Signal Model
 ======================
 
-The scope of this notebook is to show how to write a simulator TorchSim does
-not ship, using the operators it does.
+The scope of this notebook is to write a simulator TorchSim does not ship.
 
-A signal model is two pieces: a **physics**, which says which tissue
-properties the model is written in and what each kind of event does, and a
-**simulator**, which says what order the events are played in. The base class
-supplies the rest -- it resolves the layout into an event stream, rebinds
-values onto it, holds the derivatives, places the work on a device, and reads
-a sequence back from a description a scanner streamed.
+There are two things to say. **Which operator plays each kind of event** --
+what an excitation is, what a sample is -- and **what order they are played
+in**. The base class does the rest: it resolves the layout into an event
+stream, rebinds values onto it, holds the derivatives, places the work on a
+device, and reads a sequence back from a description a scanner streamed.
 """
 
 # %%
@@ -22,8 +20,7 @@ a sequence back from a description a scanner streamed.
 
 # %%
 #
-# The two pieces a signal model is written from, and the trigger set that
-# says what an unbalanced readout plays.
+# The base class, and the operators a layout is written from.
 #
 
 # sphinx_gallery_start_ignore
@@ -107,60 +104,31 @@ import torch
 from torchsim import (
     Delay,
     Excitation,
+    Inversion,
+    SPGRReadout,
+    SSFPFidReadout,
     Spoil,
 )
-from torchsim.sequence import (
-    module,
-    operator_names,
-)
-from torchsim.model import (
-    SPOILED,
-    UNBALANCED,
-    Simulator,
-    SpinPhysics,
-)
+from torchsim.model import Simulator
 
 # %%
-# Physics
-# -------
-# A :class:`~torchsim.model.SpinPhysics` is the physics. ``properties``
-# maps the name a caller uses to the tissue field it fills, so the model keeps
-# the vocabulary your protocol is written in while the engine keeps its own.
+# Handlers
+# --------
+# A simulator says what plays each kind of event by naming it. The five
+# readouts are what distinguishes one steady-state family from another: an
+# :func:`~torchsim.SSFPFidReadout` winds one configuration order after every
+# sample, an :func:`~torchsim.SSFPEchoReadout` winds it before, an
+# :func:`~torchsim.SPGRReadout` spoils, a :func:`~torchsim.bSSFPReadout` leaves
+# the states where they were, and an :func:`~torchsim.FSEReadout` samples a
+# spin echo the refocusing pulses have already crushed around.
 #
-# It is also the whole of how you ask for physics. A field you do not name is
-# never handed to the tissue, and the kernels leave its term out -- so a T1/T2
-# model pays for no off-resonance turn, no diffusion attenuation and no flow
-# winding. Name ``b0_hz`` and the off-resonance term comes back.
+# Naming one is the whole of choosing between them, and it is also what says
+# how an arriving stream is to be read -- the transport carries no gradients,
+# so the handler is where the dephasing lives.
 #
-# ``operators`` is what each kind of event is realized as. ``UNBALANCED`` says
-# a Readout is followed by one unbalanced gradient, which is what makes this
-# an SSFP-FID rather than a balanced or a spoiled train. Swapping it is how
-# you change that, and it is the only thing you change.
-
-physics = SpinPhysics(
-    properties={"T1": "t1_ms", "T2": "t2_ms"},
-    operators=UNBALANCED,
-)
-
-# %%
-# Built-in operators
-# ------------------
-# A layout does not write events. It writes **operators** -- one module of a
-# sequence each, knowing what it plays and how long it holds the timeline --
-# and TorchSim ships the ordinary ones: the pulses, the two ways of waiting,
-# and a readout in each of the flavours a repetition can end in.
+# Nothing is said here about the tissue. Every property a voxel has can be
+# given to any simulator, and giving one is what turns its term on.
 #
-# The five readouts are what distinguishes one steady-state sequence from
-# another, and a trigger set is a choice among them: ``BALANCED`` reads with
-# ``bssfp-readout``, ``UNBALANCED`` with ``ssfp-fid-readout``, ``SPOILED`` with
-# ``spgr-readout`` and ``REFOCUSED`` with ``fse-readout``. Naming
-# ``ssfp-echo-readout`` instead is what makes a train an SSFP-Echo.
-
-# sphinx_gallery_start_ignore
-print("  operators reachable by name:")
-for name in operator_names():
-    print(f"    {name}")
-# sphinx_gallery_end_ignore
 
 # %%
 # Layout
@@ -170,16 +138,17 @@ for name in operator_names():
 # order, and the simulator turns the span each one holds into the timestamps a
 # description carries.
 #
-# The operators are bound when the simulator is constructed. What ``layout``
-# then produces is an ordinary description whose events carry their own action
-# word, and from there the path is the fused one -- packing, the feature mask,
-# offload and sharding. Nothing consults a trigger during a run.
+# ``self.operators`` is the handler set named above. What ``layout`` produces
+# is an event stream whose events carry their own action word, and from there
+# the path is the fused one -- packing, the feature mask, offload and sharding.
 
 
 class SSFPMRF(Simulator):
     """An Inversion, then one Excitation and one sample per repetition."""
 
-    model = physics
+    excitation = Excitation
+    inversion = Inversion
+    readout = SSFPFidReadout
     states = 10
 
     def layout(self, *, flip, TR, TI=0.0):
@@ -272,10 +241,9 @@ plt.ylabel("d(loss) / d(flip) [1/deg]")
 # %%
 # Additional physics
 # ------------------
-# ``properties`` is the vocabulary this model's *protocol* is written in, not
-# a list of what a voxel may have. Every field a voxel has can be given to any
-# simulator, and giving one is what turns its term on -- so a second exchanging
-# pool is four more names in the call and nothing in the model:
+# Nothing was declared about the tissue, and nothing had to be. Naming a
+# property in the call is what turns its term on, so a second exchanging pool
+# is four more names in the call and no change to the simulator:
 #
 two_pool = sequence.simulate(
     T1=1000.0,
@@ -311,8 +279,8 @@ print(
 # It plays them, so agreeing with the closed form is a check rather than a
 # tautology.
 #
-# :func:`~torchsim.module` is what packages the pulse and the spoiler as one
-# operator, so the layout reads as the three things a physicist would name.
+# ``@`` composes two operators into one, so the saturation reads as the single
+# thing a physicist would name rather than as a pulse and a spoiler.
 
 
 class SaturationRecovery(Simulator):
@@ -328,10 +296,8 @@ class SaturationRecovery(Simulator):
         The readout phase, in degrees.
     """
 
-    model = SpinPhysics(
-        properties={"T1": "t1_ms", "T2": "t2_ms", "M0": "m0", "B1": "b1"},
-        operators=SPOILED,
-    )
+    excitation = Excitation
+    readout = SPGRReadout
     # Every block begins by destroying the transverse magnetization, so nothing
     # is carried in a dephased configuration and one order is the whole state.
     states = 1
@@ -342,7 +308,7 @@ class SaturationRecovery(Simulator):
         angle = torch.deg2rad(torch.as_tensor(flip)).broadcast_to(waits.shape)
         turn = torch.deg2rad(torch.as_tensor(phases)).broadcast_to(waits.shape)
 
-        saturate = module(Excitation(torch.pi / 2), Spoil(), duration_s=0.0)
+        saturate = Excitation(torch.pi / 2) @ Spoil()
         parts = []
         for index in range(waits.numel()):
             parts.append(saturate)
@@ -431,7 +397,7 @@ key(axis, ncols=2)
 # arriving from a scanner could not have carried it either. A preparation that
 # has to survive the round trip belongs in a pulse the wire can name.
 #
-arrived = Simulator.from_description(description, SaturationRecovery.model, states=1)
+arrived = SaturationRecovery.from_description(description, states=1)
 
 # sphinx_gallery_start_ignore
 print(

@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from torchsim.model import SPOILED, Simulator, SpinPhysics
+from torchsim.model import Simulator
 from torchsim.sequence import Delay, EventAction, Excitation, SPGRReadout
 from torchsim.simulators import FSESimulator, MRFSimulator, SPGRSimulator
 
@@ -1171,9 +1171,8 @@ def binding():
 class _SpoiledTrain(Simulator):
     """A spoiled gradient echo played out, rather than solved."""
 
-    model = SpinPhysics(
-        properties={"T1": "t1_ms", "T2": "t2_ms", "M0": "m0"}, operators=SPOILED
-    )
+    excitation = Excitation
+    readout = SPGRReadout
     states = 4
 
     def layout(self, *, flip, TR, repeats):

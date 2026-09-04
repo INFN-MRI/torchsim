@@ -7,8 +7,9 @@ The scope of this notebook is to show how to add a sequence module TorchSim
 does not ship -- a preparation, or a readout -- without touching a kernel.
 
 An operator is a Python function that returns events and says how long it
-holds the timeline. Two are written here: a T2 preparation, and a readout that
-takes both samples an unbalanced repetition can carry.
+holds the timeline, and ``@`` composes two into one. Two are written here: a
+T2 preparation, and a readout that takes both samples an unbalanced repetition
+can carry.
 """
 
 # %%
@@ -19,8 +20,8 @@ takes both samples an unbalanced repetition can carry.
 
 # %%
 #
-# An operator is written against the event vocabulary and registered by
-# name, so everything it needs comes from :mod:`torchsim.sequence`.
+# The operators the new ones are composed from, and the simulator that plays
+# them.
 #
 
 # sphinx_gallery_start_ignore
@@ -99,22 +100,17 @@ def key(axes, ncols=1):
 # sphinx_gallery_end_ignore
 import torch
 
-from torchsim.sequence import (
-    SequenceDescription,
+from torchsim import (
     Delay,
     Dephase,
-    EpgEngine,
-    EventAction,
     Excitation,
-    module,
-    operator,
     Readout,
     Refocusing,
-    register_operator,
     SSFPEchoReadout,
     SSFPFidReadout,
-    TissueProperties,
+    Spoil,
 )
+from torchsim.model import Simulator
 
 # %%
 # Composing existing operators
@@ -123,15 +119,13 @@ from torchsim.sequence import (
 # decay for a chosen time about a Refocusing pulse, tips what is left back
 # along z, and spoils whatever did not come back.
 #
-# All of those are operators already, so the preparation is
-# :func:`~torchsim.sequence.module` over them. Nothing new is being taught to
-# the kernels -- what is new is the *arrangement*, and that is exactly what an
-# operator is.
+# All of those are operators already, so ``@`` is the whole of writing it.
+# Nothing new is taught to the kernels -- what is new is the *arrangement*, and
+# that is what an operator is.
 #
 # The Refocusing pulse is asked for uncrushed: a T2 preparation refocuses
-# rather than dephases, and the crusher pair
-# :func:`~torchsim.sequence.refocusing` adds by default would Spoil the echo it
-# exists to form.
+# rather than dephases, and the crusher pair :func:`~torchsim.Refocusing` adds
+# by default would spoil the echo it exists to form.
 
 
 def t2_preparation(echo_time_s, *, spoil_s=2e-3):
@@ -145,35 +139,56 @@ def t2_preparation(echo_time_s, *, spoil_s=2e-3):
         The spoiler after the tip-up, which removes what did not return.
     """
     half = 0.5 * echo_time_s
-    return module(
-        Excitation(0.5 * torch.pi),
-        Delay(half),
-        Refocusing(torch.pi, 0.5 * torch.pi, crushed=False),
-        Delay(half),
-        Excitation(-0.5 * torch.pi),
-        Delay(spoil_s, action=EventAction.SPOIL_AFTER),
-        duration_s=echo_time_s + spoil_s,
+    return (
+        Excitation(0.5 * torch.pi)
+        @ Delay(half)
+        @ Refocusing(torch.pi, 0.5 * torch.pi, crushed=False)
+        @ Delay(half)
+        @ Excitation(-0.5 * torch.pi)
+        @ Delay(spoil_s)
+        @ Spoil()
     )
 
 
 # %%
 # Using the operator
 # ------------------
-# The preparation goes at the front of an ordinary refocused train, and
-# :func:`~torchsim.sequence.compose` lays the two out end to end. The
-# preparation leaves the weighted magnetization along z, so the train excites
+# A new operator goes into a layout beside the shipped ones. The preparation
+# leaves the weighted magnetization along z, so the train that follows excites
 # it as it would any other longitudinal magnetization.
 
 
-def prepared_train(prep_s, echo_spacing_s, echoes):
-    """Return a T2-prepared spin-echo train."""
-    modules = [t2_preparation(prep_s), Excitation(0.5 * torch.pi, 0.5 * torch.pi)]
-    for _ in range(echoes):
-        modules.append(Delay(0.5 * echo_spacing_s))
-        modules.append(Refocusing(torch.pi, 0.5 * torch.pi))
-        modules.append(Delay(0.5 * echo_spacing_s))
-        modules.append(Readout(0.5 * torch.pi))
-    return SequenceDescription.from_operators(*modules)
+class T2PreparedFSE(Simulator):
+    """A T2 preparation, then a refocused train.
+
+    Parameters
+    ----------
+    TE_prep : float
+        How long the preparation holds the magnetization transverse, in
+        milliseconds.
+    ESP : float
+        The echo spacing, in milliseconds.
+    ETL : int
+        How many echoes are recorded.
+    """
+
+    states = 8
+
+    def layout(self, *, TE_prep, ESP, ETL):
+        """Return the operators of the whole train, in order."""
+        half = Delay(0.5 * ESP * 1e-3)
+        parts = [
+            t2_preparation(TE_prep * 1e-3),
+            self.operators.excitation(0.5 * torch.pi, 0.5 * torch.pi),
+        ]
+        for _ in range(ETL):
+            parts += [
+                half,
+                self.operators.refocusing(torch.pi, 0.5 * torch.pi),
+                half,
+                self.operators.readout(0.5 * torch.pi),
+            ]
+        return parts
 
 
 # %%
@@ -185,16 +200,17 @@ def prepared_train(prep_s, echo_spacing_s, echoes):
 # for.
 #
 T2_MS = torch.tensor([40.0, 80.0, 160.0])
-tissue = TissueProperties(t1_ms=1000.0, t2_ms=T2_MS)
 prep_times_ms = torch.linspace(0.0, 120.0, 13)
 
-prepared = []
-for prep_ms in prep_times_ms:
-    described = prepared_train(float(prep_ms) * 1e-3, 5e-3, echoes=1)
-    result = EpgEngine().simulate(described, tissue, nstates=8)
-    prepared.append(result.signal[..., 0].abs())
-
-prepared = torch.stack(prepared, dim=-1)
+prepared = torch.stack(
+    [
+        T2PreparedFSE(TE_prep=float(prep_ms), ESP=5.0, ETL=1)
+        .simulate(T1=1000.0, T2=T2_MS)[..., 0]
+        .abs()
+        for prep_ms in prep_times_ms
+    ],
+    dim=-1,
+)
 weighting = prepared / prepared[:, :1]
 expected = torch.exp(-prep_times_ms / T2_MS[:, None])
 
@@ -246,13 +262,7 @@ def dess_readout(phase_rad=0.0, *, duration_s=0.0):
     duration_s : float, optional
         What is left of the repetition after the second sample.
     """
-    return module(
-        Readout(phase_rad),
-        Dephase(),
-        Readout(phase_rad),
-        Delay(duration_s),
-        duration_s=duration_s,
-    )
+    return Readout(phase_rad) @ Dephase() @ Readout(phase_rad) @ Delay(duration_s)
 
 
 # %%
@@ -262,36 +272,49 @@ def dess_readout(phase_rad=0.0, *, duration_s=0.0):
 # SSFP-Echo train records, since those are the same two samples taken one at a
 # time. So the check is to run all three.
 #
-FLIP_DEG, TR_S, REPETITIONS = 30.0, 20e-3, 64
+FLIP_DEG, TR_MS, REPETITIONS = 30.0, 20.0, 64
 T2_MS = torch.tensor([40.0, 80.0, 160.0])
 
 
-def unbalanced_train(readout):
-    """Return a steady-state train ending each repetition in ``readout``."""
-    modules = []
-    for _ in range(REPETITIONS):
-        modules.append(Excitation(torch.deg2rad(torch.tensor(FLIP_DEG))))
-        modules.append(readout(duration_s=TR_S))
-    return SequenceDescription.from_operators(*modules)
+class DESS(Simulator):
+    """A steady-state train taking both samples each repetition can carry."""
+
+    excitation = Excitation
+    readout = dess_readout
+    states = 24
+
+    def layout(self, *, flip, TR):
+        """Return the operators of one repetition, in order."""
+        return [
+            self.operators.excitation(torch.deg2rad(torch.as_tensor(flip))),
+            self.operators.readout(duration_s=TR * 1e-3),
+        ]
 
 
-def played(readout, t1_ms=1000.0):
+# Naming a different readout is the whole of the difference between the three.
+class SSFPFid(DESS):
+    readout = SSFPFidReadout
+
+
+class SSFPEcho(DESS):
+    readout = SSFPEchoReadout
+
+
+def played(sequence, t1_ms=1000.0):
     """Return what one train records, over the three T2 values."""
-    tissue = TissueProperties(t1_ms=t1_ms, t2_ms=T2_MS)
-    return EpgEngine().simulate(unbalanced_train(readout), tissue, nstates=24).signal
+    train = sequence(flip=FLIP_DEG, TR=TR_MS, repetitions=REPETITIONS)
+    return train.simulate(T1=t1_ms, T2=T2_MS)
 
 
-both = played(dess_readout)
+both = played(DESS)
 fid, echo = both[..., 0::2], both[..., 1::2]
 
 # sphinx_gallery_start_ignore
 print(
-    "  first sample against ssfp-fid-readout:  "
-    f"{float((fid - played(SSFPFidReadout)).abs().max()):.1e}"
+    f"  first sample against SSFPFidReadout:  {float((fid - played(SSFPFid)).abs().max()):.1e}"
 )
 print(
-    "  second sample against ssfp-echo-readout:"
-    f"{float((echo - played(SSFPEchoReadout)).abs().max()):.1e}"
+    f"  second sample against SSFPEchoReadout: {float((echo - played(SSFPEcho)).abs().max()):.1e}"
 )
 # sphinx_gallery_end_ignore
 
@@ -305,13 +328,10 @@ print(
 # decay carries a mixture -- and the ratio of the two is a T2 contrast that
 # needs no separate measurement to normalize.
 #
-ratios = {
-    t1_ms: (
-        played(dess_readout, t1_ms)[..., 1::2][:, -1].abs()
-        / played(dess_readout, t1_ms)[..., 0::2][:, -1].abs()
-    )
-    for t1_ms in (600.0, 1000.0, 2000.0)
-}
+ratios = {}
+for t1_ms in (600.0, 1000.0, 2000.0):
+    recorded = played(DESS, t1_ms)
+    ratios[t1_ms] = recorded[..., 1::2][:, -1].abs() / recorded[..., 0::2][:, -1].abs()
 
 # sphinx_gallery_start_ignore
 figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
@@ -348,34 +368,17 @@ print(f"  at T2 = 40 ms the ratio moves {spread:.2f} over a 3.3x range in T1")
 # The ratio rises with T2 at every T1, and moves far less with T1 than with
 # T2 -- which is what makes it usable, and why a DESS T2 measurement at a
 # larger flip angle wants T1 known rather than assumed away.
-#
-# Registration by name
-# --------------------
-# Events form a stream, and a stream can come from somewhere other than a
-# builder -- an MRD file, a protocol exporter, any generator that names what it
-# plays. Registering the operator is what lets such a stream ask for it without
-# the caller keeping a mapping of its own.
-#
-register_operator("t2-prep", t2_preparation)
-register_operator("dess-readout", dess_readout)
-
-built = operator("t2-prep")(60e-3)
-
-# sphinx_gallery_start_ignore
-print("registered:", built.duration_s, "s,", len(built.emit(0.0)), "events")
-# sphinx_gallery_end_ignore
 
 # %%
 # Limits
 # ------
-# The vocabulary is the three event types, the four dephasing actions and the
-# RF and ADC roles -- so a preparation, a Readout, a shaped or per-channel
-# pulse is written here and reaches the kernels unchanged.
+# A preparation, a readout, a shaped or per-channel pulse is written from the
+# shipped operators and reaches the kernels unchanged.
 #
-# What a description cannot express is *how much* a gradient dephases. It
+# What an event stream cannot express is *how much* a gradient dephases. It
 # carries one crusher moment for the whole sequence and dephasing is quantized
 # to whole configuration orders, so a bipolar pair, a velocity-encoding moment
 # of its own, or a crusher of twice its neighbour's area have no spelling here.
 # Those need a per-event gradient moment through the packed layout and every
-# kernel, which is a change to the engine rather than to a module written on
+# kernel, which is a change to the engine rather than to an operator written on
 # top of it.

@@ -98,22 +98,13 @@ def key(axes, ncols=1):
 
 # sphinx_gallery_end_ignore
 import math
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import torch
 
 import torchsim
-from torchsim import (
-    ShimDefinition,
-)
-from torchsim.sequence import (
-    EpgEngine,
-    TissueProperties,
-    fse_description,
-)
-from torchsim.model import BALANCED, SPOILED
+from torchsim import SPGRReadout, ShimDefinition, bSSFPReadout
 from torchsim.simulators import FSESimulator, MRFSimulator
 
 # %%
@@ -191,41 +182,28 @@ sensitivity_phase = (
     .contiguous()
     .float()
 )
-echo_train = fse_description(
-    torch.deg2rad(torch.full((8,), 150.0)),
-    echo_spacing_s=5e-3,
-    phases_rad=0.5 * math.pi,
-    excitation_phase_rad=0.5 * math.pi,
-)
-array_tissue = TissueProperties(
-    t1_ms=torch.linspace(600.0, 1400.0, VOXELS),
-    t2_ms=torch.linspace(40.0, 120.0, VOXELS),
-    b1=sensitivity,
-    b1_phase_rad=sensitivity_phase,
+ARRAY = dict(
+    T1=torch.linspace(600.0, 1400.0, VOXELS),
+    T2=torch.linspace(40.0, 120.0, VOXELS),
+    B1=sensitivity,
+    B1phase=sensitivity_phase,
 )
 
 
-def driven_apart(step_rad):
-    """The array with each channel held one more step behind the last."""
-    return ShimDefinition(
+def first_echo(step_rad):
+    """What a shim holding each channel one more step behind leaves per voxel."""
+    shim = ShimDefinition(
         0,
         (1.0,) * CHANNELS,
         tuple(float(-channel * step_rad) for channel in range(CHANNELS)),
     )
-
-
-def first_echo(step_rad):
-    """What that shim leaves on each voxel at the first echo."""
-    return (
-        EpgEngine()
-        .simulate(
-            replace(echo_train, shim_definitions={0: driven_apart(step_rad)}),
-            array_tissue,
-            nstates=12,
-        )
-        .signal[:, 0]
-        .abs()
+    train = FSESimulator(
+        ESP=5.0,
+        flip=torch.full((8,), 150.0),
+        states=12,
+        shims={0: shim},
     )
+    return train.simulate(**ARRAY)[..., 0].abs()
 
 
 steps_rad = torch.linspace(0.0, 2.0 * math.pi, 61)
@@ -376,9 +354,14 @@ WHITE_MATTER = dict(T1=779.0, T2=45.0)
 FREE = dict(poolB_exchange=2.0, poolB_T1=500.0, poolB_T2=20.0)
 BOUND = dict(bound_exchange=4.3, bound_T1=779.0)
 
-spoiled = MRFSimulator(
-    model=replace(MRFSimulator.model, operators=SPOILED), **SPOILED_TRAIN
-)
+
+class SpoiledMRF(MRFSimulator):
+    """The same train, read with a spoiled gradient echo."""
+
+    readout = SPGRReadout
+
+
+spoiled = SpoiledMRF(**SPOILED_TRAIN)
 one_pool = spoiled.simulate(**WHITE_MATTER)
 with_free = spoiled.simulate(**WHITE_MATTER, poolB_fraction=0.2, **FREE)
 with_bound = spoiled.simulate(**WHITE_MATTER, bound_fraction=0.117, **BOUND)
@@ -463,8 +446,15 @@ print(
 #
 BALANCED_TR_MS = 10.0
 offsets_hz = torch.linspace(-150.0, 150.0, 121)
-banded = MRFSimulator(
-    model=replace(MRFSimulator.model, operators=BALANCED),
+
+
+class BalancedMRF(MRFSimulator):
+    """The same train, read with a fully refocused steady state."""
+
+    readout = bSSFPReadout
+
+
+banded = BalancedMRF(
     flip=np.full(64, 20.0),
     TR=BALANCED_TR_MS,
     TI=0.0,
