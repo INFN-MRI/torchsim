@@ -572,7 +572,7 @@ class Simulator(SignalModel):
         settings = {
             "repetitions": repetitions,
             "record": record,
-            "rf_raster_time_s": _RF_RASTER_TIME_S,
+            "rf_raster_time_s": self.rf_raster_time_s,
         }
         key = run_key(played, device=where, **settings)
         if self._packing is not None and self._packing.matches(key):
@@ -639,6 +639,13 @@ class Simulator(SignalModel):
         }
         return {**self.protocol, **read(given)}
 
+    @property
+    def rf_raster_time_s(self) -> float:
+        """The dwell this simulator's RF shapes are sampled on."""
+        if self._described is not None:
+            return self._described.rf_raster_time_s
+        return _RF_RASTER_TIME_S
+
     def describe(self, **protocol: Any) -> SequenceDescription:
         """Return the description this protocol plays."""
         if self._described is not None:
@@ -652,6 +659,44 @@ class Simulator(SignalModel):
             shim_definitions=dict(self.shims),
             crusher_dephasing_rad=self.crusher_dephasing_rad,
             voxel_size_m=self.voxel_size_m,
+        )
+
+    @classmethod
+    def from_pulseq(
+        cls,
+        path: Any,
+        *,
+        tr_index: int | None = None,
+        **settings: Any,
+    ) -> Simulator:
+        """Return a simulator over one repetition of a Pulseq ``.seq`` file.
+
+        The offline half of :meth:`from_description`: the same events, read
+        from the file a scanner would be given rather than from the stream it
+        sends back. The file states how many blocks a repetition holds, so
+        nothing here searches for the period; naming the simulator is what says
+        how those events are to be played.
+
+        Parameters
+        ----------
+        path : str or Path
+            The sequence file.
+        tr_index : int, optional
+            Which repetition to read, counted in whole repetitions. Defaults to
+            the file's ``TRRef`` definition, and otherwise to the first
+            repetition that acquires -- which is refused when the repetitions
+            differ in their pulses.
+        settings : Any
+            Run settings and tissue, as the constructor takes them.
+
+        Returns
+        -------
+            A simulator playing that repetition.
+        """
+        from ..sequence._pulseq import read_pulseq_description
+
+        return cls.from_description(
+            read_pulseq_description(path, tr_index=tr_index), **settings
         )
 
     @classmethod
@@ -723,6 +768,7 @@ class Simulator(SignalModel):
             "repetitions": given.pop("repetitions", self.repetitions),
             "record": given.pop("record", self.record),
             "device": given.pop("device", None),
+            "rf_raster_time_s": self.rf_raster_time_s,
         }
         target = given.pop("execution", self.execution)
         profile = across_the_slice(given.pop("across_slice", None)) or self.across_slice

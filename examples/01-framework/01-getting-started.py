@@ -92,10 +92,22 @@ def key(axes, ncols=1):
 import math
 import time
 
+import numpy as np
 import torch
 
 import torchsim
 from torchsim.simulators import FSESimulator
+
+# sphinx_gallery_start_ignore
+from pathlib import Path
+
+# The example sequence, wherever the gallery is running this file from.
+SEQ_FILE = next(
+    candidate
+    for candidate in (Path("fse.seq"), Path("examples/01-framework/fse.seq"))
+    if candidate.exists()
+)
+# sphinx_gallery_end_ignore
 
 # %%
 #
@@ -520,6 +532,51 @@ axis.set(
 axis.grid(alpha=0.3)
 key(axis, ncols=2)
 # sphinx_gallery_end_ignore
+
+# %%
+# From a Pulseq file
+# ------------------
+#
+# The stream a scanner sends is read off the Pulseq sequence it is running, so
+# the same events can be read from the ``.seq`` file directly -- which is what
+# to do when the scan has not been run yet. The file is parsed by pypulseq,
+# which also computes its trajectory: ``pip install torchsim[pulseq]``.
+#
+# The file states how many blocks one repetition holds, in its ``TRSize``
+# definition, so nothing is searched for. What is read off the trajectory is
+# what Pulseq does not write down: which ADC sample each readout passes
+# through k = 0 in, which is the echo the timestamp goes on.
+#
+train = FSESimulator.from_pulseq(SEQ_FILE, states=20)
+from_file = train.simulate(T1=T1_MS, T2=T2_MS)
+
+# sphinx_gallery_start_ignore
+read = train.describe()
+spacing = np.diff([event.timestamp_us for event in read.adc_events]) * 1e-3
+print(f"  read from {SEQ_FILE.name}:")
+print(f"    {len(read.events)} events over {read.tr_duration_us * 1e-3:.0f} ms")
+print(f"    {len(read.adc_events)} echoes, {spacing.mean():.2f} ms apart")
+print(f"    {len(read.rf_definitions)} pulse shapes")
+
+figure, axes = plt.subplots(2, 1, figsize=(PAGE_WIDTH, 5.4))
+read.plot(axes[0])
+axes[0].set(title=f"one repetition of {SEQ_FILE.name}", ylim=(-8, 200))
+key(axes[0], ncols=2)
+axes[1].plot(np.cumsum(np.r_[spacing[0], spacing]), from_file[0].abs().numpy(), "o-")
+axes[1].set(
+    xlabel="time after excitation [ms]",
+    ylabel="|signal|",
+    title="white matter, at the echo times the file puts them at",
+)
+axes[1].grid(alpha=0.3)
+# sphinx_gallery_end_ignore
+
+# %%
+#
+# Echo spacing, echo train length, refocusing angle and pulse shapes were never
+# named. The two things given were the tissue and which simulator to read the
+# events as.
+#
 
 # %%
 #

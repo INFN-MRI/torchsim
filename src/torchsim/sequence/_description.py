@@ -626,6 +626,10 @@ class SequenceDescription:
     voxel_size_m : float, optional
         The voxel a spin crosses, and the length the dephasing is wound
         across. ``None`` declares no voxel.
+    rf_raster_time_s : float
+        The dwell the RF shapes are sampled on. A pulse is integrated against
+        it, so a stream carrying shapes on a 2 microsecond raster and read on a
+        1 microsecond one turns half the angle it should.
     """
 
     subsequence_index: int
@@ -635,6 +639,7 @@ class SequenceDescription:
     shim_definitions: dict[int, ShimDefinition] = field(default_factory=dict)
     crusher_dephasing_rad: float = 0.0
     voxel_size_m: float | None = None
+    rf_raster_time_s: float = 1e-6
 
     @classmethod
     def from_operators(
@@ -689,6 +694,27 @@ class SequenceDescription:
             crusher_dephasing_rad=crusher_dephasing_rad,
             voxel_size_m=voxel_size_m,
         )
+
+    @classmethod
+    def from_pulseq(cls, path: Any, **settings: Any) -> SequenceDescription:
+        """Return what one repetition of a Pulseq ``.seq`` file plays.
+
+        Parameters
+        ----------
+        path : str or Path
+            The sequence file.
+        settings : Any
+            ``tr_index`` to name which repetition to read, and the
+            ``subsequence_index``, ``crusher_dephasing_rad`` and
+            ``voxel_size_m`` the description carries.
+
+        Returns
+        -------
+            The stream, in the same object a scanner's own would arrive in.
+        """
+        from ._pulseq import read_pulseq_description
+
+        return read_pulseq_description(path, **settings)
 
     def plot(self, axis: Any = None, *, upto_s: float | None = None) -> Any:
         """Draw the stream: pulses as stems, samples as markers.

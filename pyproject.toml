@@ -54,8 +54,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# What it takes to read a Pulseq .seq file. The format's reference
+# implementation parses it and computes its trajectory; nothing else in the
+# package imports it.
+pulseq = [
+"pypulseq>=1.4",
+]
 # What it takes to run the suite. Nothing here is imported by the package.
 test = [
+"torchsim[pulseq]",
 "pytest>=7.0",
 "pytest-cov",
 "pytest-sugar",
@@ -82,6 +89,7 @@ doc = [
 # phantoms, the segmentation, the coils, the Fourier encoding and the linear
 # solvers all come from elsewhere, which is the point several examples make.
 examples = [
+"torchsim[pulseq]",
 "brainweb-dl>=0.3",
 "deepinv>=0.2",
 "deepmriprep>=0.3",
