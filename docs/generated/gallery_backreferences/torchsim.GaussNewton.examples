@@ -1,0 +1,42 @@
+
+
+Examples using ``torchsim.GaussNewton``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/04-model-based-imaging/images/thumb/sphx_glr_02-nonlinear-inversion_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Nonlinear inversion from k-space</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

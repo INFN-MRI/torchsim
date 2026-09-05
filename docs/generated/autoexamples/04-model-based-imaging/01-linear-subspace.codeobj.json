@@ -1,0 +1,3253 @@
+{
+ "BAR_WIDTH": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "BRAIN_TISSUES": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "tuple"
+  }
+ ],
+ "CONTRAST_GAMMA": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "Colormap": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "cmap._colormap",
+   "module_short": "cmap",
+   "name": "Colormap"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "cmap",
+   "module_short": "cmap",
+   "name": "Colormap"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "cmap",
+   "module_short": "cmap",
+   "name": "Colormap"
+  }
+ ],
+ "DictionaryMatcher": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.estimators._dictionary",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.estimators._mapping",
+   "module_short": "torchsim",
+   "name": "Estimator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "Estimator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "Estimator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  }
+ ],
+ "ECHOES": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "LIPARI": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.colors",
+   "module_short": "matplotlib.colors",
+   "name": "LinearSegmentedColormap"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "LinearSegmentedColormap"
+  }
+ ],
+ "LinearPhysics": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "LinearPhysics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics",
+   "name": "Physics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "Physics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "Physics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics"
+  }
+ ],
+ "M0_true": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "M0_true.to": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "MRISubspace": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.subspace",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRISubspace"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorBase"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.subspace",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace"
+  }
+ ],
+ "MultiEchoSimulator": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.simulators.relaxometry",
+   "module_short": "torchsim.simulators",
+   "name": "MultiEchoSimulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.simulators",
+   "module_short": "torchsim.simulators",
+   "name": "MultiEchoSimulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "MultiEchoSimulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.model._state_machine",
+   "module_short": "torchsim.model",
+   "name": "Simulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.model",
+   "module_short": "torchsim.model",
+   "name": "Simulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "Simulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.model._signal",
+   "module_short": "torchsim.model",
+   "name": "SignalModel"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim.model",
+   "module_short": "torchsim.model",
+   "name": "SignalModel"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "SignalModel"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.simulators",
+   "module_short": "torchsim.simulators",
+   "name": "MultiEchoSimulator"
+  }
+ ],
+ "NAVIA": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.colors",
+   "module_short": "matplotlib.colors",
+   "name": "LinearSegmentedColormap"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "LinearSegmentedColormap"
+  }
+ ],
+ "PAGE_WIDTH": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "PANEL": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "Path": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "Path"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "PurePath"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "Path"
+  }
+ ],
+ "RANK": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "RadialEncoding": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "__main__",
+   "module_short": "__main__",
+   "name": "RadialEncoding"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "LinearPhysics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics",
+   "name": "Physics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "Physics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "Physics"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module"
+  }
+ ],
+ "SAMPLES": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "SIZE": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "SLICE": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "SPOKES": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "STYLE": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "dict"
+  }
+ ],
+ "SUBSPACE_GAMMA": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "T2_true": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "T2_true.clamp": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "T2_true.shape": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Size"
+  }
+ ],
+ "TE": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "adjoint": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "arm": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "axes": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "axis": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes"
+  }
+ ],
+ "axis.figure.colorbar": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.figure"
+  }
+ ],
+ "axis.imshow": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.imshow"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.imshow"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.imshow"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.imshow"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.imshow"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.imshow"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.imshow"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.imshow"
+  }
+ ],
+ "axis.set_box_aspect": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_box_aspect"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_box_aspect"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.set_box_aspect"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.set_box_aspect"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.set_box_aspect"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.set_box_aspect"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.set_box_aspect"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.set_box_aspect"
+  }
+ ],
+ "axis.set_title": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_title"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_title"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.set_title"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.set_title"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.set_title"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.set_title"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.set_title"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.set_title"
+  }
+ ],
+ "axis.set_xticks": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_xticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_xticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.set_xticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.set_xticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.set_xticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.set_xticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.set_xticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.set_xticks"
+  }
+ ],
+ "axis.set_ylabel": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_ylabel"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_ylabel"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.set_ylabel"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.set_ylabel"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.set_ylabel"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.set_ylabel"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.set_ylabel"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.set_ylabel"
+  }
+ ],
+ "axis.set_yticks": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_yticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_yticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.set_yticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.set_yticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.set_yticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.set_yticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.set_yticks"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.set_yticks"
+  }
+ ],
+ "backend": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "str"
+  }
+ ],
+ "bar": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.colorbar",
+   "module_short": "matplotlib.colorbar",
+   "name": "Colorbar"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Colorbar"
+  }
+ ],
+ "bar.ax.set_visible": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_visible"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "Axes.set_visible"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Axes.set_visible"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes._base",
+   "module_short": "matplotlib.axes._base",
+   "name": "_AxesBase.set_visible"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.axes",
+   "module_short": "matplotlib.axes",
+   "name": "_AxesBase.set_visible"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "_AxesBase.set_visible"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.set_visible"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.set_visible"
+  }
+ ],
+ "brain": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "brainweb_dl.__file__": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "str"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "brainweb_dl",
+   "module_short": "brainweb_dl",
+   "name": "__file__"
+  }
+ ],
+ "build": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.interfaces.finufft",
+   "module_short": "mrinufft.operators.interfaces.finufft",
+   "name": "MRIfinufft"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.interfaces",
+   "module_short": "mrinufft.operators.interfaces",
+   "name": "MRIfinufft"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRIfinufft"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRIfinufft"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators.base",
+   "name": "FourierOperatorCPU"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorCPU"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorCPU"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators.base",
+   "name": "_ToggleGradPlanMixin"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "_ToggleGradPlanMixin"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "_ToggleGradPlanMixin"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators.base",
+   "name": "FourierOperatorSimple"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorSimple"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorSimple"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorBase"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC"
+  }
+ ],
+ "canvas": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  }
+ ],
+ "clock": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  }
+ ],
+ "cmap": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.colors",
+   "module_short": "matplotlib.colors",
+   "name": "LinearSegmentedColormap"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "LinearSegmentedColormap"
+  }
+ ],
+ "coefficients": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "column": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "csv.DictReader": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "csv",
+   "module_short": "csv",
+   "name": "DictReader"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "csv",
+   "module_short": "csv",
+   "name": "DictReader"
+  }
+ ],
+ "deepinv.physics.LinearPhysics": [
+  {
+   "is_class": false,
+   "is_explicit": true,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics"
+  }
+ ],
+ "device": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "str"
+  }
+ ],
+ "difference": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "difference.cpu": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "echo": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "encoding": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "__main__",
+   "module_short": "__main__",
+   "name": "RadialEncoding"
+  }
+ ],
+ "encoding.A": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "__main__",
+   "module_short": "__main__",
+   "name": "RadialEncoding.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "LinearPhysics.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics",
+   "name": "Physics.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "Physics.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "Physics.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn.modules.module",
+   "name": "Module.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn.modules",
+   "name": "Module.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module.A"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module.A"
+  }
+ ],
+ "encoding.A_adjoint": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "__main__",
+   "module_short": "__main__",
+   "name": "RadialEncoding.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "LinearPhysics.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "LinearPhysics.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics.forward",
+   "module_short": "deepinv.physics.forward",
+   "name": "Physics.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.physics",
+   "module_short": "deepinv.physics",
+   "name": "Physics.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv",
+   "module_short": "deepinv",
+   "name": "Physics.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn.modules.module",
+   "name": "Module.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn.modules",
+   "name": "Module.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module.A_adjoint"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module.A_adjoint"
+  }
+ ],
+ "error": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.image",
+   "module_short": "matplotlib.image",
+   "name": "AxesImage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "AxesImage"
+  }
+ ],
+ "error.mean": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.image",
+   "module_short": "matplotlib.image",
+   "name": "AxesImage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "AxesImage"
+  }
+ ],
+ "estimate": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.image",
+   "module_short": "matplotlib.image",
+   "name": "AxesImage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "AxesImage"
+  }
+ ],
+ "figure": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.figure",
+   "module_short": "matplotlib.figure",
+   "name": "Figure"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Figure"
+  }
+ ],
+ "figure.colorbar": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.figure",
+   "module_short": "matplotlib.figure",
+   "name": "Figure.colorbar"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Figure.colorbar"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.figure",
+   "module_short": "matplotlib.figure",
+   "name": "FigureBase.colorbar"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "FigureBase.colorbar"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.artist",
+   "module_short": "matplotlib.artist",
+   "name": "Artist.colorbar"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "Artist.colorbar"
+  }
+ ],
+ "flat": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.interfaces.finufft",
+   "module_short": "mrinufft.operators.interfaces.finufft",
+   "name": "MRIfinufft"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.interfaces",
+   "module_short": "mrinufft.operators.interfaces",
+   "name": "MRIfinufft"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRIfinufft"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRIfinufft"
+  }
+ ],
+ "fractions": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "fractions.sum": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "get_mri": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "brainweb_dl",
+   "module_short": "brainweb_dl",
+   "name": "get_mri"
+  }
+ ],
+ "grid": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "gridded": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "gridded.abs": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "handle": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.image",
+   "module_short": "matplotlib.image",
+   "name": "AxesImage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "AxesImage"
+  }
+ ],
+ "images": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "images.movedim": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "initialize_2D_radial": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.trajectories",
+   "module_short": "mrinufft",
+   "name": "initialize_2D_radial"
+  }
+ ],
+ "kspace": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "label": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "str"
+  }
+ ],
+ "least_squares": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "deepinv.optim.linear",
+   "module_short": "deepinv.optim",
+   "name": "least_squares"
+  }
+ ],
+ "limits": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "tuple"
+  }
+ ],
+ "linear": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "mapping": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators._dictionary",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  }
+ ],
+ "mapping.from_coefficients": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators._dictionary",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators._mapping",
+   "module_short": "torchsim",
+   "name": "Estimator.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "Estimator.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "Estimator.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn.modules.module",
+   "name": "Module.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn.modules",
+   "name": "Module.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module.from_coefficients"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module.from_coefficients"
+  }
+ ],
+ "mapping.subspace.modes.to": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators._dictionary",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators._mapping",
+   "module_short": "torchsim",
+   "name": "Estimator.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "Estimator.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "Estimator.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn.modules.module",
+   "name": "Module.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn.modules",
+   "name": "Module.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module.subspace"
+  }
+ ],
+ "mapping.subspace.retained": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators._dictionary",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators._mapping",
+   "module_short": "torchsim",
+   "name": "Estimator.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.estimators",
+   "module_short": "torchsim",
+   "name": "Estimator.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "Estimator.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules.module",
+   "module_short": "torch.nn.modules.module",
+   "name": "Module.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.modules",
+   "module_short": "torch.nn.modules",
+   "name": "Module.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn",
+   "module_short": "torch.nn",
+   "name": "Module.subspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Module.subspace"
+  }
+ ],
+ "mrinufft.check_backend": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "check_backend"
+  }
+ ],
+ "mrinufft.get_operator": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "get_operator"
+  }
+ ],
+ "name": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "str"
+  }
+ ],
+ "np.array": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "array"
+  }
+ ],
+ "np.asarray": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "asarray"
+  }
+ ],
+ "np.flipud": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "_ArrayFunctionDispatcher"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "flipud"
+  }
+ ],
+ "np.float32": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "float32"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "floating"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "inexact"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "number"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "generic"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "float32"
+  }
+ ],
+ "np.maximum": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ufunc"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "maximum"
+  }
+ ],
+ "np.pi": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "pi"
+  }
+ ],
+ "np.ravel": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "_ArrayFunctionDispatcher"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ravel"
+  }
+ ],
+ "np.where": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "_ArrayFunctionDispatcher"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "where"
+  }
+ ],
+ "occupancy": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "on_gpu": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "bool"
+  }
+ ],
+ "panel": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  }
+ ],
+ "per_echo": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "list"
+  }
+ ],
+ "picture": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "picture.cpu": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "plt.cm.plasma": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.colors",
+   "module_short": "matplotlib.colors",
+   "name": "ListedColormap"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "ListedColormap"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.pyplot.cm",
+   "module_short": "matplotlib.pyplot.cm",
+   "name": "plasma"
+  }
+ ],
+ "plt.rcParams.update": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib",
+   "module_short": "matplotlib",
+   "name": "RcParams.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections.abc",
+   "module_short": "collections.abc",
+   "name": "MutableMapping.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections",
+   "module_short": "collections",
+   "name": "MutableMapping.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "dict.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections.abc",
+   "module_short": "collections.abc",
+   "name": "Mapping.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections",
+   "module_short": "collections",
+   "name": "Mapping.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections.abc",
+   "module_short": "collections.abc",
+   "name": "Collection.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections",
+   "module_short": "collections",
+   "name": "Collection.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections.abc",
+   "module_short": "collections.abc",
+   "name": "Sized.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections",
+   "module_short": "collections",
+   "name": "Sized.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections.abc",
+   "module_short": "collections.abc",
+   "name": "Iterable.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections",
+   "module_short": "collections",
+   "name": "Iterable.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections.abc",
+   "module_short": "collections.abc",
+   "name": "Container.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "collections",
+   "module_short": "collections",
+   "name": "Container.update"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.pyplot.rcParams",
+   "module_short": "matplotlib.pyplot.rcParams",
+   "name": "update"
+  }
+ ],
+ "plt.subplots": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "matplotlib.pyplot",
+   "module_short": "matplotlib.pyplot",
+   "name": "subplots"
+  }
+ ],
+ "projected": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.subspace",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRISubspace"
+  }
+ ],
+ "projected.adj_op": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.subspace",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.adj_op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.adj_op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRISubspace.adj_op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.adj_op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.adj_op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorBase.adj_op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC.adj_op"
+  }
+ ],
+ "projected.n_batchs": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.subspace",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.n_batchs"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.n_batchs"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRISubspace.n_batchs"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.n_batchs"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.n_batchs"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorBase.n_batchs"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC.n_batchs"
+  }
+ ],
+ "projected.n_coils": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.subspace",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.n_coils"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.n_coils"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRISubspace.n_coils"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.n_coils"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.n_coils"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorBase.n_coils"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC.n_coils"
+  }
+ ],
+ "projected.op": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.subspace",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "MRISubspace.op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "MRISubspace.op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators.base",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft.operators",
+   "module_short": "mrinufft.operators",
+   "name": "FourierOperatorBase.op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mrinufft",
+   "module_short": "mrinufft",
+   "name": "FourierOperatorBase.op"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC.op"
+  }
+ ],
+ "report": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  }
+ ],
+ "resampled": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  }
+ ],
+ "rows": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "list"
+  }
+ ],
+ "scale": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "scalebar": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  }
+ ],
+ "separate": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "share": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "shown": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "tuple"
+  }
+ ],
+ "simulator": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.simulators.relaxometry",
+   "module_short": "torchsim.simulators",
+   "name": "MultiEchoSimulator"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.simulators",
+   "module_short": "torchsim.simulators",
+   "name": "MultiEchoSimulator"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "MultiEchoSimulator"
+  }
+ ],
+ "simulator.to": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.simulators.relaxometry",
+   "module_short": "torchsim.simulators",
+   "name": "MultiEchoSimulator.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.simulators",
+   "module_short": "torchsim.simulators",
+   "name": "MultiEchoSimulator.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "MultiEchoSimulator.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.model._state_machine",
+   "module_short": "torchsim.model",
+   "name": "Simulator.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.model",
+   "module_short": "torchsim.model",
+   "name": "Simulator.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "Simulator.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.model._signal",
+   "module_short": "torchsim.model",
+   "name": "SignalModel.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim.model",
+   "module_short": "torchsim.model",
+   "name": "SignalModel.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "SignalModel.to"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "abc",
+   "module_short": "abc",
+   "name": "ABC.to"
+  }
+ ],
+ "spoke": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "started": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "table": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "PosixPath"
+  }
+ ],
+ "table.open": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "PosixPath.open"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "Path.open"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "PurePosixPath.open"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "PurePath.open"
+  }
+ ],
+ "time.perf_counter": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "time",
+   "module_short": "time",
+   "name": "perf_counter"
+  }
+ ],
+ "tissue_PD": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "tissue_T2": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "title": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "str"
+  }
+ ],
+ "torch.as_tensor": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "as_tensor"
+  }
+ ],
+ "torch.complex64": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "dtype"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "complex64"
+  }
+ ],
+ "torch.cuda.is_available": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.cuda",
+   "module_short": "torch.cuda",
+   "name": "is_available"
+  }
+ ],
+ "torch.cuda.synchronize": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.cuda",
+   "module_short": "torch.cuda",
+   "name": "synchronize"
+  }
+ ],
+ "torch.linspace": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "linspace"
+  }
+ ],
+ "torch.nn.functional.interpolate": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch.nn.functional",
+   "module_short": "torch.nn.functional",
+   "name": "interpolate"
+  }
+ ],
+ "torch.stack": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "stack"
+  }
+ ],
+ "torch.tensor": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "tensor"
+  }
+ ],
+ "torch.where": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "where"
+  }
+ ],
+ "torchsim.DictionaryMatcher": [
+  {
+   "is_class": false,
+   "is_explicit": true,
+   "module": "torchsim",
+   "module_short": "torchsim",
+   "name": "DictionaryMatcher"
+  }
+ ],
+ "torchsim.Subspace.modes": [
+  {
+   "is_class": false,
+   "is_explicit": true,
+   "module": "torchsim.Subspace",
+   "module_short": "torchsim.Subspace",
+   "name": "modes"
+  }
+ ],
+ "torchsim.Subspace.retained": [
+  {
+   "is_class": false,
+   "is_explicit": true,
+   "module": "torchsim.Subspace",
+   "module_short": "torchsim.Subspace",
+   "name": "retained"
+  }
+ ],
+ "trajectory": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ndarray"
+  }
+ ],
+ "trajectory.reshape": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "undersampling": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  }
+ ],
+ "values": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "torch",
+   "module_short": "torch",
+   "name": "Tensor"
+  }
+ ],
+ "values.cpu": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  }
+ ],
+ "warnings.filterwarnings": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "warnings",
+   "module_short": "warnings",
+   "name": "filterwarnings"
+  }
+ ]
+}

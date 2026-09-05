@@ -1,0 +1,3105 @@
+{
+ "torchsim.Bounded": [
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.Delay": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.Dephase": [
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.DictionaryMatcher": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.DictionaryMatcher.from_coefficients": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ]
+ ],
+ "torchsim.DictionaryMatcher.grouping": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.DictionaryMatcher.map": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.DictionaryMatcher.subspace": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.Estimator": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.Estimator.buffers": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.Estimator.fit": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.Estimator.from_coefficients": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ]
+ ],
+ "torchsim.Estimator.grouping": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.Estimator.map": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.Estimator.points": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.Estimator.span": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.Estimator.subspace": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.Excitation": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.FSEReadout": [
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.FSESimulator": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ]
+ ],
+ "torchsim.FSESimulator.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.FSESimulator.from_description": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.FSESimulator.from_pulseq": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.FSESimulator.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.FSESimulator.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ]
+ ],
+ "torchsim.GaussNewton": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.Grouping": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.Grouping.sizes": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.Grouping.survivors": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.Inversion": [
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.LookupTable": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.LookupTable.buffers": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.LookupTable.fit": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.LookupTable.map": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.LookupTable.points": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.LookupTable.span": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.MP2RAGESimulator": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.MP2RAGESimulator.bind": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.MP2RAGESimulator.simulate": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.MRFSimulator": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.MRFSimulator.accepts": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.MRFSimulator.exposes": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.MRFSimulator.jacobian": [
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ]
+ ],
+ "torchsim.MRFSimulator.simulate": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.MRFSimulator.variables": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.ModelOperator": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.ModelOperator.A_jvp": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.ModelOperator.A_vjp": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.ModelOperator.channels": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.ModelOperator.initial": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.ModelOperator.jacobian": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.ModelOperator.split": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.MultiEchoSimulator": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.MultiEchoSimulator.bind": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.MultiEchoSimulator.simulate": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.MultiEchoSimulator.to": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.NonlinearLeastSquares": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.NonlinearLeastSquares.map": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.PERK": [
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ]
+ ],
+ "torchsim.Readout": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.Refocusing": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.RfDefinition": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.SPGRReadout": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.SPGRSimulator": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.SSFPEchoReadout": [
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.SSFPFidReadout": [
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.Schedule": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.SequenceDescription": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.SequenceDescription.adc_events": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.SequenceDescription.from_operators": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.SequenceDescription.plot": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.SequenceDesign": [
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.SequenceDesign.minimize": [
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.SequenceOptimization": [
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.ShimDefinition": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.SignalModel": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.SignalModel.accepts": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.SignalModel.bind": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.SignalModel.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.SignalModel.exposes": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.SignalModel.from_description": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.SignalModel.from_pulseq": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.SignalModel.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.SignalModel.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.SignalModel.to": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.SignalModel.variables": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.Simulator": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.Simulator.accepts": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.Simulator.bind": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.Simulator.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.Simulator.exposes": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.Simulator.from_description": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.Simulator.from_pulseq": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.Simulator.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.Simulator.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.Simulator.to": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.Simulator.variables": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.Solution": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.Spoil": [
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ]
+ ],
+ "torchsim.Subspace.fit": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ]
+ ],
+ "torchsim.Subspace.modes": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ]
+ ],
+ "torchsim.Subspace.retained": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ]
+ ],
+ "torchsim.TransitionTable": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.TransitionTable.at": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim._Described": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim._Described.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim._Described.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim._Described.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.bSSFPReadout": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.bSSFPSimulator": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.bSSFPSimulator.exposes": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.bSSFPSimulator.jacobian": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.bSSFPSimulator.simulate": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.crlb": [
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.estimators.Estimator.grouping": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators.Estimator.points": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.estimators.Estimator.span": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.estimators.Grouping": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators.Grouping.sizes": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators.Grouping.survivors": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators._grouped.Grouping": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators._grouped.Grouping.sizes": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators._grouped.Grouping.survivors": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators._mapping.Estimator.grouping": [
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ]
+ ],
+ "torchsim.estimators._mapping.Estimator.points": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.estimators._mapping.Estimator.span": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.execution": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ]
+ ],
+ "torchsim.fse_sim": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.iterative": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.model.SignalModel": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.model.SignalModel.accepts": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.model.SignalModel.bind": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.model.SignalModel.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model.SignalModel.exposes": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.model.SignalModel.from_description": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model.SignalModel.from_pulseq": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.model.SignalModel.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.model.SignalModel.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.model.SignalModel.to": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.model.SignalModel.variables": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.model.Simulator": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-custom-operator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.",
+   "Writing a New Operator"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.model.Simulator.accepts": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.model.Simulator.bind": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.model.Simulator.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model.Simulator.exposes": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.model.Simulator.from_description": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model.Simulator.from_pulseq": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.model.Simulator.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.model.Simulator.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ],
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.model.Simulator.to": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.model.Simulator.variables": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.model._Described": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model._Described.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.model._Described.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.model._Described.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model._signal.SignalModel.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model._signal.SignalModel.from_description": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model._signal.SignalModel.from_pulseq": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.model._signal.SignalModel.variables": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.model._state_machine._Described": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.model._state_machine._Described.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.model._state_machine._Described.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.model._state_machine._Described.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "03-writing-a-simulator.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to write a simulator TorchSim does not ship.",
+   "Writing a Signal Model"
+  ]
+ ],
+ "torchsim.optim.SequenceOptimization": [
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ],
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.recon.Schedule": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.recon.Solution": [
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.rf_definition": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.sequence.RfDefinition": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.sequence.TransitionTable": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.sequence.TransitionTable.at": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.sequence._transition.TransitionTable": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.sequence._transition.TransitionTable.at": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.sequence._transition.transition_table": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.simulators.FSESimulator": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ]
+ ],
+ "torchsim.simulators.FSESimulator.describe": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.simulators.FSESimulator.from_description": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.simulators.FSESimulator.from_pulseq": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.simulators.FSESimulator.jacobian": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ]
+ ],
+ "torchsim.simulators.FSESimulator.simulate": [
+  [
+   "01-getting-started.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.",
+   "Basic Usage"
+  ],
+  [
+   "01-echo-train-design.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.",
+   "Designing echo trains for image quality"
+  ]
+ ],
+ "torchsim.simulators.MP2RAGESimulator": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.simulators.MP2RAGESimulator.bind": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.simulators.MP2RAGESimulator.simulate": [
+  [
+   "02-lookup-table.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.",
+   "MP2RAGE lookup table"
+  ]
+ ],
+ "torchsim.simulators.MRFSimulator": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.simulators.MRFSimulator.accepts": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.simulators.MRFSimulator.exposes": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.simulators.MRFSimulator.jacobian": [
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ]
+ ],
+ "torchsim.simulators.MRFSimulator.simulate": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ],
+  [
+   "01-dictionary-matching.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.",
+   "Dictionary matching"
+  ],
+  [
+   "04-perk.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.",
+   "PERK: kernel ridge regression"
+  ],
+  [
+   "01-synthetic-data.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/05-misc",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/05-misc",
+   "The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.",
+   "Synthetic MR fingerprinting"
+  ]
+ ],
+ "torchsim.simulators.MRFSimulator.variables": [
+  [
+   "02-expanded-physics.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/01-framework",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/01-framework",
+   "The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays.",
+   "Expanded Physics"
+  ]
+ ],
+ "torchsim.simulators.MultiEchoSimulator": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ],
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.simulators.MultiEchoSimulator.bind": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.simulators.MultiEchoSimulator.simulate": [
+  [
+   "03-nonlinear-least-squares.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/02-parameter-inference",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/02-parameter-inference",
+   "The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.",
+   "T2 mapping by nonlinear least squares"
+  ]
+ ],
+ "torchsim.simulators.MultiEchoSimulator.to": [
+  [
+   "01-linear-subspace.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.",
+   "Reconstructing in a linear subspace"
+  ],
+  [
+   "02-nonlinear-inversion.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/04-model-based-imaging",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/04-model-based-imaging",
+   "The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.",
+   "Nonlinear inversion from k-space"
+  ]
+ ],
+ "torchsim.simulators.SPGRSimulator": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.simulators.bSSFPSimulator": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.simulators.bSSFPSimulator.exposes": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.simulators.bSSFPSimulator.jacobian": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ],
+ "torchsim.simulators.bSSFPSimulator.simulate": [
+  [
+   "02-joint-relaxometry.py",
+   "/home/runner/work/torchsim/torchsim/docs/../examples/03-sequence-optimization",
+   "/home/runner/work/torchsim/torchsim/docs/generated/autoexamples/03-sequence-optimization",
+   "The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.",
+   "Designing a joint relaxometry protocol"
+  ]
+ ]
+}

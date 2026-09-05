@@ -1,0 +1,63 @@
+
+
+Examples using ``torchsim.SequenceDesign.minimize``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/03-sequence-optimization/images/thumb/sphx_glr_01-echo-train-design_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/03-sequence-optimization/01-echo-train-design`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Designing echo trains for image quality</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/03-sequence-optimization/01-echo-train-design`
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/03-sequence-optimization/images/thumb/sphx_glr_02-joint-relaxometry_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Designing a joint relaxometry protocol</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

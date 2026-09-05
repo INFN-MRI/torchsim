@@ -1,0 +1,42 @@
+
+
+Examples using ``torchsim.simulators.MRFSimulator.jacobian``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/02-parameter-inference/images/thumb/sphx_glr_04-perk_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/02-parameter-inference/04-perk`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">PERK: kernel ridge regression</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/02-parameter-inference/04-perk`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

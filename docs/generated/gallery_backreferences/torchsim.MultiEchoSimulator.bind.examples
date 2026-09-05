@@ -1,0 +1,42 @@
+
+
+Examples using ``torchsim.MultiEchoSimulator.bind``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/02-parameter-inference/images/thumb/sphx_glr_03-nonlinear-least-squares_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">T2 mapping by nonlinear least squares</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

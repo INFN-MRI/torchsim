@@ -1,0 +1,63 @@
+
+
+Examples using ``torchsim.model.SignalModel.bind``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/02-parameter-inference/images/thumb/sphx_glr_02-lookup-table_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/02-parameter-inference/02-lookup-table`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">MP2RAGE lookup table</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/02-parameter-inference/02-lookup-table`
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/02-parameter-inference/images/thumb/sphx_glr_03-nonlinear-least-squares_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">T2 mapping by nonlinear least squares</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

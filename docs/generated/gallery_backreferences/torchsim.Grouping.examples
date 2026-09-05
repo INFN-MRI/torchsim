@@ -1,0 +1,42 @@
+
+
+Examples using ``torchsim.Grouping``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/02-parameter-inference/images/thumb/sphx_glr_01-dictionary-matching_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/02-parameter-inference/01-dictionary-matching`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Dictionary matching</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/02-parameter-inference/01-dictionary-matching`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

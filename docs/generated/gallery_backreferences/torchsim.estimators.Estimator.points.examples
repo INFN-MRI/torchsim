@@ -1,0 +1,42 @@
+
+
+Examples using ``torchsim.estimators.Estimator.points``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/02-parameter-inference/images/thumb/sphx_glr_02-lookup-table_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/02-parameter-inference/02-lookup-table`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">MP2RAGE lookup table</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/02-parameter-inference/02-lookup-table`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

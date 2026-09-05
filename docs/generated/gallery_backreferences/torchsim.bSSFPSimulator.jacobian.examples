@@ -1,0 +1,42 @@
+
+
+Examples using ``torchsim.bSSFPSimulator.jacobian``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/03-sequence-optimization/images/thumb/sphx_glr_02-joint-relaxometry_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Designing a joint relaxometry protocol</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

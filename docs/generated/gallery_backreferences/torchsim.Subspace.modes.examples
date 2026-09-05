@@ -1,0 +1,42 @@
+
+
+Examples using ``torchsim.Subspace.modes``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/04-model-based-imaging/images/thumb/sphx_glr_01-linear-subspace_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/04-model-based-imaging/01-linear-subspace`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Reconstructing in a linear subspace</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/04-model-based-imaging/01-linear-subspace`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

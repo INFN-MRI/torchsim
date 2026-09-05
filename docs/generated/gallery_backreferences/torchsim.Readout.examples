@@ -1,0 +1,63 @@
+
+
+Examples using ``torchsim.Readout``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/01-framework/images/thumb/sphx_glr_01-getting-started_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/01-framework/01-getting-started`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Basic Usage</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/01-framework/01-getting-started`
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to show how to add a sequence module TorchSim does not ship -- a preparation, or a readout -- without touching a kernel.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/01-framework/images/thumb/sphx_glr_04-custom-operator_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/01-framework/04-custom-operator`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Writing a New Operator</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/01-framework/04-custom-operator`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+

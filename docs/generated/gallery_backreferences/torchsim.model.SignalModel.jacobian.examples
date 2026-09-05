@@ -1,0 +1,105 @@
+
+
+Examples using ``torchsim.model.SignalModel.jacobian``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+.. start-sphx-glr-thumbnails
+
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbnails">
+
+.. thumbnail-parent-div-open
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to showcase the basic functionalities of Torchsim, including how to simulate a signal, calculating derivatives etc.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/01-framework/images/thumb/sphx_glr_01-getting-started_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/01-framework/01-getting-started`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Basic Usage</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/01-framework/01-getting-started`
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to write a simulator TorchSim does not ship.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/01-framework/images/thumb/sphx_glr_03-writing-a-simulator_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/01-framework/03-writing-a-simulator`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Writing a Signal Model</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/01-framework/03-writing-a-simulator`
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/02-parameter-inference/images/thumb/sphx_glr_04-perk_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/02-parameter-inference/04-perk`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">PERK: kernel ridge regression</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/02-parameter-inference/04-perk`
+
+.. raw:: html
+
+    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.">
+
+.. only:: html
+
+  .. image:: /generated/autoexamples/03-sequence-optimization/images/thumb/sphx_glr_02-joint-relaxometry_thumb.png
+    :alt:
+
+  :doc:`/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Designing a joint relaxometry protocol</div>
+    </div>
+
+
+.. only:: not html
+
+ * :doc:`/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry`
+
+.. thumbnail-parent-div-close
+
+.. raw:: html
+
+    </div>
+
