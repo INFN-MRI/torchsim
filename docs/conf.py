@@ -24,6 +24,7 @@ from pathlib import Path
 import sphinx.util.logging
 import torch
 from sphinx_gallery.sorting import ExplicitOrder
+from sphinx_gallery.utils import get_md5sum
 
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("../.."))  # Source code dir relative to this file
@@ -156,13 +157,13 @@ GALLERY_SCRIPTS = [
     for script in sorted((Path(__file__).parent / section).glob("[0-9]*.py"))
 ]
 
-#: Which examples are not executed, and what each one asked for. An example
-#: runs where everything it imports is installed and is rendered from its
-#: source where something is not, so an environment holding the ``examples``
-#: extra executes the whole gallery and one holding ``doc`` alone executes
-#: what needs nothing but TorchSim. That is what the hosted builder has:
-#: fetching a subject and segmenting it with a network asks for more memory
-#: and more minutes than it is given.
+#: Which examples are not executed here, and what each one asked for. An
+#: example runs where everything it imports is installed, so an environment
+#: holding the ``examples`` extra executes the whole gallery and one holding
+#: ``doc`` alone executes what needs nothing but TorchSim. The hosted builder
+#: is the second: fetching a subject and segmenting it with a network asks for
+#: more memory and more minutes than it is given, so it publishes the output
+#: the Docs workflow executed and restored into ``generated/autoexamples``.
 UNRUNNABLE = {
     script: missing
     for script in GALLERY_SCRIPTS
@@ -326,15 +327,37 @@ def _draw_explanation_figures(app) -> None:
     render(os.path.join(app.srcdir, "generated", "figures"))
 
 
+def _restored(app, script: Path) -> bool:
+    """Whether the gallery holds output executed from ``script`` as it stands.
+
+    sphinx-gallery stamps a page it executed with the checksum of the source
+    it ran, and reuses the page whenever the two still agree. A page restored
+    from the Docs workflow carries that stamp; one rendered from its source
+    alone does not.
+    """
+    stamped = Path(app.srcdir, "generated/autoexamples", script.parent.name)
+    stamp = stamped / f"{script.name}.md5"
+    return stamp.is_file() and stamp.read_text().strip() == get_md5sum(script, mode="t")
+
+
 def _say_what_is_not_executed(app) -> None:
-    """Name each example rendered from its source, and what it asked for."""
+    """Name each example this build does not run, and where its output stands."""
     logger = sphinx.util.logging.getLogger(__name__)
     for script, missing in UNRUNNABLE.items():
-        logger.info(
-            "[gallery] %s is rendered without running it: no %s",
-            script.name,
-            ", ".join(missing),
-        )
+        if _restored(app, script):
+            logger.info(
+                "[gallery] %s: publishing the output already executed for it "
+                "(no %s here)",
+                script.name,
+                ", ".join(missing),
+            )
+        else:
+            logger.warning(
+                "[gallery] %s is published without its output: no %s, and no "
+                "executed copy of it under generated/autoexamples",
+                script.name,
+                ", ".join(missing),
+            )
 
 
 def setup(app):

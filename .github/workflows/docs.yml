@@ -4,6 +4,7 @@ name: Docs
 on:
   push:
     branches: ["**"]
+    tags: ["v*.*.*"]
   pull_request:
   workflow_dispatch:
 
@@ -15,8 +16,8 @@ permissions:
   contents: read
 
 jobs:
-  html:
-    name: HTML
+  pages:
+    name: Pages
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -41,8 +42,8 @@ jobs:
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       # The ``doc`` extra alone, which is what the hosted builder installs:
-      # this job is that build, run on every branch rather than on a release.
-      # The examples reaching outside it are rendered from their source.
+      # every page is written, and the examples needing nothing but TorchSim
+      # are executed. What the rest need is the Gallery job below.
       - name: Build the extensions and install
         run: python -m pip install ".[doc]"
 
@@ -54,3 +55,71 @@ jobs:
           name: html
           path: docs/build/html
           retention-days: 7
+
+  gallery:
+    name: Gallery
+    # What the published pages show. The examples are executed here, where
+    # the phantoms, the segmentation network and the encoding fit and where
+    # there is time to download a subject, and what they produced is pushed
+    # to the branch ``.readthedocs.yaml`` restores before it runs Sphinx.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'push'
+          && (github.ref == 'refs/heads/main'
+              || startsWith(github.ref, 'refs/tags/v')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install PyTorch (CPU)
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      # Everything the notebooks import while they run, which is the
+      # ``examples`` extra, so that every one of the thirteen is executed.
+      - name: Build the extensions and install
+        run: python -m pip install ".[doc,examples]"
+
+      - name: Build the HTML
+        run: bash scripts/build_docs.sh
+
+      - name: Report what was executed
+        run: |
+          find docs/generated/autoexamples -name '*.py.md5' -printf '%f\n' | sort
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: html-gallery
+          path: docs/build/html
+          retention-days: 7
+
+      # One commit holding the executed gallery, replaced each time: the
+      # branch is what a documentation build restores, not a history.
+      - name: Publish the executed gallery
+        # A run started by hand on a branch builds and uploads; what the
+        # published pages restore is written by ``main`` and by a tag.
+        if: >-
+          github.ref == 'refs/heads/main'
+          || startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan docs-gallery
+          git rm -r --cached . --quiet
+          git add --force docs/generated
+          git commit --quiet -m "Gallery executed from ${{ github.sha }}"
+          git push --force origin docs-gallery

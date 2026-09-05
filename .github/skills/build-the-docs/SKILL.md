@@ -18,17 +18,29 @@ it slower than a plain Sphinx run and are the point of it: **sphinx-gallery
 executes the examples**, and **the explanation pages' figures are re-rendered**
 by `docs/explanation_figures.py` with the TorchSim in your working tree.
 
-An example is executed when the interpreter can import everything it imports,
-and rendered from its source when it cannot: an environment with the `dev` or
-`examples` extra runs the whole gallery, and one with `doc` alone runs what
-needs nothing but TorchSim. The build says which ones it did not run, and what
-each was missing. To build the pages without running any of them, pass
-`-D plot_gallery=0`.
+An example is executed when the interpreter can import everything it imports:
+an environment with the `dev` or `examples` extra runs the whole gallery, one
+with `doc` alone runs what needs nothing but TorchSim. A page already carrying
+output executed from the source as it stands is reused rather than re-run, and
+the build names each example it did not run and where its output came from. To
+build the pages without running any of them, pass `-D plot_gallery=0`.
+
+## Where the published gallery is executed
 
 Read the Docs builds the published pages from `.readthedocs.yaml`, one version
-per release. It installs the `doc` extra, so the notebooks that fetch a
-phantom or a subject are published as source; adding `examples` back there is
-what publishes their output too.
+per release, with the `doc` extra and Sphinx alone: a subject to download, a
+segmentation network and a spiral encoding are more than that builder has.
+
+The Gallery job of `.github/workflows/docs.yml` is where the thirteen examples
+run. It installs the `examples` extra on a GitHub runner, builds the docs, and
+force-pushes `docs/generated` to the `docs-gallery` branch as a single commit.
+Read the Docs restores that branch before Sphinx starts, so every page is
+published with the figures and printed output it was executed with.
+
+The job runs on `main`, on a `v*.*.*` tag and on demand. An example whose
+source has moved on since the branch was written is published without its
+output and named in the build log with a warning — push to `main`, or run the
+workflow by hand, to refresh it.
 
 ## Markdown, and the two places it is not
 
