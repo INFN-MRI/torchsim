@@ -174,7 +174,12 @@ with a `{figure}` directive. To add a gallery example, drop a script into the
 right `examples/` section — the numeric prefix orders it and the module
 docstring becomes the page.
 
-Read the Docs builds and hosts the published pages, one version per release.
+An example is executed by the gallery when the interpreter can import
+everything it imports, and rendered from its source when it cannot, so what a
+build runs follows from the extras installed into it.
+
+Read the Docs builds and hosts the published pages, one version per release,
+from the `doc` extra alone.
 
 ## Packaging
 

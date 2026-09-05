@@ -73,6 +73,9 @@ test = [
 # import while they execute -- those are the ``examples`` extra, so a
 # documentation build without the gallery does not drag them in.
 doc = [
+# The explanation figures and the getting-started example read the shipped
+# ``.seq`` file, which pypulseq parses.
+"torchsim[pulseq]",
 "sphinx>=7.0",
 "sphinx_book_theme>=1.1",
 "sphinx-design>=0.6",

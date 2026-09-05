@@ -15,12 +15,20 @@ python -m http.server --directory docs/build/html 8000
 The script checks that the interpreter it is given can import TorchSim and the
 documentation extensions, then builds into `docs/build/html`. Two things make
 it slower than a plain Sphinx run and are the point of it: **sphinx-gallery
-executes every example**, and **the explanation pages' figures are re-rendered**
+executes the examples**, and **the explanation pages' figures are re-rendered**
 by `docs/explanation_figures.py` with the TorchSim in your working tree.
 
+An example is executed when the interpreter can import everything it imports,
+and rendered from its source when it cannot: an environment with the `dev` or
+`examples` extra runs the whole gallery, and one with `doc` alone runs what
+needs nothing but TorchSim. The build says which ones it did not run, and what
+each was missing. To build the pages without running any of them, pass
+`-D plot_gallery=0`.
+
 Read the Docs builds the published pages from `.readthedocs.yaml`, one version
-per release. To build the pages without running the examples, drop the
-`examples` extra and pass `-D plot_gallery=0`.
+per release. It installs the `doc` extra, so the notebooks that fetch a
+phantom or a subject are published as source; adding `examples` back there is
+what publishes their output too.
 
 ## Markdown, and the two places it is not
 
@@ -60,8 +68,8 @@ outlive the behaviour it shows.
 
 Drop a script into the right `examples/` section. The numeric prefix orders it
 within the section, and the module docstring — an reStructuredText title block
-— becomes the page's introduction. `filename_pattern` in `docs/conf.py` decides
-which scripts are executed.
+— becomes the page's introduction. What it imports decides where it is
+executed and where it is published as source.
 
 ## Writing
 

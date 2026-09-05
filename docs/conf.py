@@ -13,10 +13,15 @@ https://www.sphinx-doc.org/en/master/usage/configuration.html
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 
+import ast
 import dataclasses
+import importlib.util
 import os
+import re
 import sys
+from pathlib import Path
 
+import sphinx.util.logging
 import torch
 from sphinx_gallery.sorting import ExplicitOrder
 
@@ -124,13 +129,62 @@ GALLERY_SECTIONS = [
     "../examples/05-misc",
 ]
 
+
+def _importable(module: str) -> bool:
+    """Whether this interpreter can import ``module``."""
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _missing_imports(script: Path) -> list[str]:
+    """The top-level modules ``script`` imports and this interpreter lacks."""
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(script.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            imported.add(node.module.split(".")[0])
+    return sorted(name for name in imported if not _importable(name))
+
+
+#: Every example script, in the order the gallery meets them.
+GALLERY_SCRIPTS = [
+    script
+    for section in GALLERY_SECTIONS
+    for script in sorted((Path(__file__).parent / section).glob("[0-9]*.py"))
+]
+
+#: Which examples are not executed, and what each one asked for. An example
+#: runs where everything it imports is installed and is rendered from its
+#: source where something is not, so an environment holding the ``examples``
+#: extra executes the whole gallery and one holding ``doc`` alone executes
+#: what needs nothing but TorchSim. That is what the hosted builder has:
+#: fetching a subject and segmenting it with a network asks for more memory
+#: and more minutes than it is given.
+UNRUNNABLE = {
+    script: missing
+    for script in GALLERY_SCRIPTS
+    if (missing := _missing_imports(script))
+}
+
+#: ``filename_pattern`` is searched in the path of each script, and the file
+#: names are unique across the sections.
+EXECUTED_PATTERN = (
+    "|".join(
+        re.escape(script.name) for script in GALLERY_SCRIPTS if script not in UNRUNNABLE
+    )
+    or r"(?!)"  # nothing to execute, and a pattern that matches nothing
+)
+
 sphinx_gallery_conf = {
     "doc_module": "torchsim",
     "backreferences_dir": "generated/gallery_backreferences",
     "reference_url": {"torchsim": None},
     "examples_dirs": ["../examples/"],
     "gallery_dirs": ["generated/autoexamples"],
-    "filename_pattern": "/0",
+    "filename_pattern": EXECUTED_PATTERN,
     "ignore_pattern": r"(__init__|conftest|utils).py",
     "nested_sections": True,
     "subsection_order": ExplicitOrder(GALLERY_SECTIONS),
@@ -272,6 +326,17 @@ def _draw_explanation_figures(app) -> None:
     render(os.path.join(app.srcdir, "generated", "figures"))
 
 
+def _say_what_is_not_executed(app) -> None:
+    """Name each example rendered from its source, and what it asked for."""
+    logger = sphinx.util.logging.getLogger(__name__)
+    for script, missing in UNRUNNABLE.items():
+        logger.info(
+            "[gallery] %s is rendered without running it: no %s",
+            script.name,
+            ", ".join(missing),
+        )
+
+
 def setup(app):
     """Wire in the figure pass, and drop sphinx-gallery's code-link pass.
 
@@ -280,6 +345,7 @@ def setup(app):
     it would add are the only thing lost.
     """
     _hide_ignored_code_from_the_page_only()
+    app.connect("builder-inited", _say_what_is_not_executed)
     app.connect("builder-inited", _draw_explanation_figures)
     app.connect("autodoc-skip-member", _skip_undocumented_specials)
     try:

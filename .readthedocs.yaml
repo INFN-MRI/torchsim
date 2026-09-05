@@ -19,6 +19,11 @@ build:
       # clones shallow.
       - git fetch --unshallow || true
       - git fetch --tags || true
+    pre_install:
+      # The default index serves the CUDA build on Linux, which is gigabytes
+      # of driver libraries a builder with no card cannot use. Installed
+      # first, it is what the project's own requirement resolves against.
+      - python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 sphinx:
   configuration: docs/conf.py
@@ -29,11 +34,12 @@ formats:
 
 python:
   install:
-    # ``examples`` is what sphinx-gallery imports while it executes the
-    # thirteen example scripts. Drop it, and pass ``-D plot_gallery=0`` in
-    # ``sphinx.builder`` options, to build the pages without running them.
+    # What the pages themselves need. The phantom, segmentation, coil and
+    # encoding packages the later examples import are the ``examples`` extra,
+    # and downloading a subject and segmenting it with a network is more than
+    # this builder has; ``docs/conf.py`` executes the examples this
+    # environment can import and renders the rest from their source.
     - method: pip
       path: .
       extra_requirements:
         - doc
-        - examples
