@@ -24,13 +24,21 @@ done
 if ! "$python_bin" - <<'PY'
 import importlib, sys
 
+
+def absent(name):
+    try:
+        return importlib.util.find_spec(name) is None
+    except ModuleNotFoundError:  # the package holding it is not there either
+        return True
+
+
 missing = [
     name
-    for name in ("torch", "matplotlib", "sphinx", "sphinx_gallery",
-                 "sphinx_copybutton", "sphinx_exec_directive",
-                 "sphinx_book_theme", "myst_parser", "linkify_it",
-                 "pypulseq")
-    if importlib.util.find_spec(name) is None
+    for name in ("torchsim", "torchsim._epg_cpu", "torch", "matplotlib",
+                 "sphinx", "sphinx_gallery", "sphinx_copybutton",
+                 "sphinx_exec_directive", "sphinx_book_theme", "myst_parser",
+                 "linkify_it", "pypulseq")
+    if absent(name)
 ]
 if missing:
     print("missing: " + " ".join(missing), file=sys.stderr)
@@ -45,9 +53,11 @@ if [ "$clean" -eq 1 ]; then
     rm -rf "$root/docs/build" "$root/docs/generated"
 fi
 
+# The pages are built against the installed TorchSim, kernels and all. Put
+# ``src`` on the path instead and the compiled halves of the package are gone:
+# a figure the fused kernel draws then fails the build.
 cd "$root/docs"
-PYTHONPATH="$root/src${PYTHONPATH:+:$PYTHONPATH}" \
-    "$python_bin" -m sphinx -b html . build/html
+"$python_bin" -m sphinx -b html . build/html
 
 echo
 echo "open file://$root/docs/build/html/index.html"
