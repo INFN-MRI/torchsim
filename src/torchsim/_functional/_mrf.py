@@ -5,7 +5,8 @@ __all__ = ["mrf_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.mrf import MRFModel
+from ..simulators.mrf import MRFSimulator
+from ._run import evaluated
 
 
 def mrf_sim(
@@ -14,16 +15,14 @@ def mrf_sim(
     T1: float | npt.ArrayLike,
     T2: float | npt.ArrayLike,
     diff: str | tuple[str] = None,
-    slice_prof: float | npt.ArrayLike = 1.0,
     B1: float | npt.ArrayLike = 1.0,
     inv_efficiency: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
     TI: float = 0.0,
     nstates: int = 10,
     nreps: int = 1,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     SSFP MR Fingerprinting simulator wrapper.
 
@@ -40,9 +39,6 @@ def mrf_sim(
     diff : str | tuple[str], optional
         Arguments to get the signal derivative with respect to.
         The default is ``None`` (no differentation).
-    slice_prof : float | npt.ArrayLike, optional
-        Flip angle scaling along slice profile.
-        The default is ``1.0``.
     B1 : float | npt.ArrayLike, optional
         Flip angle scaling map, default is ``1.0``.
     inv_efficiency : float | npt.ArrayLike, optional
@@ -58,9 +54,6 @@ def mrf_sim(
     nreps : int, optional
         Number of simulation repetitions.
         The default is ``1``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -75,7 +68,18 @@ def mrf_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = MRFModel(diff, chunk_size, device)
-    model.set_properties(T1, T2, M0, B1, inv_efficiency)
-    model.set_sequence(flip, TR, TI, slice_prof, nstates, nreps)
-    return model()
+    return evaluated(
+        MRFSimulator(),
+        diff,
+        device,
+        T1=T1,
+        T2=T2,
+        M0=M0,
+        B1=B1,
+        inv_efficiency=inv_efficiency,
+        flip=flip,
+        TR=TR,
+        TI=TI,
+        nstates=nstates,
+        repetitions=nreps,
+    )

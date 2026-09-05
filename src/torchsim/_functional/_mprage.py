@@ -5,7 +5,8 @@ __all__ = ["mprage_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.mprage import MPRAGEModel
+from ..simulators.mprage import MPRAGESimulator
+from ._run import evaluated
 
 
 def mprage_sim(
@@ -17,9 +18,8 @@ def mprage_sim(
     diff: str | tuple[str] = None,
     inv_efficiency: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     MPRAGE simulator wrapper.
 
@@ -49,9 +49,6 @@ def mprage_sim(
     TI : float | npt.ArrayLike, optional
         Inversion time in milliseconds.
         The default is ``0.0``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -66,7 +63,15 @@ def mprage_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = MPRAGEModel(diff, chunk_size, device)
-    model.set_properties(T1, M0, inv_efficiency)
-    model.set_sequence(TI, flip, TRspgr, nshots)
-    return model()
+    return evaluated(
+        MPRAGESimulator(),
+        diff,
+        device,
+        T1=T1,
+        M0=M0,
+        inv_efficiency=inv_efficiency,
+        TI=TI,
+        flip=flip,
+        TRspgr=TRspgr,
+        nshots=nshots,
+    )

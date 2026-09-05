@@ -5,7 +5,8 @@ __all__ = ["spgr_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.spgr import SPGRModel
+from ..simulators.spgr import SPGRSimulator
+from ._run import evaluated
 
 
 def spgr_sim(
@@ -18,9 +19,8 @@ def spgr_sim(
     B0: float | npt.ArrayLike = 0.0,
     chemshift: float | npt.ArrayLike = 0.0,
     M0: float | npt.ArrayLike = 1.0,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     SPoiled Gradient Recalled echo simulator wrapper.
 
@@ -45,9 +45,6 @@ def spgr_sim(
         Chemical shift in Hz, default is ``0.0``.
     M0 : float or array-like, optional
         Proton density scaling factor, default is ``1.0``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -62,7 +59,16 @@ def spgr_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = SPGRModel(diff, chunk_size, device)
-    model.set_properties(T1, T2star, M0, B0, chemshift)
-    model.set_sequence(flip, TR, TE)
-    return model()
+    return evaluated(
+        SPGRSimulator(),
+        diff,
+        device,
+        T1=T1,
+        T2star=T2star,
+        M0=M0,
+        B0=B0,
+        chemshift=chemshift,
+        flip=flip,
+        TR=TR,
+        TE=TE,
+    )

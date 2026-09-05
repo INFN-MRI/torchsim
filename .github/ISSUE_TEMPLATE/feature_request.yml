@@ -1,0 +1,41 @@
+name: Feature request
+description: A sequence, a physical effect, an estimator or an interface TorchSim should carry.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to simulate or fit
+      description: |
+        The acquisition or the analysis, in the vocabulary of the experiment
+        rather than of the API. What the sequence plays, which properties you
+        need out, and what stops you today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like TorchSim to do
+      description: |
+        If you already know the shape of it -- an operator, a tissue property,
+        a keyword on an existing simulator -- sketch the call you would like
+        to write.
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference
+      description: |
+        The paper the model comes from, if there is one, and the figure or
+        equation the implementation would have to reproduce.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to open a pull request for this.

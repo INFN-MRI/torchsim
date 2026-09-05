@@ -5,7 +5,8 @@ __all__ = ["mpnrage_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.mpnrage import MPnRAGEModel
+from ..simulators.mpnrage import MPnRAGESimulator
+from ._run import evaluated
 
 
 def mpnrage_sim(
@@ -14,14 +15,12 @@ def mpnrage_sim(
     TR: float | npt.ArrayLike,
     T1: float | npt.ArrayLike,
     diff: str | tuple[str] = None,
-    slice_prof: float | npt.ArrayLike = 1.0,
     B1: float | npt.ArrayLike = 1.0,
     inv_efficiency: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
     TI: float = 0.0,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     MPnRAGE simulator wrapper.
 
@@ -38,9 +37,6 @@ def mpnrage_sim(
     diff : str | tuple[str], optional
         Arguments to get the signal derivative with respect to.
         The default is ``None`` (no differentation).
-    slice_prof : float | npt.ArrayLike, optional
-        Flip angle scaling along slice profile.
-        The default is ``1.0``.
     B1 : float | npt.ArrayLike, optional
         Flip angle scaling map, default is ``1.0``.
     inv_efficiency : float | npt.ArrayLike, optional
@@ -50,9 +46,6 @@ def mpnrage_sim(
     TI : float | npt.ArrayLike, optional
         Inversion time in milliseconds.
         The default is ``0.0``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -67,7 +60,16 @@ def mpnrage_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = MPnRAGEModel(diff, chunk_size, device)
-    model.set_properties(T1, M0, B1, inv_efficiency)
-    model.set_sequence(nshots, flip, TR, TI, slice_prof)
-    return model()
+    return evaluated(
+        MPnRAGESimulator(),
+        diff,
+        device,
+        T1=T1,
+        M0=M0,
+        B1=B1,
+        inv_efficiency=inv_efficiency,
+        nshots=nshots,
+        flip=flip,
+        TR=TR,
+        TI=TI,
+    )

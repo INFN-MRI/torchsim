@@ -1,9 +1,10 @@
 """Test relaxation operators."""
 
-import torch
 from types import SimpleNamespace
 
-from torchsim import epg
+import torch
+
+from utils import epg
 
 
 # %% longitudinal

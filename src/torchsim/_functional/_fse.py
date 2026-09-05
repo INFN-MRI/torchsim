@@ -5,7 +5,8 @@ __all__ = ["fse_sim"]
 import numpy.typing as npt
 import torch
 
-from ..models.fse import FSEModel
+from ..simulators.fse import FSESimulator
+from ._run import evaluated
 
 
 def fse_sim(
@@ -18,13 +19,11 @@ def fse_sim(
     exc_flip: float = 90.0,
     exc_phase: float = 90.0,
     diff: str | tuple[str] = None,
-    slice_prof: float | npt.ArrayLike = 1.0,
     B1: float | npt.ArrayLike = 1.0,
     M0: float | npt.ArrayLike = 1.0,
     nstates: int = 10,
-    chunk_size: int = None,
     device: str | torch.device = None,
-):
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """
     Fast Spin Echo simulator wrapper.
 
@@ -53,9 +52,6 @@ def fse_sim(
     diff : str | tuple[str], optional
         Arguments to get the signal derivative with respect to.
         The default is ``None`` (no differentation).
-    slice_prof : float | npt.ArrayLike, optional
-        Flip angle scaling along slice profile.
-        The default is ``1.0``.
     B1 : float | npt.ArrayLike, optional
         Flip angle scaling map, default is ``1.0``.
     inv_efficiency : float | npt.ArrayLike, optional
@@ -68,9 +64,6 @@ def fse_sim(
     nstates : int, optional
         Number of EPG states to be retained.
         The default is ``10``.
-    chunk_size : int, optional
-        Number of atoms to be simulated in parallel.
-        The default is ``None``.
     device : str | torch.device, optional
         Computational device for simulation.
         The default is ``None`` (infer from input).
@@ -85,7 +78,19 @@ def fse_sim(
         Not returned if ``diff`` is ``None``.
 
     """
-    model = FSEModel(diff, chunk_size, device)
-    model.set_properties(T1, T2, M0, B1)
-    model.set_sequence(flip, ESP, phases, TR, exc_flip, exc_phase, slice_prof, nstates)
-    return model()
+    return evaluated(
+        FSESimulator(),
+        diff,
+        device,
+        T1=T1,
+        T2=T2,
+        M0=M0,
+        B1=B1,
+        flip=flip,
+        ESP=ESP,
+        phases=phases,
+        TR=TR,
+        exc_flip=exc_flip,
+        exc_phase=exc_phase,
+        nstates=nstates,
+    )

@@ -3,8 +3,8 @@
 __all__ = ["b1rms"]
 
 
-import numpy.typing as npt
 import numpy as np
+import numpy.typing as npt
 
 gamma = 2 * np.pi * 42.58 * 1e6
 

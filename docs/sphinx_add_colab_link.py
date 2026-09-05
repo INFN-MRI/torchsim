@@ -1,9 +1,9 @@
+import json
+import os
+
 from docutils import nodes
 from sphinx.util.docutils import SphinxDirective
 from sphinx_gallery.notebook import add_code_cell, add_markdown_cell
-
-import os
-import json
 
 
 class ColabLinkNode(nodes.General, nodes.Element):
@@ -45,12 +45,12 @@ class ColabLinkDirective(SphinxDirective):
         )
 
         # Generate the Colab URL based on GitHub repo information
-        self.colab_url = f"https://colab.research.google.com/github/INFN-MRI/torchsim/blob/gh-pages/examples/{notebook_repo_relative_path}"
+        self.colab_url = f"https://colab.research.google.com/github/FiRMLAB-Pisa/torchsim/blob/gh-pages/examples/{notebook_repo_relative_path}"
 
         # Create the HTML button or link
         self.html = f"""<div class="colab-button">
             <a href="{self.colab_url}" target="_blank">
-                <img src="https://colab.research.google.com/assets/colab-badge.svg" 
+                <img src="https://colab.research.google.com/assets/colab-badge.svg"
                 alt="Open In Colab"/>
             </a>
         </div>

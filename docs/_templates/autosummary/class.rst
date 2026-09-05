@@ -4,28 +4,17 @@
 
 .. autoclass:: {{ objname }}
    :members:
-   :private-members:
    :show-inheritance:
    :special-members: __call__, __add__, __mul__, __matmul__
 
    {% block methods %}
-   {% if methods %}
+   {% set own = methods | reject("in", inherited_from_torch) | reject("eq", "__init__") | list %}
+   {% if own %}
    .. rubric:: {{ _('Methods') }}
 
    .. autosummary::
       :nosignatures:
-   {% for item in methods %}
-      ~{{ name }}.{{ item }}
-   {%- endfor %}
-   {% endif %}
-   {% endblock %}
-
-   {% block attributes %}
-   {% if attributes %}
-   .. rubric:: {{ _('Attributes') }}
-
-   .. autosummary::
-   {% for item in attributes %}
+   {% for item in own %}
       ~{{ name }}.{{ item }}
    {%- endfor %}
    {% endif %}

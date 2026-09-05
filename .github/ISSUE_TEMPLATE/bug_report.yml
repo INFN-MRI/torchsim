@@ -1,0 +1,69 @@
+name: Bug report
+description: A simulation that raises, hangs, or returns a signal you can show is wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions about how to use TorchSim, and results you are unsure about,
+        belong in [Discussions](https://github.com/FiRMLAB-Pisa/torchsim/discussions).
+        This form is for behaviour you can pin down.
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What happens
+      description: What you ran, and what it did instead of what you expected.
+      placeholder: |
+        A 48-echo FSE train at 60 degree refocusing returns NaN from the
+        second echo on, on CPU, for T2 = 0.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Code that reproduces it
+      description: |
+        The shortest script that shows the problem, with the tissue and the
+        protocol it was run on. Paste it whole rather than describing it -- a
+        sequence is enough numbers that a description leaves the run ambiguous.
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Traceback or output
+      description: The full traceback, or the numbers that are wrong beside the ones you expected.
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Paste the output of
+
+        ```sh
+        python -c "from importlib.metadata import version; print('torchsim', version('torchsim'))"
+        python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_device_name() if torch.cuda.is_available() else 'cpu')"
+        python -VV
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it runs
+      description: Which backends you have seen it on.
+      multiple: true
+      options:
+        - CPU
+        - CUDA (Triton kernels)
+        - Both
+    validations:
+      required: true

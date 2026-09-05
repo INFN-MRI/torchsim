@@ -1,17 +1,18 @@
 [build-system]
-build-backend = "setuptools.build_meta"
-requires = ["setuptools", "setuptools_scm[toml]", "wheel"]
+build-backend = "scikit_build_core.build"
+requires = ["scikit-build-core>=0.10", "setuptools-scm>=8"]
 
 
 [project]
 name = "torchsim"
 description = "A feature-rich MR simulator supporting massive parallelization on GPU and automatic differentiation."
-readme = "README.rst"
+readme = "README.md"
 
 requires-python = ">=3.10"
 dynamic = ["version"]
 
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE.txt"]
 keywords = ["epg", "mri", "simulation", "bloch"]
 
 
@@ -30,47 +31,129 @@ classifiers = [  # Optional
 
   # Indicate who your project is intended for
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
-
   # Specify the Python versions you support here. In particular, ensure
   # that you indicate you support Python 3. These classifiers are *not*
   # checked by "pip install". See instead "python_requires" below.
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+  "Topic :: Scientific/Engineering :: Physics",
 ]
 
 dependencies = [
-"scipy",
-"torch",
-"mri-nufft",
+# NumPy 2.0 renamed ``trapz`` to ``trapezoid`` and is the baseline for the
+# array API used across the simulator.
+"numpy>=2.0",
+"scipy>=1.10",
+# torch.func (jacrev/jacfwd) and torch.linalg are used by the optimization and
+# estimator packages.
+"torch>=2.1",
 ]
 
-[project.optional-dependencies] # Optional
-dev = ["black", "isort"]
-test = ["pytest", "pytest-black", "pytest-cov", "pytest-sugar", "pytest-xdist"]
+[project.optional-dependencies]
+# What it takes to read a Pulseq .seq file. The format's reference
+# implementation parses it and computes its trajectory; nothing else in the
+# package imports it.
+pulseq = [
+"pypulseq>=1.4",
+]
+# What it takes to run the suite. Nothing here is imported by the package.
+test = [
+"torchsim[pulseq]",
+"pytest>=7.0",
+"pytest-cov",
+"pytest-sugar",
+"pytest-xdist",
+"coverage",
+]
+# What it takes to build these pages, minus the packages the gallery examples
+# import while they execute -- those are the ``examples`` extra, so a
+# documentation build without the gallery does not drag them in.
 doc = [
-"sphinx", 
-"sphinx_book_theme", 
-"sphinx-gallery",
-"sphinx-exec-directive",
-"sphinx_copybutton",
-"matplotlib", 
-"sigpy", 
-"torchio",
-"numba",
-"ipywidgets",
+"sphinx>=7.0",
+"sphinx_book_theme>=1.1",
+"sphinx-design>=0.6",
+"sphinx-gallery>=0.15",
+"myst-parser>=4.0",
+"linkify-it-py>=2.0",
+"sphinx-exec-directive>=0.6",
+"sphinx_copybutton>=0.5",
+"matplotlib>=3.8",
+"cmap>=0.1",
+"ipywidgets>=8.0",
+]
+# What the gallery examples reach for. None of it is needed to simulate: the
+# phantoms, the segmentation, the coils, the Fourier encoding and the linear
+# solvers all come from elsewhere, which is the point several examples make.
+examples = [
+"torchsim[pulseq]",
+"brainweb-dl>=0.3",
+"deepinv>=0.2",
+"deepmriprep>=0.3",
+"mri-nufft[finufft]>=1.0",
+"sigpy>=0.1.26",
+"torchio>=0.19",
+]
+# The whole toolchain in one command, which is what a contributor installs.
+dev = [
+"torchsim[test,doc,examples]",
+"ruff>=0.14",
+"mypy",
+"pre-commit",
 ]
 
 # List URLs that are relevant to your project
 # This field corresponds to the "Project-URL" and "Home-Page" metadata fields:
 [project.urls]  # Optional
-"Homepage" = "https://github.com/INFN-MRI/torchsim"
-"Bug Reports" = "https://github.com/INFN-MRI/torchsim/issues"
-"Source" = "https://github.com/INFN-MRI/torchsim"
+"Homepage" = "https://github.com/FiRMLAB-Pisa/torchsim"
+"Documentation" = "https://firmlab-torchsim.readthedocs.io"
+"Bug Reports" = "https://github.com/FiRMLAB-Pisa/torchsim/issues"
+"Source" = "https://github.com/FiRMLAB-Pisa/torchsim"
 
-[tool.setuptools.packages.find]
-where=["src"]
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+build-dir = "build/{wheel_tag}"
+cmake.version = ">=3.26"
+wheel.packages = ["src/torchsim"]
+# One wheel per platform rather than one per interpreter: the kernels are built
+# against the CPython stable ABI from 3.10 on, so the tag is cp310-abi3.
+wheel.py-api = "cp310"
+# What ships is the compiled kernel, not the source it was compiled from.
+wheel.exclude = ["*.cpp", "*.hpp"]
+metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
+sdist.include = ["src/torchsim/_version.py"]
+
+# One wheel per platform, built by cibuildwheel in .github/workflows/wheels.yml.
+[tool.cibuildwheel]
+# The kernels target the CPython stable ABI from 3.10 on, so the cp310 build
+# is the wheel every supported interpreter installs. There is nothing to
+# repeat per minor version.
+build = "cp310-*"
+skip = ["*-musllinux_i686", "pp*"]
+build-frontend = "build"
+# No PyTorch, no NumPy, nothing: the check loads the compiled kernels by path.
+test-command = "python {project}/scripts/check_wheel.py"
+# A wheel is installed with its dependencies before it is tested, and PyTorch
+# publishes no musllinux wheel for that install to resolve. The workflow loads
+# the musl kernels in an Alpine container instead, where nothing resolves.
+test-skip = "*musllinux*"
+
+[tool.cibuildwheel.linux]
+# scikit-build-core installs cmake and ninja as build-time wheels inside the
+# manylinux container; the image's compiler is what builds the kernels.
+archs = ["auto64"]
+
+[tool.cibuildwheel.macos]
+# An Apple silicon runner builds its own wheel and cross-compiles the Intel
+# one beside it; cibuildwheel skips the test for the architecture the runner
+# cannot execute.
+archs = ["arm64", "x86_64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
 
 [tool.setuptools_scm]
 write_to = "src/torchsim/_version.py"
@@ -78,38 +161,76 @@ version_scheme = "python-simplified-semver"
 local_scheme="no-local-version"
 fallback_version="v99-dev"
 
-# Formatting using black.
-[tool.black]
-
-[tool.isort]
-profile="black"
-
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = [
-    "--cov=mrsim",
+    "--cov=torchsim",
     "--cov-report=term-missing",
-    "--cov-report=xml"
+    "--cov-report=xml",
+    "-m", "not interpreted"
+]
+markers = [
+    "interpreted: runs a kernel in Triton's CPU interpreter; a minute each"
 ]
 
-# linting using ruff.
+# Formatting and linting are both ruff: ``ruff format`` is the formatter and the
+# ``I`` rules are the import sorter, so one tool and one config decide the style.
 [tool.ruff]
+# Rules move between ruff releases -- UP038 was removed in 0.14 -- so an older
+# ruff would report findings this configuration cannot express. It refuses to
+# run rather than disagree with CI, which pins the version in
+# .pre-commit-config.yaml.
+required-version = ">=0.14"
 src = ["src", "tests"]
-select = ["E", "F", "B", "Q", "D", "UP", "ANN"]
+line-length = 88
+extend-exclude = ["docs/generated", "src/torchsim/_version.py"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "Q", "D", "UP", "ANN"]
 
 ignore = [
-    "ANN101", # missing type annotation for self
-    "ANN102", # missing type annotation for cls in classmethod.
     "ANN204", # missing return type for __init__
     "D105", # missing docstring in magic method
+    # A docstring here names what a thing *is* -- "The rotation named by its
+    # Cayley-Klein pair" -- which is what a caller reads it for. Imperative mood
+    # would make every one of them a worse sentence.
+    "D401",
     "D404", # Imperative mode is not necessary everywhere, trust me.
+    "E501", # line length is the formatter's to decide, not the linter's
+    # Every collaborator TorchSim takes at a boundary is duck-typed on purpose:
+    # an acquisition is anything with ``simulate``, an encoding anything with
+    # ``A`` and ``A_adjoint``, and naming a class there would close the door
+    # this package exists to hold open. The docstring says what is expected.
+    "ANN401",
 ]
 
-[tool.ruff.per-file-ignores]
-"tests/*.py" = ["ANN"]
+[tool.ruff.lint.per-file-ignores]
+# The suite states its invariants in module docstrings and in test names, in
+# whatever prose says it best; pydocstyle's summary-line shape would cost that
+# and buy nothing, since nobody calls a test. Annotations on a fixture likewise.
+"tests/**" = ["ANN", "D"]
+# A gallery example is prose with code in it. Its module docstring is the
+# rendered page title and intro, so it has the shape sphinx-gallery wants
+# rather than the shape pydocstyle wants; and its imports sit in the cell that
+# needs them, which is what a reader of the page follows.
+"examples/**" = ["ANN", "D", "E402", "I001", "B018"]
+"docs/**" = ["ANN", "D1"]
+"scripts/**" = ["ANN", "D1"]
+# A Triton kernel's parameters are compile-time constants and tensors the
+# compiler types itself; an annotation on one says nothing Python will read.
+"src/torchsim/**/*_triton.py" = ["ANN"]
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.isort]
+known-first-party = ["torchsim"]
+
+[tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
-[mypy]
+[tool.mypy]
 ignore_missing_imports = true

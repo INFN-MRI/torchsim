@@ -1,0 +1,31 @@
+name: Lint
+
+# Every branch, so a check cannot first fail on the pull request.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # The same hooks, at the same pinned versions, as a working tree runs.
+      # Nothing about the style is decided here; it is decided in
+      # .pre-commit-config.yaml and in pyproject.toml.
+      - uses: pre-commit/action@v3.0.1

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question, or a result you are unsure about
+    url: https://github.com/FiRMLAB-Pisa/torchsim/discussions
+    about: Ask how to model a sequence, or whether a signal you got is expected.
+  - name: Security report
+    url: https://github.com/FiRMLAB-Pisa/torchsim/security/policy
+    about: Report a vulnerability privately rather than in a public issue.

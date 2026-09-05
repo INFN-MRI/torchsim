@@ -1,9 +1,11 @@
 """FSE tests."""
 
+import numpy as np
 from pytest import fixture
 
-import numpy as np
-from torchsim import fse_sim
+from torchsim import (
+    fse_sim,
+)
 
 
 @fixture

@@ -1,9 +1,11 @@
 """MRF tests."""
 
+import numpy as np
 from pytest import fixture
 
-import numpy as np
-from torchsim import mrf_sim
+from torchsim import (
+    mrf_sim,
+)
 
 
 @fixture

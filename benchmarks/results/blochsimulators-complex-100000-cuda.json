@@ -1,0 +1,48 @@
+{
+  "note": "float32; complex RF train, complex states; max_state is a multiple of 32 by construction",
+  "setup_seconds": 20.63653769,
+  "peak_device_mib": 4960,
+  "atoms_per_second": 1128363.895,
+  "mode": "forward(complex)",
+  "versions": {
+    "julia": "1.12.7",
+    "BlochSimulators": "0.9.0"
+  },
+  "baseline_rss_mib": 1138.375,
+  "seconds": [
+    0.247959938,
+    0.108169951,
+    0.091788611,
+    0.0898357,
+    0.088979351,
+    0.088623892,
+    0.089838233,
+    0.089455414,
+    0.089154552,
+    0.089771919,
+    0.08926289,
+    0.09089072,
+    0.107512734,
+    0.108952702,
+    0.107580069
+  ],
+  "machine": {
+    "julia": "1.12.7",
+    "processor": "13th Gen Intel(R) Core(TM) i7-13700H",
+    "platform": "Linux x86_64-linux-gnu"
+  },
+  "states": 32,
+  "length": 500,
+  "backend": "BlochSimulators.jl",
+  "repeats": 15,
+  "median": 0.089838233,
+  "threads": 4,
+  "device": "cuda",
+  "checksum": [
+    0,
+    -2213845.25
+  ],
+  "peak_rss_mib": 1727.5625,
+  "atoms": 100000,
+  "best": 0.088623892
+}

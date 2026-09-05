@@ -1,10 +1,11 @@
 """Test perfect spoiling."""
 
-import pytest
-import torch
 from types import SimpleNamespace
 
-from torchsim.epg import spoil
+import pytest
+import torch
+
+from utils.epg import spoil
 
 
 @pytest.fixture
@@ -33,9 +34,9 @@ def test_spoil_transverse_magnetization(sample_states):
     assert torch.all(spoiled_states.Fminus == 0), "Fminus should be zeroed after spoil"
 
     # Ensure Z is unchanged
-    assert torch.all(
-        spoiled_states.Z == original_states.Z
-    ), "Z should remain unchanged after spoil"
+    assert torch.all(spoiled_states.Z == original_states.Z), (
+        "Z should remain unchanged after spoil"
+    )
 
 
 def test_spoil_in_place(sample_states):
@@ -51,15 +52,15 @@ def test_spoil_no_shape_change(sample_states):
     spoiled_states = spoil(sample_states)
 
     # Ensure shapes of Fplus, Fminus, and Z remain unchanged
-    assert (
-        spoiled_states.Fplus.shape == original_states.Fplus.shape
-    ), "Fplus shape should not change after spoil"
-    assert (
-        spoiled_states.Fminus.shape == original_states.Fminus.shape
-    ), "Fminus shape should not change after spoil"
-    assert (
-        spoiled_states.Z.shape == original_states.Z.shape
-    ), "Z shape should not change after spoil"
+    assert spoiled_states.Fplus.shape == original_states.Fplus.shape, (
+        "Fplus shape should not change after spoil"
+    )
+    assert spoiled_states.Fminus.shape == original_states.Fminus.shape, (
+        "Fminus shape should not change after spoil"
+    )
+    assert spoiled_states.Z.shape == original_states.Z.shape, (
+        "Z shape should not change after spoil"
+    )
 
 
 def test_spoil_does_not_affect_device(sample_states):
@@ -67,12 +68,12 @@ def test_spoil_does_not_affect_device(sample_states):
     spoiled_states = spoil(sample_states)
 
     # Ensure device of the tensors is preserved
-    assert (
-        spoiled_states.Fplus.device == original_states.Fplus.device
-    ), "Device of Fplus should remain unchanged"
-    assert (
-        spoiled_states.Fminus.device == original_states.Fminus.device
-    ), "Device of Fminus should remain unchanged"
-    assert (
-        spoiled_states.Z.device == original_states.Z.device
-    ), "Device of Z should remain unchanged"
+    assert spoiled_states.Fplus.device == original_states.Fplus.device, (
+        "Device of Fplus should remain unchanged"
+    )
+    assert spoiled_states.Fminus.device == original_states.Fminus.device, (
+        "Device of Fminus should remain unchanged"
+    )
+    assert spoiled_states.Z.device == original_states.Z.device, (
+        "Device of Z should remain unchanged"
+    )

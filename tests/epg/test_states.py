@@ -1,9 +1,10 @@
 """EPG States creation."""
 
-import torch
 from types import SimpleNamespace
 
-from torchsim.epg import states_matrix
+import torch
+
+from utils.epg import states_matrix
 
 
 def test_states_matrix_default():
@@ -48,13 +49,13 @@ def test_states_matrix_non_default():
 
     assert torch.all(result.Fplus == 0), "Fplus should be initialized to zeros"
     assert torch.all(result.Fminus == 0), "Fminus should be initialized to zeros"
-    assert torch.all(
-        result.Z[0, :, 0] == 0.6
-    ), "Z[0] for pool 0 should be initialized to 0.6"
-    assert torch.all(
-        result.Z[0, :, 1] == 0.2
-    ), "Z[0] for pool 1 should be initialized to 0.2"
-    assert torch.all(
-        result.Z[0, :, 2] == 0.2
-    ), "Z[0] for pool 2 should be initialized to 0.2"
+    assert torch.all(result.Z[0, :, 0] == 0.6), (
+        "Z[0] for pool 0 should be initialized to 0.6"
+    )
+    assert torch.all(result.Z[0, :, 1] == 0.2), (
+        "Z[0] for pool 1 should be initialized to 0.2"
+    )
+    assert torch.all(result.Z[0, :, 2] == 0.2), (
+        "Z[0] for pool 2 should be initialized to 0.2"
+    )
     assert torch.all(result.Z[1:] == 0), "Z[1:] should be initialized to zeros"

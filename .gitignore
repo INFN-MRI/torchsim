@@ -1,25 +1,61 @@
-*.npy
+# Byte-compiled / cached
+__pycache__/
+*.py[cod]
+*_cache/
+.ipynb_checkpoints/
+
+# Build artifacts
 build/
 dist/
-*.egg-info/
-**/.ipynb_checkpoints/
-examples/*.ipynb
-*.xml
-.coverage*
-.vscode
-
-
-.idea
-*.log
-tmp/
-
-*_cache/
-*.py[cod]
+_skbuild/
+wheelhouse/
 *.egg
-*.nbi
-*.nbc
+*.egg-info/
+*.so
+*.pyd
+*.dylib
 
+# CMake, out of a stray in-source configure
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# Generated at build time
+src/torchsim/_version.py
+
+# Test and coverage output
+.coverage*
+coverage.xml
+htmlcov/
+
+# Documentation output
+docs/build/
 docs/generated/
 docs_build/
+# Written by sphinx-gallery on every build.
+docs/sg_execution_times.rst
 
-src/torchsim/_version.py
+# Sphinx-gallery writes notebooks beside the example scripts it executes
+examples/**/*.ipynb
+
+# Simulation and profiling scratch
+*.npy
+*.nbi
+*.nbc
+*.log
+tmp/
+private/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# The stream Windows attaches to a downloaded file. A colon is not a legal
+# character in a Windows path, so a checkout that carries one fails there.
+*:Zone.Identifier
+
+# Local environment
+.env
+.venv/
+venv/

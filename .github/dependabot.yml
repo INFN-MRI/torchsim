@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # The actions the workflows pin. A pinned action that is never updated is a
+  # pinned action that stops working.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The dependency floors in pyproject.toml, and the toolchain the extras pull.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "deps"
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
