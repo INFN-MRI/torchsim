@@ -109,7 +109,7 @@ dev = [
 # This field corresponds to the "Project-URL" and "Home-Page" metadata fields:
 [project.urls]  # Optional
 "Homepage" = "https://github.com/FiRMLAB-Pisa/torchsim"
-"Documentation" = "https://torchsim.readthedocs.io"
+"Documentation" = "https://firmlab-torchsim.readthedocs.io"
 "Bug Reports" = "https://github.com/FiRMLAB-Pisa/torchsim/issues"
 "Source" = "https://github.com/FiRMLAB-Pisa/torchsim"
 
