@@ -2,7 +2,7 @@
 
 TorchSim is a pure Pytorch-based MR simulator, including analytical and EPG model.
 
-[![Coverage](https://codecov.io/gh/FiRMLAB-Pisa/torchsim/graph/badge.svg?token=qtB53xANwI)](https://codecov.io/gh/FiRMLAB-Pisa/torchsim)
+[![codecov](https://codecov.io/gh/FiRMLAB-Pisa/torchsim/graph/badge.svg?token=l8xhIVORYm)](https://codecov.io/gh/FiRMLAB-Pisa/torchsim)
 [![Tests](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/test.yml/badge.svg)](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/test.yml)
 [![Lint](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/lint.yml/badge.svg)](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/lint.yml)
 [![License](https://img.shields.io/github/license/FiRMLAB-Pisa/torchsim)](https://github.com/FiRMLAB-Pisa/torchsim/blob/main/LICENSE.txt)
