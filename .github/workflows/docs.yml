@@ -86,10 +86,16 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      - name: Install PyTorch (CPU)
-        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      # torchvision reaches this job through deepinv, which imports it as it
+      # loads, and its compiled half registers its operators against the exact
+      # PyTorch it was built for. Both come from the CPU index in one command
+      # so that the pair matches.
+      - name: Install PyTorch and torchvision (CPU)
+        run: |
+          python -m pip install torch torchvision \
+            --index-url https://download.pytorch.org/whl/cpu
 
-      # Everything the notebooks import while they run, which is the
+      # Everything else the notebooks import while they run, which is the
       # ``examples`` extra, so that every one of the thirteen is executed.
       - name: Build the extensions and install
         run: python -m pip install ".[doc,examples]"

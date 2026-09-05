@@ -483,7 +483,8 @@ estimates = {
 #
 # Best of three passes each, after a warm-up. **model** is what the fitted
 # estimator carries between volumes; **peak** is the high-water mark on the
-# card, which decides whether a volume fits or has to be streamed.
+# card, which decides whether a volume fits or has to be streamed, and a dash
+# on a machine with no card.
 #
 
 
@@ -491,6 +492,11 @@ estimates = {
 def error(estimate, reference):
     """Median relative error, in percent."""
     return float(100 * ((estimate - reference).abs() / reference).median())
+
+
+def held(megabytes):
+    """A measurement in MiB, or a dash where there was no card to make it."""
+    return f"{megabytes:6.0f} MiB" if np.isfinite(megabytes) else f"{'--':>10}"
 
 
 print(
@@ -528,7 +534,7 @@ for key, name, training, timing, model, peak in rows:
     found, m0 = estimates[key]
     print(
         f"{name:<28}{training:7.1f}s{timing:7.2f}s"
-        f"{model:6.1f} MiB{peak:6.0f} MiB"
+        f"{model:6.1f} MiB{held(peak)}"
         f"{error(found['T1'], truth['T1']):7.1f}%"
         f"{error(found['T2'], truth['T2']):7.1f}%"
         f"{error(m0, density):7.1f}%"
