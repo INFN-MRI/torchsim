@@ -454,7 +454,8 @@ print(
 #
 # Best of three passes each, after a warm-up. **model** is what the fitted
 # estimator carries between volumes; **peak** is the high-water mark on the
-# card while the slice was mapped. The dictionary row is the reference point.
+# card while the slice was mapped, and a dash on a machine with no card. The
+# dictionary row is the reference point.
 #
 
 
@@ -462,6 +463,11 @@ print(
 def error(estimate, reference):
     """Median relative error, in percent."""
     return float(100 * ((estimate - reference).abs() / reference).median())
+
+
+def held(megabytes):
+    """A measurement in MiB, or a dash where there was no card to make it."""
+    return f"{megabytes:6.0f} MiB" if np.isfinite(megabytes) else f"{'--':>10}"
 
 
 print(
@@ -484,7 +490,7 @@ for features, (found, training, timing, model, peak) in regressions.items():
 for name, training, timing, model, peak, found in rows:
     print(
         f"{name:<26}{training:7.1f}s{timing:7.2f}s"
-        f"{model:6.1f} MiB{peak:6.0f} MiB"
+        f"{model:6.1f} MiB{held(peak)}"
         f"{error(found['T1'], truth['T1']):7.1f}%"
         f"{error(found['T2'], truth['T2']):7.1f}%"
     )

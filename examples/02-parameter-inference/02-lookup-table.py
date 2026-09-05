@@ -341,6 +341,11 @@ def error(estimate, reference):
     return float(100 * ((estimate - reference).abs() / reference).median())
 
 
+def held(megabytes):
+    """A measurement in MiB, or a dash where there was no card to make it."""
+    return f"{megabytes:6.0f} MiB" if np.isfinite(megabytes) else f"{'--':>10}"
+
+
 # sphinx_gallery_end_ignore
 
 # %%
@@ -500,7 +505,7 @@ for short, name, training, timing, model, peak in (
     found, m0 = estimates[short]
     print(
         f"{name:<24}{training:8.2f}s{1e3 * timing:7.1f}ms"
-        f"{model:6.2f} MiB{peak:6.0f} MiB"
+        f"{model:6.2f} MiB{held(peak)}"
         f"{error(found['T1'], truth):7.2f}%{error(m0, density):7.2f}%"
     )
 # sphinx_gallery_end_ignore

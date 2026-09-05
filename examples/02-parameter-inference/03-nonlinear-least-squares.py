@@ -284,6 +284,11 @@ def error(estimate, reference):
     return float(100 * ((estimate - reference).abs() / reference).median())
 
 
+def held(megabytes):
+    """A measurement in MiB, or a dash where there was no card to make it."""
+    return f"{megabytes:6.0f} MiB" if np.isfinite(megabytes) else f"{'--':>10}"
+
+
 # sphinx_gallery_end_ignore
 
 # %%
@@ -401,7 +406,7 @@ matches = {floors: matched(floors) for floors in FLOOR_VALUES}
 #
 # Best of three passes each, after a warm-up. **model** is what the fitted
 # estimator carries between volumes; **peak** is the high-water mark on the
-# card while the slice was mapped.
+# card while the slice was mapped, and a dash on a machine with no card.
 #
 
 # sphinx_gallery_start_ignore
@@ -415,7 +420,7 @@ for floors in FLOOR_VALUES:
     name = "match, T2 only" if floors == 1 else f"match, T2 x {floors} offsets"
     print(
         f"{name:<30}{atoms:>8}{training:7.1f}s{timing:7.2f}s"
-        f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%"
+        f"{model:6.1f} MiB{held(peak)}{error(found['T2'], truth):7.1f}%"
     )
 for name, training, timing, model, peak, found in (
     (
@@ -437,7 +442,7 @@ for name, training, timing, model, peak, found in (
 ):
     print(
         f"{name:<30}{'--':>8}{training:7.1f}s{timing:7.2f}s"
-        f"{model:6.1f} MiB{peak:6.0f} MiB{error(found['T2'], truth):7.1f}%"
+        f"{model:6.1f} MiB{held(peak)}{error(found['T2'], truth):7.1f}%"
     )
 # sphinx_gallery_end_ignore
 
@@ -453,8 +458,7 @@ for name, training, timing, model, peak, found in (
 #
 # With the offset on the grid the match recovers, and the cost of recovering is
 # the point: ten values of one nuisance is ten times the atoms and ten times
-# the memory, for a parameter that cost the fit one column. The peak stops
-# climbing at the top of the sweep only because streaming has taken over.
+# the memory, for a parameter that cost the fit one column.
 #
 # The fit is the slower of the two in wall clock and stays that way here: a
 # Levenberg-Marquardt loop is tens of passes where a match is one. What it does
@@ -475,11 +479,11 @@ axes[0].set(
     yscale="log",
     title="time",
 )
-axes[1].plot(atoms, [matches[f][5] for f in FLOOR_VALUES], "-o", label="match")
-axes[1].axhline(three_peak, color="crimson", ls="--", label="fit, 3 unknowns")
+axes[1].plot(atoms, [matches[f][4] for f in FLOOR_VALUES], "-o", label="match")
+axes[1].axhline(three_model, color="crimson", ls="--", label="fit, 3 unknowns")
 axes[1].set(
     xlabel="Atoms in the dictionary",
-    ylabel="Peak device memory [MiB]",
+    ylabel="Estimator memory [MiB]",
     xscale="log",
     yscale="log",
     title="memory",
