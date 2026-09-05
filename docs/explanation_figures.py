@@ -29,6 +29,9 @@ from torchsim.model import Simulator
 from torchsim.sequence import Delay, EventAction, Excitation, SPGRReadout
 from torchsim.simulators import FSESimulator, MRFSimulator, SPGRSimulator
 
+#: The example sequence the description figures are read from.
+SEQ_FILE = Path(__file__).resolve().parent.parent / "examples/01-framework/fse.seq"
+
 #: Drawn at the width of the documentation column, so nothing is scaled on the
 #: way in and type is the same size on every page.
 PAGE_WIDTH = 8.6  # inches
@@ -1225,6 +1228,144 @@ def closed_form_agreement():
     return figure
 
 
+def _example_sequence():
+    """The shipped spin-echo train, as pypulseq reads it."""
+    import pypulseq
+
+    sequence = pypulseq.Sequence()
+    sequence.read(str(SEQ_FILE))
+    return sequence
+
+
+def description_blocks():
+    """A Pulseq block table above the event stream it is read as."""
+    from torchsim.sequence import EventType, SequenceDescription
+
+    sequence = _example_sequence()
+    described = SequenceDescription.from_pulseq(SEQ_FILE)
+    shown = 9
+    starts = np.concatenate(
+        ([0.0], np.cumsum([sequence.block_durations[i] for i in range(1, shown + 1)]))
+    )
+
+    figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.8))
+    colours = {EventType.RF: "tab:blue", EventType.ADC: "tab:red"}
+    stamps: list[float] = []
+    for index in range(shown):
+        block = sequence.get_block(index + 1)
+        carried = [
+            name
+            for name, held in (
+                ("RF", block.rf),
+                ("Gx", block.gx),
+                ("Gy", block.gy),
+                ("Gz", block.gz),
+                ("ADC", block.adc),
+            )
+            if held is not None
+        ]
+        event = described.events[index]
+        colour = colours.get(event.type, "0.75")
+        axis.add_patch(
+            plt.Rectangle(
+                (starts[index] * 1e3, 0.62),
+                (starts[index + 1] - starts[index]) * 1e3,
+                0.3,
+                facecolor=colour,
+                alpha=0.25,
+                edgecolor=colour,
+            )
+        )
+        axis.text(
+            0.5 * (starts[index] + starts[index + 1]) * 1e3,
+            0.77,
+            "\n".join(carried) or "-",
+            ha="center",
+            va="center",
+            fontsize=10.5,
+        )
+        stamp = event.timestamp_us * 1e-3
+        axis.plot([stamp, stamp], [0.18, 0.4], color=colour, lw=2.5)
+        axis.plot([stamp], [0.4], "o", color=colour, ms=6)
+        axis.annotate(
+            "",
+            xy=(stamp, 0.42),
+            xytext=(stamp, 0.6),
+            arrowprops=dict(arrowstyle="-|>", color="0.5", lw=1.2),
+        )
+        # Two stamps can fall within a fraction of a millisecond of one
+        # another, and a label sitting on its neighbour reads as neither.
+        crowded = stamps and stamp - stamps[-1] < 0.06 * starts[-1] * 1e3
+        axis.text(
+            stamp,
+            0.02 if crowded else 0.11,
+            event.type.name,
+            ha="center",
+            fontsize=10,
+            color=colour,
+        )
+        stamps.append(stamp)
+
+    axis.set(
+        xlim=(-0.3, starts[-1] * 1e3 + 0.3),
+        ylim=(0.0, 1.0),
+        xlabel="time from the start of the repetition [ms]",
+        yticks=[0.77, 0.29],
+        yticklabels=["blocks", "events"],
+        title="one block, one event: the first nine of a spin-echo train",
+    )
+    axis.tick_params(axis="y", length=0, labelsize=12.5)
+    for side in ("left", "right", "top"):
+        axis.spines[side].set_visible(False)
+    figure.tight_layout()
+    return figure
+
+
+def description_echo():
+    """Where each readout sits in k-space, and which one bears the echo."""
+    from torchsim.sequence import SequenceDescription
+
+    sequence = _example_sequence()
+    described = SequenceDescription.from_pulseq(SEQ_FILE)
+    k_adc, _, _t_excitation, _, _t_adc = sequence.calculate_kspace()
+    k_adc = np.asarray(k_adc)
+    samples = k_adc.shape[1] // len(described.adc_events)
+    tracks = k_adc.reshape(3, -1, samples)
+    centres = np.argmin(tracks[0] ** 2, axis=1)
+    echoes = tracks[:, np.arange(tracks.shape[1]), centres]
+    flags = np.array([event.is_echo for event in described.adc_events])
+
+    figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.6))
+    for echo in range(tracks.shape[1]):
+        colour = "tab:red" if flags[echo] else "0.65"
+        axes[0].plot(tracks[0, echo], tracks[1, echo], color=colour, lw=2.0)
+        axes[0].plot(echoes[0, echo], echoes[1, echo], "o", color=colour, ms=6)
+    axes[0].axhline(0.0, color="0.8", lw=1.0, ls=":")
+    axes[0].axvline(0.0, color="0.8", lw=1.0, ls=":")
+    axes[0].set(
+        xlabel="$k_x$ [1/m]",
+        ylabel="$k_y$ [1/m]",
+        title="the eight lines one repetition encodes",
+    )
+    axes[0].grid(alpha=0.25)
+
+    norms = np.linalg.norm(echoes, axis=0)
+    axes[1].bar(
+        np.arange(norms.size),
+        norms,
+        color=["tab:red" if flag else "0.7" for flag in flags],
+    )
+    axes[1].set(
+        xlabel="echo",
+        ylabel="|k| at the centre sample [1/m]",
+        title="how close each one comes to k = 0",
+        xticks=np.arange(norms.size),
+    )
+    axes[1].grid(alpha=0.3, axis="y")
+    figure.tight_layout()
+    return figure
+
+
 FIGURES = {
     # the theory page
     "dephasing_helix": dephasing_helix,
@@ -1249,6 +1390,8 @@ FIGURES = {
     "execution_policy": execution_policy,
     "binding": binding,
     "closed_form_agreement": closed_form_agreement,
+    "description_blocks": description_blocks,
+    "description_echo": description_echo,
 }
 
 

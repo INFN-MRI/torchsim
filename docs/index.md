@@ -16,6 +16,7 @@ developer_guide
 :caption: Explanation
 
 explanations/epg
+explanations/description
 explanations/implementation
 ```
 

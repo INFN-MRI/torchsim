@@ -6,12 +6,24 @@ fingerprinting schedule: in each, what you sample is not one decaying
 magnetization but a sum over routes through the pulses and the gradients, each
 of which has spent a different amount of time transverse and a different amount
 parked along the field. The extended phase graph (EPG) is the accounting that
-keeps those routes straight, and it is what TorchSim evaluates.
+keeps those routes straight, and it is what TorchSim evaluates. Weigel [^2] is
+the introduction to read alongside this one.
 
-This page is the physics. How it is realized -- the events, the kernels, the
-derivatives -- is {doc}`implementation`.
+The magnetization is decomposed into configuration states, and three operators
+act on them:
 
-## Dephasing is what a gradient does to a voxel
+1. **Transition** -- an RF pulse, which mixes the transverse and longitudinal
+   families within an order and never moves a state between orders.
+2. **Shift** -- a gradient, which moves transverse states between orders and
+   mixes nothing.
+3. **Evolution** -- relaxation and precession between events. Decay reaches
+   every state; recovery toward equilibrium reaches order zero alone.
+
+A sequence is those three alternating, and the signal is read off the states
+wherever it samples. This page is the physics; how it is realized -- the
+events, the kernels, the derivatives -- is {doc}`implementation`.
+
+## Dephasing
 
 A voxel is not one magnetization vector. It is an ensemble of isochromats, and
 a gradient gives each of them a Larmor frequency that depends on where it sits.
@@ -36,7 +48,7 @@ quantity as the k-space coordinate of imaging. It is the natural coordinate for
 this problem: a gradient does one thing to the ensemble, which is to move
 $k$.
 
-## Configuration states: the Fourier picture
+## Configuration states
 
 Because the phase is linear in position, the transverse magnetization across
 the voxel is a sum of spatial harmonics, and each harmonic is labelled by its
@@ -69,7 +81,7 @@ spatial resolution it does not care about; the phase graph pays for the number
 of *orders the sequence actually populates*, which is small and which you can
 count in advance from the gradients.
 
-## Three families, one ladder
+## Three families of state
 
 Transverse magnetization is complex, and its two conjugate halves behave
 differently under a gradient, so they are tracked separately as
@@ -92,9 +104,9 @@ of one another -- which is why order zero needs a rule of its own in every
 implementation.
 ```
 
-Two operators act on that grid, and the whole of EPG is their alternation.
+The transition and shift operators act on that grid.
 
-## An RF pulse mixes the families
+## RF pulses
 
 A hard pulse of flip angle $\alpha$ and phase $\varphi$ acts
 identically on every order -- it cannot move magnetization in space, only turn
@@ -125,7 +137,7 @@ that is neither 0 nor 180 degrees splits each populated state into three, so
 the number of live pathways grows with each pulse until relaxation and
 truncation kill the weakest.
 
-## A gradient shifts the ladder
+## Gradients
 
 A gradient's only effect is to change the winding, which in this basis is a
 shift by whole orders:
@@ -155,7 +167,7 @@ shift is one crusher or one unbalanced readout gradient. Ideal spoiling --
 winding it on, which is what a spoiled gradient echo assumes its spoiler and
 its RF phase cycling achieve together.
 
-## Relaxation reaches only one order
+## Relaxation and recovery
 
 Between events, transverse states decay by $E_2 = e^{-\Delta t / T_2}$
 and longitudinal states by $E_1 = e^{-\Delta t / T_1}$. Recovery toward
@@ -200,10 +212,10 @@ The diagram is what makes EPG a way of *thinking* and not only of computing.
 Refocusing angle, echo spacing, spoiler size and RF phase all change the graph
 in ways you can see before you simulate anything.
 
-## Why a train is not a decay
+## Stimulated echoes
 
-The practical consequence: with anything other than exact 180 degree
-refocusing, an echo train is not a mono-exponential. Stimulated-echo pathways
+With anything other than exact 180 degree refocusing, an echo train is not a
+mono-exponential. Stimulated-echo pathways
 spend part of their life along $z$, so they arrive with less
 $T_2$ decay than their echo time suggests, and the train picks up
 oscillations at its start and a long tail at its end.
@@ -220,7 +232,7 @@ percent. This is the practical case for simulating the pathways rather than
 assuming the decay.
 ```
 
-## How many orders you have to carry
+## Configuration orders to carry
 
 A sequence populates a bounded set of orders: each shift moves the ladder by
 one, so after $n$ shifts nothing beyond order $n$ exists, and
@@ -240,7 +252,7 @@ approximation you have to accept blindly -- it is a convergence you can
 measure for your own sequence with two calls.
 ```
 
-## Motion finds the high orders
+## Diffusion and flow
 
 A state at order $k$ is wound up in space, and anything that moves spins
 around inside the voxel scrambles that winding. Over an interval a state
@@ -267,7 +279,7 @@ Both effects need geometry the sequence has to declare -- how far a crusher
 winds and across what voxel -- because a dephasing order is only a b-factor
 once you know the gradient behind it.
 
-## A second pool
+## Second pool
 
 Tissue is not one proton pool. TorchSim carries the two extensions of the EPG
 formalism that matter in practice, both from Malik et al [^3]: a **semisolid
@@ -294,10 +306,10 @@ says whether the schedule can *estimate* it rather than merely be affected
 by it.
 ```
 
-## What the formalism assumes
+## Assumptions
 
-EPG is exact for what it models, and what it models is worth stating plainly.
-It assumes the dephasing within a voxel is **linear in position**, so that a
+EPG is exact for what it models. It assumes the dephasing within a voxel is
+**linear in position**, so that a
 gradient is a shift; sequences whose gradients are unbalanced by non-integer
 amounts, or whose voxels contain their own strong field variation, need the
 orders to be interpreted with care. It treats an isochromat's off-resonance as
