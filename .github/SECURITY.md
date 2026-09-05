@@ -10,7 +10,7 @@ Older releases are not patched.
 Report privately, not as a public issue:
 
 - open a draft advisory through
-  [Security -> Report a vulnerability](https://github.com/INFN-MRI/torchsim/security/advisories/new),
+  [Security -> Report a vulnerability](https://github.com/FiRMLAB-Pisa/torchsim/security/advisories/new),
   which is the preferred route; or
 - email **matteo.cencini@gmail.com** if you cannot use GitHub.
 
@@ -36,4 +36,4 @@ merely a bug.
 ## Not a vulnerability
 
 A simulation that returns wrong physics, diverges, or raises is a
-[bug report](https://github.com/INFN-MRI/torchsim/issues/new/choose).
+[bug report](https://github.com/FiRMLAB-Pisa/torchsim/issues/new/choose).

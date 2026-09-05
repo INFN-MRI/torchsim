@@ -139,7 +139,7 @@ sphinx_gallery_conf = {
     # generated index.rst by an include; the file has to travel with it.
     "copyfile_regex": r".*\.md",
     "binder": {
-        "org": "infn-mri",
+        "org": "firmlab-pisa",
         "repo": "torchsim",
         "branch": "gh-pages",
         "binderhub_url": "https://mybinder.org",
@@ -171,7 +171,7 @@ html_theme = "sphinx_book_theme"
 # so a file named "default.css" will overwrite the builtin "default.css".
 # html_static_path = ["_static"]
 html_theme_options = {
-    "repository_url": "https://github.com/INFN-MRI/torchsim",
+    "repository_url": "https://github.com/FiRMLAB-Pisa/torchsim",
     "use_repository_button": True,
     "use_issues_button": True,
     "use_edit_page_button": True,

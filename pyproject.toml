@@ -108,10 +108,10 @@ dev = [
 # List URLs that are relevant to your project
 # This field corresponds to the "Project-URL" and "Home-Page" metadata fields:
 [project.urls]  # Optional
-"Homepage" = "https://github.com/INFN-MRI/torchsim"
+"Homepage" = "https://github.com/FiRMLAB-Pisa/torchsim"
 "Documentation" = "https://torchsim.readthedocs.io"
-"Bug Reports" = "https://github.com/INFN-MRI/torchsim/issues"
-"Source" = "https://github.com/INFN-MRI/torchsim"
+"Bug Reports" = "https://github.com/FiRMLAB-Pisa/torchsim/issues"
+"Source" = "https://github.com/FiRMLAB-Pisa/torchsim"
 
 [tool.scikit-build]
 minimum-version = "build-system.requires"

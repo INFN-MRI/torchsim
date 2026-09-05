@@ -240,13 +240,13 @@ CuPy or PyTorch elsewhere -- over the same memory rather than a copy.
 ## Getting help, and reporting what breaks
 
 **Ask a question** in
-[Discussions](https://github.com/INFN-MRI/torchsim/discussions). How to model
+[Discussions](https://github.com/FiRMLAB-Pisa/torchsim/discussions). How to model
 a sequence, whether a signal you got is expected, which estimator suits a
 problem -- these belong there, and the answer is then findable by whoever asks
 next.
 
 **Report a bug** in
-[Issues](https://github.com/INFN-MRI/torchsim/issues/new/choose), where a
+[Issues](https://github.com/FiRMLAB-Pisa/torchsim/issues/new/choose), where a
 form asks for what a fix needs:
 
 - the shortest script that reproduces it, pasted whole -- a sequence is enough
@@ -265,8 +265,8 @@ the same form chooser. Name the paper the model comes from and the figure it
 would have to reproduce; that is what makes it implementable.
 
 **Report a vulnerability** privately instead: open a draft advisory from the
-repository's [Security tab](https://github.com/INFN-MRI/torchsim/security/advisories/new),
-or email the address in the [security policy](https://github.com/INFN-MRI/torchsim/blob/main/.github/SECURITY.md).
+repository's [Security tab](https://github.com/FiRMLAB-Pisa/torchsim/security/advisories/new),
+or email the address in the [security policy](https://github.com/FiRMLAB-Pisa/torchsim/blob/main/.github/SECURITY.md).
 The kernels index raw pointers, so anything reachable from ordinary arguments
 that reads or writes out of bounds is worth reporting that way rather than in a
 public issue. Wrong physics is a bug report, not a vulnerability.

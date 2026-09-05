@@ -49,7 +49,7 @@ the compiler is on the path.
 
 ::::
 
-**Git**, and a fork of https://github.com/INFN-MRI/torchsim if you intend to
+**Git**, and a fork of https://github.com/FiRMLAB-Pisa/torchsim if you intend to
 open a pull request.
 
 **An NVIDIA card, if you want to touch the GPU kernels.** They are Triton,
@@ -60,7 +60,7 @@ card runs it for real.
 ## Installing for development
 
 ```sh
-git clone https://github.com/INFN-MRI/torchsim
+git clone https://github.com/FiRMLAB-Pisa/torchsim
 cd torchsim
 pip install -e ".[dev]"
 pre-commit install

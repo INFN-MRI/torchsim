@@ -84,6 +84,6 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: INFN-MRI/torchsim
+          slug: FiRMLAB-Pisa/torchsim
           files: coverage.xml
           fail_ci_if_error: false

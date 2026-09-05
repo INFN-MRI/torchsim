@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Questions about how to use TorchSim, and results you are unsure about,
-        belong in [Discussions](https://github.com/INFN-MRI/torchsim/discussions).
+        belong in [Discussions](https://github.com/FiRMLAB-Pisa/torchsim/discussions).
         This form is for behaviour you can pin down.
 
   - type: textarea

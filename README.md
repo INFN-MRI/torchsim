@@ -2,11 +2,11 @@
 
 TorchSim is a pure Pytorch-based MR simulator, including analytical and EPG model.
 
-[![Coverage](https://codecov.io/gh/INFN-MRI/torchsim/graph/badge.svg?token=qtB53xANwI)](https://codecov.io/gh/INFN-MRI/torchsim)
-[![Tests](https://github.com/INFN-MRI/torchsim/actions/workflows/test.yml/badge.svg)](https://github.com/INFN-MRI/torchsim/actions/workflows/test.yml)
-[![Lint](https://github.com/INFN-MRI/torchsim/actions/workflows/lint.yml/badge.svg)](https://github.com/INFN-MRI/torchsim/actions/workflows/lint.yml)
-[![License](https://img.shields.io/github/license/INFN-MRI/torchsim)](https://github.com/INFN-MRI/torchsim/blob/main/LICENSE.txt)
-[![Codefactor](https://www.codefactor.io/repository/github/INFN-MRI/torchsim/badge)](https://www.codefactor.io/repository/github/INFN-MRI/torchsim)
+[![Coverage](https://codecov.io/gh/FiRMLAB-Pisa/torchsim/graph/badge.svg?token=qtB53xANwI)](https://codecov.io/gh/FiRMLAB-Pisa/torchsim)
+[![Tests](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/test.yml/badge.svg)](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/test.yml)
+[![Lint](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/lint.yml/badge.svg)](https://github.com/FiRMLAB-Pisa/torchsim/actions/workflows/lint.yml)
+[![License](https://img.shields.io/github/license/FiRMLAB-Pisa/torchsim)](https://github.com/FiRMLAB-Pisa/torchsim/blob/main/LICENSE.txt)
+[![Codefactor](https://www.codefactor.io/repository/github/FiRMLAB-Pisa/torchsim/badge)](https://www.codefactor.io/repository/github/FiRMLAB-Pisa/torchsim)
 [![Documentation](https://readthedocs.org/projects/torchsim/badge/?version=latest)](https://torchsim.readthedocs.io/en/latest/)
 [![PyPi](https://img.shields.io/pypi/v/torchsim)](https://pypi.org/project/torchsim)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -52,7 +52,7 @@ calculated with respect to `T1` and `T2`.
 If you are interested in improving this project, install TorchSim in editable mode:
 
 ```bash
-git clone git@github.com:INFN-MRI/torchsim
+git clone git@github.com:FiRMLAB-Pisa/torchsim
 cd torchsim
 pip install -e ".[dev]"
 pre-commit install

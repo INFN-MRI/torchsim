@@ -20,10 +20,15 @@ repos:
       - id: debug-statements
       - id: destroyed-symlinks
       - id: end-of-file-fixer
+        exclude: \.seq$
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        # A .seq file is written by Pulseq, which puts a trailing space after
+        # every definition. It is a data file, not source, and is kept as its
+        # writer emits it.
+        exclude: \.seq$
 
   # The formatter and the linter, in that order: format first so the linter
   # judges the code as it will be committed.
