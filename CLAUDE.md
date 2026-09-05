@@ -174,7 +174,16 @@ with a `{figure}` directive. To add a gallery example, drop a script into the
 right `examples/` section — the numeric prefix orders it and the module
 docstring becomes the page.
 
-Read the Docs builds and hosts the published pages, one version per release.
+An example is executed by the gallery when the interpreter can import
+everything it imports, so what a build runs follows from the extras installed
+into it, and a page already carrying output executed from the source as it
+stands is reused rather than re-run.
+
+Read the Docs builds and hosts the published pages, one version per release,
+from the `doc` extra and Sphinx alone. The thirteen examples are executed by
+the Gallery job of `.github/workflows/docs.yml`, which pushes `docs/generated`
+to the `docs-gallery` branch; the published build restores it and so publishes
+every page with the output it was executed with.
 
 ## Packaging
 

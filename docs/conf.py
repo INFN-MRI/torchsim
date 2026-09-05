@@ -13,12 +13,18 @@ https://www.sphinx-doc.org/en/master/usage/configuration.html
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 
+import ast
 import dataclasses
+import importlib.util
 import os
+import re
 import sys
+from pathlib import Path
 
+import sphinx.util.logging
 import torch
 from sphinx_gallery.sorting import ExplicitOrder
+from sphinx_gallery.utils import get_md5sum
 
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("../.."))  # Source code dir relative to this file
@@ -124,13 +130,62 @@ GALLERY_SECTIONS = [
     "../examples/05-misc",
 ]
 
+
+def _importable(module: str) -> bool:
+    """Whether this interpreter can import ``module``."""
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _missing_imports(script: Path) -> list[str]:
+    """The top-level modules ``script`` imports and this interpreter lacks."""
+    imported: set[str] = set()
+    for node in ast.walk(ast.parse(script.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            imported.add(node.module.split(".")[0])
+    return sorted(name for name in imported if not _importable(name))
+
+
+#: Every example script, in the order the gallery meets them.
+GALLERY_SCRIPTS = [
+    script
+    for section in GALLERY_SECTIONS
+    for script in sorted((Path(__file__).parent / section).glob("[0-9]*.py"))
+]
+
+#: Which examples are not executed here, and what each one asked for. An
+#: example runs where everything it imports is installed, so an environment
+#: holding the ``examples`` extra executes the whole gallery and one holding
+#: ``doc`` alone executes what needs nothing but TorchSim. The hosted builder
+#: is the second: fetching a subject and segmenting it with a network asks for
+#: more memory and more minutes than it is given, so it publishes the output
+#: the Docs workflow executed and restored into ``generated/autoexamples``.
+UNRUNNABLE = {
+    script: missing
+    for script in GALLERY_SCRIPTS
+    if (missing := _missing_imports(script))
+}
+
+#: ``filename_pattern`` is searched in the path of each script, and the file
+#: names are unique across the sections.
+EXECUTED_PATTERN = (
+    "|".join(
+        re.escape(script.name) for script in GALLERY_SCRIPTS if script not in UNRUNNABLE
+    )
+    or r"(?!)"  # nothing to execute, and a pattern that matches nothing
+)
+
 sphinx_gallery_conf = {
     "doc_module": "torchsim",
     "backreferences_dir": "generated/gallery_backreferences",
     "reference_url": {"torchsim": None},
     "examples_dirs": ["../examples/"],
     "gallery_dirs": ["generated/autoexamples"],
-    "filename_pattern": "/0",
+    "filename_pattern": EXECUTED_PATTERN,
     "ignore_pattern": r"(__init__|conftest|utils).py",
     "nested_sections": True,
     "subsection_order": ExplicitOrder(GALLERY_SECTIONS),
@@ -272,6 +327,39 @@ def _draw_explanation_figures(app) -> None:
     render(os.path.join(app.srcdir, "generated", "figures"))
 
 
+def _restored(app, script: Path) -> bool:
+    """Whether the gallery holds output executed from ``script`` as it stands.
+
+    sphinx-gallery stamps a page it executed with the checksum of the source
+    it ran, and reuses the page whenever the two still agree. A page restored
+    from the Docs workflow carries that stamp; one rendered from its source
+    alone does not.
+    """
+    stamped = Path(app.srcdir, "generated/autoexamples", script.parent.name)
+    stamp = stamped / f"{script.name}.md5"
+    return stamp.is_file() and stamp.read_text().strip() == get_md5sum(script, mode="t")
+
+
+def _say_what_is_not_executed(app) -> None:
+    """Name each example this build does not run, and where its output stands."""
+    logger = sphinx.util.logging.getLogger(__name__)
+    for script, missing in UNRUNNABLE.items():
+        if _restored(app, script):
+            logger.info(
+                "[gallery] %s: publishing the output already executed for it "
+                "(no %s here)",
+                script.name,
+                ", ".join(missing),
+            )
+        else:
+            logger.warning(
+                "[gallery] %s is published without its output: no %s, and no "
+                "executed copy of it under generated/autoexamples",
+                script.name,
+                ", ".join(missing),
+            )
+
+
 def setup(app):
     """Wire in the figure pass, and drop sphinx-gallery's code-link pass.
 
@@ -280,6 +368,7 @@ def setup(app):
     it would add are the only thing lost.
     """
     _hide_ignored_code_from_the_page_only()
+    app.connect("builder-inited", _say_what_is_not_executed)
     app.connect("builder-inited", _draw_explanation_figures)
     app.connect("autodoc-skip-member", _skip_undocumented_specials)
     try:
