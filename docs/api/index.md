@@ -4,7 +4,7 @@ The reference follows the subpackages. Conceptual background is in
 {doc}`../explanations/index`; a signal model is the interface that estimation,
 reconstruction and design are written against.
 
-| Page | Module | Topic |
+| Page | Module | Contents |
 | --- | --- | --- |
 | {doc}`model` | `blochsim.model` | Signal models, event physics, simulator. |
 | {doc}`simulators` | `blochsim.simulators` | Shipped sequences, classes and functional wrappers. |

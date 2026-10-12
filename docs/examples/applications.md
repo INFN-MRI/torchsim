@@ -7,7 +7,7 @@ assumes.
 
 T1, T2 and M0 estimation, compared on one BrainWeb slice.
 
-| Application | Topic |
+| Application | Contents |
 | --- | --- |
 | {doc}`/generated/autoexamples/02-parameter-inference/01-dictionary-matching` | MRF dictionary matching, low-rank and clustered. |
 | {doc}`/generated/autoexamples/02-parameter-inference/02-lookup-table` | MP2RAGE T1 lookup table. |
@@ -27,7 +27,7 @@ T1, T2 and M0 estimation, compared on one BrainWeb slice.
 
 Sequence parameters optimized by gradient descent through the simulation.
 
-| Application | Topic |
+| Application | Contents |
 | --- | --- |
 | {doc}`/generated/autoexamples/03-sequence-optimization/01-echo-train-design` | Fast spin echo refocusing flip angles for sharpness. |
 | {doc}`/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry` | DESPOT flip angles by Cramér-Rao bound. |
@@ -46,7 +46,7 @@ Sequence parameters optimized by gradient descent through the simulation.
 Parameter maps reconstructed from k-space with the signal model in the forward
 operator.
 
-| Application | Topic |
+| Application | Contents |
 | --- | --- |
 | {doc}`/generated/autoexamples/04-model-based-imaging/01-linear-subspace` | Linear subspace reconstruction of radial multi-echo spin echo. |
 | {doc}`/generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion` | T2 mapping by nonlinear model-based inversion. |
@@ -62,7 +62,7 @@ operator.
 
 Training data for a learned reconstruction.
 
-| Application | Topic |
+| Application | Contents |
 | --- | --- |
 | {doc}`/generated/autoexamples/05-misc/01-synthetic-data` | Synthetic MRF training data. |
 

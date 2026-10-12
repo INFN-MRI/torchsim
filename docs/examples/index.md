@@ -11,7 +11,7 @@ interfaces they call are documented in {doc}`/api/index`.
 Five lessons, read in order, from a shipped sequence to a custom signal model
 and operator.
 
-| Lesson | Topic |
+| Lesson | Contents |
 | --- | --- |
 | {doc}`1. Your first simulation </generated/autoexamples/01-framework/01-first-simulation>` | Simulation of a shipped sequence and its derivatives. |
 | {doc}`2. Advanced physics </generated/autoexamples/01-framework/02-advanced-physics>` | B1, off resonance, magnetization transfer, diffusion and flow. |
@@ -23,7 +23,7 @@ and operator.
 
 Standalone examples built on the Course.
 
-| Application | Topic |
+| Application | Contents |
 | --- | --- |
 | {doc}`/generated/autoexamples/02-parameter-inference/01-dictionary-matching` | MRF dictionary matching, low-rank and clustered. |
 | {doc}`/generated/autoexamples/02-parameter-inference/02-lookup-table` | MP2RAGE T1 lookup table. |

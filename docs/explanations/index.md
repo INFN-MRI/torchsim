@@ -3,7 +3,7 @@
 What blochsim does, and how, one concept per page, in the order data flows
 through it.
 
-| Page | Topic |
+| Page | Contents |
 | --- | --- |
 | {doc}`signal-model` | Signal model: event handlers and layout. |
 | {doc}`epg` | Extended phase graphs: relaxation, B1, B0, pools, diffusion, flow. |

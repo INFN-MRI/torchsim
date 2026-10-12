@@ -3,7 +3,7 @@
 Five lessons, read in order, from a shipped sequence to a custom signal model
 and operator.
 
-| Lesson | Topic |
+| Lesson | Contents |
 | --- | --- |
 | {doc}`1. Your first simulation </generated/autoexamples/01-framework/01-first-simulation>` | Simulation of a shipped sequence and its derivatives. |
 | {doc}`2. Advanced physics </generated/autoexamples/01-framework/02-advanced-physics>` | B1, off resonance, magnetization transfer, diffusion and flow. |

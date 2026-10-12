@@ -3,7 +3,7 @@
 Derivations, format rules and kernels behind {doc}`../../explanations/index`,
 for whoever changes them.
 
-| Page | Topic |
+| Page | Contents |
 | --- | --- |
 | {doc}`epg` | Extended phase graph operators and tissue terms. |
 | {doc}`description` | Pulseq and MRD reading. |

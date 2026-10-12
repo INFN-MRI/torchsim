@@ -2,7 +2,7 @@
 
 Setting up to change BlochSim, and the conventions a change follows.
 
-| Page | Topic |
+| Page | Contents |
 | --- | --- |
 | {doc}`installation` | Prerequisites, editable install, pre-commit hooks, documentation build. |
 | {doc}`workflow` | Tests, pull requests, code of conduct. |

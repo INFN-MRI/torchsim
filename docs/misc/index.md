@@ -3,7 +3,7 @@
 Project information that is useful to keep with the documentation but is not
 part of the learning path.
 
-| Page | Topic |
+| Page | Contents |
 | --- | --- |
 | {doc}`license` | MIT license. |
 | {doc}`related` | Other MR simulators. |
