@@ -4,7 +4,6 @@ from __future__ import annotations
 
 __all__ = ["FSESimulator", "HyperechoSimulator"]
 
-from collections.abc import Mapping
 from typing import Any
 
 import numpy.typing as npt
@@ -30,10 +29,15 @@ class FSESimulator(Simulator):
     """
 
     model = SpinPhysics(
-        properties={"T1": "t1_ms", "T2": "t2_ms", "M0": None, "B1": "b1"},
+        properties={"T1": "t1_ms", "T2": "t2_ms", "M0": "m0", "B1": "b1"},
         operators=REFOCUSED,
     )
     states = 10
+    # The first playing leaves the longitudinal magnetization the TR recovers
+    # to, and the second, which is recorded, starts from it. A 90 degree
+    # excitation leaves no longitudinal memory of the train before, so two
+    # playings are the steady state; another excitation needs repetitions="auto".
+    repetitions = 2
 
     def layout(
         self,
@@ -98,39 +102,10 @@ class FSESimulator(Simulator):
             parts.append((echo_s, self.operators.readout(demodulation[..., index])))
         return parts
 
-    def _echoes(self, played: Mapping[str, Any]) -> int:
-        """How many echoes the train records."""
-        return torch.atleast_1d(as_torch(played["flip"])).shape[-1]
-
     def repetition_s(self, played_s: Any, **protocol: Any) -> Any:
         """Return the TR, which the train waits out before the next one."""
         del played_s
         return protocol.get("TR", 1e6) * 1e-3
-
-    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Simulate one train, then let it recover for what is left of the TR."""
-        played = self.played(**sequence)
-        signal = super().evaluate(properties, **sequence)
-        echoes = self._echoes(played)
-
-        def beside(value: Any) -> Any:
-            """Put a value where the signal came back from.
-
-            A run may be asked for a device the tissue was not written on, and
-            what is worked out here multiplies the signal rather than reaching
-            a kernel.
-            """
-            return value.to(signal.device) if torch.is_tensor(value) else value
-
-        left_ms = beside(played.get("TR", 1e6)) - beside(played["ESP"]) * echoes
-        recovered = torch.exp(-1e3 / beside(properties["T1"]) * left_ms * 1e-3)
-        # Both carry the tissue shape and the signal is (..., tissue, echo), so
-        # one trailing axis lines them up and any leading train axis broadcasts.
-        recovered = recovered[..., None]
-        density = beside(properties.get("M0", 1.0))
-        if torch.is_tensor(density):
-            density = density[..., None]
-        return density * signal * (1 - recovered) / (1 - recovered * signal)
 
 
 class HyperechoSimulator(FSESimulator):
@@ -208,6 +183,3 @@ class HyperechoSimulator(FSESimulator):
         return self._train(
             angles, turns, torch.zeros_like(turns), ESP, exc_flip, exc_phase
         )
-
-    def _echoes(self, played: Mapping[str, Any]) -> int:
-        return 2 * super()._echoes(played) + 1

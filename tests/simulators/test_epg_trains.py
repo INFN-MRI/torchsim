@@ -17,6 +17,7 @@ import pytest
 
 from blochsim.simulators import (
     FLASHSimulator,
+    FSESimulator,
     HyperechoSimulator,
     StimulatedEchoSimulator,
     TrueFISPSimulator,
@@ -108,7 +109,7 @@ def test_the_hyperecho_train_matches_crushed_isochromats(tissue):
         voxel.wait(spacing_s / 2)
         expected.append(voxel.signal())
     sequence = HyperechoSimulator(
-        flip=flips_deg, phases=phases_deg, ESP=1e3 * spacing_s, TR=1e15
+        flip=flips_deg, phases=phases_deg, ESP=1e3 * spacing_s, repetitions=1
     )
     _close(sequence.simulate(**tissue), expected)
 
@@ -120,7 +121,7 @@ def test_the_hyperecho_recovers_the_whole_excited_magnetization():
         flip=generator.uniform(20.0, 160.0, 6),
         phases=generator.uniform(-180.0, 180.0, 6),
         ESP=6.0,
-        TR=1e15,
+        repetitions=1,
     )
     signal = np.asarray(sequence.simulate(**UNRELAXED, B0=-41.0))
     assert abs(abs(signal[-1]) - 1.0) < 1e-5
@@ -249,3 +250,25 @@ def test_fmssfp_refuses_a_train_it_cannot_play(arguments):
 def test_the_stimulated_echo_refuses_what_it_cannot_play(arguments):
     with pytest.raises(ValueError):
         StimulatedEchoSimulator(**arguments).simulate(T1=900.0, T2=70.0)
+
+
+@pytest.mark.parametrize("repetitions", [2, 6])
+def test_a_refocused_train_waits_out_its_tr_once_between_trains(repetitions):
+    """The train recorded is the last of ``repetitions``, each a TR apart."""
+    flips_deg, spacing_s, tr_s = [150.0, 120.0, 160.0, 140.0], 10e-3, 300e-3
+    voxel = _Isochromats(64, **TISSUE)
+    for _ in range(repetitions):
+        expected = []
+        voxel.pulse(math.pi / 2, math.pi / 2)
+        for flip in flips_deg:
+            voxel.wait(spacing_s / 2)
+            voxel.crush()
+            voxel.pulse(math.radians(flip))
+            voxel.crush()
+            voxel.wait(spacing_s / 2)
+            expected.append(voxel.signal())
+        voxel.wait(tr_s - spacing_s * len(flips_deg))
+    sequence = FSESimulator(
+        flip=flips_deg, ESP=1e3 * spacing_s, TR=1e3 * tr_s, repetitions=repetitions
+    )
+    _close(sequence.simulate(**TISSUE), expected)

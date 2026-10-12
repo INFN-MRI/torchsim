@@ -52,8 +52,8 @@ The file is parsed and its trajectory computed by pypulseq
 (`pip install blochsim[pulseq]`); a sequence in memory with pypulseq's reading
 interface, pypulseq's or pypulseqpp's, is read the same way. The gradients are
 read for two things only: the k-space trajectory that places each ADC event,
-and the slice-select amplitude under each pulse's isocentre, recorded when
-exactly one axis carries a gradient there.
+and the slice-select amplitude under each pulse's isocentre, the magnitude of
+the vector the three axes play there.
 
 ### Which repetition
 
@@ -103,9 +103,15 @@ The two sources normalise differently:
 | Pulseq file, {func}`~blochsim.rf_definition` | integral $1/(2\pi)$ s | flip angle in radians |
 | MRD stream | peak of one | Hz |
 
-A Pulseq definition is read with no bandwidth, so a shaped pulse from a file is
-integrated as non-selective, and the per-event slice-select gradient is not
-read by any simulation. A pulse with unevenly spaced sample times is refused,
+A pulse played under a slice-select gradient $G$ is given the bandwidth
+$G\,\Delta z$, where $\Delta z$ is the reference slice thickness: the
+excitation's small-tip bandwidth, the full width at half maximum of its
+envelope's Fourier transform, over its own gradient. Slice positions are then
+in units of $\Delta z$ for every pulse of the repetition, so a refocusing pulse
+designed for a wider slice selects a wider one. A pulse with no gradient keeps
+a bandwidth of zero and stays non-selective, and the gradient is read at the
+pulse centre, so a gradient that varies under the pulse is not followed.
+A pulse with unevenly spaced sample times is refused,
 since a definition read from a file is played one sample per dwell.
 
 ## Echo detection

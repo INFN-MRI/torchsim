@@ -38,6 +38,11 @@ wire format are in {doc}`../internals/description`.
   :::{dropdown} Show code and tests
   Code: {func}`~blochsim.rf_definition`. Tests: *the pulse reads back at the angle it was written at* (`test_pulseq_reader.py`); *the dwell need not be the raster* (`test_rf_definition.py`).
   :::
+- **Makes a pulse played under a slice-select gradient slice selective, with slice positions in units of the excitation's thickness.**
+
+  :::{dropdown} Show code and tests
+  Code: `read_pulseq_description`. Tests: *a pulse under a slice select gradient selects the slice it was designed for*; *a slice selective pulse from a file excites only its slice* (`test_pulseq_reader.py`).
+  :::
 - **Stamps an ADC event at the sample where its readout crosses the k-space centre, found on the gradient trajectory.**
 
   :::{dropdown} Show code and tests
@@ -64,7 +69,7 @@ wire format are in {doc}`../internals/description`.
 ## What blochsim leaves out
 
 - **Gradient moments.** A description holds one crusher moment for the whole sequence, `crusher_dephasing_rad` across `voxel_size_m`, given by the caller; neither file nor stream supplies it.
-- **Slice selection from a Pulseq file.** The gradient under each pulse is recorded but no simulation reads it, and the definition carries no bandwidth, so a shaped pulse is integrated as non-selective.
+- **A slice-select gradient that varies under the pulse**, as in VERSE or ramp sampling: a file's pulse is selected by the gradient at its centre.
 - **Pulses with a time shape of their own**, sampled unevenly in a Pulseq file, which are refused.
 - **A gradient that belongs to no pulse or readout**, such as a preparation's own spoiler, which no handler reinstates.
 
