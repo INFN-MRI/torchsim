@@ -214,7 +214,7 @@ value itself:
 
     start              sigma(T1)/T1 = 11.0%, 12.9%   sigma(T2)/T2 = 10.1%, 12.1%
     designed           sigma(T1)/T1 = 7.4%, 8.9%   sigma(T2)/T2 = 7.4%, 9.1%
-    designed in 3.6 s
+    designed in 2.7 s
 
 
 
@@ -380,7 +380,7 @@ designed protocol, add the noise and fit every voxel:
 
  .. code-block:: none
 
-    38980 joint fits in 3.6 s
+    38980 joint fits in 3.0 s
 
 
 
@@ -519,7 +519,7 @@ References
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 10.382 seconds)
+   **Total running time of the script:** (0 minutes 8.434 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_02-joint-relaxometry.py:
@@ -531,7 +531,7 @@ References
     .. container:: binder-badge
 
       .. image:: images/binder_badge_logo.svg
-        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry.ipynb
+        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/03-sequence-optimization/02-joint-relaxometry.ipynb
         :alt: Launch binder
         :width: 150 px
 

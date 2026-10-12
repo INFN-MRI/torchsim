@@ -46,7 +46,7 @@
   <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
 <link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
 
-    <script src="../../../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../../../_static/documentation_options.js?v=b1def801"></script>
     <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -68,10 +68,10 @@
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
     <link rel="next" title="MP2RAGE lookup table" href="02-lookup-table.html" />
-    <link rel="prev" title="Applications: parameter mapping" href="index.html" />
+    <link rel="prev" title="Applications" href="../../../examples/applications.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="" />
+  <meta name="docsearch:version" content="latest" />
   
     
     <script src="../../../_static/searchtools.js"></script>
@@ -198,11 +198,19 @@
             </li>
         </ul>
         <ul class="current nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer-guide/index.html">Developer guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/terminology.html">Terminology</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../developer-guide/internals/index.html">Internals</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -216,115 +224,44 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
-
-
-
-
-
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../../api/index.html">API</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/model.html">Signal models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.model.Simulator.html">Simulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.model.SpinPhysics.html">SpinPhysics</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.model.EventOperators.html">EventOperators</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../../../examples/index.html">Examples</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../examples/course.html">Course</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/01-first-simulation.html">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/05-custom-operator.html">5. Custom operator</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/simulators.html">Simulators</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.bSSFPSimulator.html">bSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.SPGRSimulator.html">SPGRSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.MP2RAGESimulator.html">MP2RAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.InversionRecoverySimulator.html">InversionRecoverySimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html">MultiEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.DoubleAngleSimulator.html">DoubleAngleSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.SpinEchoSimulator.html">SpinEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.LookLockerSimulator.html">LookLockerSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.MOLLISimulator.html">MOLLISimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.IRbSSFPSimulator.html">IRbSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.HSFPSimulator.html">HSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.MultiGradientEchoSimulator.html">MultiGradientEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.IRMultiGradientEchoSimulator.html">IRMultiGradientEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.DiffusionSimulator.html">DiffusionSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.LorentzianSimulator.html">LorentzianSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.ASLSimulator.html">ASLSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.FSESimulator.html">FSESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.HyperechoSimulator.html">HyperechoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.StimulatedEchoSimulator.html">StimulatedEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.MPRAGESimulator.html">MPRAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.MPnRAGESimulator.html">MPnRAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.MRFSimulator.html">MRFSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.FLASHSimulator.html">FLASHSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.TrueFISPSimulator.html">TrueFISPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.fmSSFPSimulator.html">fmSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.simulators.CESTSimulator.html">CESTSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.bssfp_sim.html">bssfp_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.spgr_sim.html">spgr_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.fse_sim.html">fse_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.mprage_sim.html">mprage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.mp2rage_sim.html">mp2rage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.mpnrage_sim.html">mpnrage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.mrf_sim.html">mrf_sim</a></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="../../../examples/applications.html">Applications</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../03-sequence-optimization/01-echo-train-design.html">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../03-sequence-optimization/02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../03-sequence-optimization/03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/sequence.html">Sequences</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Operator.html">Operator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Excitation.html">Excitation</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Refocusing.html">Refocusing</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Inversion.html">Inversion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Saturation.html">Saturation</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.SampledPulse.html">SampledPulse</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Readout.html">Readout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Delay.html">Delay</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Dephase.html">Dephase</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Spoil.html">Spoil</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.bSSFPReadout.html">bSSFPReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.SSFPFidReadout.html">SSFPFidReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.SSFPEchoReadout.html">SSFPEchoReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.SPGRReadout.html">SPGRReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.FSEReadout.html">FSEReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.rf_definition.html">rf_definition</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.ShimDefinition.html">ShimDefinition</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.compose_spinor.html">compose_spinor</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.SequenceDescription.html">SequenceDescription</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.read_mrd_description.html">read_mrd_description</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Estimator.html">Estimator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.DictionaryMatcher.html">DictionaryMatcher</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.LookupTable.html">LookupTable</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.NonlinearLeastSquares.html">NonlinearLeastSquares</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.PERK.html">PERK</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.ModelOperator.html">ModelOperator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.GaussNewton.html">GaussNewton</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Schedule.html">Schedule</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.TrustRegion.html">TrustRegion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.direct.html">direct</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.iterative.html">iterative</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Subspace.html">Subspace</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/optim.html">Sequence design</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Bounded.html">Bounded</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.SequenceDesign.html">SequenceDesign</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.crlb.html">crlb</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.execution.html">execution</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.offload.html">offload</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../../blochsim.utils.b1rms.html">b1rms</a></li>
-</ul>
-</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../api/index.html">API reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/model.html">Signal models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/license.html">License</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../misc/related.html">Related Projects</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../misc/contributors.html">Contributors</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../misc/code_of_conduct.html">Code of Conduct</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../misc/license.html">License</a></li>
 </ul>
 </details></li>
 </ul>
@@ -578,7 +515,7 @@ match in two independent ways: by working in the low-rank subspace spanned by
 the train, and by clustering the dictionary so that most atoms are not scored.</p>
 <p>Prerequisites: Course lesson <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
 <div class="colab-button">
-            <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/examples/generated/autoexamples/02-parameter-inference/01-dictionary-matching.ipynb" target="_blank">
+            <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/notebooks/generated/autoexamples/02-parameter-inference/01-dictionary-matching.ipynb" target="_blank">
                 <img src="https://colab.research.google.com/assets/colab-badge.svg"
                 alt="Open In Colab"/>
             </a>
@@ -603,225 +540,225 @@ ground truth is a continuum of values rather than four.</p>
 Downloading phantom_1.0mm_normal_bck: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 8.69kB/s]
+Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 6.85kB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 209kB [00:00, 1.15MB/s]
+Downloading phantom_1.0mm_normal_bck: 184kB [00:00, 839kB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 433kB [00:00, 1.63MB/s]
+Downloading phantom_1.0mm_normal_bck: 497kB [00:00, 1.66MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 721kB [00:00, 1.97MB/s]
+Downloading phantom_1.0mm_normal_bck: 721kB [00:00, 1.88MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 993kB [00:00, 2.12MB/s]
+Downloading phantom_1.0mm_normal_bck: 993kB [00:00, 2.04MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.24MB [00:00, 2.22MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.24MB [00:00, 2.15MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.52MB [00:00, 2.28MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.51MB [00:00, 2.37MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.74MB [00:00, 2.26MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.74MB [00:00, 2.18MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.97MB [00:01, 2.23MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.97MB [00:01, 2.14MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 2.19MB [00:01, 2.16MB/s]
+Downloading phantom_1.0mm_normal_bck: 2.19MB [00:01, 2.09MB/s]
 
 
 
 
-Downloading tissues:  10%|█         | 1/10 [00:01&lt;00:15,  1.67s/it]
+Downloading tissues:  10%|█         | 1/10 [00:02&lt;00:18,  2.00s/it]
 
 
 Downloading phantom_1.0mm_normal_csf: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_csf: 1.00kB [00:00, 9.84kB/s]
+Downloading phantom_1.0mm_normal_csf: 8.81kB [00:00, 71.1kB/s]
 
 
-Downloading phantom_1.0mm_normal_csf: 273kB [00:00, 1.51MB/s]
+Downloading phantom_1.0mm_normal_csf: 273kB [00:00, 1.27MB/s]
 
 
 
 
-Downloading tissues:  20%|██        | 2/10 [00:02&lt;00:08,  1.12s/it]
+Downloading tissues:  20%|██        | 2/10 [00:02&lt;00:10,  1.27s/it]
 
 
 Downloading phantom_1.0mm_normal_gry: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_gry: 1.00kB [00:00, 7.54kB/s]
+Downloading phantom_1.0mm_normal_gry: 1.00kB [00:00, 9.86kB/s]
 
 
-Downloading phantom_1.0mm_normal_gry: 257kB [00:00, 1.32MB/s]
+Downloading phantom_1.0mm_normal_gry: 176kB [00:00, 993kB/s]
 
 
-Downloading phantom_1.0mm_normal_gry: 993kB [00:00, 3.84MB/s]
+Downloading phantom_1.0mm_normal_gry: 577kB [00:00, 2.19MB/s]
 
 
 
 
-Downloading tissues:  30%|███       | 3/10 [00:03&lt;00:06,  1.12it/s]
+Downloading tissues:  30%|███       | 3/10 [00:03&lt;00:07,  1.01s/it]
 
 
 Downloading phantom_1.0mm_normal_wht: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_wht: 1.00kB [00:00, 8.75kB/s]
+Downloading phantom_1.0mm_normal_wht: 1.00kB [00:00, 8.23kB/s]
 
 
-Downloading phantom_1.0mm_normal_wht: 249kB [00:00, 1.31MB/s]
+Downloading phantom_1.0mm_normal_wht: 185kB [00:00, 916kB/s]
 
 
 
 
-Downloading tissues:  40%|████      | 4/10 [00:03&lt;00:04,  1.24it/s]
+Downloading tissues:  40%|████      | 4/10 [00:04&lt;00:05,  1.06it/s]
 
 
 Downloading phantom_1.0mm_normal_fat: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_fat: 81.0kB [00:00, 822kB/s]
+Downloading phantom_1.0mm_normal_fat: 8.81kB [00:00, 88.2kB/s]
 
 
-Downloading phantom_1.0mm_normal_fat: 473kB [00:00, 2.64MB/s]
+Downloading phantom_1.0mm_normal_fat: 321kB [00:00, 1.64MB/s]
 
 
 
 
-Downloading tissues:  50%|█████     | 5/10 [00:04&lt;00:03,  1.40it/s]
+Downloading tissues:  50%|█████     | 5/10 [00:04&lt;00:04,  1.19it/s]
 
 
 Downloading phantom_1.0mm_normal_m-s: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 8.81kB [00:00, 83.5kB/s]
+Downloading phantom_1.0mm_normal_m-s: 1.00kB [00:00, 9.27kB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 385kB [00:00, 2.21MB/s]
+Downloading phantom_1.0mm_normal_m-s: 177kB [00:00, 872kB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 721kB [00:00, 2.73MB/s]
+Downloading phantom_1.0mm_normal_m-s: 785kB [00:00, 2.87MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 1.05MB [00:00, 3.03MB/s]
+Downloading phantom_1.0mm_normal_m-s: 1.11MB [00:00, 3.12MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 1.49MB [00:00, 3.54MB/s]
+Downloading phantom_1.0mm_normal_m-s: 1.53MB [00:00, 3.56MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 1.88MB [00:00, 3.69MB/s]
+Downloading phantom_1.0mm_normal_m-s: 1.91MB [00:00, 3.66MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 2.25MB [00:00, 3.68MB/s]
+Downloading phantom_1.0mm_normal_m-s: 2.26MB [00:00, 3.63MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 2.61MB [00:00, 3.68MB/s]
+Downloading phantom_1.0mm_normal_m-s: 2.61MB [00:00, 3.59MB/s]
 
 
 
 
-Downloading tissues:  60%|██████    | 6/10 [00:05&lt;00:03,  1.14it/s]
+Downloading tissues:  60%|██████    | 6/10 [00:06&lt;00:04,  1.03s/it]
 
 
 Downloading phantom_1.0mm_normal_skn: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 8.81kB [00:00, 79.4kB/s]
+Downloading phantom_1.0mm_normal_skn: 1.00kB [00:00, 7.02kB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 273kB [00:00, 1.34MB/s]
+Downloading phantom_1.0mm_normal_skn: 185kB [00:00, 857kB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 609kB [00:00, 2.11MB/s]
+Downloading phantom_1.0mm_normal_skn: 609kB [00:00, 2.14MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 961kB [00:00, 2.62MB/s]
+Downloading phantom_1.0mm_normal_skn: 961kB [00:00, 2.59MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 1.31MB [00:00, 2.98MB/s]
+Downloading phantom_1.0mm_normal_skn: 1.31MB [00:00, 2.91MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 1.67MB [00:00, 3.22MB/s]
+Downloading phantom_1.0mm_normal_skn: 1.67MB [00:00, 3.15MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 2.06MB [00:00, 3.34MB/s]
+Downloading phantom_1.0mm_normal_skn: 2.06MB [00:00, 3.28MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 2.44MB [00:00, 3.36MB/s]
+Downloading phantom_1.0mm_normal_skn: 2.44MB [00:00, 3.32MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 2.77MB [00:01, 3.26MB/s]
+Downloading phantom_1.0mm_normal_skn: 2.77MB [00:01, 3.18MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 3.08MB [00:01, 3.05MB/s]
+Downloading phantom_1.0mm_normal_skn: 3.07MB [00:01, 2.98MB/s]
 
 
 
 
-Downloading tissues:  70%|███████   | 7/10 [00:06&lt;00:03,  1.08s/it]
+Downloading tissues:  70%|███████   | 7/10 [00:07&lt;00:03,  1.19s/it]
 
 
 Downloading phantom_1.0mm_normal_skl: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_skl: 8.81kB [00:00, 73.7kB/s]
+Downloading phantom_1.0mm_normal_skl: 8.81kB [00:00, 71.4kB/s]
 
 
-Downloading phantom_1.0mm_normal_skl: 369kB [00:00, 1.88MB/s]
+Downloading phantom_1.0mm_normal_skl: 289kB [00:00, 1.48MB/s]
 
 
 
 
-Downloading tissues:  80%|████████  | 8/10 [00:07&lt;00:01,  1.06it/s]
+Downloading tissues:  80%|████████  | 8/10 [00:08&lt;00:02,  1.05s/it]
 
 
 Downloading phantom_1.0mm_normal_gli: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 7.07kB/s]
+Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 6.95kB/s]
 
 
 
 
-Downloading tissues:  90%|█████████ | 9/10 [00:08&lt;00:00,  1.21it/s]
+Downloading tissues:  90%|█████████ | 9/10 [00:09&lt;00:00,  1.10it/s]
 
 
 Downloading phantom_1.0mm_normal_mit: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 9.28kB/s]
+Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 9.63kB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 257kB [00:00, 1.40MB/s]
+Downloading phantom_1.0mm_normal_mit: 185kB [00:00, 927kB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 529kB [00:00, 1.95MB/s]
+Downloading phantom_1.0mm_normal_mit: 593kB [00:00, 2.09MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 849kB [00:00, 2.41MB/s]
+Downloading phantom_1.0mm_normal_mit: 913kB [00:00, 2.44MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 1.14MB [00:00, 2.69MB/s]
+Downloading phantom_1.0mm_normal_mit: 1.20MB [00:00, 2.68MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 1.47MB [00:00, 2.89MB/s]
+Downloading phantom_1.0mm_normal_mit: 1.52MB [00:00, 2.86MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 1.80MB [00:00, 3.05MB/s]
+Downloading phantom_1.0mm_normal_mit: 1.83MB [00:00, 2.97MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 2.09MB [00:00, 2.99MB/s]
+Downloading phantom_1.0mm_normal_mit: 2.11MB [00:00, 2.97MB/s]
 
 
 
 
-Downloading tissues: 100%|██████████| 10/10 [00:09&lt;00:00,  1.07it/s]
+Downloading tissues: 100%|██████████| 10/10 [00:10&lt;00:00,  1.00s/it]
 </pre></div>
 </div>
 </section>
@@ -966,9 +903,9 @@ has to be processed in pieces; it is blank on a machine without a GPU.
 Errors are medians over the brain voxels, relative to the truth.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                         train     map     model      peak      T1      T2      M0
 ----------------------------------------------------------------------------------------
-match, 400 contrasts            5.9s   5.40s 122.3 MiB        --    0.6%    1.6%    0.4%
-match, rank 4                   0.9s   1.77s   1.4 MiB        --    0.6%    1.6%    0.4%
-match, rank 4 + groups          0.9s   0.09s   1.4 MiB        --    0.6%    1.6%    0.4%
+match, 400 contrasts            5.9s   5.30s 122.3 MiB        --    0.6%    1.6%    0.4%
+match, rank 4                   0.9s   1.91s   1.4 MiB        --    0.6%    1.6%    0.4%
+match, rank 4 + groups          0.9s   0.10s   1.4 MiB        --    0.6%    1.6%    0.4%
 </pre></div>
 </div>
 </section>
@@ -993,10 +930,10 @@ rank 4 with 32 groups, reporting training time, mapping time, estimator
 memory and the median relative error of each map.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 45.043 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 45.919 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-01-dictionary-matching-py">
 <div class="binder-badge docutils container">
-<a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/02-parameter-inference/01-dictionary-matching.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />
+<a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/02-parameter-inference/01-dictionary-matching.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />
 </a>
 </div>
 <div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
@@ -1025,12 +962,12 @@ memory and the median relative error of each map.
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="index.html"
+       href="../../../examples/applications.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Applications: parameter mapping</p>
+        <p class="prev-next-title">Applications</p>
       </div>
     </a>
     <a class="right-next"

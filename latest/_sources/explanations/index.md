@@ -1,35 +1,20 @@
 # Explanations
 
-What blochsim does, and how, one concept per page, in the order data flows
-through it.
+The concepts behind BlochSim, one page each, in the order of a simulation.
 
-{doc}`signal-model`
-: A sequence written as handlers and a layout.
+| Page | Contents |
+| --- | --- |
+| {doc}`signal-model` | Signal model: event handlers and layout |
+| {doc}`epg` | Extended phase graphs: relaxation, B1, B0, pools, diffusion, flow |
+| {doc}`description` | Pulseq and MRD sequence descriptions |
+| {doc}`derivatives` | Forward- and reverse-mode derivatives; Cramér-Rao bound |
+| {doc}`execution` | CPU and GPU execution, chunking, binding |
+| {doc}`parameter-estimation` | Dictionary matching, lookup tables, nonlinear least squares, PERK |
+| {doc}`model-based-reconstruction` | Linear subspace and nonlinear model-based reconstruction |
+| {doc}`sequence-design` | Protocol optimization against the Cramér-Rao bound |
 
-{doc}`epg`
-: The physics in the kernels: configuration states, relaxation, B1 and B0,
-  pools, diffusion and flow.
-
-{doc}`description`
-: What a Pulseq file or an MRD stream gives a simulator.
-
-{doc}`derivatives`
-: Forward mode for tissue properties, reverse mode for sequence parameters,
-  and the Cramér-Rao bound built on them.
-
-{doc}`execution`
-: CPU threads or a GPU, chunking to fit memory, and structure resolved once.
-
-{doc}`parameter-estimation`
-: Dictionary matching, low-rank matching, lookup tables, nonlinear least
-  squares and PERK.
-
-{doc}`model-based-reconstruction`
-: The signal model inside a reconstruction, linear in a subspace or
-  nonlinear.
-
-{doc}`sequence-design`
-: Protocol parameters optimized against a Cramér-Rao bound.
+The derivations, format rules and kernels behind these pages are in
+{doc}`../developer-guide/internals/index`.
 
 ```{toctree}
 :hidden:

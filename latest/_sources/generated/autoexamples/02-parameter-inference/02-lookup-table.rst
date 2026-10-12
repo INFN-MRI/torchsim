@@ -259,13 +259,13 @@ Times are the best of three passes over the slice.
      points     match     table     match     table
                 error     error      time      time
     -----------------------------------------------
-         30     7.93%     0.88%     2.3ms     0.5ms
-         60     3.29%     0.75%     3.2ms     0.5ms
-        120     0.78%     0.71%     3.6ms     0.6ms
-        250     0.80%     0.71%     6.7ms     0.6ms
-        500     0.62%     0.71%    13.4ms     0.6ms
-       1000     0.66%     0.71%    28.4ms     0.7ms
-       2000     0.71%     0.71%    62.0ms     0.8ms
+         30     7.93%     0.88%     2.0ms     0.4ms
+         60     3.29%     0.75%     3.0ms     0.5ms
+        120     0.78%     0.71%     3.3ms     0.5ms
+        250     0.80%     0.71%     5.5ms     0.5ms
+        500     0.62%     0.71%     9.8ms     0.5ms
+       1000     0.66%     0.71%    23.4ms     0.7ms
+       2000     0.71%     0.71%    52.4ms     0.6ms
 
 
 
@@ -349,7 +349,7 @@ one inner product per voxel:
     method                      train      map     model      peak      T1      M0
     ------------------------------------------------------------------------------
     lookup, 60 points           0.00s    0.5ms  0.00 MiB        --   0.75%   0.46%
-    match, 2000 atoms           0.00s   61.7ms  0.05 MiB        --   0.71%   0.45%
+    match, 2000 atoms           0.00s   55.4ms  0.05 MiB        --   0.71%   0.45%
 
 
 
@@ -374,7 +374,7 @@ What this page did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.013 seconds)
+   **Total running time of the script:** (0 minutes 1.672 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_02-lookup-table.py:
@@ -386,7 +386,7 @@ What this page did, stated the way you would ask an agent for it:
     .. container:: binder-badge
 
       .. image:: images/binder_badge_logo.svg
-        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/02-parameter-inference/02-lookup-table.ipynb
+        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/02-parameter-inference/02-lookup-table.ipynb
         :alt: Launch binder
         :width: 150 px
 

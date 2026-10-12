@@ -343,7 +343,7 @@ What this lesson built, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.533 seconds)
+   **Total running time of the script:** (0 minutes 0.439 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_01-framework_03-custom-signal-model.py:
@@ -355,7 +355,7 @@ What this lesson built, stated the way you would ask an agent for it:
     .. container:: binder-badge
 
       .. image:: images/binder_badge_logo.svg
-        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/01-framework/03-custom-signal-model.ipynb
+        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/01-framework/03-custom-signal-model.ipynb
         :alt: Launch binder
         :width: 150 px
 

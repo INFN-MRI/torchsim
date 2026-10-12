@@ -235,7 +235,7 @@ What this lesson did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.269 seconds)
+   **Total running time of the script:** (0 minutes 1.964 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_01-framework_04-description-based-simulation.py:
@@ -247,7 +247,7 @@ What this lesson did, stated the way you would ask an agent for it:
     .. container:: binder-badge
 
       .. image:: images/binder_badge_logo.svg
-        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/01-framework/04-description-based-simulation.ipynb
+        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/01-framework/04-description-based-simulation.ipynb
         :alt: Launch binder
         :width: 150 px
 

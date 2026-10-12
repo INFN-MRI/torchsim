@@ -12,7 +12,7 @@ You can simulate a sequence written elsewhere, from its Pulseq file or from
 the stream a scanner sends during the acquisition, without restating its
 parameters. This page states what such a description gives a simulator. How
 the handlers then play it is on {doc}`signal-model`; the reading rules and the
-wire format are in {doc}`../internals/description`.
+wire format are in {doc}`../developer-guide/internals/description`.
 
 ## Capabilities
 

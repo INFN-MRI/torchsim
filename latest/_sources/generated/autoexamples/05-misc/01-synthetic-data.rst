@@ -138,8 +138,8 @@ the home directory.
 
  .. code-block:: none
 
-    Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmpwa2xtr3v.zip
-    0it [00:00, ?it/s]      0%|          | 0/233926107 [00:01<?, ?it/s]      2%|▏         | 4464640/233926107 [00:01<00:05, 38250635.08it/s]      4%|▍         | 9445376/233926107 [00:01<00:05, 41988208.75it/s]      9%|▉         | 21241856/233926107 [00:01<00:02, 71692288.50it/s]     14%|█▍        | 33341440/233926107 [00:01<00:02, 89912061.63it/s]     20%|█▉        | 46014464/233926107 [00:02<00:01, 100971075.36it/s]     24%|██▍       | 55656448/233926107 [00:02<00:01, 93656518.90it/s]      28%|██▊       | 65282048/233926107 [00:02<00:01, 94169390.19it/s]     32%|███▏      | 74547200/233926107 [00:02<00:03, 41802157.42it/s]     38%|███▊      | 89300992/233926107 [00:02<00:02, 58904694.39it/s]     45%|████▍     | 105160704/233926107 [00:03<00:01, 77625358.84it/s]     50%|████▉     | 116498432/233926107 [00:03<00:01, 62057447.17it/s]     54%|█████▎    | 125640704/233926107 [00:03<00:01, 58432837.99it/s]     57%|█████▋    | 133513216/233926107 [00:03<00:01, 60003140.50it/s]     64%|██████▍   | 149168128/233926107 [00:03<00:01, 78722545.99it/s]     71%|███████   | 165945344/233926107 [00:03<00:00, 97129031.43it/s]     78%|███████▊  | 182722560/233926107 [00:03<00:00, 112855274.77it/s]     85%|████████▌ | 199499776/233926107 [00:04<00:00, 125702662.33it/s]     91%|█████████ | 213442560/233926107 [00:04<00:00, 114310495.87it/s]     97%|█████████▋| 225992704/233926107 [00:04<00:00, 107414741.17it/s]    233930752it [00:05, 42606594.09it/s]                                
+    Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmpkh852tzb.zip
+    0it [00:00, ?it/s]      0%|          | 0/233926107 [00:01<?, ?it/s]      0%|          | 1073152/233926107 [00:01<00:21, 10588043.97it/s]      7%|▋         | 15335424/233926107 [00:01<00:02, 87820426.74it/s]     16%|█▋        | 38281216/233926107 [00:01<00:01, 143218171.35it/s]     22%|██▏       | 50380800/233926107 [00:02<00:02, 89861268.48it/s]      27%|██▋       | 64233472/233926107 [00:02<00:01, 102219615.86it/s]     33%|███▎      | 77996032/233926107 [00:02<00:01, 109859037.12it/s]     45%|████▍     | 104865792/233926107 [00:02<00:00, 147160245.78it/s]     51%|█████▏    | 120102912/233926107 [00:02<00:00, 148346830.74it/s]     58%|█████▊    | 135315456/233926107 [00:02<00:00, 104819858.84it/s]     63%|██████▎   | 147701760/233926107 [00:02<00:00, 104246808.15it/s]     73%|███████▎  | 170795008/233926107 [00:02<00:00, 123259182.34it/s]     79%|███████▊  | 184123392/233926107 [00:03<00:00, 100809470.50it/s]     85%|████████▍ | 198729728/233926107 [00:03<00:00, 110366150.69it/s]     93%|█████████▎| 217702400/233926107 [00:03<00:00, 128749755.98it/s]     99%|█████████▉| 231989248/233926107 [00:03<00:00, 104367418.03it/s]    233930752it [00:04, 51489566.78it/s]                                
 
 
 
@@ -362,7 +362,7 @@ acquisitions.
 
  .. code-block:: none
 
-    400 arms built in 3.2s
+    400 arms built in 2.6s
 
 
 
@@ -394,7 +394,7 @@ The forward transform takes the coil-weighted image of each frame to k-space:
 
  .. code-block:: none
 
-    forward NUFFT 2.4s -> (400, 8, 768)
+    forward NUFFT 2.1s -> (400, 8, 768)
 
 
 
@@ -431,7 +431,7 @@ estimates them.
 
  .. code-block:: none
 
-    adjoint and combine 2.5s
+    adjoint and combine 2.1s
 
 
 
@@ -580,7 +580,7 @@ What this Application did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (1 minutes 55.278 seconds)
+   **Total running time of the script:** (2 minutes 5.165 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_05-misc_01-synthetic-data.py:
@@ -592,7 +592,7 @@ What this Application did, stated the way you would ask an agent for it:
     .. container:: binder-badge
 
       .. image:: images/binder_badge_logo.svg
-        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/05-misc/01-synthetic-data.ipynb
+        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/05-misc/01-synthetic-data.ipynb
         :alt: Launch binder
         :width: 150 px
 

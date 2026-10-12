@@ -46,7 +46,7 @@
   <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
 
-    <script src="../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../_static/documentation_options.js?v=b1def801"></script>
     <script src="../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -67,11 +67,11 @@
     <link rel="icon" href="../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="bSSFPSimulator" href="../generated/blochsim.simulators.bSSFPSimulator.html" />
-    <link rel="prev" title="EventOperators" href="../generated/blochsim.model.EventOperators.html" />
+    <link rel="next" title="Sequences" href="sequence.html" />
+    <link rel="prev" title="Signal models" href="model.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="" />
+  <meta name="docsearch:version" content="latest" />
   
     
     <script src="../_static/searchtools.js"></script>
@@ -198,11 +198,19 @@
             </li>
         </ul>
         <ul class="current nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer-guide/index.html">Developer guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/terminology.html">Terminology</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../developer-guide/internals/index.html">Internals</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../developer-guide/internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../developer-guide/internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../developer-guide/internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -216,115 +224,44 @@
 <li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1"><a class="reference internal" href="../generated/autoexamples/index.html">Examples</a></li>
-
-
-
-
-
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">API</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2 has-children"><a class="reference internal" href="model.html">Signal models</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.model.Simulator.html">Simulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.model.SpinPhysics.html">SpinPhysics</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.model.EventOperators.html">EventOperators</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../examples/index.html">Examples</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../examples/course.html">Course</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/01-framework/01-first-simulation.html">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/01-framework/02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/01-framework/03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/01-framework/04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/01-framework/05-custom-operator.html">5. Custom operator</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">Simulators</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.bSSFPSimulator.html">bSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.SPGRSimulator.html">SPGRSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.MP2RAGESimulator.html">MP2RAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.InversionRecoverySimulator.html">InversionRecoverySimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.MultiEchoSimulator.html">MultiEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.DoubleAngleSimulator.html">DoubleAngleSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.SpinEchoSimulator.html">SpinEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.LookLockerSimulator.html">LookLockerSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.MOLLISimulator.html">MOLLISimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.IRbSSFPSimulator.html">IRbSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.HSFPSimulator.html">HSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.MultiGradientEchoSimulator.html">MultiGradientEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.IRMultiGradientEchoSimulator.html">IRMultiGradientEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.DiffusionSimulator.html">DiffusionSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.LorentzianSimulator.html">LorentzianSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.ASLSimulator.html">ASLSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.FSESimulator.html">FSESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.HyperechoSimulator.html">HyperechoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.StimulatedEchoSimulator.html">StimulatedEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.MPRAGESimulator.html">MPRAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.MPnRAGESimulator.html">MPnRAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.MRFSimulator.html">MRFSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.FLASHSimulator.html">FLASHSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.TrueFISPSimulator.html">TrueFISPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.fmSSFPSimulator.html">fmSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.simulators.CESTSimulator.html">CESTSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.bssfp_sim.html">bssfp_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.spgr_sim.html">spgr_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.fse_sim.html">fse_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.mprage_sim.html">mprage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.mp2rage_sim.html">mp2rage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.mpnrage_sim.html">mpnrage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.mrf_sim.html">mrf_sim</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../examples/applications.html">Applications</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/01-dictionary-matching.html">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/03-sequence-optimization/01-echo-train-design.html">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/03-sequence-optimization/02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/03-sequence-optimization/03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/autoexamples/05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="sequence.html">Sequences</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Operator.html">Operator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Excitation.html">Excitation</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Refocusing.html">Refocusing</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Inversion.html">Inversion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Saturation.html">Saturation</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.SampledPulse.html">SampledPulse</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Readout.html">Readout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Delay.html">Delay</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Dephase.html">Dephase</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Spoil.html">Spoil</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.bSSFPReadout.html">bSSFPReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.SSFPFidReadout.html">SSFPFidReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.SSFPEchoReadout.html">SSFPEchoReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.SPGRReadout.html">SPGRReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.FSEReadout.html">FSEReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.rf_definition.html">rf_definition</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.ShimDefinition.html">ShimDefinition</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.compose_spinor.html">compose_spinor</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.SequenceDescription.html">SequenceDescription</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.read_mrd_description.html">read_mrd_description</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="estimators.html">Parameter estimation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Estimator.html">Estimator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html">DictionaryMatcher</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.LookupTable.html">LookupTable</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html">NonlinearLeastSquares</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.PERK.html">PERK</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="recon.html">Model-based reconstruction</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.ModelOperator.html">ModelOperator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.GaussNewton.html">GaussNewton</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Schedule.html">Schedule</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.TrustRegion.html">TrustRegion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.direct.html">direct</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.iterative.html">iterative</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Subspace.html">Subspace</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="optim.html">Sequence design</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Bounded.html">Bounded</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.SequenceDesign.html">SequenceDesign</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.crlb.html">crlb</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.execution.html">execution</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.offload.html">offload</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.utils.b1rms.html">b1rms</a></li>
-</ul>
-</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">API reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="model.html">Signal models</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="recon.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optim.html">Sequence design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../misc/license.html">License</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../misc/related.html">Related Projects</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../misc/contributors.html">Contributors</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../misc/code_of_conduct.html">Code of Conduct</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../misc/license.html">License</a></li>
 </ul>
 </details></li>
 </ul>
@@ -570,55 +507,60 @@ call. See the <a class="reference internal" href="../explanations/signal-model.h
 <section id="closed-form">
 <h2>Closed form<a class="headerlink" href="#closed-form" title="Link to this heading">#</a></h2>
 <p>Signals that have an analytic expression, evaluated in one pass.</p>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Object</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.bSSFPSimulator.html#blochsim.simulators.bSSFPSimulator" title="blochsim.simulators.bSSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.bSSFPSimulator</span></code></a></p></td>
-<td><p>Balanced SSFP steady state, read at the echo time.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.bSSFPSimulator.html#blochsim.simulators.bSSFPSimulator" title="blochsim.simulators.bSSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">bSSFPSimulator</span></code></a></p></td>
+<td><p>Balanced steady-state free precession (bSSFP) signal at the echo time.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.SPGRSimulator.html#blochsim.simulators.SPGRSimulator" title="blochsim.simulators.SPGRSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.SPGRSimulator</span></code></a></p></td>
-<td><p>Spoiled gradient-echo steady state, read at the echo time.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.SPGRSimulator.html#blochsim.simulators.SPGRSimulator" title="blochsim.simulators.SPGRSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SPGRSimulator</span></code></a></p></td>
+<td><p>Spoiled gradient echo (SPGR, FLASH) steady state, in closed form.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator" title="blochsim.simulators.MP2RAGESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.MP2RAGESimulator</span></code></a></p></td>
-<td><p>Two gradient-echo blocks read at two inversion times, in closed form.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator" title="blochsim.simulators.MP2RAGESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MP2RAGESimulator</span></code></a></p></td>
+<td><p>MP2RAGE: an inversion followed by two spoiled gradient-echo blocks.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.InversionRecoverySimulator.html#blochsim.simulators.InversionRecoverySimulator" title="blochsim.simulators.InversionRecoverySimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.InversionRecoverySimulator</span></code></a></p></td>
-<td><p>Longitudinal recovery from an inversion, read at a series of delays.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.InversionRecoverySimulator.html#blochsim.simulators.InversionRecoverySimulator" title="blochsim.simulators.InversionRecoverySimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">InversionRecoverySimulator</span></code></a></p></td>
+<td><p>Inversion-recovery T1 relaxometry, in closed form.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.MultiEchoSimulator</span></code></a></p></td>
-<td><p>Transverse decay, read at a series of echo times.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MultiEchoSimulator</span></code></a></p></td>
+<td><p>Multi-echo T2 relaxometry, in closed form.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.DoubleAngleSimulator.html#blochsim.simulators.DoubleAngleSimulator" title="blochsim.simulators.DoubleAngleSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.DoubleAngleSimulator</span></code></a></p></td>
-<td><p>Excitation at a series of flip angles, scaled by the transmit field.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.DoubleAngleSimulator.html#blochsim.simulators.DoubleAngleSimulator" title="blochsim.simulators.DoubleAngleSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DoubleAngleSimulator</span></code></a></p></td>
+<td><p>Double-angle B1 mapping, in closed form.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.SpinEchoSimulator.html#blochsim.simulators.SpinEchoSimulator" title="blochsim.simulators.SpinEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.SpinEchoSimulator</span></code></a></p></td>
-<td><p>Spin echo repeated every TR, optionally behind an inversion.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.SpinEchoSimulator.html#blochsim.simulators.SpinEchoSimulator" title="blochsim.simulators.SpinEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SpinEchoSimulator</span></code></a></p></td>
+<td><p>Spin echo with partial longitudinal recovery, in closed form.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.LookLockerSimulator.html#blochsim.simulators.LookLockerSimulator" title="blochsim.simulators.LookLockerSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.LookLockerSimulator</span></code></a></p></td>
-<td><p>Recovery from an inversion under a spoiled train of small flip angles.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.LookLockerSimulator.html#blochsim.simulators.LookLockerSimulator" title="blochsim.simulators.LookLockerSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LookLockerSimulator</span></code></a></p></td>
+<td><p>Look-Locker inversion recovery under a spoiled train of small flip angles.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MOLLISimulator.html#blochsim.simulators.MOLLISimulator" title="blochsim.simulators.MOLLISimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.MOLLISimulator</span></code></a></p></td>
-<td><p>Look-Locker readout blocks separated by free recovery, after one inversion.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MOLLISimulator.html#blochsim.simulators.MOLLISimulator" title="blochsim.simulators.MOLLISimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MOLLISimulator</span></code></a></p></td>
+<td><p>Modified Look-Locker inversion recovery (MOLLI): readout blocks separated by free recovery.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.IRbSSFPSimulator.html#blochsim.simulators.IRbSSFPSimulator" title="blochsim.simulators.IRbSSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.IRbSSFPSimulator</span></code></a></p></td>
-<td><p>Recovery from an inversion under a balanced SSFP train.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.IRbSSFPSimulator.html#blochsim.simulators.IRbSSFPSimulator" title="blochsim.simulators.IRbSSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">IRbSSFPSimulator</span></code></a></p></td>
+<td><p>Inversion-recovery balanced SSFP (IR-TrueFISP) signal, in closed form.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.HSFPSimulator.html#blochsim.simulators.HSFPSimulator" title="blochsim.simulators.HSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.HSFPSimulator</span></code></a></p></td>
-<td><p>Balanced train with a slowly varying flip angle, in the hybrid state.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.HSFPSimulator.html#blochsim.simulators.HSFPSimulator" title="blochsim.simulators.HSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">HSFPSimulator</span></code></a></p></td>
+<td><p>Hybrid-state free precession (HSFP) of a balanced train, in closed form.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MultiGradientEchoSimulator.html#blochsim.simulators.MultiGradientEchoSimulator" title="blochsim.simulators.MultiGradientEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.MultiGradientEchoSimulator</span></code></a></p></td>
-<td><p>Water and fat, dephasing and decaying across a gradient-echo train.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MultiGradientEchoSimulator.html#blochsim.simulators.MultiGradientEchoSimulator" title="blochsim.simulators.MultiGradientEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MultiGradientEchoSimulator</span></code></a></p></td>
+<td><p>Multi-gradient-echo signal of water and fat, in closed form.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.IRMultiGradientEchoSimulator.html#blochsim.simulators.IRMultiGradientEchoSimulator" title="blochsim.simulators.IRMultiGradientEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.IRMultiGradientEchoSimulator</span></code></a></p></td>
-<td><p>Multi-gradient-echo train read at a series of inversion times.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.IRMultiGradientEchoSimulator.html#blochsim.simulators.IRMultiGradientEchoSimulator" title="blochsim.simulators.IRMultiGradientEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">IRMultiGradientEchoSimulator</span></code></a></p></td>
+<td><p>Inversion-recovery multi-gradient-echo signal of water and fat, in closed form.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.DiffusionSimulator.html#blochsim.simulators.DiffusionSimulator" title="blochsim.simulators.DiffusionSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.DiffusionSimulator</span></code></a></p></td>
-<td><p>Attenuation by Gaussian diffusion at a series of b-values.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.DiffusionSimulator.html#blochsim.simulators.DiffusionSimulator" title="blochsim.simulators.DiffusionSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DiffusionSimulator</span></code></a></p></td>
+<td><p>Diffusion-weighted signal attenuation by Gaussian diffusion, in closed form.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.LorentzianSimulator.html#blochsim.simulators.LorentzianSimulator" title="blochsim.simulators.LorentzianSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.LorentzianSimulator</span></code></a></p></td>
-<td><p>Z-spectrum as equilibrium minus one Lorentzian line per pool.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.LorentzianSimulator.html#blochsim.simulators.LorentzianSimulator" title="blochsim.simulators.LorentzianSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LorentzianSimulator</span></code></a></p></td>
+<td><p>Z-spectrum (CEST) as equilibrium minus one Lorentzian line per pool.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.ASLSimulator.html#blochsim.simulators.ASLSimulator" title="blochsim.simulators.ASLSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.ASLSimulator</span></code></a></p></td>
-<td><p>Label-control difference of arterial spin labelling, over time.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.ASLSimulator.html#blochsim.simulators.ASLSimulator" title="blochsim.simulators.ASLSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ASLSimulator</span></code></a></p></td>
+<td><p>Arterial spin labelling (ASL) control-label difference signal, in closed form.</p></td>
 </tr>
 </tbody>
 </table>
@@ -627,37 +569,42 @@ call. See the <a class="reference internal" href="../explanations/signal-model.h
 <section id="state-machine">
 <h2>State machine<a class="headerlink" href="#state-machine" title="Link to this heading">#</a></h2>
 <p>Trains that are played out event by event on the extended phase graph engine (<a class="reference internal" href="../explanations/epg.html"><span class="doc">Extended phase graphs</span></a>).</p>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Object</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.FSESimulator</span></code></a></p></td>
-<td><p>Refocused echo train, sampled at every echo.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FSESimulator</span></code></a></p></td>
+<td><p>Fast (turbo) spin echo (FSE, RARE) train, sampled at every echo.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.HyperechoSimulator.html#blochsim.simulators.HyperechoSimulator" title="blochsim.simulators.HyperechoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.HyperechoSimulator</span></code></a></p></td>
-<td><p>Refocused train mirrored about a central refocusing pulse.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.HyperechoSimulator.html#blochsim.simulators.HyperechoSimulator" title="blochsim.simulators.HyperechoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">HyperechoSimulator</span></code></a></p></td>
+<td><p>Hyperecho train: refocusing pulses mirrored about a central pulse.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.StimulatedEchoSimulator.html#blochsim.simulators.StimulatedEchoSimulator" title="blochsim.simulators.StimulatedEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.StimulatedEchoSimulator</span></code></a></p></td>
-<td><p>Three pulses, sampled at the spin echo of the first two and at the stimulated echo.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.StimulatedEchoSimulator.html#blochsim.simulators.StimulatedEchoSimulator" title="blochsim.simulators.StimulatedEchoSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">StimulatedEchoSimulator</span></code></a></p></td>
+<td><p>Stimulated-echo sequence: three pulses, sampled at the spin echo and the stimulated echo.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MPRAGESimulator.html#blochsim.simulators.MPRAGESimulator" title="blochsim.simulators.MPRAGESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.MPRAGESimulator</span></code></a></p></td>
-<td><p>Inversion followed by a spoiled train, sampled at the k-space centre.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MPRAGESimulator.html#blochsim.simulators.MPRAGESimulator" title="blochsim.simulators.MPRAGESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MPRAGESimulator</span></code></a></p></td>
+<td><p>MPRAGE: an inversion followed by a spoiled gradient-echo train.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MPnRAGESimulator.html#blochsim.simulators.MPnRAGESimulator" title="blochsim.simulators.MPnRAGESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.MPnRAGESimulator</span></code></a></p></td>
-<td><p>Inversion followed by a spoiled gradient-echo train, every shot read.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MPnRAGESimulator.html#blochsim.simulators.MPnRAGESimulator" title="blochsim.simulators.MPnRAGESimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MPnRAGESimulator</span></code></a></p></td>
+<td><p>MPnRAGE: an inversion and a spoiled gradient-echo train, every shot read.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.MRFSimulator</span></code></a></p></td>
-<td><p>Inversion followed by a variable flip-angle train whose readouts wind on.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MRFSimulator</span></code></a></p></td>
+<td><p>MR fingerprinting with an unbalanced SSFP (FISP) train.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.FLASHSimulator.html#blochsim.simulators.FLASHSimulator" title="blochsim.simulators.FLASHSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.FLASHSimulator</span></code></a></p></td>
-<td><p>Spoiled gradient-echo train from equilibrium, optionally inverted first.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.FLASHSimulator.html#blochsim.simulators.FLASHSimulator" title="blochsim.simulators.FLASHSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FLASHSimulator</span></code></a></p></td>
+<td><p>Spoiled gradient-echo (FLASH, SPGR) train from equilibrium, optionally inverted first.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.TrueFISPSimulator.html#blochsim.simulators.TrueFISPSimulator" title="blochsim.simulators.TrueFISPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.TrueFISPSimulator</span></code></a></p></td>
-<td><p>Balanced SSFP train from equilibrium, optionally inverted first.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.TrueFISPSimulator.html#blochsim.simulators.TrueFISPSimulator" title="blochsim.simulators.TrueFISPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TrueFISPSimulator</span></code></a></p></td>
+<td><p>Balanced SSFP (TrueFISP, FIESTA) train from equilibrium, optionally inverted first.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.fmSSFPSimulator.html#blochsim.simulators.fmSSFPSimulator" title="blochsim.simulators.fmSSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.fmSSFPSimulator</span></code></a></p></td>
-<td><p>Balanced SSFP train with RF phase swept through one passband per sweep.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.fmSSFPSimulator.html#blochsim.simulators.fmSSFPSimulator" title="blochsim.simulators.fmSSFPSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fmSSFPSimulator</span></code></a></p></td>
+<td><p>Frequency-modulated balanced SSFP (fmSSFP) train.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.simulators.CESTSimulator.html#blochsim.simulators.CESTSimulator" title="blochsim.simulators.CESTSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.simulators.CESTSimulator</span></code></a></p></td>
-<td><p>Z-spectrum simulated through a train of rectangular saturation pulses.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.simulators.CESTSimulator.html#blochsim.simulators.CESTSimulator" title="blochsim.simulators.CESTSimulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CESTSimulator</span></code></a></p></td>
+<td><p>Chemical exchange saturation transfer (CEST) Z-spectrum by Bloch-McConnell simulation.</p></td>
 </tr>
 </tbody>
 </table>
@@ -672,12 +619,17 @@ sequence is reused, bound to a protocol, or passed to an estimator,
 reconstruction or design object.</p>
 <section id="closed-form-wrappers">
 <h3>Closed-form wrappers<a class="headerlink" href="#closed-form-wrappers" title="Link to this heading">#</a></h3>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Object</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.bssfp_sim.html#blochsim.bssfp_sim" title="blochsim.bssfp_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.bssfp_sim</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.bssfp_sim.html#blochsim.bssfp_sim" title="blochsim.bssfp_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">bssfp_sim</span></code></a></p></td>
 <td><p>Simulate the balanced SSFP steady-state signal.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.spgr_sim.html#blochsim.spgr_sim" title="blochsim.spgr_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.spgr_sim</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.spgr_sim.html#blochsim.spgr_sim" title="blochsim.spgr_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">spgr_sim</span></code></a></p></td>
 <td><p>Simulate the spoiled gradient-echo steady-state signal.</p></td>
 </tr>
 </tbody>
@@ -686,21 +638,26 @@ reconstruction or design object.</p>
 </section>
 <section id="state-machine-wrappers">
 <h3>State-machine wrappers<a class="headerlink" href="#state-machine-wrappers" title="Link to this heading">#</a></h3>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Object</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.fse_sim.html#blochsim.fse_sim" title="blochsim.fse_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.fse_sim</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.fse_sim.html#blochsim.fse_sim" title="blochsim.fse_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fse_sim</span></code></a></p></td>
 <td><p>Simulate a fast spin echo train.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.mprage_sim.html#blochsim.mprage_sim" title="blochsim.mprage_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.mprage_sim</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.mprage_sim.html#blochsim.mprage_sim" title="blochsim.mprage_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mprage_sim</span></code></a></p></td>
 <td><p>Simulate the sampled MPRAGE shot in closed form.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.mp2rage_sim.html#blochsim.mp2rage_sim" title="blochsim.mp2rage_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.mp2rage_sim</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.mp2rage_sim.html#blochsim.mp2rage_sim" title="blochsim.mp2rage_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mp2rage_sim</span></code></a></p></td>
 <td><p>Simulate the two MP2RAGE blocks in closed form.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.mpnrage_sim.html#blochsim.mpnrage_sim" title="blochsim.mpnrage_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.mpnrage_sim</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.mpnrage_sim.html#blochsim.mpnrage_sim" title="blochsim.mpnrage_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mpnrage_sim</span></code></a></p></td>
 <td><p>Simulate an MPnRAGE train, every shot read.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.mrf_sim.html#blochsim.mrf_sim" title="blochsim.mrf_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">blochsim.mrf_sim</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.mrf_sim.html#blochsim.mrf_sim" title="blochsim.mrf_sim"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mrf_sim</span></code></a></p></td>
 <td><p>Simulate an unbalanced SSFP MR fingerprinting train.</p></td>
 </tr>
 </tbody>
@@ -722,20 +679,20 @@ reconstruction or design object.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../generated/blochsim.model.EventOperators.html"
+       href="model.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">EventOperators</p>
+        <p class="prev-next-title">Signal models</p>
       </div>
     </a>
     <a class="right-next"
-       href="../generated/blochsim.simulators.bSSFPSimulator.html"
+       href="sequence.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">bSSFPSimulator</p>
+        <p class="prev-next-title">Sequences</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

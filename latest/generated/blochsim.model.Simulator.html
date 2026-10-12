@@ -46,7 +46,7 @@
   <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
 
-    <script src="../_static/documentation_options.js?v=9eb32ce0"></script>
+    <script src="../_static/documentation_options.js?v=b1def801"></script>
     <script src="../_static/doctools.js?v=fd6eb6e6"></script>
     <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -67,11 +67,9 @@
     <link rel="icon" href="../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="SpinPhysics" href="blochsim.model.SpinPhysics.html" />
-    <link rel="prev" title="Signal models" href="../api/model.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="" />
+  <meta name="docsearch:version" content="latest" />
   
     
     <script src="../_static/searchtools.js"></script>
@@ -197,12 +195,20 @@
                 </a>
             </li>
         </ul>
-        <ul class="current nav bd-sidenav">
-<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer-guide/index.html">Developer guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer-guide/terminology.html">Terminology</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../developer-guide/internals/index.html">Internals</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../developer-guide/internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../developer-guide/internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../developer-guide/internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -216,115 +222,44 @@
 <li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
-
-
-
-
-
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="../api/index.html">API</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="../api/model.html">Signal models</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l3 current active"><a class="current reference internal" href="#">Simulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.model.SpinPhysics.html">SpinPhysics</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.model.EventOperators.html">EventOperators</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../examples/index.html">Examples</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../examples/course.html">Course</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/01-framework/01-first-simulation.html">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/01-framework/02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/01-framework/03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/01-framework/04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/01-framework/05-custom-operator.html">5. Custom operator</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/simulators.html">Simulators</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.bSSFPSimulator.html">bSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.SPGRSimulator.html">SPGRSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.MP2RAGESimulator.html">MP2RAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.InversionRecoverySimulator.html">InversionRecoverySimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.MultiEchoSimulator.html">MultiEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.DoubleAngleSimulator.html">DoubleAngleSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.SpinEchoSimulator.html">SpinEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.LookLockerSimulator.html">LookLockerSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.MOLLISimulator.html">MOLLISimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.IRbSSFPSimulator.html">IRbSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.HSFPSimulator.html">HSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.MultiGradientEchoSimulator.html">MultiGradientEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.IRMultiGradientEchoSimulator.html">IRMultiGradientEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.DiffusionSimulator.html">DiffusionSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.LorentzianSimulator.html">LorentzianSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.ASLSimulator.html">ASLSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.FSESimulator.html">FSESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.HyperechoSimulator.html">HyperechoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.StimulatedEchoSimulator.html">StimulatedEchoSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.MPRAGESimulator.html">MPRAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.MPnRAGESimulator.html">MPnRAGESimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.MRFSimulator.html">MRFSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.FLASHSimulator.html">FLASHSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.TrueFISPSimulator.html">TrueFISPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.fmSSFPSimulator.html">fmSSFPSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.simulators.CESTSimulator.html">CESTSimulator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.bssfp_sim.html">bssfp_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.spgr_sim.html">spgr_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.fse_sim.html">fse_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.mprage_sim.html">mprage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.mp2rage_sim.html">mp2rage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.mpnrage_sim.html">mpnrage_sim</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.mrf_sim.html">mrf_sim</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../examples/applications.html">Applications</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/02-parameter-inference/01-dictionary-matching.html">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/02-parameter-inference/02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/02-parameter-inference/03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/02-parameter-inference/04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/03-sequence-optimization/01-echo-train-design.html">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/03-sequence-optimization/02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/03-sequence-optimization/03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="autoexamples/05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/sequence.html">Sequences</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Operator.html">Operator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Excitation.html">Excitation</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Refocusing.html">Refocusing</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Inversion.html">Inversion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Saturation.html">Saturation</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.SampledPulse.html">SampledPulse</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Readout.html">Readout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Delay.html">Delay</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Dephase.html">Dephase</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Spoil.html">Spoil</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.bSSFPReadout.html">bSSFPReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.SSFPFidReadout.html">SSFPFidReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.SSFPEchoReadout.html">SSFPEchoReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.SPGRReadout.html">SPGRReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.FSEReadout.html">FSEReadout</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.rf_definition.html">rf_definition</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.ShimDefinition.html">ShimDefinition</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.compose_spinor.html">compose_spinor</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.SequenceDescription.html">SequenceDescription</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.read_mrd_description.html">read_mrd_description</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Estimator.html">Estimator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.DictionaryMatcher.html">DictionaryMatcher</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.LookupTable.html">LookupTable</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.NonlinearLeastSquares.html">NonlinearLeastSquares</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.PERK.html">PERK</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.ModelOperator.html">ModelOperator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.GaussNewton.html">GaussNewton</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Schedule.html">Schedule</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.TrustRegion.html">TrustRegion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.direct.html">direct</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.iterative.html">iterative</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Subspace.html">Subspace</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/optim.html">Sequence design</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.Bounded.html">Bounded</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.SequenceDesign.html">SequenceDesign</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
-</ul>
-</details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
-<li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
-</ul>
-</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api/index.html">API reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../api/model.html">Signal models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../misc/license.html">License</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../misc/related.html">Related Projects</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../misc/contributors.html">Contributors</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../misc/code_of_conduct.html">Code of Conduct</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../misc/license.html">License</a></li>
 </ul>
 </details></li>
 </ul>
@@ -545,7 +480,7 @@
                 <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator"><code class="docutils literal notranslate"><span class="pre">Simulator</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.model"><code class="docutils literal notranslate"><span class="pre">Simulator.model</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.states"><code class="docutils literal notranslate"><span class="pre">Simulator.states</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.protocol"><code class="docutils literal notranslate"><span class="pre">Simulator.protocol</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.bind"><code class="docutils literal notranslate"><span class="pre">Simulator.bind()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.operators"><code class="docutils literal notranslate"><span class="pre">Simulator.operators</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.variables"><code class="docutils literal notranslate"><span class="pre">Simulator.variables</span></code></a></li>
@@ -575,12 +510,69 @@
 <h1>Simulator<a class="headerlink" href="#simulator" title="Link to this heading">#</a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="blochsim.model.Simulator">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">Simulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator" title="Link to this definition">#</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">Simulator</span></span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">_SignalModel</span></code></p>
 <p>Base class of a pulse sequence protocol and its signal model.</p>
-<p>Subclasses set <a class="reference internal" href="#blochsim.model.Simulator.model" title="blochsim.model.Simulator.model"><code class="xref py py-attr docutils literal notranslate"><span class="pre">model</span></code></a> and implement <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, or implement
-<a class="reference internal" href="#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a> directly for a closed-form signal. The constructor takes
-the keywords <code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> takes and fixes them; a call overrides.</p>
+<p>A subclass sets <a class="reference internal" href="#blochsim.model.Simulator.model" title="blochsim.model.Simulator.model"><code class="xref py py-attr docutils literal notranslate"><span class="pre">model</span></code></a>, which says which tissue properties are
+exposed and how each kind of event is played, and implements
+<a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, which returns the events of one repetition from the
+protocol parameters. A closed-form signal implements <a class="reference internal" href="#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a>
+instead. <code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> returns the complex signal of the ADC events
+recorded, and <code class="xref py py-meth docutils literal notranslate"><span class="pre">jacobian()</span></code> its derivative with respect to tissue
+properties.</p>
+<p>The constructor fixes the keywords <code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> takes, as protocol
+parameters, tissue properties or run settings; a call overrides them.
+Subclasses document their own protocol parameters; the run settings below
+are common to all of them, and a subclass may change their class-level
+defaults.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>**protocol</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Protocol parameters (the arguments of <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>) and tissue
+properties to fix. Arrays may be NumPy, CuPy or torch; the signal is
+returned in the library they were given in.</p></li>
+<li><p><strong>model</strong> (<a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><em>SpinPhysics</em></a><em>, </em><em>default=None</em>) – Replaces the class’s <a class="reference internal" href="#blochsim.model.Simulator.model" title="blochsim.model.Simulator.model"><code class="xref py py-attr docutils literal notranslate"><span class="pre">model</span></code></a>, and with it the exposed tissue
+properties and the event operators.</p></li>
+<li><p><strong>states</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>default=None</em>) – Configuration orders carried by the extended-phase-graph simulation.
+<code class="docutils literal notranslate"><span class="pre">None</span></code> sizes them from the dephasing in the sequence.</p></li>
+<li><p><strong>repetitions</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> or </em><em>&quot;auto&quot;</em><em>, </em><em>default=None</em>) – Playings of the sequence; the last is recorded. <code class="docutils literal notranslate"><span class="pre">None</span></code> takes the
+class’s own (1 unless it declares otherwise); <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> extrapolates
+the steady state from a few playings.</p></li>
+<li><p><strong>record</strong> (<em>{&quot;all&quot;</em><em>, </em><em>&quot;acquired&quot;</em><em>, </em><em>&quot;echo&quot;}</em><em>, </em><em>default=&quot;all&quot;</em>) – Which ADC events the signal holds: every one, those that acquire data,
+or those flagged as echoes.</p></li>
+<li><p><strong>execution</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><em>torch.device</em><em> or </em><em>sequence</em><em> of </em><em>device</em><em>, </em><em>default=None</em>) – <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;cpu&quot;</span></code> or CUDA device(s). <code class="docutils literal notranslate"><span class="pre">None</span></code> follows the
+enclosing <a class="reference internal" href="blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a> block.</p></li>
+<li><p><strong>pulse</strong> (<em>RfDefinition</em><em>, </em><em>default=None</em>) – RF waveform replacing the ideal hard pulse of definition 0, which the
+shipped operators play.</p></li>
+<li><p><strong>shims</strong> (<em>mapping</em><em>, </em><em>default=None</em>) – Transmit shims by <code class="docutils literal notranslate"><span class="pre">shim_id</span></code>. By default one channel drives every
+pulse alike.</p></li>
+<li><p><strong>across_slice</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> or </em><em>ExactSliceProfile</em><em>, </em><em>default=None</em>) – Number of positions across the slice at which a shaped <code class="docutils literal notranslate"><span class="pre">pulse</span></code> is
+integrated, or an <code class="docutils literal notranslate"><span class="pre">exact_slice_profile()</span></code>. <code class="docutils literal notranslate"><span class="pre">None</span></code> uses the slice
+centre only.</p></li>
+<li><p><strong>resolve</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a><em>, </em><em>default=True</em>) – Reuse the packed event structure across calls that change only
+values. <code class="docutils literal notranslate"><span class="pre">False</span></code> rebuilds it every call.</p></li>
+<li><p><strong>crusher_dephasing_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>default=0.0</em>) – Dephasing of the unbalanced gradient across one voxel, in rad.</p></li>
+<li><p><strong>voxel_size_m</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>default=None</em>) – Voxel size along the unbalanced gradient, in m.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Tissue properties<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>T1, T2</strong> (<em>float or array-like</em>) – Longitudinal and transverse relaxation times, in ms.</p></li>
+<li><p><strong>M0</strong> (<em>float or array-like, default=1.0</em>) – Equilibrium magnetization.</p></li>
+<li><p><strong>B1</strong> (<em>float or array-like, default=1.0</em>) – Transmit field, as a fraction of the nominal flip angle.</p></li>
+<li><p><strong>B1phase</strong> (<em>float or array-like, default=0.0</em>) – Transmit phase, in rad.</p></li>
+<li><p><strong>B0</strong> (<em>float or array-like, default=0.0</em>) – Off-resonance, in Hz.</p></li>
+<li><p><strong>T2prime</strong> (<em>float or array-like, default=inf</em>) – Reversible dephasing time, in ms.</p></li>
+<li><p><strong>inv_efficiency</strong> (<em>float or array-like, default=1.0</em>) – Fraction of a perfect inversion achieved by an inversion pulse.</p></li>
+<li><p><strong>D</strong> (<em>float or array-like, default=0.0</em>) – Apparent diffusion coefficient, in um^2/ms.</p></li>
+<li><p><strong>v</strong> (<em>float or array-like, default=0.0</em>) – Velocity along the unbalanced gradient, in m/s.</p></li>
+<li><p><strong>bound_fraction, bound_exchange, bound_T1</strong> (<em>float or array-like</em>) – Semisolid pool for magnetization transfer: fraction, exchange rate
+in Hz and T1 in ms. A zero fraction leaves the pool out.</p></li>
+<li><p><strong>poolB_fraction, poolB_exchange, poolB_T1, poolB_T2, poolB_shift</strong> (<em>float or array-like</em>) – A second exchanging water pool: fraction, exchange rate in Hz, T1 and
+T2 in ms, chemical shift in Hz. Pools C to E take <code class="docutils literal notranslate"><span class="pre">poolC_*</span></code> to <code class="docutils literal notranslate"><span class="pre">poolE_*</span></code>.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.model">
 <span class="sig-name descname"><span class="pre">model</span></span><a class="headerlink" href="#blochsim.model.Simulator.model" title="Link to this definition">#</a></dt>
@@ -593,13 +585,12 @@ the keywords <code class="xref py py-meth docutils literal notranslate"><span cl
 </dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="blochsim.model.Simulator.states">
-<span class="sig-name descname"><span class="pre">states</span></span><a class="headerlink" href="#blochsim.model.Simulator.states" title="Link to this definition">#</a></dt>
-<dd><p>Configuration orders to carry. <code class="docutils literal notranslate"><span class="pre">None</span></code> sizes them from the winding in
-the description.</p>
+<dt class="sig sig-object py" id="blochsim.model.Simulator.protocol">
+<span class="sig-name descname"><span class="pre">protocol</span></span><a class="headerlink" href="#blochsim.model.Simulator.protocol" title="Link to this definition">#</a></dt>
+<dd><p>Protocol parameters fixed by the constructor, as torch tensors.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)">int</a> or None</p>
+<dd class="field-odd"><p>mapping</p>
 </dd>
 </dl>
 </dd></dl>
@@ -642,7 +633,7 @@ the description.</p>
 </div>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.bind">
-<span class="sig-name descname"><span class="pre">bind</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">values</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.bind"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.bind" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">bind</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.bind"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.bind" title="Link to this definition">#</a></dt>
 <dd><p>Return a copy with further arguments fixed.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -668,12 +659,17 @@ the constructor, e.g. <code class="docutils literal notranslate"><span class="pr
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.variables">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">variables</span></span><a class="headerlink" href="#blochsim.model.Simulator.variables" title="Link to this definition">#</a></dt>
-<dd><p>Names of the <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a> parameters, excluding <code class="docutils literal notranslate"><span class="pre">*args</span></code> and <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code>.</p>
+<dd><p>the protocol a call takes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Names of the <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a> parameters</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.to">
-<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.to" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.to" title="Link to this definition">#</a></dt>
 <dd><p>Return a copy with its protocol and fixed properties on <code class="docutils literal notranslate"><span class="pre">device</span></code>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -690,14 +686,22 @@ the constructor, e.g. <code class="docutils literal notranslate"><span class="pr
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.layout">
-<span class="sig-name descname"><span class="pre">layout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">protocol</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.layout" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">layout</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.layout" title="Link to this definition">#</a></dt>
 <dd><p>Return the operators of one repetition in playing order.</p>
 <p>A bare operator starts where the previous one ended; an
 <code class="docutils literal notranslate"><span class="pre">(offset_s,</span> <span class="pre">operator)</span></code> pair starts <code class="docutils literal notranslate"><span class="pre">offset_s</span></code> seconds into the
-repetition.</p>
+repetition. A subclass overrides this with the protocol parameters as
+keyword-only arguments, in ms and degrees, and documents them on the
+class.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>**protocol</strong> – The arguments named by <a class="reference internal" href="#blochsim.model.Simulator.variables" title="blochsim.model.Simulator.variables"><code class="xref py py-attr docutils literal notranslate"><span class="pre">variables</span></code></a>.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Operators from <a class="reference internal" href="#blochsim.model.Simulator.operators" title="blochsim.model.Simulator.operators"><code class="xref py py-attr docutils literal notranslate"><span class="pre">operators</span></code></a>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>sequence of <a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator">Operator</a> or (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a>, <a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator">Operator</a>)</p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
 <dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#NotImplementedError" title="(in Python v3.15)"><strong>NotImplementedError</strong></a> – If the subclass implements neither this nor <a class="reference internal" href="#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>.</p>
@@ -707,7 +711,7 @@ repetition.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.repetition_s">
-<span class="sig-name descname"><span class="pre">repetition_s</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">played_s</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">protocol</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.repetition_s"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.repetition_s" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">repetition_s</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.repetition_s"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.repetition_s" title="Link to this definition">#</a></dt>
 <dd><p>Return the duration of one repetition in seconds.</p>
 <p>Defaults to <code class="docutils literal notranslate"><span class="pre">played_s</span></code>, the span the layout covers. Override when
 the repetition time exceeds it.</p>
@@ -723,21 +727,26 @@ the repetition time exceeds it.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.played">
-<span class="sig-name descname"><span class="pre">played</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.played"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.played" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">played</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.played"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.played" title="Link to this definition">#</a></dt>
 <dd><p>Return the protocol arguments of <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, arrays as torch tensors.</p>
 <p>The constructor’s protocol overridden by <code class="docutils literal notranslate"><span class="pre">sequence</span></code>; run settings are
 dropped.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>**sequence</strong> – Protocol arguments of this call.</p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.rf_raster_time_s">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">rf_raster_time_s</span></span><a class="headerlink" href="#blochsim.model.Simulator.rf_raster_time_s" title="Link to this definition">#</a></dt>
-<dd><p>RF raster time of the shapes, in seconds.</p>
+<dd><p>RF raster time of the pulse shapes, in seconds.</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.describe">
-<span class="sig-name descname"><span class="pre">describe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">protocol</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.describe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.describe" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">describe</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.describe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.describe" title="Link to this definition">#</a></dt>
 <dd><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -755,7 +764,7 @@ was built by <a class="reference internal" href="#blochsim.model.Simulator.from_
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.from_pulseq">
-<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_pulseq</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">source</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">tr_index</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">settings</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.from_pulseq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.from_pulseq" title="Link to this definition">#</a></dt>
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_pulseq</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.from_pulseq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.from_pulseq" title="Link to this definition">#</a></dt>
 <dd><p>Return a simulator over one repetition of a Pulseq sequence.</p>
 <p>The events are re-emitted through this class’s operators, as in
 <a class="reference internal" href="#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>.</p>
@@ -763,7 +772,7 @@ was built by <a class="reference internal" href="#blochsim.model.Simulator.from_
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>source</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="(in Python v3.15)"><em>pathlib.Path</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><em>object</em></a>) – A <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, or a pypulseq or pypulseqpp <code class="docutils literal notranslate"><span class="pre">Sequence</span></code>.</p></li>
-<li><p><strong>tr_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Repetition to read, counted from 0. Defaults to the <code class="docutils literal notranslate"><span class="pre">TRRef</span></code>
+<li><p><strong>tr_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>default=None</em>) – Repetition to read, counted from 0. Defaults to the <code class="docutils literal notranslate"><span class="pre">TRRef</span></code>
 definition, else the first repetition that acquires.</p></li>
 <li><p><strong>**settings</strong> – Run settings and tissue properties, as for the constructor.</p></li>
 </ul>
@@ -783,7 +792,7 @@ definition, else the first repetition that acquires.</p></li>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.from_description">
-<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_description</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">description</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">settings</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.from_description"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.from_description" title="Link to this definition">#</a></dt>
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_description</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.from_description"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.from_description" title="Link to this definition">#</a></dt>
 <dd><p>Return a simulator that plays an existing description.</p>
 <p>The description carries RF pulses and ADC windows but no gradients, so
 its events are re-emitted through this class’s operators, which supply
@@ -794,7 +803,7 @@ called on therefore selects how the events are interpreted.</p>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>description</strong> (<a class="reference internal" href="blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription"><em>SequenceDescription</em></a>) – Description decoded from an MRD stream or exported from a Pulseq
 design.</p></li>
-<li><p><strong>model</strong> (<a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><em>SpinPhysics</em></a><em>, </em><em>optional</em>) – Physics to read it with. Defaults to the class’s own.</p></li>
+<li><p><strong>model</strong> (<a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><em>SpinPhysics</em></a><em>, </em><em>default=None</em>) – Physics to read it with. Defaults to the class’s own.</p></li>
 <li><p><strong>**settings</strong> – Run settings and tissue properties, as for the constructor.
 <code class="docutils literal notranslate"><span class="pre">repetitions</span></code> defaults to the class’s own.</p></li>
 </ul>
@@ -814,17 +823,26 @@ design.</p></li>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.evaluate">
-<span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">properties</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.evaluate" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.evaluate" title="Link to this definition">#</a></dt>
 <dd><p>Return the signal of one simulation of the protocol.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>properties</strong> (<em>mapping</em>) – Tissue property values by public name.</p></li>
+<li><p><strong>properties</strong> (<em>mapping</em>) – Tissue property values by public name, as torch tensors in public
+units (ms, degrees, Hz).</p></li>
 <li><p><strong>**sequence</strong> – Run settings (<code class="docutils literal notranslate"><span class="pre">states</span></code>, <code class="docutils literal notranslate"><span class="pre">repetitions</span></code>, <code class="docutils literal notranslate"><span class="pre">record</span></code>,
 <code class="docutils literal notranslate"><span class="pre">device</span></code>, <code class="docutils literal notranslate"><span class="pre">execution</span></code>, <code class="docutils literal notranslate"><span class="pre">across_slice</span></code>), each defaulting to
 the constructor’s, and protocol arguments overriding the
 constructor’s.</p></li>
 </ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Complex signal of the recorded ADC events, of shape
+<code class="docutils literal notranslate"><span class="pre">(*voxel_shape,</span> <span class="pre">samples)</span></code>; with scalar properties there is no
+voxel axis.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>torch.Tensor</p>
 </dd>
 </dl>
 </dd></dl>
@@ -844,24 +862,6 @@ constructor’s.</p></li>
                 <footer class="prev-next-footer d-print-none">
                   
 <div class="prev-next-area">
-    <a class="left-prev"
-       href="../api/model.html"
-       title="previous page">
-      <i class="fa-solid fa-angle-left"></i>
-      <div class="prev-next-info">
-        <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Signal models</p>
-      </div>
-    </a>
-    <a class="right-next"
-       href="blochsim.model.SpinPhysics.html"
-       title="next page">
-      <div class="prev-next-info">
-        <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">SpinPhysics</p>
-      </div>
-      <i class="fa-solid fa-angle-right"></i>
-    </a>
 </div>
                 </footer>
               
@@ -882,7 +882,7 @@ constructor’s.</p></li>
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator"><code class="docutils literal notranslate"><span class="pre">Simulator</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.model"><code class="docutils literal notranslate"><span class="pre">Simulator.model</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.states"><code class="docutils literal notranslate"><span class="pre">Simulator.states</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.protocol"><code class="docutils literal notranslate"><span class="pre">Simulator.protocol</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.bind"><code class="docutils literal notranslate"><span class="pre">Simulator.bind()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.operators"><code class="docutils literal notranslate"><span class="pre">Simulator.operators</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.Simulator.variables"><code class="docutils literal notranslate"><span class="pre">Simulator.variables</span></code></a></li>

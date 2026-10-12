@@ -243,7 +243,7 @@ What this example did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 7.201 seconds)
+   **Total running time of the script:** (0 minutes 5.874 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_03-rf-pulse-design.py:
@@ -255,7 +255,7 @@ What this example did, stated the way you would ask an agent for it:
     .. container:: binder-badge
 
       .. image:: images/binder_badge_logo.svg
-        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/03-sequence-optimization/03-rf-pulse-design.ipynb
+        :target: https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/03-sequence-optimization/03-rf-pulse-design.ipynb
         :alt: Launch binder
         :width: 150 px
 
