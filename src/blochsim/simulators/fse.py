@@ -4,6 +4,7 @@ from __future__ import annotations
 
 __all__ = ["FSESimulator", "HyperechoSimulator"]
 
+from collections.abc import Mapping
 from typing import Any
 
 import numpy.typing as npt
@@ -106,6 +107,39 @@ class FSESimulator(Simulator):
         """Return the TR, which the train waits out before the next one."""
         del played_s
         return protocol.get("TR", 1e6) * 1e-3
+
+    def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
+        """Simulate the train, one train at a time where each has its own TR.
+
+        The engine plays a batch of trains on one clock, so trains that wait
+        out different repetition times are run separately and stacked along
+        the train axis, the leading axis of ``TR`` and of every per-echo
+        argument batched with it.
+        """
+        played = self.played(**sequence)
+        repetition = played.get("TR")
+        playings = sequence.get("repetitions", self.repetitions)
+        if not torch.is_tensor(repetition) or repetition.numel() < 2 or playings == 1:
+            return super().evaluate(properties, **sequence)
+        trains = repetition.shape[0]
+        batched = {
+            name: value
+            for name, value in played.items()
+            if torch.is_tensor(value) and value.ndim >= 2 and value.shape[0] == trains
+        }
+        return torch.stack(
+            [
+                super(FSESimulator, self).evaluate(
+                    properties,
+                    **{
+                        **sequence,
+                        **{name: value[train] for name, value in batched.items()},
+                        "TR": repetition.reshape(trains, -1)[train, 0],
+                    },
+                )
+                for train in range(trains)
+            ]
+        )
 
 
 class HyperechoSimulator(FSESimulator):

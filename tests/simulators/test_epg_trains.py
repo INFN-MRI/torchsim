@@ -272,3 +272,14 @@ def test_a_refocused_train_waits_out_its_tr_once_between_trains(repetitions):
         flip=flips_deg, ESP=1e3 * spacing_s, TR=1e3 * tr_s, repetitions=repetitions
     )
     _close(sequence.simulate(**TISSUE), expected)
+
+
+def test_trains_with_their_own_tr_each_settle_as_if_played_alone():
+    flips_deg = np.array([[150.0, 120.0, 160.0], [100.0, 170.0, 130.0]])
+    tr_ms = np.array([[300.0], [900.0]])
+    batched = FSESimulator(flip=flips_deg, ESP=10.0, TR=tr_ms).simulate(**TISSUE)
+    for train in range(2):
+        alone = FSESimulator(
+            flip=flips_deg[train], ESP=10.0, TR=float(tr_ms[train, 0])
+        ).simulate(**TISSUE)
+        _close(np.asarray(batched)[train], alone)
