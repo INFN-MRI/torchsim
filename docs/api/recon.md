@@ -11,7 +11,7 @@ operator. The concepts are in {doc}`../explanations/model-based-reconstruction`.
 one image per contrast out, with analytic Jacobian-vector products, a complex
 amplitude and box bounds. It honours {func}`execution`, and `physics()` wraps
 it for deepinv. {class}`GaussNewton` inverts it by repeated linearization; its
-damping policy (`blochsim.recon.Schedule` for an iteratively regularized
+damping policy ({class}`Schedule` for an iteratively regularized
 Gauss-Newton, {class}`TrustRegion` for Levenberg-Marquardt) selects the method,
 and its linear solve is {func}`direct` or {func}`iterative`. The Fourier
 encoding is external: any object with `A` and `A_adjoint` composes.
@@ -34,6 +34,7 @@ encoding is external: any object with `A` and `A_adjoint` composes.
    :nosignatures:
 
    GaussNewton
+   Schedule
    TrustRegion
 ```
 
