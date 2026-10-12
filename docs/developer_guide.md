@@ -10,7 +10,7 @@ opened.
 :depth: 2
 ```
 
-## What you need on the machine
+## Prerequisites
 
 Beyond what the {doc}`user_guide` asks of everyone -- an isolated environment
 and a PyTorch build chosen for your hardware -- working on the source needs:
@@ -58,7 +58,7 @@ finds it. The same kernels are also compiled for the host, so you can develop
 and test them without a card -- see {ref}`dev-tests` -- but only a card runs
 them for real.
 
-## Installing for development
+## Development installation
 
 ```sh
 git clone https://github.com/pulserver/blochsim
@@ -96,7 +96,7 @@ pip install -e ".[dev]" ; echo "exit: $?"
 python -c "import blochsim._epg_cpu as k; print(k.__file__)"
 ```
 
-### Where the source lives
+### Source layout
 
 `src/blochsim/sequence/`
 : The description an acquisition is assembled from -- events, operators,
@@ -137,7 +137,7 @@ bugbear, quote, pydocstyle, pyupgrade and annotation rules, with the
 **numpydoc** docstring convention. Public functions and classes carry
 annotations; the settings are in `pyproject.toml` and are the authority.
 
-### Setting up pre-commit
+### Pre-commit hooks
 
 `pip install -e ".[dev]"` puts `pre-commit` on the path. Registering the hook
 is a second, separate step, and until you take it nothing runs on commit:
@@ -175,7 +175,7 @@ about it, and a run that changed something exits non-zero so you see what it
 did. Nothing is lost -- the fixes are in your working tree. Look at them,
 `git add` them, and commit again; the second attempt passes.
 
-### When you need to bypass it
+### Hook bypass
 
 Skip one hook, which is the smallest hammer and usually the right one:
 
@@ -233,7 +233,7 @@ carries radians. Convert at the boundary, and name the unit in the identifier
 
 (dev-tests)=
 
-## Running the tests
+## Tests
 
 ```sh
 pytest tests/                     # everything, with coverage
@@ -262,7 +262,7 @@ BlochSim: a closed form, a published figure, or an isochromat summation you
 write in the test itself. The `tests/epg` files are written that way, and
 each states its invariant in its module docstring.
 
-## Building the documentation
+## Documentation build
 
 ```sh
 bash scripts/build_docs.sh              # incremental
@@ -292,7 +292,7 @@ in the `FIGURES` mapping at the bottom, and reference the file it writes with a
 `examples/` section -- the numeric prefix orders it, and the module
 docstring becomes the page's introduction.
 
-## Opening a pull request
+## Pull requests
 
 1. **Branch from** `main`, in your fork. One subject per branch; a
    refactor and a fix in the same diff cost the reviewer more than they save

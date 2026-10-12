@@ -664,8 +664,8 @@ plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this example did, stated the way you would ask an agent for it:
 #

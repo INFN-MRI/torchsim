@@ -268,8 +268,8 @@ def estimated(make, points):
 # sphinx_gallery_end_ignore
 
 # %%
-# Two estimators
-# --------------
+# Estimators
+# ----------
 #
 # Both estimators are fitted on the same T1 grid, with the proton density
 # fixed to one. The matcher scores the two-block signal against every atom and
@@ -284,8 +284,8 @@ maps = lookup.map(measured)  # {"T1": ...}, one value per voxel
 match = DictionaryMatcher(simulator.bind(M0=1.0)).fit(T1=grid, seed=0)
 
 # %%
-# Number of points
-# ----------------
+# Table size
+# ----------
 #
 # Sweeping the number of grid points separates the method from the sampling.
 # Times are the best of three passes over the slice.
@@ -477,8 +477,8 @@ plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this page did, stated the way you would ask an agent for it:
 #

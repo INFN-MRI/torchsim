@@ -146,8 +146,8 @@ for label, profile in (("starting sinc", before), ("optimized", after)):
     print(f"{label:>14}: {[round(float(v), 3) for v in mean]}")
 
 # %%
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this example did, stated the way you would ask an agent for it:
 #

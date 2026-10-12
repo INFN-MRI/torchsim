@@ -23,7 +23,7 @@ blochsim ships signal models for 26 sequences (spin echo, FSE, SPGR, bSSFP,
 MPRAGE, MP2RAGE, MR fingerprinting, Look-Locker, CEST, ASL...), so for most
 work you write nothing at all.
 
-## How it works
+## Signal models
 
 1. You construct a simulator with the sequence parameters: the flip angles,
    the TR, the echo spacing.
@@ -41,7 +41,7 @@ work you write nothing at all.
    tensors, so `loss.backward()` gives you the derivative with respect to the
    sequence, which is what a design optimizes.
 
-## Simulating a shipped sequence
+## Shipped sequences
 
 ```python
 import torch
@@ -60,7 +60,7 @@ signal, dT2 = fse.jacobian("T2", flip=flip, T1=1000.0, T2=80.0)
 - Every shipped simulator also has a function form for one-off calls, such
   as `blochsim.fse_sim(...)`.
 
-## Writing your own signal model
+## Custom signal models
 
 A signal model is two things:
 
@@ -121,7 +121,7 @@ signal = recovery.simulate(T1=830.0, T2=80.0)
 Derivatives, devices, extra physics and the estimators all work on your class
 without another line.
 
-## On top of the simulator
+## Estimation, design and reconstruction
 
 - **Parameter maps**: dictionary matching, lookup tables, nonlinear least
   squares and PERK, all built from a simulator (`blochsim.estimators`).
@@ -134,7 +134,7 @@ without another line.
   file, and `Simulator.from_description` reads the sequence description
   pulserver streams from a running scanner.
 
-## Install
+## Installation
 
 Install the PyTorch build for your machine first, then blochsim:
 
@@ -146,7 +146,7 @@ pip install "blochsim[cu12]"  # the GPU kernels, beside a CUDA 12 build of torch
 The [User guide](https://pulserver.github.io/blochsim/latest/user_guide.html)
 covers CUDA versions, macOS and building from source.
 
-## Learn more
+## Documentation
 
 - [Course](https://pulserver.github.io/blochsim/latest/generated/autoexamples/index.html):
   four lessons, from a shipped simulator to your own signal model and your own
@@ -156,7 +156,7 @@ covers CUDA versions, macOS and building from source.
 - [Documentation](https://pulserver.github.io/blochsim/latest/), for the
   physics and every API detail.
 
-## How to cite
+## Citation
 
 If you use blochsim in your work, please cite:
 

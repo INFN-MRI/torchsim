@@ -41,8 +41,8 @@ TISSUES = ("white matter", "grey matter", "CSF")
 # sphinx_gallery_end_ignore
 
 # %%
-# Your sequence
-# -------------
+# Sequence
+# --------
 #
 # Each block of the sequence is a 90-degree pulse followed by a spoiler, which
 # nulls the magnetization; a saturation time TS of free recovery; and a
@@ -54,8 +54,8 @@ TISSUES = ("white matter", "grey matter", "CSF")
 #
 # which serves as the reference for the simulation.
 #
-# The handlers
-# ------------
+# Handlers
+# --------
 #
 # A sequence consists of RF, ADC and wait events. The *handlers* define the
 # operator that plays each kind of event. They are class attributes of the
@@ -98,8 +98,8 @@ class SaturationRecovery(Simulator):
 # simulated (lesson 4), the handlers define the dephasing between events:
 # spoiled, unbalanced or balanced.
 #
-# The layout
-# ----------
+# Layout
+# ------
 #
 # The *layout* returns the events of one repetition in playing order, built
 # from the handlers through ``self.operators``. It is the default sequence
@@ -225,8 +225,8 @@ plt.show()
 # the signal; at long ones the 8-degree readout lowers it. A T1 fit that
 # ignores B1 is biased by both effects.
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this lesson built, stated the way you would ask an agent for it:
 #

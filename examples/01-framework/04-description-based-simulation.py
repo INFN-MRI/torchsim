@@ -46,8 +46,8 @@ SEQ_FILE = next(
 # sphinx_gallery_end_ignore
 
 # %%
-# A sequence description
-# ----------------------
+# Sequence description
+# --------------------
 #
 # A *sequence description* (:class:`~blochsim.SequenceDescription`) lists the
 # events of one repetition: RF pulses, ADC windows and waits, each with its
@@ -80,8 +80,8 @@ plt.show()
 # between readouts. The description contains no gradients: the scanner stream
 # does not carry them, and blochsim does not read them from a Pulseq file.
 #
-# Simulating a description
-# ------------------------
+# Simulation from a description
+# -----------------------------
 #
 # ``from_description`` constructs a simulator from a description, bypassing
 # the layout. Only tissue properties and simulation settings are passed:
@@ -125,16 +125,16 @@ plt.show()
 # handlers the CPMG condition is not met and the echo amplitudes oscillate and
 # decay. The class therefore specifies how the events are to be interpreted.
 #
-# A description from a scanner
-# ----------------------------
+# Scanner stream
+# --------------
 #
 # During acquisition, pulserver streams the description of the running
 # sequence with the raw data. :func:`~blochsim.read_mrd_description` reads it
 # from an MRD stream, and ``from_description`` simulates it as above. A
 # reconstruction can thus simulate the sequence that was actually played.
 #
-# A Pulseq file
-# -------------
+# Pulseq file
+# -----------
 #
 # ``from_pulseq`` reads the description from a ``.seq`` file; it requires the
 # ``pulseq`` extra (``pip install "blochsim[pulseq]"``). The file below is a
@@ -166,8 +166,8 @@ plt.show()
 # of the file. Each readout is timestamped at the sample where the trajectory
 # crosses the k-space centre, i.e. at the echo time.
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this lesson did, stated the way you would ask an agent for it:
 #

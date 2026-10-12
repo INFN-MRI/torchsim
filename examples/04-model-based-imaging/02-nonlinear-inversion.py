@@ -251,8 +251,8 @@ plt.show()
 # The maps are what both reconstructions below recover, and the spokes are all
 # that is measured of them.
 #
-# Baseline: gridding and a fit
-# ----------------------------
+# Gridding baseline
+# -----------------
 #
 # The baseline reconstructs the eight images and then fits them. The fit needs
 # an estimator, here a dictionary match over a rank-3 temporal basis, which
@@ -432,8 +432,8 @@ plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
-# A different model
-# -----------------
+# Alternative signal model
+# ------------------------
 #
 # The model is the only part that names a relaxation time, and it is an ordinary
 # :class:`~blochsim.model.Simulator`, the object used in the fitting and design
@@ -450,8 +450,8 @@ plt.show()
 # .. [2] Fuderer M, et al. Recommended colour maps for relaxation parameter
 #        maps. Magn Reson Med (2025).
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this Application did, stated the way you would ask an agent for it:
 #

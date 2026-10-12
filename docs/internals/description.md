@@ -41,7 +41,7 @@ nothing. The echo flag says whether the position reaches $k = 0$.
 `record="all"` keeps every ADC event, `"acquired"` those whose role is not
 `NON_ACQUIRED`, and `"echo"` those flagged.
 
-## Pulseq blocks to events
+## Pulseq block conversion
 
 A Pulseq file is a table of blocks, each holding at most one RF pulse, one
 gradient per axis and one ADC window. One block becomes one event: a block with
@@ -151,7 +151,7 @@ samples, as every echo of a CPMG train or every blade of a PROPELLER, are all
 The train in the figure is the tied case: all eight roles are `SINGLE`, and one
 echo flag is set.
 
-## The MRD stream
+## MRD stream
 
 Pulserver's reconstruction proxy reads the sequence file a series was played
 from and sends its description after the MRD XML header and before the first

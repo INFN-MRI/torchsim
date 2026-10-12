@@ -5,7 +5,7 @@ the fused CPU and CUDA kernels run them. The physics is on
 {doc}`../explanations/epg`; derivatives and device placement are on
 {doc}`../explanations/derivatives` and {doc}`../explanations/execution`.
 
-## From description to packed buffers
+## Event packing
 
 A description is a list of events, each with a timestamp, a payload and an
 action word. Whatever assembled it -- composed operators, a shipped builder, a
@@ -53,7 +53,7 @@ The operators (`Excitation`, `Refocusing`, `Readout`, `Dephase`, `Spoil`,
 vocabulary, so a module written outside the package -- a T2 preparation, an
 MT saturation, a shaped pulse -- reaches the kernels unchanged.
 
-### Rebinding values onto a resolved structure
+### Value rebinding
 
 ```{figure} /generated/figures/binding.png
 :width: 100%
@@ -97,7 +97,7 @@ the order count. Left unset, it is one more than the winding the description
 declares -- every `CRUSH_BEFORE`, `CRUSH_AFTER` and `SHIFT_AFTER` over every
 repetition -- clamped to between 8 and 64.
 
-## One fused kernel
+## Fused kernel
 
 ```{figure} /generated/figures/fusion.png
 :width: 100%
@@ -144,7 +144,7 @@ a layout kernel ahead of any tile kernel.
   where it is formed, and the launcher refuses an integer argument that does
   not fit rather than truncating it.
 
-## Terms evaluated only when declared
+## Declared terms
 
 A tissue property has an identity value, at which it has no effect, and a run
 reads which properties were given as maps to decide which terms the kernel
@@ -161,7 +161,7 @@ pool is not a term on top of these: it selects a different kernel, with a
 coupled relaxation-exchange operator [^1] in place of the two scalar factors.
 ```
 
-## The real-subspace path
+## Real-subspace path
 
 If every refocusing pulse shares one phase, the excitation is in phase with
 them or a half turn away, and there is no off-resonance, transmit phase or

@@ -481,8 +481,8 @@ with tempfile.TemporaryDirectory() as folder:
 # sphinx_gallery_end_ignore
 
 # %%
-# Command-line use
-# ----------------
+# Command-line interface
+# ----------------------
 #
 # To turn the script into a tool, replace three inputs and keep the rest:
 #
@@ -500,8 +500,8 @@ with tempfile.TemporaryDirectory() as folder:
 # .. [1] Fuderer M, et al. Color-map recommendation for MR relaxometry maps.
 #        Magn Reson Med 93(2):490-506 (2025).
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this Application did, stated the way you would ask an agent for it:
 #

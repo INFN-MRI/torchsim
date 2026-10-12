@@ -460,8 +460,8 @@ plt.show()
 # that sum to one are written with one as the unknown and the other as ``1 - f``
 # inside the model, so the constraint holds at every iterate.
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this page did, stated the way you would ask an agent for it:
 #

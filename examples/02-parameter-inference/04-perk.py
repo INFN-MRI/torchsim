@@ -532,8 +532,8 @@ plt.show()
 # the prior where the data are weak, and is wrong in the same way in every
 # realization, so repeating the scan would not reveal that part.
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this page did, stated the way you would ask an agent for it:
 #

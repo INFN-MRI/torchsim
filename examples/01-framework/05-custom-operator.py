@@ -37,8 +37,8 @@ warnings.filterwarnings("ignore")
 # sphinx_gallery_end_ignore
 
 # %%
-# A preparation
-# -------------
+# Preparation
+# -----------
 #
 # A T2 preparation weights the magnetization by its transverse decay before the
 # readout. It tips the magnetization into the transverse plane, lets it decay
@@ -69,8 +69,8 @@ def t2_preparation(echo_time_s, *, spoil_s=2e-3):
 
 
 # %%
-# Play it in a sequence
-# ---------------------
+# Preparation in a sequence
+# -------------------------
 #
 # An operator goes into a layout like any other. The preparation leaves the
 # weighted magnetization along z, and the fast spin echo that follows excites
@@ -100,8 +100,8 @@ class T2PreparedFSE(Simulator):
 
 
 # %%
-# Check the weighting
-# -------------------
+# Contrast weighting
+# ------------------
 #
 # Sweep TE_prep and compare the first echo with exp(-TE_prep / T2), which is
 # what a T2 preparation is for. Times are in milliseconds:
@@ -145,8 +145,8 @@ plt.show()
 # follows, and more of it does so after the longer preparations, which leave
 # less behind.
 #
-# A readout
-# ---------
+# Readout
+# -------
 #
 # The shipped readouts differ in what they play around the sample. In an
 # unbalanced steady-state train each repetition winds every configuration order
@@ -264,8 +264,8 @@ print(f"at T2 = 40 ms the ratio moves {spread:.2f} over a 3.3x range in T1")
 # per event through the packed layout and every kernel, which is a change to
 # blochsim itself.
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this lesson built, stated the way you would ask an agent for it:
 #

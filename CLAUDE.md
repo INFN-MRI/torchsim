@@ -177,9 +177,9 @@ here. These are specific to this gallery.
 **`examples/01-framework/01-first-simulation.py` and `03-custom-signal-model.py`
 are the register.** Match them: a numbered title for a Course lesson, an
 opening that tells you what you will do, a **Learning objectives** list and a
-Previous/Next line; then sections named by what you do in them, each giving
+Previous/Next line; then sections each named by the concept it covers, giving
 the physics or the mental model first and the code after it, written to
-"you". The last section, *As a spec*, is a `text` code block stating what the
+"you". The last section, *Specification*, is a `text` code block stating what the
 page did the way you would ask an agent for it. An Application opens with its
 objective and a *Prerequisites* line naming the lessons it assumes, and has no
 Previous/Next.

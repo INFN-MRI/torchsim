@@ -43,8 +43,8 @@ DATA = Path("data") if Path("data").is_dir() else Path(__file__).parent / "data"
 # sphinx_gallery_end_ignore
 
 # %%
-# Your sequence
-# -------------
+# Sequence
+# --------
 #
 # The test sequence is an inversion-prepared fingerprinting train: 400
 # repetitions at TR = 10 ms, with a flip angle that rises from 5 to 55 degrees
@@ -463,8 +463,8 @@ print(f"5 cm/s departs by {flow_change:.1f}x the unflowed signal")
 # from them. Flow carries winding out of the voxel and brings unsaturated
 # magnetization in, so it reshapes the train.
 #
-# Cost of an unused property
-# --------------------------
+# Unused properties
+# -----------------
 #
 # None. A property held at the value where it has no effect (unit transmit, no
 # off resonance, an empty pool) is treated as absent, and its term is left out
@@ -488,8 +488,8 @@ print(
 # not, such as a third free pool or a gradient moment that varies along the
 # train, is a change to blochsim itself and not a name in a call.
 #
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this lesson did, stated the way you would ask an agent for it:
 #

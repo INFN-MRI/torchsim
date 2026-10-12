@@ -38,8 +38,8 @@ TISSUES = ("white matter", "grey matter", "CSF")
 # sphinx_gallery_end_ignore
 
 # %%
-# Your sequence
-# -------------
+# Sequence
+# --------
 #
 # The sequence is a CPMG echo train: a 90-degree excitation followed by 48
 # refocusing pulses, echo spacing (ESP) 5 ms, repetition time 3 s.
@@ -56,8 +56,8 @@ fse = FSESimulator(ESP=5.0, TR=3000.0)
 flip = torch.full((48,), 180.0)
 
 # %%
-# Your tissue
-# -----------
+# Tissue
+# ------
 #
 # Tissue properties are passed at call time; here T1 and T2, in milliseconds.
 # Each simulator accepts scalar and tensor-valued inputs. Tensor-valued inputs
@@ -82,8 +82,8 @@ plt.show()
 # The output has one row per tissue and one column per echo. With ideal
 # 180-degree refocusing each train decays as exp(-TE/T2).
 #
-# Changing the sequence
-# ---------------------
+# Sequence parameters
+# -------------------
 #
 # Clinical FSE protocols often use refocusing angles below 180 degrees to
 # reduce SAR, which scales with the square of the flip angle. At 60 degrees more
@@ -112,8 +112,8 @@ plt.show()
 # exp(-TE/T2). blochsim models all coherence pathways with the extended phase
 # graph (EPG) formalism; see the :doc:`EPG explanation </explanations/epg>`.
 #
-# Derivative with respect to the tissue
-# -------------------------------------
+# Tissue derivatives
+# ------------------
 #
 # Model-based T2 fitting, as well as Cramér-Rao bound analysis, needs the
 # derivative of the signal with respect to T2. ``jacobian`` returns the signal
@@ -146,8 +146,8 @@ plt.show()
 # sensitivity to T2 peaks at TE close to T2. Passing several names,
 # ``jacobian(("T1", "T2"), ...)``, returns one derivative per property.
 #
-# How exact, and where it runs
-# ----------------------------
+# Accuracy and devices
+# --------------------
 #
 # Two settings control accuracy and cost. Both can be passed to the
 # constructor or to the call.
@@ -187,8 +187,8 @@ signal, dT2 = blochsim.fse_sim(
 )
 
 # %%
-# As a spec
-# ---------
+# Specification
+# -------------
 #
 # What this lesson did, stated the way you would ask an agent for it:
 #
