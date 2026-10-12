@@ -650,10 +650,10 @@ GPU memory allocated while mapping the slice, blank on a machine without a
 GPU. Errors are medians over the brain voxels, relative to the truth.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                       train     map     model      peak      T1      T2
 ------------------------------------------------------------------------------
-match, rank 4                 1.0s   1.34s   1.4 MiB        --    0.6%    1.6%
-PERK, 500 features            1.2s   0.03s   0.0 MiB        --    1.2%    6.5%
-PERK, 1000 features           1.5s   0.04s   0.1 MiB        --    1.4%    4.7%
-PERK, 4000 features           8.6s   0.10s   0.4 MiB        --    1.1%    7.3%
+match, rank 4                 1.0s   1.36s   1.4 MiB        --    0.6%    1.6%
+PERK, 500 features            1.2s   0.03s   0.0 MiB        --    1.4%    9.5%
+PERK, 1000 features           1.5s   0.04s   0.1 MiB        --    0.6%    5.2%
+PERK, 4000 features           8.7s   0.10s   0.4 MiB        --    0.7%    5.0%
 </pre></div>
 </div>
 </section>
@@ -685,8 +685,8 @@ to T1 and T2, scaled by the proton density:</p>
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">bound</span></a> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;</span><span class="s2">T1</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">floor</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">floor</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="p">)</span><span class="p">}</span><span class="w">
 </span></pre></div></div>
 <img src="../../../_images/sphx_glr_04-perk_006.png" srcset="../../../_images/sphx_glr_04-perk_006.png" alt="PERK, CRLB, PERK, relative" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>            PERK      CRLB     PERK   (median over the brain)
-T1        7.7 ms    2.4 ms     1.1%
-T2       13.4 ms    0.5 ms    17.0%
+T1       10.0 ms    2.4 ms     1.3%
+T2       11.7 ms    0.5 ms    15.7%
 </pre></div>
 </div>
 <p>The two absolute columns share a scale in each row; the third column is the
@@ -714,7 +714,7 @@ uncertainty and compare it with the Cramér-Rao bound computed from the
 simulator Jacobian.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 25.957 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 26.705 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-04-perk-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/02-parameter-inference/04-perk.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />
