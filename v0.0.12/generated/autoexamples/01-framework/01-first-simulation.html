@@ -1,0 +1,771 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>1. Your first simulation &#8212; BlochSim Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=4418a689" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery.css?v=c83e6b79" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
+
+    <script src="../../../_static/documentation_options.js?v=90dfe745"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../_static/sg-tags.js?v=d80f6fa4"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'generated/autoexamples/01-framework/01-first-simulation';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.20.0';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://pulserver.github.io/blochsim/versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'v0.0.12';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner =
+            true;
+        </script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <link rel="canonical" href="https://pulserver.github.io/blochsim/v0.0.12/generated/autoexamples/01-framework/01-first-simulation.html" />
+    <link rel="icon" href="../../../_static/blochsim-mark.svg"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="2. Advanced physics" href="02-advanced-physics.html" />
+    <link rel="prev" title="Course" href="../../../examples/course.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="v0.0.12" />
+  
+    
+    <script src="../../../_static/searchtools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <script src="../../../searchindex.js"></script>
+  
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/blochsim-mark.svg" class="logo__image only-light" alt="blochsim"/>
+    <img src="../../../_static/blochsim-mark-dark.svg" class="logo__image only-dark pst-js-only" alt="blochsim"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+<div class="version-switcher__container dropdown pst-js-only">
+  <button id="pst-version-switcher-button-2"
+    type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-controls="pst-version-switcher-list-2"
+    aria-label="Version switcher list"
+  >
+    Choose version  <!-- this text may get changed later by javascript -->
+    <span class="caret"></span>
+  </button>
+  <div id="pst-version-switcher-list-2"
+    class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox" aria-labelledby="pst-version-switcher-button-2">
+    <!-- dropdown will be populated by javascript on page load -->
+  </div>
+</div></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    Homepage
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer-guide/index.html">Developer guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/terminology.html">Terminology</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../developer-guide/internals/index.html">Internals</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../../../examples/index.html">Examples</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="../../../examples/course.html">Course</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="05-custom-operator.html">5. Custom operator</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../examples/applications.html">Applications</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/01-dictionary-matching.html">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../03-sequence-optimization/01-echo-train-design.html">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../03-sequence-optimization/02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../03-sequence-optimization/03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../api/index.html">API reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/model.html">Signal models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/license.html">License</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/related.html">Related Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/contributors.html">Contributors</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/edit/main/generated/autoexamples/01-framework/01-first-simulation.rst" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/issues/new?title=Issue%20on%20page%20%2Fgenerated/autoexamples/01-framework/01-first-simulation.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../../_sources/generated/autoexamples/01-framework/01-first-simulation.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>1. Your first simulation</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence">Sequence</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tissue">Tissue</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence-parameters">Sequence parameters</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tissue-derivatives">Tissue derivatives</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#accuracy-and-devices">Accuracy and devices</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <div class="sphx-glr-download-link-note admonition note">
+<p class="admonition-title">Note</p>
+<p><a class="reference internal" href="#sphx-glr-download-generated-autoexamples-01-framework-01-first-simulation-py"><span class="std std-ref">Go to the end</span></a>
+to download the full example code or to run this example in your browser via Binder.</p>
+</div>
+<section class="sphx-glr-example-title" id="your-first-simulation">
+<span id="sphx-glr-generated-autoexamples-01-framework-01-first-simulation-py"></span><h1>1. Your first simulation<a class="headerlink" href="#your-first-simulation" title="Link to this heading">#</a></h1>
+<p>blochsim computes the signal of an MR sequence for given tissue properties,
+together with its derivatives with respect to those properties and to the
+sequence parameters. This lesson uses the fast spin echo (FSE) simulator
+shipped with blochsim: you simulate three tissues, change the refocusing
+angle, and compute the derivative of the signal with respect to T2.</p>
+<p><strong>Learning objectives</strong></p>
+<ul class="simple">
+<li><p>Construct a shipped simulator and evaluate it for several tissues.</p></li>
+<li><p>Take the derivative of the signal with respect to a tissue property.</p></li>
+<li><p>Choose how many configuration states to keep, and where the simulation runs.</p></li>
+</ul>
+<p>Next: <a class="reference internal" href="02-advanced-physics.html"><span class="doc">2. Advanced physics</span></a>, where the same sequence meets B1, off
+resonance, magnetization transfer, diffusion and flow.</p>
+<div class="colab-button">
+            <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/v0.0.12/notebooks/generated/autoexamples/01-framework/01-first-simulation.ipynb" target="_blank">
+                <img src="https://colab.research.google.com/assets/colab-badge.svg"
+                alt="Open In Colab"/>
+            </a>
+        </div>
+        <section id="sequence">
+<h2>Sequence<a class="headerlink" href="#sequence" title="Link to this heading">#</a></h2>
+<p>The sequence is a CPMG echo train: a 90-degree excitation followed by 48
+refocusing pulses, echo spacing (ESP) 5 ms, repetition time 3 s.</p>
+<p>Each shipped sequence is a <em>simulator</em> class, constructed from its sequence
+parameters. Times are in milliseconds and angles in degrees. The refocusing
+angles are given per echo, so variable flip angle trains use the same
+interface.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
+</span><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">FSESimulator</span></a><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">FSESimulator</span></a><span class="p">(</span><span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">3000.0</span><span class="p">)</span><span class="w">
+</span><span class="n">flip</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="p">(</span><span class="mi">48</span><span class="p">,</span><span class="p">)</span><span class="p">,</span> <span class="mf">180.0</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+</section>
+<section id="tissue">
+<h2>Tissue<a class="headerlink" href="#tissue" title="Link to this heading">#</a></h2>
+<p>Tissue properties are passed at call time; here T1 and T2, in milliseconds.
+Each simulator accepts scalar and tensor-valued inputs. Tensor-valued inputs
+are simulated in parallel, over multiple CPU threads or on a GPU if
+available. The three entries below approximate white matter, grey matter and
+cerebrospinal fluid, with a common T1 of 1 s:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">T2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="mf">80.0</span><span class="p">,</span> <span class="mf">110.0</span><span class="p">,</span> <span class="mf">2000.0</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="n">signal</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<img src="../../../_images/sphx_glr_01-first-simulation_001.png" srcset="../../../_images/sphx_glr_01-first-simulation_001.png" alt="01 first simulation" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>torch.Size([3, 48])
+</pre></div>
+</div>
+<p>The output has one row per tissue and one column per echo. With ideal
+180-degree refocusing each train decays as exp(-TE/T2).</p>
+</section>
+<section id="sequence-parameters">
+<h2>Sequence parameters<a class="headerlink" href="#sequence-parameters" title="Link to this heading">#</a></h2>
+<p>Clinical FSE protocols often use refocusing angles below 180 degrees to
+reduce SAR, which scales with the square of the flip angle. At 60 degrees more
+coherence pathways contribute, so more configuration states are retained
+(<code class="docutils literal notranslate"><span class="pre">states</span></code>, discussed below):</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">signal60</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="p">(</span><span class="mi">48</span><span class="p">,</span><span class="p">)</span><span class="p">,</span> <span class="mf">60.0</span><span class="p">)</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">states</span></a><span class="o">=</span><span class="mi">48</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<img src="../../../_images/sphx_glr_01-first-simulation_002.png" srcset="../../../_images/sphx_glr_01-first-simulation_002.png" alt="180° refocusing, 60° refocusing" class = "sphx-glr-single-img"/><p>With 60-degree refocusing, part of the magnetization is stored along z and
+returns as stimulated echoes. The first echoes oscillate before the train
+approaches a pseudo steady state, and the late echoes decay more slowly than
+exp(-TE/T2). blochsim models all coherence pathways with the extended phase
+graph (EPG) formalism; see the <a class="reference internal" href="../../../explanations/epg.html"><span class="doc">EPG explanation</span></a>.</p>
+</section>
+<section id="tissue-derivatives">
+<h2>Tissue derivatives<a class="headerlink" href="#tissue-derivatives" title="Link to this heading">#</a></h2>
+<p>Model-based T2 fitting, as well as Cramér-Rao bound analysis, needs the
+derivative of the signal with respect to T2. <code class="docutils literal notranslate"><span class="pre">jacobian</span></code> returns the signal
+and its derivatives with respect to the named properties:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">signal</span><span class="p">,</span> <span class="n">dT2</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">jacobian</span><span class="p">(</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<p>The derivative is computed in forward mode alongside the signal, not by
+finite differences. As a check, compare it with a forward difference over a
+1 ms step:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">step</span></a> <span class="o">=</span> <span class="mf">1.0</span><span class="w">
+</span><span class="n">finite</span> <span class="o">=</span> <span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span> <span class="o">+</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">step</span></a><span class="p">)</span> <span class="o">-</span> <span class="n">signal</span><span class="p">)</span> <span class="o">/</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">step</span></a><span class="w">
+</span><span class="w">
+</span><span class="n">error</span> <span class="o">=</span> <span class="p">(</span><span class="n">dT2</span> <span class="o">-</span> <span class="n">finite</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span> <span class="o">/</span> <span class="n">dT2</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="s2">largest difference: </span><span class="si">{</span><span class="n">error</span><span class="si">:</span><span class="s2">.1e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<img src="../../../_images/sphx_glr_01-first-simulation_003.png" srcset="../../../_images/sphx_glr_01-first-simulation_003.png" alt="01 first simulation" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>largest difference: 7.7e-03
+</pre></div>
+</div>
+<p>The two agree to within the truncation error of the finite difference. The
+sensitivity to T2 peaks at TE close to T2. Passing several names,
+<code class="docutils literal notranslate"><span class="pre">jacobian((&quot;T1&quot;,</span> <span class="pre">&quot;T2&quot;),</span> <span class="pre">...)</span></code>, returns one derivative per property.</p>
+</section>
+<section id="accuracy-and-devices">
+<h2>Accuracy and devices<a class="headerlink" href="#accuracy-and-devices" title="Link to this heading">#</a></h2>
+<p>Two settings control accuracy and cost. Both can be passed to the
+constructor or to the call.</p>
+<p><code class="docutils literal notranslate"><span class="pre">states</span></code> is the number of EPG configuration states retained. A train of N
+refocusing pulses populates at most N states, so 48 is exact here. The FSE
+simulator defaults to 10, which is sufficient for near-180-degree trains.
+Truncation is a systematic error, so check it against the exact number when
+the refocusing angle is low:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">flip60</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="p">(</span><span class="mi">48</span><span class="p">,</span><span class="p">)</span><span class="p">,</span> <span class="mf">60.0</span><span class="p">)</span><span class="w">
+</span><span class="n">reference</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip60</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">states</span></a><span class="o">=</span><span class="mi">48</span><span class="p">)</span><span class="w">
+</span><span class="k">for</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">states</span></a> <span class="ow">in</span> <span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="n">approximate</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip60</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">states</span></a><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">states</span></a><span class="p">)</span><span class="w">
+</span>    <span class="n">error</span> <span class="o">=</span> <span class="p">(</span><span class="n">approximate</span> <span class="o">-</span> <span class="n">reference</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span> <span class="o">/</span> <span class="n">reference</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">states</span></a><span class="si">:</span><span class="s2">2d</span><span class="si">}</span><span class="s2"> states: </span><span class="si">{</span><span class="n">error</span><span class="si">:</span><span class="s2">.0%</span><span class="si">}</span><span class="s2"> off</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>10 states: 8% off
+24 states: 6% off
+32 states: 6% off
+</pre></div>
+</div>
+<p>The 60-degree train requires the full 48 states, which the previous figure
+used.</p>
+<p><code class="docutils literal notranslate"><span class="pre">execution=</span></code> selects the device. <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> runs small problems on the CPU
+and large ones on a GPU when available, split into chunks when they exceed
+device memory; a named device overrides this. Without it, the simulation
+runs where its tensors are:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">on_cpu</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <span class="n">execution</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">cpu</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<p>The first call resolves the sequence structure; later calls only rebind
+numerical values. Construct a simulator once and reuse it inside loops.</p>
+<p>Each shipped sequence also has a functional form, convenient for one-off
+calls:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.fse_sim.html#blochsim.fse_sim" title="blochsim.fse_sim"><span class="n">fse_sim</span></a><span class="w">
+</span><span class="w">
+</span><span class="n">signal</span><span class="p">,</span> <span class="n">dT2</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.fse_sim.html#blochsim.fse_sim" title="blochsim.fse_sim"><span class="n">fse_sim</span></a><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">3000.0</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <span class="n">diff</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+</section>
+<section id="specification">
+<h2>Specification<a class="headerlink" href="#specification" title="Link to this heading">#</a></h2>
+<p>What this lesson did, stated the way you would ask an agent for it:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim, simulate a fast spin echo of 48 echoes, 5 ms apart, TR 3 s,
+in white matter, grey matter and CSF (T1 1 s; T2 80, 110 and 2000 ms).
+Compare 180 and 60 degree refocusing trains. Return the derivative of the
+signal with respect to T2, checked against a finite difference, and check
+that the number of configuration states kept is enough for the 60 degree
+train.
+</pre></div>
+</div>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.947 seconds)</p>
+<div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-01-framework-01-first-simulation-py">
+<div class="binder-badge docutils container">
+<a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/v0.0.12/notebooks/generated/autoexamples/01-framework/01-first-simulation.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo.svg" style="width: 150px;" />
+</a>
+</div>
+<div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
+<p><a class="reference download internal" download="" href="../../../_downloads/89ba200c119ee41109778bca2f26db6d/01-first-simulation.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">01-first-simulation.ipynb</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-python docutils container">
+<p><a class="reference download internal" download="" href="../../../_downloads/58819f95663cc903e09e63915b8892dd/01-first-simulation.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">01-first-simulation.py</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-zip docutils container">
+<p><a class="reference download internal" download="" href="../../../_downloads/eb36d9d9e3bc539680fe6d138809e38e/01-first-simulation.zip"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">zipped:</span> <span class="pre">01-first-simulation.zip</span></code></a></p>
+</div>
+</div>
+<p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="../../../examples/course.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Course</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="02-advanced-physics.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">2. Advanced physics</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence">Sequence</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tissue">Tissue</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence-parameters">Sequence parameters</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tissue-derivatives">Tissue derivatives</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#accuracy-and-devices">Accuracy and devices</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BlochSim Contributors
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024, BlochSim Contributors.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
