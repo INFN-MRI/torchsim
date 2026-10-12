@@ -51,6 +51,9 @@ dependencies = [
 # torch.func (jacrev/jacfwd) and torch.linalg are used by the optimization and
 # estimator packages.
 "torch>=2.1",
+# The format's reference implementation parses a Pulseq .seq file and
+# computes its trajectory.
+"pypulseq>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -64,15 +67,8 @@ cu12 = [
 cu13 = [
 "blochsim-cuda13; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
-# What it takes to read a Pulseq .seq file. The format's reference
-# implementation parses it and computes its trajectory; nothing else in the
-# package imports it.
-pulseq = [
-"pypulseq>=1.4",
-]
 # What it takes to run the suite. Nothing here is imported by the package.
 test = [
-"blochsim[pulseq]",
 "pytest>=7.0",
 "pytest-cov",
 "pytest-sugar",
@@ -83,9 +79,6 @@ test = [
 # import while they execute -- those are the ``examples`` extra, so a
 # documentation build without the gallery does not drag them in.
 doc = [
-# The explanation figures and Course lesson 4 read the shipped
-# ``.seq`` file, which pypulseq parses.
-"blochsim[pulseq]",
 "sphinx>=7.0",
 "sphinx_book_theme>=1.1",
 "sphinx-design>=0.6",
@@ -102,7 +95,6 @@ doc = [
 # phantoms, the segmentation, the coils, the Fourier encoding and the linear
 # solvers all come from elsewhere, which is the point several examples make.
 examples = [
-"blochsim[pulseq]",
 "brainweb-dl>=0.3",
 "deepinv>=0.2",
 "deepmriprep>=0.3",

@@ -4,8 +4,6 @@ The file is parsed and its trajectory computed by :mod:`pypulseq`, which is the
 reference implementation of the format. What is added here is the reading a
 simulation needs and Pulseq does not write down: which pulse shapes the RF rows
 share, and which ADC sample each readout passes through k = 0 in.
-
-``pypulseq`` is an optional dependency -- ``pip install blochsim[pulseq]``.
 """
 
 from __future__ import annotations
@@ -45,13 +43,8 @@ def _read(source: Any) -> Any:
     """Return ``source`` if it is a sequence already, or the file it names parsed."""
     if hasattr(source, "block_events"):
         return source
-    try:
-        import pypulseq
-    except ImportError as missing:  # pragma: no cover - exercised by the message
-        raise ImportError(
-            "reading a Pulseq file needs pypulseq, which BlochSim does not "
-            "require otherwise: pip install blochsim[pulseq]"
-        ) from missing
+    import pypulseq
+
     sequence = pypulseq.Sequence()
     sequence.read(str(source))
     return sequence
@@ -354,8 +347,6 @@ def read_pulseq_description(
 
     Raises
     ------
-    ImportError
-        If pypulseq is not installed.
     ValueError
         If the file declares no ``TRSize``, if ``tr_index`` is out of range, or
         if the repetitions differ and none was named.
