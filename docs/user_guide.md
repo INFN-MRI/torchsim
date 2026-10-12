@@ -126,9 +126,8 @@ pip install "blochsim[cu13]"    # plus the GPU kernels, for a CUDA 13 PyTorch
 
 The GPU kernels are compiled ahead of time and need a driver, not the CUDA
 toolkit. Install the extra that matches PyTorch's CUDA major version; BlochSim
-refuses a mismatched one and names the extra to install. Other extras:
-`pulseq` reads `.seq` files, and `examples` brings the packages the gallery
-imports.
+refuses a mismatched one and names the extra to install. The `examples` extra
+brings the packages the gallery imports.
 
 Check the installation by simulating a fast spin echo for three tissues:
 

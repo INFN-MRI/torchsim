@@ -68,8 +68,6 @@ in-memory sequence, {func}`read_mrd_description` reads those an MRD stream
 carries ahead of its first acquisition, and
 {meth}`~blochsim.model.Simulator.from_description` simulates any of them.
 
-Reading Pulseq needs pypulseq: `pip install blochsim[pulseq]`.
-
 ```{eval-rst}
 .. autosummary::
    :toctree: ../generated

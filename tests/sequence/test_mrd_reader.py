@@ -16,6 +16,7 @@ import math
 import struct
 
 import numpy as np
+import pypulseq as pp
 import pytest
 import torch
 
@@ -23,8 +24,6 @@ from blochsim import Excitation, SPGRReadout
 from blochsim.model import Simulator
 from blochsim.sequence import EventType, RfUse, read_mrd_description
 from blochsim.simulators import SPGRSimulator
-
-pp = pytest.importorskip("pypulseq", reason="building the sequence needs pypulseq")
 
 FLIP_DEG = 30.0
 TR_S = 20e-3

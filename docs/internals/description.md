@@ -48,8 +48,7 @@ gradient per axis and one ADC window. One block becomes one event: a block with
 a pulse is an RF event, one with an ADC and no pulse an ADC event, any other a
 WAIT. Gradients are not events.
 
-The file is parsed and its trajectory computed by pypulseq
-(`pip install blochsim[pulseq]`); a sequence in memory with pypulseq's reading
+The file is parsed and its trajectory computed by pypulseq; a sequence in memory with pypulseq's reading
 interface, pypulseq's or pypulseqpp's, is read the same way. The gradients are
 read for two things only: the k-space trajectory that places each ADC event,
 and the slice-select amplitude under each pulse's isocentre, the magnitude of

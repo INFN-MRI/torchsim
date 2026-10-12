@@ -686,8 +686,6 @@ class SequenceDescription:
     def from_pulseq(cls, source: Any, **settings: Any) -> SequenceDescription:
         """Read one repetition of a Pulseq sequence.
 
-        Requires pypulseq (``pip install blochsim[pulseq]``).
-
         Parameters
         ----------
         source : str, Path or sequence
@@ -704,8 +702,6 @@ class SequenceDescription:
 
         Raises
         ------
-        ImportError
-            If pypulseq is not installed.
         ValueError
             If the file declares no ``TRSize``, ``tr_index`` is out of range,
             or the repetitions differ and none was named.
