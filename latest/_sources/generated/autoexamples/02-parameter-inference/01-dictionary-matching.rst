@@ -37,7 +37,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
    !pip install blochsim matplotlib brainweb-dl cmap
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 20-134
+.. GENERATED FROM PYTHON SOURCE LINES 20-132
 
 .. code-block:: Python
 
@@ -56,7 +56,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 135-143
+.. GENERATED FROM PYTHON SOURCE LINES 133-141
 
 Phantom
 -------
@@ -67,7 +67,7 @@ holds a fraction of each tissue and its relaxation times are the
 fraction-weighted average. About a third of the voxels are mixtures, so the
 ground truth is a continuum of values rather than four.
 
-.. GENERATED FROM PYTHON SOURCE LINES 143-183
+.. GENERATED FROM PYTHON SOURCE LINES 141-181
 
 
 
@@ -87,172 +87,148 @@ ground truth is a continuum of values rather than four.
 
     Downloading phantom_1.0mm_normal_bck: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 7.80kB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 9.49kB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 40.1kB [00:00, 170kB/s] 
+    Downloading phantom_1.0mm_normal_bck: 209kB [00:00, 1.22MB/s] 
 
-    Downloading phantom_1.0mm_normal_bck: 160kB [00:00, 495kB/s] 
+    Downloading phantom_1.0mm_normal_bck: 497kB [00:00, 1.81MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 289kB [00:00, 670kB/s]
+    Downloading phantom_1.0mm_normal_bck: 769kB [00:00, 2.03MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 423kB [00:00, 807kB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.02MB [00:00, 2.17MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 576kB [00:00, 974kB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.30MB [00:00, 2.33MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 744kB [00:00, 1.08MB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.58MB [00:00, 2.36MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 929kB [00:01, 1.19MB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.80MB [00:00, 2.33MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 1.11MB [00:01, 1.31MB/s]
-
-    Downloading phantom_1.0mm_normal_bck: 1.33MB [00:01, 1.44MB/s]
-
-    Downloading phantom_1.0mm_normal_bck: 1.58MB [00:01, 1.59MB/s]
-
-    Downloading phantom_1.0mm_normal_bck: 1.84MB [00:01, 1.74MB/s]
-
-    Downloading phantom_1.0mm_normal_bck: 2.14MB [00:01, 1.92MB/s]
+    Downloading phantom_1.0mm_normal_bck: 2.03MB [00:01, 2.25MB/s]
 
                                                                   
-    Downloading tissues:  10%|█         | 1/10 [00:02<00:23,  2.65s/it]
+    Downloading tissues:  10%|█         | 1/10 [00:01<00:14,  1.61s/it]
 
     Downloading phantom_1.0mm_normal_csf: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_csf: 8.81kB [00:00, 57.1kB/s]
+    Downloading phantom_1.0mm_normal_csf: 8.81kB [00:00, 82.9kB/s]
 
-    Downloading phantom_1.0mm_normal_csf: 105kB [00:00, 428kB/s]  
-
-    Downloading phantom_1.0mm_normal_csf: 297kB [00:00, 982kB/s]
-
-    Downloading phantom_1.0mm_normal_csf: 505kB [00:00, 1.35MB/s]
+    Downloading phantom_1.0mm_normal_csf: 512kB [00:00, 2.70MB/s] 
 
                                                                  
-    Downloading tissues:  20%|██        | 2/10 [00:03<00:14,  1.81s/it]
+    Downloading tissues:  20%|██        | 2/10 [00:02<00:08,  1.02s/it]
 
     Downloading phantom_1.0mm_normal_gry: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_gry: 1.00kB [00:00, 9.72kB/s]
+    Downloading phantom_1.0mm_normal_gry: 8.81kB [00:00, 80.3kB/s]
 
-    Downloading phantom_1.0mm_normal_gry: 40.8kB [00:00, 205kB/s] 
-
-    Downloading phantom_1.0mm_normal_gry: 177kB [00:00, 621kB/s] 
-
-    Downloading phantom_1.0mm_normal_gry: 433kB [00:00, 1.19MB/s]
-
-    Downloading phantom_1.0mm_normal_gry: 913kB [00:00, 2.15MB/s]
+    Downloading phantom_1.0mm_normal_gry: 601kB [00:00, 3.16MB/s] 
 
                                                                  
-    Downloading tissues:  30%|███       | 3/10 [00:05<00:10,  1.52s/it]
+    Downloading tissues:  30%|███       | 3/10 [00:02<00:05,  1.20it/s]
 
     Downloading phantom_1.0mm_normal_wht: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_wht: 1.00kB [00:00, 9.17kB/s]
+    Downloading phantom_1.0mm_normal_wht: 8.81kB [00:00, 83.8kB/s]
 
-    Downloading phantom_1.0mm_normal_wht: 40.8kB [00:00, 195kB/s] 
-
-    Downloading phantom_1.0mm_normal_wht: 177kB [00:00, 594kB/s] 
-
-    Downloading phantom_1.0mm_normal_wht: 441kB [00:00, 1.16MB/s]
+    Downloading phantom_1.0mm_normal_wht: 561kB [00:00, 3.15MB/s] 
 
                                                                  
-    Downloading tissues:  40%|████      | 4/10 [00:06<00:08,  1.35s/it]
+    Downloading tissues:  40%|████      | 4/10 [00:03<00:04,  1.41it/s]
 
     Downloading phantom_1.0mm_normal_fat: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_fat: 8.81kB [00:00, 68.1kB/s]
+    Downloading phantom_1.0mm_normal_fat: 40.8kB [00:00, 401kB/s]
 
-    Downloading phantom_1.0mm_normal_fat: 88.8kB [00:00, 429kB/s] 
-
-    Downloading phantom_1.0mm_normal_fat: 263kB [00:00, 971kB/s] 
-
-    Downloading phantom_1.0mm_normal_fat: 441kB [00:00, 1.18MB/s]
+    Downloading phantom_1.0mm_normal_fat: 497kB [00:00, 2.85MB/s]
 
                                                                  
-    Downloading tissues:  50%|█████     | 5/10 [00:07<00:06,  1.24s/it]
+    Downloading tissues:  50%|█████     | 5/10 [00:03<00:03,  1.57it/s]
 
     Downloading phantom_1.0mm_normal_m-s: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 1.00kB [00:00, 9.79kB/s]
+    Downloading phantom_1.0mm_normal_m-s: 1.00kB [00:00, 10.1kB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 40.1kB [00:00, 195kB/s] 
+    Downloading phantom_1.0mm_normal_m-s: 337kB [00:00, 2.00MB/s] 
 
-    Downloading phantom_1.0mm_normal_m-s: 207kB [00:00, 706kB/s] 
+    Downloading phantom_1.0mm_normal_m-s: 721kB [00:00, 2.69MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 569kB [00:00, 1.53MB/s]
+    Downloading phantom_1.0mm_normal_m-s: 1.05MB [00:00, 3.03MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 1.08MB [00:00, 2.45MB/s]
+    Downloading phantom_1.0mm_normal_m-s: 1.49MB [00:00, 3.60MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 1.96MB [00:00, 3.95MB/s]
+    Downloading phantom_1.0mm_normal_m-s: 1.88MB [00:00, 3.73MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 2.61MB [00:00, 4.62MB/s]
+    Downloading phantom_1.0mm_normal_m-s: 2.25MB [00:00, 3.73MB/s]
+
+    Downloading phantom_1.0mm_normal_m-s: 2.61MB [00:00, 3.73MB/s]
 
                                                                   
-    Downloading tissues:  60%|██████    | 6/10 [00:08<00:05,  1.35s/it]
+    Downloading tissues:  60%|██████    | 6/10 [00:04<00:03,  1.24it/s]
 
     Downloading phantom_1.0mm_normal_skn: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_skn: 8.81kB [00:00, 54.7kB/s]
+    Downloading phantom_1.0mm_normal_skn: 1.00kB [00:00, 10.1kB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 105kB [00:00, 418kB/s]  
+    Downloading phantom_1.0mm_normal_skn: 337kB [00:00, 1.92MB/s] 
 
-    Downloading phantom_1.0mm_normal_skn: 313kB [00:00, 924kB/s]
+    Downloading phantom_1.0mm_normal_skn: 673kB [00:00, 2.58MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 720kB [00:00, 1.76MB/s]
+    Downloading phantom_1.0mm_normal_skn: 0.99MB [00:00, 2.89MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 1.43MB [00:00, 3.14MB/s]
+    Downloading phantom_1.0mm_normal_skn: 1.36MB [00:00, 3.20MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 2.00MB [00:00, 3.77MB/s]
+    Downloading phantom_1.0mm_normal_skn: 1.72MB [00:00, 3.38MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 2.37MB [00:00, 3.67MB/s]
+    Downloading phantom_1.0mm_normal_skn: 2.13MB [00:00, 3.53MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 2.73MB [00:01, 3.47MB/s]
+    Downloading phantom_1.0mm_normal_skn: 2.50MB [00:00, 3.54MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 3.07MB [00:01, 3.04MB/s]
+    Downloading phantom_1.0mm_normal_skn: 2.84MB [00:00, 3.35MB/s]
 
                                                                   
-    Downloading tissues:  70%|███████   | 7/10 [00:10<00:04,  1.51s/it]
+    Downloading tissues:  70%|███████   | 7/10 [00:06<00:03,  1.02s/it]
 
     Downloading phantom_1.0mm_normal_skl: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_skl: 8.81kB [00:00, 57.2kB/s]
+    Downloading phantom_1.0mm_normal_skl: 40.8kB [00:00, 367kB/s]
 
-    Downloading phantom_1.0mm_normal_skl: 105kB [00:00, 428kB/s]  
+    Downloading phantom_1.0mm_normal_skl: 465kB [00:00, 2.55MB/s]
 
-    Downloading phantom_1.0mm_normal_skl: 321kB [00:00, 964kB/s]
-
-                                                                
-    Downloading tissues:  80%|████████  | 8/10 [00:11<00:02,  1.35s/it]
+                                                                 
+    Downloading tissues:  80%|████████  | 8/10 [00:06<00:01,  1.16it/s]
 
     Downloading phantom_1.0mm_normal_gli: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 8.25kB/s]
+    Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 7.20kB/s]
 
                                                                   
-    Downloading tissues:  90%|█████████ | 9/10 [00:12<00:01,  1.15s/it]
+    Downloading tissues:  90%|█████████ | 9/10 [00:07<00:00,  1.38it/s]
 
     Downloading phantom_1.0mm_normal_mit: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 8.61kB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 8.47kB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 40.1kB [00:00, 187kB/s] 
+    Downloading phantom_1.0mm_normal_mit: 257kB [00:00, 1.36MB/s] 
 
-    Downloading phantom_1.0mm_normal_mit: 183kB [00:00, 609kB/s] 
+    Downloading phantom_1.0mm_normal_mit: 529kB [00:00, 1.93MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 464kB [00:00, 1.32MB/s]
+    Downloading phantom_1.0mm_normal_mit: 849kB [00:00, 2.41MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 985kB [00:00, 2.55MB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.14MB [00:00, 2.71MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 1.35MB [00:00, 2.83MB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.47MB [00:00, 2.84MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 1.89MB [00:00, 3.61MB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.78MB [00:00, 2.97MB/s]
+
+    Downloading phantom_1.0mm_normal_mit: 2.09MB [00:00, 2.95MB/s]
 
                                                                   
-    Downloading tissues: 100%|██████████| 10/10 [00:13<00:00,  1.24s/it]
+    Downloading tissues: 100%|██████████| 10/10 [00:08<00:00,  1.17it/s]
                                                                         
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 184-191
+.. GENERATED FROM PYTHON SOURCE LINES 182-189
 
 Sequence
 --------
@@ -262,7 +238,7 @@ flip angle varies smoothly along the train, so that the signal evolutions of
 different tissues differ by physics and not by the noise of an irregular
 schedule.
 
-.. GENERATED FROM PYTHON SOURCE LINES 191-200
+.. GENERATED FROM PYTHON SOURCE LINES 189-198
 
 .. code-block:: Python
 
@@ -282,14 +258,14 @@ schedule.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 201-205
+.. GENERATED FROM PYTHON SOURCE LINES 199-203
 
 The readouts advance the configuration states and do not rewind them, so the
 signal evolution is real to float32 precision. The dictionary and the inner
 products that search it therefore need only the real part. These are the
 evolutions of white matter, grey matter and CSF:
 
-.. GENERATED FROM PYTHON SOURCE LINES 205-222
+.. GENERATED FROM PYTHON SOURCE LINES 203-220
 
 .. code-block:: Python
 
@@ -318,7 +294,7 @@ evolutions of white matter, grey matter and CSF:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 223-230
+.. GENERATED FROM PYTHON SOURCE LINES 221-228
 
 Measurement
 -----------
@@ -328,7 +304,7 @@ by its proton density, with Gaussian noise of 2% of the peak signal. The
 estimators are given the same noise level: one trained for more noise than
 the scan has trusts the data less and returns values closer to the prior.
 
-.. GENERATED FROM PYTHON SOURCE LINES 230-241
+.. GENERATED FROM PYTHON SOURCE LINES 228-239
 
 .. code-block:: Python
 
@@ -350,7 +326,7 @@ the scan has trusts the data less and returns values closer to the prior.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 242-248
+.. GENERATED FROM PYTHON SOURCE LINES 240-246
 
 Problem statement
 -----------------
@@ -359,7 +335,7 @@ The unknowns are T1 and T2. Both span more than a decade, so the parameter
 grids and the training draws are logarithmic: uniform spacing would spend most
 of the atoms on long T1, where the evolutions are nearly parallel.
 
-.. GENERATED FROM PYTHON SOURCE LINES 248-253
+.. GENERATED FROM PYTHON SOURCE LINES 246-251
 
 .. code-block:: Python
 
@@ -375,7 +351,7 @@ of the atoms on long T1, where the evolutions are nearly parallel.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 254-261
+.. GENERATED FROM PYTHON SOURCE LINES 252-259
 
 Subspace rank
 -------------
@@ -385,7 +361,7 @@ The 400 contrasts span far fewer than 400 independent directions.
 fraction of their energy that a given rank retains; one minus that fraction
 is the relative squared error of projecting onto the basis and back.
 
-.. GENERATED FROM PYTHON SOURCE LINES 261-291
+.. GENERATED FROM PYTHON SOURCE LINES 259-289
 
 .. code-block:: Python
 
@@ -416,7 +392,7 @@ is the relative squared error of projecting onto the basis and back.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 292-305
+.. GENERATED FROM PYTHON SOURCE LINES 290-303
 
 At rank 4 the energy left outside the basis is below the energy the noise
 adds, so projecting onto four directions loses less than the noise already
@@ -432,7 +408,7 @@ multiplies the size again. ``fit`` simulates the atoms and ``map`` returns one
 value per voxel for each parameter, and for M0, which follows from the scale
 between the measurement and the best-matching atom:
 
-.. GENERATED FROM PYTHON SOURCE LINES 305-324
+.. GENERATED FROM PYTHON SOURCE LINES 303-322
 
 .. code-block:: Python
 
@@ -454,7 +430,7 @@ between the measurement and the best-matching atom:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 325-331
+.. GENERATED FROM PYTHON SOURCE LINES 323-329
 
 Matching in the subspace
 ------------------------
@@ -463,7 +439,7 @@ Passing ``rank`` fits the basis, projects the dictionary onto it and stores
 it at that rank. The measurement is projected onto the same basis before the
 atoms are scored.
 
-.. GENERATED FROM PYTHON SOURCE LINES 331-345
+.. GENERATED FROM PYTHON SOURCE LINES 329-343
 
 .. code-block:: Python
 
@@ -480,7 +456,7 @@ atoms are scored.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 346-355
+.. GENERATED FROM PYTHON SOURCE LINES 344-353
 
 Clustered dictionary
 --------------------
@@ -492,7 +468,7 @@ representative per group, and groups that cannot contain the best match are
 excluded before any of their atoms is scored. The grouping is computed in the
 compressed basis, the space the measurement is already in.
 
-.. GENERATED FROM PYTHON SOURCE LINES 355-387
+.. GENERATED FROM PYTHON SOURCE LINES 353-385
 
 .. code-block:: Python
 
@@ -519,7 +495,7 @@ compressed basis, the space the measurement is already in.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 388-396
+.. GENERATED FROM PYTHON SOURCE LINES 386-394
 
 Cost and accuracy
 -----------------
@@ -530,7 +506,7 @@ allocated while mapping the slice, which decides whether a volume fits or
 has to be processed in pieces; it is blank on a machine without a GPU.
 Errors are medians over the brain voxels, relative to the truth.
 
-.. GENERATED FROM PYTHON SOURCE LINES 396-440
+.. GENERATED FROM PYTHON SOURCE LINES 394-438
 
 
 
@@ -543,14 +519,14 @@ Errors are medians over the brain voxels, relative to the truth.
 
     method                         train     map     model      peak      T1      T2      M0
     ----------------------------------------------------------------------------------------
-    match, 400 contrasts            8.8s   8.25s 122.3 MiB        --    0.6%    1.6%    0.4%
-    match, rank 4                   1.2s   1.57s   1.4 MiB        --    0.6%    1.6%    0.4%
-    match, rank 4 + groups          1.2s   0.09s   1.4 MiB        --    0.6%    1.6%    0.4%
+    match, 400 contrasts            7.9s   7.44s 122.3 MiB        --    0.6%    1.6%    0.4%
+    match, rank 4                   1.0s   1.44s   1.4 MiB        --    0.6%    1.6%    0.4%
+    match, rank 4 + groups          1.0s   0.08s   1.4 MiB        --    0.6%    1.6%    0.4%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 441-446
+.. GENERATED FROM PYTHON SOURCE LINES 439-444
 
 Maps
 ----
@@ -558,7 +534,7 @@ Maps
 The maps of each method, and below them the absolute error on a scale of its
 own for each parameter.
 
-.. GENERATED FROM PYTHON SOURCE LINES 446-496
+.. GENERATED FROM PYTHON SOURCE LINES 444-494
 
 
 
@@ -584,7 +560,7 @@ own for each parameter.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 497-511
+.. GENERATED FROM PYTHON SOURCE LINES 495-509
 
 Specification
 -------------
@@ -604,7 +580,7 @@ What this page did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (1 minutes 2.040 seconds)
+   **Total running time of the script:** (0 minutes 51.326 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_01-dictionary-matching.py:

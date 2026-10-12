@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -506,7 +504,7 @@
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
 <li><p>A design is a simulator with the tissue fixed on it, a cost you write as a function of the protocol parameters, and those parameters with their limits.</p></li>
-<li><p><a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a> minimizes the cost by gradient descent; the gradient is reverse-mode autograd through the simulator.</p></li>
+<li><p><a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a> minimizes the cost by gradient descent; the gradient is reverse-mode autograd through the simulator.</p></li>
 <li><p>A precision design minimizes a Cramér-Rao bound; an image-quality design minimizes a property of the signal itself.</p></li>
 </ul>
 </div>
@@ -520,28 +518,28 @@ train lengths, by minimizing a cost computed from what the sequence records.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a>. Tests: <em>a design lowers the cost it was given</em>; <em>several parameters are designed together</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a>. Tests: <em>a design lowers the cost it was given</em>; <em>several parameters are designed together</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Keeps each parameter strictly between its limits at every step.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a>. Test: <em>the limits hold at every step</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a>. Test: <em>the limits hold at every step</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Computes the Cramér-Rao bound from a signal Jacobian, and refuses parameters the sequence cannot separate.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>. Tests: <em>the bound is the variance a fit actually reaches</em>; <em>parameters no sequence can tell apart are refused</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>. Tests: <em>the bound is the variance a fit actually reaches</em>; <em>parameters no sequence can tell apart are refused</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Designs one train per shot in a single batched simulation.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a>, <a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a>. Test: <em>a batch of trains is designed in one simulation</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a>, <a class="reference internal" href="../generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a>. Test: <em>a batch of trains is designed in one simulation</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Reuses the event structure across the calls of a design loop, rebuilding only the values that change.</strong></p>
@@ -555,7 +553,7 @@ train lengths, by minimizing a cost computed from what the sequence records.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.minimize" title="blochsim.SequenceDesign.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a>. Test: <em>a callback can stop early</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign.minimize" title="blochsim.optim.SequenceDesign.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a>. Test: <em>a callback can stop early</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
 </div>
 </details></li>
 </ul>
@@ -566,7 +564,7 @@ train lengths, by minimizing a cost computed from what the sequence records.</p>
 <ul class="simple">
 <li><p><strong>Hardware and safety limits</strong> other than box limits on a parameter: gradient, PNS and SAR constraints enter as penalty terms you write, or are checked by sequence design tools such as pypulseqpp.</p></li>
 <li><p><strong>Global optimization.</strong> The optimizer descends from the starting values, and the result depends on them.</p></li>
-<li><p><strong>Predefined costs</strong> other than <a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>. A blur, contrast or power term is a function you write.</p></li>
+<li><p><strong>Predefined costs</strong> other than <a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>. A blur, contrast or power term is a function you write.</p></li>
 <li><p><strong>Writing the designed protocol</strong> to a Pulseq file.</p></li>
 </ul>
 </section>
@@ -587,7 +585,7 @@ values; one bSSFP angle ends at its 70° limit.</span><a class="headerlink" href
 <p>The cost takes the designed parameters by keyword and returns one number. A
 precision design asks its simulators for <code class="xref py py-meth docutils literal notranslate"><span class="pre">jacobian()</span></code>
 with respect to the estimated tissue properties and passes the result to
-<a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>, which returns the diagonal of the inverse Fisher matrix,
+<a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>, which returns the diagonal of the inverse Fisher matrix,
 counting real and imaginary channels as separate measurements. Dividing each
 bound by its parameter squared makes the terms dimensionless; taking the
 logarithm makes the gradient independent of the noise level. A block that is
@@ -598,7 +596,7 @@ gradient of either cost is computed is in <a class="reference internal" href="de
 </section>
 <section id="limits-and-parameterization">
 <h3>Limits and parameterization<a class="headerlink" href="#limits-and-parameterization" title="Link to this heading">#</a></h3>
-<p><a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a> optimizes an unconstrained variable whose scaled
+<p><a class="reference internal" href="../generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a> optimizes an unconstrained variable whose scaled
 sigmoid is the parameter, so no iterate leaves the limits; a bare tensor is
 left unconstrained. A limit the scanner cannot exceed belongs in <code class="docutils literal notranslate"><span class="pre">Bounded</span></code>; a
 preference such as RF power or scan time belongs in the cost as a penalty. The
@@ -607,7 +605,7 @@ be written as a function of three control angles and designed over those.</p>
 </section>
 <section id="design-result">
 <h3>Design result<a class="headerlink" href="#design-result" title="Link to this heading">#</a></h3>
-<p><a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.minimize" title="blochsim.SequenceDesign.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a> runs Adam (200 steps, learning rate
+<p><a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign.minimize" title="blochsim.optim.SequenceDesign.minimize"><code class="xref py py-meth docutils literal notranslate"><span class="pre">minimize()</span></code></a> runs Adam (200 steps, learning rate
 0.05 by default; <code class="docutils literal notranslate"><span class="pre">optimizer_factory</span></code> replaces it) and returns a
 <code class="docutils literal notranslate"><span class="pre">SequenceOptimization</span></code>: <code class="docutils literal notranslate"><span class="pre">parameters</span></code>, a dictionary of detached values inside
 their limits, and <code class="docutils literal notranslate"><span class="pre">loss</span></code>, the cost at every step, from which convergence is

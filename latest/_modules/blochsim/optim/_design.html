@@ -252,9 +252,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -444,7 +442,7 @@
 
 
 <div class="viewcode-block" id="Bounded">
-<a class="viewcode-back" href="../../../generated/blochsim.Bounded.html#blochsim.Bounded">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Bounded</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""An initial value and the interval a designed parameter stays in.</span>
@@ -486,7 +484,7 @@
 
 
 <div class="viewcode-block" id="SequenceDesign">
-<a class="viewcode-back" href="../../../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">SequenceDesign</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""A cost, the parameters it is minimized over, and their limits.</span>
 
@@ -536,7 +534,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">raw</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ParameterDict</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
 
 <div class="viewcode-block" id="SequenceDesign.values">
-<a class="viewcode-back" href="../../../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.values">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign.values">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">values</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">"""Return the parameters as passed to the cost, inside their limits."""</span>
         <span class="k">return</span> <span class="p">{</span>
@@ -546,7 +544,7 @@
 
 
 <div class="viewcode-block" id="SequenceDesign.forward">
-<a class="viewcode-back" href="../../../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.forward">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign.forward">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Evaluate the cost at the current parameters.</span>
 
@@ -567,7 +565,7 @@
 
 
 <div class="viewcode-block" id="SequenceDesign.minimize">
-<a class="viewcode-back" href="../../../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.minimize">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign.minimize">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">minimize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="o">*</span><span class="p">,</span>
@@ -633,7 +631,7 @@
 
 
 <div class="viewcode-block" id="crlb">
-<a class="viewcode-back" href="../../../generated/blochsim.crlb.html#blochsim.crlb">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.optim.crlb.html#blochsim.optim.crlb">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">crlb</span><span class="p">(</span>
     <span class="n">jacobian</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="o">*</span><span class="p">,</span>

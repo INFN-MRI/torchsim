@@ -4,7 +4,7 @@ The terms and conventions the code and these pages use.
 
 ## Signal model
 
-A **signal model** is a {class}`~blochsim.model.Simulator` subclass: a handler
+A **signal model** is a {class}`~blochsim.Simulator` subclass: a handler
 per kind of event, and a layout of one repetition
 ({doc}`../explanations/signal-model`). It is the only thing a sequence has to
 supply; differentiation, device placement, parameter estimation, model-based

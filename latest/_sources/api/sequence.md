@@ -8,8 +8,8 @@ Device-agnostic description of an acquisition: a list of events with the
 timing and tissue interaction each carries, shared by the interpreter, the
 estimators and the sequence optimizer.
 
-Simulators are written on {doc}`model`, run on {doc}`execution`, and the
-temporal basis a run spans is on {doc}`recon`. Concepts are in
+Simulators are written on {doc}`model`, which also holds the temporal basis a
+run spans. Concepts are in
 {doc}`../explanations/description`.
 
 ## Operators
@@ -58,7 +58,7 @@ The event stream a layout composes to, or a scanner sequence is read into.
 {meth}`SequenceDescription.from_pulseq` reads a Pulseq `.seq` file or an
 in-memory sequence, {func}`read_mrd_description` reads those an MRD stream
 carries ahead of its first acquisition, and
-{meth}`~blochsim.model.Simulator.from_description` simulates any of them.
+{meth}`~blochsim.Simulator.from_description` simulates any of them.
 
 | Object | Description |
 | --- | --- |

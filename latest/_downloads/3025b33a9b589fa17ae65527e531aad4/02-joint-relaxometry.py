@@ -21,7 +21,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install blochsim matplotlib brainweb-dl cmap
+#    !pip install blochsim bartorch matplotlib brainweb-dl cmap
 #    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
 # sphinx_gallery_start_ignore
@@ -86,7 +86,7 @@ def canvas(rows, columns, shape, *, bars=1, extra=0.6):
 #
 # A design has three pieces. A simulator with the tissue fixed on it, so that
 # only the parameters under design are left to give. A cost. And the bounded
-# parameters that :class:`~blochsim.SequenceDesign` adjusts.
+# parameters that :class:`~blochsim.optim.SequenceDesign` adjusts.
 #
 # Here the simulators are an SPGR and a bSSFP sequence, both in closed form.
 # You construct and call them the same way as a sequence that plays events. The
@@ -118,7 +118,7 @@ ssfp = bSSFPSimulator(TE=2.5, TR=5.0, T1=T1_MS, T2=T2_MS, M0=1.0, B0=0.0)
 # closed form depends on T2* and not on T2, so its T2 row is exactly zero. Each
 # block is blind to something, and the Fisher matrix adds them up. ``rows``
 # stacks the derivatives of one block with a zero row for each parameter it is
-# blind to, and :func:`~blochsim.crlb` turns the stacked derivatives into a
+# blind to, and :func:`~blochsim.optim.crlb` turns the stacked derivatives into a
 # bound on each parameter:
 JOINT = ("T1", "T2", "M0", "B0")
 
@@ -135,7 +135,7 @@ def bounds(spgr_flip, ssfp_flip):
     together = torch.cat(
         (rows(spgr, flip=spgr_flip), rows(ssfp, flip=ssfp_flip)), dim=-1
     )
-    return blochsim.crlb(together, noise_variance=NOISE**2)
+    return blochsim.optim.crlb(together, noise_variance=NOISE**2)
 
 
 # %%
@@ -157,7 +157,7 @@ def precision(spgr_flip, ssfp_flip):
 # ------
 #
 # The protocol has four scans of each kind, initialized with a spread of angles.
-# :class:`~blochsim.Bounded` constrains each angle to the range the scanner
+# :class:`~blochsim.optim.Bounded` constrains each angle to the range the scanner
 # plays:
 spgr_start = torch.tensor([2.0, 4.0, 8.0, 16.0])
 ssfp_start = torch.tensor([10.0, 20.0, 40.0, 60.0])
@@ -319,11 +319,13 @@ plt.show()
 # ---------
 #
 # The two blocks are one experiment, and you fit them as one. A
-# :class:`~blochsim.model.Simulator` plays each block and concatenates what they
-# record. The fit is the same for both protocols: the same nonlinear least
-# squares over the same four unknowns, from the same starting values:
-from blochsim.estimators import NonlinearLeastSquares
-from blochsim.model import Simulator
+# :class:`~blochsim.Simulator` plays each block and concatenates what they
+# record. The fit is the same for both protocols: bartorch's per-voxel
+# Levenberg-Marquardt, :func:`~bartorch.apps.mobafit`, over the same four
+# unknowns, from the same starting values:
+from bartorch import apps, nlop
+
+from blochsim import ModelOperator, Simulator
 
 
 class JointRelaxometry(Simulator):
@@ -366,13 +368,19 @@ clean = joint.simulate(B0=0.0, **truth)
 noise = torch.randn((2, *clean.shape), generator=generator, dtype=torch.float32)
 measured = clean + NOISE * torch.complex(noise[0], noise[1])
 
-problem = NonlinearLeastSquares(
-    joint,
-    bounds=UNKNOWN,
-    initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
-).fit(UNKNOWN, noise_std=NOISE, seed=0)
+START = {"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0}
 
-maps = problem(measured)  # {"T1": ..., "T2": ..., "M0": ..., "B0": ...}
+
+def fitted(block, images):
+    """Fit the four unknowns of every voxel, images given voxel by contrast."""
+    model = nlop.ModelOperator(
+        ModelOperator(block, *UNKNOWN, bounds=UNKNOWN, amplitude=False),
+        (images.shape[0],),
+    )
+    return apps.mobafit(images.mT.contiguous(), model, **START)
+
+
+maps = fitted(joint, measured)  # {"T1": ..., "T2": ..., "M0": ..., "B0": ...}
 
 
 # sphinx_gallery_start_ignore
@@ -383,13 +391,8 @@ def mapped(spgr_flip, ssfp_flip):
     draw = torch.randn((2, *exact.shape), generator=generator, dtype=torch.float32)
     seen = exact + NOISE * torch.complex(draw[0], draw[1])
 
-    fit = NonlinearLeastSquares(
-        block,
-        bounds=UNKNOWN,
-        initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
-    ).fit(UNKNOWN, noise_std=NOISE, seed=0)
     start = time.time()
-    found = fit(seen)
+    found = fitted(block, seen)
     return found, time.time() - start
 
 
@@ -419,7 +422,7 @@ def predicted_sigma(spgr_flip, ssfp_flip):
     together = torch.cat(
         (rows(at_voxel[0], flip=spgr_flip), rows(at_voxel[1], flip=ssfp_flip)), dim=-1
     )
-    bound = blochsim.crlb(together, noise_variance=NOISE**2)
+    bound = blochsim.optim.crlb(together, noise_variance=NOISE**2)
     return {
         "T1": bound[..., 0].sqrt() / truth["T1"],
         "T2": bound[..., 1].sqrt() / truth["T2"],
@@ -511,7 +514,7 @@ for name in ("T1", "T2"):
 #    Estimate T1, T2, M0 and B0 jointly. Minimize the log of the summed
 #    relative Cramer-Rao bounds of T1 and T2 with SequenceDesign. Play the
 #    start and designed protocols on BrainWeb slice 90 with noise of 0.5 %,
-#    fit every voxel with NonlinearLeastSquares, and compare the RMS error of
+#    fit every voxel with bartorch's apps.mobafit, and compare the RMS error of
 #    the T1 and T2 maps with the bound.
 #
 # References

@@ -29,7 +29,7 @@ points on the curve to see which method depends on it.
 With a single unknown, the dictionary atoms lie on a curve instead of filling
 a space. Interpolating between the two nearest points on the curve costs
 nothing and removes the grid spacing from the error; this is what
-:class:`~blochsim.LookupTable` does.
+:class:`~blochsim.estimators.LookupTable` does.
 
 Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 
@@ -41,7 +41,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
    !pip install blochsim matplotlib brainweb-dl cmap
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 24-131
+.. GENERATED FROM PYTHON SOURCE LINES 24-129
 
 .. code-block:: Python
 
@@ -59,7 +59,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 132-140
+.. GENERATED FROM PYTHON SOURCE LINES 130-138
 
 Phantom
 -------
@@ -70,7 +70,7 @@ holds a fraction of each tissue and its T1 is the fraction-weighted average.
 About a third of the voxels are mixtures, so the ground truth is a continuum
 of values rather than four.
 
-.. GENERATED FROM PYTHON SOURCE LINES 140-181
+.. GENERATED FROM PYTHON SOURCE LINES 138-179
 
 .. code-block:: Python
 
@@ -90,7 +90,7 @@ of values rather than four.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 182-189
+.. GENERATED FROM PYTHON SOURCE LINES 180-187
 
 Protocol
 --------
@@ -100,7 +100,7 @@ two inversion times. Each block samples the centre of k-space of its own
 shot train, so a voxel contributes two values. The train is spoiled after
 every readout, so T1 is the only tissue property that changes them.
 
-.. GENERATED FROM PYTHON SOURCE LINES 189-200
+.. GENERATED FROM PYTHON SOURCE LINES 187-198
 
 .. code-block:: Python
 
@@ -122,7 +122,7 @@ every readout, so T1 is the only tissue property that changes them.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 201-207
+.. GENERATED FROM PYTHON SOURCE LINES 199-205
 
 Signal curve
 ------------
@@ -131,7 +131,7 @@ Neither block alone determines T1, since both are scaled by the proton
 density and the receive gain. The unified combination divides this scale
 out and leaves a value between -0.5 and 0.5 that depends on T1 alone:
 
-.. GENERATED FROM PYTHON SOURCE LINES 207-214
+.. GENERATED FROM PYTHON SOURCE LINES 205-212
 
 .. code-block:: Python
 
@@ -149,14 +149,14 @@ out and leaves a value between -0.5 and 0.5 that depends on T1 alone:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 215-219
+.. GENERATED FROM PYTHON SOURCE LINES 213-217
 
 Whether the unified image is monotonic in T1 depends on the protocol. Where
 it turns back it has no inverse, so the table keeps the longest monotonic run
 and reports the range it spans. The dashed line marks the turning point of
 the unified image at this protocol, beyond which T1 is not invertible.
 
-.. GENERATED FROM PYTHON SOURCE LINES 219-243
+.. GENERATED FROM PYTHON SOURCE LINES 217-241
 
 .. code-block:: Python
 
@@ -176,7 +176,7 @@ the unified image at this protocol, beyond which T1 is not invertible.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 244-249
+.. GENERATED FROM PYTHON SOURCE LINES 242-247
 
 Measurement
 -----------
@@ -184,7 +184,7 @@ Measurement
 The measurement is both blocks at the true T1 and proton density of every
 brain voxel, with Gaussian noise of 0.5% of the peak magnetization.
 
-.. GENERATED FROM PYTHON SOURCE LINES 249-270
+.. GENERATED FROM PYTHON SOURCE LINES 247-268
 
 .. code-block:: Python
 
@@ -203,7 +203,7 @@ brain voxel, with Gaussian noise of 0.5% of the peak magnetization.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 271-279
+.. GENERATED FROM PYTHON SOURCE LINES 269-277
 
 Estimators
 ----------
@@ -214,7 +214,7 @@ returns the nearest. The table reduces both blocks to the unified value and
 interpolates along the curve; ``combine`` is the only information it is
 given about the sequence. Neither is given the invertible range.
 
-.. GENERATED FROM PYTHON SOURCE LINES 279-286
+.. GENERATED FROM PYTHON SOURCE LINES 277-284
 
 .. code-block:: Python
 
@@ -232,7 +232,7 @@ given about the sequence. Neither is given the invertible range.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 287-292
+.. GENERATED FROM PYTHON SOURCE LINES 285-290
 
 Table size
 ----------
@@ -240,7 +240,7 @@ Table size
 Sweeping the number of grid points separates the method from the sampling.
 Times are the best of three passes over the slice.
 
-.. GENERATED FROM PYTHON SOURCE LINES 292-353
+.. GENERATED FROM PYTHON SOURCE LINES 290-351
 
 
 
@@ -259,18 +259,18 @@ Times are the best of three passes over the slice.
      points     match     table     match     table
                 error     error      time      time
     -----------------------------------------------
-         30     7.93%     0.88%     2.5ms     0.5ms
-         60     3.29%     0.75%     3.7ms     0.6ms
-        120     0.78%     0.71%     4.0ms     0.6ms
-        250     0.80%     0.71%     7.0ms     0.6ms
-        500     0.62%     0.71%    11.6ms     0.7ms
-       1000     0.66%     0.71%    23.5ms     0.8ms
-       2000     0.71%     0.71%    51.4ms     0.8ms
+         30     7.93%     0.88%     1.9ms     0.4ms
+         60     3.29%     0.75%     2.7ms     0.4ms
+        120     0.78%     0.71%     2.8ms     0.5ms
+        250     0.80%     0.71%     5.9ms     0.5ms
+        500     0.62%     0.71%     9.9ms     0.5ms
+       1000     0.66%     0.71%    21.0ms     0.6ms
+       2000     0.71%     0.71%    47.9ms     0.6ms
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 354-367
+.. GENERATED FROM PYTHON SOURCE LINES 352-365
 
 The error floor is set by the noise. The table is within 0.2 percentage
 points of it from 30 points on. The match is about nine times worse at 30
@@ -286,7 +286,7 @@ Maps
 The maps use the number of points each method needs: 60 for the table and
 2000 for the match, a grid fine enough not to limit it.
 
-.. GENERATED FROM PYTHON SOURCE LINES 367-385
+.. GENERATED FROM PYTHON SOURCE LINES 365-383
 
 
 
@@ -301,13 +301,13 @@ The maps use the number of points each method needs: 60 for the table and
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 386-389
+.. GENERATED FROM PYTHON SOURCE LINES 384-387
 
 Neither estimator returns M0. The two blocks predicted for the estimated T1
 are a shape of which the measurement is a multiple, so the proton density is
 one inner product per voxel:
 
-.. GENERATED FROM PYTHON SOURCE LINES 389-479
+.. GENERATED FROM PYTHON SOURCE LINES 387-477
 
 .. code-block:: Python
 
@@ -348,13 +348,13 @@ one inner product per voxel:
 
     method                      train      map     model      peak      T1      M0
     ------------------------------------------------------------------------------
-    lookup, 60 points           0.00s    0.7ms  0.00 MiB        --   0.75%   0.46%
-    match, 2000 atoms           0.00s   49.6ms  0.05 MiB        --   0.71%   0.45%
+    lookup, 60 points           0.00s    0.4ms  0.00 MiB        --   0.75%   0.46%
+    match, 2000 atoms           0.00s   47.0ms  0.05 MiB        --   0.71%   0.45%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 480-494
+.. GENERATED FROM PYTHON SOURCE LINES 478-492
 
 Specification
 -------------
@@ -374,7 +374,7 @@ What this page did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.082 seconds)
+   **Total running time of the script:** (0 minutes 1.583 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_02-lookup-table.py:

@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -505,7 +503,7 @@
 <div class="tldr admonition">
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
-<li><p>A call runs where its tensors are; <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a> chooses the host, a GPU, several GPUs or streaming instead.</p></li>
+<li><p>A call runs where its tensors are; <code class="docutils literal notranslate"><span class="pre">execution=</span></code> chooses the host, a GPU, several GPUs or streaming instead.</p></li>
 <li><p>A volume larger than a card’s free memory is streamed through it in chunks sized to a memory budget.</p></li>
 <li><p>A simulator resolves its sequence structure on the first call and rebinds only the numbers on later calls.</p></li>
 </ul>
@@ -518,11 +516,11 @@ a GPU.</p>
 <h2>Capabilities<a class="headerlink" href="#capabilities" title="Link to this heading">#</a></h2>
 <div class="capabilities docutils container">
 <ul>
-<li><p><strong>Runs a call where its tensors are when no policy is in force.</strong></p>
+<li><p><strong>Runs a call where its tensors are when no <code class="docutils literal notranslate"><span class="pre">execution=</span></code> is given.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>. Test: <em>without a block a call is left where it is</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Test: <em>without a block a call is left where it is</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Runs the host kernels over a pool of <code class="docutils literal notranslate"><span class="pre">torch.get_num_threads()</span></code> threads, or <code class="docutils literal notranslate"><span class="pre">BLOCHSIM_NUM_THREADS</span></code>, with the same answer at any count.</strong></p>
@@ -532,53 +530,46 @@ a GPU.</p>
 <p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_threads.hpp</span></code>. Tests: <em>fused vjp matches the reference</em>; <em>fused vjp is bitwise deterministic</em> (<code class="docutils literal notranslate"><span class="pre">test_vjp.py</span></code>).</p>
 </div>
 </details></li>
-<li><p><strong>Decides per call under <code class="docutils literal notranslate"><span class="pre">execution(&quot;auto&quot;)</span></code>: the host for small work, one card when it fits, otherwise the fewest cards that hold it, otherwise streaming.</strong></p>
+<li><p><strong>Decides per call under <code class="docutils literal notranslate"><span class="pre">execution=&quot;auto&quot;</span></code>: the host for small work, one card when it fits, otherwise the fewest cards that hold it, otherwise streaming.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>. Tests: <em>work too small to repay a launch stays on the host</em>; <em>work that fits goes across in one piece</em>; <em>a volume larger than the card is streamed</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>work too small to repay a launch stays on the host</em>; <em>work that fits goes across in one piece</em>; <em>a volume larger than the card is streamed</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
 </div>
 </details></li>
-<li><p><strong>Runs on the host or on named devices whatever the size, under <code class="docutils literal notranslate"><span class="pre">execution(&quot;cpu&quot;)</span></code> or <code class="docutils literal notranslate"><span class="pre">execution(&quot;cuda:0&quot;)</span></code>.</strong></p>
+<li><p><strong>Runs on the host or on named devices whatever the size, under <code class="docutils literal notranslate"><span class="pre">execution=&quot;cpu&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">execution=&quot;cuda:0&quot;</span></code>.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>. Tests: <em>the host can be demanded whatever the size</em>; <em>a named device is used however small the work</em>; <em>a device resident call can be forced back to the host</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>the host can be demanded whatever the size</em>; <em>a named device is used however small the work</em>; <em>a device resident call can be forced back to the host</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
 </div>
 </details></li>
-<li><p><strong>Streams on request (<code class="docutils literal notranslate"><span class="pre">stream=True</span></code>), or demands residency and lets the allocator fail (<code class="docutils literal notranslate"><span class="pre">stream=False</span></code>).</strong></p>
+<li><p><strong>Sizes streamed chunks to each card’s free memory less a reserve.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>. Tests: <em>streaming can be demanded for a volume that would fit</em>; <em>residency can be demanded for a volume that will not fit</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
-</div>
-</details></li>
-<li><p><strong>Sizes streamed chunks to <code class="docutils literal notranslate"><span class="pre">budget_bytes</span></code>, by default each card’s free memory less <code class="docutils literal notranslate"><span class="pre">reserve_bytes</span></code>.</strong></p>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>, <a class="reference internal" href="../generated/blochsim.offload.html#blochsim.offload" title="blochsim.offload"><code class="xref py py-func docutils literal notranslate"><span class="pre">offload()</span></code></a>. Tests: <em>the budget can be set outright</em>; <em>the reserve is left alone</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>the device footprint stays inside the budget</em>; <em>a streamed volume matches the cpu run</em> (<code class="docutils literal notranslate"><span class="pre">test_offload.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>the budget can be set outright</em>; <em>the reserve is left alone</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>the device footprint stays inside the budget</em>; <em>a streamed volume matches the cpu run</em> (<code class="docutils literal notranslate"><span class="pre">test_offload.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Returns the same signal, Jacobian and gradient on every route.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>. Tests: <em>every route gives the same answer</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>a streamed real adjoint matches the cpu run</em> (<code class="docutils literal notranslate"><span class="pre">test_offload.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>every route gives the same answer</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>a streamed real adjoint matches the cpu run</em> (<code class="docutils literal notranslate"><span class="pre">test_offload.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Applies the same policy to dictionary matching, PERK and the model operator of a reconstruction.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a>, <a class="reference internal" href="../generated/blochsim.PERK.html#blochsim.PERK" title="blochsim.PERK"><code class="xref py py-class docutils literal notranslate"><span class="pre">PERK</span></code></a>, <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a>. Tests: <em>a match is the same wherever it runs</em>; <em>a mapping is the same wherever it runs</em>; <em>a small budget really does split the volume</em> (<code class="docutils literal notranslate"><span class="pre">test_streaming.py</span></code>); <em>a policy changes where the work runs and nothing else</em> (<code class="docutils literal notranslate"><span class="pre">test_operator.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a>, <a class="reference internal" href="../generated/blochsim.estimators.PERK.html#blochsim.estimators.PERK" title="blochsim.estimators.PERK"><code class="xref py py-class docutils literal notranslate"><span class="pre">PERK</span></code></a>, <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a>. Tests: <em>a match is the same wherever it runs</em>; <em>a mapping is the same wherever it runs</em>; <em>a small budget really does split the volume</em> (<code class="docutils literal notranslate"><span class="pre">test_streaming.py</span></code>); <em>a policy changes where the work runs and nothing else</em> (<code class="docutils literal notranslate"><span class="pre">test_operator.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Resolves the sequence structure once and rebinds the numbers on later calls (<code class="docutils literal notranslate"><span class="pre">resolve=True</span></code>, the default).</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. Tests: <em>a resolved simulator stops packing</em>; <em>a resolved simulator answers what the plain one does</em>; <em>a layout the map cannot follow is refused</em> (<code class="docutils literal notranslate"><span class="pre">test_binding.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. Tests: <em>a resolved simulator stops packing</em>; <em>a resolved simulator answers what the plain one does</em>; <em>a layout the map cannot follow is refused</em> (<code class="docutils literal notranslate"><span class="pre">test_binding.py</span></code>).</p>
 </div>
 </details></li>
 </ul>
@@ -587,7 +578,7 @@ a GPU.</p>
 <section id="division-of-responsibility">
 <h2>Division of responsibility<a class="headerlink" href="#division-of-responsibility" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><strong>Placement without a request.</strong> With no <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a> block and no <code class="docutils literal notranslate"><span class="pre">execution=</span></code>, nothing moves a tensor between host and card.</p></li>
+<li><p><strong>Placement without a request.</strong> With no <code class="docutils literal notranslate"><span class="pre">execution=</span></code>, nothing moves a tensor between host and card.</p></li>
 <li><p><strong>Multi-node execution.</strong> Several cards in one process are supported; several processes or machines are not.</p></li>
 <li><p><strong>Thresholds measured on your machine.</strong> The work below which the host is preferred is a fixed constant, not measured where it runs.</p></li>
 </ul>
@@ -598,15 +589,14 @@ a GPU.</p>
 <a class="reference internal image-reference" href="../_images/execution_policy.png"><img alt="A decision fan from the problem to the host, one card, several cards, or streaming." src="../_images/execution_policy.png" style="width: 100%;" />
 </a>
 <figcaption>
-<p><span class="caption-text">The four routes <code class="docutils literal notranslate"><span class="pre">execution(&quot;auto&quot;)</span></code> chooses between, per call, from the work
+<p><span class="caption-text">The four routes <code class="docutils literal notranslate"><span class="pre">execution=&quot;auto&quot;</span></code> chooses between, per call, from the work
 in the problem and the free memory each card reports.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
 </figcaption>
 </figure>
 <section id="route-selection">
 <h3>Route selection<a class="headerlink" href="#route-selection" title="Link to this heading">#</a></h3>
-<p>The policy is a context manager: it applies to every call inside the block,
-nests, and is restored on exit, including after an exception. A simulator also
-takes <code class="docutils literal notranslate"><span class="pre">execution=</span></code> at construction or per call. Work is counted in (voxel,
+<p>The policy is the <code class="docutils literal notranslate"><span class="pre">execution=</span></code> argument of a simulator, at construction or per
+call, of an estimator’s <code class="docutils literal notranslate"><span class="pre">map</span></code>, and of a <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a>. Work is counted in (voxel,
 train, event) triples and compared with a crossover; past it, the device
 footprint is compared with each card’s free memory less <code class="docutils literal notranslate"><span class="pre">reserve_bytes</span></code>
 (512 MiB by default), which leaves room for other processes on a
@@ -616,9 +606,7 @@ reconstruction server.</p>
 <h3>Streaming<a class="headerlink" href="#streaming" title="Link to this heading">#</a></h3>
 <p>Chunks of voxels are staged through pinned host memory, and the result returns
 to the device the inputs came from. A smaller budget gives smaller chunks,
-which fill the card less and pay more launch and transfer latency.
-<a class="reference internal" href="../generated/blochsim.offload.html#blochsim.offload" title="blochsim.offload"><code class="xref py py-func docutils literal notranslate"><span class="pre">offload()</span></code></a> names the devices and budget directly; its <code class="docutils literal notranslate"><span class="pre">lanes=</span></code>
-lets one chunk transfer while another computes.</p>
+which fill the card less and pay more launch and transfer latency.</p>
 </section>
 <section id="structure-and-values">
 <h3>Structure and values<a class="headerlink" href="#structure-and-values" title="Link to this heading">#</a></h3>
@@ -635,7 +623,7 @@ and the kernels are on <a class="reference internal" href="../developer-guide/in
 <h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="../generated/autoexamples/01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>: a simulation forced onto the host.</p></li>
-<li><p><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/01-dictionary-matching.html"><span class="doc">Dictionary matching</span></a>: a dictionary match under <code class="docutils literal notranslate"><span class="pre">execution()</span></code>.</p></li>
+<li><p><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/01-dictionary-matching.html"><span class="doc">Dictionary matching</span></a>: a dictionary match under <code class="docutils literal notranslate"><span class="pre">execution=&quot;auto&quot;</span></code>.</p></li>
 <li><p><a class="reference internal" href="../generated/autoexamples/03-sequence-optimization/01-echo-train-design.html"><span class="doc">Echo train design for sharpness</span></a>: a design loop over a resolved structure.</p></li>
 </ul>
 </section>

@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -575,24 +573,26 @@ the home directory.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.PosixPath" title="pathlib.PosixPath"><span class="n">CACHE</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-method reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path.home" title="pathlib.Path.home"><span class="n">Path</span><span class="o">.</span><span class="n">home</span></a><span class="p">(</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;</span><span class="s2">.cache</span><span class="s2">&quot;</span> <span class="o">/</span> <span class="s2">&quot;</span><span class="s2">blochsim</span><span class="s2">&quot;</span> <span class="o">/</span> <span class="s2">&quot;</span><span class="s2">ixi-tiny</span><span class="s2">&quot;</span><span class="w">
 </span><span class="n">subject</span> <span class="o">=</span> <a class="sphx-glr-backref-module-typing sphx-glr-backref-type-py-class reference external" href="https://docs.python.org/3/library/typing.html#typing.Generic" title="typing.Generic"><span class="n">tio</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">IXITiny</span></a><span class="p">(</span><span class="nb">str</span><span class="p">(</span><a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.PosixPath" title="pathlib.PosixPath"><span class="n">CACHE</span></a><span class="p">)</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmp3xk35xxe.zip
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmpy_8clpe_.zip
 
 0it [00:00, ?it/s]
   0%|          | 0/233926107 [00:01&lt;?, ?it/s]
-  5%|▌         | 12066816/233926107 [00:01&lt;00:01, 118333651.97it/s]
- 12%|█▏        | 26943488/233926107 [00:01&lt;00:01, 136089198.71it/s]
- 22%|██▏       | 50995200/233926107 [00:01&lt;00:00, 183434885.20it/s]
- 29%|██▊       | 67117056/233926107 [00:01&lt;00:02, 81325704.59it/s]
- 34%|███▎      | 78757888/233926107 [00:02&lt;00:01, 81065191.15it/s]
- 45%|████▌     | 105357312/233926107 [00:02&lt;00:01, 120510491.61it/s]
- 55%|█████▌    | 128983040/233926107 [00:02&lt;00:00, 139997145.63it/s]
- 62%|██████▏   | 145801216/233926107 [00:02&lt;00:00, 105449312.18it/s]
- 68%|██████▊   | 159367168/233926107 [00:02&lt;00:00, 107002031.85it/s]
- 76%|███████▋  | 178921472/233926107 [00:02&lt;00:00, 125405402.30it/s]
- 83%|████████▎ | 194543616/233926107 [00:02&lt;00:00, 132583815.83it/s]
- 91%|█████████ | 212254720/233926107 [00:03&lt;00:00, 143703126.88it/s]
- 98%|█████████▊| 228106240/233926107 [00:03&lt;00:00, 129314617.11it/s]
-233930752it [00:03, 69338051.02it/s]
+  0%|          | 991232/233926107 [00:01&lt;00:23, 9855442.66it/s]
+  5%|▍         | 11673600/233926107 [00:01&lt;00:03, 66756190.02it/s]
+ 13%|█▎        | 29474816/233926107 [00:01&lt;00:01, 115894599.59it/s]
+ 20%|█▉        | 46317568/233926107 [00:01&lt;00:01, 132524342.75it/s]
+ 27%|██▋       | 63307776/233926107 [00:01&lt;00:01, 145664911.31it/s]
+ 34%|███▍      | 80003072/233926107 [00:01&lt;00:01, 150118855.04it/s]
+ 42%|████▏     | 97271808/233926107 [00:01&lt;00:00, 157044621.92it/s]
+ 48%|████▊     | 112566272/233926107 [00:02&lt;00:00, 133496004.52it/s]
+ 55%|█████▌    | 129343488/233926107 [00:02&lt;00:00, 142990288.54it/s]
+ 62%|██████▏   | 145686528/233926107 [00:02&lt;00:00, 148768692.83it/s]
+ 69%|██████▉   | 160825344/233926107 [00:02&lt;00:00, 145679088.93it/s]
+ 75%|███████▌  | 175579136/233926107 [00:02&lt;00:00, 144400855.40it/s]
+ 81%|████████▏ | 190144512/233926107 [00:02&lt;00:00, 132248224.66it/s]
+ 88%|████████▊ | 206479360/233926107 [00:02&lt;00:00, 140738159.16it/s]
+ 94%|█████████▍| 220823552/233926107 [00:02&lt;00:00, 139715035.45it/s]
+233930752it [00:04, 55702752.38it/s]
 </pre></div>
 </div>
 </section>
@@ -709,7 +709,7 @@ acquisitions.</p>
 </span>    <span class="k">for</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">frame</span></a> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">FRAMES</span></a><span class="p">)</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>400 arms built in 4.1s
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>400 arms built in 4.8s
 </pre></div>
 </div>
 <p>The forward transform takes the coil-weighted image of each frame to k-space:</p>
@@ -719,7 +719,7 @@ acquisitions.</p>
 </span>    <span class="p">[</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="list"><span class="n">arms</span></a><span class="p">[</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">frame</span></a><span class="p">]</span><span class="o">.</span><span class="n">op</span><span class="p">(</span><span class="n">coil_series</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">frame</span></a><span class="p">]</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span><span class="p">)</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">frame</span></a> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">FRAMES</span></a><span class="p">)</span><span class="p">]</span><span class="w">
 </span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<img src="../../../_images/sphx_glr_01-synthetic-data_002.png" srcset="../../../_images/sphx_glr_01-synthetic-data_002.png" alt="coil 0, coil 1, coil 2, coil 3, 3 of 400 arms" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>forward NUFFT 3.9s -&gt; (400, 8, 768)
+<img src="../../../_images/sphx_glr_01-synthetic-data_002.png" srcset="../../../_images/sphx_glr_01-synthetic-data_002.png" alt="coil 0, coil 1, coil 2, coil 3, 3 of 400 arms" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>forward NUFFT 8.7s -&gt; (400, 8, 768)
 </pre></div>
 </div>
 <p>The figure shows four of the eight coil sensitivities and three of the arms.</p>
@@ -737,7 +737,7 @@ estimates them.</p>
 </span>    <span class="n">weights</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="mf">1e-6</span><span class="w">
 </span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>adjoint and combine 3.8s
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>adjoint and combine 8.3s
 </pre></div>
 </div>
 </section>
@@ -824,7 +824,7 @@ each frame by the adjoint and a coil combination. Report the per-frame error
 and the time-course agreement, and save the pair with the maps and schedule.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (2 minutes 8.494 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (1 minutes 51.149 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-05-misc-01-synthetic-data-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/05-misc/01-synthetic-data.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo4.svg" style="width: 150px;" />

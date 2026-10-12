@@ -255,9 +255,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -551,7 +549,7 @@ added when the events are re-emitted through a simulator’s handlers.</p>
 <h3>RF use<a class="headerlink" href="#rf-use" title="Link to this heading">#</a></h3>
 <p>The use tag is Pulseq’s: <code class="docutils literal notranslate"><span class="pre">EXCITATION</span></code>, <code class="docutils literal notranslate"><span class="pre">REFOCUSING</span></code>, <code class="docutils literal notranslate"><span class="pre">INVERSION</span></code>,
 <code class="docutils literal notranslate"><span class="pre">SATURATION</span></code>, <code class="docutils literal notranslate"><span class="pre">PREPARATION</span></code>, <code class="docutils literal notranslate"><span class="pre">OTHER</span></code>, or <code class="docutils literal notranslate"><span class="pre">UNKNOWN</span></code> where the file is silent.
-<a class="reference internal" href="../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> sends <code class="docutils literal notranslate"><span class="pre">REFOCUSING</span></code>,
+<a class="reference internal" href="../../generated/blochsim.Simulator.html#blochsim.Simulator.from_description" title="blochsim.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> sends <code class="docutils literal notranslate"><span class="pre">REFOCUSING</span></code>,
 <code class="docutils literal notranslate"><span class="pre">INVERSION</span></code> and <code class="docutils literal notranslate"><span class="pre">SATURATION</span></code> to the handlers of the same name and every other
 use to <code class="docutils literal notranslate"><span class="pre">excitation</span></code>, so a refocusing pulse reaches the refocusing handler
 whatever angle it turns.</p>

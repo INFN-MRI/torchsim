@@ -77,7 +77,7 @@ def t2_preparation(echo_time_s, *, spoil_s=2e-3):
 # it as it would any other longitudinal magnetization. The handlers are the
 # defaults, so the layout only uses ``self.operators`` for the pulses and the
 # readout of the train:
-from blochsim.model import Simulator
+from blochsim import Simulator
 
 
 class T2PreparedFSE(Simulator):

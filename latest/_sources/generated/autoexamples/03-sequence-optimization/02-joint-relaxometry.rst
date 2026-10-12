@@ -40,7 +40,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim matplotlib brainweb-dl cmap
+   !pip install blochsim bartorch matplotlib brainweb-dl cmap
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
 .. GENERATED FROM PYTHON SOURCE LINES 26-83
@@ -59,7 +59,7 @@ Sequences
 
 A design has three pieces. A simulator with the tissue fixed on it, so that
 only the parameters under design are left to give. A cost. And the bounded
-parameters that :class:`~blochsim.SequenceDesign` adjusts.
+parameters that :class:`~blochsim.optim.SequenceDesign` adjusts.
 
 Here the simulators are an SPGR and a bSSFP sequence, both in closed form.
 You construct and call them the same way as a sequence that plays events. The
@@ -104,7 +104,7 @@ The two sequences carry different information. The spoiled steady state in
 closed form depends on T2* and not on T2, so its T2 row is exactly zero. Each
 block is blind to something, and the Fisher matrix adds them up. ``rows``
 stacks the derivatives of one block with a zero row for each parameter it is
-blind to, and :func:`~blochsim.crlb` turns the stacked derivatives into a
+blind to, and :func:`~blochsim.optim.crlb` turns the stacked derivatives into a
 bound on each parameter:
 
 .. GENERATED FROM PYTHON SOURCE LINES 123-141
@@ -126,7 +126,7 @@ bound on each parameter:
         together = torch.cat(
             (rows(spgr, flip=spgr_flip), rows(ssfp, flip=ssfp_flip)), dim=-1
         )
-        return blochsim.crlb(together, noise_variance=NOISE**2)
+        return blochsim.optim.crlb(together, noise_variance=NOISE**2)
 
 
 
@@ -169,7 +169,7 @@ Design
 ------
 
 The protocol has four scans of each kind, initialized with a spread of angles.
-:class:`~blochsim.Bounded` constrains each angle to the range the scanner
+:class:`~blochsim.optim.Bounded` constrains each angle to the range the scanner
 plays:
 
 .. GENERATED FROM PYTHON SOURCE LINES 162-182
@@ -214,7 +214,7 @@ value itself:
 
     start              sigma(T1)/T1 = 11.0%, 12.9%   sigma(T2)/T2 = 10.1%, 12.1%
     designed           sigma(T1)/T1 = 7.4%, 8.9%   sigma(T2)/T2 = 7.4%, 9.1%
-    designed in 5.0 s
+    designed in 3.2 s
 
 
 
@@ -291,22 +291,24 @@ maps with the truth.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 318-325
+.. GENERATED FROM PYTHON SOURCE LINES 318-326
 
 Joint fit
 ---------
 
 The two blocks are one experiment, and you fit them as one. A
-:class:`~blochsim.model.Simulator` plays each block and concatenates what they
-record. The fit is the same for both protocols: the same nonlinear least
-squares over the same four unknowns, from the same starting values:
+:class:`~blochsim.Simulator` plays each block and concatenates what they
+record. The fit is the same for both protocols: bartorch's per-voxel
+Levenberg-Marquardt, :func:`~bartorch.apps.mobafit`, over the same four
+unknowns, from the same starting values:
 
-.. GENERATED FROM PYTHON SOURCE LINES 325-351
+.. GENERATED FROM PYTHON SOURCE LINES 326-353
 
 .. code-block:: Python
 
-    from blochsim.estimators import NonlinearLeastSquares
-    from blochsim.model import Simulator
+    from bartorch import apps, nlop
+
+    from blochsim import ModelOperator, Simulator
 
 
     class JointRelaxometry(Simulator):
@@ -338,13 +340,13 @@ squares over the same four unknowns, from the same starting values:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 352-355
+.. GENERATED FROM PYTHON SOURCE LINES 354-357
 
 The noise is independent in the real and imaginary channels, each at the
 standard deviation the bound was computed with. Simulate the slice with the
 designed protocol, add the noise and fit every voxel:
 
-.. GENERATED FROM PYTHON SOURCE LINES 355-401
+.. GENERATED FROM PYTHON SOURCE LINES 357-404
 
 .. code-block:: Python
 
@@ -362,13 +364,19 @@ designed protocol, add the noise and fit every voxel:
     noise = torch.randn((2, *clean.shape), generator=generator, dtype=torch.float32)
     measured = clean + NOISE * torch.complex(noise[0], noise[1])
 
-    problem = NonlinearLeastSquares(
-        joint,
-        bounds=UNKNOWN,
-        initial={"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0},
-    ).fit(UNKNOWN, noise_std=NOISE, seed=0)
+    START = {"T1": 1000.0, "T2": 100.0, "M0": 1.0, "B0": 0.0}
 
-    maps = problem(measured)  # {"T1": ..., "T2": ..., "M0": ..., "B0": ...}
+
+    def fitted(block, images):
+        """Fit the four unknowns of every voxel, images given voxel by contrast."""
+        model = nlop.ModelOperator(
+            ModelOperator(block, *UNKNOWN, bounds=UNKNOWN, amplitude=False),
+            (images.shape[0],),
+        )
+        return apps.mobafit(images.mT.contiguous(), model, **START)
+
+
+    maps = fitted(joint, measured)  # {"T1": ..., "T2": ..., "M0": ..., "B0": ...}
 
 
 
@@ -380,12 +388,12 @@ designed protocol, add the noise and fit every voxel:
 
  .. code-block:: none
 
-    38980 joint fits in 4.1 s
+    38980 joint fits in 3.3 s
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 402-408
+.. GENERATED FROM PYTHON SOURCE LINES 405-411
 
 Predicted precision
 -------------------
@@ -394,7 +402,7 @@ The design bound was computed for two tissues. Evaluated at the relaxation
 times of each voxel, it gives a map of the predicted precision, against which
 the measured error is compared:
 
-.. GENERATED FROM PYTHON SOURCE LINES 408-436
+.. GENERATED FROM PYTHON SOURCE LINES 411-439
 
 .. code-block:: Python
 
@@ -412,7 +420,7 @@ the measured error is compared:
         together = torch.cat(
             (rows(at_voxel[0], flip=spgr_flip), rows(at_voxel[1], flip=ssfp_flip)), dim=-1
         )
-        bound = blochsim.crlb(together, noise_variance=NOISE**2)
+        bound = blochsim.optim.crlb(together, noise_variance=NOISE**2)
         return {
             "T1": bound[..., 0].sqrt() / truth["T1"],
             "T2": bound[..., 1].sqrt() / truth["T2"],
@@ -427,7 +435,7 @@ the measured error is compared:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 437-443
+.. GENERATED FROM PYTHON SOURCE LINES 440-446
 
 No unbiased estimator beats the bound. The fit below lands about a fifth
 above it for both protocols, so the reduction the bound predicts is also the
@@ -436,7 +444,7 @@ quantity. Both are root-mean-square, because a bound is a standard
 deviation. The median absolute error is about two thirds of a standard
 deviation and would understate the error by that factor:
 
-.. GENERATED FROM PYTHON SOURCE LINES 443-462
+.. GENERATED FROM PYTHON SOURCE LINES 446-465
 
 
 
@@ -455,7 +463,7 @@ deviation and would understate the error by that factor:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 463-468
+.. GENERATED FROM PYTHON SOURCE LINES 466-471
 
 Maps
 ----
@@ -463,7 +471,7 @@ Maps
 The fitted maps and the absolute error of each protocol. The designed protocol
 gives lower noise in both maps.
 
-.. GENERATED FROM PYTHON SOURCE LINES 468-500
+.. GENERATED FROM PYTHON SOURCE LINES 471-503
 
 
 
@@ -489,7 +497,7 @@ gives lower noise in both maps.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 501-525
+.. GENERATED FROM PYTHON SOURCE LINES 504-528
 
 Specification
 -------------
@@ -504,7 +512,7 @@ What this example did, stated the way you would ask an agent for it:
    Estimate T1, T2, M0 and B0 jointly. Minimize the log of the summed
    relative Cramer-Rao bounds of T1 and T2 with SequenceDesign. Play the
    start and designed protocols on BrainWeb slice 90 with noise of 0.5 %,
-   fit every voxel with NonlinearLeastSquares, and compare the RMS error of
+   fit every voxel with bartorch's apps.mobafit, and compare the RMS error of
    the T1 and T2 maps with the bound.
 
 References
@@ -519,7 +527,7 @@ References
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 12.825 seconds)
+   **Total running time of the script:** (0 minutes 9.349 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_02-joint-relaxometry.py:

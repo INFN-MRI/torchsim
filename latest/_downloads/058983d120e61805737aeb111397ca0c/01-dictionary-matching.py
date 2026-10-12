@@ -29,7 +29,6 @@ import matplotlib.pyplot as plt
 from brainweb_dl import get_mri
 from cmap import Colormap
 
-import blochsim
 from figure_style import MUTED, PAGE_WIDTH, SERIES, legend_outside
 
 warnings.filterwarnings("ignore")
@@ -94,16 +93,15 @@ def footprint(problem):
 def mapped(problem, passes=3):
     """Map the slice a few times: the quickest pass, and the peak GPU memory."""
     on_device = torch.cuda.is_available()
-    with blochsim.execution():
-        problem(measured[:64])
-        if on_device:
-            torch.cuda.reset_peak_memory_stats()
-        best = float("inf")
-        for _ in range(passes):
-            start = time.perf_counter()
-            maps = problem(measured)
-            best = min(best, time.perf_counter() - start)
-        peak = torch.cuda.max_memory_allocated() / 2**20 if on_device else float("nan")
+    problem(measured[:64], execution="auto")
+    if on_device:
+        torch.cuda.reset_peak_memory_stats()
+    best = float("inf")
+    for _ in range(passes):
+        start = time.perf_counter()
+        maps = problem(measured, execution="auto")
+        best = min(best, time.perf_counter() - start)
+    peak = torch.cuda.max_memory_allocated() / 2**20 if on_device else float("nan")
     return maps, best, peak
 
 

@@ -251,9 +251,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -507,7 +505,7 @@
 <h1>ModelOperator<a class="headerlink" href="#modeloperator" title="Link to this heading">#</a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="blochsim.ModelOperator">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">ModelOperator</span></span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator" title="Link to this definition">#</a></dt>
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">ModelOperator</span></span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
 <p>A signal model over parameter maps, with its derivatives.</p>
 <p>Maps are stacked on the last axis: <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code> in,
@@ -516,7 +514,7 @@
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><em>Simulator</em></a>) – Sequence being inverted, with every property not solved for already
+<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><em>Simulator</em></a>) – Sequence being inverted, with every property not solved for already
 bound. A property bound as a map is one value per voxel.</p></li>
 <li><p><strong>*unknown</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a>) – Names of the properties solved for, in channel order. At least one.</p></li>
 <li><p><strong>bounds</strong> (<em>mapping</em><em>, </em><em>default=None</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">(low,</span> <span class="pre">high)}</span></code> in the property’s units; either end may be
@@ -529,6 +527,10 @@ interval.</p></li>
 channels (real, imaginary).</p></li>
 <li><p><strong>subspace</strong> (<a class="reference internal" href="blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><em>Subspace</em></a><em>, </em><em>default=None</em>) – Basis the prediction is projected onto, to solve in the temporal
 basis rather than in the contrasts.</p></li>
+<li><p><strong>execution</strong> (<em>{&quot;auto&quot;</em><em>, </em><em>&quot;cpu&quot;}</em><em>, </em><em>torch.device</em><em> or </em><em>sequence</em><em> of </em><em>device</em><em>, </em><em>default=None</em>) – Where the per-voxel work runs. <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> keeps small volumes on the
+CPU, sends one that fits to the CUDA devices whole and streams a
+larger one through them in chunks. <code class="docutils literal notranslate"><span class="pre">None</span></code> runs the work where the
+maps are.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
@@ -597,7 +599,7 @@ constraint then holds exactly at every iterate.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.split">
-<span class="sig-name descname"><span class="pre">split</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.split"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.split" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">split</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.split"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.split" title="Link to this definition">#</a></dt>
 <dd><p>Convert solved-for variables to properties in their own units.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -615,7 +617,7 @@ constraint then holds exactly at every iterate.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.initial">
-<span class="sig-name descname"><span class="pre">initial</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.initial"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.initial" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">initial</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.initial"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.initial" title="Link to this definition">#</a></dt>
 <dd><p>Build starting variables from property values.</p>
 <p>Inverse of <a class="reference internal" href="#blochsim.ModelOperator.split" title="blochsim.ModelOperator.split"><code class="xref py py-meth docutils literal notranslate"><span class="pre">split()</span></code></a>.</p>
 <dl class="field-list simple">
@@ -642,7 +644,7 @@ two-sided bound. <code class="docutils literal notranslate"><span class="pre">am
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.select">
-<span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.select"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.select" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.select"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.select" title="Link to this definition">#</a></dt>
 <dd><p>Restrict the operator to a subset of the voxels.</p>
 <p>Properties bound as per-voxel maps are indexed by <code class="docutils literal notranslate"><span class="pre">keep</span></code>; other
 bound values are unchanged.</p>
@@ -661,7 +663,7 @@ bound values are unchanged.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.forward">
-<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.forward" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.forward" title="Link to this definition">#</a></dt>
 <dd><p>Predict the contrasts of the maps.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -684,7 +686,7 @@ bound values are unchanged.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.A_jvp">
-<span class="sig-name descname"><span class="pre">A_jvp</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.A_jvp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.A_jvp" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">A_jvp</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.A_jvp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.A_jvp" title="Link to this definition">#</a></dt>
 <dd><p>Directional derivative <code class="docutils literal notranslate"><span class="pre">J</span> <span class="pre">d</span></code> by one forward-mode pass.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -704,7 +706,7 @@ bound values are unchanged.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.A_vjp">
-<span class="sig-name descname"><span class="pre">A_vjp</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.A_vjp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.A_vjp" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">A_vjp</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.A_vjp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.A_vjp" title="Link to this definition">#</a></dt>
 <dd><p>Adjoint product <code class="docutils literal notranslate"><span class="pre">J^H</span> <span class="pre">v</span></code> by one reverse-mode pass.</p>
 <p>The result is the real part of the conjugate product, the adjoint of
 <a class="reference internal" href="#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_jvp()</span></code></a> under the real inner product.</p>
@@ -726,7 +728,7 @@ bound values are unchanged.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.jacobian">
-<span class="sig-name descname"><span class="pre">jacobian</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.jacobian"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.jacobian" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">jacobian</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.jacobian"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.jacobian" title="Link to this definition">#</a></dt>
 <dd><p>Build the derivative block of every voxel.</p>
 <p>Used by voxel-wise fits; use <a class="reference internal" href="#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_jvp()</span></code></a> and <a class="reference internal" href="#blochsim.ModelOperator.A_vjp" title="blochsim.ModelOperator.A_vjp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_vjp()</span></code></a> under an
 encoding operator.</p>
@@ -745,7 +747,7 @@ encoding operator.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.physics">
-<span class="sig-name descname"><span class="pre">physics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.physics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.physics" title="Link to this definition">#</a></dt>
+<span class="sig-name descname"><span class="pre">physics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_operator.html#ModelOperator.physics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.physics" title="Link to this definition">#</a></dt>
 <dd><p>Wrap the operator as a <code class="xref py py-class docutils literal notranslate"><span class="pre">deepinv.physics.Physics</span></code>.</p>
 <p>The channel axis moves to the front: <code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">channels,</span> <span class="pre">*xyz)</span></code> in,
 <code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">contrasts,</span> <span class="pre">*xyz)</span></code> out. <code class="docutils literal notranslate"><span class="pre">encoding</span> <span class="pre">*</span> <span class="pre">operator.physics()</span></code>
@@ -763,8 +765,8 @@ composes with an encoding operator.</p>
 </dl>
 <p class="rubric">Notes</p>
 <p>A deepinv <code class="docutils literal notranslate"><span class="pre">ComposedPhysics</span></code> differentiates the chain by autograd, not
-by the analytic products of this class. <code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code>
-chains the analytic products.</p>
+by the analytic products of this class; a Gauss-Newton solver such as
+bartorch’s <code class="docutils literal notranslate"><span class="pre">nlop.IRGNM</span></code> chains the analytic products.</p>
 </dd></dl>
 
 </dd></dl>

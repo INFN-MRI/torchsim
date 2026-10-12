@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -512,7 +510,7 @@ points on the curve to see which method depends on it.</p>
 <p>With a single unknown, the dictionary atoms lie on a curve instead of filling
 a space. Interpolating between the two nearest points on the curve costs
 nothing and removes the grid spacing from the error; this is what
-<a class="reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><code class="xref py py-class docutils literal notranslate"><span class="pre">LookupTable</span></code></a> does.</p>
+<a class="reference internal" href="../../blochsim.estimators.LookupTable.html#blochsim.estimators.LookupTable" title="blochsim.estimators.LookupTable"><code class="xref py py-class docutils literal notranslate"><span class="pre">LookupTable</span></code></a> does.</p>
 <p>Prerequisites: Course lesson <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
 <div class="colab-button">
             <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/notebooks/generated/autoexamples/02-parameter-inference/02-lookup-table.ipynb" target="_blank">
@@ -523,7 +521,7 @@ nothing and removes the grid spacing from the error; this is what
         <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
 </span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
 </span><span class="w">
-</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">LookupTable</span></a><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.estimators.LookupTable.html#blochsim.estimators.LookupTable" title="blochsim.estimators.LookupTable"><span class="n">LookupTable</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator" title="blochsim.simulators.MP2RAGESimulator"><span class="n">MP2RAGESimulator</span></a><span class="w">
 </span></pre></div></div>
 <section id="phantom">
@@ -592,10 +590,10 @@ interpolates along the curve; <code class="docutils literal notranslate"><span c
 given about the sequence. Neither is given the invertible range.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">grid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">50.0</span><span class="p">,</span> <span class="mf">6000.0</span><span class="p">,</span> <span class="mi">60</span><span class="p">)</span><span class="w">
 </span><span class="w">
-</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">lookup</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">LookupTable</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">,</span> <span class="n">combine</span><span class="o">=</span><span class="n">unified</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
-</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.map" title="blochsim.Estimator.map"><span class="n">lookup</span><span class="o">.</span><span class="n">map</span></a><span class="p">(</span><span class="n">measured</span><span class="p">)</span>  <span class="c1"># {&quot;T1&quot;: ...}, one value per voxel</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.estimators.LookupTable.html#blochsim.estimators.LookupTable" title="blochsim.estimators.LookupTable"><span class="n">lookup</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.estimators.LookupTable.html#blochsim.estimators.LookupTable" title="blochsim.estimators.LookupTable"><span class="n">LookupTable</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Simulator.html#blochsim.Simulator.bind" title="blochsim.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">,</span> <span class="n">combine</span><span class="o">=</span><span class="n">unified</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.estimators.LookupTable.html#blochsim.estimators.LookupTable" title="blochsim.estimators.LookupTable"><span class="n">lookup</span></a><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">measured</span><span class="p">)</span>  <span class="c1"># {&quot;T1&quot;: ...}, one value per voxel</span><span class="w">
 </span><span class="w">
-</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">match</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">match</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Simulator.html#blochsim.Simulator.bind" title="blochsim.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
 </section>
 <section id="table-size">
@@ -605,13 +603,13 @@ Times are the best of three passes over the slice.</p>
 <img src="../../../_images/sphx_glr_02-lookup-table_003.png" srcset="../../../_images/sphx_glr_02-lookup-table_003.png" alt="error, time" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span> points     match     table     match     table
             error     error      time      time
 -----------------------------------------------
-     30     7.93%     0.88%     2.5ms     0.5ms
-     60     3.29%     0.75%     3.7ms     0.6ms
-    120     0.78%     0.71%     4.0ms     0.6ms
-    250     0.80%     0.71%     7.0ms     0.6ms
-    500     0.62%     0.71%    11.6ms     0.7ms
-   1000     0.66%     0.71%    23.5ms     0.8ms
-   2000     0.71%     0.71%    51.4ms     0.8ms
+     30     7.93%     0.88%     1.9ms     0.4ms
+     60     3.29%     0.75%     2.7ms     0.4ms
+    120     0.78%     0.71%     2.8ms     0.5ms
+    250     0.80%     0.71%     5.9ms     0.5ms
+    500     0.62%     0.71%     9.9ms     0.5ms
+   1000     0.66%     0.71%    21.0ms     0.6ms
+   2000     0.71%     0.71%    47.9ms     0.6ms
 </pre></div>
 </div>
 <p>The error floor is set by the noise. The table is within 0.2 percentage
@@ -643,8 +641,8 @@ one inner product per voxel:</p>
 </ul>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                      train      map     model      peak      T1      M0
 ------------------------------------------------------------------------------
-lookup, 60 points           0.00s    0.7ms  0.00 MiB        --   0.75%   0.46%
-match, 2000 atoms           0.00s   49.6ms  0.05 MiB        --   0.71%   0.45%
+lookup, 60 points           0.00s    0.4ms  0.00 MiB        --   0.75%   0.46%
+match, 2000 atoms           0.00s   47.0ms  0.05 MiB        --   0.71%   0.45%
 </pre></div>
 </div>
 </section>
@@ -660,7 +658,7 @@ relative T1 error and the mapping time of both; derive M0 from the
 predicted blocks.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 2.082 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.583 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-02-lookup-table-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/02-parameter-inference/02-lookup-table.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />

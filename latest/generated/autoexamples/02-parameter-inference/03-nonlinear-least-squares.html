@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -514,7 +512,8 @@ on a noise floor, so the decay does not reach zero. Unlike the proton density,
 this offset does not divide out of a normalized match: ignoring it biases T2,
 and adding it to the dictionary multiplies the number of atoms. A fit instead
 adds one column to the Jacobian, at the cost of no guarantee that it finds the
-global minimum.</p>
+global minimum. blochsim supplies the model and its derivative; the fit is
+<a class="reference external" href="https://github.com/pulserver/bartorch">bartorch</a>’s <code class="docutils literal notranslate"><span class="pre">apps.mobafit</span></code>.</p>
 <p>Prerequisites: Course lesson <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
 <div class="colab-button">
             <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/notebooks/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.ipynb" target="_blank">
@@ -525,7 +524,10 @@ global minimum.</p>
         <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
 </span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
 </span><span class="w">
-</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><span class="n">NonlinearLeastSquares</span></a><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">bartorch</span><span class="w"> </span><span class="kn">import</span> <span class="n">apps</span><span class="p">,</span> <span class="n">nlop</span><span class="w">
+</span><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><span class="n">ModelOperator</span></a><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">MultiEchoSimulator</span></a><span class="w">
 </span></pre></div></div>
 <section id="phantom">
@@ -561,22 +563,26 @@ offset and T2 are hardest to separate; the long-T2 voxel never reaches it.</p>
 <img src="../../../_images/sphx_glr_03-nonlinear-least-squares_002.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_002.png" alt="03 nonlinear least squares" class = "sphx-glr-single-img"/></section>
 <section id="nonlinear-fit">
 <h2>Nonlinear fit<a class="headerlink" href="#nonlinear-fit" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code> takes the range of every unknown, a starting value
-and the noise level. All voxels are updated in the same pass; each carries
-its own damping, accepts or rejects its own step, and stops when it
-converges.</p>
-<p>The bounds are enforced by fitting a transformed variable, not by clipping:
-no iterate leaves the interval and no bound is active at the solution. The
-transformation also puts all parameters on a common scale, which the damping
-assumes.</p>
+<p>A <a class="reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a> declares the unknowns and the range of
+each. The bounds are enforced by fitting a transformed variable, not by
+clipping: no iterate leaves the interval and no bound is active at the
+solution. The transformation also puts all parameters on a common scale,
+which the damping assumes. M0 is one of the unknowns, so the operator carries
+no separate complex amplitude.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">BOUNDS</span></a> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">500.0</span><span class="p">)</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">M0</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">)</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">offset</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)</span><span class="p">}</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">START</span></a> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">:</span> <span class="mf">100.0</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">M0</span><span class="s2">&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">offset</span><span class="s2">&quot;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">}</span><span class="w">
 </span><span class="w">
-</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><span class="n">fit</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><span class="n">NonlinearLeastSquares</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">simulator</span></a><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">BOUNDS</span></a><span class="p">,</span> <span class="n">initial</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">START</span></a><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="w">
-</span>    <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">BOUNDS</span></a><span class="p">,</span> <span class="n">noise_std</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">NOISE_STD</span></a><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="w">
-</span><span class="p">)</span><span class="w">
-</span><span class="w">
-</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.map" title="blochsim.Estimator.map"><span class="n">fit</span><span class="o">.</span><span class="n">map</span></a><span class="p">(</span><span class="n">measured</span><span class="p">)</span>  <span class="c1"># {&quot;T2&quot;: ..., &quot;M0&quot;: ..., &quot;offset&quot;: ...}</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><span class="n">operator</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><span class="n">ModelOperator</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">simulator</span></a><span class="p">,</span> <span class="o">*</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">BOUNDS</span></a><span class="p">,</span> <span class="n">bounds</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">BOUNDS</span></a><span class="p">,</span> <span class="n">amplitude</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<p>bartorch’s <code class="xref py py-func docutils literal notranslate"><span class="pre">mobafit()</span></code> fits it voxel by voxel by
+Levenberg-Marquardt. All voxels are updated in the same pass; each carries its
+own damping, accepts or rejects its own step, and stops when it converges.
+<code class="xref py py-class docutils literal notranslate"><span class="pre">bartorch.nlop.ModelOperator</span></code> carries the model on the voxel shape, and
+the images go in with the echoes first:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">model</span></a> <span class="o">=</span> <span class="n">nlop</span><span class="o">.</span><span class="n">ModelOperator</span><span class="p">(</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><span class="n">operator</span></a><span class="p">,</span> <span class="p">(</span><span class="n">measured</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">,</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <span class="n">apps</span><span class="o">.</span><span class="n">mobafit</span><span class="p">(</span><span class="w">
+</span>    <span class="n">measured</span><span class="o">.</span><span class="n">mT</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">model</span></a><span class="p">,</span> <span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">START</span></a><span class="w">
+</span><span class="p">)</span>  <span class="c1"># {&quot;T2&quot;: ..., &quot;M0&quot;: ..., &quot;offset&quot;: ...}</span><span class="w">
 </span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>fitted floor, median 0.0500 against 0.05
 </pre></div>
@@ -590,14 +596,14 @@ normalization, so modelling it requires putting it on the grid. The first
 dictionary ignores the offset:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">T2_GRID</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">logspace</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc"><span class="n">np</span><span class="o">.</span><span class="n">log10</span></a><span class="p">(</span><span class="mf">500.0</span><span class="p">)</span><span class="p">,</span> <span class="mi">400</span><span class="p">)</span><span class="w">
 </span><span class="w">
-</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">match</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T2</span><span class="o">=</span><span class="n">T2_GRID</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">match</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Simulator.html#blochsim.Simulator.bind" title="blochsim.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T2</span><span class="o">=</span><span class="n">T2_GRID</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
 <p>The second has the offset on the grid, which is then the product of the T2
 and offset grids: 400 by 40 atoms.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">offsets</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.15</span><span class="p">,</span> <span class="mi">40</span><span class="p">)</span><span class="w">
 </span><span class="n">grid_t2</span><span class="p">,</span> <span class="n">grid_offset</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">T2_GRID</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">indexing</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">ij</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span><span class="w">
-</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">wide</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">wide</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-estimators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Simulator.html#blochsim.Simulator.bind" title="blochsim.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="w">
 </span>    <span class="n">T2</span><span class="o">=</span><span class="n">grid_t2</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="n">grid_offset</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="w">
 </span><span class="p">)</span><span class="w">
 </span></pre></div></div>
@@ -605,18 +611,18 @@ and offset grids: 400 by 40 atoms.</p>
 <section id="cost-and-accuracy">
 <h2>Cost and accuracy<a class="headerlink" href="#cost-and-accuracy" title="Link to this heading">#</a></h2>
 <p>Times are the best of three passes after a warm-up. <em>model</em> is the memory the
-fitted estimator holds between volumes. <em>peak</em> is the maximum GPU memory
+fitted estimator holds between volumes, none for a fit. <em>peak</em> is the maximum GPU memory
 allocated while mapping the slice, blank on a machine without a GPU. The
 error is the median relative T2 error over the brain voxels.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                           atoms   train     map     model      peak      T2
 ----------------------------------------------------------------------------------
 match, T2 only                     400    0.0s   0.01s   0.1 MiB        --   17.9%
-match, T2 x 10 offsets            4000    0.0s   0.10s   0.5 MiB        --    1.8%
-match, T2 x 20 offsets            8000    0.0s   0.20s   1.1 MiB        --    1.8%
-match, T2 x 40 offsets           16000    0.0s   0.42s   2.1 MiB        --    1.8%
-match, T2 x 80 offsets           32000    0.0s   1.02s   4.3 MiB        --    1.7%
-fit, T2 + M0, floor known           --    0.0s   0.62s   0.0 MiB        --    0.6%
-fit, T2 + M0 + offset               --    0.0s   1.02s   0.0 MiB        --    1.8%
+match, T2 x 10 offsets            4000    0.0s   0.09s   0.5 MiB        --    1.8%
+match, T2 x 20 offsets            8000    0.0s   0.18s   1.1 MiB        --    1.8%
+match, T2 x 40 offsets           16000    0.0s   0.36s   2.1 MiB        --    1.8%
+match, T2 x 80 offsets           32000    0.0s   0.77s   4.3 MiB        --    1.7%
+fit, T2 + M0, floor known           --    0.0s   0.51s   0.0 MiB        --    0.6%
+fit, T2 + M0 + offset               --    0.0s   0.83s   0.0 MiB        --    1.8%
 </pre></div>
 </div>
 </section>
@@ -632,8 +638,8 @@ for a parameter that adds one column to the fit’s Jacobian.</p>
 <p>The fit is slower in wall-clock time, because a Levenberg-Marquardt loop takes
 tens of passes where a match takes one. Each additional nuisance parameter
 multiplies the number of atoms but adds one column to the Jacobian, so the
-time curves cross at some number of nuisance values, and the memory curves
-have already crossed.</p>
+time curves cross at some number of nuisance values. The fit holds no table
+between volumes at all, so its memory does not appear on the right.</p>
 <img src="../../../_images/sphx_glr_03-nonlinear-least-squares_003.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_003.png" alt="time, memory" class = "sphx-glr-single-img"/></section>
 <section id="maps">
 <h2>Maps<a class="headerlink" href="#maps" title="Link to this heading">#</a></h2>
@@ -655,16 +661,17 @@ inside the model, so the constraint holds at every iterate.</p>
 <section id="specification">
 <h2>Specification<a class="headerlink" href="#specification" title="Link to this heading">#</a></h2>
 <p>What this page did, stated the way you would ask an agent for it:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim, map T2 in BrainWeb subject 0, slice 90, from a 16-echo
-multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor offset
-of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
-NonlinearLeastSquares (bounds T2 10-500 ms, M0 0.1-2, offset 0-0.2).
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim and bartorch, map T2 in BrainWeb subject 0, slice 90, from a
+16-echo multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor
+offset of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
+bartorch's apps.mobafit over a blochsim ModelOperator (bounds T2 10-500 ms,
+M0 0.1-2, offset 0-0.2).
 Compare with a DictionaryMatcher over 400 log-spaced T2 values, without
 the offset and with 10 to 80 offset values on the grid. Report mapping
 time, estimator memory and median relative T2 error, and plot the maps.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 12.777 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 11.445 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-03-nonlinear-least-squares-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />

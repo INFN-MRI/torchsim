@@ -8,37 +8,27 @@ object lists as tables, each entry linking the stub this page writes;
 writing them here keeps them out of the toctree the sidebar is built
 from.
 
-.. currentmodule:: blochsim
+.. currentmodule:: blochsim.estimators
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
-   Estimator
    DictionaryMatcher
    LookupTable
-   NonlinearLeastSquares
    PERK
 
-.. autosummary::
-   :toctree: generated
-   :nosignatures:
-
-   execution
-   offload
-   utils.b1rms
-
-.. currentmodule:: blochsim.model
+.. currentmodule:: blochsim
 
 .. autosummary::
    :toctree: generated
    :nosignatures:
 
    Simulator
-   SpinPhysics
-   EventOperators
+   ModelOperator
+   Subspace
 
-.. currentmodule:: blochsim
+.. currentmodule:: blochsim.optim
 
 .. autosummary::
    :toctree: generated
@@ -48,17 +38,7 @@ from.
    SequenceDesign
    crlb
 
-.. autosummary::
-   :toctree: generated
-   :nosignatures:
-
-   ModelOperator
-   GaussNewton
-   Schedule
-   TrustRegion
-   direct
-   iterative
-   Subspace
+.. currentmodule:: blochsim
 
 .. autosummary::
    :toctree: generated

@@ -58,7 +58,7 @@ Design problem
 
 A design has three pieces. A simulator with the tissue fixed on it, a cost
 written on the signal it records, and the bounded parameters that
-:class:`~blochsim.SequenceDesign` adjusts to lower the cost.
+:class:`~blochsim.optim.SequenceDesign` adjusts to lower the cost.
 
 The tissues are those of a PD-weighted knee protocol, read for the
 separation between fluid and cartilage. The design uses all three at once, so
@@ -264,7 +264,7 @@ Optimization
 ------------
 
 Start from a conventional prescription: 50 degree minimum, 90 degree
-centre-of-k-space angle and 150 degree maximum. :class:`~blochsim.Bounded`
+centre-of-k-space angle and 150 degree maximum. :class:`~blochsim.optim.Bounded`
 holds each angle inside the limits the scanner plays:
 
 .. GENERATED FROM PYTHON SOURCE LINES 187-205
@@ -284,7 +284,7 @@ holds each angle inside the limits the scanner plays:
 
  .. code-block:: none
 
-    one train of 120 echoes designed in 0.10 s, 4.1 ms per iteration
+    one train of 120 echoes designed in 0.08 s, 3.4 ms per iteration
 
 
 
@@ -571,7 +571,7 @@ Start from the prescription of the abstract in [2]_: a 45-echo train at
 
  .. code-block:: none
 
-    a whole protocol designed in 1.50 s, 37.6 ms per iteration
+    a whole protocol designed in 1.05 s, 26.2 ms per iteration
 
 
 
@@ -666,7 +666,7 @@ References
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.920 seconds)
+   **Total running time of the script:** (0 minutes 2.033 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_01-echo-train-design.py:

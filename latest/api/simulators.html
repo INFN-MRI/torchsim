@@ -253,9 +253,7 @@
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -500,7 +498,7 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="simulators">
 <h1>Simulators<a class="headerlink" href="#simulators" title="Link to this heading">#</a></h1>
-<p>The sequences that ship with BlochSim, as <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>
+<p>The sequences that ship with BlochSim, as <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>
 subclasses. A constructor fixes protocol arguments, the keywords of
 <code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code>; tissue properties are given at the
 call. See the <a class="reference internal" href="../explanations/signal-model.html"><span class="doc">Signal model</span></a> page.</p>
@@ -614,7 +612,7 @@ call. See the <a class="reference internal" href="../explanations/signal-model.h
 <h2>Functional wrappers<a class="headerlink" href="#functional-wrappers" title="Link to this heading">#</a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">*_sim</span></code> functions evaluate a subset of the simulators in one call, with an
 optional Jacobian. They are not an extension API: new sequence families are
-<a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> subclasses. The classes are preferred when a
+<a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> subclasses. The classes are preferred when a
 sequence is reused, bound to a protocol, or passed to an estimator,
 reconstruction or design object.</p>
 <section id="closed-form-wrappers">

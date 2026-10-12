@@ -255,9 +255,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -509,7 +507,7 @@
 <ul class="simple">
 <li><p>Derivatives with respect to tissue properties are forward mode: <code class="xref py py-meth docutils literal notranslate"><span class="pre">jacobian()</span></code>, one pass per property.</p></li>
 <li><p>Derivatives with respect to sequence parameters are reverse mode: <code class="xref py py-meth docutils literal notranslate"><span class="pre">torch.Tensor.backward()</span></code> on a cost built from the signal.</p></li>
-<li><p>The Cramer-Rao bound, least-squares standard errors and precision-driven sequence design are built on the Jacobian.</p></li>
+<li><p>The Cramer-Rao bound and precision-driven sequence design are built on the Jacobian.</p></li>
 </ul>
 </div>
 <p>You ask for the derivative of the signal with respect to tissue properties to
@@ -565,21 +563,14 @@ are computed by the same fused kernels that compute the signal.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>. Tests: <em>the bound is the variance a fit actually reaches</em>; <em>a complex signal counts both channels</em>; <em>parameters no sequence can tell apart are refused</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>. Tests: <em>the bound is the variance a fit actually reaches</em>; <em>a complex signal counts both channels</em>; <em>parameters no sequence can tell apart are refused</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Minimizes a precision cost over bounded sequence parameters.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a>, <a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a>. Tests: <em>a design lowers the cost it was given</em>; <em>the limits hold at every step</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
-</div>
-</details></li>
-<li><p><strong>Reports a least-squares fit’s standard error as the inverse Fisher matrix at the solution.</strong></p>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-class docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a>. Tests: <em>least squares states its own standard error</em>; <em>a standard error is never below the bound</em> (<code class="docutils literal notranslate"><span class="pre">test_uncertainty.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a>, <a class="reference internal" href="../generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a>. Tests: <em>a design lowers the cost it was given</em>; <em>the limits hold at every step</em> (<code class="docutils literal notranslate"><span class="pre">test_design.py</span></code>).</p>
 </div>
 </details></li>
 </ul>
@@ -626,7 +617,7 @@ engine reads which inputs require a gradient and selects the adjoint kernel.</p>
 <p>For independent Gaussian noise of variance <span class="math notranslate nohighlight">\(\sigma^2\)</span> on the real and imaginary
 channels, the Fisher information is
 <span class="math notranslate nohighlight">\(F = \operatorname{Re}(J^\mathsf{H} J) / \sigma^2\)</span>, with <span class="math notranslate nohighlight">\(J\)</span> the Jacobian of
-the signal, and <a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a> returns the diagonal of
+the signal, and <a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a> returns the diagonal of
 <span class="math notranslate nohighlight">\(F^{-1}\)</span>. A design that minimizes a bound therefore differentiates a Jacobian
 with respect to the sequence: forward mode inside reverse mode, both in the
 kernels.</p>

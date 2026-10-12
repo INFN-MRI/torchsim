@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -506,7 +504,7 @@
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
 <li><p>An estimator is fitted from the simulator of the acquisition it inverts, and returns one named map per unknown.</p></li>
-<li><p>Dictionary matching and lookup tables search simulated signals; nonlinear least squares fits the model; PERK regresses on a prior.</p></li>
+<li><p>Dictionary matching and lookup tables search simulated signals; PERK regresses on a prior; a per-voxel fit of the model itself is bartorch’s <code class="docutils literal notranslate"><span class="pre">apps.mobafit</span></code>.</p></li>
 <li><p>A grid grows with the product of the parameter ranges; a fit grows by one Jacobian column per parameter.</p></li>
 </ul>
 </div>
@@ -520,14 +518,14 @@ unknown, and it returns parameter maps from a measured volume.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator" title="blochsim.Estimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Estimator</span></code></a>. Tests: <em>a mapping recovers a tissue it was trained over</em>; <em>the maps come back named and shaped like the volume</em> (<code class="docutils literal notranslate"><span class="pre">test_mapping.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code>, <code class="xref py py-meth docutils literal notranslate"><span class="pre">map()</span></code>. Tests: <em>a mapping recovers a tissue it was trained over</em>; <em>the maps come back named and shaped like the volume</em> (<code class="docutils literal notranslate"><span class="pre">test_mapping.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Matches by normalized inner products, and returns M0 from the score and the stored atom norm.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a>. Tests: <em>dictionary matcher recovers complex scaled atoms</em> (<code class="docutils literal notranslate"><span class="pre">test_dictionary.py</span></code>); <em>a match answers with the density without touching an atom</em> (<code class="docutils literal notranslate"><span class="pre">test_uncertainty.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a>. Tests: <em>dictionary matcher recovers complex scaled atoms</em> (<code class="docutils literal notranslate"><span class="pre">test_dictionary.py</span></code>); <em>a match answers with the density without touching an atom</em> (<code class="docutils literal notranslate"><span class="pre">test_uncertainty.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Works in a low-rank temporal subspace, fitted here or passed in, and reports the signal energy it retains.</strong></p>
@@ -548,35 +546,28 @@ unknown, and it returns parameter maps from a measured volume.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><code class="xref py py-class docutils literal notranslate"><span class="pre">LookupTable</span></code></a>. Tests: <em>interpolating beats the grid it was built on</em>; <em>a t1 map is read from the two blocks</em> (<code class="docutils literal notranslate"><span class="pre">test_lookup.py</span></code>).</p>
-</div>
-</details></li>
-<li><p><strong>Fits every voxel at once by Levenberg-Marquardt, inside box bounds.</strong></p>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-class docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a>. Tests: <em>it finds what scipy finds</em>; <em>no iterate ever leaves the bounds</em> (<code class="docutils literal notranslate"><span class="pre">test_nlls.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.estimators.LookupTable.html#blochsim.estimators.LookupTable" title="blochsim.estimators.LookupTable"><code class="xref py py-class docutils literal notranslate"><span class="pre">LookupTable</span></code></a>. Tests: <em>interpolating beats the grid it was built on</em>; <em>a t1 map is read from the two blocks</em> (<code class="docutils literal notranslate"><span class="pre">test_lookup.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Trains a kernel ridge regression on random Fourier features.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.PERK.html#blochsim.PERK" title="blochsim.PERK"><code class="xref py py-class docutils literal notranslate"><span class="pre">PERK</span></code></a>. Tests: <em>streaming reaches what holding the dictionary reaches</em> (<code class="docutils literal notranslate"><span class="pre">test_perk.py</span></code>); <em>perk is comparable to dictionary matching under noise</em> (<code class="docutils literal notranslate"><span class="pre">test_mapping_comparison.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.estimators.PERK.html#blochsim.estimators.PERK" title="blochsim.estimators.PERK"><code class="xref py py-class docutils literal notranslate"><span class="pre">PERK</span></code></a>. Tests: <em>streaming reaches what holding the dictionary reaches</em> (<code class="docutils literal notranslate"><span class="pre">test_perk.py</span></code>); <em>perk is comparable to dictionary matching under noise</em> (<code class="docutils literal notranslate"><span class="pre">test_mapping_comparison.py</span></code>).</p>
 </div>
 </details></li>
-<li><p><strong>Takes separately measured maps, such as B1, in PERK and nonlinear least squares.</strong></p>
+<li><p><strong>Takes separately measured maps, such as B1, in PERK.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">fit(known=...)</span></code>. Tests: <em>a known property reaches the simulator and is asked for again</em> (<code class="docutils literal notranslate"><span class="pre">test_mapping.py</span></code>); <em>a property measured separately reaches the model</em> (<code class="docutils literal notranslate"><span class="pre">test_nlls.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">fit(known=...)</span></code>. Tests: <em>a known property reaches the simulator and is asked for again</em> (<code class="docutils literal notranslate"><span class="pre">test_mapping.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Returns an uncertainty map where the method defines one.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">map(volume,</span> <span class="pre">uncertainty=True)</span></code>. Tests: <em>least squares states its own standard error</em>; <em>perk states a spread without repeating itself</em> (<code class="docutils literal notranslate"><span class="pre">test_uncertainty.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">map(volume,</span> <span class="pre">uncertainty=True)</span></code>. Tests: <em>perk states a spread without repeating itself</em>; <em>a method that answers with a grid point says it has none</em> (<code class="docutils literal notranslate"><span class="pre">test_uncertainty.py</span></code>).</p>
 </div>
 </details></li>
 </ul>
@@ -587,20 +578,19 @@ unknown, and it returns parameter maps from a measured volume.</p>
 <ul class="simple">
 <li><p><strong>Spatial regularization.</strong> Every estimator is voxel-wise; a spatial prior belongs to <a class="reference internal" href="model-based-reconstruction.html"><span class="doc">Model-based reconstruction</span></a>.</p></li>
 <li><p><strong>Neural-network estimators.</strong> PERK’s estimate is differentiable with respect to the signal, so it can sit inside one.</p></li>
-<li><p><strong>A global minimum</strong> for nonlinear least squares, whose answer depends on its starting point.</p></li>
+<li><p><strong>Nonlinear least squares.</strong> A per-voxel Levenberg-Marquardt fit of the same simulator is bartorch’s <code class="docutils literal notranslate"><span class="pre">apps.mobafit</span></code>, over a <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a>; its answer depends on its starting point.</p></li>
 <li><p><strong>Declared equality constraints.</strong> Two fractions summing to one are written into the model, with one of them as the unknown.</p></li>
 </ul>
 </section>
 <section id="method">
 <h2>Method<a class="headerlink" href="#method" title="Link to this heading">#</a></h2>
 <figure class="align-default" id="id1">
-<a class="reference internal image-reference" href="../_images/parameter_estimation.png"><img alt="Relative T2 error across the T2 range for six estimators, and median error against mapping time per voxel." src="../_images/parameter_estimation.png" style="width: 100%;" />
+<a class="reference internal image-reference" href="../_images/parameter_estimation.png"><img alt="Relative T2 error across the T2 range for five estimators, and median error against mapping time per voxel." src="../_images/parameter_estimation.png" style="width: 100%;" />
 </a>
 <figcaption>
 <p><span class="caption-text">T2 and M0 from a 16-echo spin echo at 1 % noise. The lookup table reads the
 ratio of late to early echoes. On the same 24-point grid the dictionary is
-limited by the spacing and the table is not. Nonlinear least squares matches
-the fine dictionary at one to two orders of magnitude more time. PERK is least
+limited by the spacing and the table is not. PERK is least
 accurate at the short-T2 end of its prior. Times are measured at build time.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
 </figcaption>
 </figure>
@@ -609,7 +599,6 @@ accurate at the short-T2 end of its prior. Times are measured at build time.</sp
 <ul class="simple">
 <li><p><strong>Dictionary matching:</strong> a grid. A subspace shortens each inner product to the rank; grouping reduces how many are taken. A <code class="docutils literal notranslate"><span class="pre">prune</span></code> set too small can exclude the group holding the match.</p></li>
 <li><p><strong>Lookup table:</strong> one unknown, and a <code class="docutils literal notranslate"><span class="pre">combine</span></code> that is monotonic in it, such as the MP2RAGE unified image.</p></li>
-<li><p><strong>Nonlinear least squares:</strong> a starting point strictly inside the bounds, by default the median of the training draws. Each iteration costs one forward-mode pass per unknown.</p></li>
 <li><p><strong>PERK:</strong> a prior and the noise level of the scan. Mapping costs one feature projection per voxel, whatever the number of unknowns.</p></li>
 </ul>
 </section>
@@ -623,11 +612,10 @@ image, has to be put on the grid.</p>
 </section>
 <section id="uncertainty">
 <h3>Uncertainty<a class="headerlink" href="#uncertainty" title="Link to this heading">#</a></h3>
-<p>Nonlinear least squares reports its standard error, from the inverse Fisher
-matrix at the solution and the noise level given to <code class="docutils literal notranslate"><span class="pre">fit</span></code>. PERK regresses the absolute error of its training estimates on
-the same features, so its uncertainty includes the bias toward the prior; it
-holds at the signal amplitude it was trained at. Both are read against
-<a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>, the bound for an unbiased estimator. Grid methods raise
+<p>PERK regresses the absolute error of its training estimates on its features,
+so its uncertainty includes the bias toward the prior; it holds at the signal
+amplitude it was trained at. It is read against <a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>,
+the bound for an unbiased estimator. Grid methods raise
 <code class="docutils literal notranslate"><span class="pre">NotImplementedError</span></code> when asked for one.</p>
 </section>
 </section>
@@ -636,7 +624,7 @@ holds at the signal amplitude it was trained at. Both are read against
 <ul class="simple">
 <li><p><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/01-dictionary-matching.html"><span class="doc">Dictionary matching</span></a>: an MRF train matched in full, in a rank-4 subspace, and in 32 groups.</p></li>
 <li><p><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/02-lookup-table.html"><span class="doc">MP2RAGE lookup table</span></a>: MP2RAGE T1 by lookup table and by dictionary, against the number of grid points.</p></li>
-<li><p><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.html"><span class="doc">T2 mapping by nonlinear least squares</span></a>: multi-echo T2 with a noise-floor offset, fitted and matched.</p></li>
+<li><p><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.html"><span class="doc">T2 mapping by nonlinear least squares</span></a>: multi-echo T2 with a noise-floor offset, fitted with bartorch’s <code class="docutils literal notranslate"><span class="pre">apps.mobafit</span></code> and matched.</p></li>
 <li><p><a class="reference internal" href="../generated/autoexamples/02-parameter-inference/04-perk.html"><span class="doc">PERK: kernel ridge regression</span></a>: PERK at three regression sizes, and its uncertainty against the Cramér-Rao bound.</p></li>
 </ul>
 </section>

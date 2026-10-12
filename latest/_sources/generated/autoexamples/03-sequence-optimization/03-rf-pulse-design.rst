@@ -163,13 +163,13 @@ Optimization
 
 The real and imaginary parts of every sample are the design parameters, with
 no limits. To respect the scanner's peak B1, you would wrap them in
-:class:`~blochsim.Bounded`:
+:class:`~blochsim.optim.Bounded`:
 
 .. GENERATED FROM PYTHON SOURCE LINES 109-139
 
 .. code-block:: Python
 
-    from blochsim import SequenceDesign
+    from blochsim.optim import SequenceDesign
 
     design = SequenceDesign(
         cost, real=start.clone(), imag=torch.zeros(SAMPLES, dtype=torch.float64)
@@ -243,7 +243,7 @@ What this example did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 9.308 seconds)
+   **Total running time of the script:** (0 minutes 6.117 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_03-rf-pulse-design.py:

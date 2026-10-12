@@ -35,48 +35,46 @@ The forward operator is the chain
 of sampling :math:`P`, Fourier encoding :math:`\mathcal{F}`, coil sensitivities
 :math:`C` and the signal model :math:`M` [1]_. Only :math:`M` changes with the
 sequence, and it is the only factor blochsim supplies: a
-:class:`~blochsim.recon.ModelOperator` wraps any simulator as :math:`M`. The
-problem is nonlinear in the maps, so it needs a starting guess and an outer
-Gauss-Newton loop. In exchange the model can have any number of parameters,
-where a linear subspace would have to span the product of their ranges.
+:class:`~blochsim.ModelOperator` wraps any simulator as :math:`M`. The encoding
+and the Gauss-Newton solver come from
+`bartorch <https://github.com/pulserver/bartorch>`_. The problem is nonlinear
+in the maps, so it needs a starting guess and an outer Gauss-Newton loop. In
+exchange the model can have any number of parameters, where a linear subspace
+would have to span the product of their ranges.
 
 Prerequisites: Course lessons :doc:`../01-framework/01-first-simulation` and
 :doc:`../01-framework/03-custom-signal-model`.
 
-.. GENERATED FROM PYTHON SOURCE LINES 29-34
+.. GENERATED FROM PYTHON SOURCE LINES 31-36
 
 .. colab-link::
    :needs_gpu: 1
 
-   !pip install blochsim matplotlib brainweb-dl cmap mri-nufft[finufft,cufinufft] deepinv
+   !pip install blochsim bartorch matplotlib brainweb-dl cmap
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 36-44
+.. GENERATED FROM PYTHON SOURCE LINES 38-44
 
 Setup
 -----
 
-blochsim simulates the signal. The radial trajectory and the non-uniform
-Fourier transform come from mri-nufft. deepinv provides the
-:class:`~deepinv.physics.LinearPhysics` base class of the encoding operator and
-the linear solver that each Gauss-Newton step calls. Any encoding that provides
-``A`` and ``A_adjoint`` works with them.
+blochsim simulates the signal. bartorch provides the non-uniform Fourier
+transform, the nonlinear operator that carries the signal model into BART, and
+the iteratively regularized Gauss-Newton solver.
 
-.. GENERATED FROM PYTHON SOURCE LINES 44-106
+.. GENERATED FROM PYTHON SOURCE LINES 44-104
 
 .. code-block:: Python
 
     import time
 
-    import mrinufft
     import numpy as np
     import torch
 
-    from deepinv.physics import LinearPhysics
-    from mrinufft.trajectories import initialize_2D_radial
+    from bartorch import linop, nlop
 
+    from blochsim import ModelOperator
     from blochsim.estimators import DictionaryMatcher
-    from blochsim.recon import GaussNewton, ModelOperator, Schedule, iterative
     from blochsim.simulators import MultiEchoSimulator
 
 
@@ -87,12 +85,12 @@ the linear solver that each Gauss-Newton step calls. Any encoding that provides
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 107-109
+.. GENERATED FROM PYTHON SOURCE LINES 105-107
 
 The experiment is a 96 x 96 matrix read as 16 radial spokes of 192 samples per
 echo, with 8 echoes. The baseline estimator uses a rank-3 temporal basis.
 
-.. GENERATED FROM PYTHON SOURCE LINES 109-121
+.. GENERATED FROM PYTHON SOURCE LINES 107-119
 
 .. code-block:: Python
 
@@ -101,21 +99,21 @@ echo, with 8 echoes. The baseline estimator uses a rank-3 temporal basis.
     SPOKES = 16
     SAMPLES = 192
     RANK = 3
+    STEPS = 8  # Gauss-Newton iterations
+    CG_ITERATIONS = 20  # conjugate-gradient iterations per linearized problem
+    ALPHA = 1e-3  # initial damping, halved at every iteration
 
-    # The GPU transform is used when it is installed and usable, and the simulation
-    # follows it so that the images and the operator are on one device.
-    on_gpu = torch.cuda.is_available() and mrinufft.check_backend("cufinufft")
-    device = "cuda" if on_gpu else "cpu"
-    backend = "cufinufft" if on_gpu else "finufft"
-
-
+    # The simulation and the transform run on a GPU when one is available.
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 122-129
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 120-127
 
 Phantom
 -------
@@ -125,7 +123,7 @@ gives fuzzy tissue memberships, not labels. Weighting the tabulated T2 and
 proton density of each tissue by its membership gives maps in which mixed
 voxels lie between the pure tissues, known everywhere.
 
-.. GENERATED FROM PYTHON SOURCE LINES 129-162
+.. GENERATED FROM PYTHON SOURCE LINES 127-160
 
 
 
@@ -134,7 +132,7 @@ voxels lie between the pure tissues, known everywhere.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 163-169
+.. GENERATED FROM PYTHON SOURCE LINES 161-167
 
 Sequence and sampling
 ---------------------
@@ -143,7 +141,7 @@ The sequence is a multi-echo spin echo with eight echoes from 10 to 150 ms.
 Simulating it over the T2 map gives one image per echo, scaled by the proton
 density:
 
-.. GENERATED FROM PYTHON SOURCE LINES 169-177
+.. GENERATED FROM PYTHON SOURCE LINES 167-175
 
 .. code-block:: Python
 
@@ -162,50 +160,36 @@ density:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 178-186
+.. GENERATED FROM PYTHON SOURCE LINES 176-185
 
 Each echo is sampled by 16 radial spokes, rotated by the golden angle from the
 echo before, so the echoes together cover k-space more evenly than any one
 does. 16 spokes across a 96-sample matrix is about ninefold undersampling,
 which is where the reconstructions differ.
 
-The encoding operator maps the images of all echoes to k-space, with one
-trajectory per echo. It wraps mri-nufft, as a real pipeline would wrap its own
-trajectory, density compensation and coils:
+The trajectory is ``(echoes, spokes, samples, 2)`` in grid units. Each echo
+has its own :class:`bartorch.linop.NUFFT` along its own spokes, and
+:func:`bartorch.linop.block_diag` stacks them into one operator from the
+``(echoes, y, x)`` images to the ``(echoes, spokes, samples)`` k-space:
 
-.. GENERATED FROM PYTHON SOURCE LINES 186-216
+.. GENERATED FROM PYTHON SOURCE LINES 185-200
 
 .. code-block:: Python
 
-    trajectory = (
-        initialize_2D_radial(SPOKES * ECHOES, SAMPLES, tilt="golden")
-        .astype(np.float32)
-        .reshape(ECHOES, SPOKES * SAMPLES, 2)
+    golden = torch.pi * (3.0 - 5.0**0.5)
+    angle = golden * torch.arange(ECHOES * SPOKES).reshape(ECHOES, SPOKES, 1)
+    radius = torch.linspace(-SIZE / 2, SIZE / 2, SAMPLES + 1)[:-1]
+    trajectory = torch.stack(
+        (radius * torch.cos(angle), radius * torch.sin(angle)), dim=-1
+    ).to(device)
+
+    encoding = linop.block_diag(
+        [
+            linop.NUFFT(trajectory[echo : echo + 1], image_shape=(1, SIZE, SIZE))
+            for echo in range(ECHOES)
+        ]
     )
-
-    build = mrinufft.get_operator(backend)
-    per_echo = [
-        build(trajectory[echo], (SIZE, SIZE), n_coils=1, squeeze_dims=False, density=True)
-        for echo in range(ECHOES)
-    ]
-
-
-    class RadialEncoding(LinearPhysics):
-        """``(batch, echoes, x, y)`` images to k-space, one trajectory per echo."""
-
-        def A(self, x, **kwargs):
-            return torch.stack(
-                [per_echo[e].op(x[:, e][:, None])[:, 0] for e in range(ECHOES)], 1
-            )
-
-        def A_adjoint(self, y, **kwargs):
-            return torch.stack(
-                [per_echo[e].adj_op(y[:, e][:, None])[:, 0] for e in range(ECHOES)], 1
-            )
-
-
-    encoding = RadialEncoding()
-    kspace = encoding.A(images.movedim(-1, 0)[None])
+    kspace = encoding(images.movedim(-1, 0).contiguous())
 
 
 
@@ -214,16 +198,18 @@ trajectory, density compensation and coils:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 217-219
+.. GENERATED FROM PYTHON SOURCE LINES 201-204
 
-Scale the k-space so that the gridded image peaks at one. The damping weights
-below are then numbers about the model, not about the receiver gain:
+Gridding is the adjoint after a ramp density compensation. Scale the k-space
+so that the gridded image peaks at one; the damping weights below are then
+numbers about the model, not about the receiver gain:
 
-.. GENERATED FROM PYTHON SOURCE LINES 219-250
+.. GENERATED FROM PYTHON SOURCE LINES 204-236
 
 .. code-block:: Python
 
-    gridded = encoding.A_adjoint(kspace)[0].movedim(0, -1)
+    ramp = (radius.abs() + 0.5).to(device) / (SIZE / 2)
+    gridded = encoding.H(kspace * ramp).movedim(0, -1)
     scale = float(gridded.abs().max())
     kspace, gridded = kspace / scale, gridded / scale
 
@@ -246,7 +232,7 @@ below are then numbers about the model, not about the receiver gain:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 251-261
+.. GENERATED FROM PYTHON SOURCE LINES 237-247
 
 The maps are what both reconstructions below recover, and the spokes are all
 that is measured of them.
@@ -259,7 +245,7 @@ an estimator, here a dictionary match over a rank-3 temporal basis, which
 holds essentially all of an eight-echo exponential decay. The nonlinear
 reconstruction has no such step, because its result is the maps.
 
-.. GENERATED FROM PYTHON SOURCE LINES 261-291
+.. GENERATED FROM PYTHON SOURCE LINES 247-277
 
 .. code-block:: Python
 
@@ -277,19 +263,19 @@ reconstruction has no such step, because its result is the maps.
  .. code-block:: none
 
     rank 3 of 8 keeps 0.999992 of the signal
-    adjoint per echo       0.0s   T2 error  30.6 ms (20.6%)
+    adjoint per echo       0.0s   T2 error  27.9 ms (20.3%)
 
-    tensor([[ 52.7455,  61.8838,  58.0762,  ...,  96.9138,  74.0681,  63.4068],
-            [ 47.4148,  49.6994,  50.4609,  ...,  91.5832,  66.4529,  77.8758],
-            [ 52.7455,  60.3607,  74.0681,  ...,  76.3527,  71.0220,  78.6373],
+    tensor([[ 48.9379,  20.7615,  32.1844,  ..., 164.6894, 400.0000, 400.0000],
+            [ 87.0140,  54.2685,  61.8838,  ..., 400.0000, 400.0000, 400.0000],
+            [400.0000,  90.0601,  39.0381,  ..., 400.0000, 120.5210,  84.7295],
             ...,
-            [ 71.0220,  80.1603, 106.0521,  ...,  74.8297,  51.9840,  64.1683],
-            [103.0060, 123.5671, 128.1363,  ...,  93.8677,  64.9299,  56.5531],
-            [122.0441, 109.0982, 111.3828,  ...,  82.4449,  81.6834,  69.4990]])
+            [400.0000, 400.0000, 305.5711,  ...,  23.0461,  43.6072,  27.6152],
+            [ 78.6373,  84.7295, 190.5812,  ...,  20.0000,  39.0381,  39.7996],
+            [ 41.3226, 361.9239, 223.3266,  ...,  21.5230,  23.0461,  20.0000]])
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 292-310
+.. GENERATED FROM PYTHON SOURCE LINES 278-296
 
 Gridding is the adjoint with density compensation. 16 spokes of 192 samples are
 3072 measurements per echo against 9216 unknowns, so each echo alone is
@@ -310,11 +296,11 @@ k-space. You declare two things:
   fit, because the model is evaluated in every voxel to predict every k-space
   sample, and one unphysical voxel corrupts the whole residual.
 
-.. GENERATED FROM PYTHON SOURCE LINES 310-312
+.. GENERATED FROM PYTHON SOURCE LINES 296-298
 
 .. code-block:: Python
 
-    operator = ModelOperator(simulator, "T2", bounds={"T2": (20.0, 400.0)})
+    operator = ModelOperator(simulator.to(device), "T2", bounds={"T2": (20.0, 400.0)})
 
 
 
@@ -323,18 +309,19 @@ k-space. You declare two things:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 313-315
+.. GENERATED FROM PYTHON SOURCE LINES 299-303
 
-The amplitude starts from the first gridded echo, which costs nothing and
-makes the first Gauss-Newton step well conditioned:
+:class:`bartorch.nlop.ModelOperator` carries it into BART as a nonlinear
+operator from ``(channels, y, x)`` maps to ``(echoes, y, x)`` images. The
+amplitude starts from the first gridded echo, which costs nothing and makes the
+first Gauss-Newton step well conditioned:
 
-.. GENERATED FROM PYTHON SOURCE LINES 315-319
+.. GENERATED FROM PYTHON SOURCE LINES 303-306
 
 .. code-block:: Python
 
-    initial = operator.initial((1, SIZE, SIZE), T2=100.0).to(device)
-    initial[0, ..., 1] = gridded[..., 0].real
-    initial[0, ..., 2] = gridded[..., 0].imag
+    M = nlop.ModelOperator(operator, (SIZE, SIZE))
+    initial = M.initial(T2=100.0, amplitude=gridded[..., 0]).to(device)
 
 
 
@@ -343,30 +330,26 @@ makes the first Gauss-Newton step well conditioned:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 320-329
+.. GENERATED FROM PYTHON SOURCE LINES 307-315
 
 Gauss-Newton solve
 ------------------
 
-Each iteration linearizes the model at the current maps, solves the linearized
-least-squares problem and steps, then lowers the damping (iteratively
-regularized Gauss-Newton). blochsim provides the loop and the derivative.
-:func:`~blochsim.recon.iterative` hands each linearized problem to the deepinv
-solver used for the baseline; replacing that argument changes the solver, for
-example to a proximal one with a wavelet prior.
+The forward operator is the composition ``encoding @ M``. Each iteration of
+:class:`bartorch.nlop.IRGNM` linearizes it at the current maps, solves the
+linearized least-squares problem by conjugate gradients and steps, then halves
+the damping. blochsim provides the model and its derivative; the loop and the
+encoding are BART's.
 
-.. GENERATED FROM PYTHON SOURCE LINES 329-349
+.. GENERATED FROM PYTHON SOURCE LINES 315-328
 
 .. code-block:: Python
 
 
-    found = GaussNewton(
-        Schedule(initial=1e-3, factor=0.5, minimum=1e-7),
-        solve=iterative(max_iter=20),
-        max_iterations=8,
-    ).minimize(operator, kspace, initial, encoding=encoding)
+    solver = nlop.IRGNM(iterations=STEPS, alpha=ALPHA, cg_maxiter=CG_ITERATIONS)
+    found = solver(kspace, encoding @ M, x0=initial)
 
-    modelled = operator.split(found.x)["T2"][0]
+    modelled = M.split(found)["T2"]
 
 
 
@@ -377,16 +360,22 @@ example to a proximal one with a wavelet prior.
 
  .. code-block:: none
 
-    model-based            3.1s   T2 error  17.1 ms (12.6%)
-    residual 5.529e+03 -> 5.577e-01, damping 1e-03 -> 8e-06
+    model-based            3.6s   T2 error  11.6 ms ( 9.4%)
+
+    tensor([[100.6415, 100.7110, 101.6161,  ..., 101.3230, 102.0799,  98.8597],
+            [100.9624,  98.9116,  97.5704,  ..., 101.4051,  98.1519,  95.6148],
+            [101.0574, 100.0148,  98.4379,  ..., 105.0772, 104.9345, 104.2215],
+            ...,
+            [101.5620, 101.8510, 101.8470,  ..., 100.1675, 102.1606, 100.2421],
+            [100.4910, 100.6044, 101.2162,  ...,  99.1119, 104.5041, 106.3198],
+            [100.9847, 100.9229, 101.3378,  ...,  94.5165,  98.9711, 103.9647]])
 
 
 
+.. GENERATED FROM PYTHON SOURCE LINES 329-338
 
-.. GENERATED FROM PYTHON SOURCE LINES 350-359
-
-``found.x`` holds the solved variables and ``operator.split`` separates them
-into named maps. No fit follows.
+``found`` holds the solved variables and ``M.split`` separates them into named
+maps. No fit follows.
 
 Time and memory
 ---------------
@@ -395,13 +384,14 @@ Each conjugate-gradient step applies the Jacobian and its adjoint once. Each
 product is one application of the encoding operator and one of the model.
 Timing the four shows which part a faster reconstruction has to speed up.
 
-.. GENERATED FROM PYTHON SOURCE LINES 359-396
+.. GENERATED FROM PYTHON SOURCE LINES 338-375
 
 .. code-block:: Python
 
-    tangent = torch.randn_like(initial)
-    predicted = operator.A_jvp(initial, tangent)
-    adjoint_image = encoding.A_adjoint(kspace).movedim(1, -1)
+    point = operator.initial((SIZE, SIZE), T2=100.0).to(device)
+    tangent = torch.randn_like(point)
+    predicted = operator.A_jvp(point, tangent)
+    adjoint_image = encoding.H(kspace).movedim(0, -1)
 
 
 
@@ -413,16 +403,16 @@ Timing the four shows which part a faster reconstruction has to speed up.
  .. code-block:: none
 
     per conjugate-gradient step, 3 channels solved for:
-      model    J  v      3.8 ms
-      model    J^H v     1.4 ms
-      encoding A         5.4 ms
-      encoding A^H       5.3 ms
+      model    J  v      2.9 ms
+      model    J^H v     1.1 ms
+      encoding A         0.9 ms
+      encoding A^H       0.8 ms
     the Jacobian this avoids holding: 1.7 MiB, against 0.6 MiB for a signal
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 397-405
+.. GENERATED FROM PYTHON SOURCE LINES 376-384
 
 The products do not build the Jacobian. Its blocks are voxels x channels x
 contrasts, where a signal is voxels x contrasts, so avoiding it saves the
@@ -433,7 +423,7 @@ Maps
 
 The T2 maps use a perceptually uniform colormap reserved for T2 [2]_.
 
-.. GENERATED FROM PYTHON SOURCE LINES 405-434
+.. GENERATED FROM PYTHON SOURCE LINES 384-413
 
 
 
@@ -447,13 +437,13 @@ The T2 maps use a perceptually uniform colormap reserved for T2 [2]_.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 435-467
+.. GENERATED FROM PYTHON SOURCE LINES 414-448
 
 Alternative signal model
 ------------------------
 
 The model is the only part that names a relaxation time, and it is an ordinary
-:class:`~blochsim.model.Simulator`, the object used in the fitting and design
+:class:`~blochsim.Simulator`, the object used in the fitting and design
 Applications. Water-fat separation, T2* with a field map or a Look-Locker
 inversion recovery each require a different simulator. The operator, the loop
 and the encoding are unchanged.
@@ -474,18 +464,20 @@ What this Application did, stated the way you would ask an agent for it:
 
 .. code-block:: text
 
-   With blochsim, mri-nufft and deepinv, simulate an 8-echo multi-echo spin
-   echo (TE 10 to 150 ms) on a BrainWeb T2 phantom of 96 x 96 voxels, sampled
-   by 16 golden-angle radial spokes per echo. Reconstruct T2 two ways: gridding
-   followed by a dictionary match, and a ModelOperator over the simulator with
-   T2 bounded to 20-400 ms, solved by Gauss-Newton from a T2 of 100 ms.
+   With blochsim and bartorch, simulate an 8-echo multi-echo spin echo (TE 10
+   to 150 ms) on a BrainWeb T2 phantom of 96 x 96 voxels, sampled by 16
+   golden-angle radial spokes per echo. Reconstruct T2 two ways: gridding
+   followed by a dictionary match, and a blochsim ModelOperator over the
+   simulator with T2 bounded to 20-400 ms, wrapped as bartorch's
+   nlop.ModelOperator under linop.NUFFT and solved by nlop.IRGNM from a T2 of
+   100 ms.
    Report time and mean T2 error over the brain, the time of each Jacobian
    product, and the size of the Jacobian that the operator avoids storing.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.135 seconds)
+   **Total running time of the script:** (0 minutes 4.271 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_04-model-based-imaging_02-nonlinear-inversion.py:

@@ -252,9 +252,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -461,7 +459,7 @@
 
 
 <div class="viewcode-block" id="DictionaryMatcher">
-<a class="viewcode-back" href="../../../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DictionaryMatcher</span><span class="p">(</span><span class="n">Estimator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Match signals to dictionary atoms by normalized complex inner product.</span>
 
@@ -496,7 +494,7 @@
 <span class="sd">    A ``rank`` given to :meth:`fit` compresses the dictionary to</span>
 <span class="sd">    ``(atoms, rank)`` before grouping. The estimator also returns an ``M0``</span>
 <span class="sd">    map, computed from the match score and atom norms without touching atoms.</span>
-<span class="sd">    Volumes are streamed under :func:`~blochsim.execution`.</span>
+<span class="sd">    Volumes are streamed as ``map(execution=...)`` says.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -705,7 +703,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_replicas</span> <span class="o">=</span> <span class="p">{}</span>
 
 <div class="viewcode-block" id="DictionaryMatcher.match">
-<a class="viewcode-back" href="../../../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher.match">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher.match">[docs]</a>
     <span class="nd">@torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">()</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">match</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signals</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MatchResult</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Find the best-matching atoms of each measured signal.</span>

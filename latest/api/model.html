@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -480,14 +478,9 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#spin-physics-and-event-operators">Spin physics and event operators</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#operator-tables">Operator tables</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.SPOILED"><code class="docutils literal notranslate"><span class="pre">SPOILED</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.UNBALANCED"><code class="docutils literal notranslate"><span class="pre">UNBALANCED</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.BALANCED"><code class="docutils literal notranslate"><span class="pre">BALANCED</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.REFOCUSED"><code class="docutils literal notranslate"><span class="pre">REFOCUSED</span></code></a></li>
-</ul>
-</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#handlers">Handlers</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#model-operator">Model operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#temporal-basis">Temporal basis</a></li>
 </ul>
             </nav>
         </div>
@@ -501,16 +494,16 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="signal-models">
 <h1>Signal models<a class="headerlink" href="#signal-models" title="Link to this heading">#</a></h1>
-<p><a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> is the base class of a pulse sequence protocol and the only
+<p><a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> is the base class of a pulse sequence protocol and the only
 model interface that estimators, reconstruction and sequence design consume.</p>
-<p>A subclass names an operator for each kind of event (<code class="docutils literal notranslate"><span class="pre">excitation</span></code>,
-<code class="docutils literal notranslate"><span class="pre">refocusing</span></code>, <code class="docutils literal notranslate"><span class="pre">inversion</span></code>, <code class="docutils literal notranslate"><span class="pre">saturation</span></code>, <code class="docutils literal notranslate"><span class="pre">readout</span></code>, <code class="docutils literal notranslate"><span class="pre">delay</span></code>) and implements
-<a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, which returns the operators of one repetition in
+<p>A subclass binds a handler to each kind of event it plays and implements
+<a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.layout" title="blochsim.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, which returns the operators of one repetition in
 playing order. A protocol with a closed form implements
-<a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a> instead. The same operators interpret a description
-read by <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> or <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_pulseq" title="blochsim.model.Simulator.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a>,
-in which case the layout is not called. The constructor takes the keywords
-<code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> takes, <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><code class="xref py py-meth docutils literal notranslate"><span class="pre">bind()</span></code></a> fixes more on a
+<a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.evaluate" title="blochsim.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a> instead. The same operators interpret a description
+read by <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.from_description" title="blochsim.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> or <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.from_pulseq" title="blochsim.Simulator.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a>,
+in which case the layout is not called; a pulse is played by the handler its
+Pulseq RF use names. The constructor takes the keywords
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> takes, <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.bind" title="blochsim.Simulator.bind"><code class="xref py py-meth docutils literal notranslate"><span class="pre">bind()</span></code></a> fixes more on a
 copy, and a call overrides both. See <a class="reference internal" href="../explanations/signal-model.html"><span class="doc">Signal model</span></a>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">SSFPMRF</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
     <span class="n">excitation</span> <span class="o">=</span> <span class="n">Excitation</span>
@@ -529,7 +522,7 @@ copy, and a call overrides both. See <a class="reference internal" href="../expl
 </pre></div>
 </div>
 <p>A model composing other simulators lists its properties in the class body and
-implements <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a>:</p>
+implements <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.evaluate" title="blochsim.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">JointRelaxometry</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
     <span class="n">properties</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"T1"</span><span class="p">,</span> <span class="s2">"T2"</span><span class="p">,</span> <span class="s2">"M0"</span><span class="p">)</span>
 
@@ -547,17 +540,69 @@ implements <a class="reference internal" href="../generated/blochsim.model.Simul
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Simulator</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Simulator</span></code></a></p></td>
 <td><p>Base class of a pulse sequence protocol and its signal model.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<section id="spin-physics-and-event-operators">
-<h2>Spin physics and event operators<a class="headerlink" href="#spin-physics-and-event-operators" title="Link to this heading">#</a></h2>
-<p><a class="reference internal" href="../generated/blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpinPhysics</span></code></a> declares the tissue properties of a voxel and the
-<a class="reference internal" href="../generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators" title="blochsim.model.EventOperators"><code class="xref py py-class docutils literal notranslate"><span class="pre">EventOperators</span></code></a> that realize each kind of event. Any tissue property
-may be given to any simulator; giving one enables its term.</p>
+<section id="handlers">
+<h2>Handlers<a class="headerlink" href="#handlers" title="Link to this heading">#</a></h2>
+<p>A class attribute named after a kind of event binds the operator that plays
+it. A handler is a built-in operator from <a class="reference internal" href="sequence.html"><span class="doc">Sequences</span></a> or a function
+composing them with <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Attribute</p></th>
+<th class="head"><p>Event</p></th>
+<th class="head"><p>Default</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">excitation</span></code></p></td>
+<td><p>RF, use <em>excitation</em> or none</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Excitation</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">refocusing</span></code></p></td>
+<td><p>RF, use <em>refocusing</em></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Refocusing</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">inversion</span></code></p></td>
+<td><p>RF, use <em>inversion</em></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Inversion</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">saturation</span></code></p></td>
+<td><p>RF, use <em>saturation</em></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Saturation</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">preparation</span></code></p></td>
+<td><p>RF, use <em>preparation</em></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Excitation</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">other</span></code></p></td>
+<td><p>RF, use <em>other</em></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Excitation</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">readout</span></code></p></td>
+<td><p>ADC, with the gradients after it</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Readout</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">delay</span></code></p></td>
+<td><p>wait, with or without a gradient</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Delay</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="model-operator">
+<h2>Model operator<a class="headerlink" href="#model-operator" title="Link to this heading">#</a></h2>
+<p><a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a> is a signal model as an operator: parameter maps in,
+one image per contrast out, with analytic Jacobian-vector and adjoint
+products, a complex amplitude and box bounds. It is what a model-based
+reconstruction composes with an encoding: bartorch’s <code class="docutils literal notranslate"><span class="pre">nlop.ModelOperator</span></code>
+takes it as a BART nonlinear operator, and <code class="docutils literal notranslate"><span class="pre">physics()</span></code> wraps it for deepinv.
+See <a class="reference internal" href="../explanations/model-based-reconstruction.html"><span class="doc">Model-based reconstruction</span></a>.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
 <tr class="row-odd"><th class="head"><p>Object</p></th>
@@ -565,154 +610,30 @@ may be given to any simulator; giving one enables its term.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SpinPhysics</span></code></a></p></td>
-<td><p>The tissue properties a model exposes and the operators that realize its events.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators" title="blochsim.model.EventOperators"><code class="xref py py-obj docutils literal notranslate"><span class="pre">EventOperators</span></code></a></p></td>
-<td><p>Operator factories, one per kind of event.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ModelOperator</span></code></a></p></td>
+<td><p>A signal model over parameter maps, with its derivatives.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-<section id="operator-tables">
-<h2>Operator tables<a class="headerlink" href="#operator-tables" title="Link to this heading">#</a></h2>
-<p>A <code class="docutils literal notranslate"><span class="pre">SpinPhysics</span></code> takes one of four predefined <a class="reference internal" href="../generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators" title="blochsim.model.EventOperators"><code class="xref py py-class docutils literal notranslate"><span class="pre">EventOperators</span></code></a>.</p>
+<section id="temporal-basis">
+<h2>Temporal basis<a class="headerlink" href="#temporal-basis" title="Link to this heading">#</a></h2>
+<p><a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace.modes" title="blochsim.Subspace.modes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Subspace.modes</span></code></a> gives the basis in the layout a subspace operator reads.
+The same basis serves the estimators on <a class="reference internal" href="estimators.html"><span class="doc">Parameter estimation</span></a>.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
-<tr class="row-odd"><th class="head"><p></p></th>
-<th class="head"><p>Readout</p></th>
-<th class="head"><p>Refocusing</p></th>
+<tr class="row-odd"><th class="head"><p>Object</p></th>
+<th class="head"><p>Description</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.SPOILED" title="blochsim.model.SPOILED"><code class="xref py py-data docutils literal notranslate"><span class="pre">SPOILED</span></code></a></p></td>
-<td><p>ideal transverse spoiling after the sample</p></td>
-<td><p>crushed</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.UNBALANCED" title="blochsim.model.UNBALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">UNBALANCED</span></code></a></p></td>
-<td><p>one unbalanced gradient after the sample</p></td>
-<td><p>crushed</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.BALANCED" title="blochsim.model.BALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">BALANCED</span></code></a></p></td>
-<td><p>the repetition rewinds after the sample</p></td>
-<td><p>uncrushed</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.REFOCUSED" title="blochsim.model.REFOCUSED"><code class="xref py py-data docutils literal notranslate"><span class="pre">REFOCUSED</span></code></a></p></td>
-<td><p>the sample at the echo centre</p></td>
-<td><p>crushed</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Subspace</span></code></a></p></td>
+<td><p>Orthonormal temporal basis of a set of signals, for subspace reconstruction.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<dl class="py data">
-<dt class="sig sig-object py" id="blochsim.model.SPOILED">
-<span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">SPOILED</span></span><a class="headerlink" href="#blochsim.model.SPOILED" title="Link to this definition">#</a></dt>
-<dd><p>Operator factories, one per kind of event.</p>
-<p>Each field is called with the protocol’s parameters for that event and
-decides which <code class="xref py py-class docutils literal notranslate"><span class="pre">RfUse</span></code> and
-<code class="xref py py-class docutils literal notranslate"><span class="pre">EventAction</span></code> its events carry. Assigning one
-selects, for example, a readout followed by an unbalanced gradient or a
-shaped excitation. The presets <a class="reference internal" href="#blochsim.model.BALANCED" title="blochsim.model.BALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">BALANCED</span></code></a>, <a class="reference internal" href="#blochsim.model.UNBALANCED" title="blochsim.model.UNBALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">UNBALANCED</span></code></a>,
-<a class="reference internal" href="#blochsim.model.SPOILED" title="blochsim.model.SPOILED"><code class="xref py py-data docutils literal notranslate"><span class="pre">SPOILED</span></code></a> and <a class="reference internal" href="#blochsim.model.REFOCUSED" title="blochsim.model.REFOCUSED"><code class="xref py py-data docutils literal notranslate"><span class="pre">REFOCUSED</span></code></a> cover the standard sequence
-families.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>excitation</strong> (<em>callable</em><em>, </em><em>default=Excitation</em>) – Plays a pulse that tips magnetization into the transverse plane.</p></li>
-<li><p><strong>refocusing</strong> (<em>callable</em><em>, </em><em>default=Refocusing</em>) – Plays a refocusing pulse, with the crusher gradients it sits between.</p></li>
-<li><p><strong>inversion</strong> (<em>callable</em><em>, </em><em>default=Inversion</em>) – Plays an inversion and holds the timeline for the recovery after it.</p></li>
-<li><p><strong>saturation</strong> (<em>callable</em><em>, </em><em>default=Saturation</em>) – Plays a saturation pulse.</p></li>
-<li><p><strong>readout</strong> (<em>callable</em><em>, </em><em>default=Readout</em>) – Plays an ADC sample and the rest of its repetition: whether the
-gradient after it is balanced, unbalanced (shifting every state by one
-order) or followed by spoiling.</p></li>
-<li><p><strong>delay</strong> (<em>callable</em><em>, </em><em>default=Delay</em>) – Plays a wait.</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py data">
-<dt class="sig sig-object py" id="blochsim.model.UNBALANCED">
-<span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">UNBALANCED</span></span><a class="headerlink" href="#blochsim.model.UNBALANCED" title="Link to this definition">#</a></dt>
-<dd><p>Operator factories, one per kind of event.</p>
-<p>Each field is called with the protocol’s parameters for that event and
-decides which <code class="xref py py-class docutils literal notranslate"><span class="pre">RfUse</span></code> and
-<code class="xref py py-class docutils literal notranslate"><span class="pre">EventAction</span></code> its events carry. Assigning one
-selects, for example, a readout followed by an unbalanced gradient or a
-shaped excitation. The presets <a class="reference internal" href="#blochsim.model.BALANCED" title="blochsim.model.BALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">BALANCED</span></code></a>, <a class="reference internal" href="#blochsim.model.UNBALANCED" title="blochsim.model.UNBALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">UNBALANCED</span></code></a>,
-<a class="reference internal" href="#blochsim.model.SPOILED" title="blochsim.model.SPOILED"><code class="xref py py-data docutils literal notranslate"><span class="pre">SPOILED</span></code></a> and <a class="reference internal" href="#blochsim.model.REFOCUSED" title="blochsim.model.REFOCUSED"><code class="xref py py-data docutils literal notranslate"><span class="pre">REFOCUSED</span></code></a> cover the standard sequence
-families.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>excitation</strong> (<em>callable</em><em>, </em><em>default=Excitation</em>) – Plays a pulse that tips magnetization into the transverse plane.</p></li>
-<li><p><strong>refocusing</strong> (<em>callable</em><em>, </em><em>default=Refocusing</em>) – Plays a refocusing pulse, with the crusher gradients it sits between.</p></li>
-<li><p><strong>inversion</strong> (<em>callable</em><em>, </em><em>default=Inversion</em>) – Plays an inversion and holds the timeline for the recovery after it.</p></li>
-<li><p><strong>saturation</strong> (<em>callable</em><em>, </em><em>default=Saturation</em>) – Plays a saturation pulse.</p></li>
-<li><p><strong>readout</strong> (<em>callable</em><em>, </em><em>default=Readout</em>) – Plays an ADC sample and the rest of its repetition: whether the
-gradient after it is balanced, unbalanced (shifting every state by one
-order) or followed by spoiling.</p></li>
-<li><p><strong>delay</strong> (<em>callable</em><em>, </em><em>default=Delay</em>) – Plays a wait.</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py data">
-<dt class="sig sig-object py" id="blochsim.model.BALANCED">
-<span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">BALANCED</span></span><a class="headerlink" href="#blochsim.model.BALANCED" title="Link to this definition">#</a></dt>
-<dd><p>Operator factories, one per kind of event.</p>
-<p>Each field is called with the protocol’s parameters for that event and
-decides which <code class="xref py py-class docutils literal notranslate"><span class="pre">RfUse</span></code> and
-<code class="xref py py-class docutils literal notranslate"><span class="pre">EventAction</span></code> its events carry. Assigning one
-selects, for example, a readout followed by an unbalanced gradient or a
-shaped excitation. The presets <a class="reference internal" href="#blochsim.model.BALANCED" title="blochsim.model.BALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">BALANCED</span></code></a>, <a class="reference internal" href="#blochsim.model.UNBALANCED" title="blochsim.model.UNBALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">UNBALANCED</span></code></a>,
-<a class="reference internal" href="#blochsim.model.SPOILED" title="blochsim.model.SPOILED"><code class="xref py py-data docutils literal notranslate"><span class="pre">SPOILED</span></code></a> and <a class="reference internal" href="#blochsim.model.REFOCUSED" title="blochsim.model.REFOCUSED"><code class="xref py py-data docutils literal notranslate"><span class="pre">REFOCUSED</span></code></a> cover the standard sequence
-families.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>excitation</strong> (<em>callable</em><em>, </em><em>default=Excitation</em>) – Plays a pulse that tips magnetization into the transverse plane.</p></li>
-<li><p><strong>refocusing</strong> (<em>callable</em><em>, </em><em>default=Refocusing</em>) – Plays a refocusing pulse, with the crusher gradients it sits between.</p></li>
-<li><p><strong>inversion</strong> (<em>callable</em><em>, </em><em>default=Inversion</em>) – Plays an inversion and holds the timeline for the recovery after it.</p></li>
-<li><p><strong>saturation</strong> (<em>callable</em><em>, </em><em>default=Saturation</em>) – Plays a saturation pulse.</p></li>
-<li><p><strong>readout</strong> (<em>callable</em><em>, </em><em>default=Readout</em>) – Plays an ADC sample and the rest of its repetition: whether the
-gradient after it is balanced, unbalanced (shifting every state by one
-order) or followed by spoiling.</p></li>
-<li><p><strong>delay</strong> (<em>callable</em><em>, </em><em>default=Delay</em>) – Plays a wait.</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py data">
-<dt class="sig sig-object py" id="blochsim.model.REFOCUSED">
-<span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">REFOCUSED</span></span><a class="headerlink" href="#blochsim.model.REFOCUSED" title="Link to this definition">#</a></dt>
-<dd><p>Operator factories, one per kind of event.</p>
-<p>Each field is called with the protocol’s parameters for that event and
-decides which <code class="xref py py-class docutils literal notranslate"><span class="pre">RfUse</span></code> and
-<code class="xref py py-class docutils literal notranslate"><span class="pre">EventAction</span></code> its events carry. Assigning one
-selects, for example, a readout followed by an unbalanced gradient or a
-shaped excitation. The presets <a class="reference internal" href="#blochsim.model.BALANCED" title="blochsim.model.BALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">BALANCED</span></code></a>, <a class="reference internal" href="#blochsim.model.UNBALANCED" title="blochsim.model.UNBALANCED"><code class="xref py py-data docutils literal notranslate"><span class="pre">UNBALANCED</span></code></a>,
-<a class="reference internal" href="#blochsim.model.SPOILED" title="blochsim.model.SPOILED"><code class="xref py py-data docutils literal notranslate"><span class="pre">SPOILED</span></code></a> and <a class="reference internal" href="#blochsim.model.REFOCUSED" title="blochsim.model.REFOCUSED"><code class="xref py py-data docutils literal notranslate"><span class="pre">REFOCUSED</span></code></a> cover the standard sequence
-families.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>excitation</strong> (<em>callable</em><em>, </em><em>default=Excitation</em>) – Plays a pulse that tips magnetization into the transverse plane.</p></li>
-<li><p><strong>refocusing</strong> (<em>callable</em><em>, </em><em>default=Refocusing</em>) – Plays a refocusing pulse, with the crusher gradients it sits between.</p></li>
-<li><p><strong>inversion</strong> (<em>callable</em><em>, </em><em>default=Inversion</em>) – Plays an inversion and holds the timeline for the recovery after it.</p></li>
-<li><p><strong>saturation</strong> (<em>callable</em><em>, </em><em>default=Saturation</em>) – Plays a saturation pulse.</p></li>
-<li><p><strong>readout</strong> (<em>callable</em><em>, </em><em>default=Readout</em>) – Plays an ADC sample and the rest of its repetition: whether the
-gradient after it is balanced, unbalanced (shifting every state by one
-order) or followed by spoiling.</p></li>
-<li><p><strong>delay</strong> (<em>callable</em><em>, </em><em>default=Delay</em>) – Plays a wait.</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
 </section>
 </section>
 
@@ -763,14 +684,9 @@ order) or followed by spoiling.</p></li>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#spin-physics-and-event-operators">Spin physics and event operators</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#operator-tables">Operator tables</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.SPOILED"><code class="docutils literal notranslate"><span class="pre">SPOILED</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.UNBALANCED"><code class="docutils literal notranslate"><span class="pre">UNBALANCED</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.BALANCED"><code class="docutils literal notranslate"><span class="pre">BALANCED</span></code></a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.model.REFOCUSED"><code class="docutils literal notranslate"><span class="pre">REFOCUSED</span></code></a></li>
-</ul>
-</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#handlers">Handlers</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#model-operator">Model operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#temporal-basis">Temporal basis</a></li>
 </ul>
   </nav></div>
 

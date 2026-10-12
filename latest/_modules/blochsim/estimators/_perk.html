@@ -252,9 +252,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -435,7 +433,7 @@
 
 
 <div class="viewcode-block" id="PERK">
-<a class="viewcode-back" href="../../../generated/blochsim.PERK.html#blochsim.PERK">[docs]</a>
+<a class="viewcode-back" href="../../../generated/blochsim.estimators.PERK.html#blochsim.estimators.PERK">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PERK</span><span class="p">(</span><span class="n">Estimator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Parameter estimation via regression with kernels (PERK).</span>
 
@@ -473,7 +471,7 @@
 <span class="sd">        compatible with a ``rank`` passed to :meth:`fit`; a ``subspace`` is</span>
 <span class="sd">        accepted.</span>
 <span class="sd">    uncertainty : bool, default=True</span>
-<span class="sd">        Learn the error model that :meth:`~Estimator.map` reads with</span>
+<span class="sd">        Learn the error model that :meth:`map` reads with</span>
 <span class="sd">        ``uncertainty=True``, at the cost of a second pass over the training</span>
 <span class="sd">        source. With ``False`` that request raises.</span>
 
@@ -487,7 +485,7 @@
 <span class="sd">    training set was simulated at.</span>
 
 <span class="sd">    Estimation is differentiable with respect to the signals. Volumes are</span>
-<span class="sd">    streamed under :func:`~blochsim.execution`.</span>
+<span class="sd">    streamed as ``map(execution=...)`` says.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>

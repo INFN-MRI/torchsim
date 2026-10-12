@@ -67,8 +67,8 @@
     <link rel="icon" href="../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Execution" href="execution.html" />
-    <link rel="prev" title="Model-based reconstruction" href="recon.html" />
+    <link rel="next" title="Miscellaneous" href="../misc/index.html" />
+    <link rel="prev" title="Parameter estimation" href="estimators.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="latest" />
@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -486,8 +484,8 @@
 <h1>Sequence design<a class="headerlink" href="#sequence-design" title="Link to this heading">#</a></h1>
 <p>Minimization of a user-written cost over bounded sequence parameters; see
 <a class="reference internal" href="../explanations/sequence-design.html"><span class="doc">Sequence design</span></a>.</p>
-<p><a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a> holds the cost and the parameters and runs the loop.
-<a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a> keeps a parameter inside given limits. <a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a> returns the
+<p><a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a> holds the cost and the parameters and runs the loop.
+<a class="reference internal" href="../generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a> keeps a parameter inside given limits. <a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a> returns the
 Cramer-Rao lower bound on parameter variance from a signal Jacobian.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
@@ -496,13 +494,13 @@ Cramer-Rao lower bound on parameter variance from a signal Jacobian.</p>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bounded</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bounded</span></code></a></p></td>
 <td><p>An initial value and the interval a designed parameter stays in.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a></p></td>
 <td><p>A cost, the parameters it is minimized over, and their limits.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-obj docutils literal notranslate"><span class="pre">crlb</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-obj docutils literal notranslate"><span class="pre">crlb</span></code></a></p></td>
 <td><p>Cramer-Rao lower bound on the variance of each parameter.</p></td>
 </tr>
 </tbody>
@@ -522,20 +520,20 @@ Cramer-Rao lower bound on parameter variance from a signal Jacobian.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="recon.html"
+       href="estimators.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Model-based reconstruction</p>
+        <p class="prev-next-title">Parameter estimation</p>
       </div>
     </a>
     <a class="right-next"
-       href="execution.html"
+       href="../misc/index.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Execution</p>
+        <p class="prev-next-title">Miscellaneous</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="simulators.html">Simulators</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -499,8 +497,8 @@
 <p>Device-agnostic description of an acquisition: a list of events with the
 timing and tissue interaction each carries, shared by the interpreter, the
 estimators and the sequence optimizer.</p>
-<p>Simulators are written on <a class="reference internal" href="model.html"><span class="doc">Signal models</span></a>, run on <a class="reference internal" href="execution.html"><span class="doc">Execution</span></a>, and the
-temporal basis a run spans is on <a class="reference internal" href="recon.html"><span class="doc">Model-based reconstruction</span></a>. Concepts are in
+<p>Simulators are written on <a class="reference internal" href="model.html"><span class="doc">Signal models</span></a>, which also holds the temporal basis a
+run spans. Concepts are in
 <a class="reference internal" href="../explanations/description.html"><span class="doc">Sequence description</span></a>.</p>
 <section id="operators">
 <h2>Operators<a class="headerlink" href="#operators" title="Link to this heading">#</a></h2>
@@ -598,7 +596,7 @@ spin, differentiably with respect to the samples.</p>
 <a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_pulseq" title="blochsim.SequenceDescription.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SequenceDescription.from_pulseq()</span></code></a> reads a Pulseq <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file or an
 in-memory sequence, <a class="reference internal" href="../generated/blochsim.read_mrd_description.html#blochsim.read_mrd_description" title="blochsim.read_mrd_description"><code class="xref py py-func docutils literal notranslate"><span class="pre">read_mrd_description()</span></code></a> reads those an MRD stream
 carries ahead of its first acquisition, and
-<a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> simulates any of them.</p>
+<a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.from_description" title="blochsim.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> simulates any of them.</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
 <tr class="row-odd"><th class="head"><p>Object</p></th>

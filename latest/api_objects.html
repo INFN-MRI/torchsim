@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -490,19 +488,13 @@ writing them here keeps them out of the toctree the sidebar is built
 from.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.Estimator.html#blochsim.Estimator" title="blochsim.Estimator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Estimator</span></code></a></p></td>
-<td><p>Base class of the mapping methods.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.estimators.DictionaryMatcher.html#blochsim.estimators.DictionaryMatcher" title="blochsim.estimators.DictionaryMatcher"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a></p></td>
 <td><p>Match signals to dictionary atoms by normalized complex inner product.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LookupTable</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.estimators.LookupTable.html#blochsim.estimators.LookupTable" title="blochsim.estimators.LookupTable"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LookupTable</span></code></a></p></td>
 <td><p>Read one unknown back from a monotonic signal curve.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-obj docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a></p></td>
-<td><p>Per-voxel Levenberg-Marquardt fit of the signal model.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.PERK.html#blochsim.PERK" title="blochsim.PERK"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PERK</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.estimators.PERK.html#blochsim.estimators.PERK" title="blochsim.estimators.PERK"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PERK</span></code></a></p></td>
 <td><p>Parameter estimation via regression with kernels (PERK).</p></td>
 </tr>
 </tbody>
@@ -510,68 +502,28 @@ from.</p>
 </div>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-obj docutils literal notranslate"><span class="pre">execution</span></code></a></p></td>
-<td><p>Set where per-voxel work runs inside the block.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.offload.html#blochsim.offload" title="blochsim.offload"><code class="xref py py-obj docutils literal notranslate"><span class="pre">offload</span></code></a></p></td>
-<td><p>Stream host-resident volumes through CUDA devices inside the block.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.utils.b1rms.html#blochsim.utils.b1rms" title="blochsim.utils.b1rms"><code class="xref py py-obj docutils literal notranslate"><span class="pre">utils.b1rms</span></code></a></p></td>
-<td><p>Root-mean-square B1 of an RF pulse, in T.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
-<tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Simulator</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Simulator</span></code></a></p></td>
 <td><p>Base class of a pulse sequence protocol and its signal model.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SpinPhysics</span></code></a></p></td>
-<td><p>The tissue properties a model exposes and the operators that realize its events.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators" title="blochsim.model.EventOperators"><code class="xref py py-obj docutils literal notranslate"><span class="pre">EventOperators</span></code></a></p></td>
-<td><p>Operator factories, one per kind of event.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
-<tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bounded</span></code></a></p></td>
-<td><p>An initial value and the interval a designed parameter stays in.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a></p></td>
-<td><p>A cost, the parameters it is minimized over, and their limits.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-obj docutils literal notranslate"><span class="pre">crlb</span></code></a></p></td>
-<td><p>Cramer-Rao lower bound on the variance of each parameter.</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
-<tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ModelOperator</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ModelOperator</span></code></a></p></td>
 <td><p>A signal model over parameter maps, with its derivatives.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GaussNewton</span></code></a></p></td>
-<td><p>Solve a nonlinear inverse problem by repeated linearization.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.Schedule.html#blochsim.Schedule" title="blochsim.Schedule"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Schedule</span></code></a></p></td>
-<td><p>One damping for the whole volume, lowered geometrically.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TrustRegion</span></code></a></p></td>
-<td><p>Levenberg-Marquardt: per-voxel damping, raised where a step does not pay.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-obj docutils literal notranslate"><span class="pre">direct</span></code></a></p></td>
-<td><p>Solve every voxel's damped linearized system by batched least squares.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-obj docutils literal notranslate"><span class="pre">iterative</span></code></a></p></td>
-<td><p>Build an inner solve from a regularized least-squares routine.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Subspace</span></code></a></p></td>
 <td><p>Orthonormal temporal basis of a set of signals, for subspace reconstruction.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bounded</span></code></a></p></td>
+<td><p>An initial value and the interval a designed parameter stays in.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a></p></td>
+<td><p>A cost, the parameters it is minimized over, and their limits.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/blochsim.optim.crlb.html#blochsim.optim.crlb" title="blochsim.optim.crlb"><code class="xref py py-obj docutils literal notranslate"><span class="pre">crlb</span></code></a></p></td>
+<td><p>Cramer-Rao lower bound on the variance of each parameter.</p></td>
 </tr>
 </tbody>
 </table>

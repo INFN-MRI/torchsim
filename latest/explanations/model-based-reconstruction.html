@@ -255,9 +255,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -507,7 +505,7 @@
 <div class="tldr admonition">
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
-<li><p>blochsim supplies the signal model of the forward operator and the Gauss-Newton loop that inverts it; the Fourier encoding comes from another library.</p></li>
+<li><p>blochsim supplies the signal model of the forward operator; the encoding and the Gauss-Newton loop that inverts it come from bartorch or another library.</p></li>
 <li><p>The linear route reconstructs coefficients in a temporal subspace; the nonlinear route solves for the parameter maps themselves.</p></li>
 <li><p>Jacobian products cost one forward-mode or one reverse-mode pass, and the Jacobian is never formed.</p></li>
 </ul>
@@ -532,32 +530,18 @@ inside the forward operator rather than fitted to images afterwards.</p>
 <p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_jvp()</span></code></a>, <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator.A_vjp" title="blochsim.ModelOperator.A_vjp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_vjp()</span></code></a>. Tests: <em>the directional derivative is the jacobian contracted</em>; <em>the adjoint is the adjoint</em> (<code class="docutils literal notranslate"><span class="pre">test_operator.py</span></code>).</p>
 </div>
 </details></li>
-<li><p><strong>Keeps box bounds at every iterate, under an encoding as in a voxel-wise fit.</strong></p>
+<li><p><strong>Keeps box bounds at every point it is evaluated at, by solving for a transformed variable, and imposes an equality constraint by writing the model on what is free.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">ModelOperator(bounds=...)</span></code>. Tests: <em>a bound holds at every iterate under an encoding</em> (<code class="docutils literal notranslate"><span class="pre">test_constraints.py</span></code>); <em>a bound holds however far the variable goes</em> (<code class="docutils literal notranslate"><span class="pre">test_operator.py</span></code>).</p>
-</div>
-</details></li>
-<li><p><strong>Solves through the encoding by Gauss-Newton, with the linear solve passed in as a callable.</strong></p>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code></a>, <a class="reference internal" href="../generated/blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-func docutils literal notranslate"><span class="pre">iterative()</span></code></a>. Tests: <em>solving through an encoding beats reconstructing first</em>; <em>a solver object needs no deepinv</em> (<code class="docutils literal notranslate"><span class="pre">test_gauss_newton.py</span></code>).</p>
-</div>
-</details></li>
-<li><p><strong>Damps by a geometric schedule (iteratively regularized Gauss-Newton) or a per-voxel trust region (Levenberg-Marquardt).</strong></p>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Schedule.html#blochsim.Schedule" title="blochsim.Schedule"><code class="xref py py-class docutils literal notranslate"><span class="pre">Schedule</span></code></a>, <a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code></a>, <a class="reference internal" href="../generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a>. Tests: <em>the two policies land in the same place</em>; <em>a per voxel damping is refused under an encoding</em> (<code class="docutils literal notranslate"><span class="pre">test_gauss_newton.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">ModelOperator(bounds=...)</span></code>. Tests: <em>a bound holds however far the variable goes</em> (<code class="docutils literal notranslate"><span class="pre">test_operator.py</span></code>); <em>an equality constraint is the model written on what is free</em> (<code class="docutils literal notranslate"><span class="pre">test_constraints.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Hands the temporal basis to a subspace encoding operator, and reads maps from the coefficients it returns.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace.modes" title="blochsim.Subspace.modes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">modes</span></code></a>, <a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator.from_coefficients" title="blochsim.Estimator.from_coefficients"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_coefficients()</span></code></a>. Tests: <em>the basis goes out in the layout the encoding reads</em>; <em>one mapping supplies the basis and reads what comes back</em> (<code class="docutils literal notranslate"><span class="pre">test_subspace_route.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace.modes" title="blochsim.Subspace.modes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">modes</span></code></a>, <code class="xref py py-meth docutils literal notranslate"><span class="pre">from_coefficients()</span></code>. Tests: <em>the basis goes out in the layout the encoding reads</em>; <em>one mapping supplies the basis and reads what comes back</em> (<code class="docutils literal notranslate"><span class="pre">test_subspace_route.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Converts to a deepinv physics, so deepinv’s optimizers and priors apply to the composed chain.</strong></p>
@@ -573,9 +557,9 @@ inside the forward operator rather than fitted to images afterwards.</p>
 <section id="division-of-responsibility">
 <h2>Division of responsibility<a class="headerlink" href="#division-of-responsibility" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><strong>The encoding</strong>: sampling, non-uniform FFT, coil sensitivities, density compensation. Any object with <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> composes: an mri-nufft operator through its deepinv bridge, a deepinv <code class="docutils literal notranslate"><span class="pre">LinearPhysics</span></code>, or a bartorch operator through <code class="docutils literal notranslate"><span class="pre">bartorch.interop.to_deepinv</span></code>.</p></li>
-<li><p><strong>A general linear solver.</strong> <a class="reference internal" href="../generated/blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-func docutils literal notranslate"><span class="pre">iterative()</span></code></a> calls deepinv’s <code class="docutils literal notranslate"><span class="pre">least_squares</span></code> or any callable with its signature; <a class="reference internal" href="../generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> serves only a model with no encoding in front of it.</p></li>
-<li><p><strong>Regularizers</strong>, which enter as a closure around a proximal solver passed as <code class="docutils literal notranslate"><span class="pre">solve</span></code>.</p></li>
+<li><p><strong>The encoding</strong>: sampling, non-uniform FFT, coil sensitivities, density compensation. bartorch’s operators, mri-nufft’s and deepinv’s <code class="docutils literal notranslate"><span class="pre">LinearPhysics</span></code> all compose with the model operator.</p></li>
+<li><p><strong>The solver.</strong> bartorch’s <code class="docutils literal notranslate"><span class="pre">nlop.ModelOperator</span></code> turns the model operator into a BART nonlinear operator; <code class="docutils literal notranslate"><span class="pre">nlop.IRGNM</span></code> inverts it under an encoding, <code class="docutils literal notranslate"><span class="pre">apps.moba</span></code> from k-space and <code class="docutils literal notranslate"><span class="pre">apps.mobafit</span></code> voxel by voxel from images.</p></li>
+<li><p><strong>Regularizers</strong>, which enter through the linear solver of each Gauss-Newton step (<code class="docutils literal notranslate"><span class="pre">IRGNM(inner=...)</span></code>).</p></li>
 </ul>
 </section>
 <section id="method">
@@ -586,10 +570,10 @@ inside the forward operator rather than fitted to images afterwards.</p>
 <figcaption>
 <p><span class="caption-text">An 8-echo spin echo (TE 10 to 150 ms) on a 48 × 48 phantom, sampled at one
 phase-encode line in three per echo, shifted from echo to echo, plus six
-central lines. The masked FFT and the conjugate-gradient solver are written in
-the figure’s code; blochsim supplies the dictionary, the basis, the model
-operator and the loop. Errors are the mean relative T2 error inside the
-phantom.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
+central lines. blochsim supplies the dictionary, the basis and the model
+operator; the masked FFT is bartorch’s, the conjugate-gradient solve of the
+subspace route is written in the figure’s code, and the nonlinear route is
+bartorch’s <code class="docutils literal notranslate"><span class="pre">nlop.IRGNM</span></code>. Errors are the mean relative T2 error inside the phantom.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
 </figcaption>
 </figure>
 <section id="forward-operator">
@@ -606,7 +590,7 @@ axis 1, as deepinv and mri-nufft lay it out.</p>
 <a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace.modes" title="blochsim.Subspace.modes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">modes</span></code></a> gives the basis as <code class="docutils literal notranslate"><span class="pre">(rank,</span> <span class="pre">contrasts)</span></code>, the
 layout mri-nufft’s <code class="docutils literal notranslate"><span class="pre">MRISubspace</span></code> and BART’s <code class="docutils literal notranslate"><span class="pre">pics</span> <span class="pre">-B</span></code> read. The reconstruction
 is linear in the coefficients, has one minimum and needs no starting point.
-<a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator.from_coefficients" title="blochsim.Estimator.from_coefficients"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_coefficients()</span></code></a> then maps the coefficients
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">from_coefficients()</span></code> then maps the coefficients
 without projecting them again. A signal that needs many components, such as a
 phase-modulated train or a model with several parameters, gives no small
 basis.</p>
@@ -616,11 +600,9 @@ basis.</p>
 <p>Each Gauss-Newton step linearizes <span class="math notranslate nohighlight">\(F\)</span> at the current maps and solves the
 damped least-squares problem for the step. With an encoding, the step is
 solved by an iterative solver from products alone: one encoding application
-and one <code class="docutils literal notranslate"><span class="pre">A_jvp</span></code> forward, one adjoint encoding and one <code class="docutils literal notranslate"><span class="pre">A_vjp</span></code> back.
-<a class="reference internal" href="../generated/blochsim.Schedule.html#blochsim.Schedule" title="blochsim.Schedule"><code class="xref py py-class docutils literal notranslate"><span class="pre">Schedule</span></code></a> lowers one damping weight geometrically and pulls each step toward
-the starting maps; a per-voxel <a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code></a> needs
-independent voxels and applies only without an encoding, where the same loop
-with <a class="reference internal" href="../generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> is <a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-class docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a>. Composing through
+and one <code class="docutils literal notranslate"><span class="pre">A_jvp</span></code> forward, one adjoint encoding and one <code class="docutils literal notranslate"><span class="pre">A_vjp</span></code> back. These are
+the three products bartorch’s <code class="docutils literal notranslate"><span class="pre">nlop.ModelOperator</span></code> hands to BART, so the loop
+is BART’s iteratively regularized Gauss-Newton method. Composing through
 <code class="docutils literal notranslate"><span class="pre">physics()</span></code> instead lets deepinv differentiate the whole chain by autograd,
 which gives up these analytic products.</p>
 </section>
@@ -629,7 +611,7 @@ which gives up these analytic products.</p>
 <h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="../generated/autoexamples/04-model-based-imaging/01-linear-subspace.html"><span class="doc">Subspace reconstruction</span></a>: radial multi-echo T2 by gridding, per-echo CG, and a rank-3 subspace with mri-nufft.</p></li>
-<li><p><a class="reference internal" href="../generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion.html"><span class="doc">Nonlinear inversion from k-space</span></a>: the same data reconstructed by Gauss-Newton with the model inside the operator.</p></li>
+<li><p><a class="reference internal" href="../generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion.html"><span class="doc">Nonlinear inversion from k-space</span></a>: the same data reconstructed by bartorch’s Gauss-Newton method with the model inside the operator.</p></li>
 </ul>
 </section>
 </section>

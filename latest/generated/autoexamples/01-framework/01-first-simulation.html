@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -617,21 +615,19 @@ the refocusing angle is low:</p>
 </div>
 <p>The 60-degree train requires the full 48 states, which the previous figure
 used.</p>
-<p><code class="docutils literal notranslate"><span class="pre">blochsim.execution</span></code> selects the device. The default, <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, runs
-small problems on the CPU and large ones on a GPU when available, split
-into chunks when they exceed device memory. A named device overrides this:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">blochsim</span><span class="w">
-</span><span class="w">
-</span><span class="k">with</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.execution.html#blochsim.execution" title="blochsim.execution"><span class="n">blochsim</span><span class="o">.</span><span class="n">execution</span></a><span class="p">(</span><span class="s2">&quot;</span><span class="s2">cpu</span><span class="s2">&quot;</span><span class="p">)</span><span class="p">:</span><span class="w">
-</span>    <span class="n">on_cpu</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">)</span><span class="w">
+<p><code class="docutils literal notranslate"><span class="pre">execution=</span></code> selects the device. <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> runs small problems on the CPU
+and large ones on a GPU when available, split into chunks when they exceed
+device memory; a named device overrides this. Without it, the simulation
+runs where its tensors are:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">on_cpu</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <span class="n">execution</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">cpu</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
 <p>The first call resolves the sequence structure; later calls only rebind
 numerical values. Construct a simulator once and reuse it inside loops.</p>
 <p>Each shipped sequence also has a functional form, convenient for one-off
 calls:</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">signal</span><span class="p">,</span> <span class="n">dT2</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.fse_sim.html#blochsim.fse_sim" title="blochsim.fse_sim"><span class="n">blochsim</span><span class="o">.</span><span class="n">fse_sim</span></a><span class="p">(</span><span class="w">
-</span>    <span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">3000.0</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <span class="n">diff</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="w">
-</span><span class="p">)</span><span class="w">
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.fse_sim.html#blochsim.fse_sim" title="blochsim.fse_sim"><span class="n">fse_sim</span></a><span class="w">
+</span><span class="w">
+</span><span class="n">signal</span><span class="p">,</span> <span class="n">dT2</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.fse_sim.html#blochsim.fse_sim" title="blochsim.fse_sim"><span class="n">fse_sim</span></a><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">3000.0</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <span class="n">diff</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
 </section>
 <section id="specification">
@@ -645,7 +641,7 @@ that the number of configuration states kept is enough for the 60 degree
 train.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.878 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.515 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-01-framework-01-first-simulation-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/01-framework/01-first-simulation.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo.svg" style="width: 150px;" />

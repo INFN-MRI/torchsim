@@ -263,23 +263,21 @@ the refocusing angle is low:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 168-174
+.. GENERATED FROM PYTHON SOURCE LINES 168-175
 
 The 60-degree train requires the full 48 states, which the previous figure
 used.
 
-``blochsim.execution`` selects the device. The default, ``"auto"``, runs
-small problems on the CPU and large ones on a GPU when available, split
-into chunks when they exceed device memory. A named device overrides this:
+``execution=`` selects the device. ``"auto"`` runs small problems on the CPU
+and large ones on a GPU when available, split into chunks when they exceed
+device memory; a named device overrides this. Without it, the simulation
+runs where its tensors are:
 
-.. GENERATED FROM PYTHON SOURCE LINES 174-179
+.. GENERATED FROM PYTHON SOURCE LINES 175-177
 
 .. code-block:: Python
 
-    import blochsim
-
-    with blochsim.execution("cpu"):
-        on_cpu = fse.simulate(flip=flip, T1=1000.0, T2=T2)
+    on_cpu = fse.simulate(flip=flip, T1=1000.0, T2=T2, execution="cpu")
 
 
 
@@ -288,7 +286,7 @@ into chunks when they exceed device memory. A named device overrides this:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 180-185
+.. GENERATED FROM PYTHON SOURCE LINES 178-183
 
 The first call resolves the sequence structure; later calls only rebind
 numerical values. Construct a simulator once and reuse it inside loops.
@@ -296,13 +294,13 @@ numerical values. Construct a simulator once and reuse it inside loops.
 Each shipped sequence also has a functional form, convenient for one-off
 calls:
 
-.. GENERATED FROM PYTHON SOURCE LINES 185-189
+.. GENERATED FROM PYTHON SOURCE LINES 183-187
 
 .. code-block:: Python
 
-    signal, dT2 = blochsim.fse_sim(
-        flip=flip, ESP=5.0, TR=3000.0, T1=1000.0, T2=T2, diff="T2"
-    )
+    from blochsim import fse_sim
+
+    signal, dT2 = fse_sim(flip=flip, ESP=5.0, TR=3000.0, T1=1000.0, T2=T2, diff="T2")
 
 
 
@@ -311,7 +309,7 @@ calls:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 190-203
+.. GENERATED FROM PYTHON SOURCE LINES 188-201
 
 Specification
 -------------
@@ -330,7 +328,7 @@ What this lesson did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.878 seconds)
+   **Total running time of the script:** (0 minutes 1.515 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_01-framework_01-first-simulation.py:

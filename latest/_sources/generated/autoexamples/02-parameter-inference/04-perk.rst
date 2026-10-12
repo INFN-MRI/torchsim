@@ -42,7 +42,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
    !pip install blochsim matplotlib brainweb-dl cmap
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 25-139
+.. GENERATED FROM PYTHON SOURCE LINES 25-138
 
 .. code-block:: Python
 
@@ -50,7 +50,8 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
     import numpy as np
     import torch
 
-    from blochsim import Subspace, crlb
+    from blochsim import Subspace
+    from blochsim.optim import crlb
     from blochsim.estimators import PERK, DictionaryMatcher
     from blochsim.simulators import MRFSimulator
 
@@ -61,7 +62,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 140-148
+.. GENERATED FROM PYTHON SOURCE LINES 139-147
 
 Phantom
 -------
@@ -72,7 +73,7 @@ holds a fraction of each tissue and its relaxation times are the
 fraction-weighted average. About a third of the voxels are mixtures, so the
 ground truth is a continuum of values rather than four.
 
-.. GENERATED FROM PYTHON SOURCE LINES 148-188
+.. GENERATED FROM PYTHON SOURCE LINES 147-187
 
 
 
@@ -86,7 +87,7 @@ ground truth is a continuum of values rather than four.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 189-196
+.. GENERATED FROM PYTHON SOURCE LINES 188-195
 
 Sequence
 --------
@@ -96,7 +97,7 @@ flip angle varies smoothly along the train, so that the signal evolutions of
 different tissues differ by physics and not by the noise of an irregular
 schedule.
 
-.. GENERATED FROM PYTHON SOURCE LINES 196-205
+.. GENERATED FROM PYTHON SOURCE LINES 195-204
 
 .. code-block:: Python
 
@@ -116,14 +117,14 @@ schedule.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 206-210
+.. GENERATED FROM PYTHON SOURCE LINES 205-209
 
 The readouts advance the configuration states and do not rewind them, so no
 transverse magnetization is returned to the imaginary axis and the signal
 evolution is real to float32 precision. The regression then needs only the
 real part. These are the evolutions of white matter, grey matter and CSF:
 
-.. GENERATED FROM PYTHON SOURCE LINES 210-227
+.. GENERATED FROM PYTHON SOURCE LINES 209-226
 
 .. code-block:: Python
 
@@ -152,7 +153,7 @@ real part. These are the evolutions of white matter, grey matter and CSF:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 228-235
+.. GENERATED FROM PYTHON SOURCE LINES 227-234
 
 Measurement
 -----------
@@ -162,7 +163,7 @@ by its proton density, with Gaussian noise of 2% of the peak signal. The
 estimators are given the same noise level: one trained for more noise than
 the scan has trusts the data less and returns values closer to the prior.
 
-.. GENERATED FROM PYTHON SOURCE LINES 235-246
+.. GENERATED FROM PYTHON SOURCE LINES 234-245
 
 .. code-block:: Python
 
@@ -184,7 +185,7 @@ the scan has trusts the data less and returns values closer to the prior.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 247-253
+.. GENERATED FROM PYTHON SOURCE LINES 246-252
 
 Problem statement
 -----------------
@@ -193,7 +194,7 @@ The unknowns are T1 and T2. Both span more than a decade, so the prior is
 logarithmic: uniform sampling would spend most of the training draws on long
 T1, where the evolutions are nearly parallel.
 
-.. GENERATED FROM PYTHON SOURCE LINES 253-258
+.. GENERATED FROM PYTHON SOURCE LINES 252-257
 
 .. code-block:: Python
 
@@ -209,7 +210,7 @@ T1, where the evolutions are nearly parallel.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 259-266
+.. GENERATED FROM PYTHON SOURCE LINES 258-265
 
 Subspace basis
 --------------
@@ -219,7 +220,7 @@ The 400 contrasts span far fewer than 400 independent directions.
 fraction of their energy that a given rank retains; one minus that fraction
 is the relative squared error of projecting onto the basis and back.
 
-.. GENERATED FROM PYTHON SOURCE LINES 266-296
+.. GENERATED FROM PYTHON SOURCE LINES 265-295
 
 .. code-block:: Python
 
@@ -250,7 +251,7 @@ is the relative squared error of projecting onto the basis and back.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 297-307
+.. GENERATED FROM PYTHON SOURCE LINES 296-306
 
 At rank 4 the energy left outside the basis is below the energy the noise
 adds, so rank 4 is used from here on.
@@ -263,7 +264,7 @@ noise level of the scan, and solves the regularized linear system against
 1000 random Fourier features. The fitted regression maps a measurement to
 the estimates directly:
 
-.. GENERATED FROM PYTHON SOURCE LINES 307-366
+.. GENERATED FROM PYTHON SOURCE LINES 306-365
 
 .. code-block:: Python
 
@@ -295,7 +296,7 @@ the estimates directly:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 367-375
+.. GENERATED FROM PYTHON SOURCE LINES 366-374
 
 Cost and accuracy
 -----------------
@@ -306,7 +307,7 @@ the memory the fitted estimator holds between volumes. *peak* is the maximum
 GPU memory allocated while mapping the slice, blank on a machine without a
 GPU. Errors are medians over the brain voxels, relative to the truth.
 
-.. GENERATED FROM PYTHON SOURCE LINES 375-403
+.. GENERATED FROM PYTHON SOURCE LINES 374-402
 
 
 
@@ -319,15 +320,15 @@ GPU. Errors are medians over the brain voxels, relative to the truth.
 
     method                       train     map     model      peak      T1      T2
     ------------------------------------------------------------------------------
-    match, rank 4                 1.1s   1.57s   1.4 MiB        --    0.6%    1.6%
-    PERK, 500 features            1.4s   0.03s   0.0 MiB        --    1.3%   20.6%
-    PERK, 1000 features           1.8s   0.04s   0.1 MiB        --    0.7%    3.5%
-    PERK, 4000 features           9.9s   0.12s   0.4 MiB        --    0.9%    5.4%
+    match, rank 4                 1.0s   1.34s   1.4 MiB        --    0.6%    1.6%
+    PERK, 500 features            1.2s   0.03s   0.0 MiB        --    1.2%    6.5%
+    PERK, 1000 features           1.5s   0.04s   0.1 MiB        --    1.4%    4.7%
+    PERK, 4000 features           8.6s   0.10s   0.4 MiB        --    1.1%    7.3%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 404-409
+.. GENERATED FROM PYTHON SOURCE LINES 403-408
 
 Maps
 ----
@@ -335,7 +336,7 @@ Maps
 The maps of both methods, and below them the absolute error on a scale of its
 own for each parameter.
 
-.. GENERATED FROM PYTHON SOURCE LINES 409-459
+.. GENERATED FROM PYTHON SOURCE LINES 408-458
 
 
 
@@ -361,7 +362,7 @@ own for each parameter.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 460-467
+.. GENERATED FROM PYTHON SOURCE LINES 459-466
 
 Uncertainty
 -----------
@@ -371,7 +372,7 @@ expected distance of the estimate from the truth. PERK learns it during
 training from the residuals of its own fit, so reporting it costs a matrix
 multiplication and not a second pass over the volume:
 
-.. GENERATED FROM PYTHON SOURCE LINES 467-469
+.. GENERATED FROM PYTHON SOURCE LINES 466-468
 
 .. code-block:: Python
 
@@ -384,7 +385,7 @@ multiplication and not a second pass over the volume:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 470-475
+.. GENERATED FROM PYTHON SOURCE LINES 469-474
 
 The reference is the Cramér-Rao bound: the lowest standard deviation an
 unbiased estimator could reach from this train at this noise level. The bound
@@ -392,7 +393,7 @@ is a property of the sequence, so the gap between it and the spread is what
 the method loses. The bound comes from the Jacobian of the signal with respect
 to T1 and T2, scaled by the proton density:
 
-.. GENERATED FROM PYTHON SOURCE LINES 475-519
+.. GENERATED FROM PYTHON SOURCE LINES 474-518
 
 .. code-block:: Python
 
@@ -416,13 +417,13 @@ to T1 and T2, scaled by the proton density:
  .. code-block:: none
 
                 PERK      CRLB     PERK   (median over the brain)
-    T1        6.7 ms    2.4 ms     1.0%
-    T2       11.5 ms    0.5 ms    14.7%
+    T1        7.7 ms    2.4 ms     1.1%
+    T2       13.4 ms    0.5 ms    17.0%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 520-549
+.. GENERATED FROM PYTHON SOURCE LINES 519-548
 
 The two absolute columns share a scale in each row; the third column is the
 PERK spread as a percentage of the relaxation time, which shows whether a
@@ -457,7 +458,7 @@ What this page did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 31.203 seconds)
+   **Total running time of the script:** (0 minutes 25.957 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_04-perk.py:

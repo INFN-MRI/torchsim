@@ -253,9 +253,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -504,7 +502,7 @@
 <div class="tldr admonition">
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
-<li><p>A signal model is a <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> subclass: a handler per kind of event, and a layout of one repetition.</p></li>
+<li><p>A signal model is a <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> subclass: a handler per kind of event, and a layout of one repetition.</p></li>
 <li><p>The layout is the default description; a Pulseq file or an MRD stream can replace it, and the handlers still play every event.</p></li>
 <li><p>Batching, derivatives, devices, estimation and design are written once against this interface.</p></li>
 </ul>
@@ -520,7 +518,7 @@ shipped simulators are written the same way as any you add.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>, <a class="reference internal" href="../generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators" title="blochsim.model.EventOperators"><code class="xref py py-class docutils literal notranslate"><span class="pre">EventOperators</span></code></a>. Tests: <em>a protocol with no layout says so</em>; <em>a trigger table defaults to the bare operators</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. Tests: <em>a protocol with no layout says so</em>; <em>a trigger table defaults to the bare operators</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Composes operators with <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>, each starting where the previous one ends.</strong></p>
@@ -534,42 +532,42 @@ shipped simulators are written the same way as any you add.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><code class="xref py py-meth docutils literal notranslate"><span class="pre">bind()</span></code></a>. Test: <em>the protocol may be overridden per call</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.bind" title="blochsim.Simulator.bind"><code class="xref py py-meth docutils literal notranslate"><span class="pre">bind()</span></code></a>. Test: <em>the protocol may be overridden per call</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Returns the description the layout produced, with the timestamp of every event.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>. Test: <em>the repetition lasts as long as the operators do</em> (<code class="docutils literal notranslate"><span class="pre">test_description_helper.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.describe" title="blochsim.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>. Test: <em>the repetition lasts as long as the operators do</em> (<code class="docutils literal notranslate"><span class="pre">test_description_helper.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Simulates a description read from a Pulseq file or an MRD stream, skipping the layout.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_pulseq" title="blochsim.model.Simulator.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a>, <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>. Tests: <em>a description handed over whole skips the layout</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>); <em>the steady state is the spoiled gradient echo closed form</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.from_pulseq" title="blochsim.Simulator.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a>, <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.from_description" title="blochsim.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>. Tests: <em>a description handed over whole skips the layout</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>); <em>the steady state is the spoiled gradient echo closed form</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Plays a read description through the handlers of the class it is given to, which supply the dephasing it does not carry.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>. Test: <em>which simulator reads a stream is what decides the dephasing</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.from_description" title="blochsim.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>. Test: <em>which simulator reads a stream is what decides the dephasing</em> (<code class="docutils literal notranslate"><span class="pre">test_state_machine.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Carries a tissue property into the kernels only when a call gives it as a map.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><code class="xref py py-class docutils literal notranslate"><span class="pre">SpinPhysics</span></code></a>. Tests: <em>a property the model does not declare stays out of the kernel</em>; <em>a declared property given a map reaches the kernel</em> (<code class="docutils literal notranslate"><span class="pre">test_signal_model.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_model/_state_machine.py</span></code>. Tests: <em>a property the model does not declare stays out of the kernel</em>; <em>a declared property given a map reaches the kernel</em> (<code class="docutils literal notranslate"><span class="pre">test_signal_model.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Accepts a closed form (<code class="docutils literal notranslate"><span class="pre">evaluate</span></code>) in place of a layout, with the same batching and derivatives.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a>. Test: <em>a closed form travels the same way</em> (<code class="docutils literal notranslate"><span class="pre">test_array_backends.py</span></code>).</p>
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Simulator.html#blochsim.Simulator.evaluate" title="blochsim.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a>. Test: <em>a closed form travels the same way</em> (<code class="docutils literal notranslate"><span class="pre">test_array_backends.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Returns the signal in the array library it was given: NumPy, CuPy or PyTorch.</strong></p>
@@ -603,11 +601,16 @@ derivatives.</span><a class="headerlink" href="#id1" title="Link to this image">
 </figure>
 <section id="handlers">
 <h3>Handlers<a class="headerlink" href="#handlers" title="Link to this heading">#</a></h3>
-<p>A handler is the operator for one kind of event: <code class="docutils literal notranslate"><span class="pre">excitation</span></code>, <code class="docutils literal notranslate"><span class="pre">refocusing</span></code>,
-<code class="docutils literal notranslate"><span class="pre">inversion</span></code>, <code class="docutils literal notranslate"><span class="pre">saturation</span></code>, <code class="docutils literal notranslate"><span class="pre">readout</span></code> or <code class="docutils literal notranslate"><span class="pre">delay</span></code>. It decides, for example,
-whether a readout is followed by an unbalanced gradient, ideal spoiling or a
-rewinder. The tables <code class="docutils literal notranslate"><span class="pre">SPOILED</span></code>, <code class="docutils literal notranslate"><span class="pre">UNBALANCED</span></code>, <code class="docutils literal notranslate"><span class="pre">BALANCED</span></code> and <code class="docutils literal notranslate"><span class="pre">REFOCUSED</span></code> in
-<code class="xref py py-mod docutils literal notranslate"><span class="pre">blochsim.model</span></code> set these for the four sequence families.</p>
+<p>A handler is the operator for one kind of event, bound by a class attribute of
+that name. A pulse is played by the handler its Pulseq RF use names:
+<code class="docutils literal notranslate"><span class="pre">excitation</span></code>, <code class="docutils literal notranslate"><span class="pre">refocusing</span></code>, <code class="docutils literal notranslate"><span class="pre">inversion</span></code>, <code class="docutils literal notranslate"><span class="pre">saturation</span></code>, <code class="docutils literal notranslate"><span class="pre">preparation</span></code> or
+<code class="docutils literal notranslate"><span class="pre">other</span></code>, and a pulse with no use by <code class="docutils literal notranslate"><span class="pre">excitation</span></code>. An ADC event is played by
+<code class="docutils literal notranslate"><span class="pre">readout</span></code> and a wait by <code class="docutils literal notranslate"><span class="pre">delay</span></code>. A description carries no gradient events: a
+gradient is an action of the event it follows or precedes, so the handler
+decides, for example, whether a readout is followed by an unbalanced gradient,
+ideal spoiling or a rewinder. The built-in readouts <code class="docutils literal notranslate"><span class="pre">SPGRReadout</span></code>,
+<code class="docutils literal notranslate"><span class="pre">SSFPFidReadout</span></code>, <code class="docutils literal notranslate"><span class="pre">bSSFPReadout</span></code> and <code class="docutils literal notranslate"><span class="pre">FSEReadout</span></code> cover the four sequence
+families.</p>
 </section>
 <section id="layout">
 <h3>Layout<a class="headerlink" href="#layout" title="Link to this heading">#</a></h3>

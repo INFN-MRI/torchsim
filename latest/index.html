@@ -254,9 +254,7 @@
 <li class="toctree-l2"><a class="reference internal" href="api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -564,9 +562,10 @@ as <code class="docutils literal notranslate"><span class="pre">blochsim.fse_sim
 <p>A signal model is two things:</p>
 <ul class="simple">
 <li><p><strong>handlers</strong>: which operator plays each kind of event. A sequence has
-excitations, readouts and waits, and may have refocusing, inversion and
-saturation pulses. Each is a class attribute; one you do not set keeps
-its default (a wait is <code class="docutils literal notranslate"><span class="pre">Delay</span></code>: free precession, no RF and no ADC).</p></li>
+excitations, readouts and waits, and may have refocusing, inversion,
+saturation, preparation and other pulses, one handler for each Pulseq RF
+use. Each is a class attribute; one you do not set keeps its default (a
+wait is <code class="docutils literal notranslate"><span class="pre">Delay</span></code>: free precession, no RF and no ADC).</p></li>
 <li><p><strong>layout</strong>: the events of one repetition, in order, written with those
 handlers. It is the sequence’s default description: the constructor builds
 it from the parameters you pass. <code class="docutils literal notranslate"><span class="pre">from_pulseq</span></code> and <code class="docutils literal notranslate"><span class="pre">from_description</span></code> read
@@ -577,7 +576,7 @@ the layout.</p></li>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <span class="n">Delay</span><span class="p">,</span> <span class="n">Excitation</span><span class="p">,</span> <span class="n">SPGRReadout</span><span class="p">,</span> <span class="n">Spoil</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">Simulator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <span class="n">Simulator</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">Saturate</span><span class="p">(</span><span class="n">flip_rad</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">phase_rad</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
@@ -622,13 +621,16 @@ without another line.</p>
 <section id="estimation-design-and-reconstruction">
 <h2>Estimation, design and reconstruction<a class="headerlink" href="#estimation-design-and-reconstruction" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><strong>Parameter maps</strong>: dictionary matching, lookup tables, nonlinear least
-squares and PERK, all built from a simulator (<code class="docutils literal notranslate"><span class="pre">blochsim.estimators</span></code>).</p></li>
+<li><p><strong>Parameter maps</strong>: dictionary matching, lookup tables and PERK, all built
+from a simulator (<code class="docutils literal notranslate"><span class="pre">blochsim.estimators</span></code>).</p></li>
 <li><p><strong>Model-based reconstruction</strong>: the signal model as a factor of the forward
-operator, linear (a subspace) or nonlinear (<code class="docutils literal notranslate"><span class="pre">blochsim.recon</span></code>).</p></li>
+operator, linear (<code class="docutils literal notranslate"><span class="pre">blochsim.Subspace</span></code>) or nonlinear
+(<code class="docutils literal notranslate"><span class="pre">blochsim.ModelOperator</span></code>). <a class="reference external" href="https://github.com/pulserver/bartorch">bartorch</a>
+supplies the encoding and the Gauss-Newton solvers, and fits the same model
+voxel by voxel with <code class="docutils literal notranslate"><span class="pre">apps.mobafit</span></code>.</p></li>
 <li><p><strong>Sequence design</strong>: flip angles, timings or RF pulse samples optimized by
 gradient descent through the simulation, within the scanner’s limits
-(<code class="docutils literal notranslate"><span class="pre">blochsim.SequenceDesign</span></code>).</p></li>
+(<code class="docutils literal notranslate"><span class="pre">blochsim.optim.SequenceDesign</span></code>).</p></li>
 <li><p><strong>Sequences you did not write</strong>: <code class="docutils literal notranslate"><span class="pre">Simulator.from_pulseq</span></code> reads a <code class="docutils literal notranslate"><span class="pre">.seq</span></code>
 file, and <code class="docutils literal notranslate"><span class="pre">Simulator.from_description</span></code> reads the sequence description
 pulserver streams from a running scanner.</p></li>

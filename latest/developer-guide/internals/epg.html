@@ -255,9 +255,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../api/simulators.html">Simulators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/sequence.html">Sequences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/estimators.html">Parameter estimation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../api/recon.html">Model-based reconstruction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/optim.html">Sequence design</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../api/execution.html">Execution</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -747,7 +745,7 @@ recovers the true value.</span><a class="headerlink" href="#id17" title="Link to
 <h2>Truncation<a class="headerlink" href="#truncation" title="Link to this heading">#</a></h2>
 <p>After <span class="math notranslate nohighlight">\(n\)</span> shifts no state beyond order <span class="math notranslate nohighlight">\(n\)</span> exists, and attenuation makes the
 far orders negligible before that. The orders carried are <code class="docutils literal notranslate"><span class="pre">states</span></code> on a
-<a class="reference internal" href="../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> and <code class="docutils literal notranslate"><span class="pre">nstates</span></code> on <code class="docutils literal notranslate"><span class="pre">EpgEngine.simulate</span></code>; a
+<a class="reference internal" href="../../generated/blochsim.Simulator.html#blochsim.Simulator" title="blochsim.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> and <code class="docutils literal notranslate"><span class="pre">nstates</span></code> on <code class="docutils literal notranslate"><span class="pre">EpgEngine.simulate</span></code>; a
 simulator refuses <code class="docutils literal notranslate"><span class="pre">nstates</span></code>. Left unset, the count is
 <span class="math notranslate nohighlight">\(\max(8, \min(64, 1 + n_\mathrm{rep} n_\mathrm{shift}))\)</span> for <span class="math notranslate nohighlight">\(n_\mathrm{rep}\)</span>
 repetitions of <span class="math notranslate nohighlight">\(n_\mathrm{shift}\)</span> shift actions each.</p>

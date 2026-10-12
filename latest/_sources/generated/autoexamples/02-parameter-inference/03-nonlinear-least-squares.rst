@@ -30,19 +30,20 @@ on a noise floor, so the decay does not reach zero. Unlike the proton density,
 this offset does not divide out of a normalized match: ignoring it biases T2,
 and adding it to the dictionary multiplies the number of atoms. A fit instead
 adds one column to the Jacobian, at the cost of no guarantee that it finds the
-global minimum.
+global minimum. blochsim supplies the model and its derivative; the fit is
+`bartorch <https://github.com/pulserver/bartorch>`_'s ``apps.mobafit``.
 
 Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 
-.. GENERATED FROM PYTHON SOURCE LINES 20-25
+.. GENERATED FROM PYTHON SOURCE LINES 21-26
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim matplotlib brainweb-dl cmap
+   !pip install blochsim bartorch matplotlib brainweb-dl cmap
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 25-132
+.. GENERATED FROM PYTHON SOURCE LINES 26-134
 
 .. code-block:: Python
 
@@ -50,7 +51,10 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
     import numpy as np
     import torch
 
-    from blochsim.estimators import DictionaryMatcher, NonlinearLeastSquares
+    from bartorch import apps, nlop
+
+    from blochsim import ModelOperator
+    from blochsim.estimators import DictionaryMatcher
     from blochsim.simulators import MultiEchoSimulator
 
 
@@ -60,7 +64,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 133-141
+.. GENERATED FROM PYTHON SOURCE LINES 135-143
 
 Phantom
 -------
@@ -71,7 +75,7 @@ holds a fraction of each tissue and its T2 is the fraction-weighted average.
 About a third of the voxels are mixtures, so the ground truth is a continuum
 of values rather than four.
 
-.. GENERATED FROM PYTHON SOURCE LINES 141-182
+.. GENERATED FROM PYTHON SOURCE LINES 143-184
 
 .. code-block:: Python
 
@@ -91,7 +95,7 @@ of values rather than four.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 183-190
+.. GENERATED FROM PYTHON SOURCE LINES 185-192
 
 Measurement and noise floor
 ---------------------------
@@ -101,7 +105,7 @@ signal is the proton density times the T2 decay, plus a constant offset. A
 magnitude reconstruction rectifies the noise, so late echoes measure the
 floor and not zero, and a fit that does not model it absorbs it into T2.
 
-.. GENERATED FROM PYTHON SOURCE LINES 190-201
+.. GENERATED FROM PYTHON SOURCE LINES 192-203
 
 .. code-block:: Python
 
@@ -123,12 +127,12 @@ floor and not zero, and a fit that does not model it absorbs it into T2.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 202-204
+.. GENERATED FROM PYTHON SOURCE LINES 204-206
 
 The 70 ms decay approaches the floor only in the last echoes, where the
 offset and T2 are hardest to separate; the long-T2 voxel never reaches it.
 
-.. GENERATED FROM PYTHON SOURCE LINES 204-220
+.. GENERATED FROM PYTHON SOURCE LINES 206-222
 
 
 
@@ -142,33 +146,50 @@ offset and T2 are hardest to separate; the long-T2 voxel never reaches it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 221-233
+.. GENERATED FROM PYTHON SOURCE LINES 223-232
 
 Nonlinear fit
 -------------
 
-``NonlinearLeastSquares`` takes the range of every unknown, a starting value
-and the noise level. All voxels are updated in the same pass; each carries
-its own damping, accepts or rejects its own step, and stops when it
-converges.
+A :class:`~blochsim.ModelOperator` declares the unknowns and the range of
+each. The bounds are enforced by fitting a transformed variable, not by
+clipping: no iterate leaves the interval and no bound is active at the
+solution. The transformation also puts all parameters on a common scale,
+which the damping assumes. M0 is one of the unknowns, so the operator carries
+no separate complex amplitude.
 
-The bounds are enforced by fitting a transformed variable, not by clipping:
-no iterate leaves the interval and no bound is active at the solution. The
-transformation also puts all parameters on a common scale, which the damping
-assumes.
-
-.. GENERATED FROM PYTHON SOURCE LINES 233-275
+.. GENERATED FROM PYTHON SOURCE LINES 232-237
 
 .. code-block:: Python
 
     BOUNDS = {"T2": (10.0, 500.0), "M0": (0.1, 2.0), "offset": (0.0, 0.2)}
     START = {"T2": 100.0, "M0": 1.0, "offset": 0.02}
 
-    fit = NonlinearLeastSquares(simulator, bounds=BOUNDS, initial=START).fit(
-        BOUNDS, noise_std=NOISE_STD, seed=0
-    )
+    operator = ModelOperator(simulator, *BOUNDS, bounds=BOUNDS, amplitude=False)
 
-    maps = fit.map(measured)  # {"T2": ..., "M0": ..., "offset": ...}
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 238-243
+
+bartorch's :func:`~bartorch.apps.mobafit` fits it voxel by voxel by
+Levenberg-Marquardt. All voxels are updated in the same pass; each carries its
+own damping, accepts or rejects its own step, and stops when it converges.
+:class:`bartorch.nlop.ModelOperator` carries the model on the voxel shape, and
+the images go in with the echoes first:
+
+.. GENERATED FROM PYTHON SOURCE LINES 243-292
+
+.. code-block:: Python
+
+    model = nlop.ModelOperator(operator, (measured.shape[0],))
+    maps = apps.mobafit(
+        measured.mT, model, **START
+    )  # {"T2": ..., "M0": ..., "offset": ...}
 
 
 
@@ -185,7 +206,7 @@ assumes.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 276-283
+.. GENERATED FROM PYTHON SOURCE LINES 293-300
 
 Dictionary match
 ----------------
@@ -195,7 +216,7 @@ any positive scale is free and M0 drops out of the grid. The offset survives
 normalization, so modelling it requires putting it on the grid. The first
 dictionary ignores the offset:
 
-.. GENERATED FROM PYTHON SOURCE LINES 283-287
+.. GENERATED FROM PYTHON SOURCE LINES 300-304
 
 .. code-block:: Python
 
@@ -210,12 +231,12 @@ dictionary ignores the offset:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 288-290
+.. GENERATED FROM PYTHON SOURCE LINES 305-307
 
 The second has the offset on the grid, which is then the product of the T2
 and offset grids: 400 by 40 atoms.
 
-.. GENERATED FROM PYTHON SOURCE LINES 290-325
+.. GENERATED FROM PYTHON SOURCE LINES 307-342
 
 .. code-block:: Python
 
@@ -235,17 +256,17 @@ and offset grids: 400 by 40 atoms.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 326-333
+.. GENERATED FROM PYTHON SOURCE LINES 343-350
 
 Cost and accuracy
 -----------------
 
 Times are the best of three passes after a warm-up. *model* is the memory the
-fitted estimator holds between volumes. *peak* is the maximum GPU memory
+fitted estimator holds between volumes, none for a fit. *peak* is the maximum GPU memory
 allocated while mapping the slice, blank on a machine without a GPU. The
 error is the median relative T2 error over the brain voxels.
 
-.. GENERATED FROM PYTHON SOURCE LINES 333-371
+.. GENERATED FROM PYTHON SOURCE LINES 350-388
 
 
 
@@ -259,17 +280,17 @@ error is the median relative T2 error over the brain voxels.
     method                           atoms   train     map     model      peak      T2
     ----------------------------------------------------------------------------------
     match, T2 only                     400    0.0s   0.01s   0.1 MiB        --   17.9%
-    match, T2 x 10 offsets            4000    0.0s   0.10s   0.5 MiB        --    1.8%
-    match, T2 x 20 offsets            8000    0.0s   0.20s   1.1 MiB        --    1.8%
-    match, T2 x 40 offsets           16000    0.0s   0.42s   2.1 MiB        --    1.8%
-    match, T2 x 80 offsets           32000    0.0s   1.02s   4.3 MiB        --    1.7%
-    fit, T2 + M0, floor known           --    0.0s   0.62s   0.0 MiB        --    0.6%
-    fit, T2 + M0 + offset               --    0.0s   1.02s   0.0 MiB        --    1.8%
+    match, T2 x 10 offsets            4000    0.0s   0.09s   0.5 MiB        --    1.8%
+    match, T2 x 20 offsets            8000    0.0s   0.18s   1.1 MiB        --    1.8%
+    match, T2 x 40 offsets           16000    0.0s   0.36s   2.1 MiB        --    1.8%
+    match, T2 x 80 offsets           32000    0.0s   0.77s   4.3 MiB        --    1.7%
+    fit, T2 + M0, floor known           --    0.0s   0.51s   0.0 MiB        --    0.6%
+    fit, T2 + M0 + offset               --    0.0s   0.83s   0.0 MiB        --    1.8%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 372-389
+.. GENERATED FROM PYTHON SOURCE LINES 389-406
 
 Interpretation
 --------------
@@ -286,10 +307,10 @@ for a parameter that adds one column to the fit's Jacobian.
 The fit is slower in wall-clock time, because a Levenberg-Marquardt loop takes
 tens of passes where a match takes one. Each additional nuisance parameter
 multiplies the number of atoms but adds one column to the Jacobian, so the
-time curves cross at some number of nuisance values, and the memory curves
-have already crossed.
+time curves cross at some number of nuisance values. The fit holds no table
+between volumes at all, so its memory does not appear on the right.
 
-.. GENERATED FROM PYTHON SOURCE LINES 389-419
+.. GENERATED FROM PYTHON SOURCE LINES 406-435
 
 
 
@@ -303,7 +324,7 @@ have already crossed.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 420-425
+.. GENERATED FROM PYTHON SOURCE LINES 436-441
 
 Maps
 ----
@@ -311,7 +332,7 @@ Maps
 T2 from the match without the offset, the match with it, and the fit of all
 three parameters, with the absolute error in the second row.
 
-.. GENERATED FROM PYTHON SOURCE LINES 425-448
+.. GENERATED FROM PYTHON SOURCE LINES 441-464
 
 
 
@@ -325,7 +346,7 @@ three parameters, with the absolute error in the second row.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 449-477
+.. GENERATED FROM PYTHON SOURCE LINES 465-494
 
 Limits
 ------
@@ -348,10 +369,11 @@ What this page did, stated the way you would ask an agent for it:
 
 .. code-block:: text
 
-   With blochsim, map T2 in BrainWeb subject 0, slice 90, from a 16-echo
-   multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor offset
-   of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
-   NonlinearLeastSquares (bounds T2 10-500 ms, M0 0.1-2, offset 0-0.2).
+   With blochsim and bartorch, map T2 in BrainWeb subject 0, slice 90, from a
+   16-echo multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor
+   offset of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
+   bartorch's apps.mobafit over a blochsim ModelOperator (bounds T2 10-500 ms,
+   M0 0.1-2, offset 0-0.2).
    Compare with a DictionaryMatcher over 400 log-spaced T2 values, without
    the offset and with 10 to 80 offset values on the grid. Report mapping
    time, estimator memory and median relative T2 error, and plot the maps.
@@ -359,7 +381,7 @@ What this page did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 12.777 seconds)
+   **Total running time of the script:** (0 minutes 11.445 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_03-nonlinear-least-squares.py:
