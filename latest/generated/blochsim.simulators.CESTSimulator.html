@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
@@ -638,18 +648,18 @@ pp. R221-R269. <a class="reference external" href="https://doi.org/10.1088/0031-
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>offsets</strong> (<em>array-like</em>) – Saturation frequency offsets from the free water, in ppm.</p></li>
-<li><p><strong>field_strength</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Main field in tesla, which turns an offset in ppm into Hz.</p></li>
-<li><p><strong>B1sat</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Amplitude of each saturation pulse in microtesla.</p></li>
-<li><p><strong>npulses</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Saturation pulses per offset.</p></li>
-<li><p><strong>pulse_duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Duration of each pulse in milliseconds.</p></li>
-<li><p><strong>interpulse_delay</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Time between two pulses in milliseconds.</p></li>
-<li><p><strong>recovery</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Time in milliseconds from the end of the last pulse to the read,
+<li><p><strong>field_strength</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Main field in tesla, which turns an offset in ppm into Hz.</p></li>
+<li><p><strong>B1sat</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Amplitude of each saturation pulse in microtesla.</p></li>
+<li><p><strong>npulses</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Saturation pulses per offset.</p></li>
+<li><p><strong>pulse_duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Duration of each pulse in milliseconds.</p></li>
+<li><p><strong>interpulse_delay</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Time between two pulses in milliseconds.</p></li>
+<li><p><strong>recovery</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Time in milliseconds from the end of the last pulse to the read,
 over which the transverse magnetization is spoiled.</p></li>
-<li><p><strong>dwell</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – How long each sample of a pulse is held, in milliseconds.</p></li>
+<li><p><strong>dwell</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – How long each sample of a pulse is held, in milliseconds.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If a pulse is not a whole number of samples.</p>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If a pulse is not a whole number of samples.</p>
 </dd>
 </dl>
 </dd></dl>

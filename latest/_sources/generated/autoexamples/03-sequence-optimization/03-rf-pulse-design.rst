@@ -18,40 +18,32 @@
 .. _sphx_glr_generated_autoexamples_03-sequence-optimization_03-rf-pulse-design.py:
 
 
-========================================
-Designing an RF pulse by optimal control
-========================================
+=========================================
+RF pulse design by optimal control
+=========================================
 
-The scope of this notebook is to design the samples of an RF pulse directly,
-by gradient descent through a Bloch simulation of what they do [1]_.
+In this example you design the samples of a slice-selective RF pulse by
+gradient descent through a Bloch simulation of what they do [1]_. Across a body
+at 3 T the transmit field B1 varies by about a fifth either way, and the flip
+angle inside the slice varies with it. You reshape a 90 degree excitation so
+that it stays close to 90 degrees over that range.
 
-A slice-selective pulse is designed for one transmit field. Where B1 varies --
-by a fifth either way across a body at 3 T -- the flip inside the slice varies
-with it. Here a 90 degree excitation is reshaped so that it stays as close to
-90 degrees across that range as its samples allow.
+Prerequisites: Course lessons :doc:`../01-framework/01-first-simulation` and
+:doc:`../01-framework/02-advanced-physics`.
 
 .. [1] Conolly S, Nishimura D, Macovski A. Optimal control solutions to the
    magnetic resonance selective excitation problem. IEEE Trans Med Imaging
    1986;5(2):106-115.
 
-.. GENERATED FROM PYTHON SOURCE LINES 20-24
+.. GENERATED FROM PYTHON SOURCE LINES 21-26
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim
+   !pip install blochsim matplotlib
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 24-57
-
-.. code-block:: Python
-
-
-
-    import math
-
-    import torch
-
-    from blochsim import SequenceDesign, compose_spinor
+.. GENERATED FROM PYTHON SOURCE LINES 26-37
 
 
 
@@ -60,25 +52,27 @@ with it. Here a 90 degree excitation is reshaped so that it stays as close to
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 58-70
+.. GENERATED FROM PYTHON SOURCE LINES 38-49
 
 Pulse and slice
 ---------------
 
-The pulse is ``SAMPLES`` samples long, and under its slice-select gradient
-each sample turns a spin at ``x`` slice thicknesses from the centre by
-``2 pi TBW x / SAMPLES`` about z. Its drive is in radians per sample, so
-the design is stated without a raster or a gradient amplitude: any pulse of
-this time-bandwidth product plays it.
+The pulse has 128 samples. Under the slice-select gradient, each sample
+rotates a spin at ``x`` slice thicknesses from the centre by
+``2 pi TBW x / 128`` about z, where TBW is the time-bandwidth product. The
+drive of each sample is in radians, so the design needs no raster and no
+gradient amplitude: any pulse with this time-bandwidth product can play it.
 
 The starting point is a Hamming-windowed sinc with the area of a 90 degree
-flip -- a small-tip design, played at a large tip.
+flip. That is a small-tip design, played here at a large tip:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 71-82
+.. GENERATED FROM PYTHON SOURCE LINES 49-63
 
 .. code-block:: Python
 
+    import math
+
+    import torch
 
     SAMPLES, TBW = 128, 4.0
     x = torch.linspace(-2.0, 2.0, 161, dtype=torch.float64)
@@ -97,25 +91,27 @@ flip -- a small-tip design, played at a large tip.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 83-89
+.. GENERATED FROM PYTHON SOURCE LINES 64-71
 
 Transmit field
 --------------
 
-Every spin is simulated at five transmit scalings, from 0.8 to 1.2 of
-nominal. The pulse is one; what it does at each scaling is not.
+Simulate every spin at five transmit scalings, from 0.8 to 1.2 of nominal.
+``compose_spinor`` multiplies the rotations of all samples into one spinor
+``(a, b)`` per spin, and the transverse magnetization after a pulse applied
+to magnetization along +z is ``2 conj(a) b``:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 90-101
+.. GENERATED FROM PYTHON SOURCE LINES 71-83
 
 .. code-block:: Python
 
+    from blochsim import compose_spinor
 
     B1 = torch.tensor([0.8, 0.9, 1.0, 1.1, 1.2], dtype=torch.float64)
 
 
     def excited(real, imag):
-        """``|Mxy|`` after the pulse, from ``+z``: ``(B1, x)``."""
+        """|Mxy| after the pulse, shape (B1, x)."""
         drive = (real + 1j * imag)[:, None, None] * B1[None, :, None]
         a, b = compose_spinor(drive, turn.expand(len(B1), -1))
         return (2 * a.conj() * b).abs()
@@ -128,20 +124,19 @@ nominal. The pulse is one; what it does at each scaling is not.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 102-109
+.. GENERATED FROM PYTHON SOURCE LINES 84-91
 
-The cost
---------
+Cost
+----
 
-Inside the slice the magnetisation should be all transverse, outside it
-untouched; the transition band between is left free. A small penalty on the
-pulse's energy keeps it from buying flatness with power.
+Inside the slice the magnetization should be fully transverse. Outside it
+should be untouched. The transition band between them is left free. A small
+penalty on the pulse energy prevents the optimizer from trading power for
+flatness:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 110-122
+.. GENERATED FROM PYTHON SOURCE LINES 91-102
 
 .. code-block:: Python
-
 
     inside = (x.abs() < 0.4).double()
     outside = (x.abs() > 0.75).double()
@@ -161,20 +156,20 @@ pulse's energy keeps it from buying flatness with power.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 123-130
+.. GENERATED FROM PYTHON SOURCE LINES 103-109
 
-Optimized pulse
----------------
+Optimization
+------------
 
-The real and imaginary parts of every sample are the designed parameters,
-free of limits: the scanner's peak B1 would be a :class:`~blochsim.Bounded`
-on them.
+The real and imaginary parts of every sample are the design parameters, with
+no limits. To respect the scanner's peak B1, you would wrap them in
+:class:`~blochsim.Bounded`:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 131-159
+.. GENERATED FROM PYTHON SOURCE LINES 109-139
 
 .. code-block:: Python
 
+    from blochsim import SequenceDesign
 
     design = SequenceDesign(
         cost, real=start.clone(), imag=torch.zeros(SAMPLES, dtype=torch.float64)
@@ -191,7 +186,7 @@ on them.
 
 
 .. image-sg:: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_03-rf-pulse-design_001.png
-   :alt: Starting sinc, Optimized, Cost
+   :alt: starting sinc, optimized, cost
    :srcset: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_03-rf-pulse-design_001.png
    :class: sphx-glr-single-img
 
@@ -199,23 +194,21 @@ on them.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 160-163
+.. GENERATED FROM PYTHON SOURCE LINES 140-143
 
-Inside the slice the flip now varies less across the transmit range, most of
-all where B1 is low, while outside it the leakage stays at the sinc's level:
+Inside the slice, the flip now varies less across the transmit range, most of
+all where B1 is low. Outside the slice the leakage stays at the level of the
+sinc. Compare the mean :math:`|M_{xy}|` inside the slice at each B1:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 164-171
+.. GENERATED FROM PYTHON SOURCE LINES 143-148
 
 .. code-block:: Python
-
 
     centre = inside.bool()
     for label, profile in (("starting sinc", before), ("optimized", after)):
         mean = profile[:, centre].mean(dim=1)
-        print(
-            f"{label:>14}: |Mxy| in the slice at each B1 {[round(float(v), 3) for v in mean]}"
-        )
+        print(f"{label:>14}: {[round(float(v), 3) for v in mean]}")
+
 
 
 
@@ -224,16 +217,33 @@ all where B1 is low, while outside it the leakage stays at the sinc's level:
 
  .. code-block:: none
 
-     starting sinc: |Mxy| in the slice at each B1 [0.895, 0.94, 0.967, 0.976, 0.969]
-         optimized: |Mxy| in the slice at each B1 [0.945, 0.981, 0.996, 0.989, 0.963]
+     starting sinc: [0.895, 0.94, 0.967, 0.976, 0.969]
+         optimized: [0.945, 0.981, 0.996, 0.989, 0.963]
 
 
 
+
+.. GENERATED FROM PYTHON SOURCE LINES 149-163
+
+Specification
+-------------
+
+What this example did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, design a 128-sample slice-selective 90 degree excitation
+   with time-bandwidth product 4, starting from a Hamming-windowed sinc.
+   Simulate each spin at B1 scalings 0.8 to 1.2 with compose_spinor. Minimize
+   the squared miss from |Mxy| = 1 inside the slice and 0 outside, plus a
+   small energy penalty, with SequenceDesign over the real and imaginary
+   parts of the samples. Report the mean |Mxy| in the slice at each B1,
+   before and after.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 5.633 seconds)
+   **Total running time of the script:** (0 minutes 8.569 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_03-rf-pulse-design.py:

@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -67,8 +67,8 @@
     <link rel="icon" href="../../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Framework" href="01-framework/index.html" />
-    <link rel="prev" title="How BlochSim runs it" href="../../explanations/implementation.html" />
+    <link rel="next" title="Course" href="01-framework/index.html" />
+    <link rel="prev" title="Sequence design" href="../../explanations/sequence-design.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Examples</a></li>
@@ -534,14 +544,14 @@
                 <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Examples</a><ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#course">Course</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tours">Tours</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#applications">Applications</a></li>
 </ul>
 </li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#framework">Framework</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#parameter-inference">Parameter inference</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence-optimization">Sequence optimization</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#model-based-imaging">Model-based imaging</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#miscellaneous">Miscellaneous</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Course</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-parameter-mapping">Applications: parameter mapping</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-sequence-design">Applications: sequence design</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-model-based-reconstruction">Applications: model-based reconstruction</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-synthetic-data">Applications: synthetic data</a></li>
 </ul>
 
             </nav>
@@ -556,150 +566,116 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="examples">
 <span id="general-examples"></span><h1>Examples<a class="headerlink" href="#examples" title="Link to this heading">#</a></h1>
-<p>The examples have two jobs: a short <strong>Course</strong> teaches the framework itself,
-then <strong>Tours</strong> show what can be built on top of it. Every page is executable
-and uses the same public interfaces documented in the API reference.</p>
+<p>Every page here runs as you read it: the figures and numbers are computed by
+the code on the page, and each page has an <em>Open in Colab</em> button that runs it
+in your browser.</p>
 <section id="course">
 <h2>Course<a class="headerlink" href="#course" title="Link to this heading">#</a></h2>
-<p>Read the four <strong>Framework</strong> lessons in order. They are the shortest path from a
-shipped sequence to one of your own:</p>
-<ol class="arabic simple">
-<li><p><strong>Getting started</strong> — run a shipped <a class="reference internal" href="../blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">blochsim.model.Simulator</span></code></a>,
-inspect its sequence description, differentiate the signal, and see where
-execution happens.</p></li>
-<li><p><strong>Expanded physics</strong> — turn on off-resonance, transmit variation,
-diffusion, flow, exchange and magnetization transfer without changing the
-sequence abstraction.</p></li>
-<li><p><strong>Writing a simulator</strong> — the extension point of the framework:
-subclass <a class="reference internal" href="../blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">blochsim.model.Simulator</span></code></a>, choose the command handlers
-that interpret an incoming Pulseq/MRD event stream, and implement
-<a class="reference internal" href="../blochsim.model.Simulator.html#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">blochsim.model.Simulator.layout()</span></code></a> for offline construction.</p></li>
-<li><p><strong>Custom operator</strong> — package a preparation or readout as an operator while
-leaving the state-machine kernels untouched.</p></li>
-</ol>
-<p>A simulator is deliberately the common object in both directions. Offline,
-<code class="docutils literal notranslate"><span class="pre">layout()</span></code> builds the sequence description. During acquisition,
-<code class="docutils literal notranslate"><span class="pre">Simulator.from_description()</span></code> takes the description decoded from the
-scanner’s MRD stream and replays the RF/ADC commands through the simulator’s
-handlers. The physics, differentiation, execution policy, estimators and
-reconstruction code therefore see the same object in either case.</p>
+<p>Five lessons that take you from a sequence blochsim ships to a sequence and an
+operator of your own. Read them in order.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Lesson</p></th>
+<th class="head"><p>The question it answers</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference internal" href="01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a></p></td>
+<td><p>How do I simulate a sequence and get its derivatives?</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="01-framework/02-advanced-physics.html"><span class="doc">2. Advanced physics</span></a></p></td>
+<td><p>How do I add B1, off resonance, magnetization transfer, diffusion or flow?</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="01-framework/03-custom-signal-model.html"><span class="doc">3. Custom signal model</span></a></p></td>
+<td><p>How do I simulate a sequence blochsim does not ship?</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="01-framework/04-description-based-simulation.html"><span class="doc">4. Description-based simulation</span></a></p></td>
+<td><p>How do I simulate a Pulseq file, or the sequence a scanner is running?</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="01-framework/05-custom-operator.html"><span class="doc">5. Custom operator</span></a></p></td>
+<td><p>How do I add a preparation or a readout of my own?</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 </section>
-<section id="tours">
-<h2>Tours<a class="headerlink" href="#tours" title="Link to this heading">#</a></h2>
-<p>The remaining sections are standalone applications. They assume the Course,
-but not one another.</p>
-<p><strong>Parameter inference</strong> compares dictionary matching, lookup tables, nonlinear
-least squares and PERK on the same mapping problem.</p>
-<p><strong>Sequence optimization</strong> differentiates through the simulator to design echo
-trains, quantitative schedules and RF pulses.</p>
-<p><strong>Model-based imaging</strong> places the simulator inside the forward model, through
-a linear subspace or nonlinear inversion.</p>
-<p><strong>Miscellaneous</strong> contains complete pipelines that do not belong to the linear
-course.</p>
+<section id="applications">
+<h2>Applications<a class="headerlink" href="#applications" title="Link to this heading">#</a></h2>
+<p>Complete worked examples built on the Course: mapping tissue parameters,
+designing sequences, reconstructing parameter maps from k-space, and making
+synthetic data. Each stands alone and says which lessons it assumes.</p>
 </section>
 </section>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"></div><section id="framework">
-<h1>Framework<a class="headerlink" href="#framework" title="Link to this heading">#</a></h1>
-<p>How to use BlochSim, and how to extend it.</p>
-<p>The first notebook covers basic usage: simulating a signal, taking its
-derivatives, tuning the run, and reading a sequence back from the description
-a scanner streams. The second covers the physics a simulator can carry beyond
-T1 and T2.</p>
-<p>The last two are for sequences BlochSim does not ship. A <strong>signal model</strong> of
-your own is two pieces – a physics saying what each kind of event does, and a
-simulator saying what order they are played in. An <strong>operator</strong> of your own –
-a preparation, a readout – is a Python function that returns events.</p>
-<p>None of it requires touching a kernel.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to showcase the basic functionalities of Blochsim, including how to simulate a signal, calculating derivatives etc."><img alt="" src="../../_images/sphx_glr_01-getting-started_thumb.png" />
-<p><a class="reference internal" href="01-framework/01-getting-started.html"><span class="doc">Basic Usage</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Basic Usage</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays."><img alt="" src="../../_images/sphx_glr_02-expanded-physics_thumb.png" />
-<p><a class="reference internal" href="01-framework/02-expanded-physics.html"><span class="doc">Expanded Physics</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Expanded Physics</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to write a simulator BlochSim does not ship."><img alt="" src="../../_images/sphx_glr_03-writing-a-simulator_thumb.png" />
-<p><a class="reference internal" href="01-framework/03-writing-a-simulator.html"><span class="doc">Writing a Signal Model</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Writing a Signal Model</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to show how to add a sequence module BlochSim does not ship -- a preparation, or a readout -- without touching a kernel."><img alt="" src="../../_images/sphx_glr_04-custom-operator_thumb.png" />
-<p><a class="reference internal" href="01-framework/04-custom-operator.html"><span class="doc">Writing a New Operator</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Writing a New Operator</div>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"></div><section id="id1">
+<h1>Course<a class="headerlink" href="#id1" title="Link to this heading">#</a></h1>
+<p>The five lessons, in order.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="blochsim computes the signal of an MR sequence for given tissue properties, together with its derivatives with respect to those properties and to the sequence parameters. This lesson uses the fast spin echo (FSE) simulator shipped with blochsim: you simulate three tissues, change the refocusing angle, and compute the derivative of the signal with respect to T2."><img alt="" src="../../_images/sphx_glr_01-first-simulation_thumb.png" />
+<p><a class="reference internal" href="01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a></p>
+  <div class="sphx-glr-thumbnail-title">1. Your first simulation</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In lesson 1 a tissue was T1 and T2. A voxel has more properties than that, and each one adds a term to the physics. In this lesson you add them to a fingerprinting train one at a time: the transmit field and the array that produces it, the shaped pulse of a real slice selection, a second exchanging pool and a bound pool, off resonance, an imperfect inversion, and diffusion and flow."><img alt="" src="../../_images/sphx_glr_02-advanced-physics_thumb.png" />
+<p><a class="reference internal" href="01-framework/02-advanced-physics.html"><span class="doc">2. Advanced physics</span></a></p>
+  <div class="sphx-glr-thumbnail-title">2. Advanced physics</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="Lessons 1 and 2 used shipped simulators. This lesson implements a new one, saturation recovery, by subclassing Simulator. The resulting class supports the same features as a shipped simulator: batched tissue inputs, derivatives with respect to tissue and sequence parameters, and the additional physics of lesson 2."><img alt="" src="../../_images/sphx_glr_03-custom-signal-model_thumb.png" />
+<p><a class="reference internal" href="01-framework/03-custom-signal-model.html"><span class="doc">3. Custom signal model</span></a></p>
+  <div class="sphx-glr-thumbnail-title">3. Custom signal model</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In lesson 3 the events were generated by the layout. They can also come from an existing sequence: a Pulseq file written with another tool, or the sequence description a scanner streams during acquisition. This lesson simulates such descriptions directly, without restating the sequence parameters."><img alt="" src="../../_images/sphx_glr_04-description-based-simulation_thumb.png" />
+<p><a class="reference internal" href="01-framework/04-description-based-simulation.html"><span class="doc">4. Description-based simulation</span></a></p>
+  <div class="sphx-glr-thumbnail-title">4. Description-based simulation</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In lesson 3 you wrote a sequence from the operators that ship with blochsim. In this lesson you write two operators of your own: a T2 preparation, and a readout that records two samples in one repetition. An operator is a Python function that returns events, and @ composes operators into one. No kernel changes, and the new operators work in any simulator."><img alt="" src="../../_images/sphx_glr_05-custom-operator_thumb.png" />
+<p><a class="reference internal" href="01-framework/05-custom-operator.html"><span class="doc">5. Custom operator</span></a></p>
+  <div class="sphx-glr-thumbnail-title">5. Custom operator</div>
 </div></div></section>
-<section id="parameter-inference">
-<h1>Parameter inference<a class="headerlink" href="#parameter-inference" title="Link to this heading">#</a></h1>
-<p>Estimating tissue properties from a measured volume.</p>
-<p>Every estimator is made from the simulator it inverts and fitted over the
-same statement of the problem – what is unknown, over what range, at what
-noise level – and they differ only in how they fill it in. These examples change only that: dictionary matching over a parameter
-grid, compressed and clustered; interpolation along a curve where there is a
-single unknown; a nonlinear fit of the model itself; and a kernel regression
-that never builds a grid at all.</p>
-<p>Every one of them maps the same BrainWeb slice, so the answer is known
-everywhere – mixtures of tissues included – and reports what it cost in time
-and in memory alongside what it got wrong.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored."><img alt="" src="../../_images/sphx_glr_01-dictionary-matching_thumb.png" />
+<section id="applications-parameter-mapping">
+<h1>Applications: parameter mapping<a class="headerlink" href="#applications-parameter-mapping" title="Link to this heading">#</a></h1>
+<p>Four ways to turn a measured signal into T1, T2 and M0 maps, all built from
+the same simulator and compared on the same BrainWeb slice: dictionary
+matching, a lookup table, nonlinear least squares and PERK.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="You map T1, T2 and proton density in a brain slice from a magnetic resonance fingerprinting (MRF) train by dictionary matching, then reduce the cost of the match in two independent ways: by working in the low-rank subspace spanned by the train, and by clustering the dictionary so that most atoms are not scored."><img alt="" src="../../_images/sphx_glr_01-dictionary-matching_thumb.png" />
 <p><a class="reference internal" href="02-parameter-inference/01-dictionary-matching.html"><span class="doc">Dictionary matching</span></a></p>
   <div class="sphx-glr-thumbnail-title">Dictionary matching</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it."><img alt="" src="../../_images/sphx_glr_02-lookup-table_thumb.png" />
+</div><div class="sphx-glr-thumbcontainer" tooltip="You map T1 from a two-block MP2RAGE acquisition in two ways, by interpolating along the signal curve and by dictionary matching, and sweep the number of points on the curve to see which method depends on it."><img alt="" src="../../_images/sphx_glr_02-lookup-table_thumb.png" />
 <p><a class="reference internal" href="02-parameter-inference/02-lookup-table.html"><span class="doc">MP2RAGE lookup table</span></a></p>
   <div class="sphx-glr-thumbnail-title">MP2RAGE lookup table</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice."><img alt="" src="../../_images/sphx_glr_03-nonlinear-least-squares_thumb.png" />
+</div><div class="sphx-glr-thumbcontainer" tooltip="You map T2 from a multi-echo spin echo by nonlinear least squares and compare the result with dictionary matching on the same slice."><img alt="" src="../../_images/sphx_glr_03-nonlinear-least-squares_thumb.png" />
 <p><a class="reference internal" href="02-parameter-inference/03-nonlinear-least-squares.html"><span class="doc">T2 mapping by nonlinear least squares</span></a></p>
   <div class="sphx-glr-thumbnail-title">T2 mapping by nonlinear least squares</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports."><img alt="" src="../../_images/sphx_glr_04-perk_thumb.png" />
+</div><div class="sphx-glr-thumbcontainer" tooltip="You map T1, T2 and proton density in a brain slice with PERK, vary the size of the regression, and read the uncertainty it reports against the Cramér-Rao bound."><img alt="" src="../../_images/sphx_glr_04-perk_thumb.png" />
 <p><a class="reference internal" href="02-parameter-inference/04-perk.html"><span class="doc">PERK: kernel ridge regression</span></a></p>
   <div class="sphx-glr-thumbnail-title">PERK: kernel ridge regression</div>
 </div></div></section>
-<section id="sequence-optimization">
-<h1>Sequence optimization<a class="headerlink" href="#sequence-optimization" title="Link to this heading">#</a></h1>
-<p>Choosing a sequence’s parameters rather than simulating the ones you were
-given.</p>
-<p>A design problem is three pieces: a simulator with the tissue it is designed
-for already fixed on it; a cost, which is a plain function of what that
-simulator records; and a <a class="reference internal" href="../blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a>, which holds the
-parameters inside the limits the scanner will play and runs the loop.</p>
-<p>Only the cost changes between the first two examples here. One asks for a
-picture – sharp where sharpness is decided, with contrast where contrast is
-decided – and the other asks for precision, choosing flip angles so that T1
-and T2 are estimated as tightly as the scan time allows.</p>
-<p>The third designs no protocol parameter at all but the samples of an RF pulse,
-through a Bloch simulation of the slice it excites, so that the excitation
-holds where the transmit field does not.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles."><img alt="" src="../../_images/sphx_glr_01-echo-train-design_thumb.png" />
-<p><a class="reference internal" href="03-sequence-optimization/01-echo-train-design.html"><span class="doc">Designing echo trains for image quality</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Designing echo trains for image quality</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_."><img alt="" src="../../_images/sphx_glr_02-joint-relaxometry_thumb.png" />
-<p><a class="reference internal" href="03-sequence-optimization/02-joint-relaxometry.html"><span class="doc">Designing a joint relaxometry protocol</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Designing a joint relaxometry protocol</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to design the samples of an RF pulse directly, by gradient descent through a Bloch simulation of what they do [1]_."><img alt="" src="../../_images/sphx_glr_03-rf-pulse-design_thumb.png" />
-<p><a class="reference internal" href="03-sequence-optimization/03-rf-pulse-design.html"><span class="doc">Designing an RF pulse by optimal control</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Designing an RF pulse by optimal control</div>
+<section id="applications-sequence-design">
+<h1>Applications: sequence design<a class="headerlink" href="#applications-sequence-design" title="Link to this heading">#</a></h1>
+<p>Choose sequence parameters by gradient descent through the simulation: the
+refocusing angles of an echo train, the flip angles of a relaxometry
+protocol, and the samples of an RF pulse.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="In this example you design the refocusing flip angles of a fast spin echo for image quality rather than for precision: first one echo train, then a whole segmented 3D protocol in which each shot has its own repetition time, echo train length and angles."><img alt="" src="../../_images/sphx_glr_01-echo-train-design_thumb.png" />
+<p><a class="reference internal" href="03-sequence-optimization/01-echo-train-design.html"><span class="doc">Echo train design for sharpness</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Echo train design for sharpness</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In this example you choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_. DESPOT estimates T1 from spoiled gradient-echo scans at several flip angles and T2 from balanced SSFP scans. A joint fit uses all the data for both parameters."><img alt="" src="../../_images/sphx_glr_02-joint-relaxometry_thumb.png" />
+<p><a class="reference internal" href="03-sequence-optimization/02-joint-relaxometry.html"><span class="doc">Joint relaxometry protocol design</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Joint relaxometry protocol design</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In this example you design the samples of a slice-selective RF pulse by gradient descent through a Bloch simulation of what they do [1]_. Across a body at 3 T the transmit field B1 varies by about a fifth either way, and the flip angle inside the slice varies with it. You reshape a 90 degree excitation so that it stays close to 90 degrees over that range."><img alt="" src="../../_images/sphx_glr_03-rf-pulse-design_thumb.png" />
+<p><a class="reference internal" href="03-sequence-optimization/03-rf-pulse-design.html"><span class="doc">RF pulse design by optimal control</span></a></p>
+  <div class="sphx-glr-thumbnail-title">RF pulse design by optimal control</div>
 </div></div></section>
-<section id="model-based-imaging">
-<h1>Model-based imaging<a class="headerlink" href="#model-based-imaging" title="Link to this heading">#</a></h1>
-<p>Reconstructing parameter maps from k-space without forming the contrast images
-in between.</p>
-<p>A quantitative scan is usually reconstructed twice: once to make one image per
-contrast, and again – voxel by voxel – to turn those images into maps. The
-first step has no idea what the second one is for. Writing the signal model
-into the forward operator removes the intermediate step, and the echoes then
-constrain one another instead of being recovered separately.</p>
-<p>There are two ways to do it. A <strong>linear subspace</strong> writes the signal in the
-low-rank basis the train spans and reconstructs the coefficients, which stays
-linear and so has no local minima and no starting guess. <strong>Nonlinear inversion</strong>
-keeps the model itself inside the operator and solves for the maps directly,
-which costs more and is what a signal with no small basis needs.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong."><img alt="" src="../../_images/sphx_glr_01-linear-subspace_thumb.png" />
-<p><a class="reference internal" href="04-model-based-imaging/01-linear-subspace.html"><span class="doc">Reconstructing in a linear subspace</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Reconstructing in a linear subspace</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go."><img alt="" src="../../_images/sphx_glr_02-nonlinear-inversion_thumb.png" />
+<section id="applications-model-based-reconstruction">
+<h1>Applications: model-based reconstruction<a class="headerlink" href="#applications-model-based-reconstruction" title="Link to this heading">#</a></h1>
+<p>Reconstruct parameter maps straight from k-space, with the signal model inside
+the forward operator: linear, in a subspace, or nonlinear.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="In this Application you reconstruct one undersampled radial multi-echo spin echo three ways: by gridding, by conjugate gradients on each echo separately, and in a linear subspace. You compare what each costs and how far its T2 map is from the truth."><img alt="" src="../../_images/sphx_glr_01-linear-subspace_thumb.png" />
+<p><a class="reference internal" href="04-model-based-imaging/01-linear-subspace.html"><span class="doc">Subspace reconstruction</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Subspace reconstruction</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In this Application you reconstruct T2 maps directly from k-space, with the signal model inside the forward operator, and compare the result with gridding followed by a fit."><img alt="" src="../../_images/sphx_glr_02-nonlinear-inversion_thumb.png" />
 <p><a class="reference internal" href="04-model-based-imaging/02-nonlinear-inversion.html"><span class="doc">Nonlinear inversion from k-space</span></a></p>
   <div class="sphx-glr-thumbnail-title">Nonlinear inversion from k-space</div>
 </div></div></section>
-<section id="miscellaneous">
-<h1>Miscellaneous<a class="headerlink" href="#miscellaneous" title="Link to this heading">#</a></h1>
-<p>Everything that is a pipeline rather than a demonstration of a call.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from."><img alt="" src="../../_images/sphx_glr_01-synthetic-data_thumb.png" />
-<p><a class="reference internal" href="05-misc/01-synthetic-data.html"><span class="doc">Synthetic MR fingerprinting</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Synthetic MR fingerprinting</div>
+<section id="applications-synthetic-data">
+<h1>Applications: synthetic data<a class="headerlink" href="#applications-synthetic-data" title="Link to this heading">#</a></h1>
+<p>Build training data for a learned reconstruction: what a scanner would measure
+from a fingerprinting exam, and the maps it came from.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="In this Application you build a training pair for MR fingerprinting: the undersampled image series a scanner would produce, the fully sampled series it approximates, and the T1, T2 and M0 maps they come from."><img alt="" src="../../_images/sphx_glr_01-synthetic-data_thumb.png" />
+<p><a class="reference internal" href="05-misc/01-synthetic-data.html"><span class="doc">Synthetic fingerprint</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Synthetic fingerprint</div>
 </div></div><div class="toctree-wrapper compound">
 </div>
 <div class="sphx-glr-footer sphx-glr-footer-gallery docutils container">
@@ -725,12 +701,12 @@ which costs more and is what a signal with no small basis needs.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../../explanations/implementation.html"
+       href="../../explanations/sequence-design.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">How BlochSim runs it</p>
+        <p class="prev-next-title">Sequence design</p>
       </div>
     </a>
     <a class="right-next"
@@ -738,7 +714,7 @@ which costs more and is what a signal with no small basis needs.</p>
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Framework</p>
+        <p class="prev-next-title">Course</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -762,14 +738,14 @@ which costs more and is what a signal with no small basis needs.</p>
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Examples</a><ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#course">Course</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tours">Tours</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#applications">Applications</a></li>
 </ul>
 </li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#framework">Framework</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#parameter-inference">Parameter inference</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence-optimization">Sequence optimization</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#model-based-imaging">Model-based imaging</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#miscellaneous">Miscellaneous</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#id1">Course</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-parameter-mapping">Applications: parameter mapping</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-sequence-design">Applications: sequence design</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-model-based-reconstruction">Applications: model-based reconstruction</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#applications-synthetic-data">Applications: synthetic data</a></li>
 </ul>
 
   </nav></div>

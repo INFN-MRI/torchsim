@@ -22,40 +22,33 @@
 MP2RAGE lookup table
 ====================
 
-The scope of this notebook is to map T1 from a two-block MP2RAGE, by
-interpolating along a curve and by matching the same curve, and to sweep the
-number of points to show which of the two is limited by it.
+You map T1 from a two-block MP2RAGE acquisition in two ways, by interpolating
+along the signal curve and by dictionary matching, and sweep the number of
+points on the curve to see which method depends on it.
 
-With a single unknown a dictionary degenerates: the atoms lie on a curve rather
-than filling a space. Interpolating between the two nearest then costs nothing
-and takes the grid spacing out of the answer, which is what
+With a single unknown, the dictionary atoms lie on a curve instead of filling
+a space. Interpolating between the two nearest points on the curve costs
+nothing and removes the grid spacing from the error; this is what
 :class:`~blochsim.LookupTable` does.
 
-.. GENERATED FROM PYTHON SOURCE LINES 17-21
+Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
+
+.. GENERATED FROM PYTHON SOURCE LINES 19-24
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim brainweb-dl cmap
+   !pip install blochsim matplotlib brainweb-dl cmap
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 23-27
-
-The problem is stated over a simulator carrying the sequence and filled in
-by an estimator. :func:`~blochsim.execution` decides where that work runs,
-and the timings below are taken inside it.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 28-171
+.. GENERATED FROM PYTHON SOURCE LINES 24-131
 
 .. code-block:: Python
 
 
-    import time
-
     import numpy as np
     import torch
 
-    import blochsim
     from blochsim.estimators import DictionaryMatcher, LookupTable
     from blochsim.simulators import MP2RAGESimulator
 
@@ -66,19 +59,24 @@ and the timings below are taken inside it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 172-181
+.. GENERATED FROM PYTHON SOURCE LINES 132-140
 
 Phantom
 -------
 
-BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
-ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
-voxel holds a fraction of each tissue, and the relaxation times are weighted
-by those fractions. A third of the voxels are mixtures, so the truth is a
-continuum and not four values.
+The phantom is BrainWeb subject 0, slice 90: an axial 1 mm slice through the
+lateral ventricles. BrainWeb provides fuzzy tissue memberships, so each voxel
+holds a fraction of each tissue and its T1 is the fraction-weighted average.
+About a third of the voxels are mixtures, so the ground truth is a continuum
+of values rather than four.
+
+.. GENERATED FROM PYTHON SOURCE LINES 140-181
+
+.. code-block:: Python
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 182-218
+    truth = torch.as_tensor(T1_true[mask].copy())
+    density = torch.as_tensor(M0_true[mask].copy())
 
 
 
@@ -89,27 +87,20 @@ continuum and not four values.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    Text(0.5, 0.9901188654526398, 'BrainWeb subject 0, slice 90')
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 219-227
+.. GENERATED FROM PYTHON SOURCE LINES 182-189
 
 Protocol
 --------
 
-One inversion, two spoiled gradient-echo blocks read at two inversion times.
-Each block samples the centre of k-space of its own shot train, so a voxel
-contributes two numbers. The train spoils after every readout, so T1 is the
-only tissue property that moves them.
+MP2RAGE applies one inversion and reads two spoiled gradient-echo blocks at
+two inversion times. Each block samples the centre of k-space of its own
+shot train, so a voxel contributes two values. The train is spoiled after
+every readout, so T1 is the only tissue property that changes them.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 228-239
+.. GENERATED FROM PYTHON SOURCE LINES 189-200
 
 .. code-block:: Python
 
@@ -131,25 +122,23 @@ only tissue property that moves them.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 240-248
+.. GENERATED FROM PYTHON SOURCE LINES 201-207
 
 Signal curve
 ------------
 
-Neither block alone says T1: both carry the proton density and the receive
-gain. The unified combination divides that scale out, leaving a number
-between -0.5 and 0.5 that depends on T1 alone. Which combination is monotonic
-belongs to the sequence, so it is given rather than assumed.
+Neither block alone determines T1, since both are scaled by the proton
+density and the receive gain. The unified combination divides this scale
+out and leaves a value between -0.5 and 0.5 that depends on T1 alone:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 249-256
+.. GENERATED FROM PYTHON SOURCE LINES 207-214
 
 .. code-block:: Python
 
 
 
     def unified(blocks):
-        """The MP2RAGE unified image: scale-free, and a function of T1 alone."""
+        """The MP2RAGE unified image: independent of the scale, a function of T1."""
         return (blocks[..., 0] * blocks[..., 1]) / blocks.square().sum(-1).clamp_min(1e-12)
 
 
@@ -160,14 +149,14 @@ belongs to the sequence, so it is given rather than assumed.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 257-261
+.. GENERATED FROM PYTHON SOURCE LINES 215-219
 
-The curve is not monotonic over every T1, and where it turns back it has no
-inverse. The table keeps the longest monotonic run and reports what it spans,
-so the invertible range is a number rather than an assumption.
+Whether the unified image is monotonic in T1 depends on the protocol. Where
+it turns back it has no inverse, so the table keeps the longest monotonic run
+and reports the range it spans. The dashed line marks the turning point of
+the unified image at this protocol, beyond which T1 is not invertible.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 262-290
+.. GENERATED FROM PYTHON SOURCE LINES 219-243
 
 .. code-block:: Python
 
@@ -179,30 +168,23 @@ so the invertible range is a number rather than an assumption.
 
 
 .. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_02-lookup-table_002.png
-   :alt: the two blocks, the curve a T1 is read off
+   :alt: the two blocks, unified image
    :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_02-lookup-table_002.png
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    [<matplotlib.legend.Legend object at 0x7f10cf6b8950>]
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 291-297
+.. GENERATED FROM PYTHON SOURCE LINES 244-249
 
 Measurement
 -----------
 
-Both blocks, at the true T1 and proton density of every brain voxel, with
-noise at half a percent of the peak magnetization.
+The measurement is both blocks at the true T1 and proton density of every
+brain voxel, with Gaussian noise of 0.5% of the peak magnetization.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 298-351
+.. GENERATED FROM PYTHON SOURCE LINES 249-270
 
 .. code-block:: Python
 
@@ -221,26 +203,25 @@ noise at half a percent of the peak magnetization.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 352-360
+.. GENERATED FROM PYTHON SOURCE LINES 271-279
 
-Two estimators
---------------
+Estimators
+----------
 
-Both are given the same T1 grid. The match scores the two-block signal
-against every atom and takes the nearest; the table reduces both blocks to
-the unified number and interpolates along the curve, so ``combine`` is all it
-is told. Neither is given the range in advance.
+Both estimators are fitted on the same T1 grid, with the proton density
+fixed to one. The matcher scores the two-block signal against every atom and
+returns the nearest. The table reduces both blocks to the unified value and
+interpolates along the curve; ``combine`` is the only information it is
+given about the sequence. Neither is given the invertible range.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 361-369
+.. GENERATED FROM PYTHON SOURCE LINES 279-286
 
 .. code-block:: Python
 
     grid = torch.linspace(50.0, 6000.0, 60)
 
-    table = LookupTable(simulator.bind(M0=1.0), combine=unified).fit(T1=grid, seed=0)
-
-    maps = table.map(measured)  # {"T1": ...}, one value per voxel
+    lookup = LookupTable(simulator.bind(M0=1.0), combine=unified).fit(T1=grid, seed=0)
+    maps = lookup.map(measured)  # {"T1": ...}, one value per voxel
 
     match = DictionaryMatcher(simulator.bind(M0=1.0)).fit(T1=grid, seed=0)
 
@@ -251,16 +232,23 @@ is told. Neither is given the range in advance.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 370-373
+.. GENERATED FROM PYTHON SOURCE LINES 287-292
 
-Sweeping the grid separates the method from the sampling. Times are the best
-of three passes over the slice.
+Table size
+----------
+
+Sweeping the number of grid points separates the method from the sampling.
+Times are the best of three passes over the slice.
+
+.. GENERATED FROM PYTHON SOURCE LINES 292-353
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 374-397
 
 
-
+.. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_02-lookup-table_003.png
+   :alt: error, time
+   :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_02-lookup-table_003.png
+   :class: sphx-glr-single-img
 
 
 .. rst-class:: sphx-glr-script-out
@@ -271,58 +259,34 @@ of three passes over the slice.
      points     match     table     match     table
                 error     error      time      time
     -----------------------------------------------
-         30     7.93%     0.88%     2.0ms     0.4ms
-         60     3.29%     0.75%     2.7ms     0.4ms
-        120     0.78%     0.71%     3.2ms     0.5ms
-        250     0.80%     0.71%     5.7ms     0.5ms
-        500     0.62%     0.71%    10.6ms     0.6ms
-       1000     0.66%     0.71%    21.3ms     0.6ms
-       2000     0.71%     0.71%    43.4ms     0.7ms
+         30     7.93%     0.88%     2.4ms     0.6ms
+         60     3.29%     0.75%     3.6ms     0.6ms
+        120     0.78%     0.71%     3.9ms     0.6ms
+        250     0.80%     0.71%     6.6ms     0.6ms
+        500     0.62%     0.71%    11.6ms     0.7ms
+       1000     0.66%     0.71%    21.6ms     0.8ms
+       2000     0.71%     0.71%    49.9ms     0.8ms
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 398-406
+.. GENERATED FROM PYTHON SOURCE LINES 354-367
 
-The table is at its floor from the coarsest grid and does not move again. The
-match starts an order of magnitude worse and climbs to the same place, paying
-for it in points: its search is one comparison per atom per voxel, where the
-table's binary search grows with the logarithm.
-
-The floor both reach is the noise. A fine enough grid matches a table
-exactly; the table's advantage is that it was never told how fine.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 407-435
-
-
-
-
-.. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_02-lookup-table_003.png
-   :alt: what the grid costs, what it costs to pay it
-   :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_02-lookup-table_003.png
-   :class: sphx-glr-single-img
-
-
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    <matplotlib.legend.Legend object at 0x7f10c661e390>
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 436-442
+The error floor is set by the noise. The table is within 0.2 percentage
+points of it from 30 points on. The match is about nine times worse at 30
+points and reaches the same floor at about 120, at a cost that grows with
+the number of points: it takes one comparison per atom per voxel, where the table takes a
+binary search that grows with the logarithm of the number of points. A
+sufficiently fine grid makes the match equal to the table; the table does not
+need to be told how fine the grid must be.
 
 Maps
 ----
 
-At the point count each needs: the table at sixty, the match at a grid fine
-enough not to limit it.
+The maps use the number of points each method needs: 60 for the table and
+2000 for the match, a grid fine enough not to limit it.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 443-461
+.. GENERATED FROM PYTHON SOURCE LINES 367-385
 
 
 
@@ -337,46 +301,24 @@ enough not to limit it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 462-466
+.. GENERATED FROM PYTHON SOURCE LINES 386-389
 
-Neither estimates M0. Both answer with a T1, and the two blocks it predicts
-are a shape the measurement is a multiple of, so the multiple is one inner
-product per voxel.
+Neither estimator returns M0. The two blocks predicted for the estimated T1
+are a shape of which the measurement is a multiple, so the proton density is
+one inner product per voxel:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 467-513
+.. GENERATED FROM PYTHON SOURCE LINES 389-479
 
 .. code-block:: Python
 
 
 
     def proton_density(maps):
-        """The scale the measurement is, of the blocks the answer predicts."""
+        """The scale of the measurement relative to the blocks the answer predicts."""
         predicted = simulator.simulate(T1=maps["T1"], M0=1.0)
         return (predicted * measured).sum(-1) / predicted.square().sum(-1).clamp_min(1e-12)
 
 
-    M0_map = proton_density(maps)
-
-
-
-
-
-
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    method                      train      map     model      peak      T1      M0
-    ------------------------------------------------------------------------------
-    lookup, 60 points           0.00s    0.4ms  0.00 MiB        --   0.75%   0.46%
-    match, 2000 atoms           0.00s   43.6ms  0.05 MiB        --   0.71%   0.45%
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 514-569
 
 
 
@@ -399,13 +341,40 @@ product per voxel.
          :class: sphx-glr-multi-img
 
 
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
 
 
+    method                      train      map     model      peak      T1      M0
+    ------------------------------------------------------------------------------
+    lookup, 60 points           0.00s    0.6ms  0.00 MiB        --   0.75%   0.46%
+    match, 2000 atoms           0.00s   50.9ms  0.05 MiB        --   0.71%   0.45%
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 480-494
+
+Specification
+-------------
+
+What this page did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, map T1 and M0 in BrainWeb subject 0, slice 90, from a
+   two-block MP2RAGE (TI 800 and 2700 ms, flip angles 4 and 5 deg, TR 6.7 ms,
+   128 shots, TR_MP2RAGE 6 s, inversion efficiency 0.96) at 0.5% noise.
+   Fit a LookupTable on the unified image and a DictionaryMatcher over the
+   same T1 grid. Sweep the grid from 30 to 2000 points and report the median
+   relative T1 error and the mapping time of both; derive M0 from the
+   predicted blocks.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.860 seconds)
+   **Total running time of the script:** (0 minutes 2.019 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_02-lookup-table.py:

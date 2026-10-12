@@ -18,66 +18,61 @@
 .. _sphx_glr_generated_autoexamples_03-sequence-optimization_01-echo-train-design.py:
 
 
-=======================================
-Designing echo trains for image quality
-=======================================
+===============================
+Echo train design for sharpness
+===============================
 
-The scope of this notebook is to design refocusing flip angles for image
-quality rather than for precision: first a single echo train, then a whole
-segmented 3D protocol in which each shot carries its own repetition time, echo
+In this example you design the refocusing flip angles of a fast spin echo for
+image quality rather than for precision: first one echo train, then a whole
+segmented 3D protocol in which each shot has its own repetition time, echo
 train length and angles.
 
-T2 decay across a long train modulates k-space, and that modulation is a point
-spread function, so the refocusing angles control the resolution of the image
-[1]_. Only the cost distinguishes this from a precision design; the simulator,
-the bounded parameters and the loop are the same.
+T2 decay along a long train modulates k-space. That modulation is a point
+spread function, so the refocusing angles set the resolution of the image [1]_.
+You design the angles against a cost that measures this blur, the contrast
+between tissues and the RF power.
 
-.. GENERATED FROM PYTHON SOURCE LINES 19-23
+Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
+
+.. GENERATED FROM PYTHON SOURCE LINES 20-25
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim
+   !pip install blochsim matplotlib
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 25-29
-
-A design is a simulator with its tissue fixed on it, a cost written on what
-it records, and the bounded parameters :class:`~blochsim.SequenceDesign`
-drives.
+.. GENERATED FROM PYTHON SOURCE LINES 25-38
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 30-113
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 39-50
+
+Design problem
+--------------
+
+A design has three pieces. A simulator with the tissue fixed on it, a cost
+written on the signal it records, and the bounded parameters that
+:class:`~blochsim.SequenceDesign` adjusts to lower the cost.
+
+The tissues are those of a PD-weighted knee protocol, read for the
+separation between fluid and cartilage. The design uses all three at once, so
+that the train is not tailored to one of them. T1 and T2 are in
+milliseconds:
+
+.. GENERATED FROM PYTHON SOURCE LINES 50-62
 
 .. code-block:: Python
-
-
-    import time
 
     import torch
 
     from blochsim.optim import Bounded, SequenceDesign
     from blochsim.simulators import FSESimulator
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 114-121
-
-Tissues
--------
-
-A PD-weighted knee protocol is read for the separation between fluid and
-cartilage, so the design is for all three tissues at once. Designing for one
-of them would tailor the train to it.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 122-129
-
-.. code-block:: Python
 
     TISSUES = {
         #            cartilage  muscle  synovial fluid
@@ -93,44 +88,30 @@ of them would tailor the train to it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 130-144
+.. GENERATED FROM PYTHON SOURCE LINES 63-77
 
-Blurring
---------
+Blur
+----
 
-With the echo index running along one k-space direction, the magnitude of
-the echo train *is* the k-space modulation, and the width of its Fourier
-transform is the blur it adds. That width can be read off the modulation
-without transforming anything: the second moment of :math:`|\mathcal{F}w|^2`
-is the energy in the slope of :math:`w` relative to the energy in
-:math:`w` itself.
+Let the echo index run along one k-space direction. The magnitude of the echo
+train is then the k-space modulation, and the width of its Fourier transform
+is the blur it adds. You can read that width off the modulation without a
+transform: the second moment of :math:`|\mathcal{F}w|^2` is the energy in the
+slope of the train :math:`w` divided by the energy in :math:`w`.
 
-Written this way a train that stops early simply contributes fewer terms, so
-trains of different lengths compare on the same footing -- which is what the
-second half of this example needs.
+A train that stops early contributes fewer terms, so trains of different
+lengths compare on the same footing. The second half of this example needs
+that. ``signal`` is ``(shots, tissues, echoes)`` and ``acquired`` is
+``(shots, echoes)``, one where the shot is still acquiring. The result is the
+blur in pixels, ``(shots, tissues)``:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 145-169
+.. GENERATED FROM PYTHON SOURCE LINES 77-87
 
 .. code-block:: Python
 
 
 
     def blur(signal, acquired):
-        """The width, in pixels, of the point spread a train produces.
-
-        Parameters
-        ----------
-        signal:
-            ``(shots, tissues, echoes)`` echo train magnitudes.
-        acquired:
-            ``(shots, echoes)``, one where the shot is still acquiring.
-
-        Returns
-        -------
-        torch.Tensor
-            ``(shots, tissues)``.
-        """
         pair = acquired[:, None, :-1] * acquired[:, None, 1:]
         step = torch.diff(signal, dim=-1) * pair
         energy = (signal * acquired[:, None, :]).square().sum(-1).clamp_min(1e-12)
@@ -145,22 +126,22 @@ second half of this example needs.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 170-182
+.. GENERATED FROM PYTHON SOURCE LINES 88-100
 
-One train
-=========
+Echo train
+----------
 
-A 120-echo train has 120 angles but three degrees of freedom: the
-**minimum**, which sets how much the train is spoiled by flow and motion; the
-angle at the **centre of k-space**, which sets the image contrast; and the
-**maximum**, which the deposited RF power limits.
+A 120-echo train has 120 angles but three degrees of freedom:
 
-The train blends between them: it starts at the maximum, drops to the minimum
-as the pseudo steady state is established, passes through the centre-of-
-k-space angle where k-space is sampled, and ramps back up.
+- the minimum angle, which sets how much flow and motion spoil the train;
+- the angle at the centre of k-space, which sets the image contrast;
+- the maximum angle, which the deposited RF power limits.
 
+The train starts at the maximum, drops to the minimum as the pseudo steady
+state is established, rises to the centre-of-k-space angle where the centre of
+k-space is sampled, and ramps back up to the maximum:
 
-.. GENERATED FROM PYTHON SOURCE LINES 183-225
+.. GENERATED FROM PYTHON SOURCE LINES 100-135
 
 .. code-block:: Python
 
@@ -179,18 +160,11 @@ k-space angle where k-space is sampled, and ramps back up.
 
 
     def shape(index, control, length, centre_echo):
-        """The refocusing angles of a train of ``length`` echoes.
+        """Refocusing angles of a train of ``length`` echoes.
 
-        Parameters
-        ----------
-        index:
-            The echo indices to evaluate at, one-based.
-        control:
-            ``(shots, 3)`` -- the minimum, centre-of-k-space and maximum angles.
-        length:
-            ``(shots, 1)`` echo train length.
-        centre_echo:
-            The echo that samples the centre of the shot's k-space band.
+        ``control`` is ``(shots, 3)``: the minimum, centre-of-k-space and maximum
+        angles. ``centre_echo`` is the echo that samples the centre of the shot's
+        k-space band.
         """
         low, middle, high = control[:, 0:1], control[:, 1:2], control[:, 2:3]
         settled = torch.full_like(low, 5.0)
@@ -213,13 +187,18 @@ k-space angle where k-space is sampled, and ramps back up.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 226-229
+.. GENERATED FROM PYTHON SOURCE LINES 136-144
 
-The cost: the image should be sharp, fluid should stand out from cartilage,
-and the RF power should stay where the scanner will accept it.
+Cost
+----
 
+The image should be sharp, fluid should stand out from cartilage, and the RF
+power should stay where the scanner accepts it. Power is the refocusing
+energy, relative to a train of 180 degree pulses, divided by the time it is
+spread over. A train that ends early gets no credit for echoes it never
+played:
 
-.. GENERATED FROM PYTHON SOURCE LINES 230-272
+.. GENERATED FROM PYTHON SOURCE LINES 144-156
 
 .. code-block:: Python
 
@@ -231,19 +210,27 @@ and the RF power should stay where the scanner will accept it.
 
 
     def power(flip, acquired, TR_ms):
-        """Deposited RF power, per shot.
-
-        Refocusing energy divided by the time it is spread over, relative to a
-        train of 180 degree pulses. Energy per second is what a scanner limits,
-        so a train that ends early gets no credit for the echoes it never played
-        and none for a repetition time it does not take.
-        """
         energy = ((flip / 180.0).square() * acquired).sum(-1)
         return energy / (TR_ms.squeeze(-1) * 1e-3)
 
 
-    #: What the prescribed train already deposits. RF power is a limit the
-    #: scanner enforces, so the cost may spend up to it and no further.
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 157-160
+
+The scanner limits RF power, so the cost may spend up to what the prescribed
+train already deposits and no more. The weights set the trade between the
+three terms:
+
+.. GENERATED FROM PYTHON SOURCE LINES 160-180
+
+.. code-block:: Python
+
     POWER_BUDGET = power(
         shape(echo, PRESCRIBED, torch.full((1, 1), float(ECHOES)), CENTRE_ECHO),
         ALWAYS,
@@ -252,7 +239,6 @@ and the RF power should stay where the scanner will accept it.
 
 
     def single_train(control):
-        """Sharpness and contrast from one train of a fixed length."""
         flip = shape(echo, control, torch.full_like(control[:, :1], ECHOES), CENTRE_ECHO)
         signal = one_train.simulate(flip=flip, TR=1800.0).abs()
         at_centre = signal[:, :, CENTRE_ECHO - 1]
@@ -272,14 +258,16 @@ and the RF power should stay where the scanner will accept it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 273-277
+.. GENERATED FROM PYTHON SOURCE LINES 181-187
 
-A conventional prescription to start from: 50 degree minimum, 90 degree
-centre-of-k-space angle, 150 degree maximum. The limits are what the scanner
-will play, and :class:`~blochsim.Bounded` holds them exactly.
+Optimization
+------------
 
+Start from a conventional prescription: 50 degree minimum, 90 degree
+centre-of-k-space angle and 150 degree maximum. :class:`~blochsim.Bounded`
+holds each angle inside the limits the scanner plays:
 
-.. GENERATED FROM PYTHON SOURCE LINES 278-296
+.. GENERATED FROM PYTHON SOURCE LINES 187-205
 
 .. code-block:: Python
 
@@ -296,17 +284,17 @@ will play, and :class:`~blochsim.Bounded` holds them exactly.
 
  .. code-block:: none
 
-    one train of 120 echoes designed in 0.07 s, 2.8 ms per iteration
+    one train of 120 echoes designed in 0.10 s, 4.0 ms per iteration
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 297-299
+.. GENERATED FROM PYTHON SOURCE LINES 206-208
 
-What it did:
+Simulate the prescribed and the designed trains, and compare the angles, the
+signal and the point spread:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 300-382
+.. GENERATED FROM PYTHON SOURCE LINES 208-289
 
 .. code-block:: Python
 
@@ -321,7 +309,7 @@ What it did:
 
 
 .. image-sg:: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_01-echo-train-design_001.png
-   :alt: the train, k-space modulation, point spread
+   :alt: train, k-space modulation, cartilage
    :srcset: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_01-echo-train-design_001.png
    :class: sphx-glr-single-img
 
@@ -330,51 +318,38 @@ What it did:
 
  .. code-block:: none
 
-    prescribed  min  50.0  centre  90.0  max 150.0 deg | blur 4.34 px | fluid - cartilage 0.220
-    designed    min  89.2  centre  85.5  max 147.8 deg | blur 3.55 px | fluid - cartilage 0.218
+    prescribed  min  50.0  centre  90.0  max 150.0 deg | blur 2.79 px | fluid - cartilage 0.100
+    designed    min  89.4  centre  80.6  max 149.0 deg | blur 2.25 px | fluid - cartilage 0.112
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 383-396
+.. GENERATED FROM PYTHON SOURCE LINES 290-306
 
-Optimized schedule
-------------------
+The designed train has a lower blur and keeps the contrast at the centre of
+k-space. The cartilage point spread narrows from the prescribed to the
+designed train.
+
+Image
+-----
 
 The echo index runs along one k-space direction, so forming the image is a
-multiplication: transform each tissue's contribution along the phase-encode
+multiplication. Transform each tissue's contribution along the phase-encode
 axis, weight every line by the train at the echo that sampled it, and
-transform back. A fast-decaying train weights the edges of k-space down and
-comes back smeared.
+transform back. A train that decays fast weights the edges of k-space down,
+and the image comes back smeared.
 
 The phantom is a cartoon knee: a cartilage band with a two-pixel joint line,
 and four fluid bars five, three, two and one pixels thick. No noise is added,
-so what differs between the two images is the train alone.
+so the two images differ only by the train.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 397-451
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 452-456
-
-The joint line and the thin bars are where a point spread of a pixel or two
-shows. The ringing at every edge is the finite matrix rather than the train;
-what the design moves is the depth of the troughs between the bars.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 457-502
+.. GENERATED FROM PYTHON SOURCE LINES 306-382
 
 
 
 
 .. image-sg:: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_01-echo-train-design_002.png
-   :alt: prescribed, designed, through the fluid bars
+   :alt: prescribed, designed, through the bars
    :srcset: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_01-echo-train-design_002.png
    :class: sphx-glr-single-img
 
@@ -382,42 +357,41 @@ what the design moves is the depth of the troughs between the bars.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 503-512
+.. GENERATED FROM PYTHON SOURCE LINES 383-407
 
-Sharpness moved without giving up contrast: the fluid-to-cartilage
-difference at the centre of k-space is within a percent of where it started
-while the point spread narrowed by nearly a fifth. The power term is what
-prevents the design buying sharpness by driving the train harder than the
-scanner allows.
+The joint line and the thin bars show a point spread of a pixel or two. The
+ringing at every edge comes from the finite matrix, not from the train. The
+design moves the depth of the troughs between the bars.
+
+Sharpness moved without giving up contrast: the fluid-to-cartilage difference
+at the centre of k-space is within a percent of where it started, and the
+point spread narrowed by nearly a fifth. The power term keeps the deposited
+power at or below the prescribed level.
 
 The one-pixel bar is the limit. A point spread narrower than a pixel is not
-available, so a bar flattened in both images is flattened by the matrix.
+available, so a bar that is flat in both images is flattened by the matrix.
 
+Segmented protocol
+------------------
 
-.. GENERATED FROM PYTHON SOURCE LINES 515-528
+Segmented 3D TSE splits k-space over many shots. The centre of k-space sets
+the contrast and the periphery sets the sharpness. With parameters specific to
+each shot, the protocol can use a long repetition time for the shots that
+determine contrast and a short one for the others [2]_.
 
-A whole protocol
-================
+The prescription is two sets of numbers, one at the centre and one at the
+periphery, and a cubic transition fills in every shot between them. The
+repetition time, the echo train length and the three control angles
+transition:
 
-Segmented 3D TSE splits k-space over many shots, and they do not do the same
-job: the centre sets contrast, the periphery sets sharpness. Giving each shot
-its own parameters lets a protocol spend a long repetition time where
-contrast comes from and a short one where it does not [2]_.
-
-The prescription is two sets of numbers, at the **centre** and at the
-**periphery**, and a cubic transition builds every shot between them. What
-transitions is the repetition time, the echo train length and the three
-control angles.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 529-555
+.. GENERATED FROM PYTHON SOURCE LINES 407-432
 
 .. code-block:: Python
 
     ESP_SPACE_MS = 3.5
     TE_MS = 28.0
     TE_ECHO = round(TE_MS / ESP_SPACE_MS)
-    GRID = 64  # the padded echo axis, at least as long as the longest train
+    GRID = 64  # padded echo axis, at least as long as the longest train
 
     # 320 x 240 phase-encode matrix, CAIPIRINHA 4, elliptical scanning.
     LINES = round(320 * 240 / 4 * torch.pi / 4)
@@ -428,15 +402,14 @@ control angles.
     grid_echo = torch.arange(1, GRID + 1, dtype=torch.float32)
 
     # Each sampled radius stands for the shots at that distance from the centre of
-    # k-space. Their number grows with radius, because that is the area element of
-    # the phase-encode plane.
+    # k-space. Their number grows with radius, which is the area element of the
+    # phase-encode plane.
     radius = (torch.arange(SAMPLES, dtype=torch.float32) + 0.5) / SAMPLES
     density = 2 * radius / (2 * radius).sum()
     cubic = (3 * radius.square() - 2 * radius.pow(3))[:, None]
 
 
     def transition(centre, periphery):
-        """Every shot's value, cubically between the two prescribed ends."""
         return centre + (periphery - centre) * cubic
 
 
@@ -447,19 +420,18 @@ control angles.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 556-565
+.. GENERATED FROM PYTHON SOURCE LINES 433-441
 
-Shots differ in length: the centre can afford a long train because contrast
-is decided by one echo of it, while the periphery wants a short one so its
-lines are not spread by T2 decay. A train that has ended is masked out of the
-padded echo axis.
+The shots differ in length. A long train at the centre is acceptable because
+the contrast is set by one echo of it. A short train at the periphery limits
+the T2 blur of its lines. A train that has ended is masked out of the padded
+echo axis.
 
-A refocusing angle of exactly zero is a corner, not a point -- what reaches
-the scanner is a magnitude, which has no sign there -- so the mask floors at
-a negligible angle.
+A refocusing angle of exactly zero is a corner, not a point: what reaches the
+scanner is a magnitude, which has no sign there. The mask therefore floors at
+a negligible angle:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 566-581
+.. GENERATED FROM PYTHON SOURCE LINES 441-455
 
 .. code-block:: Python
 
@@ -469,7 +441,6 @@ a negligible angle.
     def protocol(
         centre_control, edge_control, centre_length, edge_length, centre_TR, edge_TR
     ):
-        """Every shot of the exam, from the two prescribed ends."""
         control = transition(centre_control, edge_control)
         length = transition(centre_length, edge_length)
         TR = transition(centre_TR, edge_TR)
@@ -485,16 +456,14 @@ a negligible angle.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 582-588
+.. GENERATED FROM PYTHON SOURCE LINES 456-460
 
-Covering k-space is what ties the two ends together. A shot covers as many
-lines as its train is long, so the shot count is the lines divided by the
-average train length and the scan time is that many shots at the average
-repetition time. Lengthening the trains at the centre buys the repetition
-time there.
+Covering k-space ties the two ends together. A shot covers as many lines as
+its train is long, so the number of shots is the number of lines divided by
+the average train length, and the scan time is that many shots at the average
+repetition time. Longer trains at the centre allow a longer repetition time there:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 589-639
+.. GENERATED FROM PYTHON SOURCE LINES 460-488
 
 .. code-block:: Python
 
@@ -510,11 +479,10 @@ time there.
 
 
     def deposited(flip, acquired, TR):
-        """The exam's RF power, averaged over its shots."""
         return (density * power(flip, acquired, TR)).sum()
 
 
-    #: The power the prescription deposits, which is what the exam may spend.
+    # The exam may spend the power the prescription deposits.
     PRESCRIBED_PROTOCOL = protocol(
         PRESCRIBED,
         PRESCRIBED,
@@ -528,14 +496,31 @@ time there.
     )
 
 
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 489-494
+
+The cost asks for sharpness where it is decided (the outer shots) and for
+contrast where it is decided (the inner shots). It also penalizes a scan
+longer than the budget, a train that does not fit inside its repetition time
+with 60 ms for the excitation and fat saturation, and RF power above the
+prescription:
+
+.. GENERATED FROM PYTHON SOURCE LINES 494-513
+
+.. code-block:: Python
+
+
+
     def image_quality(**design):
-        """Sharpness where it is decided, contrast where it is decided."""
         signal, flip, TR, length, acquired, shots, scan_s = measure(**design)
         at_centre = signal[:, :, TE_ECHO - 1]
         contrast = at_centre[:, FLUID] - at_centre[:, CARTILAGE]
         outer, inner = density * radius, density * (1.0 - radius)
-        # A train must fit inside its own repetition time, with room for the
-        # excitation and the fat saturation ahead of it.
         infeasible = torch.relu(
             length.squeeze(-1) * ESP_SPACE_MS + 60.0 - TR.squeeze(-1)
         ).mean()
@@ -555,13 +540,12 @@ time there.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 640-643
+.. GENERATED FROM PYTHON SOURCE LINES 514-516
 
-Starting from the prescription the abstract reports: a 45 echo train at
-1800 ms at the centre, a 20 echo train at 150 ms at the periphery.
+Start from the prescription of the abstract in [2]_: a 45-echo train at
+1800 ms at the centre and a 20-echo train at 150 ms at the periphery:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 644-669
+.. GENERATED FROM PYTHON SOURCE LINES 516-541
 
 .. code-block:: Python
 
@@ -587,18 +571,17 @@ Starting from the prescription the abstract reports: a 45 echo train at
 
  .. code-block:: none
 
-    a whole protocol designed in 0.62 s, 15.5 ms per iteration
+    a whole protocol designed in 1.48 s, 36.9 ms per iteration
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 670-673
+.. GENERATED FROM PYTHON SOURCE LINES 542-544
 
-Covering this matrix with the trains the prescription asks for takes a shot
-count that falls out of the arithmetic above; the abstract reports 586.
+The number of shots follows from the echo train lengths. Compare the
+prescribed and the designed protocol:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 674-726
+.. GENERATED FROM PYTHON SOURCE LINES 544-596
 
 
 
@@ -612,50 +595,59 @@ count that falls out of the arithmetic above; the abstract reports 586.
                     centre of k-space          periphery
                     ETL     TR         ETL     TR       shots    scan
     prescribed    44.9   1795 ms     20.1   155 ms      558   6.01 min
-    designed      55.3   1371 ms     14.6   154 ms      573   4.95 min
+    designed      56.0    717 ms     17.5   152 ms      529   2.83 min
 
     refocusing angles      min  centre-of-band    max
       prescribed, centre       50.0   90.0  150.0
       prescribed, periphery    50.0   90.0  150.0
-      designed, centre         89.5  157.0  165.2
-      designed, periphery      43.9   58.6  136.2
+      designed, centre         88.8   37.2  127.5
+      designed, periphery      72.4   44.6  118.0
 
-    fluid - cartilage at the centre 0.133 -> 0.320
-    blur at the periphery          1.85 -> 1.55 px
-    RF power                       22.51 -> 19.89  (budget 22.51)
-
-
+    fluid - cartilage at the centre -0.070 -> -0.025
+    blur at the periphery          0.48 -> 0.43 px
+    RF power                       22.51 -> 19.33  (budget 22.51)
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 727-732
-
-The trains the transition produced. Each curve is one sampled distance from
-the centre of k-space; shots between them read the same curve at their own
-radius, which keeps k-space free of the discontinuities a shot-by-shot design
-would leave.
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 733-816
+.. GENERATED FROM PYTHON SOURCE LINES 597-600
+
+Each curve in the first panel is one sampled distance from the centre of
+k-space. Shots between the curves read the curve at their own radius, so
+k-space has no discontinuities between shots.
+
+.. GENERATED FROM PYTHON SOURCE LINES 600-666
 
 
 
 
 .. image-sg:: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_01-echo-train-design_003.png
-   :alt: designed trains, train length, scan 4.9/5 min, cartilage, synovial fluid, contrast
+   :alt: designed trains, length, scan 2.8 min, cartilage, synovial fluid, contrast
    :srcset: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_01-echo-train-design_003.png
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    [<matplotlib.legend.Legend object at 0x7f10c47e5580>, <matplotlib.legend.Legend object at 0x7f10c7f8eff0>, <matplotlib.legend.Legend object at 0x7f10c488cf50>]
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 817-830
+.. GENERATED FROM PYTHON SOURCE LINES 667-697
+
+Specification
+-------------
+
+What this example did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, design the refocusing angles of a 120-echo fast spin echo
+   for a knee (cartilage, muscle, synovial fluid; ESP 5 ms, TR 1800 ms).
+   Parameterize the train by its minimum, centre-of-k-space and maximum
+   angles, bounded to what the scanner plays. Minimize the blur of the echo
+   train, minus the fluid-to-cartilage contrast at the centre, under an RF
+   power budget. Show the point spread and a phantom image before and after.
+   Then design a segmented 3D protocol whose repetition time, train length
+   and angles transition cubically from the centre to the periphery of
+   k-space, under a scan-time budget of 300 s.
 
 References
 ----------
@@ -674,7 +666,7 @@ References
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.974 seconds)
+   **Total running time of the script:** (0 minutes 2.847 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_01-echo-train-design.py:

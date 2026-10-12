@@ -1,124 +1,57 @@
 """
-=======================================
-Designing echo trains for image quality
-=======================================
+===============================
+Echo train design for sharpness
+===============================
 
-The scope of this notebook is to design refocusing flip angles for image
-quality rather than for precision: first a single echo train, then a whole
-segmented 3D protocol in which each shot carries its own repetition time, echo
+In this example you design the refocusing flip angles of a fast spin echo for
+image quality rather than for precision: first one echo train, then a whole
+segmented 3D protocol in which each shot has its own repetition time, echo
 train length and angles.
 
-T2 decay across a long train modulates k-space, and that modulation is a point
-spread function, so the refocusing angles control the resolution of the image
-[1]_. Only the cost distinguishes this from a precision design; the simulator,
-the bounded parameters and the loop are the same.
+T2 decay along a long train modulates k-space. That modulation is a point
+spread function, so the refocusing angles set the resolution of the image [1]_.
+You design the angles against a cost that measures this blur, the contrast
+between tissues and the RF power.
 
+Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 """
 
 # %%
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install blochsim
-
-# %%
-#
-# A design is a simulator with its tissue fixed on it, a cost written on what
-# it records, and the bounded parameters :class:`~blochsim.SequenceDesign`
-# drives.
-#
+#    !pip install blochsim matplotlib
+#    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
 # sphinx_gallery_start_ignore
+import time
 import warnings
-
-warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from figure_style import MUTED, PAGE_WIDTH, SERIES, legend_outside
 
-# Every figure is drawn at the width of the documentation column, so none of
-# them is scaled on the way in and type is the same size throughout.
-PAGE_WIDTH = 8.6  # inches
-
-# Figures are read at gallery scale, so the type sizes are set once here.
-plt.rcParams.update(
-    {
-        "figure.dpi": 110,
-        "figure.figsize": (PAGE_WIDTH, 3.6),
-        "savefig.dpi": 110,
-        "font.size": 16,
-        "axes.titlesize": 17,
-        "axes.labelsize": 17,
-        "xtick.labelsize": 14,
-        "ytick.labelsize": 14,
-        "legend.fontsize": 13,
-        "figure.titlesize": 19,
-        "figure.constrained_layout.use": True,
-    }
-)
-
-
-def key(axes, ncols=1):
-    """The legend above what it describes, clear of the curves and the titles.
-
-    Takes a figure, where every panel is showing the same series, and puts one
-    legend over the whole of it. Takes an axis, or several, where the panels
-    differ, and puts a legend over each -- every titled panel in the figure
-    then ends up with the same padding, so the titles line up whether or not
-    that panel carries one, which is only known once it has been laid out.
-    """
-    if hasattr(axes, "add_subplot"):
-        handles, labels = axes.axes[0].get_legend_handles_labels()
-        return axes.legend(
-            handles,
-            labels,
-            loc="outside upper center",
-            ncols=ncols,
-            frameon=False,
-            handlelength=1.6,
-            columnspacing=1.4,
-        )
-    axes = [axes] if hasattr(axes, "get_legend_handles_labels") else list(axes)
-    figure = axes[0].figure
-    legends = [
-        axis.legend(
-            loc="lower center",
-            bbox_to_anchor=(0.5, 1.0),
-            ncols=ncols,
-            frameon=False,
-            borderaxespad=0.0,
-            handlelength=1.6,
-            columnspacing=1.4,
-        )
-        for axis in axes
-    ]
-    figure.canvas.draw()
-    renderer = figure.canvas.get_renderer()
-    tallest = max(legend.get_window_extent(renderer).height for legend in legends)
-    for axis in figure.axes:
-        if axis.get_title():
-            axis.set_title(axis.get_title(), pad=72.0 * tallest / figure.dpi + 4.0)
-    return legends
-
-
+warnings.filterwarnings("ignore")
 # sphinx_gallery_end_ignore
-import time
 
+# %%
+# Design problem
+# --------------
+#
+# A design has three pieces. A simulator with the tissue fixed on it, a cost
+# written on the signal it records, and the bounded parameters that
+# :class:`~blochsim.SequenceDesign` adjusts to lower the cost.
+#
+# The tissues are those of a PD-weighted knee protocol, read for the
+# separation between fluid and cartilage. The design uses all three at once, so
+# that the train is not tailored to one of them. T1 and T2 are in
+# milliseconds:
 import torch
 
 from blochsim.optim import Bounded, SequenceDesign
 from blochsim.simulators import FSESimulator
 
-# %%
-#
-# Tissues
-# -------
-#
-# A PD-weighted knee protocol is read for the separation between fluid and
-# cartilage, so the design is for all three tissues at once. Designing for one
-# of them would tailor the train to it.
-#
 TISSUES = {
     #            cartilage  muscle  synovial fluid
     "T1": [1200.0, 1420.0, 3600.0],
@@ -127,38 +60,23 @@ TISSUES = {
 CARTILAGE, MUSCLE, FLUID = 0, 1, 2
 
 # %%
+# Blur
+# ----
 #
-# Blurring
-# --------
+# Let the echo index run along one k-space direction. The magnitude of the echo
+# train is then the k-space modulation, and the width of its Fourier transform
+# is the blur it adds. You can read that width off the modulation without a
+# transform: the second moment of :math:`|\mathcal{F}w|^2` is the energy in the
+# slope of the train :math:`w` divided by the energy in :math:`w`.
 #
-# With the echo index running along one k-space direction, the magnitude of
-# the echo train *is* the k-space modulation, and the width of its Fourier
-# transform is the blur it adds. That width can be read off the modulation
-# without transforming anything: the second moment of :math:`|\mathcal{F}w|^2`
-# is the energy in the slope of :math:`w` relative to the energy in
-# :math:`w` itself.
-#
-# Written this way a train that stops early simply contributes fewer terms, so
-# trains of different lengths compare on the same footing -- which is what the
-# second half of this example needs.
-#
+# A train that stops early contributes fewer terms, so trains of different
+# lengths compare on the same footing. The second half of this example needs
+# that. ``signal`` is ``(shots, tissues, echoes)`` and ``acquired`` is
+# ``(shots, echoes)``, one where the shot is still acquiring. The result is the
+# blur in pixels, ``(shots, tissues)``:
 
 
 def blur(signal, acquired):
-    """The width, in pixels, of the point spread a train produces.
-
-    Parameters
-    ----------
-    signal:
-        ``(shots, tissues, echoes)`` echo train magnitudes.
-    acquired:
-        ``(shots, echoes)``, one where the shot is still acquiring.
-
-    Returns
-    -------
-    torch.Tensor
-        ``(shots, tissues)``.
-    """
     pair = acquired[:, None, :-1] * acquired[:, None, 1:]
     step = torch.diff(signal, dim=-1) * pair
     energy = (signal * acquired[:, None, :]).square().sum(-1).clamp_min(1e-12)
@@ -167,19 +85,18 @@ def blur(signal, acquired):
 
 
 # %%
+# Echo train
+# ----------
 #
-# One train
-# =========
+# A 120-echo train has 120 angles but three degrees of freedom:
 #
-# A 120-echo train has 120 angles but three degrees of freedom: the
-# **minimum**, which sets how much the train is spoiled by flow and motion; the
-# angle at the **centre of k-space**, which sets the image contrast; and the
-# **maximum**, which the deposited RF power limits.
+# - the minimum angle, which sets how much flow and motion spoil the train;
+# - the angle at the centre of k-space, which sets the image contrast;
+# - the maximum angle, which the deposited RF power limits.
 #
-# The train blends between them: it starts at the maximum, drops to the minimum
-# as the pseudo steady state is established, passes through the centre-of-
-# k-space angle where k-space is sampled, and ramps back up.
-#
+# The train starts at the maximum, drops to the minimum as the pseudo steady
+# state is established, rises to the centre-of-k-space angle where the centre of
+# k-space is sampled, and ramps back up to the maximum:
 ESP_MS = 5.0
 ECHOES = 120
 CENTRE_ECHO = 24
@@ -195,18 +112,11 @@ def ramp(index, start, stop, first, last):
 
 
 def shape(index, control, length, centre_echo):
-    """The refocusing angles of a train of ``length`` echoes.
+    """Refocusing angles of a train of ``length`` echoes.
 
-    Parameters
-    ----------
-    index:
-        The echo indices to evaluate at, one-based.
-    control:
-        ``(shots, 3)`` -- the minimum, centre-of-k-space and maximum angles.
-    length:
-        ``(shots, 1)`` echo train length.
-    centre_echo:
-        The echo that samples the centre of the shot's k-space band.
+    ``control`` is ``(shots, 3)``: the minimum, centre-of-k-space and maximum
+    angles. ``centre_echo`` is the echo that samples the centre of the shot's
+    k-space band.
     """
     low, middle, high = control[:, 0:1], control[:, 1:2], control[:, 2:3]
     settled = torch.full_like(low, 5.0)
@@ -223,10 +133,14 @@ def shape(index, control, length, centre_echo):
 
 
 # %%
+# Cost
+# ----
 #
-# The cost: the image should be sharp, fluid should stand out from cartilage,
-# and the RF power should stay where the scanner will accept it.
-#
+# The image should be sharp, fluid should stand out from cartilage, and the RF
+# power should stay where the scanner accepts it. Power is the refocusing
+# energy, relative to a train of 180 degree pulses, divided by the time it is
+# spread over. A train that ends early gets no credit for echoes it never
+# played:
 LOWEST = torch.tensor([20.0, 30.0, 60.0])
 HIGHEST = torch.tensor([90.0, 160.0, 170.0])
 PRESCRIBED = torch.tensor([[50.0, 90.0, 150.0]])
@@ -235,19 +149,14 @@ ALWAYS = torch.ones(1, ECHOES)
 
 
 def power(flip, acquired, TR_ms):
-    """Deposited RF power, per shot.
-
-    Refocusing energy divided by the time it is spread over, relative to a
-    train of 180 degree pulses. Energy per second is what a scanner limits,
-    so a train that ends early gets no credit for the echoes it never played
-    and none for a repetition time it does not take.
-    """
     energy = ((flip / 180.0).square() * acquired).sum(-1)
     return energy / (TR_ms.squeeze(-1) * 1e-3)
 
 
-#: What the prescribed train already deposits. RF power is a limit the
-#: scanner enforces, so the cost may spend up to it and no further.
+# %%
+# The scanner limits RF power, so the cost may spend up to what the prescribed
+# train already deposits and no more. The weights set the trade between the
+# three terms:
 POWER_BUDGET = power(
     shape(echo, PRESCRIBED, torch.full((1, 1), float(ECHOES)), CENTRE_ECHO),
     ALWAYS,
@@ -256,7 +165,6 @@ POWER_BUDGET = power(
 
 
 def single_train(control):
-    """Sharpness and contrast from one train of a fixed length."""
     flip = shape(echo, control, torch.full_like(control[:, :1], ECHOES), CENTRE_ECHO)
     signal = one_train.simulate(flip=flip, TR=1800.0).abs()
     at_centre = signal[:, :, CENTRE_ECHO - 1]
@@ -270,16 +178,17 @@ def single_train(control):
 
 
 # %%
+# Optimization
+# ------------
 #
-# A conventional prescription to start from: 50 degree minimum, 90 degree
-# centre-of-k-space angle, 150 degree maximum. The limits are what the scanner
-# will play, and :class:`~blochsim.Bounded` holds them exactly.
-#
+# Start from a conventional prescription: 50 degree minimum, 90 degree
+# centre-of-k-space angle and 150 degree maximum. :class:`~blochsim.Bounded`
+# holds each angle inside the limits the scanner plays:
 design = SequenceDesign(single_train, control=Bounded(PRESCRIBED, LOWEST, HIGHEST))
 
 # sphinx_gallery_start_ignore
-# One call resolves the protocol's structure, which is then held; the clock
-# below measures the design itself.
+# One call resolves the structure of the protocol and holds it, so the clock
+# below measures the design alone.
 design.minimize(iterations=1)
 start = time.perf_counter()
 # sphinx_gallery_end_ignore
@@ -294,9 +203,8 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-#
-# What it did:
-#
+# Simulate the prescribed and the designed trains, and compare the angles, the
+# signal and the point spread:
 LENGTH = torch.full((1, 1), float(ECHOES))
 prescribed_flip = shape(echo, PRESCRIBED, LENGTH, CENTRE_ECHO)
 designed_flip = shape(echo, one.parameters["control"], LENGTH, CENTRE_ECHO)
@@ -318,22 +226,30 @@ for label, angles, signal in (
         f"{float(at_centre[0, FLUID] - at_centre[0, CARTILAGE]):>5.3f}"
     )
 
-figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.7))
+fig, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 0.4 * PAGE_WIDTH))
 echo_index = np.arange(1, ECHOES + 1)
 pixel = np.arange(ECHOES) - ECHOES // 2
 
 axes[0].plot(
-    echo_index, prescribed_flip[0].numpy(force=True), "k--", label="prescribed"
+    echo_index,
+    prescribed_flip[0].numpy(force=True),
+    "--",
+    color=MUTED,
+    label="prescribed",
 )
-axes[0].plot(echo_index, designed_flip[0].numpy(force=True), label="designed")
-axes[0].set(xlabel="Echo #", ylabel="Refocusing angle [deg]", title="the train")
-axes[0].grid(alpha=0.3)
+axes[0].plot(
+    echo_index,
+    designed_flip[0].numpy(force=True),
+    color=SERIES[0],
+    label="designed",
+)
+axes[0].set(xlabel="echo", ylabel="refocusing angle (deg)", title="train")
 
-# Dashed is prescribed and solid designed, as in the panel beside it, so the
-# colour is free to carry the tissue and the legend stays two entries long.
+# Dashed is prescribed and solid is designed, as in the panel beside it, so
+# the colour carries the tissue.
 for tissue, name, colour in (
-    (CARTILAGE, "cartilage", "tab:blue"),
-    (FLUID, "synovial fluid", "tab:orange"),
+    (CARTILAGE, "cartilage", SERIES[1]),
+    (FLUID, "synovial fluid", SERIES[2]),
 ):
     axes[1].plot(
         echo_index,
@@ -345,55 +261,48 @@ for tissue, name, colour in (
     axes[1].plot(
         echo_index,
         designed_signal[0, tissue].numpy(force=True),
-        "-",
         color=colour,
         label=name,
     )
-axes[1].set(xlabel="Echo #", ylabel="|signal|", title="k-space modulation")
-axes[1].grid(alpha=0.3)
+axes[1].set(xlabel="echo", ylabel="|signal| (a.u.)", title="k-space modulation")
 
 
 def spread(modulation):
-    """The point spread function itself, for drawing."""
     return torch.fft.fftshift(torch.fft.fft(modulation, dim=-1).abs().square(), dim=-1)
 
 
-for label, signal in (("prescribed", prescribed_signal), ("designed", designed_signal)):
+for label, signal, style, colour in (
+    ("prescribed", prescribed_signal, "--", MUTED),
+    ("designed", designed_signal, "-", SERIES[0]),
+):
     psf = spread(signal[0, CARTILAGE])
     axes[2].semilogy(
-        pixel,
-        (psf / psf.max()).numpy(force=True),
-        "k--" if label == "prescribed" else "-",
-        label=f"{label}, {float(blur(signal, ALWAYS)[0, CARTILAGE]):.2f} px",
+        pixel, (psf / psf.max()).numpy(force=True), style, color=colour, label=label
     )
 axes[2].set(
-    xlabel="Pixel",
-    ylabel="PSF (normalized)",
-    title="point spread",
-    ylim=(1e-5, 2.0),
+    xlabel="pixel", ylabel="PSF (normalized)", title="cartilage", ylim=(1e-5, 2.0)
 )
-axes[2].grid(alpha=0.3)
-key(axes, ncols=1)
-# An image keeps its own aspect and a line plot fills whatever it is given, so
-# the box each panel is drawn into has to be fixed for the row to line up.
-axes[2].set_box_aspect(1)
+legend_outside(fig)
+plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
+# The designed train has a lower blur and keeps the contrast at the centre of
+# k-space. The cartilage point spread narrows from the prescribed to the
+# designed train.
 #
-# Optimized schedule
-# ------------------
+# Image
+# -----
 #
 # The echo index runs along one k-space direction, so forming the image is a
-# multiplication: transform each tissue's contribution along the phase-encode
+# multiplication. Transform each tissue's contribution along the phase-encode
 # axis, weight every line by the train at the echo that sampled it, and
-# transform back. A fast-decaying train weights the edges of k-space down and
-# comes back smeared.
+# transform back. A train that decays fast weights the edges of k-space down,
+# and the image comes back smeared.
 #
 # The phantom is a cartoon knee: a cartilage band with a two-pixel joint line,
 # and four fluid bars five, three, two and one pixels thick. No noise is added,
-# so what differs between the two images is the train alone.
-#
+# so the two images differ only by the train.
 
 # sphinx_gallery_start_ignore
 SIZE = ECHOES
@@ -408,7 +317,6 @@ inside = ((rows - middle) / 54.0) ** 2 + ((columns - middle) / 44.0) ** 2 < 1.0
 
 
 def band(low, high):
-    """The rows of the phantom between two heights."""
     return inside & (rows >= low) & (rows < high)
 
 
@@ -418,23 +326,12 @@ for top, thickness in ((70, 5), (81, 3), (90, 2), (97, 1)):
 cartilage_map = band(26, 54) & ~fluid_map
 muscle_map = inside & ~cartilage_map & ~fluid_map
 
-#: One mask per tissue, in the order the simulator returns them.
+# One mask per tissue, in the order the simulator returns them.
 PHANTOM = torch.stack([cartilage_map, muscle_map, fluid_map]).to(torch.complex64)
 
 
 def imaged(signal):
-    """The image a train produces, one tissue's modulation at a time.
-
-    Parameters
-    ----------
-    signal:
-        ``(1, tissues, echoes)`` echo train magnitudes.
-
-    Returns
-    -------
-    torch.Tensor
-        ``(SIZE, SIZE)``, phase encoding down the rows.
-    """
+    """Image from ``(1, tissues, echoes)`` magnitudes, phase encoding down."""
     spectrum = torch.zeros(SIZE, SIZE, dtype=torch.complex64)
     for tissue, component in enumerate(PHANTOM):
         # The echo that samples the centre of k-space belongs at ky = 0.
@@ -446,90 +343,71 @@ def imaged(signal):
 prescribed_image = imaged(prescribed_signal)
 designed_image = imaged(designed_signal)
 scale = float(prescribed_image.max())
-# sphinx_gallery_end_ignore
 
-# %%
-#
-# The joint line and the thin bars are where a point spread of a pixel or two
-# shows. The ringing at every edge is the finite matrix rather than the train;
-# what the design moves is the depth of the troughs between the bars.
-#
-
-# sphinx_gallery_start_ignore
 VIEW = (slice(6, 114), slice(12, 108))
 
-figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 3.4))
+fig, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 0.4 * PAGE_WIDTH))
 for axis, picture, title in (
     (axes[0], prescribed_image, "prescribed"),
     (axes[1], designed_image, "designed"),
 ):
     axis.imshow(
-        (picture[VIEW] / scale).numpy(force=True),
-        cmap="gray",
-        vmin=0.0,
-        vmax=0.85,
+        (picture[VIEW] / scale).numpy(force=True), cmap="gray", vmin=0.0, vmax=0.85
     )
-    axis.set_title(title)
-    axis.set_xticks([])
-    axis.set_yticks([])
+    axis.set(title=title, xticks=[], yticks=[])
     axis.set_box_aspect(1)
 
 profile = slice(64, 104)
 column = SIZE // 2
+rows_shown = np.arange(profile.start, profile.stop)
 axes[2].plot(
-    np.arange(profile.start, profile.stop),
+    rows_shown,
     (prescribed_image[profile, column] / scale).numpy(force=True),
-    "k--",
+    "--",
+    color=MUTED,
     label="prescribed",
 )
 axes[2].plot(
-    np.arange(profile.start, profile.stop),
+    rows_shown,
     (designed_image[profile, column] / scale).numpy(force=True),
+    color=SERIES[0],
     label="designed",
 )
-axes[2].set(
-    xlabel="Row",
-    ylabel="signal (normalized)",
-    title="through the fluid bars",
-)
-axes[2].grid(alpha=0.3)
-key(axes[2], ncols=2)
-# An image keeps its own aspect and a line plot fills whatever it is given, so
-# the box each panel is drawn into has to be fixed for the row to line up.
+axes[2].set(xlabel="row", ylabel="signal (normalized)", title="through the bars")
 axes[2].set_box_aspect(1)
+legend_outside(axes[2])
+plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
+# The joint line and the thin bars show a point spread of a pixel or two. The
+# ringing at every edge comes from the finite matrix, not from the train. The
+# design moves the depth of the troughs between the bars.
 #
-# Sharpness moved without giving up contrast: the fluid-to-cartilage
-# difference at the centre of k-space is within a percent of where it started
-# while the point spread narrowed by nearly a fifth. The power term is what
-# prevents the design buying sharpness by driving the train harder than the
-# scanner allows.
+# Sharpness moved without giving up contrast: the fluid-to-cartilage difference
+# at the centre of k-space is within a percent of where it started, and the
+# point spread narrowed by nearly a fifth. The power term keeps the deposited
+# power at or below the prescribed level.
 #
 # The one-pixel bar is the limit. A point spread narrower than a pixel is not
-# available, so a bar flattened in both images is flattened by the matrix.
+# available, so a bar that is flat in both images is flattened by the matrix.
 #
-
-# %%
+# Segmented protocol
+# ------------------
 #
-# A whole protocol
-# ================
+# Segmented 3D TSE splits k-space over many shots. The centre of k-space sets
+# the contrast and the periphery sets the sharpness. With parameters specific to
+# each shot, the protocol can use a long repetition time for the shots that
+# determine contrast and a short one for the others [2]_.
 #
-# Segmented 3D TSE splits k-space over many shots, and they do not do the same
-# job: the centre sets contrast, the periphery sets sharpness. Giving each shot
-# its own parameters lets a protocol spend a long repetition time where
-# contrast comes from and a short one where it does not [2]_.
-#
-# The prescription is two sets of numbers, at the **centre** and at the
-# **periphery**, and a cubic transition builds every shot between them. What
-# transitions is the repetition time, the echo train length and the three
-# control angles.
-#
+# The prescription is two sets of numbers, one at the centre and one at the
+# periphery, and a cubic transition fills in every shot between them. The
+# repetition time, the echo train length and the three control angles
+# transition:
 ESP_SPACE_MS = 3.5
 TE_MS = 28.0
 TE_ECHO = round(TE_MS / ESP_SPACE_MS)
-GRID = 64  # the padded echo axis, at least as long as the longest train
+GRID = 64  # padded echo axis, at least as long as the longest train
 
 # 320 x 240 phase-encode matrix, CAIPIRINHA 4, elliptical scanning.
 LINES = round(320 * 240 / 4 * torch.pi / 4)
@@ -540,36 +418,32 @@ protocol_shots = FSESimulator(ESP=ESP_SPACE_MS, states=12, **TISSUES)
 grid_echo = torch.arange(1, GRID + 1, dtype=torch.float32)
 
 # Each sampled radius stands for the shots at that distance from the centre of
-# k-space. Their number grows with radius, because that is the area element of
-# the phase-encode plane.
+# k-space. Their number grows with radius, which is the area element of the
+# phase-encode plane.
 radius = (torch.arange(SAMPLES, dtype=torch.float32) + 0.5) / SAMPLES
 density = 2 * radius / (2 * radius).sum()
 cubic = (3 * radius.square() - 2 * radius.pow(3))[:, None]
 
 
 def transition(centre, periphery):
-    """Every shot's value, cubically between the two prescribed ends."""
     return centre + (periphery - centre) * cubic
 
 
 # %%
+# The shots differ in length. A long train at the centre is acceptable because
+# the contrast is set by one echo of it. A short train at the periphery limits
+# the T2 blur of its lines. A train that has ended is masked out of the padded
+# echo axis.
 #
-# Shots differ in length: the centre can afford a long train because contrast
-# is decided by one echo of it, while the periphery wants a short one so its
-# lines are not spread by T2 decay. A train that has ended is masked out of the
-# padded echo axis.
-#
-# A refocusing angle of exactly zero is a corner, not a point -- what reaches
-# the scanner is a magnitude, which has no sign there -- so the mask floors at
-# a negligible angle.
-#
+# A refocusing angle of exactly zero is a corner, not a point: what reaches the
+# scanner is a magnitude, which has no sign there. The mask therefore floors at
+# a negligible angle:
 FLOOR = 1e-6
 
 
 def protocol(
     centre_control, edge_control, centre_length, edge_length, centre_TR, edge_TR
 ):
-    """Every shot of the exam, from the two prescribed ends."""
     control = transition(centre_control, edge_control)
     length = transition(centre_length, edge_length)
     TR = transition(centre_TR, edge_TR)
@@ -579,13 +453,10 @@ def protocol(
 
 
 # %%
-#
-# Covering k-space is what ties the two ends together. A shot covers as many
-# lines as its train is long, so the shot count is the lines divided by the
-# average train length and the scan time is that many shots at the average
-# repetition time. Lengthening the trains at the centre buys the repetition
-# time there.
-#
+# Covering k-space ties the two ends together. A shot covers as many lines as
+# its train is long, so the number of shots is the number of lines divided by
+# the average train length, and the scan time is that many shots at the average
+# repetition time. Longer trains at the centre allow a longer repetition time there:
 
 
 def measure(**design):
@@ -598,11 +469,10 @@ def measure(**design):
 
 
 def deposited(flip, acquired, TR):
-    """The exam's RF power, averaged over its shots."""
     return (density * power(flip, acquired, TR)).sum()
 
 
-#: The power the prescription deposits, which is what the exam may spend.
+# The exam may spend the power the prescription deposits.
 PRESCRIBED_PROTOCOL = protocol(
     PRESCRIBED,
     PRESCRIBED,
@@ -615,15 +485,19 @@ SPACE_POWER_BUDGET = deposited(
     PRESCRIBED_PROTOCOL[0], PRESCRIBED_PROTOCOL[3], PRESCRIBED_PROTOCOL[1]
 )
 
+# %%
+# The cost asks for sharpness where it is decided (the outer shots) and for
+# contrast where it is decided (the inner shots). It also penalizes a scan
+# longer than the budget, a train that does not fit inside its repetition time
+# with 60 ms for the excitation and fat saturation, and RF power above the
+# prescription:
+
 
 def image_quality(**design):
-    """Sharpness where it is decided, contrast where it is decided."""
     signal, flip, TR, length, acquired, shots, scan_s = measure(**design)
     at_centre = signal[:, :, TE_ECHO - 1]
     contrast = at_centre[:, FLUID] - at_centre[:, CARTILAGE]
     outer, inner = density * radius, density * (1.0 - radius)
-    # A train must fit inside its own repetition time, with room for the
-    # excitation and the fat saturation ahead of it.
     infeasible = torch.relu(
         length.squeeze(-1) * ESP_SPACE_MS + 60.0 - TR.squeeze(-1)
     ).mean()
@@ -637,10 +511,8 @@ def image_quality(**design):
 
 
 # %%
-#
-# Starting from the prescription the abstract reports: a 45 echo train at
-# 1800 ms at the centre, a 20 echo train at 150 ms at the periphery.
-#
+# Start from the prescription of the abstract in [2]_: a 45-echo train at
+# 1800 ms at the centre and a 20-echo train at 150 ms at the periphery:
 PRESCRIPTION = {
     "centre_control": Bounded(PRESCRIBED, LOWEST, HIGHEST),
     "edge_control": Bounded(PRESCRIBED, LOWEST, HIGHEST),
@@ -667,10 +539,8 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-#
-# Covering this matrix with the trains the prescription asks for takes a shot
-# count that falls out of the arithmetic above; the abstract reports 586.
-#
+# The number of shots follows from the echo train lengths. Compare the
+# prescribed and the designed protocol:
 
 # sphinx_gallery_start_ignore
 prescribed = {name: value.initial for name, value in PRESCRIPTION.items()}
@@ -724,16 +594,13 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
-#
-# The trains the transition produced. Each curve is one sampled distance from
-# the centre of k-space; shots between them read the same curve at their own
-# radius, which keeps k-space free of the discontinuities a shot-by-shot design
-# would leave.
-#
+# Each curve in the first panel is one sampled distance from the centre of
+# k-space. Shots between the curves read the curve at their own radius, so
+# k-space has no discontinuities between shots.
 
 # sphinx_gallery_start_ignore
-figure, axes = plt.subplots(2, 3, figsize=(PAGE_WIDTH, 6.7))
-colours = plt.cm.viridis(np.linspace(0.0, 0.85, SAMPLES))
+fig, axes = plt.subplots(2, 3, figsize=(PAGE_WIDTH, 0.7 * PAGE_WIDTH))
+colours = [SERIES[index % len(SERIES)] for index in range(SAMPLES)]
 grid_index = np.arange(1, GRID + 1)
 shown = (0, 5, 10, 15)
 
@@ -745,38 +612,39 @@ for shot in shown:
         color=colours[shot],
         label=f"r = {float(radius[shot]):.2f}",
     )
-axes[0, 0].set(
-    xlabel="Echo #", ylabel="Refocusing angle [deg]", title="designed trains"
-)
-axes[0, 0].grid(alpha=0.3)
+axes[0, 0].set(xlabel="echo", ylabel="refocusing angle (deg)", title="designed trains")
 
-axes[0, 1].plot(
-    radius.numpy(force=True),
-    start_length[:, 0].numpy(force=True),
-    "k--",
-    label="prescribed",
-)
-axes[0, 1].plot(
-    radius.numpy(force=True), length[:, 0].numpy(force=True), label="designed"
-)
-axes[0, 1].set(
-    xlabel="k-space radius", ylabel="Echo train length", title="train length"
-)
-axes[0, 1].grid(alpha=0.3)
-
-axes[0, 2].plot(
-    radius.numpy(force=True),
-    start_TR[:, 0].numpy(force=True),
-    "k--",
-    label="prescribed",
-)
-axes[0, 2].plot(radius.numpy(force=True), TR[:, 0].numpy(force=True), label="designed")
-axes[0, 2].set(
-    xlabel="k-space radius",
-    ylabel="TR [ms]",
-    title=f"scan {float(scan_s) / 60:.1f}/{BUDGET_S / 60:.0f} min",
-)
-axes[0, 2].grid(alpha=0.3)
+for axis, prescribed_values, designed_values, ylabel, title in (
+    (axes[0, 1], start_length[:, 0], length[:, 0], "echo train length", "length"),
+    (
+        axes[0, 2],
+        start_TR[:, 0],
+        TR[:, 0],
+        "TR (ms)",
+        f"scan {float(scan_s) / 60:.1f} min",
+    ),
+    (
+        axes[1, 2],
+        start_at_centre[:, FLUID] - start_at_centre[:, CARTILAGE],
+        at_centre[:, FLUID] - at_centre[:, CARTILAGE],
+        "fluid - cartilage",
+        "contrast",
+    ),
+):
+    axis.plot(
+        radius.numpy(force=True),
+        prescribed_values.numpy(force=True),
+        "--",
+        color=MUTED,
+        label="prescribed",
+    )
+    axis.plot(
+        radius.numpy(force=True),
+        designed_values.numpy(force=True),
+        color=SERIES[0],
+        label="designed",
+    )
+    axis.set(xlabel="k-space radius", ylabel=ylabel, title=title)
 
 for axis, tissue, name in (
     (axes[1, 0], CARTILAGE, "cartilage"),
@@ -789,31 +657,29 @@ for axis, tissue, name in (
             signal[shot, tissue][live].numpy(force=True),
             color=colours[shot],
         )
-    axis.axvline(TE_ECHO, color="k", ls=":", lw=1)
-    axis.set(xlabel="Echo #", ylabel="|signal|", title=name)
-    axis.grid(alpha=0.3)
-
-start_contrast = start_at_centre[:, FLUID] - start_at_centre[:, CARTILAGE]
-axes[1, 2].plot(
-    radius.numpy(force=True),
-    start_contrast.numpy(force=True),
-    "k--",
-    label="prescribed",
-)
-axes[1, 2].plot(
-    radius.numpy(force=True),
-    (at_centre[:, FLUID] - at_centre[:, CARTILAGE]).numpy(force=True),
-    label="designed",
-)
-axes[1, 2].set(xlabel="k-space radius", ylabel="fluid - cartilage", title="contrast")
-axes[1, 2].grid(alpha=0.3)
-# A legend wider than its panel makes the layout give the panel up for it, so
-# each is columned to stay inside: four short entries in two, two long in one.
-key([axes[0, 0]], ncols=2)
-key([axes[0, 1], axes[0, 2], axes[1, 2]], ncols=1)
+    axis.axvline(TE_ECHO, color=MUTED, ls=":", lw=1)
+    axis.set(xlabel="echo", ylabel="|signal| (a.u.)", title=name)
+legend_outside(fig)
+plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
+# Specification
+# -------------
+#
+# What this example did, stated the way you would ask an agent for it:
+#
+# .. code-block:: text
+#
+#    With blochsim, design the refocusing angles of a 120-echo fast spin echo
+#    for a knee (cartilage, muscle, synovial fluid; ESP 5 ms, TR 1800 ms).
+#    Parameterize the train by its minimum, centre-of-k-space and maximum
+#    angles, bounded to what the scanner plays. Minimize the blur of the echo
+#    train, minus the fluid-to-cartilage contrast at the centre, under an RF
+#    power budget. Show the point spread and a phantom image before and after.
+#    Then design a segmented 3D protocol whose repetition time, train length
+#    and angles transition cubically from the centre to the periphery of
+#    k-space, under a scan-time budget of 300 s.
 #
 # References
 # ----------

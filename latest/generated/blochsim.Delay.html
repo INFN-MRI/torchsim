@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
@@ -558,15 +568,12 @@ raw constructor.</p>
 
 <section id="examples-using-blochsim-delay">
 <span id="sphx-glr-backref-blochsim-delay"></span><h2>Examples using <code class="docutils literal notranslate"><span class="pre">blochsim.Delay</span></code><a class="headerlink" href="#examples-using-blochsim-delay" title="Link to this heading">#</a></h2>
-<div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to showcase the basic functionalities of Blochsim, including how to simulate a signal, calculating derivatives etc."><img alt="" src="../_images/sphx_glr_01-getting-started_thumb.png" />
-<p><a class="reference internal" href="autoexamples/01-framework/01-getting-started.html"><span class="doc">Basic Usage</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Basic Usage</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to write a simulator BlochSim does not ship."><img alt="" src="../_images/sphx_glr_03-writing-a-simulator_thumb.png" />
-<p><a class="reference internal" href="autoexamples/01-framework/03-writing-a-simulator.html"><span class="doc">Writing a Signal Model</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Writing a Signal Model</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to show how to add a sequence module BlochSim does not ship -- a preparation, or a readout -- without touching a kernel."><img alt="" src="../_images/sphx_glr_04-custom-operator_thumb.png" />
-<p><a class="reference internal" href="autoexamples/01-framework/04-custom-operator.html"><span class="doc">Writing a New Operator</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Writing a New Operator</div>
+<div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="Lessons 1 and 2 used shipped simulators. This lesson implements a new one, saturation recovery, by subclassing Simulator. The resulting class supports the same features as a shipped simulator: batched tissue inputs, derivatives with respect to tissue and sequence parameters, and the additional physics of lesson 2."><img alt="" src="../_images/sphx_glr_03-custom-signal-model_thumb.png" />
+<p><a class="reference internal" href="autoexamples/01-framework/03-custom-signal-model.html"><span class="doc">3. Custom signal model</span></a></p>
+  <div class="sphx-glr-thumbnail-title">3. Custom signal model</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In lesson 3 you wrote a sequence from the operators that ship with blochsim. In this lesson you write two operators of your own: a T2 preparation, and a readout that records two samples in one repetition. An operator is a Python function that returns events, and @ composes operators into one. No kernel changes, and the new operators work in any simulator."><img alt="" src="../_images/sphx_glr_05-custom-operator_thumb.png" />
+<p><a class="reference internal" href="autoexamples/01-framework/05-custom-operator.html"><span class="doc">5. Custom operator</span></a></p>
+  <div class="sphx-glr-thumbnail-title">5. Custom operator</div>
 </div></div></section>
 </section>
 

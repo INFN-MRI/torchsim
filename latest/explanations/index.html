@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -67,8 +67,8 @@
     <link rel="icon" href="../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Sequence description" href="description.html" />
-    <link rel="prev" title="Developer Guide" href="../developer_guide.html" />
+    <link rel="next" title="Signal model" href="signal-model.html" />
+    <link rel="prev" title="Kernels" href="../internals/kernels.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Explanations</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../generated/autoexamples/index.html">Examples</a></li>
@@ -536,20 +546,28 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="explanations">
 <h1>Explanations<a class="headerlink" href="#explanations" title="Link to this heading">#</a></h1>
-<p>The concepts behind BlochSim, separate from the step-by-step examples and the
-API reference.</p>
+<p>What blochsim does, and how, one concept per page, in the order data flows
+through it.</p>
 <dl class="simple myst">
-<dt><a class="reference internal" href="description.html"><span class="doc">Sequence description</span></a></dt><dd><p>The sequence representation BlochSim consumes: events, RF definitions,
-readout roles, Pulseq input, and the MRD description a running scanner can
-send.</p>
+<dt><a class="reference internal" href="signal-model.html"><span class="doc">Signal model</span></a></dt><dd><p>A sequence written as handlers and a layout.</p>
 </dd>
-<dt><a class="reference internal" href="epg.html"><span class="doc">Extended phase graphs</span></a></dt><dd><p>Extended phase graphs: configuration states, RF transitions, gradient
-shifts, relaxation, diffusion, flow, exchange, and the assumptions behind
-the model.</p>
+<dt><a class="reference internal" href="epg.html"><span class="doc">Extended phase graphs</span></a></dt><dd><p>The physics in the kernels: configuration states, relaxation, B1 and B0,
+pools, diffusion and flow.</p>
 </dd>
-<dt><a class="reference internal" href="implementation.html"><span class="doc">How BlochSim runs it</span></a></dt><dd><p>How a <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> turns either an offline layout or
-an incoming sequence description into the fused CPU/GPU state machine, and
-how differentiation and execution are arranged.</p>
+<dt><a class="reference internal" href="description.html"><span class="doc">Sequence description</span></a></dt><dd><p>What a Pulseq file or an MRD stream gives a simulator.</p>
+</dd>
+<dt><a class="reference internal" href="derivatives.html"><span class="doc">Derivatives</span></a></dt><dd><p>Forward mode for tissue properties, reverse mode for sequence parameters,
+and the Cramér-Rao bound built on them.</p>
+</dd>
+<dt><a class="reference internal" href="execution.html"><span class="doc">Execution</span></a></dt><dd><p>CPU threads or a GPU, chunking to fit memory, and structure resolved once.</p>
+</dd>
+<dt><a class="reference internal" href="parameter-estimation.html"><span class="doc">Parameter estimation</span></a></dt><dd><p>Dictionary matching, low-rank matching, lookup tables, nonlinear least
+squares and PERK.</p>
+</dd>
+<dt><a class="reference internal" href="model-based-reconstruction.html"><span class="doc">Model-based reconstruction</span></a></dt><dd><p>The signal model inside a reconstruction, linear in a subspace or
+nonlinear.</p>
+</dd>
+<dt><a class="reference internal" href="sequence-design.html"><span class="doc">Sequence design</span></a></dt><dd><p>Protocol parameters optimized against a Cramér-Rao bound.</p>
 </dd>
 </dl>
 <div class="toctree-wrapper compound">
@@ -568,20 +586,20 @@ how differentiation and execution are arranged.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../developer_guide.html"
+       href="../internals/kernels.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Developer Guide</p>
+        <p class="prev-next-title">Kernels</p>
       </div>
     </a>
     <a class="right-next"
-       href="description.html"
+       href="signal-model.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Sequence description</p>
+        <p class="prev-next-title">Signal model</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

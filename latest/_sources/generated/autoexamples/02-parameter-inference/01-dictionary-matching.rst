@@ -22,44 +22,30 @@
 Dictionary matching
 ===================
 
-The scope of this notebook is to map a brain slice by exhaustive dictionary
-matching, and to show the two ways of making that affordable: working in the
-low-rank basis the train spans, and clustering the dictionary so that most
-atoms are never scored.
+You map T1, T2 and proton density in a brain slice from a magnetic resonance
+fingerprinting (MRF) train by dictionary matching, then reduce the cost of the
+match in two independent ways: by working in the low-rank subspace spanned by
+the train, and by clustering the dictionary so that most atoms are not scored.
 
-A dictionary spans every combination of the parameters, so its size is the
-product of the grids and each atom is as long as the train. The two savings are
-independent and multiply; what each costs and what each gets wrong is read off
-the same slice.
+Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 
-.. GENERATED FROM PYTHON SOURCE LINES 18-22
+.. GENERATED FROM PYTHON SOURCE LINES 15-20
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim brainweb-dl cmap
+   !pip install blochsim matplotlib brainweb-dl cmap
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 24-28
-
-The problem is stated over a simulator carrying the sequence and filled in
-by an estimator. :func:`~blochsim.execution` decides where that work runs,
-and the timings below are taken inside it.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 29-175
+.. GENERATED FROM PYTHON SOURCE LINES 20-134
 
 .. code-block:: Python
 
 
-    import time
-
     import numpy as np
     import torch
 
-    import blochsim
-    from blochsim import (
-        Subspace,
-    )
+    from blochsim import Subspace
     from blochsim.estimators import DictionaryMatcher
     from blochsim.simulators import MRFSimulator
 
@@ -70,19 +56,18 @@ and the timings below are taken inside it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 176-185
+.. GENERATED FROM PYTHON SOURCE LINES 135-143
 
 Phantom
 -------
 
-BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
-ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
-voxel holds a fraction of each tissue, and the relaxation times are weighted
-by those fractions. A third of the voxels are mixtures, so the truth is a
-continuum and not four values.
+The phantom is BrainWeb subject 0, slice 90: an axial 1 mm slice through the
+lateral ventricles. BrainWeb provides fuzzy tissue memberships, so each voxel
+holds a fraction of each tissue and its relaxation times are the
+fraction-weighted average. About a third of the voxels are mixtures, so the
+ground truth is a continuum of values rather than four.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 186-226
+.. GENERATED FROM PYTHON SOURCE LINES 143-183
 
 
 
@@ -102,175 +87,164 @@ continuum and not four values.
 
     Downloading phantom_1.0mm_normal_bck: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 7.99kB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 7.32kB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 40.8kB [00:00, 180kB/s] 
+    Downloading phantom_1.0mm_normal_bck: 184kB [00:00, 908kB/s]  
 
-    Downloading phantom_1.0mm_normal_bck: 185kB [00:00, 587kB/s] 
+    Downloading phantom_1.0mm_normal_bck: 497kB [00:00, 1.73MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 329kB [00:00, 768kB/s]
+    Downloading phantom_1.0mm_normal_bck: 769kB [00:00, 1.96MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 753kB [00:00, 1.62MB/s]
+    Downloading phantom_1.0mm_normal_bck: 993kB [00:00, 2.00MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 1.17MB [00:00, 2.18MB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.24MB [00:00, 2.12MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 1.62MB [00:00, 2.56MB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.52MB [00:00, 2.21MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 1.91MB [00:01, 2.55MB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.74MB [00:00, 2.20MB/s]
 
-    Downloading phantom_1.0mm_normal_bck: 2.15MB [00:01, 2.45MB/s]
+    Downloading phantom_1.0mm_normal_bck: 1.97MB [00:01, 2.19MB/s]
+
+    Downloading phantom_1.0mm_normal_bck: 2.19MB [00:01, 2.13MB/s]
 
                                                                   
-    Downloading tissues:  10%|█         | 1/10 [00:02<00:21,  2.35s/it]
+    Downloading tissues:  10%|█         | 1/10 [00:02<00:18,  2.09s/it]
 
     Downloading phantom_1.0mm_normal_csf: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_csf: 1.00kB [00:00, 9.27kB/s]
+    Downloading phantom_1.0mm_normal_csf: 1.00kB [00:00, 8.52kB/s]
 
-    Downloading phantom_1.0mm_normal_csf: 40.8kB [00:00, 197kB/s] 
+    Downloading phantom_1.0mm_normal_csf: 177kB [00:00, 851kB/s]  
 
-    Downloading phantom_1.0mm_normal_csf: 185kB [00:00, 627kB/s] 
-
-    Downloading phantom_1.0mm_normal_csf: 449kB [00:00, 1.19MB/s]
-
-                                                                 
-    Downloading tissues:  20%|██        | 2/10 [00:03<00:13,  1.66s/it]
+                                                                
+    Downloading tissues:  20%|██        | 2/10 [00:02<00:10,  1.34s/it]
 
     Downloading phantom_1.0mm_normal_gry: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_gry: 1.00kB [00:00, 8.44kB/s]
+    Downloading phantom_1.0mm_normal_gry: 1.00kB [00:00, 9.55kB/s]
 
-    Downloading phantom_1.0mm_normal_gry: 40.8kB [00:00, 190kB/s] 
+    Downloading phantom_1.0mm_normal_gry: 176kB [00:00, 880kB/s]  
 
-    Downloading phantom_1.0mm_normal_gry: 177kB [00:00, 589kB/s] 
-
-    Downloading phantom_1.0mm_normal_gry: 433kB [00:00, 1.14MB/s]
-
-    Downloading phantom_1.0mm_normal_gry: 857kB [00:00, 1.91MB/s]
+    Downloading phantom_1.0mm_normal_gry: 729kB [00:00, 2.84MB/s]
 
                                                                  
-    Downloading tissues:  30%|███       | 3/10 [00:04<00:10,  1.47s/it]
+    Downloading tissues:  30%|███       | 3/10 [00:03<00:07,  1.08s/it]
 
     Downloading phantom_1.0mm_normal_wht: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_wht: 1.00kB [00:00, 6.96kB/s]
+    Downloading phantom_1.0mm_normal_wht: 8.81kB [00:00, 76.4kB/s]
 
-    Downloading phantom_1.0mm_normal_wht: 40.8kB [00:00, 175kB/s] 
-
-    Downloading phantom_1.0mm_normal_wht: 185kB [00:00, 588kB/s] 
-
-    Downloading phantom_1.0mm_normal_wht: 439kB [00:00, 1.11MB/s]
+    Downloading phantom_1.0mm_normal_wht: 289kB [00:00, 1.53MB/s] 
 
                                                                  
-    Downloading tissues:  40%|████      | 4/10 [00:05<00:08,  1.35s/it]
+    Downloading tissues:  40%|████      | 4/10 [00:04<00:05,  1.09it/s]
 
     Downloading phantom_1.0mm_normal_fat: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_fat: 8.81kB [00:00, 60.2kB/s]
+    Downloading phantom_1.0mm_normal_fat: 40.8kB [00:00, 349kB/s]
 
-    Downloading phantom_1.0mm_normal_fat: 105kB [00:00, 438kB/s]  
+    Downloading phantom_1.0mm_normal_fat: 449kB [00:00, 2.21MB/s]
 
-    Downloading phantom_1.0mm_normal_fat: 297kB [00:00, 896kB/s]
-
-                                                                
-    Downloading tissues:  50%|█████     | 5/10 [00:07<00:06,  1.25s/it]
+                                                                 
+    Downloading tissues:  50%|█████     | 5/10 [00:05<00:04,  1.20it/s]
 
     Downloading phantom_1.0mm_normal_m-s: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 1.00kB [00:00, 8.47kB/s]
+    Downloading phantom_1.0mm_normal_m-s: 1.00kB [00:00, 9.61kB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 40.1kB [00:00, 187kB/s] 
+    Downloading phantom_1.0mm_normal_m-s: 177kB [00:00, 928kB/s]  
 
-    Downloading phantom_1.0mm_normal_m-s: 169kB [00:00, 560kB/s] 
+    Downloading phantom_1.0mm_normal_m-s: 673kB [00:00, 2.61MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 385kB [00:00, 998kB/s]
+    Downloading phantom_1.0mm_normal_m-s: 0.99MB [00:00, 2.89MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 777kB [00:00, 1.71MB/s]
+    Downloading phantom_1.0mm_normal_m-s: 1.42MB [00:00, 3.46MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 1.34MB [00:00, 2.67MB/s]
+    Downloading phantom_1.0mm_normal_m-s: 1.81MB [00:00, 3.66MB/s]
 
-    Downloading phantom_1.0mm_normal_m-s: 2.24MB [00:00, 4.12MB/s]
+    Downloading phantom_1.0mm_normal_m-s: 2.19MB [00:00, 3.64MB/s]
+
+    Downloading phantom_1.0mm_normal_m-s: 2.61MB [00:00, 3.70MB/s]
 
                                                                   
-    Downloading tissues:  60%|██████    | 6/10 [00:08<00:05,  1.38s/it]
+    Downloading tissues:  60%|██████    | 6/10 [00:06<00:04,  1.01s/it]
 
     Downloading phantom_1.0mm_normal_skn: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_skn: 1.00kB [00:00, 7.97kB/s]
+    Downloading phantom_1.0mm_normal_skn: 1.00kB [00:00, 9.99kB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 40.1kB [00:00, 177kB/s] 
+    Downloading phantom_1.0mm_normal_skn: 184kB [00:00, 1.04MB/s] 
 
-    Downloading phantom_1.0mm_normal_skn: 177kB [00:00, 560kB/s] 
+    Downloading phantom_1.0mm_normal_skn: 561kB [00:00, 2.28MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 433kB [00:00, 1.08MB/s]
+    Downloading phantom_1.0mm_normal_skn: 897kB [00:00, 2.68MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 913kB [00:00, 1.96MB/s]
+    Downloading phantom_1.0mm_normal_skn: 1.20MB [00:00, 2.92MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 1.72MB [00:00, 3.41MB/s]
+    Downloading phantom_1.0mm_normal_skn: 1.56MB [00:00, 3.17MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 2.24MB [00:00, 3.91MB/s]
+    Downloading phantom_1.0mm_normal_skn: 1.94MB [00:00, 3.33MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 2.62MB [00:01, 3.60MB/s]
+    Downloading phantom_1.0mm_normal_skn: 2.33MB [00:00, 3.43MB/s]
 
-    Downloading phantom_1.0mm_normal_skn: 2.97MB [00:01, 3.46MB/s]
+    Downloading phantom_1.0mm_normal_skn: 2.66MB [00:00, 3.37MB/s]
+
+    Downloading phantom_1.0mm_normal_skn: 2.98MB [00:01, 3.24MB/s]
 
                                                                   
-    Downloading tissues:  70%|███████   | 7/10 [00:10<00:04,  1.55s/it]
+    Downloading tissues:  70%|███████   | 7/10 [00:07<00:03,  1.15s/it]
 
     Downloading phantom_1.0mm_normal_skl: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_skl: 8.81kB [00:00, 57.6kB/s]
+    Downloading phantom_1.0mm_normal_skl: 8.81kB [00:00, 75.2kB/s]
 
-    Downloading phantom_1.0mm_normal_skl: 105kB [00:00, 431kB/s]  
-
-    Downloading phantom_1.0mm_normal_skl: 273kB [00:00, 833kB/s]
-
-    Downloading phantom_1.0mm_normal_skl: 615kB [00:00, 1.54MB/s]
+    Downloading phantom_1.0mm_normal_skl: 337kB [00:00, 1.68MB/s] 
 
                                                                  
-    Downloading tissues:  80%|████████  | 8/10 [00:11<00:02,  1.40s/it]
+    Downloading tissues:  80%|████████  | 8/10 [00:08<00:01,  1.03it/s]
 
     Downloading phantom_1.0mm_normal_gli: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 7.86kB/s]
+    Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 6.19kB/s]
 
                                                                   
-    Downloading tissues:  90%|█████████ | 9/10 [00:12<00:01,  1.18s/it]
+    Downloading tissues:  90%|█████████ | 9/10 [00:09<00:00,  1.12it/s]
 
     Downloading phantom_1.0mm_normal_mit: 0.00B [00:00, ?B/s]
 
-    Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 9.06kB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 9.44kB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 40.8kB [00:00, 194kB/s] 
+    Downloading phantom_1.0mm_normal_mit: 177kB [00:00, 980kB/s]  
 
-    Downloading phantom_1.0mm_normal_mit: 185kB [00:00, 622kB/s] 
+    Downloading phantom_1.0mm_normal_mit: 529kB [00:00, 2.02MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 423kB [00:00, 1.10MB/s]
+    Downloading phantom_1.0mm_normal_mit: 849kB [00:00, 2.44MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 889kB [00:00, 1.99MB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.14MB [00:00, 2.68MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 1.61MB [00:00, 3.58MB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.45MB [00:00, 2.86MB/s]
 
-    Downloading phantom_1.0mm_normal_mit: 1.98MB [00:00, 3.50MB/s]
+    Downloading phantom_1.0mm_normal_mit: 1.73MB [00:00, 2.80MB/s]
+
+    Downloading phantom_1.0mm_normal_mit: 2.05MB [00:00, 2.92MB/s]
 
                                                                   
-    Downloading tissues: 100%|██████████| 10/10 [00:13<00:00,  1.30s/it]
+    Downloading tissues: 100%|██████████| 10/10 [00:10<00:00,  1.00s/it]
                                                                         
-    Text(0.5, 0.9878790357573323, 'BrainWeb subject 0, slice 90')
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 227-234
+.. GENERATED FROM PYTHON SOURCE LINES 184-191
 
 Sequence
 --------
 
-Four hundred repetitions after an inversion, at a fixed repetition time and a
-flip angle that varies smoothly along the train. A schedule that jumped about
-would give trajectories differing by noise rather than by physics.
+The sequence is an inversion followed by 400 repetitions at TR = 10 ms. The
+flip angle varies smoothly along the train, so that the signal evolutions of
+different tissues differ by physics and not by the noise of an irregular
+schedule.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 235-244
+.. GENERATED FROM PYTHON SOURCE LINES 191-200
 
 .. code-block:: Python
 
@@ -290,27 +264,29 @@ would give trajectories differing by noise rather than by physics.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 245-249
+.. GENERATED FROM PYTHON SOURCE LINES 201-205
 
-The readouts wind the states on rather than rewinding them, so the trajectory
-comes back real to within 3e-8. That halves both the dictionary and the
-arithmetic that searches it.
+The readouts advance the configuration states and do not rewind them, so the
+signal evolution is real to float32 precision. The dictionary and the inner
+products that search it therefore need only the real part. These are the
+evolutions of white matter, grey matter and CSF:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 250-266
+.. GENERATED FROM PYTHON SOURCE LINES 205-222
 
 .. code-block:: Python
 
     fingerprints = simulator.simulate(
         T1=torch.tensor([500.0, 833.0, 2569.0]), T2=torch.tensor([70.0, 83.0, 329.0])
-    ).real
+    )
+    print(f"largest imaginary part: {fingerprints.imag.abs().max():.1e}")
+    fingerprints = fingerprints.real
 
 
 
 
 
 .. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_01-dictionary-matching_002.png
-   :alt: the schedule, fingerprints
+   :alt: flip angles, signal evolutions
    :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_01-dictionary-matching_002.png
    :class: sphx-glr-single-img
 
@@ -319,19 +295,22 @@ arithmetic that searches it.
 
  .. code-block:: none
 
-
-    [<matplotlib.legend.Legend object at 0x7f10c7c667b0>]
-
+    largest imaginary part: 0.0e+00
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 267-271
-
-The measurement, with noise at 2% of the peak fingerprint. The estimators are
-told the same number: one trained for more noise than the scan has learns to
-distrust the data and answers with the prior.
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 272-315
+.. GENERATED FROM PYTHON SOURCE LINES 223-230
+
+Measurement
+-----------
+
+The measurement is the evolution of every voxel at its true T1 and T2, scaled
+by its proton density, with Gaussian noise of 2% of the peak signal. The
+estimators are given the same noise level: one trained for more noise than
+the scan has trusts the data less and returns values closer to the prior.
+
+.. GENERATED FROM PYTHON SOURCE LINES 230-241
 
 .. code-block:: Python
 
@@ -353,20 +332,16 @@ distrust the data and answers with the prior.
 
 
 
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 316-324
+.. GENERATED FROM PYTHON SOURCE LINES 242-248
 
 Problem statement
 -----------------
 
-What is unknown, over what range, and at what noise level. Both relaxation
-times span more than a decade, so the grid is logarithmic: uniform spacing
-would spend most of it on long T1, where the trajectories are nearly
-parallel.
+The unknowns are T1 and T2. Both span more than a decade, so the parameter
+grids and the training draws are logarithmic: uniform spacing would spend most
+of the atoms on long T1, where the evolutions are nearly parallel.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 325-330
+.. GENERATED FROM PYTHON SOURCE LINES 248-253
 
 .. code-block:: Python
 
@@ -382,17 +357,17 @@ parallel.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 331-338
+.. GENERATED FROM PYTHON SOURCE LINES 254-261
 
 Subspace rank
 -------------
 
-A basis fitted to simulated trajectories says how much of their energy each
-rank keeps. One minus that fraction is the relative squared error of
-projecting through the basis and back.
+The 400 contrasts span far fewer than 400 independent directions.
+``Subspace.fit`` computes a basis from simulated evolutions and reports the
+fraction of their energy that a given rank retains; one minus that fraction
+is the relative squared error of projecting onto the basis and back.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 339-373
+.. GENERATED FROM PYTHON SOURCE LINES 261-291
 
 .. code-block:: Python
 
@@ -415,35 +390,31 @@ projecting through the basis and back.
 
 
 .. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_01-dictionary-matching_003.png
-   :alt: what projecting through the basis loses
+   :alt: 01 dictionary matching
    :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_01-dictionary-matching_003.png
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    [<matplotlib.legend.Legend object at 0x7f10c6a3e7b0>]
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 374-385
+.. GENERATED FROM PYTHON SOURCE LINES 292-305
 
-Four directions out of four hundred leave less outside the basis than the
-noise puts in, and every contrast dropped is arithmetic the match avoids.
+At rank 4 the energy left outside the basis is below the energy the noise
+adds, so projecting onto four directions loses less than the noise already
+contributes. Every contrast dropped also removes arithmetic from the match.
 
 Dictionary
 ----------
 
-The dictionary spans the parameters jointly, so its size is the product of
-the grids: twenty thousand atoms for two parameters, on a grid fine enough
-that the spacing is not what limits the answer. A third parameter multiplies
-it again.
+A dictionary spans the parameters jointly, so its size is the product of the
+grid sizes: here 200 values of T1 by 100 of T2, 20 000 atoms, fine enough
+that the grid spacing does not limit the result. Each additional parameter
+multiplies the size again. ``fit`` simulates the atoms and ``map`` returns one
+value per voxel for each parameter, and for M0, which follows from the scale
+between the measurement and the best-matching atom:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 386-406
+.. GENERATED FROM PYTHON SOURCE LINES 305-324
 
 .. code-block:: Python
 
@@ -455,7 +426,7 @@ it again.
         T1=grid_t1.reshape(-1), T2=grid_t2.reshape(-1), seed=0
     )
 
-    maps = full.map(measured)  # {"T1": ..., "T2": ...}, one value per voxel
+    maps = full.map(measured)  # {"T1": ..., "T2": ..., "M0": ...}
 
 
 
@@ -465,17 +436,16 @@ it again.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 407-414
+.. GENERATED FROM PYTHON SOURCE LINES 325-331
 
 Matching in the subspace
 ------------------------
 
-``rank`` is the whole change. The dictionary is fitted, projected and stored
-in four directions instead of four hundred, and the measurement is projected
-the same way before scoring.
+Passing ``rank`` fits the basis, projects the dictionary onto it and stores
+it at that rank. The measurement is projected onto the same basis before the
+atoms are scored.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 415-429
+.. GENERATED FROM PYTHON SOURCE LINES 331-345
 
 .. code-block:: Python
 
@@ -492,21 +462,19 @@ the same way before scoring.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 430-441
+.. GENERATED FROM PYTHON SOURCE LINES 346-355
 
 Clustered dictionary
 --------------------
 
-Compressing shortened every inner product; grouping cuts how many are taken.
-Neighbouring tissues give nearly parallel signals, so the atoms cluster, and
-a voxel scored against one representative per group rules out most groups
-before any atom inside them is touched.
+Compression shortens every inner product; clustering reduces how many are
+computed. Atoms of neighbouring tissues have nearly parallel signal
+evolutions, so they fall into groups. Each voxel is scored against one
+representative per group, and groups that cannot contain the best match are
+excluded before any of their atoms is scored. The grouping is computed in the
+compressed basis, the space the measurement is already in.
 
-The clustering is done in the compressed basis, so a group is entered without
-leaving the space the measurement is already in.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 442-479
+.. GENERATED FROM PYTHON SOURCE LINES 355-387
 
 .. code-block:: Python
 
@@ -524,7 +492,6 @@ leaving the space the measurement is already in.
 
 
 
-
 .. rst-class:: sphx-glr-script-out
 
  .. code-block:: none
@@ -534,18 +501,18 @@ leaving the space the measurement is already in.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 480-488
+.. GENERATED FROM PYTHON SOURCE LINES 388-396
 
 Cost and accuracy
 -----------------
 
-Best of three passes each, after a warm-up. **model** is what the fitted
-estimator carries between volumes; **peak** is the high-water mark on the
-card, which decides whether a volume fits or has to be streamed, and a dash
-on a machine with no card.
+Times are the best of three passes after a warm-up. *model* is the memory the
+fitted estimator holds between volumes. *peak* is the maximum GPU memory
+allocated while mapping the slice, which decides whether a volume fits or
+has to be processed in pieces; it is blank on a machine without a GPU.
+Errors are medians over the brain voxels, relative to the truth.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 489-544
+.. GENERATED FROM PYTHON SOURCE LINES 396-440
 
 
 
@@ -558,20 +525,22 @@ on a machine with no card.
 
     method                         train     map     model      peak      T1      T2      M0
     ----------------------------------------------------------------------------------------
-    match, 400 contrasts            5.7s   4.91s 122.3 MiB        --    0.6%    1.6%    0.4%
-    match, rank 4                   0.8s   1.76s   1.4 MiB        --    0.6%    1.6%    0.4%
-    match, rank 4 + groups          0.9s   0.07s   1.4 MiB        --    0.6%    1.6%    0.4%
+    match, 400 contrasts            8.7s   8.22s 122.3 MiB        --    0.6%    1.6%    0.4%
+    match, rank 4                   1.1s   1.63s   1.4 MiB        --    0.6%    1.6%    0.4%
+    match, rank 4 + groups          1.2s   0.09s   1.4 MiB        --    0.6%    1.6%    0.4%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 545-548
+.. GENERATED FROM PYTHON SOURCE LINES 441-446
 
 Maps
 ----
 
+The maps of each method, and below them the absolute error on a scale of its
+own for each parameter.
 
-.. GENERATED FROM PYTHON SOURCE LINES 549-606
+.. GENERATED FROM PYTHON SOURCE LINES 446-496
 
 
 
@@ -597,10 +566,27 @@ Maps
 
 
 
+.. GENERATED FROM PYTHON SOURCE LINES 497-511
+
+Specification
+-------------
+
+What this page did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, map T1, T2 and M0 in BrainWeb subject 0, slice 90, from an
+   inversion-prepared MRF train of 400 repetitions (TR 10 ms, TI 20 ms,
+   flip angle 10 + 50 sin^2(pi n / 400) deg) at 2% noise. Use a
+   DictionaryMatcher over 200 log-spaced T1 by 100 log-spaced T2 values.
+   Compare the full match, the match at subspace rank 4 and the match at
+   rank 4 with 32 groups, reporting training time, mapping time, estimator
+   memory and the median relative error of each map.
+
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 47.766 seconds)
+   **Total running time of the script:** (0 minutes 58.558 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_01-dictionary-matching.py:

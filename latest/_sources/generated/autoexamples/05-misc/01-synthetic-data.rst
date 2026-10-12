@@ -18,81 +18,59 @@
 .. _sphx_glr_generated_autoexamples_05-misc_01-synthetic-data.py:
 
 
-=============================
-Synthetic MR fingerprinting
-=============================
+=====================
+Synthetic fingerprint
+=====================
 
-The scope of this notebook is to build a training pair end to end: what a
-scanner would measure from a fingerprinting exam, and the maps it came from.
+In this Application you build a training pair for MR fingerprinting: the
+undersampled image series a scanner would produce, the fully sampled series it
+approximates, and the T1, T2 and M0 maps they come from.
 
-A subject is segmented into tissue classes; each class is given an M0, a T1 and
-a T2; one voxel per class is simulated by extended phase graphs; every voxel of
-a class is handed its class's evolution; the volume is weighted by birdcage
-sensitivities and pushed through a frame-wise non-uniform Fourier transform;
-the k-space is brought back and coil-combined. The undersampled series and the
-fully sampled one are the pair, with the ground-truth maps and the
-segmentation.
+The pipeline segments a T1-weighted subject into grey matter, white matter and
+CSF, assigns each class an M0, T1 and T2, simulates one fingerprint per class
+with extended phase graphs, and mixes the fingerprints voxelwise by tissue
+fraction. The volume is then weighted by birdcage coil sensitivities and
+encoded with a frame-wise spiral NUFFT. The adjoint and a coil combination
+return the image series. Only the simulation is blochsim's. torchio,
+deepmriprep, SigPy and mri-nufft provide the subject, the segmentation, the
+coils and the encoding.
 
-Only the simulation is BlochSim's. The phantom, the coils and the encoding come
-from torchio, deepmriprep, SigPy and mri-nufft.
+Prerequisites: Course lessons :doc:`../01-framework/01-first-simulation`.
 
-.. GENERATED FROM PYTHON SOURCE LINES 22-26
+.. GENERATED FROM PYTHON SOURCE LINES 23-28
 
 .. colab-link::
    :needs_gpu: 1
 
-   !pip install blochsim torchio deepmriprep sigpy cmap mri-nufft[finufft,cufinufft]
+   !pip install blochsim matplotlib torchio deepmriprep sigpy cmap mri-nufft[finufft,cufinufft]
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 28-41
+.. GENERATED FROM PYTHON SOURCE LINES 30-37
 
-Only one step of this pipeline is BlochSim's. Four other packages do the
-rest, and each has exactly one job here:
+Setup
+-----
 
-* ``torchio`` fetches a T1-weighted IXI subject and gives it as tensors,
-  which is where the anatomy comes from;
-* ``deepmriprep`` segments that anatomy into grey matter, white matter and
-  CSF with a U-Net -- torch throughout, and it hands back probabilities
-  rather than labels;
-* ``sigpy.mri`` generates birdcage coil sensitivities to weight the volume
-  with;
-* ``mri-nufft`` supplies the spiral trajectory and the non-uniform Fourier
-  transform that plays it, forwards and back.
+Each package has one task here: torchio loads a T1-weighted IXI subject,
+deepmriprep segments it with a U-Net and returns tissue probabilities,
+``sigpy.mri`` generates birdcage coil sensitivities, and mri-nufft provides the
+spiral trajectory and the non-uniform Fourier transform.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 42-153
-
-.. code-block:: Python
-
-
-    import mrinufft
-    from deepmriprep import Preprocess
-    import sigpy.mri as smri
-    import torchio as tio
-    from mrinufft.trajectories import initialize_2D_spiral
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 154-157
-
-BlochSim's part is the third step: one fingerprinting simulation per tissue
-class, rather than one per voxel.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 158-168
+.. GENERATED FROM PYTHON SOURCE LINES 37-120
 
 .. code-block:: Python
 
     import tempfile
     import time
-    from pathlib import Path
 
+    import mrinufft
     import numpy as np
+    import sigpy.mri as smri
     import torch
+    import torchio as tio
+
+    from deepmriprep import Preprocess
+    from mrinufft.trajectories import initialize_2D_spiral
+    from pathlib import Path
 
     from blochsim.simulators import MRFSimulator
 
@@ -104,13 +82,12 @@ class, rather than one per voxel.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 169-172
+.. GENERATED FROM PYTHON SOURCE LINES 121-123
 
-What the pair will be: a 128 matrix, four hundred frames, one spiral arm of
-768 samples per frame, and eight receive channels.
+The pair has a 128 x 128 matrix, 400 frames with one spiral arm of 768 samples
+each, and 8 receive channels.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 173-185
+.. GENERATED FROM PYTHON SOURCE LINES 123-135
 
 .. code-block:: Python
 
@@ -120,8 +97,8 @@ What the pair will be: a 128 matrix, four hundred frames, one spiral arm of
     COILS = 8
     SLICE = 110  # axial, at the level of the lateral ventricles
 
-    # The GPU transform is used when it is both installed and usable; the
-    # simulation follows it, so the images and the operator meet on one device.
+    # The GPU transform is used when it is installed and usable, and the simulation
+    # follows it so that the images and the operator are on one device.
     on_gpu = torch.cuda.is_available() and mrinufft.check_backend("cufinufft")
     device = "cuda" if on_gpu else "cpu"
     backend = "cufinufft" if on_gpu else "finufft"
@@ -133,20 +110,18 @@ What the pair will be: a 128 matrix, four hundred frames, one spiral arm of
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 186-196
+.. GENERATED FROM PYTHON SOURCE LINES 136-144
 
 Subject
 -------
 
-One IXI subject through torchio: a T1-weighted volume at 1.5 T, and the only
-measurement this notebook starts from. The segmentation reads it; a table
-supplies the tissue properties a contrast cannot give.
+The only measurement the pipeline starts from is one IXI subject loaded by
+torchio: a T1-weighted volume at 1.5 T. The segmentation reads it, and a table
+supplies the tissue properties that a single contrast cannot give.
+``download=True`` fetches the archive once, a few hundred MB, into a cache under
+the home directory.
 
-``download=True`` fetches the archive once, a few hundred MB, into a cache
-under the home directory.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 197-213
+.. GENERATED FROM PYTHON SOURCE LINES 144-160
 
 .. code-block:: Python
 
@@ -163,24 +138,22 @@ under the home directory.
 
  .. code-block:: none
 
-    Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmp7r3se4oj.zip
-    0it [00:00, ?it/s]      0%|          | 0/233926107 [00:01<?, ?it/s]      1%|▏         | 2924544/233926107 [00:01<00:07, 29243794.55it/s]      6%|▋         | 15171584/233926107 [00:01<00:02, 79278968.24it/s]     11%|█         | 25706496/233926107 [00:01<00:02, 84343087.58it/s]     15%|█▌        | 36225024/233926107 [00:01<00:02, 86559575.22it/s]     19%|█▉        | 44179456/233926107 [00:01<00:02, 76163176.80it/s]     22%|██▏       | 51396608/233926107 [00:02<00:02, 61851944.50it/s]     27%|██▋       | 63545344/233926107 [00:02<00:02, 77334789.76it/s]     33%|███▎      | 78225408/233926107 [00:02<00:01, 94513009.38it/s]     40%|███▉      | 92905472/233926107 [00:02<00:01, 104629427.48it/s]     47%|████▋     | 109682688/233926107 [00:02<00:01, 116156998.90it/s]     52%|█████▏    | 121503744/233926107 [00:02<00:00, 115196688.28it/s]     57%|█████▋    | 133160960/233926107 [00:02<00:00, 104760719.53it/s]     61%|██████▏   | 143859712/233926107 [00:02<00:00, 100718734.67it/s]     66%|██████▌   | 154083328/233926107 [00:03<00:00, 95518041.59it/s]      70%|███████   | 164413440/233926107 [00:03<00:00, 93723144.47it/s]     74%|███████▍  | 173858816/233926107 [00:03<00:00, 91359615.85it/s]     78%|███████▊  | 183033856/233926107 [00:03<00:00, 90745486.16it/s]     82%|████████▏ | 192135168/233926107 [00:03<00:00, 88267907.19it/s]     86%|████████▋ | 202309632/233926107 [00:03<00:00, 87662432.59it/s]     91%|█████████ | 212844544/233926107 [00:03<00:00, 88061847.64it/s]     95%|█████████▌| 222789632/233926107 [00:03<00:00, 91116527.17it/s]     99%|█████████▉| 231940096/233926107 [00:03<00:00, 87608569.61it/s]    233930752it [00:05, 46327921.60it/s]                               
+    Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmpowa1yu9p.zip
+    0it [00:00, ?it/s]      0%|          | 0/233926107 [00:01<?, ?it/s]      1%|          | 1400832/233926107 [00:01<00:17, 13580045.35it/s]      6%|▌         | 13180928/233926107 [00:01<00:02, 74099570.81it/s]     10%|█         | 23691264/233926107 [00:01<00:02, 86894512.69it/s]     15%|█▍        | 34209792/233926107 [00:01<00:02, 92767849.06it/s]     19%|█▉        | 44744704/233926107 [00:02<00:01, 96001826.29it/s]     24%|██▎       | 55263232/233926107 [00:02<00:01, 97590348.63it/s]     28%|██▊       | 65798144/233926107 [00:02<00:01, 99133202.57it/s]     33%|███▎      | 76316672/233926107 [00:02<00:01, 98893989.84it/s]     37%|███▋      | 86851584/233926107 [00:02<00:01, 99550239.48it/s]     42%|████▏     | 97370112/233926107 [00:02<00:01, 100523167.77it/s]     46%|████▌     | 107339776/233926107 [00:03<00:03, 38964573.78it/s]     49%|████▉     | 114761728/233926107 [00:03<00:02, 43835949.76it/s]     53%|█████▎    | 124715008/233926107 [00:03<00:02, 52540526.68it/s]     57%|█████▋    | 132661248/233926107 [00:03<00:02, 40344232.60it/s]     61%|██████    | 142876672/233926107 [00:03<00:01, 49950930.92it/s]     65%|██████▌   | 152707072/233926107 [00:03<00:01, 58547403.55it/s]     69%|██████▊   | 160702464/233926107 [00:04<00:01, 56885028.53it/s]     72%|███████▏  | 167878656/233926107 [00:04<00:01, 56412045.45it/s]     75%|███████▍  | 174555136/233926107 [00:04<00:01, 47853472.75it/s]     79%|███████▉  | 185647104/233926107 [00:04<00:00, 59311413.90it/s]     84%|████████▍ | 196182016/233926107 [00:04<00:00, 68533696.24it/s]     88%|████████▊ | 206700544/233926107 [00:04<00:00, 75255726.93it/s]     93%|█████████▎| 217235456/233926107 [00:04<00:00, 81395760.50it/s]     97%|█████████▋| 227753984/233926107 [00:04<00:00, 86800482.64it/s]    233930752it [00:05, 44790292.68it/s]                               
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 214-222
+.. GENERATED FROM PYTHON SOURCE LINES 161-167
 
 Tissue classes
 --------------
 
-``deepmriprep`` segments the head into grey matter, white matter and CSF with
-a U-Net, in torch and on the same card as everything else. It returns three
-probability maps rather than one label per voxel, which is the difference
-between a phantom with partial volume in it and one without.
+deepmriprep segments the head into grey matter, white matter and CSF with a
+U-Net. It returns three probability maps, not one label per voxel, so the
+phantom contains partial volume.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 223-264
+.. GENERATED FROM PYTHON SOURCE LINES 167-216
 
 .. code-block:: Python
 
@@ -197,6 +170,11 @@ between a phantom with partial volume in it and one without.
 
 
 
+
+.. image-sg:: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_001.png
+   :alt: T1w, grey, white, CSF
+   :srcset: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_001.png
+   :class: sphx-glr-single-img
 
 
 .. rst-class:: sphx-glr-script-out
@@ -226,52 +204,28 @@ between a phantom with partial volume in it and one without.
     Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/segmentation_patch_17_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/segmentation_patch_17_model.pt
     Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/segmentation_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/segmentation_model.pt
     Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/warp_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/warp_model.pt
-    128x128 slice, 5733 brain voxels; 92% are a mixture of two tissues or more
+    128x128 slice, 5735 brain voxels; 92% are a mixture of two tissues or more
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 265-268
+.. GENERATED FROM PYTHON SOURCE LINES 217-224
 
-The contrast the subject arrived as, and the three probabilities the network
-made of it:
+The figure shows the T1-weighted contrast and the three probabilities.
 
+Each class takes an M0, a T1 and a T2 from a table, here values at 1.5 T. A
+T1-weighted volume is a contrast and not a map, so the table cannot be read
+from this subject: the measurement gives the location and fraction of each
+tissue, and the table gives its properties. A relaxometry protocol on the same
+subject would fill the table from data.
 
-.. GENERATED FROM PYTHON SOURCE LINES 269-282
-
-
-
-
-.. image-sg:: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_001.png
-   :alt: T1w, grey, white, CSF
-   :srcset: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_001.png
-   :class: sphx-glr-single-img
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 283-289
-
-Each class is given the three numbers a simulation needs, tabulated at 1.5 T.
-None could be read off this subject: a T1-weighted volume is a contrast, not
-a map. The measurement supplies where each tissue is and in what proportion;
-the table supplies what each class is taken to be. A relaxometry protocol on
-the same subject would fill the table from data instead.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 290-308
+.. GENERATED FROM PYTHON SOURCE LINES 224-238
 
 .. code-block:: Python
 
-    NAMES_M0 = torch.tensor([0.80, 0.70, 1.00])  # relative proton density
-    NAMES_T1 = torch.tensor([1100.0, 650.0, 4000.0])  # ms, at 1.5 T
-    NAMES_T2 = torch.tensor([95.0, 70.0, 2000.0])  # ms, at 1.5 T
-
-    dominant = fractions > 0.5
-    class_M0 = NAMES_M0
-    class_T1 = NAMES_T1
-    class_T2 = NAMES_T2
+    class_M0 = torch.tensor([0.80, 0.70, 1.00])  # relative proton density
+    class_T1 = torch.tensor([1100.0, 650.0, 4000.0])  # ms
+    class_T2 = torch.tensor([95.0, 70.0, 2000.0])  # ms
 
 
 
@@ -284,25 +238,24 @@ the same subject would fill the table from data instead.
 
 
     tissue           voxels     M0  T1 (ms)  T2 (ms)
-    grey matter        2428   0.80     1100     95.0
-    white matter       2297   0.70      650     70.0
-    CSF                 568   1.00     4000   2000.0
+    grey matter        2427   0.80     1100     95.0
+    white matter       2294   0.70      650     70.0
+    CSF                 571   1.00     4000   2000.0
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 309-317
+.. GENERATED FROM PYTHON SOURCE LINES 239-246
 
 Simulation per class
 --------------------
 
-An inversion, then four hundred repetitions whose flip angle sweeps.
-:class:`~blochsim.simulators.MRFSimulator` takes arrays of tissue properties,
-so the whole table is one call: three extended phase graph runs rather than
-sixteen thousand.
+The sequence is an inversion followed by 400 repetitions whose flip angle
+follows a sinusoidal schedule. :class:`~blochsim.simulators.MRFSimulator`
+accepts tensor-valued tissue properties, so the three classes are simulated in
+one call, as three EPG runs instead of one per voxel.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 318-333
+.. GENERATED FROM PYTHON SOURCE LINES 246-261
 
 .. code-block:: Python
 
@@ -320,34 +273,45 @@ sixteen thousand.
 
  .. code-block:: none
 
-    3 classes x 400 frames in 0.3s -> (3, 400)
+    3 classes x 400 frames in 0.1s -> (3, 400)
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 334-345
+.. GENERATED FROM PYTHON SOURCE LINES 262-270
 
 Whole-brain volume
 ------------------
 
-A voxel that is part grey matter and part CSF produces the sum of what the
-two do, weighted by how much of each is present -- not the signal of their
-averaged relaxation times. The mixing happens on the signals, which is one
-matrix product against the per-class evolutions.
+A voxel that is part grey matter and part CSF produces the sum of the two
+fingerprints, weighted by the tissue fractions, and not the fingerprint of the
+averaged relaxation times. An inversion-prepared train is strongly nonlinear in
+T1, so averaging the parameters before simulating is wrong in every voxel that
+is not pure. The mixing is a matrix product over the class fingerprints:
 
-Averaging the parameters and simulating once is wrong wherever a voxel is not
-pure: an inversion-prepared train is markedly nonlinear in T1.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 346-356
+.. GENERATED FROM PYTHON SOURCE LINES 270-273
 
 .. code-block:: Python
 
     weights = (fractions * class_M0).to(per_class.dtype)
     series = (weights @ per_class) * brain[..., None]
 
-    # The maps that go out as ground truth are the mixture averages, which is what
-    # a single-compartment fit of this data could return at best.
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 274-276
+
+The ground-truth maps are the fraction-weighted averages of the class
+parameters, the best result a single-compartment fit of this data can return:
+
+.. GENERATED FROM PYTHON SOURCE LINES 276-281
+
+.. code-block:: Python
+
     share = occupancy.clamp_min(1e-6)
     truth_M0 = (fractions @ class_M0) * brain
     truth_T1 = (fractions @ class_T1) / share * brain
@@ -360,17 +324,18 @@ pure: an inversion-prepared train is markedly nonlinear in T1.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 357-364
+.. GENERATED FROM PYTHON SOURCE LINES 282-290
 
 Coils and encoding
 ------------------
 
-Birdcage sensitivities from SigPy, then one spiral arm per frame rotated by
-the golden angle. A single arm of 768 samples against a 128 x 128 matrix is
-twenty-one-fold undersampled, which is how MRF is run.
+The coil sensitivities are birdcage maps from SigPy. Each frame is encoded by
+one spiral arm, rotated by the golden angle from the previous frame, so
+consecutive frames sample different parts of k-space. One arm of 768 samples
+on a 128 x 128 matrix is about 21-fold undersampled, as in fingerprinting
+acquisitions.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 365-398
+.. GENERATED FROM PYTHON SOURCE LINES 290-311
 
 .. code-block:: Python
 
@@ -389,12 +354,6 @@ twenty-one-fold undersampled, which is how MRF is run.
         for frame in range(FRAMES)
     ]
 
-    coil_series = (sensitivities[:, None] * series.movedim(-1, 0)[None]).to(device)
-
-    kspace = torch.stack(
-        [arms[frame].op(coil_series[:, frame][None])[0] for frame in range(FRAMES)]
-    )
-
 
 
 
@@ -403,19 +362,24 @@ twenty-one-fold undersampled, which is how MRF is run.
 
  .. code-block:: none
 
-    400 arms built in 2.5s
-    forward NUFFT 2.1s -> (400, 8, 768)
+    400 arms built in 4.0s
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 399-402
+.. GENERATED FROM PYTHON SOURCE LINES 312-313
 
-Eight birdcage sensitivities, and one spiral arm per frame rotated so that
-consecutive frames sample different parts of k-space.
+The forward transform takes the coil-weighted image of each frame to k-space:
 
+.. GENERATED FROM PYTHON SOURCE LINES 313-351
 
-.. GENERATED FROM PYTHON SOURCE LINES 403-435
+.. code-block:: Python
+
+    coil_series = (sensitivities[:, None] * series.movedim(-1, 0)[None]).to(device)
+
+    kspace = torch.stack(
+        [arms[frame].op(coil_series[:, frame][None])[0] for frame in range(FRAMES)]
+    )
 
 
 
@@ -426,19 +390,27 @@ consecutive frames sample different parts of k-space.
    :class: sphx-glr-single-img
 
 
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+    forward NUFFT 3.7s -> (400, 8, 768)
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 436-442
+
+.. GENERATED FROM PYTHON SOURCE LINES 352-360
+
+The figure shows four of the eight coil sensitivities and three of the arms.
 
 Reconstruction
 --------------
 
-Adjoint per frame, then a sensitivity-weighted coil combination, available
-here because the maps are known. A real pipeline would estimate them.
+Each frame is reconstructed by the adjoint transform, and the channels are
+combined with the sensitivity maps. The maps are known here; a real pipeline
+estimates them.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 443-458
+.. GENERATED FROM PYTHON SOURCE LINES 360-375
 
 .. code-block:: Python
 
@@ -459,78 +431,59 @@ here because the maps are known. A real pipeline would estimate them.
 
  .. code-block:: none
 
-    adjoint and combine 2.2s
+    adjoint and combine 3.7s
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 459-466
+.. GENERATED FROM PYTHON SOURCE LINES 376-384
 
 Data pair
 ---------
 
-Each frame is one spiral arm, so the aliasing is worse than the signal. What
-survives is the time course, and that is what a fingerprinting reconstruction
-reads.
+The training input is the undersampled series ``combined`` and the target is the
+fully sampled series ``series``. Each frame contains one spiral arm, so
+aliasing in a single frame exceeds the signal, but the time course of each
+voxel retains the fingerprint, which is what a fingerprinting reconstruction
+uses. Both series are normalised to their peak magnitude.
+
+.. GENERATED FROM PYTHON SOURCE LINES 384-431
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 467-491
 
 
-
+.. image-sg:: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_003.png
+   :alt: frame 0, frame 200, one voxel
+   :srcset: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_003.png
+   :class: sphx-glr-single-img
 
 
 .. rst-class:: sphx-glr-script-out
 
  .. code-block:: none
 
-    per-frame error inside the brain :  60.3%
-    time-course agreement            : median 0.894, tenth percentile 0.715
+    per-frame error inside the brain :  60.7%
+    time-course agreement            : median 0.893, tenth percentile 0.714
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 492-497
+.. GENERATED FROM PYTHON SOURCE LINES 432-438
 
-Fifty percent wrong frame by frame, and the fingerprints still line up above
-0.86 for nine voxels in ten. That gap is the premise of the method: the input
-is what the scanner gives, artefacts and all, and the target is the curve
-underneath.
+The printed error is the mean per-frame error in the brain. The time-course
+agreement is the normalised inner product between the undersampled and the
+fully sampled time course of each voxel.
 
+Ground-truth maps
+-----------------
 
-.. GENERATED FROM PYTHON SOURCE LINES 500-503
-
-Phantom summary
----------------
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 504-516
-
-
-
-
-.. image-sg:: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_003.png
-   :alt: 01 synthetic data
-   :srcset: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_003.png
-   :class: sphx-glr-single-img
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 517-520
-
-Inspecting the pair
--------------------
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 521-551
+.. GENERATED FROM PYTHON SOURCE LINES 438-451
 
 
 
 
 .. image-sg:: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_004.png
-   :alt: frame 0, frame 200, one voxel
+   :alt: 01 synthetic data
    :srcset: /generated/autoexamples/05-misc/images/sphx_glr_01-synthetic-data_004.png
    :class: sphx-glr-single-img
 
@@ -538,17 +491,19 @@ Inspecting the pair
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 552-559
+.. GENERATED FROM PYTHON SOURCE LINES 452-461
 
-Exporting
----------
+The T1 and T2 maps use perceptually uniform colormaps, one per relaxation
+parameter, so that a T1 map is never read as a T2 map [1]_.
 
-The pair, the ground truth, the segmentation, and the schedule and trajectory
-that produced them. It goes to a temporary directory here so that a
-documentation build leaves no archive behind.
+Export
+------
 
+The archive holds the pair, the ground-truth maps, the segmentation, and the
+schedule and trajectory that produced them. It is written to a temporary
+directory so that a documentation build leaves no file behind.
 
-.. GENERATED FROM PYTHON SOURCE LINES 560-582
+.. GENERATED FROM PYTHON SOURCE LINES 461-483
 
 .. code-block:: Python
 
@@ -585,27 +540,47 @@ documentation build leaves no archive behind.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 583-597
+.. GENERATED FROM PYTHON SOURCE LINES 484-518
 
-Command-line use
-----------------
+Command-line interface
+----------------------
 
-Everything above is fixed except three inputs:
+To turn the script into a tool, replace three inputs and keep the rest:
 
-* **a T1-weighted NIfTI**, which replaces the torchio subject and is what
-  the segmentation was trained on, so the CSF map stops being the weak one;
-* **a matfile** carrying the trajectory and the flip-angle schedule, read
-  instead of the spiral and the sine generated here;
-* **an output path**, replacing the temporary directory.
+- the torchio subject by a T1-weighted NIfTI, which is the contrast the
+  segmentation was trained on;
+- the generated spiral and sine schedule by a trajectory and a flip-angle
+  schedule read from a matfile;
+- the temporary directory by an output path.
 
-The tissue table is the one thing decided rather than read. A relaxometry
-protocol on the same subject would fill it from data, which is what the
-parameter-inference notebooks do.
+The tissue table is the one input that is chosen and not read.
+
+References
+----------
+
+.. [1] Fuderer M, et al. Color-map recommendation for MR relaxometry maps.
+       Magn Reson Med 93(2):490-506 (2025).
+
+Specification
+-------------
+
+What this Application did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   Build a synthetic MR fingerprinting training pair. Load an IXI subject with
+   torchio and segment it into grey matter, white matter and CSF with
+   deepmriprep. Give each class M0, T1 and T2 from a table at 1.5 T and
+   simulate one inversion-prepared MRFSimulator train of 400 frames per class.
+   Mix the fingerprints by tissue fraction, weight by 8 birdcage coils, encode
+   with one golden-angle spiral arm per frame (mri-nufft), then reconstruct
+   each frame by the adjoint and a coil combination. Report the per-frame error
+   and the time-course agreement, and save the pair with the maps and schedule.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (2 minutes 0.542 seconds)
+   **Total running time of the script:** (2 minutes 13.721 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_05-misc_01-synthetic-data.py:

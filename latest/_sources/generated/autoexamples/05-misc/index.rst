@@ -2,10 +2,11 @@
 
 .. _sphx_glr_generated_autoexamples_05-misc:
 
-Miscellaneous
--------------
+Applications: synthetic data
+----------------------------
 
-Everything that is a pipeline rather than a demonstration of a call.
+Build training data for a learned reconstruction: what a scanner would measure
+from a fingerprinting exam, and the maps it came from.
 
 
 .. raw:: html
@@ -21,7 +22,7 @@ Everything that is a pipeline rather than a demonstration of a call.
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to build a training pair end to end: what a scanner would measure from a fingerprinting exam, and the maps it came from.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In this Application you build a training pair for MR fingerprinting: the undersampled image series a scanner would produce, the fully sampled series it approximates, and the T1, T2 and M0 maps they come from.">
 
 .. only:: html
 
@@ -32,7 +33,7 @@ Everything that is a pipeline rather than a demonstration of a call.
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Synthetic MR fingerprinting</div>
+      <div class="sphx-glr-thumbnail-title">Synthetic fingerprint</div>
     </div>
 
 

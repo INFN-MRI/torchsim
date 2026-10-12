@@ -18,99 +18,56 @@
 .. _sphx_glr_generated_autoexamples_04-model-based-imaging_01-linear-subspace.py:
 
 
-==============================================
-Reconstructing in a linear subspace
-==============================================
+=========================
+Subspace reconstruction
+=========================
 
-The scope of this notebook is to reconstruct one undersampled radial multi-echo
-spin echo three ways -- gridding, conjugate gradients per echo, and a linear
-subspace -- and to report what each costs and gets wrong.
+In this Application you reconstruct one undersampled radial multi-echo spin
+echo three ways: by gridding, by conjugate gradients on each echo separately,
+and in a linear subspace. You compare what each costs and how far its T2 map is
+from the truth.
 
-A quantitative scan is usually reconstructed twice: once per contrast, then
-voxel by voxel into maps. The first step recovers eight images when the answer
-is two numbers per voxel, each from its own undersampled data. A subspace
-removes both problems without leaving linear algebra: the signals span far
-fewer directions than there are contrasts, so reconstructing the coefficients
-shortens the unknown and ties the echoes together.
+Quantitative maps are usually obtained in two steps: reconstruct one image per
+contrast, then fit the maps voxel by voxel. The first step recovers eight images
+from undersampled data although each voxel has two unknowns. The multi-echo
+signals span far fewer directions than there are echoes, so you can
+reconstruct the coefficients along those directions instead. This reduces the
+number of unknowns and couples the echoes.
 
-.. GENERATED FROM PYTHON SOURCE LINES 19-23
+Prerequisites: Course lessons :doc:`../01-framework/01-first-simulation`.
+
+.. GENERATED FROM PYTHON SOURCE LINES 22-27
 
 .. colab-link::
    :needs_gpu: 1
 
-   !pip install blochsim brainweb-dl cmap mri-nufft[finufft,cufinufft] deepinv
+   !pip install blochsim matplotlib brainweb-dl cmap mri-nufft[finufft,cufinufft] deepinv
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 25-30
+.. GENERATED FROM PYTHON SOURCE LINES 29-36
 
-The phantom is BrainWeb's, reached through ``brainweb-dl``: ``get_mri``
-fetches the fuzzy tissue memberships, and the package ships the table of
-relaxation times that goes with them -- which is what the two standard
-library imports read.
+Setup
+-----
 
+blochsim simulates the signal. The radial trajectory and the non-uniform
+Fourier transform come from mri-nufft, and the linear solver and the
+:class:`~deepinv.physics.LinearPhysics` base class come from deepinv. Anything
+that provides ``A`` and ``A_adjoint`` works with the solver.
 
-.. GENERATED FROM PYTHON SOURCE LINES 31-123
-
-.. code-block:: Python
-
-
-    import csv
-    from pathlib import Path
-
-    import brainweb_dl
-    from brainweb_dl import get_mri
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 124-134
-
-The Fourier encoding is not BlochSim's and never will be. ``mri-nufft``
-supplies the radial trajectory and the non-uniform transform that plays it;
-``deepinv`` supplies the linear solver a Gauss-Newton step hands its
-linearized problem to, and the :class:`~deepinv.physics.LinearPhysics` base
-class the encoding operator below is written against.
-
-That base class is the whole of the adapter: anything exposing ``A`` and
-``A_adjoint`` composes with what BlochSim supplies, so the operator built a
-few cells down is the only glue this integration needs.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 135-141
-
-.. code-block:: Python
-
-    import mrinufft
-    from deepinv.optim.linear import least_squares
-    from deepinv.physics import LinearPhysics
-    from mrinufft.operators.subspace import MRISubspace
-    from mrinufft.trajectories import initialize_2D_radial
-
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 142-146
-
-From BlochSim: the sequence, the estimator the contrast-then-fit routes
-need, and :attr:`~blochsim.Subspace.modes`, which hands the temporal
-basis to mri-nufft in the layout its subspace operator reads.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 147-156
+.. GENERATED FROM PYTHON SOURCE LINES 36-99
 
 .. code-block:: Python
 
     import time
 
+    import mrinufft
     import numpy as np
     import torch
+
+    from deepinv.optim.linear import least_squares
+    from deepinv.physics import LinearPhysics
+    from mrinufft.operators.subspace import MRISubspace
+    from mrinufft.trajectories import initialize_2D_radial
 
     from blochsim.estimators import DictionaryMatcher
     from blochsim.simulators import MultiEchoSimulator
@@ -123,13 +80,12 @@ basis to mri-nufft in the layout its subspace operator reads.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 157-160
+.. GENERATED FROM PYTHON SOURCE LINES 100-102
 
-What the experiment is: a 96 matrix read as 16 radial spokes per echo, eight
-echoes, and the rank the temporal basis is fitted at.
+The experiment is a 96 x 96 matrix read as 16 radial spokes of 192 samples per
+echo, with 8 echoes. The temporal basis has rank 3.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 161-180
+.. GENERATED FROM PYTHON SOURCE LINES 102-114
 
 .. code-block:: Python
 
@@ -139,15 +95,8 @@ echoes, and the rank the temporal basis is fitted at.
     SAMPLES = 192
     RANK = 3
 
-    # deepinv's ``gamma`` is the *inverse* regularization weight: it minimizes
-    # ``||Ax - y||^2 + (1/gamma)||x||^2``, so a smaller number regularizes harder.
-    # Each route below was given the best of a short sweep -- a few lines, not
-    # shown -- so what the table compares is routes rather than tuning effort.
-    CONTRAST_GAMMA = 0.01
-    SUBSPACE_GAMMA = 10.0
-
-    # The GPU transform is used when it is both installed and usable; the
-    # simulation follows it, so the images and the operator meet on one device.
+    # The GPU transform is used when it is installed and usable, and the simulation
+    # follows it so that the images and the operator are on one device.
     on_gpu = torch.cuda.is_available() and mrinufft.check_backend("cufinufft")
     device = "cuda" if on_gpu else "cpu"
     backend = "cufinufft" if on_gpu else "finufft"
@@ -159,37 +108,35 @@ echoes, and the rank the temporal basis is fitted at.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 181-189
+.. GENERATED FROM PYTHON SOURCE LINES 115-122
 
 Phantom
 -------
 
-BrainWeb subject 0, slice 90, resampled to the matrix reconstructed here.
-BrainWeb publishes fuzzy memberships rather than labels, so weighting the
-tabulated relaxation times by them gives a T2 map whose mixed voxels sit
-between the pure ones, known everywhere.
+The phantom is BrainWeb subject 0, slice 90, resampled to 96 x 96. BrainWeb
+gives fuzzy tissue memberships, not labels. Weighting the tabulated T2 and
+proton density of each tissue by its membership gives maps in which mixed
+voxels lie between the pure tissues, known everywhere.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 190-227
-
-
+.. GENERATED FROM PYTHON SOURCE LINES 122-155
 
 
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 228-235
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 156-162
 
 Sequence and sampling
 ---------------------
 
-A multi-echo spin echo on a golden-angle radial trajectory that rotates
-between echoes. Sixteen spokes per echo across a 96-sample matrix is roughly
-ninefold undersampled, which is where the routes disagree.
+The sequence is a multi-echo spin echo with eight echoes from 10 to 150 ms.
+Simulating it over the T2 map gives one image per echo, scaled by the proton
+density:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 236-291
+.. GENERATED FROM PYTHON SOURCE LINES 162-170
 
 .. code-block:: Python
 
@@ -200,6 +147,28 @@ ninefold undersampled, which is where the routes disagree.
         torch.as_tensor(simulator.to(device).simulate(T2=T2_true)).to(torch.complex64)
         * M0_true.to(torch.complex64)[..., None]
     )
+
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 171-179
+
+Each echo is sampled by 16 radial spokes, rotated by the golden angle from the
+echo before, so the echoes together cover k-space more evenly than any one
+does. 16 spokes across a 96-sample matrix is about ninefold undersampling,
+which is where the reconstructions differ.
+
+The encoding operator maps the images of all echoes to k-space, with one
+trajectory per echo. It wraps mri-nufft, as a real pipeline would wrap its own
+trajectory, density compensation and coils:
+
+.. GENERATED FROM PYTHON SOURCE LINES 179-209
+
+.. code-block:: Python
 
     trajectory = (
         initialize_2D_radial(SPOKES * ECHOES, SAMPLES, tilt="golden")
@@ -215,12 +184,7 @@ ninefold undersampled, which is where the routes disagree.
 
 
     class RadialEncoding(LinearPhysics):
-        """``(batch, echoes, x, y)`` images to k-space, one trajectory per echo.
-
-        This is the whole of ``P F C`` for this experiment, and none of it is
-        BlochSim's: it wraps mri-nufft, which is what a real pipeline would do
-        with its own trajectory, its own density compensation and its own coils.
-        """
+        """``(batch, echoes, x, y)`` images to k-space, one trajectory per echo."""
 
         def A(self, x, **kwargs):
             return torch.stack(
@@ -236,9 +200,22 @@ ninefold undersampled, which is where the routes disagree.
     encoding = RadialEncoding()
     kspace = encoding.A(images.movedim(-1, 0)[None])
 
-    # The k-space is scaled so the adjoint image peaks at one. Every damping
-    # weight below is then a number about the model rather than about the
-    # receiver gain, which is what makes one choice of it transferable.
+
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 210-212
+
+Scale the k-space so that the gridded image peaks at one. The damping weights
+below are then numbers about the model, not about the receiver gain:
+
+.. GENERATED FROM PYTHON SOURCE LINES 212-243
+
+.. code-block:: Python
+
     gridded = encoding.A_adjoint(kspace)[0].movedim(0, -1)
     scale = float(gridded.abs().max())
     kspace, gridded = kspace / scale, gridded / scale
@@ -246,6 +223,11 @@ ninefold undersampled, which is where the routes disagree.
 
 
 
+
+.. image-sg:: /generated/autoexamples/04-model-based-imaging/images/sphx_glr_01-linear-subspace_001.png
+   :alt: ground truth, proton density, 3 of 8 echoes
+   :srcset: /generated/autoexamples/04-model-based-imaging/images/sphx_glr_01-linear-subspace_001.png
+   :class: sphx-glr-single-img
 
 
 .. rst-class:: sphx-glr-script-out
@@ -257,46 +239,26 @@ ninefold undersampled, which is where the routes disagree.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 292-297
+.. GENERATED FROM PYTHON SOURCE LINES 244-254
 
-The maps on the left are what every route recovers; the spokes on the right
-are all that is measured of them, one echo's worth, rotated by the golden
-angle from the echo before, so the echoes together cover k-space more evenly
-than any one does.
+The maps are what every reconstruction below recovers, and the spokes are all
+that is measured of them.
 
+Temporal basis
+--------------
 
-.. GENERATED FROM PYTHON SOURCE LINES 298-333
+A :class:`~blochsim.DictionaryMatcher` serves every reconstruction below as
+the estimator that turns images into T2. Giving ``fit`` a rank fits a temporal
+basis to the simulated signals of a grid of T2 values. Three directions hold
+essentially all of an eight-echo exponential decay:
 
-
-
-
-.. image-sg:: /generated/autoexamples/04-model-based-imaging/images/sphx_glr_01-linear-subspace_001.png
-   :alt: ground truth, proton density, 16 spokes per echo, 3 of 8 shown
-   :srcset: /generated/autoexamples/04-model-based-imaging/images/sphx_glr_01-linear-subspace_001.png
-   :class: sphx-glr-single-img
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 334-343
-
-Estimator and subspace basis
-----------------------------
-
-One :class:`~blochsim.DictionaryMatcher` states the problem and serves every
-route. Asking it for a rank fits a temporal basis to the training signals;
-that basis is what the subspace reconstruction is given, and the coefficients
-it returns come back to the same mapping. Three directions hold essentially
-all of an eight-echo exponential, read off the basis rather than assumed.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 344-376
+.. GENERATED FROM PYTHON SOURCE LINES 254-279
 
 .. code-block:: Python
 
     grid = torch.linspace(20.0, 400.0, 500)
     mapping = DictionaryMatcher(simulator).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
+    print(f"rank {RANK} of {ECHOES} keeps {mapping.subspace.retained:.6f} of the signal")
 
 
 
@@ -307,38 +269,43 @@ all of an eight-echo exponential, read off the basis rather than assumed.
 
  .. code-block:: none
 
-    rank 3 of 8 contrasts keeps 0.999992
+    rank 3 of 8 keeps 0.999992 of the signal
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 377-385
+.. GENERATED FROM PYTHON SOURCE LINES 280-293
 
-Contrast-by-contrast reconstruction
+:attr:`~blochsim.Subspace.retained` is the fraction of the signal the basis
+keeps, so you choose the rank from it before projecting anything.
+
+Reconstruction contrast by contrast
 -----------------------------------
 
-The conventional pipeline in its two usual forms. Gridding is the adjoint
-with a density weighting: one pass, smooth, biased. Iterating instead solves
-each echo's own least-squares problem, as CG-SENSE does. Both are given the
-same estimator afterwards, so what is compared is the reconstruction.
+The conventional route has two forms. Gridding is the adjoint with density
+compensation: one pass, smooth, biased. The iterative form solves a
+least-squares problem for each echo, as CG-SENSE does. Both are followed by
+the same estimator, so the comparison is between reconstructions.
 
+deepinv's ``gamma`` is the inverse regularization weight, so a smaller value
+regularizes harder. Each route was given the best of a short sweep, not shown.
 
-.. GENERATED FROM PYTHON SOURCE LINES 386-410
+.. GENERATED FROM PYTHON SOURCE LINES 293-317
 
 .. code-block:: Python
 
 
     adjoint = mapping(gridded)["T2"]
 
-    images = least_squares(
+    images_cg = least_squares(
         A=encoding.A,
         AT=encoding.A_adjoint,
         y=kspace,
-        gamma=CONTRAST_GAMMA,
+        gamma=0.01,
         solver="CG",
         max_iter=40,
     )
-    separate = mapping(images[0].movedim(0, -1))["T2"]
+    separate = mapping(images_cg[0].movedim(0, -1))["T2"]
 
 
 
@@ -349,8 +316,8 @@ same estimator afterwards, so what is compared is the reconstruction.
 
  .. code-block:: none
 
-    adjoint per echo             0.0s   T2 error  30.6 ms (20.6%)
-    iterative per echo           0.1s   T2 error  30.7 ms (20.6%)
+    adjoint per echo       0.0s   T2 error  30.6 ms (20.6%)
+    iterative per echo     0.1s   T2 error  30.7 ms (20.6%)
 
     tensor([[ 52.7455,  61.8838,  58.0762,  ...,  96.9138,  74.0681,  63.4068],
             [ 47.4148,  49.6994,  50.4609,  ...,  91.5832,  66.4529,  77.8758],
@@ -362,31 +329,28 @@ same estimator afterwards, so what is compared is the reconstruction.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 411-416
+.. GENERATED FROM PYTHON SOURCE LINES 318-336
 
-Iterating gains nothing here. Sixteen spokes of 192 samples is 3072
-measurements against 9216 unknowns, so each echo alone is underdetermined and
-there is nothing to converge to that the density-weighted adjoint has not
-found. Accuracy comes from a constraint across the echoes.
+Iterating does not reduce the error. 16 spokes of 192 samples are 3072 measurements per
+echo against 9216 unknowns, so each echo alone is underdetermined, and the
+density-weighted adjoint is already the solution the iterations converge to.
+The gain has to come from a constraint across the echoes.
 
+Reconstruction in the subspace
+------------------------------
 
-.. GENERATED FROM PYTHON SOURCE LINES 419-432
+Expressing the signal in the temporal basis reduces the unknowns from 8 echo
+images to 3 coefficient images and couples the echoes. The problem has 24576
+measurements for 27648 unknowns. It remains linear, so it has a single minimum
+and needs no starting guess.
 
-Subspace reconstruction
------------------------
+``mapping.subspace.modes`` gives the basis in the layout mri-nufft's subspace
+operator reads. One operator over the trajectories of all echoes replaces the
+per-echo operators, and the solver is the one the gridded route used.
+``from_coefficients`` turns the coefficients into maps without projecting a
+second time.
 
-The signal is written in the basis fitted above and three coefficients are
-reconstructed instead of eight images. The echoes now constrain one another
-and the problem is 3072 measurements against 3456 unknowns. It stays linear,
-so there are no local minima and no starting guess.
-
-``mapping.subspace.modes`` hands the basis over in the layout mri-nufft's
-subspace operator reads, and ``from_coefficients`` takes what comes back
-without projecting a second time. The solver is the one the first route used,
-on a different operator, and one operator now serves every echo.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 433-456
+.. GENERATED FROM PYTHON SOURCE LINES 336-359
 
 .. code-block:: Python
 
@@ -400,7 +364,7 @@ on a different operator, and one operator now serves every echo.
         A=projected.op,
         AT=projected.adj_op,
         y=kspace[:, :, None, :],
-        gamma=SUBSPACE_GAMMA,
+        gamma=10.0,
         solver="CG",
         max_iter=40,
     )
@@ -415,29 +379,31 @@ on a different operator, and one operator now serves every echo.
 
  .. code-block:: none
 
-    iterative subspace           0.3s   T2 error  16.9 ms (13.1%)
+    iterative subspace     0.4s   T2 error  16.9 ms (13.1%)
 
     tensor([[ 51.9840,  73.3066,  67.2144,  ...,  86.2525,  60.3607,  35.2305],
             [ 20.0000,  23.0461,  30.6613,  ..., 102.2445,  41.3226,  70.2605],
             [ 30.6613,  66.4529, 121.2826,  ...,  64.1683,  65.6914,  71.7836],
             ...,
             [ 33.7074,  20.0000, 105.2906,  ...,  76.3527,  50.4609,  81.6834],
-            [ 82.4449, 161.6433, 157.0742,  ..., 110.6212,  50.4609,  38.2766],
+            [ 82.4449, 160.8818, 157.0742,  ..., 110.6212,  50.4609,  38.2766],
             [ 93.1062,  84.7295, 110.6212,  ..., 115.9519, 205.0501, 119.7595]])
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 457-464
+.. GENERATED FROM PYTHON SOURCE LINES 360-369
 
 Maps
 ----
 
-The subspace is the only route that constrains the echoes against one
-another, and it lands at about half the error of either per-contrast route,
-in a fraction of the time.
+The T2 maps use a perceptually uniform colormap reserved for T2, so that a T2
+map is never read as a T1 map [1]_. The subspace is the only route that
+constrains the echoes against one another. On the CPU run of this page its mean
+error is about 55% of either per-echo route's (13% against 21%), at a longer
+reconstruction time than the iterative per-echo route; the timings printed above
+depend on the hardware.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 465-491
+.. GENERATED FROM PYTHON SOURCE LINES 369-394
 
 
 
@@ -451,29 +417,48 @@ in a fraction of the time.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 492-508
+.. GENERATED FROM PYTHON SOURCE LINES 395-430
 
 Limits
 ------
 
-Eight echoes of a single exponential is the case a subspace is best at: three
-directions hold essentially all of the signal.
+Eight echoes of one exponential is the case a subspace handles best: three
+directions hold essentially all of the signal. Two things break that.
 
-Two things break that. A phase-modulated signal -- a balanced steady state
-through a field map, a fingerprinting train with varying RF phase -- needs
-tens of components, and the coefficient problem stops being smaller than the
-image problem. A model with several parameters has no small basis at all,
-because the basis must span the product of the ranges. Both cases put the
-model inside the operator, which is the nonlinear route.
+- A phase-modulated signal, such as a balanced steady state through a field
+  map or a fingerprinting train with varying RF phase, needs tens of
+  components. The coefficient problem then is no smaller than the image
+  problem.
+- A model with several parameters has no small basis, because the basis must
+  span the product of their ranges.
 
-The rank is not a guess: :attr:`~blochsim.Subspace.retained` says what a
-basis keeps before anything is projected through it.
+Both cases require the model inside the operator. That is the nonlinear route of
+:doc:`02-nonlinear-inversion`.
 
+References
+----------
+
+.. [1] Fuderer M, et al. Color-map recommendation for MR relaxometry maps.
+       Magn Reson Med 93(2):490-506 (2025).
+
+Specification
+-------------
+
+What this Application did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, mri-nufft and deepinv, simulate an 8-echo multi-echo spin
+   echo (TE 10 to 150 ms) on a BrainWeb T2 phantom of 96 x 96 voxels. Sample
+   each echo with 16 golden-angle radial spokes of 192 samples. Fit a rank-3
+   temporal basis with a DictionaryMatcher and check how much signal it keeps.
+   Reconstruct T2 by gridding, by CG per echo, and by CG on the subspace
+   coefficients. Report the time and the mean T2 error over the brain of each.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.689 seconds)
+   **Total running time of the script:** (0 minutes 2.036 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_04-model-based-imaging_01-linear-subspace.py:

@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -200,11 +200,21 @@
         </ul>
         <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="generated/autoexamples/index.html">Examples</a></li>
@@ -533,18 +543,15 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Homepage</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim">BlochSim</a><ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-it-provides">What it provides</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-it-works">How it works</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#shipped-sequences">Shipped sequences</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#custom-signal-models">Custom signal models</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#estimation-design-and-reconstruction">Estimation, design and reconstruction</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#basic-usage">Basic usage</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#implementing-a-sequence">Implementing a sequence</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development">Development</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#related-projects">Related projects</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#learn-more">Learn more</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-to-cite">How to cite</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#license">License</a></li>
 </ul>
-</li>
-</ul>
-
             </nav>
         </div>
     </div>
@@ -557,106 +564,182 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="homepage">
 <h1>Homepage<a class="headerlink" href="#homepage" title="Link to this heading">#</a></h1>
-<picture>
+<p><a class="reference external" href="https://github.com/pulserver/blochsim/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/pulserver/blochsim/actions/workflows/test.yml/badge.svg" /></a>
+<a class="reference external" href="https://pypi.org/project/blochsim/"><img alt="PyPI" src="https://img.shields.io/pypi/v/blochsim.svg" /></a>
+<a class="reference external" href="https://pulserver.github.io/blochsim/latest/"><img alt="Docs" src="https://img.shields.io/badge/docs-latest-2b76ad" /></a>
+<a class="reference external" href="https://github.com/pulserver/blochsim/blob/main/LICENSE.txt"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-ffbd28.svg" /></a></p>
+<p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/pulserver/blochsim/main/docs/_static/blochsim-logo-dark.svg">
-  <img alt="blochsim" src="https://raw.githubusercontent.com/pulserver/blochsim/main/docs/_static/blochsim-logo.svg" width="420">
-</picture>
+  <img src="https://raw.githubusercontent.com/pulserver/blochsim/main/docs/_static/blochsim-logo.svg" alt="blochsim" width="420">
+</picture></p>
+<p>blochsim simulates the signal of an MR sequence, and its derivatives, in
+PyTorch. You describe your sequence once, as a <strong>signal model</strong>, and blochsim
+plays it over thousands of voxels at once, on the CPU or on an NVIDIA GPU.</p>
+<p>Everything else is written once against that signal model: the derivative
+with respect to tissue that a parameter fit needs, the derivative with
+respect to the sequence that a protocol design needs, dictionary matching,
+model-based reconstruction, and reading the same sequence back from a Pulseq
+file or from the stream a scanner sends. Change the signal model and all of
+them follow.</p>
+<p>blochsim ships signal models for 26 sequences (spin echo, FSE, SPGR, bSSFP,
+MPRAGE, MP2RAGE, MR fingerprinting, Look-Locker, CEST, ASL…), so for most
+work you write nothing at all.</p>
+<section id="how-it-works">
+<h2>How it works<a class="headerlink" href="#how-it-works" title="Link to this heading">#</a></h2>
+<ol class="arabic simple">
+<li><p>You construct a simulator with the sequence parameters: the flip angles,
+the TR, the echo spacing.</p></li>
+<li><p>You call <code class="docutils literal notranslate"><span class="pre">simulate</span></code> with the tissue: T1, T2, and any other property you
+care about (B1, off-resonance, diffusion, a second exchanging pool…).
+A scalar is one voxel, an array is a map, and every voxel runs at once.
+Naming a property is what turns its physics on; what you leave out costs
+nothing.</p></li>
+<li><p>blochsim turns the sequence into a stream of events (pulses, delays,
+readouts) once, and plays it through an extended phase graph (EPG)
+state machine, compiled for the CPU and the GPU. Calling again with new
+numbers reuses the stream.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">jacobian</span></code> gives you the derivative with respect to tissue properties,
+which is what a fit descends. The flip angles are ordinary PyTorch
+tensors, so <code class="docutils literal notranslate"><span class="pre">loss.backward()</span></code> gives you the derivative with respect to the
+sequence, which is what a design optimizes.</p></li>
+</ol>
 </section>
-<section class="tex2jax_ignore mathjax_ignore" id="blochsim">
-<h1>BlochSim<a class="headerlink" href="#blochsim" title="Link to this heading">#</a></h1>
-<p>BlochSim is a differentiable MR signal simulator built on PyTorch, with
-closed-form signal models and a fused extended-phase-graph (EPG) state machine
-for pulse trains.</p>
-<p><a class="reference external" href="https://codecov.io/gh/pulserver/blochsim"><img alt="codecov" src="https://codecov.io/gh/pulserver/blochsim/graph/badge.svg?token=l8xhIVORYm" /></a>
-<a class="reference external" href="https://github.com/pulserver/blochsim/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/pulserver/blochsim/actions/workflows/test.yml/badge.svg" /></a>
-<a class="reference external" href="https://github.com/pulserver/blochsim/actions/workflows/lint.yml"><img alt="Lint" src="https://github.com/pulserver/blochsim/actions/workflows/lint.yml/badge.svg" /></a>
-<a class="reference external" href="https://github.com/pulserver/blochsim/blob/main/LICENSE.txt"><img alt="License" src="https://img.shields.io/github/license/pulserver/blochsim" /></a>
-<a class="reference external" href="https://pulserver.github.io/blochsim/"><img alt="Documentation" src="https://github.com/pulserver/blochsim/actions/workflows/docs.yml/badge.svg" /></a>
-<a class="reference external" href="https://pypi.org/project/blochsim"><img alt="PyPi" src="https://img.shields.io/pypi/v/blochsim" /></a>
-<a class="reference external" href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" /></a>
-<a class="reference external" href="https://python.org"><img alt="PythonVersion" src="https://img.shields.io/badge/Python-%3E=3.10-blue?logo=python&amp;logoColor=white" /></a></p>
-<section id="what-it-provides">
-<h2>What it provides<a class="headerlink" href="#what-it-provides" title="Link to this heading">#</a></h2>
+<section id="shipped-sequences">
+<h2>Shipped sequences<a class="headerlink" href="#shipped-sequences" title="Link to this heading">#</a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">FSESimulator</span>
+
+<span class="n">fse</span> <span class="o">=</span> <span class="n">FSESimulator</span><span class="p">(</span><span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">3000.0</span><span class="p">)</span>  <span class="c1"># ms</span>
+<span class="n">flip</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">48</span><span class="p">,),</span> <span class="mf">180.0</span><span class="p">)</span>  <span class="c1"># degrees, one per echo</span>
+
+<span class="n">signal</span> <span class="o">=</span> <span class="n">fse</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">80.0</span><span class="p">,</span> <span class="mf">110.0</span><span class="p">,</span> <span class="mf">2000.0</span><span class="p">]))</span>
+<span class="n">signal</span><span class="p">,</span> <span class="n">dT2</span> <span class="o">=</span> <span class="n">fse</span><span class="o">.</span><span class="n">jacobian</span><span class="p">(</span><span class="s2">"T2"</span><span class="p">,</span> <span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="mf">80.0</span><span class="p">)</span>
+</pre></div>
+</div>
 <ul class="simple">
-<li><p>Vectorized signal simulation over voxels/atoms on CPU and NVIDIA GPU.</p></li>
-<li><p>Forward-mode Jacobians with respect to tissue properties and reverse-mode
-differentiation with respect to sequence parameters.</p></li>
-<li><p>Closed-form models and an EPG state machine with relaxation,
-off-resonance, diffusion, flow, transmit variation, magnetization transfer
-and chemical exchange.</p></li>
-<li><p>Parameter inference, model-based reconstruction and sequence-design tools
-written against the same simulator interface.</p></li>
-<li><p>Pulseq and MRD sequence-description input, so the same sequence model can be
-used offline or driven from a scanner stream.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">signal</span></code> has one row per voxel and one column per echo.</p></li>
+<li><p>Times are in milliseconds and angles in degrees, as on a scanner console.</p></li>
+<li><p>Every shipped simulator also has a function form for one-off calls, such
+as <code class="docutils literal notranslate"><span class="pre">blochsim.fse_sim(...)</span></code>.</p></li>
+</ul>
+</section>
+<section id="custom-signal-models">
+<h2>Custom signal models<a class="headerlink" href="#custom-signal-models" title="Link to this heading">#</a></h2>
+<p>A signal model is two things:</p>
+<ul class="simple">
+<li><p><strong>handlers</strong>: which operator plays each kind of event. A sequence has
+excitations, readouts and waits, and may have refocusing, inversion and
+saturation pulses. Each is a class attribute; one you do not set keeps
+its default (a wait is <code class="docutils literal notranslate"><span class="pre">Delay</span></code>: free precession, no RF and no ADC).</p></li>
+<li><p><strong>layout</strong>: the events of one repetition, in order, written with those
+handlers. It is the sequence’s default description: the constructor builds
+it from the parameters you pass. <code class="docutils literal notranslate"><span class="pre">from_pulseq</span></code> and <code class="docutils literal notranslate"><span class="pre">from_description</span></code> read
+the description from a <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file or a scanner’s stream instead, and skip
+the layout.</p></li>
+</ul>
+<p>Here is saturation recovery, which saturates, waits, and reads what came back:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <span class="n">Delay</span><span class="p">,</span> <span class="n">Excitation</span><span class="p">,</span> <span class="n">SPGRReadout</span><span class="p">,</span> <span class="n">Spoil</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">Simulator</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">Saturate</span><span class="p">(</span><span class="n">flip_rad</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">phase_rad</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A 90-degree pulse, then a spoiler."""</span>
+    <span class="k">return</span> <span class="n">Excitation</span><span class="p">(</span><span class="n">flip_rad</span><span class="p">,</span> <span class="n">phase_rad</span><span class="p">)</span> <span class="o">@</span> <span class="n">Spoil</span><span class="p">()</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">SaturationRecovery</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
+    <span class="n">saturation</span> <span class="o">=</span> <span class="n">Saturate</span>  <span class="c1"># plays a saturation pulse</span>
+    <span class="n">excitation</span> <span class="o">=</span> <span class="n">Excitation</span>  <span class="c1"># plays an excitation pulse</span>
+    <span class="n">delay</span> <span class="o">=</span> <span class="n">Delay</span>  <span class="c1"># plays a wait</span>
+    <span class="n">readout</span> <span class="o">=</span> <span class="n">SPGRReadout</span>  <span class="c1"># plays a readout, then spoils</span>
+    <span class="n">states</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">layout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">TS</span><span class="p">,</span> <span class="n">flip</span><span class="p">):</span>
+        <span class="n">angle</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">flip</span><span class="p">))</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">wait</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">TS</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-3</span><span class="p">:</span>  <span class="c1"># ms to s</span>
+            <span class="n">parts</span> <span class="o">+=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">operators</span><span class="o">.</span><span class="n">saturation</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">operators</span><span class="o">.</span><span class="n">delay</span><span class="p">(</span><span class="n">wait</span><span class="p">)]</span>
+            <span class="n">parts</span> <span class="o">+=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">operators</span><span class="o">.</span><span class="n">excitation</span><span class="p">(</span><span class="n">angle</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">operators</span><span class="o">.</span><span class="n">readout</span><span class="p">()]</span>
+        <span class="k">return</span> <span class="n">parts</span>
+
+
+<span class="n">recovery</span> <span class="o">=</span> <span class="n">SaturationRecovery</span><span class="p">(</span><span class="n">TS</span><span class="o">=</span><span class="p">[</span><span class="mf">100.0</span><span class="p">,</span> <span class="mf">400.0</span><span class="p">,</span> <span class="mf">1600.0</span><span class="p">],</span> <span class="n">flip</span><span class="o">=</span><span class="mf">10.0</span><span class="p">)</span>
+<span class="n">signal</span> <span class="o">=</span> <span class="n">recovery</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="mf">830.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="mf">80.0</span><span class="p">)</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">layout</span></code> uses only <code class="docutils literal notranslate"><span class="pre">self.operators</span></code>, the handlers you set. You never
+write timestamps; each operator holds the timeline for as long as it lasts.</p></li>
+<li><p>The handlers play the events whichever way the description came, so a
+sequence read with <code class="docutils literal notranslate"><span class="pre">from_pulseq</span></code> or <code class="docutils literal notranslate"><span class="pre">from_description</span></code> still uses them. A Pulseq file or a scanner stream carries pulses, ADC
+windows and timing but no gradients, so the handlers are where the
+dephasing lives: the readout decides whether the states are spoiled,
+wound on or rewound.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&#64;</span></code> composes two operators into one, so a pulse and its spoiler read as the
+single thing you would name.</p></li>
+</ul>
+<p>Derivatives, devices, extra physics and the estimators all work on your class
+without another line.</p>
+</section>
+<section id="estimation-design-and-reconstruction">
+<h2>Estimation, design and reconstruction<a class="headerlink" href="#estimation-design-and-reconstruction" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><strong>Parameter maps</strong>: dictionary matching, lookup tables, nonlinear least
+squares and PERK, all built from a simulator (<code class="docutils literal notranslate"><span class="pre">blochsim.estimators</span></code>).</p></li>
+<li><p><strong>Model-based reconstruction</strong>: the signal model as a factor of the forward
+operator, linear (a subspace) or nonlinear (<code class="docutils literal notranslate"><span class="pre">blochsim.recon</span></code>).</p></li>
+<li><p><strong>Sequence design</strong>: flip angles, timings or RF pulse samples optimized by
+gradient descent through the simulation, within the scanner’s limits
+(<code class="docutils literal notranslate"><span class="pre">blochsim.SequenceDesign</span></code>).</p></li>
+<li><p><strong>Sequences you did not write</strong>: <code class="docutils literal notranslate"><span class="pre">Simulator.from_pulseq</span></code> reads a <code class="docutils literal notranslate"><span class="pre">.seq</span></code>
+file, and <code class="docutils literal notranslate"><span class="pre">Simulator.from_description</span></code> reads the sequence description
+pulserver streams from a running scanner.</p></li>
 </ul>
 </section>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">#</a></h2>
-<p>Install the PyTorch build appropriate for your machine first, then BlochSim:</p>
+<p>Install the PyTorch build for your machine first, then blochsim:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>blochsim
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"blochsim[cu12]"</span><span class="w">  </span><span class="c1"># the GPU kernels, beside a CUDA 12 build of torch</span>
 </pre></div>
 </div>
-<p>See the <a class="reference external" href="https://pulserver.github.io/blochsim/latest/user_guide.html">User Guide</a>
-for CPU, CUDA, macOS and source-build details.</p>
+<p>The <a class="reference external" href="https://pulserver.github.io/blochsim/latest/user_guide.html">User guide</a>
+covers CUDA versions, macOS and building from source.</p>
 </section>
-<section id="basic-usage">
-<h2>Basic usage<a class="headerlink" href="#basic-usage" title="Link to this heading">#</a></h2>
-<p>The central public object is a <code class="docutils literal notranslate"><span class="pre">Simulator</span></code>. A shipped simulator fixes the
-sequence; <code class="docutils literal notranslate"><span class="pre">simulate</span></code> and <code class="docutils literal notranslate"><span class="pre">jacobian</span></code> evaluate it over the tissue you pass:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MRFSimulator</span>
-
-<span class="n">flip</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
-    <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">5.0</span><span class="p">,</span> <span class="mf">60.0</span><span class="p">,</span> <span class="mi">300</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">60.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mi">300</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="mi">280</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">))</span>
-<span class="p">)</span>
-<span class="n">sequence</span> <span class="o">=</span> <span class="n">MRFSimulator</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">10.0</span><span class="p">)</span>
-
-<span class="n">signal</span><span class="p">,</span> <span class="n">jacobian</span> <span class="o">=</span> <span class="n">sequence</span><span class="o">.</span><span class="n">jacobian</span><span class="p">(</span>
-    <span class="p">(</span><span class="s2">"T1"</span><span class="p">,</span> <span class="s2">"T2"</span><span class="p">),</span>
-    <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span>
-    <span class="n">T2</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span>
-<span class="p">)</span>
+<section id="learn-more">
+<h2>Learn more<a class="headerlink" href="#learn-more" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://pulserver.github.io/blochsim/latest/generated/autoexamples/index.html">Course</a>:
+four lessons, from a shipped simulator to your own signal model and your own
+operator.</p></li>
+<li><p>Tours: parameter mapping, sequence design, model-based reconstruction and
+synthetic data, each a complete worked example.</p></li>
+<li><p><a class="reference external" href="https://pulserver.github.io/blochsim/latest/">Documentation</a>, for the
+physics and every API detail.</p></li>
+</ul>
+</section>
+<section id="how-to-cite">
+<h2>How to cite<a class="headerlink" href="#how-to-cite" title="Link to this heading">#</a></h2>
+<p>If you use blochsim in your work, please cite:</p>
+<div class="highlight-bibtex notranslate"><div class="highlight"><pre><span></span><span class="nc">@inproceedings</span><span class="p">{</span><span class="nl">cencini2025pulserver</span><span class="p">,</span>
+<span class="w">  </span><span class="na">title</span><span class="w">     </span><span class="p">=</span><span class="w"> </span><span class="s">{Pulserver: an open-source Pulseq-based client-server framework for vendor agnostic, interactive {MR} sequence design}</span><span class="p">,</span>
+<span class="w">  </span><span class="na">author</span><span class="w">    </span><span class="p">=</span><span class="w"> </span><span class="s">{Cencini, Matteo and Wang, Kang and Huang, Sherry and Schulte, Rolf F. and Sprenger, Tim</span>
+<span class="s">               and Noll, Douglas C. and Tosetti, Michela and Nielsen, Jon-Fredrik}</span><span class="p">,</span>
+<span class="w">  </span><span class="na">booktitle</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">{Proceedings of the International Society for Magnetic Resonance in Medicine}</span><span class="p">,</span>
+<span class="w">  </span><span class="na">pages</span><span class="w">     </span><span class="p">=</span><span class="w"> </span><span class="s">{1275}</span><span class="p">,</span>
+<span class="w">  </span><span class="na">year</span><span class="w">      </span><span class="p">=</span><span class="w"> </span><span class="s">{2025}</span>
+<span class="p">}</span>
 </pre></div>
 </div>
-<p>Functional helpers such as <code class="docutils literal notranslate"><span class="pre">blochsim.mrf_sim(...)</span></code> remain convenient for
-one-off calls. The class interface is the canonical one for reusable models,
-parameter estimation, reconstruction, optimization, Pulseq input and scanner
-descriptions.</p>
+<p>blochsim’s state machine is the extended phase graph formalism
+(<a class="reference external" href="https://doi.org/10.1002/jmri.24619">Weigel, 2015</a>); please cite it too.</p>
 </section>
-<section id="implementing-a-sequence">
-<h2>Implementing a sequence<a class="headerlink" href="#implementing-a-sequence" title="Link to this heading">#</a></h2>
-<p>Subclass <code class="docutils literal notranslate"><span class="pre">blochsim.model.Simulator</span></code>. For a state-machine sequence you define:</p>
-<ol class="arabic simple">
-<li><p>the event handlers that say how excitation, refocusing, inversion,
-saturation, readout and delay commands are interpreted; and</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">layout()</span></code>, which returns those operators in order for offline use.</p></li>
-</ol>
-<p>An incoming Pulseq/MRD description already supplies the layout, so
-<code class="docutils literal notranslate"><span class="pre">Simulator.from_description()</span></code> replays its commands through the same handlers.
-That gives offline design and scanner-driven simulation one public sequence
-abstraction.</p>
-<p>The executable
-<a class="reference external" href="https://pulserver.github.io/blochsim/latest/generated/autoexamples/01-framework/index.html">Framework course</a>
-walks through the complete pattern.</p>
-</section>
-<section id="development">
-<h2>Development<a class="headerlink" href="#development" title="Link to this heading">#</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>git@github.com:pulserver/blochsim
-<span class="nb">cd</span><span class="w"> </span>blochsim
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[dev]"</span>
-pre-commit<span class="w"> </span>install
-</pre></div>
-</div>
-<p>The install compiles the two C++ kernels, so it needs a C++17 compiler. CMake
-and Ninja arrive as build-time dependencies. <code class="docutils literal notranslate"><span class="pre">pre-commit</span></code> runs the same Ruff
-format/lint checks as CI.</p>
-</section>
-<section id="related-projects">
-<h2>Related projects<a class="headerlink" href="#related-projects" title="Link to this heading">#</a></h2>
-<p>The documentation’s
-<a class="reference external" href="https://pulserver.github.io/blochsim/latest/misc/related.html">Related projects</a>
-page places BlochSim among other MR simulators and links to the relevant
-packages and literature.</p>
+<section id="license">
+<h2>License<a class="headerlink" href="#license" title="Link to this heading">#</a></h2>
+<p>MIT, see <a class="reference external" href="https://github.com/pulserver/blochsim/blob/main/LICENSE.txt">LICENSE</a>.</p>
 <div class="toctree-wrapper compound">
 </div>
 </section>
@@ -700,18 +783,15 @@ packages and literature.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Homepage</a></li>
-<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim">BlochSim</a><ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-it-provides">What it provides</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-it-works">How it works</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#shipped-sequences">Shipped sequences</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#custom-signal-models">Custom signal models</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#estimation-design-and-reconstruction">Estimation, design and reconstruction</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#basic-usage">Basic usage</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#implementing-a-sequence">Implementing a sequence</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development">Development</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#related-projects">Related projects</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#learn-more">Learn more</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#how-to-cite">How to cite</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#license">License</a></li>
 </ul>
-</li>
-</ul>
-
   </nav></div>
 
 </div></div>

@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Reconstructing in a linear subspace &#8212; BlochSim Documentation</title>
+    <title>Subspace reconstruction &#8212; BlochSim Documentation</title>
   
   
   
@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -68,7 +68,7 @@
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
     <link rel="next" title="Nonlinear inversion from k-space" href="02-nonlinear-inversion.html" />
-    <link rel="prev" title="Model-based imaging" href="index.html" />
+    <link rel="prev" title="Applications: model-based reconstruction" href="index.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
@@ -522,7 +532,7 @@
               
 
 <div id="jb-print-docs-body" class="onlyprint">
-    <h1>Reconstructing in a linear subspace</h1>
+    <h1>Subspace reconstruction</h1>
     <!-- Table of contents -->
     <div id="print-main-content">
         <div id="jb-print-toc">
@@ -532,13 +542,16 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#setup">Setup</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phantom">Phantom</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence-and-sampling">Sequence and sampling</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#estimator-and-subspace-basis">Estimator and subspace basis</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#contrast-by-contrast-reconstruction">Contrast-by-contrast reconstruction</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#subspace-reconstruction">Subspace reconstruction</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#temporal-basis">Temporal basis</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reconstruction-contrast-by-contrast">Reconstruction contrast by contrast</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reconstruction-in-the-subspace">Reconstruction in the subspace</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#limits">Limits</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
             </nav>
         </div>
@@ -555,91 +568,72 @@
 <p><a class="reference internal" href="#sphx-glr-download-generated-autoexamples-04-model-based-imaging-01-linear-subspace-py"><span class="std std-ref">Go to the end</span></a>
 to download the full example code or to run this example in your browser via Binder.</p>
 </div>
-<section class="sphx-glr-example-title" id="reconstructing-in-a-linear-subspace">
-<span id="sphx-glr-generated-autoexamples-04-model-based-imaging-01-linear-subspace-py"></span><h1>Reconstructing in a linear subspace<a class="headerlink" href="#reconstructing-in-a-linear-subspace" title="Link to this heading">#</a></h1>
-<p>The scope of this notebook is to reconstruct one undersampled radial multi-echo
-spin echo three ways – gridding, conjugate gradients per echo, and a linear
-subspace – and to report what each costs and gets wrong.</p>
-<p>A quantitative scan is usually reconstructed twice: once per contrast, then
-voxel by voxel into maps. The first step recovers eight images when the answer
-is two numbers per voxel, each from its own undersampled data. A subspace
-removes both problems without leaving linear algebra: the signals span far
-fewer directions than there are contrasts, so reconstructing the coefficients
-shortens the unknown and ties the echoes together.</p>
+<section class="sphx-glr-example-title" id="subspace-reconstruction">
+<span id="sphx-glr-generated-autoexamples-04-model-based-imaging-01-linear-subspace-py"></span><h1>Subspace reconstruction<a class="headerlink" href="#subspace-reconstruction" title="Link to this heading">#</a></h1>
+<p>In this Application you reconstruct one undersampled radial multi-echo spin
+echo three ways: by gridding, by conjugate gradients on each echo separately,
+and in a linear subspace. You compare what each costs and how far its T2 map is
+from the truth.</p>
+<p>Quantitative maps are usually obtained in two steps: reconstruct one image per
+contrast, then fit the maps voxel by voxel. The first step recovers eight images
+from undersampled data although each voxel has two unknowns. The multi-echo
+signals span far fewer directions than there are echoes, so you can
+reconstruct the coefficients along those directions instead. This reduces the
+number of unknowns and couples the echoes.</p>
+<p>Prerequisites: Course lessons <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
 <div class="colab-button">
             <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/examples/generated/autoexamples/04-model-based-imaging/01-linear-subspace.ipynb" target="_blank">
                 <img src="https://colab.research.google.com/assets/colab-badge.svg"
                 alt="Open In Colab"/>
             </a>
         </div>
-        <p>The phantom is BrainWeb’s, reached through <code class="docutils literal notranslate"><span class="pre">brainweb-dl</span></code>: <code class="docutils literal notranslate"><span class="pre">get_mri</span></code>
-fetches the fuzzy tissue memberships, and the package ships the table of
-relaxation times that goes with them – which is what the two standard
-library imports read.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">csv</span><span class="w">
-</span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-class reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="pathlib.Path"><span class="n">Path</span></a><span class="w">
+        <section id="setup">
+<h2>Setup<a class="headerlink" href="#setup" title="Link to this heading">#</a></h2>
+<p>blochsim simulates the signal. The radial trajectory and the non-uniform
+Fourier transform come from mri-nufft, and the linear solver and the
+<code class="xref py py-class docutils literal notranslate"><span class="pre">LinearPhysics</span></code> base class come from deepinv. Anything
+that provides <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> works with the solver.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">time</span><span class="w">
 </span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">brainweb_dl</span><span class="w">
-</span><span class="kn">from</span><span class="w"> </span><span class="nn">brainweb_dl</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_mri</span><span class="w">
-</span></pre></div></div>
-<p>The Fourier encoding is not BlochSim’s and never will be. <code class="docutils literal notranslate"><span class="pre">mri-nufft</span></code>
-supplies the radial trajectory and the non-uniform transform that plays it;
-<code class="docutils literal notranslate"><span class="pre">deepinv</span></code> supplies the linear solver a Gauss-Newton step hands its
-linearized problem to, and the <code class="xref py py-class docutils literal notranslate"><span class="pre">LinearPhysics</span></code> base
-class the encoding operator below is written against.</p>
-<p>That base class is the whole of the adapter: anything exposing <code class="docutils literal notranslate"><span class="pre">A</span></code> and
-<code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> composes with what BlochSim supplies, so the operator built a
-few cells down is the only glue this integration needs.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">mrinufft</span><span class="w">
+</span><span class="kn">import</span><span class="w"> </span><span class="nn">mrinufft</span><span class="w">
+</span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
+</span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
+</span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">deepinv</span><span class="nn">.</span><span class="nn">optim</span><span class="nn">.</span><span class="nn">linear</span><span class="w"> </span><span class="kn">import</span> <span class="n">least_squares</span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">deepinv</span><span class="nn">.</span><span class="nn">physics</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearPhysics</span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">mrinufft</span><span class="nn">.</span><span class="nn">operators</span><span class="nn">.</span><span class="nn">subspace</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-abc sphx-glr-backref-type-py-class reference external" href="https://docs.python.org/3/library/abc.html#abc.ABC" title="abc.ABC"><span class="n">MRISubspace</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">mrinufft</span><span class="nn">.</span><span class="nn">trajectories</span><span class="w"> </span><span class="kn">import</span> <span class="n">initialize_2D_radial</span><span class="w">
-</span></pre></div></div>
-<p>From BlochSim: the sequence, the estimator the contrast-then-fit routes
-need, and <a class="reference internal" href="../../blochsim.Subspace.html#blochsim.Subspace.modes" title="blochsim.Subspace.modes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">modes</span></code></a>, which hands the temporal
-basis to mri-nufft in the layout its subspace operator reads.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">time</span><span class="w">
-</span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
 </span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">MultiEchoSimulator</span></a><span class="w">
 </span></pre></div></div>
-<p>What the experiment is: a 96 matrix read as 16 radial spokes per echo, eight
-echoes, and the rank the temporal basis is fitted at.</p>
+<p>The experiment is a 96 x 96 matrix read as 16 radial spokes of 192 samples per
+echo, with 8 echoes. The temporal basis has rank 3.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SIZE</span></a> <span class="o">=</span> <span class="mi">96</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a> <span class="o">=</span> <span class="mi">8</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SPOKES</span></a> <span class="o">=</span> <span class="mi">16</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SAMPLES</span></a> <span class="o">=</span> <span class="mi">192</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">RANK</span></a> <span class="o">=</span> <span class="mi">3</span><span class="w">
 </span><span class="w">
-</span><span class="c1"># deepinv's ``gamma`` is the *inverse* regularization weight: it minimizes</span><span class="w">
-</span><span class="c1"># ``||Ax - y||^2 + (1/gamma)||x||^2``, so a smaller number regularizes harder.</span><span class="w">
-</span><span class="c1"># Each route below was given the best of a short sweep -- a few lines, not</span><span class="w">
-</span><span class="c1"># shown -- so what the table compares is routes rather than tuning effort.</span><span class="w">
-</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">CONTRAST_GAMMA</span></a> <span class="o">=</span> <span class="mf">0.01</span><span class="w">
-</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">SUBSPACE_GAMMA</span></a> <span class="o">=</span> <span class="mf">10.0</span><span class="w">
-</span><span class="w">
-</span><span class="c1"># The GPU transform is used when it is both installed and usable; the</span><span class="w">
-</span><span class="c1"># simulation follows it, so the images and the operator meet on one device.</span><span class="w">
+</span><span class="c1"># The GPU transform is used when it is installed and usable, and the simulation</span><span class="w">
+</span><span class="c1"># follows it so that the images and the operator are on one device.</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="bool"><span class="n">on_gpu</span></a> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">(</span><span class="p">)</span> <span class="ow">and</span> <span class="n">mrinufft</span><span class="o">.</span><span class="n">check_backend</span><span class="p">(</span><span class="s2">&quot;</span><span class="s2">cufinufft</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="str"><span class="n">device</span></a> <span class="o">=</span> <span class="s2">&quot;</span><span class="s2">cuda</span><span class="s2">&quot;</span> <span class="k">if</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="bool"><span class="n">on_gpu</span></a> <span class="k">else</span> <span class="s2">&quot;</span><span class="s2">cpu</span><span class="s2">&quot;</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="str"><span class="n">backend</span></a> <span class="o">=</span> <span class="s2">&quot;</span><span class="s2">cufinufft</span><span class="s2">&quot;</span> <span class="k">if</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="bool"><span class="n">on_gpu</span></a> <span class="k">else</span> <span class="s2">&quot;</span><span class="s2">finufft</span><span class="s2">&quot;</span><span class="w">
 </span></pre></div></div>
+</section>
 <section id="phantom">
 <h2>Phantom<a class="headerlink" href="#phantom" title="Link to this heading">#</a></h2>
-<p>BrainWeb subject 0, slice 90, resampled to the matrix reconstructed here.
-BrainWeb publishes fuzzy memberships rather than labels, so weighting the
-tabulated relaxation times by them gives a T2 map whose mixed voxels sit
-between the pure ones, known everywhere.</p>
+<p>The phantom is BrainWeb subject 0, slice 90, resampled to 96 x 96. BrainWeb
+gives fuzzy tissue memberships, not labels. Weighting the tabulated T2 and
+proton density of each tissue by its membership gives maps in which mixed
+voxels lie between the pure tissues, known everywhere.</p>
 </section>
 <section id="sequence-and-sampling">
 <h2>Sequence and sampling<a class="headerlink" href="#sequence-and-sampling" title="Link to this heading">#</a></h2>
-<p>A multi-echo spin echo on a golden-angle radial trajectory that rotates
-between echoes. Sixteen spokes per echo across a 96-sample matrix is roughly
-ninefold undersampled, which is where the routes disagree.</p>
+<p>The sequence is a multi-echo spin echo with eight echoes from 10 to 150 ms.
+Simulating it over the T2 map gives one image per echo, scaled by the proton
+density:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">TE</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">150.0</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">simulator</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">MultiEchoSimulator</span></a><span class="p">(</span><span class="n">TE</span><span class="o">=</span><span class="n">TE</span><span class="p">)</span><span class="w">
 </span><span class="w">
@@ -647,8 +641,15 @@ ninefold undersampled, which is where the routes disagree.</p>
 </span>    <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.to" title="blochsim.model.Simulator.to"><span class="n">simulator</span><span class="o">.</span><span class="n">to</span></a><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="str"><span class="n">device</span></a><span class="p">)</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">T2</span><span class="o">=</span><span class="n">T2_true</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span><span class="w">
 </span>    <span class="o">*</span> <span class="n">M0_true</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">complex64</span><span class="p">)</span><span class="p">[</span><span class="o">.</span><span class="o">.</span><span class="o">.</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span><span class="w">
 </span><span class="p">)</span><span class="w">
-</span><span class="w">
-</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">trajectory</span></a> <span class="o">=</span> <span class="p">(</span><span class="w">
+</span></pre></div></div>
+<p>Each echo is sampled by 16 radial spokes, rotated by the golden angle from the
+echo before, so the echoes together cover k-space more evenly than any one
+does. 16 spokes across a 96-sample matrix is about ninefold undersampling,
+which is where the reconstructions differ.</p>
+<p>The encoding operator maps the images of all echoes to k-space, with one
+trajectory per echo. It wraps mri-nufft, as a real pipeline would wrap its own
+trajectory, density compensation and coils:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">trajectory</span></a> <span class="o">=</span> <span class="p">(</span><span class="w">
 </span>    <span class="n">initialize_2D_radial</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SPOKES</span></a> <span class="o">*</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SAMPLES</span></a><span class="p">,</span> <span class="n">tilt</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">golden</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span>    <span class="o">.</span><span class="n">astype</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-attribute reference external" href="https://numpy.org/doc/stable/reference/arrays.scalars.html#numpy.float32" title="numpy.float32"><span class="n">np</span><span class="o">.</span><span class="n">float32</span></a><span class="p">)</span><span class="w">
 </span>    <span class="o">.</span><span class="n">reshape</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SPOKES</span></a> <span class="o">*</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SAMPLES</span></a><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="w">
@@ -662,12 +663,7 @@ ninefold undersampled, which is where the routes disagree.</p>
 </span><span class="w">
 </span><span class="w">
 </span><span class="k">class</span><span class="w"> </span><span class="nc">RadialEncoding</span><span class="p">(</span><span class="n">LinearPhysics</span><span class="p">)</span><span class="p">:</span><span class="w">
-</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;``(batch, echoes, x, y)`` images to k-space, one trajectory per echo.
-
-    This is the whole of ``P F C`` for this experiment, and none of it is
-    BlochSim's: it wraps mri-nufft, which is what a real pipeline would do
-    with its own trajectory, its own density compensation and its own coils.
-    &quot;&quot;&quot;</span><span class="w">
+</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;``(batch, echoes, x, y)`` images to k-space, one trajectory per echo.&quot;&quot;&quot;</span><span class="w">
 </span><span class="w">
 </span>    <span class="k">def</span><span class="w"> </span><span class="nf">A</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="o">*</span><span class="o">*</span><span class="n">kwargs</span><span class="p">)</span><span class="p">:</span><span class="w">
 </span>        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="w">
@@ -682,56 +678,57 @@ ninefold undersampled, which is where the routes disagree.</p>
 </span><span class="w">
 </span><span class="n">encoding</span> <span class="o">=</span> <span class="n">RadialEncoding</span><span class="p">(</span><span class="p">)</span><span class="w">
 </span><span class="n">kspace</span> <span class="o">=</span> <span class="n">encoding</span><span class="o">.</span><span class="n">A</span><span class="p">(</span><span class="n">images</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span><span class="p">)</span><span class="w">
-</span><span class="w">
-</span><span class="c1"># The k-space is scaled so the adjoint image peaks at one. Every damping</span><span class="w">
-</span><span class="c1"># weight below is then a number about the model rather than about the</span><span class="w">
-</span><span class="c1"># receiver gain, which is what makes one choice of it transferable.</span><span class="w">
-</span><span class="n">gridded</span> <span class="o">=</span> <span class="n">encoding</span><span class="o">.</span><span class="n">A_adjoint</span><span class="p">(</span><span class="n">kspace</span><span class="p">)</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<p>Scale the k-space so that the gridded image peaks at one. The damping weights
+below are then numbers about the model, not about the receiver gain:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">gridded</span> <span class="o">=</span> <span class="n">encoding</span><span class="o">.</span><span class="n">A_adjoint</span><span class="p">(</span><span class="n">kspace</span><span class="p">)</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">scale</span></a> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">gridded</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="w">
 </span><span class="n">kspace</span><span class="p">,</span> <span class="n">gridded</span> <span class="o">=</span> <span class="n">kspace</span> <span class="o">/</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">scale</span></a><span class="p">,</span> <span class="n">gridded</span> <span class="o">/</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">scale</span></a><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>16 spokes per echo: 9x undersampled
+<img src="../../../_images/sphx_glr_01-linear-subspace_001.png" srcset="../../../_images/sphx_glr_01-linear-subspace_001.png" alt="ground truth, proton density, 3 of 8 echoes" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>16 spokes per echo: 9x undersampled
 </pre></div>
 </div>
-<p>The maps on the left are what every route recovers; the spokes on the right
-are all that is measured of them, one echo’s worth, rotated by the golden
-angle from the echo before, so the echoes together cover k-space more evenly
-than any one does.</p>
-<img src="../../../_images/sphx_glr_01-linear-subspace_001.png" srcset="../../../_images/sphx_glr_01-linear-subspace_001.png" alt="ground truth, proton density, 16 spokes per echo, 3 of 8 shown" class = "sphx-glr-single-img"/></section>
-<section id="estimator-and-subspace-basis">
-<h2>Estimator and subspace basis<a class="headerlink" href="#estimator-and-subspace-basis" title="Link to this heading">#</a></h2>
-<p>One <a class="reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a> states the problem and serves every
-route. Asking it for a rank fits a temporal basis to the training signals;
-that basis is what the subspace reconstruction is given, and the coefficients
-it returns come back to the same mapping. Three directions hold essentially
-all of an eight-echo exponential, read off the basis rather than assumed.</p>
+<p>The maps are what every reconstruction below recovers, and the spokes are all
+that is measured of them.</p>
+</section>
+<section id="temporal-basis">
+<h2>Temporal basis<a class="headerlink" href="#temporal-basis" title="Link to this heading">#</a></h2>
+<p>A <a class="reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a> serves every reconstruction below as
+the estimator that turns images into T2. Giving <code class="docutils literal notranslate"><span class="pre">fit</span></code> a rank fits a temporal
+basis to the simulated signals of a grid of T2 values. Three directions hold
+essentially all of an eight-echo exponential decay:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">grid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">20.0</span><span class="p">,</span> <span class="mf">400.0</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">mapping</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">simulator</span></a><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T2</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">RANK</span></a><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="s2">rank </span><span class="si">{</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">RANK</span></a><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="si">}</span><span class="s2"> keeps </span><span class="si">{</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-property reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.subspace" title="blochsim.Estimator.subspace"><span class="n">mapping</span><span class="o">.</span><span class="n">subspace</span><span class="o">.</span><span class="n">retained</span></a><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2"> of the signal</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>rank 3 of 8 contrasts keeps 0.999992
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>rank 3 of 8 keeps 0.999992 of the signal
 </pre></div>
 </div>
+<p><a class="reference internal" href="../../blochsim.Subspace.html#blochsim.Subspace.retained" title="blochsim.Subspace.retained"><code class="xref py py-attr docutils literal notranslate"><span class="pre">retained</span></code></a> is the fraction of the signal the basis
+keeps, so you choose the rank from it before projecting anything.</p>
 </section>
-<section id="contrast-by-contrast-reconstruction">
-<h2>Contrast-by-contrast reconstruction<a class="headerlink" href="#contrast-by-contrast-reconstruction" title="Link to this heading">#</a></h2>
-<p>The conventional pipeline in its two usual forms. Gridding is the adjoint
-with a density weighting: one pass, smooth, biased. Iterating instead solves
-each echo’s own least-squares problem, as CG-SENSE does. Both are given the
-same estimator afterwards, so what is compared is the reconstruction.</p>
+<section id="reconstruction-contrast-by-contrast">
+<h2>Reconstruction contrast by contrast<a class="headerlink" href="#reconstruction-contrast-by-contrast" title="Link to this heading">#</a></h2>
+<p>The conventional route has two forms. Gridding is the adjoint with density
+compensation: one pass, smooth, biased. The iterative form solves a
+least-squares problem for each echo, as CG-SENSE does. Both are followed by
+the same estimator, so the comparison is between reconstructions.</p>
+<p>deepinv’s <code class="docutils literal notranslate"><span class="pre">gamma</span></code> is the inverse regularization weight, so a smaller value
+regularizes harder. Each route was given the best of a short sweep, not shown.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">adjoint</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">mapping</span></a><span class="p">(</span><span class="n">gridded</span><span class="p">)</span><span class="p">[</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">]</span><span class="w">
 </span><span class="w">
-</span><span class="n">images</span> <span class="o">=</span> <span class="n">least_squares</span><span class="p">(</span><span class="w">
+</span><span class="n">images_cg</span> <span class="o">=</span> <span class="n">least_squares</span><span class="p">(</span><span class="w">
 </span>    <span class="n">A</span><span class="o">=</span><span class="n">encoding</span><span class="o">.</span><span class="n">A</span><span class="p">,</span><span class="w">
 </span>    <span class="n">AT</span><span class="o">=</span><span class="n">encoding</span><span class="o">.</span><span class="n">A_adjoint</span><span class="p">,</span><span class="w">
 </span>    <span class="n">y</span><span class="o">=</span><span class="n">kspace</span><span class="p">,</span><span class="w">
-</span>    <span class="n">gamma</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">CONTRAST_GAMMA</span></a><span class="p">,</span><span class="w">
+</span>    <span class="n">gamma</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span><span class="w">
 </span>    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">CG</span><span class="s2">&quot;</span><span class="p">,</span><span class="w">
 </span>    <span class="n">max_iter</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span><span class="w">
 </span><span class="p">)</span><span class="w">
-</span><span class="n">separate</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">mapping</span></a><span class="p">(</span><span class="n">images</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">)</span><span class="p">[</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">]</span><span class="w">
+</span><span class="n">separate</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">mapping</span></a><span class="p">(</span><span class="n">images_cg</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">)</span><span class="p">[</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">]</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>adjoint per echo             0.0s   T2 error  30.6 ms (20.6%)
-iterative per echo           0.1s   T2 error  30.7 ms (20.6%)
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>adjoint per echo       0.0s   T2 error  30.6 ms (20.6%)
+iterative per echo     0.1s   T2 error  30.7 ms (20.6%)
 
 tensor([[ 52.7455,  61.8838,  58.0762,  ...,  96.9138,  74.0681,  63.4068],
         [ 47.4148,  49.6994,  50.4609,  ...,  91.5832,  66.4529,  77.8758],
@@ -742,21 +739,22 @@ tensor([[ 52.7455,  61.8838,  58.0762,  ...,  96.9138,  74.0681,  63.4068],
         [122.0441, 109.0982, 111.3828,  ...,  82.4449,  82.4449,  69.4990]])
 </pre></div>
 </div>
-<p>Iterating gains nothing here. Sixteen spokes of 192 samples is 3072
-measurements against 9216 unknowns, so each echo alone is underdetermined and
-there is nothing to converge to that the density-weighted adjoint has not
-found. Accuracy comes from a constraint across the echoes.</p>
+<p>Iterating does not reduce the error. 16 spokes of 192 samples are 3072 measurements per
+echo against 9216 unknowns, so each echo alone is underdetermined, and the
+density-weighted adjoint is already the solution the iterations converge to.
+The gain has to come from a constraint across the echoes.</p>
 </section>
-<section id="subspace-reconstruction">
-<h2>Subspace reconstruction<a class="headerlink" href="#subspace-reconstruction" title="Link to this heading">#</a></h2>
-<p>The signal is written in the basis fitted above and three coefficients are
-reconstructed instead of eight images. The echoes now constrain one another
-and the problem is 3072 measurements against 3456 unknowns. It stays linear,
-so there are no local minima and no starting guess.</p>
-<p><code class="docutils literal notranslate"><span class="pre">mapping.subspace.modes</span></code> hands the basis over in the layout mri-nufft’s
-subspace operator reads, and <code class="docutils literal notranslate"><span class="pre">from_coefficients</span></code> takes what comes back
-without projecting a second time. The solver is the one the first route used,
-on a different operator, and one operator now serves every echo.</p>
+<section id="reconstruction-in-the-subspace">
+<h2>Reconstruction in the subspace<a class="headerlink" href="#reconstruction-in-the-subspace" title="Link to this heading">#</a></h2>
+<p>Expressing the signal in the temporal basis reduces the unknowns from 8 echo
+images to 3 coefficient images and couples the echoes. The problem has 24576
+measurements for 27648 unknowns. It remains linear, so it has a single minimum
+and needs no starting guess.</p>
+<p><code class="docutils literal notranslate"><span class="pre">mapping.subspace.modes</span></code> gives the basis in the layout mri-nufft’s subspace
+operator reads. One operator over the trajectories of all echoes replaces the
+per-echo operators, and the solver is the one the gridded route used.
+<code class="docutils literal notranslate"><span class="pre">from_coefficients</span></code> turns the coefficients into maps without projecting a
+second time.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">flat</span> <span class="o">=</span> <a class="sphx-glr-backref-module-abc sphx-glr-backref-type-py-class reference external" href="https://docs.python.org/3/library/abc.html#abc.ABC" title="abc.ABC"><span class="n">build</span></a><span class="p">(</span><span class="w">
 </span>    <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">trajectory</span></a><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span><span class="p">,</span> <span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SIZE</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SIZE</span></a><span class="p">)</span><span class="p">,</span> <span class="n">n_coils</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">squeeze_dims</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="w">
 </span><span class="p">)</span><span class="w">
@@ -767,43 +765,70 @@ on a different operator, and one operator now serves every echo.</p>
 </span>    <span class="n">A</span><span class="o">=</span><span class="n">projected</span><span class="o">.</span><span class="n">op</span><span class="p">,</span><span class="w">
 </span>    <span class="n">AT</span><span class="o">=</span><span class="n">projected</span><span class="o">.</span><span class="n">adj_op</span><span class="p">,</span><span class="w">
 </span>    <span class="n">y</span><span class="o">=</span><span class="n">kspace</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="p">:</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:</span><span class="p">]</span><span class="p">,</span><span class="w">
-</span>    <span class="n">gamma</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">SUBSPACE_GAMMA</span></a><span class="p">,</span><span class="w">
+</span>    <span class="n">gamma</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span><span class="w">
 </span>    <span class="n">solver</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">CG</span><span class="s2">&quot;</span><span class="p">,</span><span class="w">
 </span>    <span class="n">max_iter</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span><span class="w">
 </span><span class="p">)</span><span class="w">
 </span><span class="n">linear</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.from_coefficients" title="blochsim.Estimator.from_coefficients"><span class="n">mapping</span><span class="o">.</span><span class="n">from_coefficients</span></a><span class="p">(</span><span class="n">coefficients</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">)</span><span class="p">[</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">]</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>iterative subspace           0.3s   T2 error  16.9 ms (13.1%)
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>iterative subspace     0.4s   T2 error  16.9 ms (13.1%)
 
 tensor([[ 51.9840,  73.3066,  67.2144,  ...,  86.2525,  60.3607,  35.2305],
         [ 20.0000,  23.0461,  30.6613,  ..., 102.2445,  41.3226,  70.2605],
         [ 30.6613,  66.4529, 121.2826,  ...,  64.1683,  65.6914,  71.7836],
         ...,
         [ 33.7074,  20.0000, 105.2906,  ...,  76.3527,  50.4609,  81.6834],
-        [ 82.4449, 161.6433, 157.0742,  ..., 110.6212,  50.4609,  38.2766],
+        [ 82.4449, 160.8818, 157.0742,  ..., 110.6212,  50.4609,  38.2766],
         [ 93.1062,  84.7295, 110.6212,  ..., 115.9519, 205.0501, 119.7595]])
 </pre></div>
 </div>
 </section>
 <section id="maps">
 <h2>Maps<a class="headerlink" href="#maps" title="Link to this heading">#</a></h2>
-<p>The subspace is the only route that constrains the echoes against one
-another, and it lands at about half the error of either per-contrast route,
-in a fraction of the time.</p>
+<p>The T2 maps use a perceptually uniform colormap reserved for T2, so that a T2
+map is never read as a T1 map <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. The subspace is the only route that
+constrains the echoes against one another. On the CPU run of this page its mean
+error is about 55% of either per-echo route’s (13% against 21%), at a longer
+reconstruction time than the iterative per-echo route; the timings printed above
+depend on the hardware.</p>
 <img src="../../../_images/sphx_glr_01-linear-subspace_002.png" srcset="../../../_images/sphx_glr_01-linear-subspace_002.png" alt="truth, adjoint, iterative, subspace" class = "sphx-glr-single-img"/></section>
 <section id="limits">
 <h2>Limits<a class="headerlink" href="#limits" title="Link to this heading">#</a></h2>
-<p>Eight echoes of a single exponential is the case a subspace is best at: three
-directions hold essentially all of the signal.</p>
-<p>Two things break that. A phase-modulated signal – a balanced steady state
-through a field map, a fingerprinting train with varying RF phase – needs
-tens of components, and the coefficient problem stops being smaller than the
-image problem. A model with several parameters has no small basis at all,
-because the basis must span the product of the ranges. Both cases put the
-model inside the operator, which is the nonlinear route.</p>
-<p>The rank is not a guess: <a class="reference internal" href="../../blochsim.Subspace.html#blochsim.Subspace.retained" title="blochsim.Subspace.retained"><code class="xref py py-attr docutils literal notranslate"><span class="pre">retained</span></code></a> says what a
-basis keeps before anything is projected through it.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.689 seconds)</p>
+<p>Eight echoes of one exponential is the case a subspace handles best: three
+directions hold essentially all of the signal. Two things break that.</p>
+<ul class="simple">
+<li><p>A phase-modulated signal, such as a balanced steady state through a field
+map or a fingerprinting train with varying RF phase, needs tens of
+components. The coefficient problem then is no smaller than the image
+problem.</p></li>
+<li><p>A model with several parameters has no small basis, because the basis must
+span the product of their ranges.</p></li>
+</ul>
+<p>Both cases require the model inside the operator. That is the nonlinear route of
+<a class="reference internal" href="02-nonlinear-inversion.html"><span class="doc">Nonlinear inversion from k-space</span></a>.</p>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
+<aside class="footnote-list brackets">
+<aside class="footnote brackets" id="id2" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id1">1</a><span class="fn-bracket">]</span></span>
+<p>Fuderer M, et al. Color-map recommendation for MR relaxometry maps.
+Magn Reson Med 93(2):490-506 (2025).</p>
+</aside>
+</aside>
+</section>
+<section id="specification">
+<h2>Specification<a class="headerlink" href="#specification" title="Link to this heading">#</a></h2>
+<p>What this Application did, stated the way you would ask an agent for it:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim, mri-nufft and deepinv, simulate an 8-echo multi-echo spin
+echo (TE 10 to 150 ms) on a BrainWeb T2 phantom of 96 x 96 voxels. Sample
+each echo with 16 golden-angle radial spokes of 192 samples. Fit a rank-3
+temporal basis with a DictionaryMatcher and check how much signal it keeps.
+Reconstruct T2 by gridding, by CG per echo, and by CG on the subspace
+coefficients. Report the time and the mean T2 error over the brain of each.
+</pre></div>
+</div>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 2.036 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-04-model-based-imaging-01-linear-subspace-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/04-model-based-imaging/01-linear-subspace.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo3.svg" style="width: 150px;" />
@@ -840,7 +865,7 @@ basis keeps before anything is projected through it.</p>
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Model-based imaging</p>
+        <p class="prev-next-title">Applications: model-based reconstruction</p>
       </div>
     </a>
     <a class="right-next"
@@ -870,13 +895,16 @@ basis keeps before anything is projected through it.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#setup">Setup</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phantom">Phantom</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence-and-sampling">Sequence and sampling</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#estimator-and-subspace-basis">Estimator and subspace basis</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#contrast-by-contrast-reconstruction">Contrast-by-contrast reconstruction</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#subspace-reconstruction">Subspace reconstruction</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#temporal-basis">Temporal basis</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reconstruction-contrast-by-contrast">Reconstruction contrast by contrast</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reconstruction-in-the-subspace">Reconstruction in the subspace</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#limits">Limits</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
   </nav></div>
 

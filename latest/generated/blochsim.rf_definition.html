@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
@@ -565,17 +575,17 @@ pulse keeps the axis it turns about.</p>
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>waveform</strong> (<em>array-like</em>) – The complex envelope, <code class="docutils literal notranslate"><span class="pre">(samples,)</span></code> or <code class="docutils literal notranslate"><span class="pre">(channels,</span> <span class="pre">samples)</span></code>.</p></li>
-<li><p><strong>dwell_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a>) – How long one sample is held, in seconds.</p></li>
-<li><p><strong>bandwidth_hz</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The pulse’s bandwidth, which the slice select is quoted against. Zero
+<li><p><strong>dwell_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – How long one sample is held, in seconds.</p></li>
+<li><p><strong>bandwidth_hz</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The pulse’s bandwidth, which the slice select is quoted against. Zero
 – the default – is a pulse that selects nothing and stays on the
 instant operator, and a non-zero one is what makes a pulse slice
 selective. There is no separate flag for that, here or in the stream a
 description arrives on.</p></li>
-<li><p><strong>definition_id</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – The identifier events name this pulse by.</p></li>
-<li><p><strong>band_frequency_offsets_hz</strong> (<em>sequence</em><em> of </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – Where each band sits, for a multiband pulse. One band at zero when not
+<li><p><strong>definition_id</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – The identifier events name this pulse by.</p></li>
+<li><p><strong>band_frequency_offsets_hz</strong> (<em>sequence</em><em> of </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Where each band sits, for a multiband pulse. One band at zero when not
 given.</p></li>
-<li><p><strong>band_bandwidth_hz</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The bandwidth of one band, defaulting to <code class="docutils literal notranslate"><span class="pre">bandwidth_hz</span></code>.</p></li>
-<li><p><strong>rf_raster_time_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The raster the sample times are written against, which is the one the
+<li><p><strong>band_bandwidth_hz</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The bandwidth of one band, defaulting to <code class="docutils literal notranslate"><span class="pre">bandwidth_hz</span></code>.</p></li>
+<li><p><strong>rf_raster_time_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The raster the sample times are written against, which is the one the
 run will read them back with. Sample times are carried in units of it
 rather than in seconds, so a pulse whose dwell is not the raster still
 says how long it lasts.</p></li>
@@ -589,7 +599,7 @@ radians.</p>
 <dd class="field-odd"><p>RfDefinition</p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If the envelope is empty, if <code class="docutils literal notranslate"><span class="pre">dwell_s</span></code> is not positive, or if the
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the envelope is empty, if <code class="docutils literal notranslate"><span class="pre">dwell_s</span></code> is not positive, or if the
     waveform integrates to nothing and so has no flip angle to be read
     against.</p>
 </dd>
@@ -598,9 +608,9 @@ radians.</p>
 
 <section id="examples-using-blochsim-rf-definition">
 <span id="sphx-glr-backref-blochsim-rf-definition"></span><h2>Examples using <code class="docutils literal notranslate"><span class="pre">blochsim.rf_definition</span></code><a class="headerlink" href="#examples-using-blochsim-rf-definition" title="Link to this heading">#</a></h2>
-<div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays."><img alt="" src="../_images/sphx_glr_02-expanded-physics_thumb.png" />
-<p><a class="reference internal" href="autoexamples/01-framework/02-expanded-physics.html"><span class="doc">Expanded Physics</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Expanded Physics</div>
+<div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="In lesson 1 a tissue was T1 and T2. A voxel has more properties than that, and each one adds a term to the physics. In this lesson you add them to a fingerprinting train one at a time: the transmit field and the array that produces it, the shaped pulse of a real slice selection, a second exchanging pool and a bound pool, off resonance, an imperfect inversion, and diffusion and flow."><img alt="" src="../_images/sphx_glr_02-advanced-physics_thumb.png" />
+<p><a class="reference internal" href="autoexamples/01-framework/02-advanced-physics.html"><span class="doc">2. Advanced physics</span></a></p>
+  <div class="sphx-glr-thumbnail-title">2. Advanced physics</div>
 </div></div></section>
 </section>
 

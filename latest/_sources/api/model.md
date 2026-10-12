@@ -84,8 +84,7 @@ class JointRelaxometry(Simulator):
         self.spoiled = SPGRSimulator(TE=2.0, TR=6.0, flip=spgr_flip)
         self.balanced = bSSFPSimulator(TE=2.5, TR=5.0, flip=ssfp_flip)
 
-    def evaluate(self, properties, **sequence):
-        ...
+    def evaluate(self, properties, **sequence): ...
 ```
 
 Either way it fixes its arguments the same way: a constructor takes the

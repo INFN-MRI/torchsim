@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
@@ -533,7 +543,6 @@
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.Inversion"><code class="docutils literal notranslate"><span class="pre">Inversion()</span></code></a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#examples-using-blochsim-inversion">Examples using <code class="docutils literal notranslate"><span class="pre">blochsim.Inversion</span></code></a></li>
 </ul>
             </nav>
         </div>
@@ -557,13 +566,7 @@ preparation whose saturation matters is an <code class="xref py py-func docutils
 <code class="xref py py-func docutils literal notranslate"><span class="pre">saturation()</span></code> carrying a real waveform instead.</p>
 </dd></dl>
 
-<section id="examples-using-blochsim-inversion">
-<span id="sphx-glr-backref-blochsim-inversion"></span><h2>Examples using <code class="docutils literal notranslate"><span class="pre">blochsim.Inversion</span></code><a class="headerlink" href="#examples-using-blochsim-inversion" title="Link to this heading">#</a></h2>
-<div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to write a simulator BlochSim does not ship."><img alt="" src="../_images/sphx_glr_03-writing-a-simulator_thumb.png" />
-<p><a class="reference internal" href="autoexamples/01-framework/03-writing-a-simulator.html"><span class="doc">Writing a Signal Model</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Writing a Signal Model</div>
-</div></div></section>
-</section>
+<span class="target" id="sphx-glr-backref-blochsim-inversion"></span></section>
 
 
                 </article>
@@ -613,7 +616,6 @@ preparation whose saturation matters is an <code class="xref py py-func docutils
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim.Inversion"><code class="docutils literal notranslate"><span class="pre">Inversion()</span></code></a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#examples-using-blochsim-inversion">Examples using <code class="docutils literal notranslate"><span class="pre">blochsim.Inversion</span></code></a></li>
 </ul>
   </nav></div>
 

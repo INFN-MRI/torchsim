@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -69,8 +69,8 @@
     <link rel="icon" href="../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="How BlochSim runs it" href="implementation.html" />
-    <link rel="prev" title="Sequence description" href="description.html" />
+    <link rel="next" title="Sequence description" href="description.html" />
+    <link rel="prev" title="Signal model" href="signal-model.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -201,11 +201,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">Explanations</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="signal-model.html">Signal model</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../generated/autoexamples/index.html">Examples</a></li>
@@ -534,18 +544,15 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dephasing">Dephasing</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-states">Configuration states</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#three-families-of-state">Three families of state</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#rf-pulses">RF pulses</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gradients">Gradients</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#relaxation-and-recovery">Relaxation and recovery</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reading-the-graph">Reading the graph</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#stimulated-echoes">Stimulated echoes</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-orders-to-carry">Configuration orders to carry</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#diffusion-and-flow">Diffusion and flow</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#second-pool">Second pool</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#assumptions">Assumptions</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#capabilities">Capabilities</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#division-of-responsibility">Division of responsibility</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#method">Method</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-orders">Configuration orders</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pulse-rotation">Pulse rotation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#off-resonance">Off-resonance</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#examples">Examples</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
 </ul>
             </nav>
@@ -563,364 +570,158 @@
 <div class="tldr admonition">
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
-<li><p>EPG represents a voxel by transverse and longitudinal configuration states
-indexed by dephasing order.</p></li>
-<li><p>RF pulses mix state families, gradients shift transverse orders, and
-relaxation/evolution acts between events.</p></li>
-<li><p>BlochSim extends that state machine with off-resonance, diffusion, flow and
-exchange while retaining the same sequence-level abstraction.</p></li>
+<li><p>A voxel is held as configuration states over integer dephasing orders; the signal is the order-zero transverse state.</p></li>
+<li><p>Pulses rotate within an order, gradients shift between orders, and relaxation, exchange, diffusion and flow act between events.</p></li>
+<li><p>Every term beyond <span class="math notranslate nohighlight">\(T_1\)</span> and <span class="math notranslate nohighlight">\(T_2\)</span> is a tissue property: <span class="math notranslate nohighlight">\(B_1\)</span>, <span class="math notranslate nohighlight">\(B_0\)</span>, <span class="math notranslate nohighlight">\(T_2'\)</span>, <span class="math notranslate nohighlight">\(D\)</span>, <span class="math notranslate nohighlight">\(v\)</span>, and up to five further pools.</p></li>
 </ul>
 </div>
-<p>Three pulses generate five echoes, and a train of a hundred generates far more
-than a hundred. A refocused train, a gradient-echo steady state, a
-fingerprinting schedule: in each, what you sample is not one decaying
-magnetization but a sum over routes through the pulses and the gradients, each
-of which has spent a different amount of time transverse and a different amount
-parked along the field. The extended phase graph (EPG) is the accounting that
-keeps those routes straight, and it is what BlochSim evaluates. Weigel <a class="footnote-reference brackets" href="#id8" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a> is
-the introduction to read alongside this one.</p>
-<p>The magnetization is decomposed into configuration states, and three operators
-act on them:</p>
-<ol class="arabic simple">
-<li><p><strong>Transition</strong> – an RF pulse, which mixes the transverse and longitudinal
-families within an order and never moves a state between orders.</p></li>
-<li><p><strong>Shift</strong> – a gradient, which moves transverse states between orders and
-mixes nothing.</p></li>
-<li><p><strong>Evolution</strong> – relaxation and precession between events. Decay reaches
-every state; recovery toward equilibrium reaches order zero alone.</p></li>
-</ol>
-<p>A sequence is those three alternating, and the signal is read off the states
-wherever it samples. This page is the physics; how it is realized – the
-events, the kernels, the derivatives – is <a class="reference internal" href="implementation.html"><span class="doc">How BlochSim runs it</span></a>.</p>
-<section id="dephasing">
-<h2>Dephasing<a class="headerlink" href="#dephasing" title="Link to this heading">#</a></h2>
-<p>A voxel is not one magnetization vector. It is an ensemble of isochromats, and
-a gradient gives each of them a Larmor frequency that depends on where it sits.
-Over an interval the phase they acquire is linear in position, so the ensemble
-winds into a helix, and the signal – which is the <em>sum</em> over the voxel – falls
-away as the helix tightens. Nothing has been lost: the magnetization is still
-there, wound up, and a gradient of the opposite sign will bring it back.</p>
-<figure class="align-default" id="id11">
-<a class="reference internal image-reference" href="../_images/dephasing_helix.png"><img alt="Isochromats fanning out in the transverse plane as a gradient winds them." src="../_images/dephasing_helix.png" style="width: 100%;" />
+<p>You give a simulator a tissue, and the kernels carry its configuration states
+through every event of the sequence. This page states which physics those
+kernels hold. The derivations and the operator-by-operator detail are in
+<a class="reference internal" href="../internals/epg.html"><span class="doc">Extended phase graphs: operators</span></a>.</p>
+<section id="capabilities">
+<h2>Capabilities<a class="headerlink" href="#capabilities" title="Link to this heading">#</a></h2>
+<div class="capabilities docutils container">
+<ul>
+<li><p><strong>Carries the states <span class="math notranslate nohighlight">\(F^+_k\)</span>, <span class="math notranslate nohighlight">\(F^-_k\)</span> and <span class="math notranslate nohighlight">\(Z_k\)</span> up to the order set by <code class="docutils literal notranslate"><span class="pre">states</span></code>.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> (<code class="docutils literal notranslate"><span class="pre">states</span></code>), <code class="docutils literal notranslate"><span class="pre">EpgEngine.simulate</span></code> (<code class="docutils literal notranslate"><span class="pre">nstates</span></code>). Tests: <em>a refocused train agrees echo for echo</em>; <em>a spoiled train agrees over two hundred repetitions</em> (<code class="docutils literal notranslate"><span class="pre">test_against_epgpy.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Plays an unbalanced gradient as a shift by one order, and ideal spoiling as the loss of every transverse order.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.Dephase.html#blochsim.Dephase" title="blochsim.Dephase"><code class="xref py py-func docutils literal notranslate"><span class="pre">Dephase()</span></code></a>, <a class="reference internal" href="../generated/blochsim.Spoil.html#blochsim.Spoil" title="blochsim.Spoil"><code class="xref py py-func docutils literal notranslate"><span class="pre">Spoil()</span></code></a>. Tests: <em>the hyperecho train matches crushed isochromats</em>; <em>rf spoiled flash matches crushed isochromats</em> (<code class="docutils literal notranslate"><span class="pre">test_epg_trains.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Scales each flip angle by <span class="math notranslate nohighlight">\(B_1\)</span>, turns its axis by the transmit phase, and combines per-channel sensitivities with a static RF shim.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">transmit_field</span></code>, <a class="reference internal" href="../generated/blochsim.ShimDefinition.html#blochsim.ShimDefinition" title="blochsim.ShimDefinition"><code class="xref py py-class docutils literal notranslate"><span class="pre">ShimDefinition</span></code></a>. Tests: <em>channels in antiphase cancel</em>; <em>the field is the complex sum written out</em> (<code class="docutils literal notranslate"><span class="pre">test_transmit_array.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Integrates a shaped pulse into the rotation it performs across the slice, or per voxel when its channel weights vary while it plays.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">exact_slice_profile</span></code>, <code class="docutils literal notranslate"><span class="pre">transition_table</span></code>, <code class="docutils literal notranslate"><span class="pre">dynamic_pair</span></code>. Tests: <em>the slice shows up when the pulse selects one</em> (<code class="docutils literal notranslate"><span class="pre">test_exact_profile.py</span></code>); <em>the pair is what exponentiating each sample gives</em> (<code class="docutils literal notranslate"><span class="pre">test_dynamic_transmit.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Plays a waveform sample by sample, with relaxation, precession and exchange between samples.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.SampledPulse.html#blochsim.SampledPulse" title="blochsim.SampledPulse"><code class="xref py py-func docutils literal notranslate"><span class="pre">SampledPulse()</span></code></a>. Test: <em>truefisp matches the bloch mcconnell equations</em> (<code class="docutils literal notranslate"><span class="pre">test_sampled_pulses.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Applies a voxel’s off-resonance <span class="math notranslate nohighlight">\(B_0\)</span> and a Lorentzian field spread of width <span class="math notranslate nohighlight">\(1/T_2'\)</span> within it.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">TissueProperties</span></code> (<code class="docutils literal notranslate"><span class="pre">b0_hz</span></code>, <code class="docutils literal notranslate"><span class="pre">t2_prime_ms</span></code>). Tests: <em>a gradient echo decays at t2 star</em>; <em>a spin echo is left exactly as it stands</em> (<code class="docutils literal notranslate"><span class="pre">test_static_spread.py</span></code>); <em>the unrefocused time reproduces what the states compute</em> (<code class="docutils literal notranslate"><span class="pre">test_unrefocused_time.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Couples to the free water a semisolid pool, saturated through a super-Lorentzian lineshape, and up to four chemically exchanging pools with their own <span class="math notranslate nohighlight">\(T_1\)</span>, <span class="math notranslate nohighlight">\(T_2\)</span> and chemical shift.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">TissueProperties</span></code> (<code class="docutils literal notranslate"><span class="pre">bound_fraction</span></code>, <code class="docutils literal notranslate"><span class="pre">pool_b_fraction</span></code> to <code class="docutils literal notranslate"><span class="pre">pool_e_fraction</span></code>), <code class="docutils literal notranslate"><span class="pre">lineshape_table</span></code>. Tests: <em>the canonical saturation matches the literature number</em> (<code class="docutils literal notranslate"><span class="pre">test_bound_pool.py</span></code>); <em>exchange washes the beat out</em> (<code class="docutils literal notranslate"><span class="pre">test_exchange.py</span></code>); <em>fast exchange precesses at the population average shift</em> (<code class="docutils literal notranslate"><span class="pre">test_many_pools.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Damps each order by diffusion and turns it through a flow phase, both weighted by its order, and replaces spins that leave the voxel with relaxed, unexcited ones.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">TissueProperties</span></code> (<code class="docutils literal notranslate"><span class="pre">diffusion_um2_per_ms</span></code>, <code class="docutils literal notranslate"><span class="pre">velocity_m_per_s</span></code>). Tests: <em>a declared crusher actually damps</em> (<code class="docutils literal notranslate"><span class="pre">test_diffusion_kernels.py</span></code>); <em>flow actually moves the signal</em> (<code class="docutils literal notranslate"><span class="pre">test_flow_kernels.py</span></code>); <em>washout only shrinks the signal</em> (<code class="docutils literal notranslate"><span class="pre">test_washout_kernels.py</span></code>).</p>
+</div>
+</details></li>
+</ul>
+</div>
+</section>
+<section id="division-of-responsibility">
+<h2>Division of responsibility<a class="headerlink" href="#division-of-responsibility" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><strong>Gradient moments other than one per sequence.</strong> Every unbalanced gradient winds one order, and diffusion and flow are scaled by one crusher moment, <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code> across <code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code>. A bipolar pair or a velocity-encoding lobe has no representation.</p></li>
+<li><p><strong>Isochromat simulation.</strong> A field distribution within the voxel is the Lorentzian <span class="math notranslate nohighlight">\(T_2'\)</span> term on the samples, not a spatial ensemble.</p></li>
+<li><p><strong>Exchange between second pools.</strong> Each exchanges with the free water alone, and the semisolid pool’s <span class="math notranslate nohighlight">\(T_2\)</span> is fixed at 12 µs.</p></li>
+<li><p><strong>Relaxation during a tabulated rotation.</strong> A slice-profile or per-voxel rotation is a pure rotation; <a class="reference internal" href="../generated/blochsim.SampledPulse.html#blochsim.SampledPulse" title="blochsim.SampledPulse"><code class="xref py py-func docutils literal notranslate"><span class="pre">SampledPulse()</span></code></a> is the route when relaxation during the pulse matters.</p></li>
+</ul>
+</section>
+<section id="method">
+<h2>Method<a class="headerlink" href="#method" title="Link to this heading">#</a></h2>
+<figure class="align-default" id="id9">
+<a class="reference internal image-reference" href="../_images/epg_mechanism.png"><img alt="A phase graph of four refocusing pulses above simulated echo trains with B1, diffusion and a bound pool switched on in turn." src="../_images/epg_mechanism.png" style="width: 100%;" />
 </a>
 <figcaption>
-<p><span class="caption-text">Isochromats across one voxel, in the transverse plane, after gradient areas
-winding zero, a quarter, one and three turns across it. The red arrow is
-their sum, which is all a receiver ever sees. Past one full turn the sum is
-effectively zero and stays there, while the ensemble underneath it is
-perfectly ordered.</span><a class="headerlink" href="#id11" title="Link to this image">#</a></p>
+<p><span class="caption-text">Above, the pathways of a refocused train: a pulse continues, reflects or
+stores each state, and an echo forms where a transverse pathway reaches
+<span class="math notranslate nohighlight">\(k = 0\)</span>. Below, the same train at 120° simulated with one tissue term at a
+time; the crushers wind 20 turns across a 1 mm voxel.</span><a class="headerlink" href="#id9" title="Link to this image">#</a></p>
 </figcaption>
 </figure>
-<p>The winding is measured by <span class="math notranslate nohighlight">\(k = \gamma \int G\,\mathrm{d}t\)</span>, the same
-quantity as the k-space coordinate of imaging. It is the natural coordinate for
-this problem: a gradient does one thing to the ensemble, which is to move
-<span class="math notranslate nohighlight">\(k\)</span>.</p>
+<section id="configuration-orders">
+<h3>Configuration orders<a class="headerlink" href="#configuration-orders" title="Link to this heading">#</a></h3>
+<p>A shift adds one order, and relaxation makes the far orders negligible. When
+<code class="docutils literal notranslate"><span class="pre">states</span></code> is not given, it is one more than the shifts the played repetitions
+contain, clamped to 8–64. The truncation error falls geometrically with the
+number of orders, so a second run with more of them measures it.</p>
 </section>
-<section id="configuration-states">
-<h2>Configuration states<a class="headerlink" href="#configuration-states" title="Link to this heading">#</a></h2>
-<p>Because the phase is linear in position, the transverse magnetization across
-the voxel is a sum of spatial harmonics, and each harmonic is labelled by its
-winding <span class="math notranslate nohighlight">\(k\)</span>. Writing <span class="math notranslate nohighlight">\(M^{+}(r) = M_x + iM_y\)</span> and taking its Fourier
-transform over the voxel gives the <strong>configuration states</strong></p>
-<div class="math notranslate nohighlight">
-\[
-\tilde F^{+}(k) = \int_V M^{+}(r)\, e^{-ikr}\, \mathrm{d}^3r ,
-\]</div>
-<p>and the states are the whole description: the spatial profile is recoverable
-from them, and the measured signal is exactly the coherent one,
-<span class="math notranslate nohighlight">\(\tilde F^{+}(0)\)</span>. This is the configuration-state treatment of echo
-trains introduced by Hennig <a class="footnote-reference brackets" href="#id7" id="id2" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>, in the notation of Weigel’s review <a class="footnote-reference brackets" href="#id8" id="id3" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>,
-which the rest of this page follows.</p>
-<figure class="align-default" id="id12">
-<a class="reference internal image-reference" href="../_images/configuration_states.png"><img alt="A spatially modulated magnetization profile beside its few Fourier coefficients." src="../_images/configuration_states.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">Left, the transverse magnetization across a voxel part-way through a
-sequence – the thing an isochromat summation would need thousands of
-samples to represent. Right, the same state as configuration amplitudes.
-A sequence that winds by whole turns populates only integer orders, so a
-handful of numbers carries the voxel exactly rather than approximately.</span><a class="headerlink" href="#id12" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>This is the move that makes EPG cheap. An isochromat simulation pays for
-spatial resolution it does not care about; the phase graph pays for the number
-of <em>orders the sequence actually populates</em>, which is small and which you can
-count in advance from the gradients.</p>
+<section id="pulse-rotation">
+<h3>Pulse rotation<a class="headerlink" href="#pulse-rotation" title="Link to this heading">#</a></h3>
+<p>The RF definition decides, not the call: a rectangle without slice selection
+is an instantaneous rotation, any other shape a Cayley–Klein pair tabulated
+over slice position and effective flip angle, the hybrid Bloch–EPG treatment
+of Guenthner et al.<a class="footnote-reference brackets" href="#id8" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>4<span class="fn-bracket">]</span></a></p>
 </section>
-<section id="three-families-of-state">
-<h2>Three families of state<a class="headerlink" href="#three-families-of-state" title="Link to this heading">#</a></h2>
-<p>Transverse magnetization is complex, and its two conjugate halves behave
-differently under a gradient, so they are tracked separately as
-<span class="math notranslate nohighlight">\(\tilde F^{+}(k)\)</span> and <span class="math notranslate nohighlight">\(\tilde F^{-}(k)\)</span>. Longitudinal magnetization
-is modulated across the voxel too – a pulse can store a wound-up transverse
-state along <span class="math notranslate nohighlight">\(z\)</span>, where it neither dephases further nor decays with
-<span class="math notranslate nohighlight">\(T_2\)</span> – so it has configurations of its own, <span class="math notranslate nohighlight">\(\tilde Z(k)\)</span>. Those
-three families at each integer order are the entire state of a voxel.</p>
-<figure class="align-default" id="id13">
-<a class="reference internal image-reference" href="../_images/state_ladder.png"><img alt="A grid of F-plus, F-minus and Z states over dephasing orders zero to four." src="../_images/state_ladder.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">The state of a voxel: three families over the integer dephasing orders. A
-gradient moves populations <em>along</em> the rows in opposite directions; an RF
-pulse mixes them <em>within</em> a column and never moves an order. At order zero
-the two transverse families are the same information, since
-<span class="math notranslate nohighlight">\(\tilde F^{+}(0)\)</span> and <span class="math notranslate nohighlight">\(\tilde F^{-}(0)\)</span> are complex conjugates
-of one another – which is why order zero needs a rule of its own in every
-implementation.</span><a class="headerlink" href="#id13" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>The transition and shift operators act on that grid.</p>
+<section id="off-resonance">
+<h3>Off-resonance<a class="headerlink" href="#off-resonance" title="Link to this heading">#</a></h3>
+<p>Where the sequence winds at one steady rate, an order also measures how long a
+state has dephased, and <span class="math notranslate nohighlight">\(B_0\)</span> and <span class="math notranslate nohighlight">\(T_2'\)</span> are applied to each sample from that
+time: a gradient echo decays at <span class="math notranslate nohighlight">\(T_2^*\)</span>, a spin echo at <span class="math notranslate nohighlight">\(T_2\)</span>. Otherwise <span class="math notranslate nohighlight">\(B_0\)</span>
+precesses the states interval by interval and <span class="math notranslate nohighlight">\(T_2'\)</span> is refused.</p>
+<p>The formalism follows Hennig<a class="footnote-reference brackets" href="#id5" id="id2" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> and Weigel<a class="footnote-reference brackets" href="#id6" id="id3" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>, the second pools Malik et
+al.<a class="footnote-reference brackets" href="#id7" id="id4" role="doc-noteref"><span class="fn-bracket">[</span>3<span class="fn-bracket">]</span></a></p>
 </section>
-<section id="rf-pulses">
-<h2>RF pulses<a class="headerlink" href="#rf-pulses" title="Link to this heading">#</a></h2>
-<p>A hard pulse of flip angle <span class="math notranslate nohighlight">\(\alpha\)</span> and phase <span class="math notranslate nohighlight">\(\varphi\)</span> acts
-identically on every order – it cannot move magnetization in space, only turn
-it – so it is one 3x3 matrix applied to each column:</p>
-<div class="math notranslate nohighlight">
-\[\begin{split}
-\begin{pmatrix}\tilde F^{+}\\ \tilde F^{-}\\ \tilde Z\end{pmatrix}
-\leftarrow
-\mathbf{T}(\alpha, \varphi)
-\begin{pmatrix}\tilde F^{+}\\ \tilde F^{-}\\ \tilde Z\end{pmatrix} .
-\end{split}\]</div>
-<figure class="align-default" id="id14">
-<a class="reference internal image-reference" href="../_images/rf_operator.png"><img alt="The magnitude of the EPG rotation matrix at 30, 90 and 180 degrees." src="../_images/rf_operator.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">The magnitude of <span class="math notranslate nohighlight">\(\mathbf{T}\)</span> at three flip angles. A 180 degree pulse
-swaps the two transverse families outright – perfect refocusing – and
-inverts <span class="math notranslate nohighlight">\(\tilde Z\)</span>. A 90 degree pulse splits every state three ways: it
-refocuses half, leaves half dephasing, converts all longitudinal
-magnetization into transverse, and stores half of the transverse along
-<span class="math notranslate nohighlight">\(z\)</span>. A small pulse mostly leaves things where they were, which is why
-a low-flip train carries so many pathways at once.</span><a class="headerlink" href="#id14" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>The off-diagonal entries are the entire reason echoes proliferate. Every pulse
-that is neither 0 nor 180 degrees splits each populated state into three, so
-the number of live pathways grows with each pulse until relaxation and
-truncation kill the weakest.</p>
 </section>
-<section id="gradients">
-<h2>Gradients<a class="headerlink" href="#gradients" title="Link to this heading">#</a></h2>
-<p>A gradient’s only effect is to change the winding, which in this basis is a
-shift by whole orders:</p>
-<div class="math notranslate nohighlight">
-\[
-\tilde F^{+}(k) \rightarrow \tilde F^{+}(k + \Delta k), \qquad
-\tilde Z(k) \rightarrow \tilde Z(k),
-\]</div>
-<p>with the longitudinal states untouched, because they carry no phase to wind.</p>
-<figure class="align-default" id="id15">
-<a class="reference internal image-reference" href="../_images/shift_operator.png"><img alt="Transverse state populations before and after a one-order shift." src="../_images/shift_operator.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">One unbalanced gradient, before and after. Everything transverse moves up
-one order in <span class="math notranslate nohighlight">\(\tilde F^{+}\)</span> and down one in <span class="math notranslate nohighlight">\(\tilde F^{-}\)</span>. The
-order-zero entry is the interesting one: it is refilled from the conjugate
-of what was at order zero in the other family, which is the bookkeeping that
-makes rephasing come out right and is the single place a shift is not just a
-memory move.</span><a class="headerlink" href="#id15" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>In BlochSim the shift is what an operator such as <code class="docutils literal notranslate"><span class="pre">Dephase</span></code> plays, and one
-shift is one crusher or one unbalanced readout gradient. Ideal spoiling –
-<code class="docutils literal notranslate"><span class="pre">Spoil</span></code> – is the other option: discard every transverse order instead of
-winding it on, which is what a spoiled gradient echo assumes its spoiler and
-its RF phase cycling achieve together.</p>
-</section>
-<section id="relaxation-and-recovery">
-<h2>Relaxation and recovery<a class="headerlink" href="#relaxation-and-recovery" title="Link to this heading">#</a></h2>
-<p>Between events, transverse states decay by <span class="math notranslate nohighlight">\(E_2 = e^{-\Delta t / T_2}\)</span>
-and longitudinal states by <span class="math notranslate nohighlight">\(E_1 = e^{-\Delta t / T_1}\)</span>. Recovery toward
-equilibrium, though, is <em>spatially uniform</em>: it adds magnetization with no
-modulation at all, so it enters <span class="math notranslate nohighlight">\(\tilde Z(0)\)</span> alone.</p>
-<figure class="align-default" id="id16">
-<a class="reference internal image-reference" href="../_images/relaxation.png"><img alt="Relaxation curves, and longitudinal state populations before and after an interval." src="../_images/relaxation.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">Left, the two attenuation factors for white matter at 3 T. Right, what 100 ms
-of longitudinal relaxation does to a set of <span class="math notranslate nohighlight">\(\tilde Z\)</span> states: every
-order is scaled by <span class="math notranslate nohighlight">\(E_1\)</span>, and only order zero gains the
-<span class="math notranslate nohighlight">\(M_0(1 - E_1)\)</span> that regrowth supplies. A modulated longitudinal state
-decays toward zero, not toward equilibrium, because equilibrium has no
-modulation to relax into.</span><a class="headerlink" href="#id16" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-</section>
-<section id="reading-the-graph">
-<h2>Reading the graph<a class="headerlink" href="#reading-the-graph" title="Link to this heading">#</a></h2>
-<p>Plotting <span class="math notranslate nohighlight">\(k\)</span> against time turns a sequence into a picture. Between pulses
-every transverse pathway moves at a constant rate set by the gradients;
-at each pulse it may continue, reverse, or be parked along <span class="math notranslate nohighlight">\(z\)</span> until a
-later pulse brings it back. <strong>Wherever a transverse pathway crosses</strong>
-<span class="math notranslate nohighlight">\(k = 0\)</span> <strong>there is an echo</strong>, and the sample is the sum of every pathway
-crossing at that moment.</p>
-<figure class="align-default" id="id17">
-<a class="reference internal image-reference" href="../_images/phase_graph.png"><img alt="A phase graph of a refocused train above the echo amplitudes BlochSim computes." src="../_images/phase_graph.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">Above, the phase graph of six refocusing pulses: solid lines are transverse
-pathways, dotted lines are magnetization parked along <span class="math notranslate nohighlight">\(z\)</span> between
-pulses, dashed verticals are the pulses. Below, what BlochSim records at
-those crossings. From the fourth pulse on, the sampled signal contains
-direct spin echoes and stimulated echoes at once – pathways that spent one
-or more intervals longitudinal, and so were spared <span class="math notranslate nohighlight">\(T_2\)</span> decay while
-they were there.</span><a class="headerlink" href="#id17" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>The diagram is what makes EPG a way of <em>thinking</em> and not only of computing.
-Refocusing angle, echo spacing, spoiler size and RF phase all change the graph
-in ways you can see before you simulate anything.</p>
-</section>
-<section id="stimulated-echoes">
-<h2>Stimulated echoes<a class="headerlink" href="#stimulated-echoes" title="Link to this heading">#</a></h2>
-<p>With anything other than exact 180 degree refocusing, an echo train is not a
-mono-exponential. Stimulated-echo pathways
-spend part of their life along <span class="math notranslate nohighlight">\(z\)</span>, so they arrive with less
-<span class="math notranslate nohighlight">\(T_2\)</span> decay than their echo time suggests, and the train picks up
-oscillations at its start and a long tail at its end.</p>
-<figure class="align-default" id="id18">
-<a class="reference internal image-reference" href="../_images/mono_exponential.png"><img alt="Echo trains at three refocusing angles, and the T2 a mono-exponential fit returns for each." src="../_images/mono_exponential.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">Left, a 48-echo train at three refocusing angles beside <span class="math notranslate nohighlight">\(e^{-t/T_2}\)</span>.
-Right, the <span class="math notranslate nohighlight">\(T_2\)</span> a mono-exponential fit of each train returns. Only the
-180 degree train recovers the true value; the low-flip trains – which is
-what a real sequence plays, to stay inside SAR – are biased by tens of
-percent. This is the practical case for simulating the pathways rather than
-assuming the decay.</span><a class="headerlink" href="#id18" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-</section>
-<section id="configuration-orders-to-carry">
-<h2>Configuration orders to carry<a class="headerlink" href="#configuration-orders-to-carry" title="Link to this heading">#</a></h2>
-<p>A sequence populates a bounded set of orders: each shift moves the ladder by
-one, so after <span class="math notranslate nohighlight">\(n\)</span> shifts nothing beyond order <span class="math notranslate nohighlight">\(n\)</span> exists, and
-attenuation makes the far orders negligible long before that. You choose how
-many to carry with <code class="docutils literal notranslate"><span class="pre">states=</span></code> (or <code class="docutils literal notranslate"><span class="pre">nstates=</span></code> per call), and BlochSim sizes it
-from the winding the sequence declares when you do not.</p>
-<figure class="align-default" id="id19">
-<a class="reference internal image-reference" href="../_images/truncation.png"><img alt="An unbalanced train simulated with different numbers of configuration orders, and the error of each." src="../_images/truncation.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">Left, an unbalanced fingerprinting train carried with 2, 6 and 20 orders.
-Right, the largest error against a 60-order reference. The error falls
-geometrically: a handful of orders is qualitatively wrong, a dozen or two is
-right to well below the noise of any real measurement. Truncating is not an
-approximation you have to accept blindly – it is a convergence you can
-measure for your own sequence with two calls.</span><a class="headerlink" href="#id19" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-</section>
-<section id="diffusion-and-flow">
-<h2>Diffusion and flow<a class="headerlink" href="#diffusion-and-flow" title="Link to this heading">#</a></h2>
-<p>A state at order <span class="math notranslate nohighlight">\(k\)</span> is wound up in space, and anything that moves spins
-around inside the voxel scrambles that winding. Over an interval a state
-accumulates a diffusion b-factor weighted by <span class="math notranslate nohighlight">\(k^2\)</span> while it is
-longitudinal, and by <span class="math notranslate nohighlight">\(k^2 + k + 1/3\)</span> while it is transverse and winding
-through the interval <a class="footnote-reference brackets" href="#id8" id="id4" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>. Order zero is untouched, which is why diffusion enters
-through the <em>pathways</em> rather than as a single exponential on the signal.</p>
-<figure class="align-default" id="id20">
-<a class="reference internal image-reference" href="../_images/diffusion.png"><img alt="The b-factor weight per configuration order, and the diffusion attenuation of an echo train." src="../_images/diffusion.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">Left, what one interval costs each order. Right, a 120 degree train played
-between crushers winding 20 turns across a millimetre voxel, at two
-diffusion coefficients, relative to the same train with no diffusion. The
-attenuation is neither exponential in time nor uniform across echoes,
-because the pathways contributing to each echo have spent different amounts
-of time at different orders. Coherent flow enters the same way but as a
-phase per order rather than an attenuation, and washout replaces the excited
-spins outright.</span><a class="headerlink" href="#id20" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>Both effects need geometry the sequence has to declare – how far a crusher
-winds and across what voxel – because a dephasing order is only a b-factor
-once you know the gradient behind it.</p>
-</section>
-<section id="second-pool">
-<h2>Second pool<a class="headerlink" href="#second-pool" title="Link to this heading">#</a></h2>
-<p>Tissue is not one proton pool. BlochSim carries the two extensions of the EPG
-formalism that matter in practice, both from Malik et al <a class="footnote-reference brackets" href="#id9" id="id5" role="doc-noteref"><span class="fn-bracket">[</span>3<span class="fn-bracket">]</span></a>: a <strong>semisolid
-pool</strong>
-that RF saturates through its absorption lineshape and that exchanges
-longitudinal magnetization with the free water (magnetization transfer), and a
-<strong>chemically exchanging pool</strong> that has transverse states of its own and sits
-at a frequency offset (Bloch-McConnell). Exchange couples states of the same
-family and the same order, so the phase-graph structure is unchanged: what
-changes is that relaxation and exchange are one combined operator, since the
-two do not commute.</p>
-<figure class="align-default" id="id21">
-<a class="reference internal image-reference" href="../_images/two_pool.png"><img alt="A fingerprinting trajectory with and without a bound pool, and its derivative." src="../_images/two_pool.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">Left, a fingerprinting trajectory on white matter, with and without a bound
-pool holding 12% of the magnetization. The pool is never sampled – it has no
-transverse magnetization to detect – and it still moves the trajectory by a
-sizeable fraction of its peak, so a dictionary built from the single-pool
-model is wrong in a way no amount of matching recovers. Right, the
-derivative of the signal with respect to the bound fraction, which is what
-says whether the schedule can <em>estimate</em> it rather than merely be affected
-by it.</span><a class="headerlink" href="#id21" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-</section>
-<section id="assumptions">
-<h2>Assumptions<a class="headerlink" href="#assumptions" title="Link to this heading">#</a></h2>
-<p>EPG is exact for what it models. It assumes the dephasing within a voxel is
-<strong>linear in position</strong>, so that a
-gradient is a shift; sequences whose gradients are unbalanced by non-integer
-amounts, or whose voxels contain their own strong field variation, need the
-orders to be interpreted with care. It treats an isochromat’s off-resonance as
-a constant precession rather than as a distribution, so a spread of field
-across the voxel is not something the states carry.</p>
-<p>BlochSim applies that spread to the samples instead. <code class="docutils literal notranslate"><span class="pre">t2_prime_ms</span></code> sets a
-Lorentzian population of frequencies, half-width <span class="math notranslate nohighlight">\(1 / T_2'\)</span> in angular
-frequency, whose average over the voxel is <span class="math notranslate nohighlight">\(e^{-|\tau| / T_2'}\)</span> in the time
-<span class="math notranslate nohighlight">\(\tau\)</span> a sample has gone
-unrefocused – so a gradient echo decays at <span class="math notranslate nohighlight">\(T_2^*\)</span>, a spin echo is left at
-<span class="math notranslate nohighlight">\(T_2\)</span>, and the decay grows and recovers either side of each echo. It asks the
-sequence to wind at one steady rate, which is the condition under which a
-configuration order stands for elapsed time as well as for area; a balanced
-train does not, and needs a spread of <code class="docutils literal notranslate"><span class="pre">b0_hz</span></code> across voxels as before.</p>
-<p>Pulses are instantaneous rotations unless you say otherwise. A real
-slice-selective pulse acts under its gradient, so what it does depends on
-position within the slice; BlochSim can carry that exactly by integrating the
-pulse ahead of time, which is the hybrid Bloch-EPG picture of Guenthner et al
-<a class="footnote-reference brackets" href="#id10" id="id6" role="doc-noteref"><span class="fn-bracket">[</span>4<span class="fn-bracket">]</span></a> and is described in <a class="reference internal" href="implementation.html"><span class="doc">How BlochSim runs it</span></a>.</p>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="../generated/autoexamples/01-framework/02-advanced-physics.html"><span class="doc">2. Advanced physics</span></a>: each tissue term added to a fingerprinting train in turn.</p></li>
+<li><p><a class="reference internal" href="../generated/autoexamples/03-sequence-optimization/01-echo-train-design.html"><span class="doc">Echo train design for sharpness</span></a>: refocusing flip angles of a fast spin echo designed through its simulated echo train.</p></li>
+<li><p><a class="reference internal" href="../generated/autoexamples/03-sequence-optimization/03-rf-pulse-design.html"><span class="doc">RF pulse design by optimal control</span></a>: a slice-selective pulse designed through the Cayley–Klein rotation of its samples.</p></li>
+</ul>
 </section>
 <section id="references">
 <h2>References<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
 </section>
 </section>
 <aside class="footnote-list brackets">
-<aside class="footnote brackets" id="id7" role="doc-footnote">
+<aside class="footnote brackets" id="id5" role="doc-footnote">
 <span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id2">1</a><span class="fn-bracket">]</span></span>
-<p>Hennig, J., “Multiecho imaging sequences with low refocusing flip
-angles”, Journal of Magnetic Resonance 78 (1988), pp. 397-407.
-<a class="reference external" href="https://doi.org/10.1016/0022-2364(88)90128-X">https://doi.org/10.1016/0022-2364(88)90128-X</a></p>
+<p>Hennig J. Multiecho imaging sequences with low refocusing flip angles.
+J Magn Reson 1988;78:397-407. <a class="reference external" href="https://doi.org/10.1016/0022-2364(88)90128-X">https://doi.org/10.1016/0022-2364(88)90128-X</a></p>
+</aside>
+<aside class="footnote brackets" id="id6" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id3">2</a><span class="fn-bracket">]</span></span>
+<p>Weigel M. Extended phase graphs: dephasing, RF pulses, and echoes - pure
+and simple. J Magn Reson Imaging 2015;41(2):266-295.
+<a class="reference external" href="https://doi.org/10.1002/jmri.24619">https://doi.org/10.1002/jmri.24619</a></p>
+</aside>
+<aside class="footnote brackets" id="id7" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id4">3</a><span class="fn-bracket">]</span></span>
+<p>Malik SJ, Teixeira RPAG, Hajnal JV. Extended phase graph formalism for
+systems with magnetization transfer and exchange. Magn Reson Med
+2018;80(2):767-779. <a class="reference external" href="https://doi.org/10.1002/mrm.27040">https://doi.org/10.1002/mrm.27040</a></p>
 </aside>
 <aside class="footnote brackets" id="id8" role="doc-footnote">
-<span class="label"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></span>
-<span class="backrefs">(<a role="doc-backlink" href="#id1">1</a>,<a role="doc-backlink" href="#id3">2</a>,<a role="doc-backlink" href="#id4">3</a>)</span>
-<p>Weigel, M., “Extended phase graphs: dephasing, RF pulses, and echoes -
-pure and simple”, Journal of Magnetic Resonance Imaging 41.2 (2015),
-pp. 266-295. <a class="reference external" href="https://doi.org/10.1002/jmri.24619">https://doi.org/10.1002/jmri.24619</a></p>
-</aside>
-<aside class="footnote brackets" id="id9" role="doc-footnote">
-<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id5">3</a><span class="fn-bracket">]</span></span>
-<p>Malik, S. J., Teixeira, R. P. A. G., Hajnal, J. V., “Extended phase
-graph formalism for systems with magnetization transfer and exchange”,
-Magnetic Resonance in Medicine 80.2 (2018), pp. 767-779.
-<a class="reference external" href="https://doi.org/10.1002/mrm.27040">https://doi.org/10.1002/mrm.27040</a></p>
-</aside>
-<aside class="footnote brackets" id="id10" role="doc-footnote">
-<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id6">4</a><span class="fn-bracket">]</span></span>
-<p>Guenthner, C., Amthor, T., Doneva, M., Kozerke, S., “A unifying view on
-extended phase graphs and Bloch simulations for quantitative MRI”,
-Scientific Reports 11 (2021), 21289.
-<a class="reference external" href="https://doi.org/10.1038/s41598-021-00233-6">https://doi.org/10.1038/s41598-021-00233-6</a></p>
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id1">4</a><span class="fn-bracket">]</span></span>
+<p>Guenthner C, Amthor T, Doneva M, Kozerke S. A unifying view on extended
+phase graphs and Bloch simulations for quantitative MRI. Sci Rep
+2021;11:21289. <a class="reference external" href="https://doi.org/10.1038/s41598-021-00233-6">https://doi.org/10.1038/s41598-021-00233-6</a></p>
 </aside>
 </aside>
 
@@ -936,20 +737,20 @@ Scientific Reports 11 (2021), 21289.
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="description.html"
+       href="signal-model.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Sequence description</p>
+        <p class="prev-next-title">Signal model</p>
       </div>
     </a>
     <a class="right-next"
-       href="implementation.html"
+       href="description.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">How BlochSim runs it</p>
+        <p class="prev-next-title">Sequence description</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -971,18 +772,15 @@ Scientific Reports 11 (2021), 21289.
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dephasing">Dephasing</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-states">Configuration states</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#three-families-of-state">Three families of state</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#rf-pulses">RF pulses</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gradients">Gradients</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#relaxation-and-recovery">Relaxation and recovery</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reading-the-graph">Reading the graph</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#stimulated-echoes">Stimulated echoes</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-orders-to-carry">Configuration orders to carry</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#diffusion-and-flow">Diffusion and flow</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#second-pool">Second pool</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#assumptions">Assumptions</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#capabilities">Capabilities</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#division-of-responsibility">Division of responsibility</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#method">Method</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-orders">Configuration orders</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pulse-rotation">Pulse rotation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#off-resonance">Off-resonance</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#examples">Examples</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
 </ul>
   </nav></div>

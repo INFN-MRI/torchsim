@@ -18,38 +18,58 @@
 .. _sphx_glr_generated_autoexamples_03-sequence-optimization_02-joint-relaxometry.py:
 
 
-=========================================
-Designing a joint relaxometry protocol
-=========================================
+==================================
+Joint relaxometry protocol design
+==================================
 
-The scope of this notebook is to choose the flip angles of a DESPOT protocol
-so that a joint fit of T1 and T2 is as precise as possible [1]_.
+In this example you choose the flip angles of a DESPOT protocol so that a joint
+fit of T1 and T2 is as precise as possible [1]_. DESPOT estimates T1 from
+spoiled gradient-echo scans at several flip angles and T2 from balanced SSFP
+scans. A joint fit uses all the data for both parameters.
 
-DESPOT estimates T1 from spoiled gradient-echo scans at different flip angles
-and T2 from balanced SSFP scans. Fitting them jointly uses all the data for
-both parameters. The cost is a Cramer-Rao bound: the lowest variance an
-unbiased estimate can have, given the derivative of each signal with respect to
-every parameter estimated.
+The cost is a Cramer-Rao bound: the lowest variance an unbiased estimate can
+have, given the derivative of the signal with respect to every parameter
+estimated. You minimize it over the flip angles, then play the designed
+protocol on a BrainWeb slice and compare the error of the fitted maps with the
+bound.
 
-.. GENERATED FROM PYTHON SOURCE LINES 18-22
+Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
+
+.. GENERATED FROM PYTHON SOURCE LINES 21-26
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim brainweb-dl cmap
+   !pip install blochsim matplotlib brainweb-dl cmap
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 24-27
-
-The two closed-form sequences being designed, the three pieces a design is
-stated in, and :func:`~blochsim.crlb`, which is the cost.
+.. GENERATED FROM PYTHON SOURCE LINES 26-83
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 28-166
+
+
+
+
+
+
+.. GENERATED FROM PYTHON SOURCE LINES 84-96
+
+Sequences
+---------
+
+A design has three pieces. A simulator with the tissue fixed on it, so that
+only the parameters under design are left to give. A cost. And the bounded
+parameters that :class:`~blochsim.SequenceDesign` adjusts.
+
+Here the simulators are an SPGR and a bSSFP sequence, both in closed form.
+You construct and call them the same way as a sequence that plays events. The
+tissues are white and grey matter at 3 T, and you design for both at once.
+``NOISE`` is the noise standard deviation as a fraction of the fully relaxed
+magnetization:
+
+.. GENERATED FROM PYTHON SOURCE LINES 96-109
 
 .. code-block:: Python
-
-
-    import time
 
     import torch
 
@@ -57,33 +77,8 @@ stated in, and :func:`~blochsim.crlb`, which is the cost.
     from blochsim.optim import Bounded, SequenceDesign
     from blochsim.simulators import SPGRSimulator, bSSFPSimulator
 
-
-
-
-
-
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 167-175
-
-Sequences
----------
-
-A design problem is three pieces, and the first is a simulator with the
-tissue it is designed for already fixed on it, so only the parameters under
-design are left to give. Both sequences here are closed forms, constructed
-and called exactly as a state-machine sequence would be.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 176-186
-
-.. code-block:: Python
-
-
-    # White and grey matter at 3 T -- the design is for both at once.
     T1_MS = torch.tensor([830.0, 1330.0])
     T2_MS = torch.tensor([80.0, 110.0])
-    # Noise standard deviation, as a fraction of the fully relaxed magnetization.
     NOISE = 0.005
 
     spgr = SPGRSimulator(TE=2.0, TR=6.0, T1=T1_MS, T2star=T2_MS, M0=1.0, B0=0.0)
@@ -96,21 +91,23 @@ and called exactly as a state-machine sequence would be.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 187-198
+.. GENERATED FROM PYTHON SOURCE LINES 110-123
 
 Cost
 ----
 
-Four parameters are estimated jointly: T1, T2, the proton density and the
-off-resonance. The last two are nuisances, estimated because they affect the
-data rather than because the design is for them.
+You estimate four parameters jointly: T1, T2, the proton density M0 and the
+off-resonance B0. M0 and B0 are nuisance parameters, estimated because they
+affect the data and not because the design is for them.
 
 The two sequences carry different information. The spoiled steady state in
-closed form depends on T2\* rather than T2, so its T2 row is exactly zero.
-Each block is blind to something and the Fisher matrix adds them up.
+closed form depends on T2* and not on T2, so its T2 row is exactly zero. Each
+block is blind to something, and the Fisher matrix adds them up. ``rows``
+stacks the derivatives of one block with a zero row for each parameter it is
+blind to, and :func:`~blochsim.crlb` turns the stacked derivatives into a
+bound on each parameter:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 199-219
+.. GENERATED FROM PYTHON SOURCE LINES 123-141
 
 .. code-block:: Python
 
@@ -118,7 +115,6 @@ Each block is blind to something and the Fisher matrix adds them up.
 
 
     def rows(simulator, **design):
-        """The Jacobian rows for every joint parameter, zero where the block is blind."""
         present = [name for name in JOINT if name in simulator.exposes]
         _, jacobian = simulator.jacobian(present, **design)
         placed = jacobian.new_zeros(jacobian.shape[:-2] + (len(JOINT), jacobian.shape[-1]))
@@ -127,7 +123,6 @@ Each block is blind to something and the Fisher matrix adds them up.
 
 
     def bounds(spgr_flip, ssfp_flip):
-        """The Cramer-Rao bound on each joint parameter, for each design tissue."""
         together = torch.cat(
             (rows(spgr, flip=spgr_flip), rows(ssfp, flip=ssfp_flip)), dim=-1
         )
@@ -141,15 +136,14 @@ Each block is blind to something and the Fisher matrix adds them up.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 220-225
+.. GENERATED FROM PYTHON SOURCE LINES 142-146
 
-Dividing each bound by its own parameter squared makes the terms
-dimensionless, so a 100 ms T2 and a 1000 ms T1 are weighted by how well they
-are known rather than by how large they are. The logarithm makes the gradient
-relative, so the design does not depend on the noise level.
+Dividing each bound by its parameter squared makes the terms dimensionless, so
+a T2 of 100 ms and a T1 of 1000 ms are weighted by how well they are known and
+not by how large they are. The logarithm makes the gradient relative, so the
+design does not depend on the noise level:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 226-235
+.. GENERATED FROM PYTHON SOURCE LINES 146-155
 
 .. code-block:: Python
 
@@ -169,16 +163,16 @@ relative, so the design does not depend on the noise level.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 236-242
+.. GENERATED FROM PYTHON SOURCE LINES 156-162
 
 Design
 ------
 
-Four scans of each kind, starting from a spread of angles. The limits are
-what the scanner will play and are enforced exactly.
+The protocol has four scans of each kind, initialized with a spread of angles.
+:class:`~blochsim.Bounded` constrains each angle to the range the scanner
+plays:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 243-259
+.. GENERATED FROM PYTHON SOURCE LINES 162-182
 
 .. code-block:: Python
 
@@ -191,9 +185,7 @@ what the scanner will play and are enforced exactly.
         ssfp_flip=Bounded(ssfp_start, 1.0, 70.0),
     )
 
-    start = time.time()
     result = design.minimize(iterations=120, learning_rate=0.3)
-    design_time = time.time() - start
 
     spgr_designed = result.parameters["spgr_flip"]
     ssfp_designed = result.parameters["ssfp_flip"]
@@ -205,13 +197,12 @@ what the scanner will play and are enforced exactly.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 260-263
+.. GENERATED FROM PYTHON SOURCE LINES 183-185
 
-What it buys, as the standard deviation of each estimate in percent of the
-value itself.
+The bound gives the standard deviation of each estimate, in percent of the
+value itself:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 264-281
+.. GENERATED FROM PYTHON SOURCE LINES 185-202
 
 
 
@@ -221,23 +212,22 @@ value itself.
 
  .. code-block:: none
 
-    published spread   sigma(T1)/T1 = 11.0%, 12.9%   sigma(T2)/T2 = 10.1%, 12.1%
+    start              sigma(T1)/T1 = 11.0%, 12.9%   sigma(T2)/T2 = 10.1%, 12.1%
     designed           sigma(T1)/T1 = 7.4%, 8.9%   sigma(T2)/T2 = 7.4%, 9.1%
-    designed in 3.0 s
+    designed in 4.9 s
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 282-288
+.. GENERATED FROM PYTHON SOURCE LINES 203-208
 
-Optimized schedule
-------------------
+Flip angles
+-----------
 
-What the scanner is handed: eight scans, four spoiled and four balanced, each
-differing only in flip angle. Before and after.
+The protocol has eight scans, four spoiled and four balanced, which differ
+only in flip angle:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 289-317
+.. GENERATED FROM PYTHON SOURCE LINES 208-234
 
 
 
@@ -248,33 +238,22 @@ differing only in flip angle. Before and after.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    <matplotlib.legend.Legend object at 0x7f10c65065a0>
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 318-332
+.. GENERATED FROM PYTHON SOURCE LINES 235-244
 
-Optimized flip angles
----------------------
-
-The design collapses eight distinct angles onto three and repeats them. The
-information sits at a few places on each curve, and a fixed number of scans
-is best spent there rather than sampling the curve evenly.
+The design collapses the eight angles onto three and repeats them. The
+information sits at a few places on each curve, and a fixed number of scans is
+best placed there and not on an even sampling of the curve.
 
 The SPGR angle lands above the Ernst angle of both tissues, where the curve
-separates the two T1 values most sharply; the peak itself is where the signal
+separates the two T1 values most sharply. The peak itself is where the signal
 is largest and says least. The two bSSFP angles sit either side of the
-steady-state maximum, which is what makes the pair sensitive to T2. The upper
-one is against its limit rather than at an interior optimum, and that limit
-is what the deposited RF power allows.
+steady-state maximum, which makes the pair sensitive to T2. The upper one is
+against its limit and not at an interior optimum.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 333-358
+.. GENERATED FROM PYTHON SOURCE LINES 244-268
 
 
 
@@ -288,18 +267,17 @@ is what the deposited RF power allows.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 359-367
+.. GENERATED FROM PYTHON SOURCE LINES 269-276
 
-Effect on the maps
-------------------
+Phantom
+-------
 
-The phantom is the one the parameter-inference examples map: BrainWeb
-subject 0, slice 90, whose fuzzy memberships give a T1, a T2 and a proton
-density known at every voxel. Both protocols are played on it and compared
-against the truth rather than against each other.
+The phantom is BrainWeb subject 0, slice 90, the one the parameter-inference
+examples map. Its fuzzy tissue memberships give a T1, a T2 and a proton
+density at every voxel. You play both protocols on it and compare the fitted
+maps with the truth.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 368-415
+.. GENERATED FROM PYTHON SOURCE LINES 276-317
 
 
 
@@ -310,25 +288,20 @@ against the truth rather than against each other.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    Text(0.5, 0.9883529057497298, 'BrainWeb subject 0, slice 90')
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 416-422
+.. GENERATED FROM PYTHON SOURCE LINES 318-325
 
-The two blocks are one experiment and are fitted as one: a
-:class:`~blochsim.model.Simulator` that plays each and concatenates what
-they record. The fit is the one thing held fixed between the protocols --
-the same nonlinear least squares over the same four unknowns, from the same
-guess.
+Joint fit
+---------
 
+The two blocks are one experiment, and you fit them as one. A
+:class:`~blochsim.model.Simulator` plays each block and concatenates what they
+record. The fit is the same for both protocols: the same nonlinear least
+squares over the same four unknowns, from the same starting values:
 
-.. GENERATED FROM PYTHON SOURCE LINES 423-450
+.. GENERATED FROM PYTHON SOURCE LINES 325-351
 
 .. code-block:: Python
 
@@ -346,7 +319,6 @@ guess.
             self.balanced = bSSFPSimulator(TE=2.5, TR=5.0, flip=ssfp_flip)
 
         def evaluate(self, properties, **sequence):
-            """The two blocks, end to end along the contrast axis."""
             T1, T2 = properties["T1"], properties["T2"]
             M0 = properties.get("M0", 1.0)
             B0 = properties.get("B0", 0.0)
@@ -366,13 +338,13 @@ guess.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 451-454
+.. GENERATED FROM PYTHON SOURCE LINES 352-355
 
-The noise is independent on the real and imaginary channels, each at the
-standard deviation the bound was computed with.
+The noise is independent in the real and imaginary channels, each at the
+standard deviation the bound was computed with. Simulate the slice with the
+designed protocol, add the noise and fit every voxel:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 455-504
+.. GENERATED FROM PYTHON SOURCE LINES 355-401
 
 .. code-block:: Python
 
@@ -384,9 +356,10 @@ standard deviation the bound was computed with.
     }
     generator = torch.Generator().manual_seed(7)
 
-
     joint = JointRelaxometry(spgr_designed, ssfp_designed)
 
+    clean = joint.simulate(B0=0.0, **truth)
+    noise = torch.randn((2, *clean.shape), generator=generator, dtype=torch.float32)
     measured = clean + NOISE * torch.complex(noise[0], noise[1])
 
     problem = NonlinearLeastSquares(
@@ -407,19 +380,21 @@ standard deviation the bound was computed with.
 
  .. code-block:: none
 
-    38980 joint fits in 3.0 s
+    38980 joint fits in 4.0 s
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 505-509
+.. GENERATED FROM PYTHON SOURCE LINES 402-408
 
-The bound was computed for two tissues; the slice has thousands. Evaluated at
-every voxel's own relaxation times it becomes a predicted precision map,
-which is what the measured error is read against.
+Predicted precision
+-------------------
 
+The design bound was computed for two tissues. Evaluated at the relaxation
+times of each voxel, it gives a map of the predicted precision, against which
+the measured error is compared:
 
-.. GENERATED FROM PYTHON SOURCE LINES 510-538
+.. GENERATED FROM PYTHON SOURCE LINES 408-436
 
 .. code-block:: Python
 
@@ -452,18 +427,16 @@ which is what the measured error is read against.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 539-547
+.. GENERATED FROM PYTHON SOURCE LINES 437-443
 
-What the design bought, over the brain rather than two tissues. No unbiased
-estimator beats the bound and a good one approaches it, so the two columns
-agreeing is the check that the design optimized the right thing.
+No unbiased estimator beats the bound. The fit below lands about a fifth
+above it for both protocols, so the reduction the bound predicts is also the
+reduction measured, which is the check that the design optimized the right
+quantity. Both are root-mean-square, because a bound is a standard
+deviation. The median absolute error is about two thirds of a standard
+deviation and would understate the error by that factor:
 
-Both are root-mean-square, because a bound is a standard deviation: the
-median absolute error is about two thirds of one and would flatter the
-estimator by that factor.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 548-568
+.. GENERATED FROM PYTHON SOURCE LINES 443-462
 
 
 
@@ -476,19 +449,21 @@ estimator by that factor.
 
                                               T1                        T2
                            measured        bound     measured        bound
-    published spread          13.8%        11.3%        13.3%        10.6%
+    start                     13.8%        11.3%        13.3%        10.6%
     designed                   9.8%         8.1%         9.8%         8.1%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 569-572
+.. GENERATED FROM PYTHON SOURCE LINES 463-468
 
-The maps, and the error each protocol leaves. The designed protocol gives the
-same picture with less noise in it, which is what a precision design buys.
+Maps
+----
 
+The fitted maps and the absolute error of each protocol. The designed protocol
+gives lower noise in both maps.
 
-.. GENERATED FROM PYTHON SOURCE LINES 573-604
+.. GENERATED FROM PYTHON SOURCE LINES 468-500
 
 
 
@@ -499,14 +474,14 @@ same picture with less noise in it, which is what a precision design buys.
     *
 
       .. image-sg:: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_02-joint-relaxometry_004.png
-         :alt: truth, published spread, designed
+         :alt: truth, start, designed
          :srcset: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_02-joint-relaxometry_004.png
          :class: sphx-glr-multi-img
 
     *
 
       .. image-sg:: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_02-joint-relaxometry_005.png
-         :alt: truth, published spread, designed
+         :alt: truth, start, designed
          :srcset: /generated/autoexamples/03-sequence-optimization/images/sphx_glr_02-joint-relaxometry_005.png
          :class: sphx-glr-multi-img
 
@@ -514,7 +489,23 @@ same picture with less noise in it, which is what a precision design buys.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 605-613
+.. GENERATED FROM PYTHON SOURCE LINES 501-525
+
+Specification
+-------------
+
+What this example did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, design the flip angles of a joint DESPOT protocol: four
+   SPGR scans (TE 2 ms, TR 6 ms, up to 40 degrees) and four bSSFP scans (TE
+   2.5 ms, TR 5 ms, up to 70 degrees), for white and grey matter at 3 T.
+   Estimate T1, T2, M0 and B0 jointly. Minimize the log of the summed
+   relative Cramer-Rao bounds of T1 and T2 with SequenceDesign. Play the
+   start and designed protocols on BrainWeb slice 90 with noise of 0.5 %,
+   fit every voxel with NonlinearLeastSquares, and compare the RMS error of
+   the T1 and T2 maps with the bound.
 
 References
 ----------
@@ -528,7 +519,7 @@ References
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 8.785 seconds)
+   **Total running time of the script:** (0 minutes 12.573 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_02-joint-relaxometry.py:

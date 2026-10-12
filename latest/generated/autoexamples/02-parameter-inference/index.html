@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Parameter inference &#8212; BlochSim Documentation</title>
+    <title>Applications: parameter mapping &#8212; BlochSim Documentation</title>
   
   
   
@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -68,7 +68,7 @@
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
     <link rel="next" title="Dictionary matching" href="01-dictionary-matching.html" />
-    <link rel="prev" title="Writing a New Operator" href="../01-framework/04-custom-operator.html" />
+    <link rel="prev" title="5. Custom operator" href="../01-framework/05-custom-operator.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
@@ -520,7 +530,7 @@
               
 
 <div id="jb-print-docs-body" class="onlyprint">
-    <h1>Parameter inference</h1>
+    <h1>Applications: parameter mapping</h1>
     <!-- Table of contents -->
     <div id="print-main-content">
         <div id="jb-print-toc">
@@ -534,28 +544,21 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="parameter-inference">
-<span id="sphx-glr-generated-autoexamples-02-parameter-inference"></span><h1>Parameter inference<a class="headerlink" href="#parameter-inference" title="Link to this heading">#</a></h1>
-<p>Estimating tissue properties from a measured volume.</p>
-<p>Every estimator is made from the simulator it inverts and fitted over the
-same statement of the problem – what is unknown, over what range, at what
-noise level – and they differ only in how they fill it in. These examples change only that: dictionary matching over a parameter
-grid, compressed and clustered; interpolation along a curve where there is a
-single unknown; a nonlinear fit of the model itself; and a kernel regression
-that never builds a grid at all.</p>
-<p>Every one of them maps the same BrainWeb slice, so the answer is known
-everywhere – mixtures of tissues included – and reports what it cost in time
-and in memory alongside what it got wrong.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored."><img alt="" src="../../../_images/sphx_glr_01-dictionary-matching_thumb.png" />
+  <section id="applications-parameter-mapping">
+<span id="sphx-glr-generated-autoexamples-02-parameter-inference"></span><h1>Applications: parameter mapping<a class="headerlink" href="#applications-parameter-mapping" title="Link to this heading">#</a></h1>
+<p>Four ways to turn a measured signal into T1, T2 and M0 maps, all built from
+the same simulator and compared on the same BrainWeb slice: dictionary
+matching, a lookup table, nonlinear least squares and PERK.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="You map T1, T2 and proton density in a brain slice from a magnetic resonance fingerprinting (MRF) train by dictionary matching, then reduce the cost of the match in two independent ways: by working in the low-rank subspace spanned by the train, and by clustering the dictionary so that most atoms are not scored."><img alt="" src="../../../_images/sphx_glr_01-dictionary-matching_thumb.png" />
 <p><a class="reference internal" href="01-dictionary-matching.html"><span class="doc">Dictionary matching</span></a></p>
   <div class="sphx-glr-thumbnail-title">Dictionary matching</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it."><img alt="" src="../../../_images/sphx_glr_02-lookup-table_thumb.png" />
+</div><div class="sphx-glr-thumbcontainer" tooltip="You map T1 from a two-block MP2RAGE acquisition in two ways, by interpolating along the signal curve and by dictionary matching, and sweep the number of points on the curve to see which method depends on it."><img alt="" src="../../../_images/sphx_glr_02-lookup-table_thumb.png" />
 <p><a class="reference internal" href="02-lookup-table.html"><span class="doc">MP2RAGE lookup table</span></a></p>
   <div class="sphx-glr-thumbnail-title">MP2RAGE lookup table</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice."><img alt="" src="../../../_images/sphx_glr_03-nonlinear-least-squares_thumb.png" />
+</div><div class="sphx-glr-thumbcontainer" tooltip="You map T2 from a multi-echo spin echo by nonlinear least squares and compare the result with dictionary matching on the same slice."><img alt="" src="../../../_images/sphx_glr_03-nonlinear-least-squares_thumb.png" />
 <p><a class="reference internal" href="03-nonlinear-least-squares.html"><span class="doc">T2 mapping by nonlinear least squares</span></a></p>
   <div class="sphx-glr-thumbnail-title">T2 mapping by nonlinear least squares</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports."><img alt="" src="../../../_images/sphx_glr_04-perk_thumb.png" />
+</div><div class="sphx-glr-thumbcontainer" tooltip="You map T1, T2 and proton density in a brain slice with PERK, vary the size of the regression, and read the uncertainty it reports against the Cramér-Rao bound."><img alt="" src="../../../_images/sphx_glr_04-perk_thumb.png" />
 <p><a class="reference internal" href="04-perk.html"><span class="doc">PERK: kernel ridge regression</span></a></p>
   <div class="sphx-glr-thumbnail-title">PERK: kernel ridge regression</div>
 </div></div><div class="toctree-wrapper compound">
@@ -574,12 +577,12 @@ and in memory alongside what it got wrong.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../01-framework/04-custom-operator.html"
+       href="../01-framework/05-custom-operator.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Writing a New Operator</p>
+        <p class="prev-next-title">5. Custom operator</p>
       </div>
     </a>
     <a class="right-next"

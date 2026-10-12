@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
@@ -569,17 +579,17 @@ out to fit from signals handed to <code class="xref py py-meth docutils literal 
 give an <code class="docutils literal notranslate"><span class="pre">acquisition</span></code> instead, and the atoms are simulated from it.</p></li>
 <li><p><strong>parameters</strong> (<em>torch.Tensor</em><em>, </em><em>optional</em>) – Parameter values shaped <code class="docutils literal notranslate"><span class="pre">(n_atoms,</span> <span class="pre">n_parameters)</span></code>. If provided, a
 call returns parameter estimates; otherwise it returns atom indices.</p></li>
-<li><p><strong>query_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum measured signals compared at once.</p></li>
-<li><p><strong>dictionary_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum dictionary atoms compared at once.</p></li>
-<li><p><strong>top_k</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Number of candidates retained by <a class="reference internal" href="#blochsim.DictionaryMatcher.match" title="blochsim.DictionaryMatcher.match"><code class="xref py py-meth docutils literal notranslate"><span class="pre">match()</span></code></a>. The first is the
+<li><p><strong>query_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum measured signals compared at once.</p></li>
+<li><p><strong>dictionary_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum dictionary atoms compared at once.</p></li>
+<li><p><strong>top_k</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Number of candidates retained by <a class="reference internal" href="#blochsim.DictionaryMatcher.match" title="blochsim.DictionaryMatcher.match"><code class="xref py py-meth docutils literal notranslate"><span class="pre">match()</span></code></a>. The first is the
 conventional dictionary-matching estimate.</p></li>
-<li><p><strong>groups</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Cluster the dictionary into this many groups and match against their
+<li><p><strong>groups</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Cluster the dictionary into this many groups and match against their
 representative signals first, ruling out whole groups before any atom
 in them is scored. Read <a class="reference internal" href="#blochsim.DictionaryMatcher.grouping" title="blochsim.DictionaryMatcher.grouping"><code class="xref py py-attr docutils literal notranslate"><span class="pre">grouping</span></code></a> afterwards: its <code class="docutils literal notranslate"><span class="pre">condition</span></code>
 says whether the representatives are still distinct enough to prune
 with, and its <code class="docutils literal notranslate"><span class="pre">compression</span></code> says how much shorter an inner product
 inside a group is.</p></li>
-<li><p><strong>prune</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – How far below its best group score a voxel still considers a group,
+<li><p><strong>prune</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – How far below its best group score a voxel still considers a group,
 as a fraction of that score. Larger keeps more groups and costs more.
 The default is the value Cauley et al. <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> tuned on 280 groups of
 700 atoms; on a smaller dictionary or a coarser parameter grid it can rule

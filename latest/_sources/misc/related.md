@@ -21,7 +21,7 @@ mri-sim-py [^9], snapMRF [^10] and BlochSim answer this one.
 BlochSimulators.jl [^11] answers both, from the same sequence description.
 
 **BlochSim is the second kind.** It has no gradient waveforms, no phantom
-coordinates and no encoding operator of its own -- {doc}`../explanations/implementation`
+coordinates and no encoding operator of its own -- {doc}`../internals/kernels`
 lists what that rules out. What it adds instead is the derivative: the same
 kernels that produce a signal produce its Jacobian with respect to tissue, and
 its gradient with respect to the sequence, which is what the estimators, the

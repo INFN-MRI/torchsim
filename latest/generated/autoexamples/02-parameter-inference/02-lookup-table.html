@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
@@ -536,8 +546,10 @@
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#protocol">Protocol</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#signal-curve">Signal curve</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#measurement">Measurement</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#two-estimators">Two estimators</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#estimators">Estimators</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#table-size">Table size</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
             </nav>
         </div>
@@ -556,48 +568,43 @@ to download the full example code or to run this example in your browser via Bin
 </div>
 <section class="sphx-glr-example-title" id="mp2rage-lookup-table">
 <span id="sphx-glr-generated-autoexamples-02-parameter-inference-02-lookup-table-py"></span><h1>MP2RAGE lookup table<a class="headerlink" href="#mp2rage-lookup-table" title="Link to this heading">#</a></h1>
-<p>The scope of this notebook is to map T1 from a two-block MP2RAGE, by
-interpolating along a curve and by matching the same curve, and to sweep the
-number of points to show which of the two is limited by it.</p>
-<p>With a single unknown a dictionary degenerates: the atoms lie on a curve rather
-than filling a space. Interpolating between the two nearest then costs nothing
-and takes the grid spacing out of the answer, which is what
+<p>You map T1 from a two-block MP2RAGE acquisition in two ways, by interpolating
+along the signal curve and by dictionary matching, and sweep the number of
+points on the curve to see which method depends on it.</p>
+<p>With a single unknown, the dictionary atoms lie on a curve instead of filling
+a space. Interpolating between the two nearest points on the curve costs
+nothing and removes the grid spacing from the error; this is what
 <a class="reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><code class="xref py py-class docutils literal notranslate"><span class="pre">LookupTable</span></code></a> does.</p>
+<p>Prerequisites: Course lesson <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
 <div class="colab-button">
             <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/examples/generated/autoexamples/02-parameter-inference/02-lookup-table.ipynb" target="_blank">
                 <img src="https://colab.research.google.com/assets/colab-badge.svg"
                 alt="Open In Colab"/>
             </a>
         </div>
-        <p>The problem is stated over a simulator carrying the sequence and filled in
-by an estimator. <a class="reference internal" href="../../blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a> decides where that work runs,
-and the timings below are taken inside it.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">time</span><span class="w">
-</span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
+        <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
 </span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
 </span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">blochsim</span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">LookupTable</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator" title="blochsim.simulators.MP2RAGESimulator"><span class="n">MP2RAGESimulator</span></a><span class="w">
 </span></pre></div></div>
 <section id="phantom">
 <h2>Phantom<a class="headerlink" href="#phantom" title="Link to this heading">#</a></h2>
-<p>BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
-ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
-voxel holds a fraction of each tissue, and the relaxation times are weighted
-by those fractions. A third of the voxels are mixtures, so the truth is a
-continuum and not four values.</p>
-<img src="../../../_images/sphx_glr_02-lookup-table_001.png" srcset="../../../_images/sphx_glr_02-lookup-table_001.png" alt="BrainWeb subject 0, slice 90" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Text(0.5, 0.9901188654526398, 'BrainWeb subject 0, slice 90')
-</pre></div>
-</div>
-</section>
+<p>The phantom is BrainWeb subject 0, slice 90: an axial 1 mm slice through the
+lateral ventricles. BrainWeb provides fuzzy tissue memberships, so each voxel
+holds a fraction of each tissue and its T1 is the fraction-weighted average.
+About a third of the voxels are mixtures, so the ground truth is a continuum
+of values rather than four.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">truth</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">T1_true</span></a><span class="p">[</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">mask</span></a><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span><span class="n">density</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">M0_true</span></a><span class="p">[</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">mask</span></a><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<img src="../../../_images/sphx_glr_02-lookup-table_001.png" srcset="../../../_images/sphx_glr_02-lookup-table_001.png" alt="BrainWeb subject 0, slice 90" class = "sphx-glr-single-img"/></section>
 <section id="protocol">
 <h2>Protocol<a class="headerlink" href="#protocol" title="Link to this heading">#</a></h2>
-<p>One inversion, two spoiled gradient-echo blocks read at two inversion times.
-Each block samples the centre of k-space of its own shot train, so a voxel
-contributes two numbers. The train spoils after every readout, so T1 is the
-only tissue property that moves them.</p>
+<p>MP2RAGE applies one inversion and reads two spoiled gradient-echo blocks at
+two inversion times. Each block samples the centre of k-space of its own
+shot train, so a voxel contributes two values. The train is spoiled after
+every readout, so T1 is the only tissue property that changes them.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">PROTOCOL</span></a> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="w">
 </span>    <span class="n">TI</span><span class="o">=</span><span class="p">(</span><span class="mf">800.0</span><span class="p">,</span> <span class="mf">2700.0</span><span class="p">)</span><span class="p">,</span><span class="w">
 </span>    <span class="n">flip</span><span class="o">=</span><span class="p">(</span><span class="mf">4.0</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">)</span><span class="p">,</span><span class="w">
@@ -612,28 +619,25 @@ only tissue property that moves them.</p>
 </section>
 <section id="signal-curve">
 <h2>Signal curve<a class="headerlink" href="#signal-curve" title="Link to this heading">#</a></h2>
-<p>Neither block alone says T1: both carry the proton density and the receive
-gain. The unified combination divides that scale out, leaving a number
-between -0.5 and 0.5 that depends on T1 alone. Which combination is monotonic
-belongs to the sequence, so it is given rather than assumed.</p>
+<p>Neither block alone determines T1, since both are scaled by the proton
+density and the receive gain. The unified combination divides this scale
+out and leaves a value between -0.5 and 0.5 that depends on T1 alone:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">unified</span><span class="p">(</span><span class="n">blocks</span><span class="p">)</span><span class="p">:</span><span class="w">
-</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;The MP2RAGE unified image: scale-free, and a function of T1 alone.&quot;&quot;&quot;</span><span class="w">
+</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;The MP2RAGE unified image: independent of the scale, a function of T1.&quot;&quot;&quot;</span><span class="w">
 </span>    <span class="k">return</span> <span class="p">(</span><span class="n">blocks</span><span class="p">[</span><span class="o">.</span><span class="o">.</span><span class="o">.</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">blocks</span><span class="p">[</span><span class="o">.</span><span class="o">.</span><span class="o">.</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span><span class="p">)</span> <span class="o">/</span> <span class="n">blocks</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mf">1e-12</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<p>The curve is not monotonic over every T1, and where it turns back it has no
-inverse. The table keeps the longest monotonic run and reports what it spans,
-so the invertible range is a number rather than an assumption.</p>
+<p>Whether the unified image is monotonic in T1 depends on the protocol. Where
+it turns back it has no inverse, so the table keeps the longest monotonic run
+and reports the range it spans. The dashed line marks the turning point of
+the unified image at this protocol, beyond which T1 is not invertible.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">sweep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">50.0</span><span class="p">,</span> <span class="mf">6000.0</span><span class="p">,</span> <span class="mf">10.0</span><span class="p">)</span><span class="w">
 </span><span class="n">curve</span> <span class="o">=</span> <span class="n">unified</span><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator" title="blochsim.simulators.MP2RAGESimulator"><span class="n">simulator</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">sweep</span><span class="p">,</span> <span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<img src="../../../_images/sphx_glr_02-lookup-table_002.png" srcset="../../../_images/sphx_glr_02-lookup-table_002.png" alt="the two blocks, the curve a T1 is read off" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>[&lt;matplotlib.legend.Legend object at 0x7f10cf6b8950&gt;]
-</pre></div>
-</div>
-</section>
+<img src="../../../_images/sphx_glr_02-lookup-table_002.png" srcset="../../../_images/sphx_glr_02-lookup-table_002.png" alt="the two blocks, unified image" class = "sphx-glr-single-img"/></section>
 <section id="measurement">
 <h2>Measurement<a class="headerlink" href="#measurement" title="Link to this heading">#</a></h2>
-<p>Both blocks, at the true T1 and proton density of every brain voxel, with
-noise at half a percent of the peak magnetization.</p>
+<p>The measurement is both blocks at the true T1 and proton density of every
+brain voxel, with Gaussian noise of 0.5% of the peak magnetization.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">clean</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator" title="blochsim.simulators.MP2RAGESimulator"><span class="n">simulator</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">truth</span><span class="p">,</span> <span class="n">M0</span><span class="o">=</span><span class="n">density</span><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">NOISE_STD</span></a> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="mf">0.005</span> <span class="o">*</span> <span class="n">clean</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="w">
 </span><span class="w">
@@ -641,73 +645,84 @@ noise at half a percent of the peak magnetization.</p>
 </span><span class="n">measured</span> <span class="o">=</span> <span class="n">clean</span> <span class="o">+</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">NOISE_STD</span></a> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">clean</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">generator</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
 </section>
-<section id="two-estimators">
-<h2>Two estimators<a class="headerlink" href="#two-estimators" title="Link to this heading">#</a></h2>
-<p>Both are given the same T1 grid. The match scores the two-block signal
-against every atom and takes the nearest; the table reduces both blocks to
-the unified number and interpolates along the curve, so <code class="docutils literal notranslate"><span class="pre">combine</span></code> is all it
-is told. Neither is given the range in advance.</p>
+<section id="estimators">
+<h2>Estimators<a class="headerlink" href="#estimators" title="Link to this heading">#</a></h2>
+<p>Both estimators are fitted on the same T1 grid, with the proton density
+fixed to one. The matcher scores the two-block signal against every atom and
+returns the nearest. The table reduces both blocks to the unified value and
+interpolates along the curve; <code class="docutils literal notranslate"><span class="pre">combine</span></code> is the only information it is
+given about the sequence. Neither is given the invertible range.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">grid</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">50.0</span><span class="p">,</span> <span class="mf">6000.0</span><span class="p">,</span> <span class="mi">60</span><span class="p">)</span><span class="w">
 </span><span class="w">
-</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">table</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">LookupTable</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">,</span> <span class="n">combine</span><span class="o">=</span><span class="n">unified</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
-</span><span class="w">
-</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.map" title="blochsim.Estimator.map"><span class="n">table</span><span class="o">.</span><span class="n">map</span></a><span class="p">(</span><span class="n">measured</span><span class="p">)</span>  <span class="c1"># {&quot;T1&quot;: ...}, one value per voxel</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">lookup</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><span class="n">LookupTable</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">,</span> <span class="n">combine</span><span class="o">=</span><span class="n">unified</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.map" title="blochsim.Estimator.map"><span class="n">lookup</span><span class="o">.</span><span class="n">map</span></a><span class="p">(</span><span class="n">measured</span><span class="p">)</span>  <span class="c1"># {&quot;T1&quot;: ...}, one value per voxel</span><span class="w">
 </span><span class="w">
 </span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">match</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="n">grid</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<p>Sweeping the grid separates the method from the sampling. Times are the best
-of three passes over the slice.</p>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span> points     match     table     match     table
+</section>
+<section id="table-size">
+<h2>Table size<a class="headerlink" href="#table-size" title="Link to this heading">#</a></h2>
+<p>Sweeping the number of grid points separates the method from the sampling.
+Times are the best of three passes over the slice.</p>
+<img src="../../../_images/sphx_glr_02-lookup-table_003.png" srcset="../../../_images/sphx_glr_02-lookup-table_003.png" alt="error, time" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span> points     match     table     match     table
             error     error      time      time
 -----------------------------------------------
-     30     7.93%     0.88%     2.0ms     0.4ms
-     60     3.29%     0.75%     2.7ms     0.4ms
-    120     0.78%     0.71%     3.2ms     0.5ms
-    250     0.80%     0.71%     5.7ms     0.5ms
-    500     0.62%     0.71%    10.6ms     0.6ms
-   1000     0.66%     0.71%    21.3ms     0.6ms
-   2000     0.71%     0.71%    43.4ms     0.7ms
+     30     7.93%     0.88%     2.4ms     0.6ms
+     60     3.29%     0.75%     3.6ms     0.6ms
+    120     0.78%     0.71%     3.9ms     0.6ms
+    250     0.80%     0.71%     6.6ms     0.6ms
+    500     0.62%     0.71%    11.6ms     0.7ms
+   1000     0.66%     0.71%    21.6ms     0.8ms
+   2000     0.71%     0.71%    49.9ms     0.8ms
 </pre></div>
 </div>
-<p>The table is at its floor from the coarsest grid and does not move again. The
-match starts an order of magnitude worse and climbs to the same place, paying
-for it in points: its search is one comparison per atom per voxel, where the
-table’s binary search grows with the logarithm.</p>
-<p>The floor both reach is the noise. A fine enough grid matches a table
-exactly; the table’s advantage is that it was never told how fine.</p>
-<img src="../../../_images/sphx_glr_02-lookup-table_003.png" srcset="../../../_images/sphx_glr_02-lookup-table_003.png" alt="what the grid costs, what it costs to pay it" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend object at 0x7f10c661e390&gt;
-</pre></div>
-</div>
+<p>The error floor is set by the noise. The table is within 0.2 percentage
+points of it from 30 points on. The match is about nine times worse at 30
+points and reaches the same floor at about 120, at a cost that grows with
+the number of points: it takes one comparison per atom per voxel, where the table takes a
+binary search that grows with the logarithm of the number of points. A
+sufficiently fine grid makes the match equal to the table; the table does not
+need to be told how fine the grid must be.</p>
 </section>
 <section id="maps">
 <h2>Maps<a class="headerlink" href="#maps" title="Link to this heading">#</a></h2>
-<p>At the point count each needs: the table at sixty, the match at a grid fine
-enough not to limit it.</p>
+<p>The maps use the number of points each method needs: 60 for the table and
+2000 for the match, a grid fine enough not to limit it.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>the table keeps 38 of 60 points -- the monotonic run -- and spans unified -0.50 to 0.49
 </pre></div>
 </div>
-<p>Neither estimates M0. Both answer with a T1, and the two blocks it predicts
-are a shape the measurement is a multiple of, so the multiple is one inner
-product per voxel.</p>
+<p>Neither estimator returns M0. The two blocks predicted for the estimated T1
+are a shape of which the measurement is a multiple, so the proton density is
+one inner product per voxel:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">proton_density</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a><span class="p">)</span><span class="p">:</span><span class="w">
-</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;The scale the measurement is, of the blocks the answer predicts.&quot;&quot;&quot;</span><span class="w">
+</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;The scale of the measurement relative to the blocks the answer predicts.&quot;&quot;&quot;</span><span class="w">
 </span>    <span class="n">predicted</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator" title="blochsim.simulators.MP2RAGESimulator"><span class="n">simulator</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a><span class="p">[</span><span class="s2">&quot;</span><span class="s2">T1</span><span class="s2">&quot;</span><span class="p">]</span><span class="p">,</span> <span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="w">
 </span>    <span class="k">return</span> <span class="p">(</span><span class="n">predicted</span> <span class="o">*</span> <span class="n">measured</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">predicted</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mf">1e-12</span><span class="p">)</span><span class="w">
-</span><span class="w">
-</span><span class="w">
-</span><span class="n">M0_map</span> <span class="o">=</span> <span class="n">proton_density</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                      train      map     model      peak      T1      M0
-------------------------------------------------------------------------------
-lookup, 60 points           0.00s    0.4ms  0.00 MiB        --   0.75%   0.46%
-match, 2000 atoms           0.00s   43.6ms  0.05 MiB        --   0.71%   0.45%
-</pre></div>
-</div>
 <ul class="sphx-glr-horizontal">
 <li><img src="../../../_images/sphx_glr_02-lookup-table_004.png" srcset="../../../_images/sphx_glr_02-lookup-table_004.png" alt="truth, lookup, match" class = "sphx-glr-multi-img"/></li>
 <li><img src="../../../_images/sphx_glr_02-lookup-table_005.png" srcset="../../../_images/sphx_glr_02-lookup-table_005.png" alt="Δ lookup, Δ match" class = "sphx-glr-multi-img"/></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.860 seconds)</p>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                      train      map     model      peak      T1      M0
+------------------------------------------------------------------------------
+lookup, 60 points           0.00s    0.6ms  0.00 MiB        --   0.75%   0.46%
+match, 2000 atoms           0.00s   50.9ms  0.05 MiB        --   0.71%   0.45%
+</pre></div>
+</div>
+</section>
+<section id="specification">
+<h2>Specification<a class="headerlink" href="#specification" title="Link to this heading">#</a></h2>
+<p>What this page did, stated the way you would ask an agent for it:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim, map T1 and M0 in BrainWeb subject 0, slice 90, from a
+two-block MP2RAGE (TI 800 and 2700 ms, flip angles 4 and 5 deg, TR 6.7 ms,
+128 shots, TR_MP2RAGE 6 s, inversion efficiency 0.96) at 0.5% noise.
+Fit a LookupTable on the unified image and a DictionaryMatcher over the
+same T1 grid. Sweep the grid from 30 to 2000 points and report the median
+relative T1 error and the mapping time of both; derive M0 from the
+predicted blocks.
+</pre></div>
+</div>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 2.019 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-02-lookup-table-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/02-parameter-inference/02-lookup-table.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />
@@ -778,8 +793,10 @@ match, 2000 atoms           0.00s   43.6ms  0.05 MiB        --   0.71%   0.45%
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#protocol">Protocol</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#signal-curve">Signal curve</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#measurement">Measurement</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#two-estimators">Two estimators</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#estimators">Estimators</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#table-size">Table size</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
   </nav></div>
 

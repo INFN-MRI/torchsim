@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -67,7 +67,7 @@
     <link rel="icon" href="_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Explanations" href="explanations/index.html" />
+    <link rel="next" title="Extended phase graphs: operators" href="internals/epg.html" />
     <link rel="prev" title="User Guide" href="user_guide.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="user_guide.html">User Guide</a></li>
-<li class="toctree-l1 current active"><a class="current reference internal" href="#">Developer Guide</a></li>
+<li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Developer Guide</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="generated/autoexamples/index.html">Examples</a></li>
@@ -532,19 +542,20 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-need-on-the-machine">What you need on the machine</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installing-for-development">Installing for development</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#where-the-source-lives">Where the source lives</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-installation">Development installation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#source-layout">Source layout</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#style">Style</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#setting-up-pre-commit">Setting up pre-commit</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#when-you-need-to-bypass-it">When you need to bypass it</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pre-commit-hooks">Pre-commit hooks</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hook-bypass">Hook bypass</a></li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#running-the-tests">Running the tests</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-the-documentation">Building the documentation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#opening-a-pull-request">Opening a pull request</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tests">Tests</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#documentation-build">Documentation build</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pull-requests">Pull requests</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#internals">Internals</a></li>
 </ul>
             </nav>
         </div>
@@ -564,25 +575,26 @@ in, how to run the tests and build these pages, and how a pull request is
 opened.</p>
 <nav class="contents local" id="contents">
 <ul class="simple">
-<li><p><a class="reference internal" href="#what-you-need-on-the-machine" id="id1">What you need on the machine</a></p></li>
-<li><p><a class="reference internal" href="#installing-for-development" id="id2">Installing for development</a></p>
+<li><p><a class="reference internal" href="#prerequisites" id="id1">Prerequisites</a></p></li>
+<li><p><a class="reference internal" href="#development-installation" id="id2">Development installation</a></p>
 <ul>
-<li><p><a class="reference internal" href="#where-the-source-lives" id="id3">Where the source lives</a></p></li>
+<li><p><a class="reference internal" href="#source-layout" id="id3">Source layout</a></p></li>
 </ul>
 </li>
 <li><p><a class="reference internal" href="#style" id="id4">Style</a></p>
 <ul>
-<li><p><a class="reference internal" href="#setting-up-pre-commit" id="id5">Setting up pre-commit</a></p></li>
-<li><p><a class="reference internal" href="#when-you-need-to-bypass-it" id="id6">When you need to bypass it</a></p></li>
+<li><p><a class="reference internal" href="#pre-commit-hooks" id="id5">Pre-commit hooks</a></p></li>
+<li><p><a class="reference internal" href="#hook-bypass" id="id6">Hook bypass</a></p></li>
 </ul>
 </li>
-<li><p><a class="reference internal" href="#running-the-tests" id="id7">Running the tests</a></p></li>
-<li><p><a class="reference internal" href="#building-the-documentation" id="id8">Building the documentation</a></p></li>
-<li><p><a class="reference internal" href="#opening-a-pull-request" id="id9">Opening a pull request</a></p></li>
+<li><p><a class="reference internal" href="#tests" id="id7">Tests</a></p></li>
+<li><p><a class="reference internal" href="#documentation-build" id="id8">Documentation build</a></p></li>
+<li><p><a class="reference internal" href="#pull-requests" id="id9">Pull requests</a></p></li>
+<li><p><a class="reference internal" href="#internals" id="id10">Internals</a></p></li>
 </ul>
 </nav>
-<section id="what-you-need-on-the-machine">
-<h2><a class="toc-backref" href="#id1" role="doc-backlink">What you need on the machine</a><a class="headerlink" href="#what-you-need-on-the-machine" title="Link to this heading">#</a></h2>
+<section id="prerequisites">
+<h2><a class="toc-backref" href="#id1" role="doc-backlink">Prerequisites</a><a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
 <p>Beyond what the <a class="reference internal" href="user_guide.html"><span class="doc">User Guide</span></a> asks of everyone – an isolated environment
 and a PyTorch build chosen for your hardware – working on the source needs:</p>
 <p><strong>A C++17 compiler.</strong> The CPU state machine and the PERK kernel are C++
@@ -618,11 +630,11 @@ open a pull request.</p>
 <p><strong>The CUDA toolkit and an NVIDIA card, if you want to touch the GPU kernels.</strong>
 They are C++ compiled ahead of time by <code class="docutils literal notranslate"><span class="pre">nvcc</span></code>, which CMake uses wherever it
 finds it. The same kernels are also compiled for the host, so you can develop
-and test them without a card – see <a class="reference internal" href="#dev-tests"><span class="std std-ref">Running the tests</span></a> – but only a card runs
+and test them without a card – see <a class="reference internal" href="#dev-tests"><span class="std std-ref">Tests</span></a> – but only a card runs
 them for real.</p>
 </section>
-<section id="installing-for-development">
-<h2><a class="toc-backref" href="#id2" role="doc-backlink">Installing for development</a><a class="headerlink" href="#installing-for-development" title="Link to this heading">#</a></h2>
+<section id="development-installation">
+<h2><a class="toc-backref" href="#id2" role="doc-backlink">Development installation</a><a class="headerlink" href="#development-installation" title="Link to this heading">#</a></h2>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pulserver/blochsim
 <span class="nb">cd</span><span class="w"> </span>blochsim
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[dev]"</span>
@@ -652,8 +664,8 @@ the one you just built:</p>
 python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import blochsim._epg_cpu as k; print(k.__file__)"</span>
 </pre></div>
 </div>
-<section id="where-the-source-lives">
-<h3><a class="toc-backref" href="#id3" role="doc-backlink">Where the source lives</a><a class="headerlink" href="#where-the-source-lives" title="Link to this heading">#</a></h3>
+<section id="source-layout">
+<h3><a class="toc-backref" href="#id3" role="doc-backlink">Source layout</a><a class="headerlink" href="#source-layout" title="Link to this heading">#</a></h3>
 <dl class="simple myst">
 <dt><code class="docutils literal notranslate"><span class="pre">src/blochsim/sequence/</span></code></dt><dd><p>The description an acquisition is assembled from – events, operators,
 builders – and the dispatch that turns one into a kernel launch:
@@ -676,8 +688,8 @@ models – exists here too, and the two agree to float32 round-off.</p>
 respectively.</p>
 </dd>
 </dl>
-<p><a class="reference internal" href="explanations/implementation.html"><span class="doc">How BlochSim runs it</span></a> is the tour of how those pieces fit
-together; read it before changing any of them.</p>
+<p><a class="reference internal" href="internals/kernels.html"><span class="doc">Kernels</span></a> describes how those pieces fit together; read it
+before changing any of them.</p>
 </section>
 </section>
 <section id="style">
@@ -688,8 +700,8 @@ the style is decided in one place. Ruff also runs pycodestyle, pyflakes,
 bugbear, quote, pydocstyle, pyupgrade and annotation rules, with the
 <strong>numpydoc</strong> docstring convention. Public functions and classes carry
 annotations; the settings are in <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> and are the authority.</p>
-<section id="setting-up-pre-commit">
-<h3><a class="toc-backref" href="#id5" role="doc-backlink">Setting up pre-commit</a><a class="headerlink" href="#setting-up-pre-commit" title="Link to this heading">#</a></h3>
+<section id="pre-commit-hooks">
+<h3><a class="toc-backref" href="#id5" role="doc-backlink">Pre-commit hooks</a><a class="headerlink" href="#pre-commit-hooks" title="Link to this heading">#</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-e</span> <span class="pre">&quot;.[dev]&quot;</span></code> puts <code class="docutils literal notranslate"><span class="pre">pre-commit</span></code> on the path. Registering the hook
 is a second, separate step, and until you take it nothing runs on commit:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>pre-commit<span class="w"> </span>install
@@ -719,8 +731,8 @@ about it, and a run that changed something exits non-zero so you see what it
 did. Nothing is lost – the fixes are in your working tree. Look at them,
 <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">add</span></code> them, and commit again; the second attempt passes.</p>
 </section>
-<section id="when-you-need-to-bypass-it">
-<h3><a class="toc-backref" href="#id6" role="doc-backlink">When you need to bypass it</a><a class="headerlink" href="#when-you-need-to-bypass-it" title="Link to this heading">#</a></h3>
+<section id="hook-bypass">
+<h3><a class="toc-backref" href="#id6" role="doc-backlink">Hook bypass</a><a class="headerlink" href="#hook-bypass" title="Link to this heading">#</a></h3>
 <p>Skip one hook, which is the smallest hammer and usually the right one:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">SKIP</span><span class="o">=</span>ruff-check<span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"..."</span>
 <span class="nv">SKIP</span><span class="o">=</span>ruff-check,ruff-format<span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">"..."</span>
@@ -767,8 +779,8 @@ carries radians. Convert at the boundary, and name the unit in the identifier
 (<code class="docutils literal notranslate"><span class="pre">duration_s</span></code>, <code class="docutils literal notranslate"><span class="pre">flip_rad</span></code>, <code class="docutils literal notranslate"><span class="pre">t1_ms</span></code>) rather than in a comment beside it.</p>
 </section>
 </section>
-<section id="running-the-tests">
-<span id="dev-tests"></span><h2><a class="toc-backref" href="#id7" role="doc-backlink">Running the tests</a><a class="headerlink" href="#running-the-tests" title="Link to this heading">#</a></h2>
+<section id="tests">
+<span id="dev-tests"></span><h2><a class="toc-backref" href="#id7" role="doc-backlink">Tests</a><a class="headerlink" href="#tests" title="Link to this heading">#</a></h2>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>pytest<span class="w"> </span>tests/<span class="w">                     </span><span class="c1"># everything, with coverage</span>
 pytest<span class="w"> </span>tests/epg/<span class="w">                 </span><span class="c1"># one area</span>
 pytest<span class="w"> </span>tests/epg/test_shift.py<span class="w"> </span>-k<span class="w"> </span>inversion
@@ -792,8 +804,8 @@ BlochSim: a closed form, a published figure, or an isochromat summation you
 write in the test itself. The <code class="docutils literal notranslate"><span class="pre">tests/epg</span></code> files are written that way, and
 each states its invariant in its module docstring.</p>
 </section>
-<section id="building-the-documentation">
-<h2><a class="toc-backref" href="#id8" role="doc-backlink">Building the documentation</a><a class="headerlink" href="#building-the-documentation" title="Link to this heading">#</a></h2>
+<section id="documentation-build">
+<h2><a class="toc-backref" href="#id8" role="doc-backlink">Documentation build</a><a class="headerlink" href="#documentation-build" title="Link to this heading">#</a></h2>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>bash<span class="w"> </span>scripts/build_docs.sh<span class="w">              </span><span class="c1"># incremental</span>
 bash<span class="w"> </span>scripts/build_docs.sh<span class="w"> </span>--clean<span class="w">      </span><span class="c1"># re-execute every example</span>
 <span class="nv">PYTHON_BIN</span><span class="o">=</span>~/envs/blochsim/bin/python<span class="w"> </span>bash<span class="w"> </span>scripts/build_docs.sh
@@ -818,8 +830,8 @@ in the <code class="docutils literal notranslate"><span class="pre">FIGURES</spa
 <code class="docutils literal notranslate"><span class="pre">examples/</span></code> section – the numeric prefix orders it, and the module
 docstring becomes the page’s introduction.</p>
 </section>
-<section id="opening-a-pull-request">
-<h2><a class="toc-backref" href="#id9" role="doc-backlink">Opening a pull request</a><a class="headerlink" href="#opening-a-pull-request" title="Link to this heading">#</a></h2>
+<section id="pull-requests">
+<h2><a class="toc-backref" href="#id9" role="doc-backlink">Pull requests</a><a class="headerlink" href="#pull-requests" title="Link to this heading">#</a></h2>
 <ol class="arabic">
 <li><p><strong>Branch from</strong> <code class="docutils literal notranslate"><span class="pre">main</span></code>, in your fork. One subject per branch; a
 refactor and a fix in the same diff cost the reviewer more than they save
@@ -850,6 +862,18 @@ to issues, discussions, pull requests and reviews alike. BlochSim is released
 under the <a class="reference internal" href="misc/license.html"><span class="doc">License</span></a>, and a contribution is released under the same
 terms; <a class="reference internal" href="misc/contributors.html"><span class="doc">Contributors</span></a> is generated from the repository history.</p>
 </section>
+<section id="internals">
+<h2><a class="toc-backref" href="#id10" role="doc-backlink">Internals</a><a class="headerlink" href="#internals" title="Link to this heading">#</a></h2>
+<p>The implementation behind the explanation pages: the derivations, the format
+rules and the kernels, for whoever changes them.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l1"><a class="reference internal" href="internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l1"><a class="reference internal" href="internals/kernels.html">Kernels</a></li>
+</ul>
+</div>
+</section>
 </section>
 
 
@@ -873,11 +897,11 @@ terms; <a class="reference internal" href="misc/contributors.html"><span class="
       </div>
     </a>
     <a class="right-next"
-       href="explanations/index.html"
+       href="internals/epg.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Explanations</p>
+        <p class="prev-next-title">Extended phase graphs: operators</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -899,19 +923,20 @@ terms; <a class="reference internal" href="misc/contributors.html"><span class="
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-need-on-the-machine">What you need on the machine</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installing-for-development">Installing for development</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#where-the-source-lives">Where the source lives</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#development-installation">Development installation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#source-layout">Source layout</a></li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#style">Style</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#setting-up-pre-commit">Setting up pre-commit</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#when-you-need-to-bypass-it">When you need to bypass it</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pre-commit-hooks">Pre-commit hooks</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#hook-bypass">Hook bypass</a></li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#running-the-tests">Running the tests</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#building-the-documentation">Building the documentation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#opening-a-pull-request">Opening a pull request</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tests">Tests</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#documentation-build">Documentation build</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pull-requests">Pull requests</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#internals">Internals</a></li>
 </ul>
   </nav></div>
 

@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -69,8 +69,8 @@
     <link rel="icon" href="../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Extended phase graphs" href="epg.html" />
-    <link rel="prev" title="Explanations" href="index.html" />
+    <link rel="next" title="Derivatives" href="derivatives.html" />
+    <link rel="prev" title="Extended phase graphs" href="epg.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -201,11 +201,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">Explanations</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2 current active"><a class="current reference internal" href="#">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../generated/autoexamples/index.html">Examples</a></li>
@@ -534,12 +544,15 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#event-classification">Event classification</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blocks-to-events">Blocks to events</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pulse-shapes">Pulse shapes</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#echo-detection">Echo detection</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-mrd-stream">The MRD stream</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gradients-the-stream-does-not-carry">Gradients the stream does not carry</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#capabilities">Capabilities</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#division-of-responsibility">Division of responsibility</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#method">Method</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#event-classification">Event classification</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#rf-shapes">RF shapes</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#timing">Timing</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#examples">Examples</a></li>
 </ul>
             </nav>
         </div>
@@ -556,183 +569,139 @@
 <div class="tldr admonition">
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
-<li><p>BlochSim consumes a compact sequence description made of RF, ADC and wait
-events plus reusable RF definitions.</p></li>
-<li><p>Pulseq files and scanner MRD streams are both decoded into this same
-description.</p></li>
-<li><p>The description states what was played; a <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>
-supplies the handlers that decide how those commands affect the EPG state.</p></li>
+<li><p>A sequence description is one repetition as WAIT, RF and ADC events, timestamped in microseconds, with the RF definitions its pulses name.</p></li>
+<li><p>A Pulseq file and the MRD stream pulserver sends are read into the same <a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code></a>.</p></li>
+<li><p>Gradients are not events: the handlers of the simulator a description is given to supply the dephasing.</p></li>
 </ul>
 </div>
-<p>A sequence reaches BlochSim as an <strong>event stream</strong>: one repetition’s worth of
-events, each with a timestamp and the few numbers its kind carries. This page
-is what that stream holds, how it is read out of a Pulseq file, and how a
-scanner carries it. The physics the events drive is <a class="reference internal" href="epg.html"><span class="doc">Extended phase graphs</span></a>; how the kernels
-run them is <a class="reference internal" href="implementation.html"><span class="doc">How BlochSim runs it</span></a>.</p>
+<p>You can simulate a sequence written elsewhere, from its Pulseq file or from
+the stream a scanner sends during the acquisition, without restating its
+parameters. This page states what such a description gives a simulator. How
+the handlers then play it is on <a class="reference internal" href="signal-model.html"><span class="doc">Signal model</span></a>; the reading rules and the
+wire format are in <a class="reference internal" href="../internals/description.html"><span class="doc">Sequence description: reading rules</span></a>.</p>
+<section id="capabilities">
+<h2>Capabilities<a class="headerlink" href="#capabilities" title="Link to this heading">#</a></h2>
+<div class="capabilities docutils container">
+<ul>
+<li><p><strong>Reads one repetition of a Pulseq file, as many blocks as its <code class="docutils literal notranslate"><span class="pre">TRSize</span></code> definition states, one event per block.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_pulseq" title="blochsim.SequenceDescription.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a>. Tests: <em>the stream is the blocks the file lists</em>; <em>a file without a declared repetition is refused</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Reads a sequence held in memory by pypulseq or pypulseqpp as it reads the file that sequence writes.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_pulseq" title="blochsim.SequenceDescription.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a>. Test: <em>a sequence in memory reads as the file it writes</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Takes the repetition named by <code class="docutils literal notranslate"><span class="pre">tr_index</span></code> or by the file’s <code class="docutils literal notranslate"><span class="pre">TRRef</span></code>, and otherwise the first that acquires, provided every repetition plays the same pulses.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">read_pulseq_description</span></code>. Test: <em>naming a repetition out of range is refused</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Stamps an RF event at the isocentre of its pulse, with the flip angle the envelope integrates to on the declared RF raster.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.rf_definition.html#blochsim.rf_definition" title="blochsim.rf_definition"><code class="xref py py-func docutils literal notranslate"><span class="pre">rf_definition()</span></code></a>. Tests: <em>the pulse reads back at the angle it was written at</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>); <em>the dwell need not be the raster</em> (<code class="docutils literal notranslate"><span class="pre">test_rf_definition.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Makes a pulse played under a slice-select gradient slice selective, with slice positions in units of the excitation’s thickness.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">read_pulseq_description</span></code>. Tests: <em>a pulse under a slice select gradient selects the slice it was designed for</em>; <em>a slice selective pulse from a file excites only its slice</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Stamps an ADC event at the sample where its readout crosses the k-space centre, found on the gradient trajectory.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">read_pulseq_description</span></code>. Test: <em>the echo sits where the trajectory crosses zero</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Flags the readouts that pass through <span class="math notranslate nohighlight">\(k = 0\)</span>, which <code class="docutils literal notranslate"><span class="pre">record=&quot;echo&quot;</span></code> keeps.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">read_pulseq_description</span></code>, <code class="docutils literal notranslate"><span class="pre">EpgEngine.simulate</span></code>. Tests: <em>only the readout that crosses zero is an echo</em>; <em>recording echoes keeps the central readout alone</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Decodes the description pulserver sends on an MRD stream, one per file of the sequence chain, in play order.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.read_mrd_description.html#blochsim.read_mrd_description" title="blochsim.read_mrd_description"><code class="xref py py-func docutils literal notranslate"><span class="pre">read_mrd_description()</span></code></a>. Tests: <em>a written stream reads back into the rows it was built from</em>; <em>every file of a chain is read in play order</em>; <em>a stream whose data arrives first is refused</em> (<code class="docutils literal notranslate"><span class="pre">test_mrd_reader.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Reproduces the spoiled gradient-echo steady state from a description read either way.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>. Tests: <em>the steady state is the spoiled gradient echo closed form</em> (<code class="docutils literal notranslate"><span class="pre">test_pulseq_reader.py</span></code>); <em>a described sequence drives the spoiled gradient echo steady state</em> (<code class="docutils literal notranslate"><span class="pre">test_mrd_reader.py</span></code>).</p>
+</div>
+</details></li>
+</ul>
+</div>
+</section>
+<section id="division-of-responsibility">
+<h2>Division of responsibility<a class="headerlink" href="#division-of-responsibility" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><strong>Gradient moments.</strong> A description holds one crusher moment for the whole sequence, <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code> across <code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code>, given by the caller; neither file nor stream supplies it.</p></li>
+<li><p><strong>A slice-select gradient that varies under the pulse</strong>, as in VERSE or ramp sampling: a file’s pulse is selected by the gradient at its centre.</p></li>
+<li><p><strong>Pulses with a time shape of their own</strong>, sampled unevenly in a Pulseq file, which are refused.</p></li>
+<li><p><strong>A gradient that belongs to no pulse or readout</strong>, such as a preparation’s own spoiler, which no handler reinstates.</p></li>
+</ul>
+</section>
+<section id="method">
+<h2>Method<a class="headerlink" href="#method" title="Link to this heading">#</a></h2>
+<figure class="align-default" id="id1">
+<a class="reference internal image-reference" href="../_images/sequence_description.png"><img alt="Thirteen Pulseq blocks above the events they are read as, and the readout k-space coordinate crossing zero at each ADC timestamp." src="../_images/sequence_description.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Above, the first thirteen blocks of a spin-echo train and the events they are
+read as; blocks holding only gradients become WAITs. Below, the readout
+coordinate <span class="math notranslate nohighlight">\(k_x\)</span> at every ADC sample: each ADC event is stamped at its zero
+crossing.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
 <section id="event-classification">
-<h2>Event classification<a class="headerlink" href="#event-classification" title="Link to this heading">#</a></h2>
-<p>An event is one of three things, and carries a timestamp in microseconds
-whichever it is.</p>
-<ol class="arabic simple">
-<li><p><strong>WAIT</strong> – time passing. Nothing but when.</p></li>
-<li><p><strong>RF</strong> – a pulse, stamped at its isocenter. It names the pulse shape it
-drives, the amplitude and phase it drives it at, a frequency offset, a
-transmit shim, and the slice-select gradient playing under it.</p></li>
-<li><p><strong>ADC</strong> – a sample, stamped where its readout passes closest to k = 0. It
-carries the receiver phase, its role among the repetition’s samples, and
-whether it reaches k = 0 at all.</p></li>
-</ol>
-<p>A pulse also carries the <strong>use</strong> its designer gave it, which is the one thing a
-Pulseq file says about what a pulse is <em>for</em>: <code class="docutils literal notranslate"><span class="pre">EXCITATION</span></code>, <code class="docutils literal notranslate"><span class="pre">REFOCUSING</span></code>,
-<code class="docutils literal notranslate"><span class="pre">INVERSION</span></code>, <code class="docutils literal notranslate"><span class="pre">SATURATION</span></code>, <code class="docutils literal notranslate"><span class="pre">PREPARATION</span></code>, <code class="docutils literal notranslate"><span class="pre">OTHER</span></code>, or <code class="docutils literal notranslate"><span class="pre">UNKNOWN</span></code> where the file
-is silent. A simulator dispatches on it, so a refocusing pulse reaches the
-refocusing handler whatever angle it turns.</p>
-<p>A sample carries a <strong>role</strong>, relating it to the other samples of the same
-repetition: <code class="docutils literal notranslate"><span class="pre">SINGLE</span></code> where a repetition takes one and where several are alike,
-<code class="docutils literal notranslate"><span class="pre">ECHO_CENTER</span></code> for the one nearest the centre of a train whose samples are not,
-<code class="docutils literal notranslate"><span class="pre">NON_CENTER</span></code> for the rest, and <code class="docutils literal notranslate"><span class="pre">NON_ACQUIRED</span></code> for a window that records
-nothing. Beside it sits the echo flag, and the two answer different questions –
-see <a class="reference internal" href="#echo-detection"><span class="std std-ref">Echo detection</span></a>.</p>
-<p>Every event has one field more, an <strong>action</strong>, saying what the sequence does
-around it that is not itself an event: crushing before or after a pulse,
-winding or spoiling after a sample. A stream that arrived from a scanner has
-this empty on every event, and <a class="reference internal" href="#no-gradients"><span class="std std-ref">Gradients the stream does not carry</span></a> is why.</p>
+<h3>Event classification<a class="headerlink" href="#event-classification" title="Link to this heading">#</a></h3>
+<p>A block holding a pulse becomes an RF event, one holding only an ADC an ADC
+event, and any other a WAIT; a block holding both is read as the pulse. An RF
+event carries the Pulseq use tag, which selects the handler: refocusing,
+inversion and saturation pulses reach their own, and any other pulse the
+excitation handler. An ADC event carries a role among the repetition’s samples
+and the echo flag; <code class="docutils literal notranslate"><span class="pre">record=&quot;acquired&quot;</span></code> keeps every sample whose role is not
+<code class="docutils literal notranslate"><span class="pre">NON_ACQUIRED</span></code>.</p>
 </section>
-<section id="blocks-to-events">
-<h2>Blocks to events<a class="headerlink" href="#blocks-to-events" title="Link to this heading">#</a></h2>
-<p>A Pulseq file is a table of blocks, each holding at most one RF pulse, one
-gradient per axis, and one ADC window. One block becomes one event.</p>
-<figure class="align-default" id="id2">
-<a class="reference internal image-reference" href="../_images/description_blocks.png"><img alt="Nine Pulseq blocks above the nine events they are read as." src="../_images/description_blocks.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">The first nine blocks of a spin-echo train and the events they become. A block
-holding a pulse becomes an RF event, one holding only a sample becomes an ADC
-event, and the rest become WAITs – the gradients they play are not events.</span><a class="headerlink" href="#id2" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>Timestamps accumulate from the start of the repetition being read, not from the
-start of the scan, so a description is the same wherever in the file it was
-taken from. Two of them are not the block’s own start: an RF event is stamped
-at the isocenter of its pulse, <code class="docutils literal notranslate"><span class="pre">delay</span> <span class="pre">+</span> <span class="pre">center</span></code>, and an ADC event at the sample
-the trajectory passes closest to zero in. A block carrying both a pulse and a
-sample is read as the pulse.</p>
-<p><strong>Which repetition.</strong> The file states how many blocks one repetition holds, in
-its <code class="docutils literal notranslate"><span class="pre">TRSize</span></code> definition, and reading is refused without it – a period is
-declared by the design side, never searched for here. Which <em>instance</em> of it
-stands for the sequence is a separate question, and it has an obvious answer
-only when the repetitions are alike. The default is the first repetition that
-acquires, and that default is refused when the repetitions play different
-pulses – an optimized echo train, a fingerprinting schedule – because the
-simulation would otherwise silently stand for whichever came first. Such a file
-says which with a <code class="docutils literal notranslate"><span class="pre">TRRef</span></code> definition, or the caller passes <code class="docutils literal notranslate"><span class="pre">tr_index</span></code>.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">FSESimulator</span>
-
-<span class="c1"># The tissue is given; the echo spacing, the train length, the refocusing</span>
-<span class="c1"># angle and the pulse shapes are read.</span>
-<span class="n">train</span> <span class="o">=</span> <span class="n">FSESimulator</span><span class="o">.</span><span class="n">from_pulseq</span><span class="p">(</span><span class="s2">"fse.seq"</span><span class="p">,</span> <span class="n">states</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
-<span class="n">signal</span> <span class="o">=</span> <span class="n">train</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="mf">830.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="mf">80.0</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Reading a file needs <code class="docutils literal notranslate"><span class="pre">pypulseq</span></code>, which parses the format and computes the
-gradient trajectory: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">blochsim[pulseq]</span></code>.</p>
+<section id="rf-shapes">
+<h3>RF shapes<a class="headerlink" href="#rf-shapes" title="Link to this heading">#</a></h3>
+<p>Events name a definition rather than carry a waveform. Rows of the Pulseq RF
+library that differ only in amplitude, phase or frequency, as RF spoiling
+writes them, share one definition. The flip angle is <span class="math notranslate nohighlight">\(2\pi\)</span> times the
+magnitude of the event amplitude times the envelope’s integral, taken on the
+<code class="docutils literal notranslate"><span class="pre">RadiofrequencyRasterTime</span></code> the description carries. Which rotation the
+kernels perform with the definition is on <a class="reference internal" href="epg.html"><span class="doc">Extended phase graphs</span></a>.</p>
 </section>
-<section id="pulse-shapes">
-<h2>Pulse shapes<a class="headerlink" href="#pulse-shapes" title="Link to this heading">#</a></h2>
-<p>An RF event names a <strong>definition</strong> rather than carrying a waveform, and several
-events share one. Pulseq writes a library row per pulse <em>occurrence</em>, so RF
-spoiling writes one row per repetition of the same shape; rows agreeing on
-their magnitude, phase and time shapes are one pulse played at different
-amplitudes, phases and frequencies, and collapse onto a single definition.</p>
-<p>A definition holds the envelope, normalized so that the amplitude an event
-carries is the flip angle in radians. What that normalization divides by is the
-envelope integrated on the raster the file declares as its
-<code class="docutils literal notranslate"><span class="pre">RadiofrequencyRasterTime</span></code>, so the raster travels with the description. Read a
-pulse sampled every 2 microseconds on a 1 microsecond raster and every flip
-angle in the sequence is halved.</p>
-<p>Beyond one envelope a definition can carry a phase per sample, sample times of
-its own, a slice-select gradient per sample, several frequency bands, and one
-envelope per transmit channel. Which of those are present is what decides
-whether a pulse reaches the kernels as an ideal rotation, an integrated
-rotation about a fixed axis, or a full dynamic one; <a class="reference internal" href="implementation.html"><span class="doc">How BlochSim runs it</span></a> has
-that.</p>
+<section id="timing">
+<h3>Timing<a class="headerlink" href="#timing" title="Link to this heading">#</a></h3>
+<p>Timestamps count from the start of the repetition read, not of the scan, so a
+description does not depend on where in the file it was taken. The repetition
+lasts the sum of its block durations.</p>
 </section>
-<section id="echo-detection">
-<span id="id1"></span><h2>Echo detection<a class="headerlink" href="#echo-detection" title="Link to this heading">#</a></h2>
-<p>A Pulseq file does not say which sample is the echo. It says what gradients
-play, and the trajectory follows: <span class="math notranslate nohighlight">\(k = \gamma \int G\,\mathrm{d}t\)</span>, the same
-quantity as the k-space coordinate of imaging. A readout’s own centre is the
-sample where the axes <em>that readout sweeps</em> come closest to zero.</p>
-<figure class="align-default" id="id3">
-<a class="reference internal image-reference" href="../_images/description_echo.png"><img alt="Eight k-space lines, one through the origin, and their distances from it." src="../_images/description_echo.png" style="width: 100%;" />
-</a>
-<figcaption>
-<p><span class="caption-text">One repetition of the spin-echo train above. Every readout sweeps through its
-own zero in the readout direction, which is what makes each of them an echo;
-only one of the eight is also at the centre of the phase-encode direction.</span><a class="headerlink" href="#id3" title="Link to this image">#</a></p>
-</figcaption>
-</figure>
-<p>Two questions follow, and they are not the same one.</p>
-<p><strong>Whether a position bears an echo</strong> is absolute. The comparison is against the
-scan’s own closest approach to k = 0, reduced over every instance of that
-position in the file, with a tolerance relative to the largest coordinate the
-scan reaches – so a finite phase-encode offset stays out and accumulated
-floating-point error stays in. This is what separates the line through the
-centre from the phase-encoded ones, and it is what <code class="docutils literal notranslate"><span class="pre">record=&quot;echo&quot;</span></code> keeps.</p>
-<p><strong>What a position’s role is</strong> is structural. The norm is taken only along the
-axes the readout itself sweeps, ignoring offsets carried in from encodes, so a
-CPMG echo is central whatever line it encodes. Where a repetition takes several
-samples and one is nearer the centre than the rest, that one is <code class="docutils literal notranslate"><span class="pre">ECHO_CENTER</span></code>
-and the others <code class="docutils literal notranslate"><span class="pre">NON_CENTER</span></code>; where they tie – every echo of a CPMG train,
-every blade of a PROPELLER – all of them are <code class="docutils literal notranslate"><span class="pre">SINGLE</span></code>. This is what
-<code class="docutils literal notranslate"><span class="pre">record=&quot;acquired&quot;</span></code> reads.</p>
-<p>The train in the figure is the tied case: all eight roles are <code class="docutils literal notranslate"><span class="pre">SINGLE</span></code>, because
-each echo is central in the direction it sweeps, and one echo flag is set,
-because only one of them is the line through k = 0.</p>
 </section>
-<section id="the-mrd-stream">
-<h2>The MRD stream<a class="headerlink" href="#the-mrd-stream" title="Link to this heading">#</a></h2>
-<p>A scanner does not send a file. Pulserver’s reconstruction proxy reads the
-sequence file a series was played from and sends its description on the MRD
-stream, after the XML header and before the first acquisition, as one <code class="docutils literal notranslate"><span class="pre">TEXT</span></code>
-message holding a description per file of the sequence chain.
-<code class="xref py py-func docutils literal notranslate"><span class="pre">read_mrd_description()</span></code> decodes it into the same object
-<a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_pulseq" title="blochsim.SequenceDescription.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a> builds, so a simulation driven
-from a design script and one driven from a running scan read one derivation,
-not two. Which model the rows drive is chosen by the reader.</p>
-<p>The fields of an event are positional and in that wire order, which is why an
-RF event’s numbers are reached through named properties rather than by index.</p>
-</section>
-<section id="gradients-the-stream-does-not-carry">
-<span id="no-gradients"></span><h2>Gradients the stream does not carry<a class="headerlink" href="#gradients-the-stream-does-not-carry" title="Link to this heading">#</a></h2>
-<p>The stream names pulses and samples. It does not name gradients, and that is
-not an omission that can be repaired by adding a field: a Pulseq file has no
-gradient <em>use</em>, so a crusher cannot be told from a phase encode without
-tracking the k-space moment through the whole repetition, and the moment itself
-is what an EPG simulation quantizes away.</p>
-<p>What the description carries instead is one dephasing for the whole sequence –
-<code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code>, the turn one unbalanced gradient winds across a voxel
-of <code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code>. Their ratio is what diffusion is damped by and what flow
-turns each order through. A dephasing of zero leaves both terms out however
-large the coefficients behind them.</p>
-<p>Everything else lives in the simulator. A refocused train crushes either side
-of its refocusing pulses, an unbalanced one winds an order after every sample,
-a spoiled one discards the transverse states, a balanced one leaves them where
-they are. Naming the simulator is what says which of those the arriving events
-are to be read as, and it is the only thing a caller chooses:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">FSESimulator</span><span class="p">,</span> <span class="n">MRFSimulator</span>
-
-<span class="c1"># The same file, read as a refocused train and as an unbalanced one.</span>
-<span class="n">refocused</span> <span class="o">=</span> <span class="n">FSESimulator</span><span class="o">.</span><span class="n">from_pulseq</span><span class="p">(</span><span class="s2">"scan.seq"</span><span class="p">)</span>
-<span class="n">unbalanced</span> <span class="o">=</span> <span class="n">MRFSimulator</span><span class="o">.</span><span class="n">from_pulseq</span><span class="p">(</span><span class="s2">"scan.seq"</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Two consequences are worth knowing. A gradient moment that is not a whole
-number of configuration orders has no spelling here – a bipolar pair, a
-velocity-encoding lobe, a crusher of twice its neighbour’s area. And a
-preparation’s own spoiler does not survive the round trip: a handler reinstates
-what a pulse or a sample implies, and a bare gradient is neither, so a
-preparation that has to reach the kernels belongs in a pulse the wire can name.</p>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="../generated/autoexamples/01-framework/04-description-based-simulation.html"><span class="doc">4. Description-based simulation</span></a>: a description inspected, then simulated from a Pulseq file and through two sets of handlers.</p></li>
+<li><p><a class="reference internal" href="../generated/autoexamples/01-framework/02-advanced-physics.html"><span class="doc">2. Advanced physics</span></a>: a shaped pulse from an RF definition, integrated across the slice.</p></li>
+</ul>
 </section>
 </section>
 
@@ -748,20 +717,20 @@ preparation that has to reach the kernels belongs in a pulse the wire can name.<
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="index.html"
+       href="epg.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Explanations</p>
+        <p class="prev-next-title">Extended phase graphs</p>
       </div>
     </a>
     <a class="right-next"
-       href="epg.html"
+       href="derivatives.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Extended phase graphs</p>
+        <p class="prev-next-title">Derivatives</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -783,12 +752,15 @@ preparation that has to reach the kernels belongs in a pulse the wire can name.<
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#event-classification">Event classification</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blocks-to-events">Blocks to events</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pulse-shapes">Pulse shapes</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#echo-detection">Echo detection</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-mrd-stream">The MRD stream</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gradients-the-stream-does-not-carry">Gradients the stream does not carry</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#capabilities">Capabilities</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#division-of-responsibility">Division of responsibility</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#method">Method</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#event-classification">Event classification</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#rf-shapes">RF shapes</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#timing">Timing</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#examples">Examples</a></li>
 </ul>
   </nav></div>
 

@@ -2,21 +2,12 @@
 
 .. _sphx_glr_generated_autoexamples_02-parameter-inference:
 
-Parameter inference
--------------------
+Applications: parameter mapping
+-------------------------------
 
-Estimating tissue properties from a measured volume.
-
-Every estimator is made from the simulator it inverts and fitted over the
-same statement of the problem -- what is unknown, over what range, at what
-noise level -- and they differ only in how they fill it in. These examples change only that: dictionary matching over a parameter
-grid, compressed and clustered; interpolation along a curve where there is a
-single unknown; a nonlinear fit of the model itself; and a kernel regression
-that never builds a grid at all.
-
-Every one of them maps the same BrainWeb slice, so the answer is known
-everywhere -- mixtures of tissues included -- and reports what it cost in time
-and in memory alongside what it got wrong.
+Four ways to turn a measured signal into T1, T2 and M0 maps, all built from
+the same simulator and compared on the same BrainWeb slice: dictionary
+matching, a lookup table, nonlinear least squares and PERK.
 
 
 .. raw:: html
@@ -32,7 +23,7 @@ and in memory alongside what it got wrong.
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice by exhaustive dictionary matching, and to show the two ways of making that affordable: working in the low-rank basis the train spans, and clustering the dictionary so that most atoms are never scored.">
+    <div class="sphx-glr-thumbcontainer" tooltip="You map T1, T2 and proton density in a brain slice from a magnetic resonance fingerprinting (MRF) train by dictionary matching, then reduce the cost of the match in two independent ways: by working in the low-rank subspace spanned by the train, and by clustering the dictionary so that most atoms are not scored.">
 
 .. only:: html
 
@@ -49,7 +40,7 @@ and in memory alongside what it got wrong.
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T1 from a two-block MP2RAGE, by interpolating along a curve and by matching the same curve, and to sweep the number of points to show which of the two is limited by it.">
+    <div class="sphx-glr-thumbcontainer" tooltip="You map T1 from a two-block MP2RAGE acquisition in two ways, by interpolating along the signal curve and by dictionary matching, and sweep the number of points on the curve to see which method depends on it.">
 
 .. only:: html
 
@@ -66,7 +57,7 @@ and in memory alongside what it got wrong.
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map T2 from a multi-echo spin echo by nonlinear least squares, and to compare it against a dictionary match on the same slice.">
+    <div class="sphx-glr-thumbcontainer" tooltip="You map T2 from a multi-echo spin echo by nonlinear least squares and compare the result with dictionary matching on the same slice.">
 
 .. only:: html
 
@@ -83,7 +74,7 @@ and in memory alongside what it got wrong.
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports.">
+    <div class="sphx-glr-thumbcontainer" tooltip="You map T1, T2 and proton density in a brain slice with PERK, vary the size of the regression, and read the uncertainty it reports against the Cramér-Rao bound.">
 
 .. only:: html
 

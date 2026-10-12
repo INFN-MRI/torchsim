@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
@@ -558,7 +568,7 @@
 respect to each parameter being estimated. Real and imaginary parts
 are counted as separate measurements, which is what independent
 Gaussian noise on the two channels means.</p></li>
-<li><p><strong>noise_variance</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.14)"><em>float</em></a><em>, </em><em>optional</em>) – The variance of that noise, in the units the signal is in.</p></li>
+<li><p><strong>noise_variance</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The variance of that noise, in the units the signal is in.</p></li>
 <li><p><strong>singular</strong> (<em>{&quot;raise&quot;</em><em>, </em><em>&quot;infinite&quot;}</em><em>, </em><em>optional</em>) – What to do where the parameters are not jointly identifiable. The
 default refuses, which is right for a design being scored: a
 sequence that cannot separate its parameters has no bound to
@@ -578,7 +588,7 @@ a short and a long relaxation time comparably.</p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
 <dd class="field-even"><ul class="simple">
-<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If the Jacobian has no parameter axis.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the Jacobian has no parameter axis.</p></li>
 <li><p><strong>torch.linalg.LinAlgError</strong> – If the parameters are not jointly identifiable from these samples,
     which is a singular Fisher matrix and says the design cannot work at
     all rather than that it is imprecise.</p></li>
@@ -589,12 +599,12 @@ a short and a long relaxation time comparably.</p>
 
 <section id="examples-using-blochsim-crlb">
 <span id="sphx-glr-backref-blochsim-crlb"></span><h2>Examples using <code class="docutils literal notranslate"><span class="pre">blochsim.crlb</span></code><a class="headerlink" href="#examples-using-blochsim-crlb" title="Link to this heading">#</a></h2>
-<div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to map a brain slice with PERK, to show what the size of the regression buys, and to read the error bar it reports."><img alt="" src="../_images/sphx_glr_04-perk_thumb.png" />
+<div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="You map T1, T2 and proton density in a brain slice with PERK, vary the size of the regression, and read the uncertainty it reports against the Cramér-Rao bound."><img alt="" src="../_images/sphx_glr_04-perk_thumb.png" />
 <p><a class="reference internal" href="autoexamples/02-parameter-inference/04-perk.html"><span class="doc">PERK: kernel ridge regression</span></a></p>
   <div class="sphx-glr-thumbnail-title">PERK: kernel ridge regression</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_."><img alt="" src="../_images/sphx_glr_02-joint-relaxometry_thumb.png" />
-<p><a class="reference internal" href="autoexamples/03-sequence-optimization/02-joint-relaxometry.html"><span class="doc">Designing a joint relaxometry protocol</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Designing a joint relaxometry protocol</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In this example you choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_. DESPOT estimates T1 from spoiled gradient-echo scans at several flip angles and T2 from balanced SSFP scans. A joint fit uses all the data for both parameters."><img alt="" src="../_images/sphx_glr_02-joint-relaxometry_thumb.png" />
+<p><a class="reference internal" href="autoexamples/03-sequence-optimization/02-joint-relaxometry.html"><span class="doc">Joint relaxometry protocol design</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Joint relaxometry protocol design</div>
 </div></div></section>
 </section>
 

@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -68,7 +68,7 @@
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
     <link rel="next" title="MP2RAGE lookup table" href="02-lookup-table.html" />
-    <link rel="prev" title="Parameter inference" href="index.html" />
+    <link rel="prev" title="Applications: parameter mapping" href="index.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
@@ -534,6 +544,7 @@
                 <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phantom">Phantom</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence">Sequence</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#measurement">Measurement</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#problem-statement">Problem statement</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#subspace-rank">Subspace rank</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dictionary">Dictionary</a></li>
@@ -541,6 +552,7 @@
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#clustered-dictionary">Clustered dictionary</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cost-and-accuracy">Cost and accuracy</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
             </nav>
         </div>
@@ -559,293 +571,265 @@ to download the full example code or to run this example in your browser via Bin
 </div>
 <section class="sphx-glr-example-title" id="dictionary-matching">
 <span id="sphx-glr-generated-autoexamples-02-parameter-inference-01-dictionary-matching-py"></span><h1>Dictionary matching<a class="headerlink" href="#dictionary-matching" title="Link to this heading">#</a></h1>
-<p>The scope of this notebook is to map a brain slice by exhaustive dictionary
-matching, and to show the two ways of making that affordable: working in the
-low-rank basis the train spans, and clustering the dictionary so that most
-atoms are never scored.</p>
-<p>A dictionary spans every combination of the parameters, so its size is the
-product of the grids and each atom is as long as the train. The two savings are
-independent and multiply; what each costs and what each gets wrong is read off
-the same slice.</p>
+<p>You map T1, T2 and proton density in a brain slice from a magnetic resonance
+fingerprinting (MRF) train by dictionary matching, then reduce the cost of the
+match in two independent ways: by working in the low-rank subspace spanned by
+the train, and by clustering the dictionary so that most atoms are not scored.</p>
+<p>Prerequisites: Course lesson <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
 <div class="colab-button">
             <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/examples/generated/autoexamples/02-parameter-inference/01-dictionary-matching.ipynb" target="_blank">
                 <img src="https://colab.research.google.com/assets/colab-badge.svg"
                 alt="Open In Colab"/>
             </a>
         </div>
-        <p>The problem is stated over a simulator carrying the sequence and filled in
-by an estimator. <a class="reference internal" href="../../blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a> decides where that work runs,
-and the timings below are taken inside it.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">time</span><span class="w">
-</span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
+        <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
 </span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
 </span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">blochsim</span><span class="w">
-</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span><span class="w">
-</span>    <span class="n">Subspace</span><span class="p">,</span><span class="w">
-</span><span class="p">)</span><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="w"> </span><span class="kn">import</span> <span class="n">Subspace</span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><span class="n">MRFSimulator</span></a><span class="w">
 </span></pre></div></div>
 <section id="phantom">
 <h2>Phantom<a class="headerlink" href="#phantom" title="Link to this heading">#</a></h2>
-<p>BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
-ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
-voxel holds a fraction of each tissue, and the relaxation times are weighted
-by those fractions. A third of the voxels are mixtures, so the truth is a
-continuum and not four values.</p>
+<p>The phantom is BrainWeb subject 0, slice 90: an axial 1 mm slice through the
+lateral ventricles. BrainWeb provides fuzzy tissue memberships, so each voxel
+holds a fraction of each tissue and its relaxation times are the
+fraction-weighted average. About a third of the voxels are mixtures, so the
+ground truth is a continuum of values rather than four.</p>
 <img src="../../../_images/sphx_glr_01-dictionary-matching_001.png" srcset="../../../_images/sphx_glr_01-dictionary-matching_001.png" alt="BrainWeb subject 0, slice 90" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Downloading tissues:   0%|          | 0/10 [00:00&lt;?, ?it/s]
 
 
 Downloading phantom_1.0mm_normal_bck: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 7.99kB/s]
+Downloading phantom_1.0mm_normal_bck: 1.00kB [00:00, 7.32kB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 40.8kB [00:00, 180kB/s]
+Downloading phantom_1.0mm_normal_bck: 184kB [00:00, 908kB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 185kB [00:00, 587kB/s]
+Downloading phantom_1.0mm_normal_bck: 497kB [00:00, 1.73MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 329kB [00:00, 768kB/s]
+Downloading phantom_1.0mm_normal_bck: 769kB [00:00, 1.96MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 753kB [00:00, 1.62MB/s]
+Downloading phantom_1.0mm_normal_bck: 993kB [00:00, 2.00MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.17MB [00:00, 2.18MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.24MB [00:00, 2.12MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.62MB [00:00, 2.56MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.52MB [00:00, 2.21MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 1.91MB [00:01, 2.55MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.74MB [00:00, 2.20MB/s]
 
 
-Downloading phantom_1.0mm_normal_bck: 2.15MB [00:01, 2.45MB/s]
+Downloading phantom_1.0mm_normal_bck: 1.97MB [00:01, 2.19MB/s]
+
+
+Downloading phantom_1.0mm_normal_bck: 2.19MB [00:01, 2.13MB/s]
 
 
 
 
-Downloading tissues:  10%|█         | 1/10 [00:02&lt;00:21,  2.35s/it]
+Downloading tissues:  10%|█         | 1/10 [00:02&lt;00:18,  2.09s/it]
 
 
 Downloading phantom_1.0mm_normal_csf: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_csf: 1.00kB [00:00, 9.27kB/s]
+Downloading phantom_1.0mm_normal_csf: 1.00kB [00:00, 8.52kB/s]
 
 
-Downloading phantom_1.0mm_normal_csf: 40.8kB [00:00, 197kB/s]
-
-
-Downloading phantom_1.0mm_normal_csf: 185kB [00:00, 627kB/s]
-
-
-Downloading phantom_1.0mm_normal_csf: 449kB [00:00, 1.19MB/s]
+Downloading phantom_1.0mm_normal_csf: 177kB [00:00, 851kB/s]
 
 
 
 
-Downloading tissues:  20%|██        | 2/10 [00:03&lt;00:13,  1.66s/it]
+Downloading tissues:  20%|██        | 2/10 [00:02&lt;00:10,  1.34s/it]
 
 
 Downloading phantom_1.0mm_normal_gry: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_gry: 1.00kB [00:00, 8.44kB/s]
+Downloading phantom_1.0mm_normal_gry: 1.00kB [00:00, 9.55kB/s]
 
 
-Downloading phantom_1.0mm_normal_gry: 40.8kB [00:00, 190kB/s]
+Downloading phantom_1.0mm_normal_gry: 176kB [00:00, 880kB/s]
 
 
-Downloading phantom_1.0mm_normal_gry: 177kB [00:00, 589kB/s]
-
-
-Downloading phantom_1.0mm_normal_gry: 433kB [00:00, 1.14MB/s]
-
-
-Downloading phantom_1.0mm_normal_gry: 857kB [00:00, 1.91MB/s]
+Downloading phantom_1.0mm_normal_gry: 729kB [00:00, 2.84MB/s]
 
 
 
 
-Downloading tissues:  30%|███       | 3/10 [00:04&lt;00:10,  1.47s/it]
+Downloading tissues:  30%|███       | 3/10 [00:03&lt;00:07,  1.08s/it]
 
 
 Downloading phantom_1.0mm_normal_wht: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_wht: 1.00kB [00:00, 6.96kB/s]
+Downloading phantom_1.0mm_normal_wht: 8.81kB [00:00, 76.4kB/s]
 
 
-Downloading phantom_1.0mm_normal_wht: 40.8kB [00:00, 175kB/s]
-
-
-Downloading phantom_1.0mm_normal_wht: 185kB [00:00, 588kB/s]
-
-
-Downloading phantom_1.0mm_normal_wht: 439kB [00:00, 1.11MB/s]
+Downloading phantom_1.0mm_normal_wht: 289kB [00:00, 1.53MB/s]
 
 
 
 
-Downloading tissues:  40%|████      | 4/10 [00:05&lt;00:08,  1.35s/it]
+Downloading tissues:  40%|████      | 4/10 [00:04&lt;00:05,  1.09it/s]
 
 
 Downloading phantom_1.0mm_normal_fat: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_fat: 8.81kB [00:00, 60.2kB/s]
+Downloading phantom_1.0mm_normal_fat: 40.8kB [00:00, 349kB/s]
 
 
-Downloading phantom_1.0mm_normal_fat: 105kB [00:00, 438kB/s]
-
-
-Downloading phantom_1.0mm_normal_fat: 297kB [00:00, 896kB/s]
+Downloading phantom_1.0mm_normal_fat: 449kB [00:00, 2.21MB/s]
 
 
 
 
-Downloading tissues:  50%|█████     | 5/10 [00:07&lt;00:06,  1.25s/it]
+Downloading tissues:  50%|█████     | 5/10 [00:05&lt;00:04,  1.20it/s]
 
 
 Downloading phantom_1.0mm_normal_m-s: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 1.00kB [00:00, 8.47kB/s]
+Downloading phantom_1.0mm_normal_m-s: 1.00kB [00:00, 9.61kB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 40.1kB [00:00, 187kB/s]
+Downloading phantom_1.0mm_normal_m-s: 177kB [00:00, 928kB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 169kB [00:00, 560kB/s]
+Downloading phantom_1.0mm_normal_m-s: 673kB [00:00, 2.61MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 385kB [00:00, 998kB/s]
+Downloading phantom_1.0mm_normal_m-s: 0.99MB [00:00, 2.89MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 777kB [00:00, 1.71MB/s]
+Downloading phantom_1.0mm_normal_m-s: 1.42MB [00:00, 3.46MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 1.34MB [00:00, 2.67MB/s]
+Downloading phantom_1.0mm_normal_m-s: 1.81MB [00:00, 3.66MB/s]
 
 
-Downloading phantom_1.0mm_normal_m-s: 2.24MB [00:00, 4.12MB/s]
+Downloading phantom_1.0mm_normal_m-s: 2.19MB [00:00, 3.64MB/s]
+
+
+Downloading phantom_1.0mm_normal_m-s: 2.61MB [00:00, 3.70MB/s]
 
 
 
 
-Downloading tissues:  60%|██████    | 6/10 [00:08&lt;00:05,  1.38s/it]
+Downloading tissues:  60%|██████    | 6/10 [00:06&lt;00:04,  1.01s/it]
 
 
 Downloading phantom_1.0mm_normal_skn: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 1.00kB [00:00, 7.97kB/s]
+Downloading phantom_1.0mm_normal_skn: 1.00kB [00:00, 9.99kB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 40.1kB [00:00, 177kB/s]
+Downloading phantom_1.0mm_normal_skn: 184kB [00:00, 1.04MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 177kB [00:00, 560kB/s]
+Downloading phantom_1.0mm_normal_skn: 561kB [00:00, 2.28MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 433kB [00:00, 1.08MB/s]
+Downloading phantom_1.0mm_normal_skn: 897kB [00:00, 2.68MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 913kB [00:00, 1.96MB/s]
+Downloading phantom_1.0mm_normal_skn: 1.20MB [00:00, 2.92MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 1.72MB [00:00, 3.41MB/s]
+Downloading phantom_1.0mm_normal_skn: 1.56MB [00:00, 3.17MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 2.24MB [00:00, 3.91MB/s]
+Downloading phantom_1.0mm_normal_skn: 1.94MB [00:00, 3.33MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 2.62MB [00:01, 3.60MB/s]
+Downloading phantom_1.0mm_normal_skn: 2.33MB [00:00, 3.43MB/s]
 
 
-Downloading phantom_1.0mm_normal_skn: 2.97MB [00:01, 3.46MB/s]
+Downloading phantom_1.0mm_normal_skn: 2.66MB [00:00, 3.37MB/s]
+
+
+Downloading phantom_1.0mm_normal_skn: 2.98MB [00:01, 3.24MB/s]
 
 
 
 
-Downloading tissues:  70%|███████   | 7/10 [00:10&lt;00:04,  1.55s/it]
+Downloading tissues:  70%|███████   | 7/10 [00:07&lt;00:03,  1.15s/it]
 
 
 Downloading phantom_1.0mm_normal_skl: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_skl: 8.81kB [00:00, 57.6kB/s]
+Downloading phantom_1.0mm_normal_skl: 8.81kB [00:00, 75.2kB/s]
 
 
-Downloading phantom_1.0mm_normal_skl: 105kB [00:00, 431kB/s]
-
-
-Downloading phantom_1.0mm_normal_skl: 273kB [00:00, 833kB/s]
-
-
-Downloading phantom_1.0mm_normal_skl: 615kB [00:00, 1.54MB/s]
+Downloading phantom_1.0mm_normal_skl: 337kB [00:00, 1.68MB/s]
 
 
 
 
-Downloading tissues:  80%|████████  | 8/10 [00:11&lt;00:02,  1.40s/it]
+Downloading tissues:  80%|████████  | 8/10 [00:08&lt;00:01,  1.03it/s]
 
 
 Downloading phantom_1.0mm_normal_gli: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 7.86kB/s]
+Downloading phantom_1.0mm_normal_gli: 1.00kB [00:00, 6.19kB/s]
 
 
 
 
-Downloading tissues:  90%|█████████ | 9/10 [00:12&lt;00:01,  1.18s/it]
+Downloading tissues:  90%|█████████ | 9/10 [00:09&lt;00:00,  1.12it/s]
 
 
 Downloading phantom_1.0mm_normal_mit: 0.00B [00:00, ?B/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 9.06kB/s]
+Downloading phantom_1.0mm_normal_mit: 1.00kB [00:00, 9.44kB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 40.8kB [00:00, 194kB/s]
+Downloading phantom_1.0mm_normal_mit: 177kB [00:00, 980kB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 185kB [00:00, 622kB/s]
+Downloading phantom_1.0mm_normal_mit: 529kB [00:00, 2.02MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 423kB [00:00, 1.10MB/s]
+Downloading phantom_1.0mm_normal_mit: 849kB [00:00, 2.44MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 889kB [00:00, 1.99MB/s]
+Downloading phantom_1.0mm_normal_mit: 1.14MB [00:00, 2.68MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 1.61MB [00:00, 3.58MB/s]
+Downloading phantom_1.0mm_normal_mit: 1.45MB [00:00, 2.86MB/s]
 
 
-Downloading phantom_1.0mm_normal_mit: 1.98MB [00:00, 3.50MB/s]
+Downloading phantom_1.0mm_normal_mit: 1.73MB [00:00, 2.80MB/s]
+
+
+Downloading phantom_1.0mm_normal_mit: 2.05MB [00:00, 2.92MB/s]
 
 
 
 
-Downloading tissues: 100%|██████████| 10/10 [00:13&lt;00:00,  1.30s/it]
-
-
-Text(0.5, 0.9878790357573323, 'BrainWeb subject 0, slice 90')
+Downloading tissues: 100%|██████████| 10/10 [00:10&lt;00:00,  1.00s/it]
 </pre></div>
 </div>
 </section>
 <section id="sequence">
 <h2>Sequence<a class="headerlink" href="#sequence" title="Link to this heading">#</a></h2>
-<p>Four hundred repetitions after an inversion, at a fixed repetition time and a
-flip angle that varies smoothly along the train. A schedule that jumped about
-would give trajectories differing by noise rather than by physics.</p>
+<p>The sequence is an inversion followed by 400 repetitions at TR = 10 ms. The
+flip angle varies smoothly along the train, so that the signal evolutions of
+different tissues differ by physics and not by the noise of an irregular
+schedule.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CONTRASTS</span></a> <span class="o">=</span> <span class="mi">400</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">TR_MS</span></a> <span class="o">=</span> <span class="mf">10.0</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">TI_MS</span></a> <span class="o">=</span> <span class="mf">20.0</span><span class="w">
@@ -855,19 +839,26 @@ would give trajectories differing by noise rather than by physics.</p>
 </span><span class="w">
 </span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><span class="n">simulator</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><span class="n">MRFSimulator</span></a><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">TR_MS</span></a><span class="p">,</span> <span class="n">TI</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">TI_MS</span></a><span class="p">,</span> <span class="n">states</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<p>The readouts wind the states on rather than rewinding them, so the trajectory
-comes back real to within 3e-8. That halves both the dictionary and the
-arithmetic that searches it.</p>
+<p>The readouts advance the configuration states and do not rewind them, so the
+signal evolution is real to float32 precision. The dictionary and the inner
+products that search it therefore need only the real part. These are the
+evolutions of white matter, grey matter and CSF:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">fingerprints</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><span class="n">simulator</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="w">
 </span>    <span class="n">T1</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="mf">500.0</span><span class="p">,</span> <span class="mf">833.0</span><span class="p">,</span> <span class="mf">2569.0</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="mf">70.0</span><span class="p">,</span> <span class="mf">83.0</span><span class="p">,</span> <span class="mf">329.0</span><span class="p">]</span><span class="p">)</span><span class="w">
-</span><span class="p">)</span><span class="o">.</span><span class="n">real</span><span class="w">
+</span><span class="p">)</span><span class="w">
+</span><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="s2">largest imaginary part: </span><span class="si">{</span><span class="n">fingerprints</span><span class="o">.</span><span class="n">imag</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span><span class="si">:</span><span class="s2">.1e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
+</span><span class="n">fingerprints</span> <span class="o">=</span> <span class="n">fingerprints</span><span class="o">.</span><span class="n">real</span><span class="w">
 </span></pre></div></div>
-<img src="../../../_images/sphx_glr_01-dictionary-matching_002.png" srcset="../../../_images/sphx_glr_01-dictionary-matching_002.png" alt="the schedule, fingerprints" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>[&lt;matplotlib.legend.Legend object at 0x7f10c7c667b0&gt;]
+<img src="../../../_images/sphx_glr_01-dictionary-matching_002.png" srcset="../../../_images/sphx_glr_01-dictionary-matching_002.png" alt="flip angles, signal evolutions" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>largest imaginary part: 0.0e+00
 </pre></div>
 </div>
-<p>The measurement, with noise at 2% of the peak fingerprint. The estimators are
-told the same number: one trained for more noise than the scan has learns to
-distrust the data and answers with the prior.</p>
+</section>
+<section id="measurement">
+<h2>Measurement<a class="headerlink" href="#measurement" title="Link to this heading">#</a></h2>
+<p>The measurement is the evolution of every voxel at its true T1 and T2, scaled
+by its proton density, with Gaussian noise of 2% of the peak signal. The
+estimators are given the same noise level: one trained for more noise than
+the scan has trusts the data less and returns values closer to the prior.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">NOISE_STD</span></a> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="mf">0.02</span> <span class="o">*</span> <span class="n">fingerprints</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="w">
 </span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">truth</span></a> <span class="o">=</span> <span class="p">{</span><span class="w">
@@ -882,10 +873,9 @@ distrust the data and answers with the prior.</p>
 </section>
 <section id="problem-statement">
 <h2>Problem statement<a class="headerlink" href="#problem-statement" title="Link to this heading">#</a></h2>
-<p>What is unknown, over what range, and at what noise level. Both relaxation
-times span more than a decade, so the grid is logarithmic: uniform spacing
-would spend most of it on long T1, where the trajectories are nearly
-parallel.</p>
+<p>The unknowns are T1 and T2. Both span more than a decade, so the parameter
+grids and the training draws are logarithmic: uniform spacing would spend most
+of the atoms on long T1, where the evolutions are nearly parallel.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">T1_RANGE</span></a> <span class="o">=</span> <span class="p">(</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">5000.0</span><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">T2_RANGE</span></a> <span class="o">=</span> <span class="p">(</span><span class="mf">20.0</span><span class="p">,</span> <span class="mf">600.0</span><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SAMPLES</span></a> <span class="o">=</span> <span class="mi">20_000</span><span class="w">
@@ -894,9 +884,10 @@ parallel.</p>
 </section>
 <section id="subspace-rank">
 <h2>Subspace rank<a class="headerlink" href="#subspace-rank" title="Link to this heading">#</a></h2>
-<p>A basis fitted to simulated trajectories says how much of their energy each
-rank keeps. One minus that fraction is the relative squared error of
-projecting through the basis and back.</p>
+<p>The 400 contrasts span far fewer than 400 independent directions.
+<code class="docutils literal notranslate"><span class="pre">Subspace.fit</span></code> computes a basis from simulated evolutions and reports the
+fraction of their energy that a given rank retains; one minus that fraction
+is the relative squared error of projecting onto the basis and back.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">training_signals</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="p">(</span><span class="w">
 </span>    <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><span class="n">simulator</span></a><span class="p">)</span><span class="w">
 </span>    <span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="w">
@@ -911,18 +902,18 @@ projecting through the basis and back.</p>
 </span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">RANK</span></a> <span class="o">=</span> <span class="mi">4</span><span class="w">
 </span></pre></div></div>
-<img src="../../../_images/sphx_glr_01-dictionary-matching_003.png" srcset="../../../_images/sphx_glr_01-dictionary-matching_003.png" alt="what projecting through the basis loses" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>[&lt;matplotlib.legend.Legend object at 0x7f10c6a3e7b0&gt;]
-</pre></div>
-</div>
-<p>Four directions out of four hundred leave less outside the basis than the
-noise puts in, and every contrast dropped is arithmetic the match avoids.</p>
+<img src="../../../_images/sphx_glr_01-dictionary-matching_003.png" srcset="../../../_images/sphx_glr_01-dictionary-matching_003.png" alt="01 dictionary matching" class = "sphx-glr-single-img"/><p>At rank 4 the energy left outside the basis is below the energy the noise
+adds, so projecting onto four directions loses less than the noise already
+contributes. Every contrast dropped also removes arithmetic from the match.</p>
 </section>
 <section id="dictionary">
 <h2>Dictionary<a class="headerlink" href="#dictionary" title="Link to this heading">#</a></h2>
-<p>The dictionary spans the parameters jointly, so its size is the product of
-the grids: twenty thousand atoms for two parameters, on a grid fine enough
-that the spacing is not what limits the answer. A third parameter multiplies
-it again.</p>
+<p>A dictionary spans the parameters jointly, so its size is the product of the
+grid sizes: here 200 values of T1 by 100 of T2, 20 000 atoms, fine enough
+that the grid spacing does not limit the result. Each additional parameter
+multiplies the size again. <code class="docutils literal notranslate"><span class="pre">fit</span></code> simulates the atoms and <code class="docutils literal notranslate"><span class="pre">map</span></code> returns one
+value per voxel for each parameter, and for M0, which follows from the scale
+between the measurement and the best-matching atom:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">T1_GRID</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">logspace</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc"><span class="n">np</span><span class="o">.</span><span class="n">log10</span></a><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">T1_RANGE</span></a><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc"><span class="n">np</span><span class="o">.</span><span class="n">log10</span></a><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">T1_RANGE</span></a><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span><span class="w">
 </span><span class="n">T2_GRID</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">logspace</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc"><span class="n">np</span><span class="o">.</span><span class="n">log10</span></a><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">T2_RANGE</span></a><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc"><span class="n">np</span><span class="o">.</span><span class="n">log10</span></a><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">T2_RANGE</span></a><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span><span class="w">
 </span><span class="n">grid_t1</span><span class="p">,</span> <span class="n">grid_t2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">T1_GRID</span><span class="p">,</span> <span class="n">T2_GRID</span><span class="p">,</span> <span class="n">indexing</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">ij</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
@@ -931,14 +922,14 @@ it again.</p>
 </span>    <span class="n">T1</span><span class="o">=</span><span class="n">grid_t1</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">grid_t2</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="w">
 </span><span class="p">)</span><span class="w">
 </span><span class="w">
-</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.map" title="blochsim.Estimator.map"><span class="n">full</span><span class="o">.</span><span class="n">map</span></a><span class="p">(</span><span class="n">measured</span><span class="p">)</span>  <span class="c1"># {&quot;T1&quot;: ..., &quot;T2&quot;: ...}, one value per voxel</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">maps</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.Estimator.html#blochsim.Estimator.map" title="blochsim.Estimator.map"><span class="n">full</span><span class="o">.</span><span class="n">map</span></a><span class="p">(</span><span class="n">measured</span><span class="p">)</span>  <span class="c1"># {&quot;T1&quot;: ..., &quot;T2&quot;: ..., &quot;M0&quot;: ...}</span><span class="w">
 </span></pre></div></div>
 </section>
 <section id="matching-in-the-subspace">
 <h2>Matching in the subspace<a class="headerlink" href="#matching-in-the-subspace" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">rank</span></code> is the whole change. The dictionary is fitted, projected and stored
-in four directions instead of four hundred, and the measurement is projected
-the same way before scoring.</p>
+<p>Passing <code class="docutils literal notranslate"><span class="pre">rank</span></code> fits the basis, projects the dictionary onto it and stores
+it at that rank. The measurement is projected onto the same basis before the
+atoms are scored.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">low</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><span class="n">simulator</span></a><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="w">
 </span>    <span class="n">T1</span><span class="o">=</span><span class="n">grid_t1</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">grid_t2</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">rank</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">RANK</span></a><span class="w">
 </span><span class="p">)</span><span class="w">
@@ -946,12 +937,12 @@ the same way before scoring.</p>
 </section>
 <section id="clustered-dictionary">
 <h2>Clustered dictionary<a class="headerlink" href="#clustered-dictionary" title="Link to this heading">#</a></h2>
-<p>Compressing shortened every inner product; grouping cuts how many are taken.
-Neighbouring tissues give nearly parallel signals, so the atoms cluster, and
-a voxel scored against one representative per group rules out most groups
-before any atom inside them is touched.</p>
-<p>The clustering is done in the compressed basis, so a group is entered without
-leaving the space the measurement is already in.</p>
+<p>Compression shortens every inner product; clustering reduces how many are
+computed. Atoms of neighbouring tissues have nearly parallel signal
+evolutions, so they fall into groups. Each voxel is scored against one
+representative per group, and groups that cannot contain the best match are
+excluded before any of their atoms is scored. The grouping is computed in the
+compressed basis, the space the measurement is already in.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">GROUPS</span></a> <span class="o">=</span> <span class="mi">32</span><span class="w">
 </span><span class="w">
 </span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">grouped</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.MRFSimulator.html#blochsim.simulators.MRFSimulator" title="blochsim.simulators.MRFSimulator"><span class="n">simulator</span></a><span class="p">,</span> <span class="n">groups</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">GROUPS</span></a><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="w">
@@ -967,25 +958,41 @@ leaving the space the measurement is already in.</p>
 </section>
 <section id="cost-and-accuracy">
 <h2>Cost and accuracy<a class="headerlink" href="#cost-and-accuracy" title="Link to this heading">#</a></h2>
-<p>Best of three passes each, after a warm-up. <strong>model</strong> is what the fitted
-estimator carries between volumes; <strong>peak</strong> is the high-water mark on the
-card, which decides whether a volume fits or has to be streamed, and a dash
-on a machine with no card.</p>
+<p>Times are the best of three passes after a warm-up. <em>model</em> is the memory the
+fitted estimator holds between volumes. <em>peak</em> is the maximum GPU memory
+allocated while mapping the slice, which decides whether a volume fits or
+has to be processed in pieces; it is blank on a machine without a GPU.
+Errors are medians over the brain voxels, relative to the truth.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                         train     map     model      peak      T1      T2      M0
 ----------------------------------------------------------------------------------------
-match, 400 contrasts            5.7s   4.91s 122.3 MiB        --    0.6%    1.6%    0.4%
-match, rank 4                   0.8s   1.76s   1.4 MiB        --    0.6%    1.6%    0.4%
-match, rank 4 + groups          0.9s   0.07s   1.4 MiB        --    0.6%    1.6%    0.4%
+match, 400 contrasts            8.7s   8.22s 122.3 MiB        --    0.6%    1.6%    0.4%
+match, rank 4                   1.1s   1.63s   1.4 MiB        --    0.6%    1.6%    0.4%
+match, rank 4 + groups          1.2s   0.09s   1.4 MiB        --    0.6%    1.6%    0.4%
 </pre></div>
 </div>
 </section>
 <section id="maps">
 <h2>Maps<a class="headerlink" href="#maps" title="Link to this heading">#</a></h2>
+<p>The maps of each method, and below them the absolute error on a scale of its
+own for each parameter.</p>
 <ul class="sphx-glr-horizontal">
 <li><img src="../../../_images/sphx_glr_01-dictionary-matching_004.png" srcset="../../../_images/sphx_glr_01-dictionary-matching_004.png" alt="truth, full, rank 4, + groups" class = "sphx-glr-multi-img"/></li>
 <li><img src="../../../_images/sphx_glr_01-dictionary-matching_005.png" srcset="../../../_images/sphx_glr_01-dictionary-matching_005.png" alt="Δ full, Δ rank 4, Δ + groups" class = "sphx-glr-multi-img"/></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 47.766 seconds)</p>
+</section>
+<section id="specification">
+<h2>Specification<a class="headerlink" href="#specification" title="Link to this heading">#</a></h2>
+<p>What this page did, stated the way you would ask an agent for it:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim, map T1, T2 and M0 in BrainWeb subject 0, slice 90, from an
+inversion-prepared MRF train of 400 repetitions (TR 10 ms, TI 20 ms,
+flip angle 10 + 50 sin^2(pi n / 400) deg) at 2% noise. Use a
+DictionaryMatcher over 200 log-spaced T1 by 100 log-spaced T2 values.
+Compare the full match, the match at subspace rank 4 and the match at
+rank 4 with 32 groups, reporting training time, mapping time, estimator
+memory and the median relative error of each map.
+</pre></div>
+</div>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 58.558 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-01-dictionary-matching-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/02-parameter-inference/01-dictionary-matching.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />
@@ -1022,7 +1029,7 @@ match, rank 4 + groups          0.9s   0.07s   1.4 MiB        --    0.6%    1.6%
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Parameter inference</p>
+        <p class="prev-next-title">Applications: parameter mapping</p>
       </div>
     </a>
     <a class="right-next"
@@ -1054,6 +1061,7 @@ match, rank 4 + groups          0.9s   0.07s   1.4 MiB        --    0.6%    1.6%
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phantom">Phantom</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sequence">Sequence</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#measurement">Measurement</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#problem-statement">Problem statement</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#subspace-rank">Subspace rank</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dictionary">Dictionary</a></li>
@@ -1061,6 +1069,7 @@ match, rank 4 + groups          0.9s   0.07s   1.4 MiB        --    0.6%    1.6%
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#clustered-dictionary">Clustered dictionary</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cost-and-accuracy">Cost and accuracy</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
   </nav></div>
 

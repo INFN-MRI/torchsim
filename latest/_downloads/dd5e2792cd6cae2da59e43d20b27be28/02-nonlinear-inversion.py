@@ -1,196 +1,131 @@
 """
-==============================================
+================================
 Nonlinear inversion from k-space
-==============================================
+================================
 
-The scope of this notebook is to reconstruct T2 maps straight from k-space,
-with the signal model inside the forward operator, and to say where the time
-and the memory go.
+In this Application you reconstruct T2 maps directly from k-space, with the
+signal model inside the forward operator, and compare the result with gridding
+followed by a fit.
 
-Physics-based reconstruction removes the intermediate images. The forward
-operator is a chain
+The forward operator is the chain
 
 .. math::
 
    F = P \\, \\mathcal{F} \\, C \\, M
 
--- sampling, Fourier encoding, coil sensitivities, and the **signal model** --
-and the parameter maps are solved for directly against the k-space that was
-measured. Only the last factor changes with the sequence, and it is the only
-one BlochSim supplies: :class:`~blochsim.recon.ModelOperator` turns any
-simulator into it, and the encoding comes from mri-nufft.
+of sampling :math:`P`, Fourier encoding :math:`\\mathcal{F}`, coil sensitivities
+:math:`C` and the signal model :math:`M` [1]_. Only :math:`M` changes with the
+sequence, and it is the only factor blochsim supplies: a
+:class:`~blochsim.recon.ModelOperator` wraps any simulator as :math:`M`. The
+problem is nonlinear in the maps, so it needs a starting guess and an outer
+Gauss-Newton loop. In exchange the model can have any number of parameters,
+where a linear subspace would have to span the product of their ranges.
 
-Unlike a subspace this stays nonlinear, so it needs a starting guess and a loop
-around it, and it pays for that with a model of any number of parameters where
-a basis would have to span their product. The comparison here is against
-gridding, by iteratively regularized Gauss-Newton.
-
-Wang X, Tan Z, Scholand N, Roeloffs V, Uecker M. *Physics-based reconstruction
-methods for magnetic resonance imaging.* Phil Trans R Soc A 379:20200196
-(2021).
+Prerequisites: Course lessons :doc:`../01-framework/01-first-simulation` and
+:doc:`../01-framework/03-custom-signal-model`.
 """
 
 # %%
 # .. colab-link::
 #    :needs_gpu: 1
 #
-#    !pip install blochsim brainweb-dl cmap mri-nufft[finufft,cufinufft] deepinv
+#    !pip install blochsim matplotlib brainweb-dl cmap mri-nufft[finufft,cufinufft] deepinv
+#    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
 # %%
+# Setup
+# -----
 #
-# The phantom is BrainWeb's, reached through ``brainweb-dl``: ``get_mri``
-# fetches the fuzzy tissue memberships, and the package ships the table of
-# relaxation times that goes with them -- which is what the two standard
-# library imports read.
-#
-
-# sphinx_gallery_start_ignore
-import warnings
-
-warnings.filterwarnings("ignore")
-
-import matplotlib.pyplot as plt
-from cmap import Colormap
-
-
-# Fuderer et al. (Magn. Reson. Med. 2025) recommend one perceptually uniform
-# colormap per relaxation parameter, so that a T1 map is never read as a T2 map.
-LIPARI = Colormap("crameri:lipari").to_matplotlib()
-NAVIA = Colormap("crameri:navia").to_matplotlib()
-
-# Colormap, window and unit per parameter. Both relaxation windows stop well
-# short of CSF, so that white and grey matter -- 500 against 833 ms in T1, 70
-# against 83 ms in T2 -- take up most of the scale and CSF saturates.
-STYLE = {
-    "T1": (LIPARI, (0.0, 1200.0), "T1 [ms]"),
-    "T2": (NAVIA, (0.0, 120.0), "T2 [ms]"),
-    "M0": ("gray", (0.0, 1.0), "M0"),
-}
-
-
-def panel(axis, values, cmap, limits, title=None, ylabel=None):
-    """One map without ticks; the handle is what a row shares a colorbar from."""
-    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
-    axis.set_xticks([])
-    axis.set_yticks([])
-    if title is not None:
-        axis.set_title(title)
-    if ylabel is not None:
-        axis.set_ylabel(ylabel)
-    return handle
-
-
-def scalebar(handle, axes, label):
-    """One colorbar for a group of panels, so none gives up width to its own."""
-    axes = list(np.ravel(axes))
-    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
-
-
-# Every panel on this page is drawn at the same size, so any two figures can be
-# read against each other. The side is set by the widest grid, which fills the
-# documentation column; a figure with fewer columns is narrower, not larger.
-PAGE_WIDTH = 8.6  # inches, the width of the documentation column
-BAR_WIDTH = 0.8  # what one colorbar takes out of it
-PANEL = (PAGE_WIDTH - 1 * BAR_WIDTH) / 3  # one image panel
-
-
-def canvas(rows, columns, shape, *, bars=1, extra=0.6):
-    """A grid of image panels, in the proportion of the images.
-
-    ``bars`` is how many colorbars a row carries and ``extra`` the height left
-    over the panels, for titles and for a figure title where there is one.
-    """
-    return plt.subplots(
-        rows,
-        columns,
-        squeeze=False,
-        figsize=(
-            columns * PANEL + bars * BAR_WIDTH,
-            PANEL * shape[0] / shape[1] * rows + extra,
-        ),
-    )
-
-
-# Figures are read at gallery scale, so the type sizes are set once here.
-plt.rcParams.update(
-    {
-        "figure.dpi": 110,
-        "figure.figsize": (PAGE_WIDTH, 3.6),
-        "savefig.dpi": 110,
-        "font.size": 16,
-        "axes.titlesize": 17,
-        "axes.labelsize": 17,
-        "xtick.labelsize": 14,
-        "ytick.labelsize": 14,
-        "legend.fontsize": 13,
-        "figure.titlesize": 19,
-        "figure.constrained_layout.use": True,
-    }
-)
-
-# sphinx_gallery_end_ignore
-import csv
-from pathlib import Path
-
-import brainweb_dl
-from brainweb_dl import get_mri
-
-# %%
-#
-# The Fourier encoding is not BlochSim's and never will be. ``mri-nufft``
-# supplies the radial trajectory and the non-uniform transform that plays it;
-# ``deepinv`` supplies the :class:`~deepinv.physics.LinearPhysics` base class
-# the encoding operator is written against, and the linear solver a
-# Gauss-Newton step hands its linearized problem to. Anything exposing ``A``
-# and ``A_adjoint`` composes with what BlochSim supplies.
-#
-import mrinufft
-from deepinv.physics import LinearPhysics
-from mrinufft.trajectories import initialize_2D_radial
-
-# %%
-#
-# From BlochSim: the sequence, the estimator the contrast-then-fit routes
-# need, and :class:`~blochsim.recon.ModelOperator`, which is the signal
-# model as a factor of the forward operator.
-#
+# blochsim simulates the signal. The radial trajectory and the non-uniform
+# Fourier transform come from mri-nufft. deepinv provides the
+# :class:`~deepinv.physics.LinearPhysics` base class of the encoding operator and
+# the linear solver that each Gauss-Newton step calls. Any encoding that provides
+# ``A`` and ``A_adjoint`` works with them.
 import time
 
+import mrinufft
 import numpy as np
 import torch
+
+from deepinv.physics import LinearPhysics
+from mrinufft.trajectories import initialize_2D_radial
 
 from blochsim.estimators import DictionaryMatcher
 from blochsim.recon import GaussNewton, ModelOperator, Schedule, iterative
 from blochsim.simulators import MultiEchoSimulator
 
+# sphinx_gallery_start_ignore
+import csv
+import warnings
+from pathlib import Path
+
+import brainweb_dl
+import matplotlib.pyplot as plt
+from brainweb_dl import get_mri
+from cmap import Colormap
+
+from figure_style import PAGE_WIDTH, SERIES
+
+warnings.filterwarnings("ignore")
+
+# The window stops short of CSF, so white and grey matter fill the scale.
+NAVIA = Colormap("crameri:navia").to_matplotlib()
+T2_WINDOW = (0.0, 120.0)
+BAR_WIDTH = 0.8
+PANEL = (PAGE_WIDTH - BAR_WIDTH) / 4
+
+
+def panel(axis, values, cmap, limits, title=None):
+    handle = axis.imshow(values, cmap=cmap, vmin=limits[0], vmax=limits[1])
+    axis.set_xticks([])
+    axis.set_yticks([])
+    if title is not None:
+        axis.set_title(title)
+    return handle
+
+
+def scalebar(handle, axes, label):
+    axes = list(np.ravel(axes))
+    axes[0].figure.colorbar(handle, ax=axes, label=label, shrink=0.92, aspect=20)
+
+
+def canvas(rows, columns, shape):
+    return plt.subplots(
+        rows,
+        columns,
+        squeeze=False,
+        figsize=(
+            columns * PANEL + BAR_WIDTH,
+            PANEL * shape[0] / shape[1] * rows + 0.6,
+        ),
+    )
+
+
+# sphinx_gallery_end_ignore
 
 # %%
-#
-# What the experiment is: a 96 matrix read as 16 radial spokes per echo, eight
-# echoes, and the rank the baseline's estimator compresses to.
-#
+# The experiment is a 96 x 96 matrix read as 16 radial spokes of 192 samples per
+# echo, with 8 echoes. The baseline estimator uses a rank-3 temporal basis.
 SIZE = 96
 ECHOES = 8
 SPOKES = 16
 SAMPLES = 192
 RANK = 3
 
-# The GPU transform is used when it is both installed and usable; the
-# simulation follows it, so the images and the operator meet on one device.
+# The GPU transform is used when it is installed and usable, and the simulation
+# follows it so that the images and the operator are on one device.
 on_gpu = torch.cuda.is_available() and mrinufft.check_backend("cufinufft")
 device = "cuda" if on_gpu else "cpu"
 backend = "cufinufft" if on_gpu else "finufft"
 
 # %%
-#
 # Phantom
 # -------
 #
-# BrainWeb subject 0, slice 90, resampled to the matrix reconstructed here.
-# BrainWeb publishes fuzzy memberships rather than labels, so weighting the
-# tabulated relaxation times by them gives a T2 map whose mixed voxels sit
-# between the pure ones, known everywhere.
-#
+# The phantom is BrainWeb subject 0, slice 90, resampled to 96 x 96. BrainWeb
+# gives fuzzy tissue memberships, not labels. Weighting the tabulated T2 and
+# proton density of each tissue by its membership gives maps in which mixed
+# voxels lie between the pure tissues, known everywhere.
 
 # sphinx_gallery_start_ignore
 BRAIN_TISSUES = (1, 2, 3, 8)  # CSF, grey matter, white matter, glial matter
@@ -203,16 +138,13 @@ tissue_PD = np.array([float(r["PD (ms)"]) for r in rows])[list(BRAIN_TISSUES)]
 
 fractions = get_mri(sub_id=0, contrast="fuzzy")[SLICE].astype(np.float32)
 fractions = fractions[..., list(BRAIN_TISSUES)]
-# BrainWeb's first in-plane axis runs posterior to anterior, and an image is
-# drawn from its first row down. Flipping here puts anterior at the top of
-# every figure below rather than in each one of them.
+# Anterior at the top of every figure.
 fractions = np.flipud(fractions).copy()
 occupancy = fractions.sum(-1)
 share = np.maximum(occupancy, 1e-6)
 
 
 def resampled(values):
-    """The slice at the matrix size this example reconstructs."""
     grid = torch.as_tensor(np.asarray(values, np.float32))[None, None]
     return torch.nn.functional.interpolate(
         grid, size=(SIZE, SIZE), mode="bilinear", align_corners=False
@@ -225,19 +157,15 @@ brain = resampled((occupancy > 0.5).astype(np.float32)) > 0.5
 T2_true = torch.where(
     brain, T2_true.clamp(20.0, 400.0), torch.tensor(20.0, device=device)
 )
-
 # sphinx_gallery_end_ignore
 
 # %%
-#
 # Sequence and sampling
 # ---------------------
 #
-# A multi-echo spin echo on a golden-angle radial trajectory that rotates
-# between echoes. Sixteen spokes per echo across a 96-sample matrix is roughly
-# ninefold undersampled. The protocol stays on the host;
-# :class:`~blochsim.recon.ModelOperator` takes it wherever the maps are.
-#
+# The sequence is a multi-echo spin echo with eight echoes from 10 to 150 ms.
+# Simulating it over the T2 map gives one image per echo, scaled by the proton
+# density:
 TE = torch.linspace(10.0, 150.0, ECHOES)
 simulator = MultiEchoSimulator(TE=TE)
 
@@ -246,6 +174,15 @@ images = (
     * M0_true.to(torch.complex64)[..., None]
 )
 
+# %%
+# Each echo is sampled by 16 radial spokes, rotated by the golden angle from the
+# echo before, so the echoes together cover k-space more evenly than any one
+# does. 16 spokes across a 96-sample matrix is about ninefold undersampling,
+# which is where the reconstructions differ.
+#
+# The encoding operator maps the images of all echoes to k-space, with one
+# trajectory per echo. It wraps mri-nufft, as a real pipeline would wrap its own
+# trajectory, density compensation and coils:
 trajectory = (
     initialize_2D_radial(SPOKES * ECHOES, SAMPLES, tilt="golden")
     .astype(np.float32)
@@ -260,12 +197,7 @@ per_echo = [
 
 
 class RadialEncoding(LinearPhysics):
-    """``(batch, echoes, x, y)`` images to k-space, one trajectory per echo.
-
-    This is the whole of ``P F C`` for this experiment, and none of it is
-    BlochSim's: it wraps mri-nufft, which is what a real pipeline would do
-    with its own trajectory, its own density compensation and its own coils.
-    """
+    """``(batch, echoes, x, y)`` images to k-space, one trajectory per echo."""
 
     def A(self, x, **kwargs):
         return torch.stack(
@@ -281,155 +213,119 @@ class RadialEncoding(LinearPhysics):
 encoding = RadialEncoding()
 kspace = encoding.A(images.movedim(-1, 0)[None])
 
-# The k-space is scaled so the adjoint image peaks at one. Every damping
-# weight below is then a number about the model rather than about the
-# receiver gain, which is what makes one choice of it transferable.
+# %%
+# Scale the k-space so that the gridded image peaks at one. The damping weights
+# below are then numbers about the model, not about the receiver gain:
 gridded = encoding.A_adjoint(kspace)[0].movedim(0, -1)
 scale = float(gridded.abs().max())
 kspace, gridded = kspace / scale, gridded / scale
 
 # sphinx_gallery_start_ignore
-undersampling = (0.5 * np.pi * SIZE) / SPOKES
-print(f"{SPOKES} spokes per echo: {undersampling:.0f}x undersampled")
-# sphinx_gallery_end_ignore
+print(f"{SPOKES} spokes per echo: {0.5 * np.pi * SIZE / SPOKES:.0f}x undersampled")
 
-# %%
-#
-# The maps on the left are what every route recovers; the spokes on the right
-# are all that is measured of them, one echo's worth, rotated by the golden
-# angle from the echo before.
-#
-
-# sphinx_gallery_start_ignore
-figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 2.58))
-for axis, values, name, title in (
-    (axes[0], T2_true, "T2", "ground truth"),
-    (axes[1], M0_true, "M0", "proton density"),
+figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 0.3 * PAGE_WIDTH))
+for axis, values, cmap, limits, label, title in (
+    (axes[0], T2_true, NAVIA, T2_WINDOW, "T2 [ms]", "ground truth"),
+    (axes[1], M0_true, "gray", (0.0, 1.0), "M0", "proton density"),
 ):
-    cmap, limits, label = STYLE[name]
     handle = panel(axis, values.cpu().numpy(), cmap, limits, title=title)
-    axis.figure.colorbar(handle, ax=axis, label=label, fraction=0.046, pad=0.03)
+    figure.colorbar(handle, ax=axis, label=label, fraction=0.046, pad=0.03)
     axis.set_box_aspect(1)
-
-for echo in (0, ECHOES // 2, ECHOES - 1):
+for shade, echo in enumerate((0, ECHOES // 2, ECHOES - 1)):
     arm = trajectory[echo].reshape(SPOKES, SAMPLES, 2)
     for spoke in range(SPOKES):
         axes[2].plot(
             arm[spoke, :, 0],
             arm[spoke, :, 1],
             lw=0.4,
-            color=plt.cm.plasma(echo / (ECHOES - 1)),
+            color=SERIES[shade],
         )
-axes[2].set(
-    xlabel="$k_x$",
-    ylabel="$k_y$",
-    title=f"{SPOKES} spokes per echo, 3 of {ECHOES} shown",
-)
-# An image keeps its own aspect and a line plot fills whatever it is given, so
-# the box each panel is drawn into has to be fixed for the row to line up.
+axes[2].set(xlabel="$k_x$", ylabel="$k_y$", title="3 of 8 echoes")
 axes[2].set_box_aspect(1)
-# A colorbar on the trajectory would have nothing to scale, but the panel has
-# to lose the same width as the two beside it or the images shrink.
 bar = figure.colorbar(handle, ax=axes[2], fraction=0.046, pad=0.03)
 bar.ax.set_visible(False)
+plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
+# The maps are what both reconstructions below recover, and the spokes are all
+# that is measured of them.
 #
-# Estimator for the baseline
-# --------------------------
+# Gridding baseline
+# -----------------
 #
-# The baseline reconstructs images and then fits them, so it needs an
-# estimator, stated over a compressed basis: three directions hold essentially
-# all of an eight-echo exponential. The nonlinear route has no such step --
-# its answer is the maps.
-#
+# The baseline reconstructs the eight images and then fits them. The fit needs
+# an estimator, here a dictionary match over a rank-3 temporal basis, which
+# holds essentially all of an eight-echo exponential decay. The nonlinear
+# reconstruction has no such step, because its result is the maps.
 grid = torch.linspace(20.0, 400.0, 500)
 mapping = DictionaryMatcher(simulator).fit(T2=grid, M0=1.0, rank=RANK, seed=0)
 
 # sphinx_gallery_start_ignore
-print(f"rank {RANK} of {ECHOES} contrasts keeps {mapping.subspace.retained:.6f}")
+print(f"rank {RANK} of {ECHOES} keeps {mapping.subspace.retained:.6f} of the signal")
 
 
 def clock():
-    """Wall clock, with the card caught up first."""
     if device == "cuda":
         torch.cuda.synchronize()
     return time.perf_counter()
 
 
 def report(name, seconds, found):
-    """One route's cost and its error over the brain.
-
-    Every route is timed the same way -- reconstruction *and* fit -- because
-    that is what a pipeline costs. A route that reconstructs quickly and then
-    fits eight images is not a quick route.
-    """
     error = (found[brain] - T2_true[brain]).abs()
     print(
-        f"{name:<26} {seconds:5.1f}s   "
+        f"{name:<20} {seconds:5.1f}s   "
         f"T2 error {float(error.mean()):5.1f} ms "
         f"({100 * float((error / T2_true[brain]).mean()):4.1f}%)"
     )
     return found
 
 
-# sphinx_gallery_end_ignore
-
-# %%
-#
-# Baseline reconstruction
-# -----------------------
-#
-# Gridding is the adjoint with a density weighting -- one pass, smooth, biased
-# -- and the estimator above turns its eight images into a T2 map. Sixteen
-# spokes of 192 samples is 3072 measurements against 9216 unknowns, so each
-# echo alone is underdetermined and iterating has nothing to converge to.
-# Accuracy comes from a constraint across the echoes, which is the model.
-#
-
-# sphinx_gallery_start_ignore
 started = clock()
 # sphinx_gallery_end_ignore
 adjoint = mapping(gridded)["T2"]
-
 # sphinx_gallery_start_ignore
 report("adjoint per echo", clock() - started, adjoint)
 # sphinx_gallery_end_ignore
 
 # %%
+# Gridding is the adjoint with density compensation. 16 spokes of 192 samples are
+# 3072 measurements per echo against 9216 unknowns, so each echo alone is
+# underdetermined and iterating per echo does not reduce the error. The
+# improvement has to come from a constraint across the echoes, which is the
+# signal model.
 #
-# Nonlinear model
-# ---------------
+# Signal model
+# ------------
 #
-# The signal model stays inside the forward operator and the maps are solved
-# for against k-space directly. Two things are declared:
+# The model stays in the forward operator and the maps are solved for against
+# k-space. You declare two things:
 #
-# * **what is unknown** -- ``T2``, plus the complex amplitude the operator
-#   carries for it, which is proton density and receive phase together;
-# * **what T2 may be** -- a box bound, kept by solving for a transformed
-#   variable so no iterate leaves it. That matters more here than in a fit:
-#   the model is evaluated at every voxel to predict every k-space sample, so
-#   one unphysical voxel corrupts the whole residual.
-#
-# An equality constraint would be written into the model instead.
-#
+# - the unknowns: ``T2`` and the complex amplitude the operator carries with it,
+#   which combines proton density and receive phase;
+# - the range of T2. The bound is enforced by solving for a transformed
+#   variable, so no iterate leaves it. This matters more here than in a voxelwise
+#   fit, because the model is evaluated in every voxel to predict every k-space
+#   sample, and one unphysical voxel corrupts the whole residual.
 operator = ModelOperator(simulator, "T2", bounds={"T2": (20.0, 400.0)})
 
-# The amplitude starts from the first gridded echo, which is nearly free and
-# is most of what makes the first Newton step sensible.
+# %%
+# The amplitude starts from the first gridded echo, which costs nothing and
+# makes the first Gauss-Newton step well conditioned:
 initial = operator.initial((1, SIZE, SIZE), T2=100.0).to(device)
 initial[0, ..., 1] = gridded[..., 0].real
 initial[0, ..., 2] = gridded[..., 0].imag
 
 # %%
+# Gauss-Newton solve
+# ------------------
 #
-# An iteratively regularized Gauss-Newton: linearize, solve, step, lower the
-# damping. BlochSim supplies the loop and the derivative but not the linear
-# solver -- :func:`~blochsim.recon.iterative` hands the linearized problem to
-# the same deepinv routine the baseline called. A proximal solver under a
-# wavelet prior is a change to that one argument.
-#
+# Each iteration linearizes the model at the current maps, solves the linearized
+# least-squares problem and steps, then lowers the damping (iteratively
+# regularized Gauss-Newton). blochsim provides the loop and the derivative.
+# :func:`~blochsim.recon.iterative` hands each linearized problem to the deepinv
+# solver used for the baseline; replacing that argument changes the solver, for
+# example to a proximal one with a wavelet prior.
 
 # sphinx_gallery_start_ignore
 started = clock()
@@ -440,7 +336,6 @@ found = GaussNewton(
     max_iterations=8,
 ).minimize(operator, kspace, initial, encoding=encoding)
 
-# No fit afterwards: the maps are what was solved for.
 modelled = operator.split(found.x)["T2"][0]
 
 # sphinx_gallery_start_ignore
@@ -452,29 +347,24 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
+# ``found.x`` holds the solved variables and ``operator.split`` separates them
+# into named maps. No fit follows.
 #
-# Timing
-# ------
+# Time and memory
+# ---------------
 #
-# Each conjugate-gradient step costs one product with the Jacobian and one with
-# its adjoint, and each is the encoding operator once and the model once.
-# Timing the four says which half a faster reconstruction would come from; here
-# they are comparable.
-#
-# Neither product builds the Jacobian. That is a memory argument: the blocks
-# are ``voxels x channels x contrasts`` where a signal is ``voxels x
-# contrasts``, so what is not held is the channel count times the signal, every
-# iteration.
-#
+# Each conjugate-gradient step applies the Jacobian and its adjoint once. Each
+# product is one application of the encoding operator and one of the model.
+# Timing the four shows which part a faster reconstruction has to speed up.
 tangent = torch.randn_like(initial)
 predicted = operator.A_jvp(initial, tangent)
 adjoint_image = encoding.A_adjoint(kspace).movedim(1, -1)
 
-
 # sphinx_gallery_start_ignore
+
+
 def timed(call, repeats=5):
-    """Wall clock, after a warm-up, because the first call plans transforms."""
-    call()
+    call()  # the first call plans the transforms
     if device == "cuda":
         torch.cuda.synchronize()
     start = time.perf_counter()
@@ -504,10 +394,14 @@ print(
 # sphinx_gallery_end_ignore
 
 # %%
+# The products do not build the Jacobian. Its blocks are voxels x channels x
+# contrasts, where a signal is voxels x contrasts, so avoiding it saves the
+# channel count times the signal size at every iteration.
 #
 # Maps
 # ----
 #
+# The T2 maps use a perceptually uniform colormap reserved for T2 [2]_.
 
 # sphinx_gallery_start_ignore
 shown = (
@@ -516,30 +410,57 @@ shown = (
     ("model-based", modelled),
 )
 
-cmap, limits, label = STYLE["T2"]
-figure, axes = canvas(2, len(shown), T2_true.shape)
+figure, axes = plt.subplots(
+    2,
+    len(shown),
+    squeeze=False,
+    figsize=(len(shown) * PANEL + BAR_WIDTH, PANEL * 2 + 0.6),
+)
 axes[1, 0].set_visible(False)
 for column, (title, values) in enumerate(shown):
     picture = torch.where(brain, values, torch.tensor(0.0, device=device))
-    estimate = panel(axes[0, column], picture.cpu().numpy(), cmap, limits, title=title)
+    estimate = panel(axes[0, column], picture.cpu().numpy(), NAVIA, T2_WINDOW, title)
     if column == 0:
         continue
     difference = torch.where(
         brain, (values - T2_true).abs(), torch.tensor(0.0, device=device)
     )
     error = panel(axes[1, column], difference.cpu().numpy(), "inferno", (0, 80))
-scalebar(estimate, axes[0], label)
-scalebar(error, axes[1, 1:], f"|error|, {label}")
+scalebar(estimate, axes[0], "T2 [ms]")
+scalebar(error, axes[1, 1:], "|error| [ms]")
+plt.show()
 # sphinx_gallery_end_ignore
 
 # %%
+# Alternative signal model
+# ------------------------
 #
-# Writing a different model
-# -------------------------
+# The model is the only part that names a relaxation time, and it is an ordinary
+# :class:`~blochsim.model.Simulator`, the object used in the fitting and design
+# Applications. Water-fat separation, T2* with a field map or a Look-Locker
+# inversion recovery each require a different simulator. The operator, the loop
+# and the encoding are unchanged.
 #
-# The model is the only thing above that names a relaxation time, and it is an
-# ordinary :class:`~blochsim.model.Simulator` -- the same object the fitting
-# and sequence-design notebooks use. Water-fat separation, T2* with a field
-# map, a Look-Locker inversion recovery: each is a different ``evaluate``, and
-# the operator, the loop and the encoding are unchanged.
+# References
+# ----------
 #
+# .. [1] Wang X, Tan Z, Scholand N, Roeloffs V, Uecker M. Physics-based
+#        reconstruction methods for magnetic resonance imaging. Phil Trans R Soc
+#        A 379:20200196 (2021).
+# .. [2] Fuderer M, et al. Recommended colour maps for relaxation parameter
+#        maps. Magn Reson Med (2025).
+#
+# Specification
+# -------------
+#
+# What this Application did, stated the way you would ask an agent for it:
+#
+# .. code-block:: text
+#
+#    With blochsim, mri-nufft and deepinv, simulate an 8-echo multi-echo spin
+#    echo (TE 10 to 150 ms) on a BrainWeb T2 phantom of 96 x 96 voxels, sampled
+#    by 16 golden-angle radial spokes per echo. Reconstruct T2 two ways: gridding
+#    followed by a dictionary match, and a ModelOperator over the simulator with
+#    T2 bounded to 20-400 ms, solved by Gauss-Newton from a T2 of 100 ms.
+#    Report time and mean T2 error over the brain, the time of each Jacobian
+#    product, and the size of the Jacobian that the operator avoids storing.

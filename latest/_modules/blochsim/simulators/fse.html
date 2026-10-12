@@ -37,7 +37,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -198,11 +198,21 @@
         </ul>
         <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../generated/autoexamples/index.html">Examples</a></li>
@@ -503,10 +513,15 @@
 <span class="sd">    """</span>
 
     <span class="n">model</span> <span class="o">=</span> <span class="n">SpinPhysics</span><span class="p">(</span>
-        <span class="n">properties</span><span class="o">=</span><span class="p">{</span><span class="s2">"T1"</span><span class="p">:</span> <span class="s2">"t1_ms"</span><span class="p">,</span> <span class="s2">"T2"</span><span class="p">:</span> <span class="s2">"t2_ms"</span><span class="p">,</span> <span class="s2">"M0"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"B1"</span><span class="p">:</span> <span class="s2">"b1"</span><span class="p">},</span>
+        <span class="n">properties</span><span class="o">=</span><span class="p">{</span><span class="s2">"T1"</span><span class="p">:</span> <span class="s2">"t1_ms"</span><span class="p">,</span> <span class="s2">"T2"</span><span class="p">:</span> <span class="s2">"t2_ms"</span><span class="p">,</span> <span class="s2">"M0"</span><span class="p">:</span> <span class="s2">"m0"</span><span class="p">,</span> <span class="s2">"B1"</span><span class="p">:</span> <span class="s2">"b1"</span><span class="p">},</span>
         <span class="n">operators</span><span class="o">=</span><span class="n">REFOCUSED</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">states</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="c1"># The first playing leaves the longitudinal magnetization the TR recovers</span>
+    <span class="c1"># to, and the second, which is recorded, starts from it. A 90 degree</span>
+    <span class="c1"># excitation leaves no longitudinal memory of the train before, so two</span>
+    <span class="c1"># playings are the steady state; another excitation needs repetitions="auto".</span>
+    <span class="n">repetitions</span> <span class="o">=</span> <span class="mi">2</span>
 
 <div class="viewcode-block" id="FSESimulator.layout">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator.layout">[docs]</a>
@@ -574,10 +589,6 @@
             <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">echo_s</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">operators</span><span class="o">.</span><span class="n">readout</span><span class="p">(</span><span class="n">demodulation</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">index</span><span class="p">])))</span>
         <span class="k">return</span> <span class="n">parts</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">_echoes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">played</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""How many echoes the train records."""</span>
-        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">as_torch</span><span class="p">(</span><span class="n">played</span><span class="p">[</span><span class="s2">"flip"</span><span class="p">]))</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-
 <div class="viewcode-block" id="FSESimulator.repetition_s">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator.repetition_s">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">repetition_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">played_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">protocol</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
@@ -589,29 +600,37 @@
 <div class="viewcode-block" id="FSESimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Simulate one train, then let it recover for what is left of the TR."""</span>
+<span class="w">        </span><span class="sd">"""Simulate the train, one train at a time where each has its own TR.</span>
+
+<span class="sd">        The engine plays a batch of trains on one clock, so trains that wait</span>
+<span class="sd">        out different repetition times are run separately and stacked along</span>
+<span class="sd">        the train axis, the leading axis of ``TR`` and of every per-echo</span>
+<span class="sd">        argument batched with it.</span>
+<span class="sd">        """</span>
         <span class="n">played</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)</span>
-        <span class="n">signal</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">evaluate</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">sequence</span><span class="p">)</span>
-        <span class="n">echoes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_echoes</span><span class="p">(</span><span class="n">played</span><span class="p">)</span>
-
-        <span class="k">def</span><span class="w"> </span><span class="nf">beside</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">            </span><span class="sd">"""Put a value where the signal came back from.</span>
-
-<span class="sd">            A run may be asked for a device the tissue was not written on, and</span>
-<span class="sd">            what is worked out here multiplies the signal rather than reaching</span>
-<span class="sd">            a kernel.</span>
-<span class="sd">            """</span>
-            <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_tensor</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">else</span> <span class="n">value</span>
-
-        <span class="n">left_ms</span> <span class="o">=</span> <span class="n">beside</span><span class="p">(</span><span class="n">played</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"TR"</span><span class="p">,</span> <span class="mf">1e6</span><span class="p">))</span> <span class="o">-</span> <span class="n">beside</span><span class="p">(</span><span class="n">played</span><span class="p">[</span><span class="s2">"ESP"</span><span class="p">])</span> <span class="o">*</span> <span class="n">echoes</span>
-        <span class="n">recovered</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">1e3</span> <span class="o">/</span> <span class="n">beside</span><span class="p">(</span><span class="n">properties</span><span class="p">[</span><span class="s2">"T1"</span><span class="p">])</span> <span class="o">*</span> <span class="n">left_ms</span> <span class="o">*</span> <span class="mf">1e-3</span><span class="p">)</span>
-        <span class="c1"># Both carry the tissue shape and the signal is (..., tissue, echo), so</span>
-        <span class="c1"># one trailing axis lines them up and any leading train axis broadcasts.</span>
-        <span class="n">recovered</span> <span class="o">=</span> <span class="n">recovered</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-        <span class="n">density</span> <span class="o">=</span> <span class="n">beside</span><span class="p">(</span><span class="n">properties</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"M0"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
-        <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_tensor</span><span class="p">(</span><span class="n">density</span><span class="p">):</span>
-            <span class="n">density</span> <span class="o">=</span> <span class="n">density</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-        <span class="k">return</span> <span class="n">density</span> <span class="o">*</span> <span class="n">signal</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">recovered</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">recovered</span> <span class="o">*</span> <span class="n">signal</span><span class="p">)</span></div>
+        <span class="n">repetition</span> <span class="o">=</span> <span class="n">played</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"TR"</span><span class="p">)</span>
+        <span class="n">playings</span> <span class="o">=</span> <span class="n">sequence</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"repetitions"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">repetitions</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_tensor</span><span class="p">(</span><span class="n">repetition</span><span class="p">)</span> <span class="ow">or</span> <span class="n">repetition</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">playings</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">evaluate</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">sequence</span><span class="p">)</span>
+        <span class="n">trains</span> <span class="o">=</span> <span class="n">repetition</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">batched</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">name</span><span class="p">:</span> <span class="n">value</span>
+            <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">played</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_tensor</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">trains</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span>
+            <span class="p">[</span>
+                <span class="nb">super</span><span class="p">(</span><span class="n">FSESimulator</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">evaluate</span><span class="p">(</span>
+                    <span class="n">properties</span><span class="p">,</span>
+                    <span class="o">**</span><span class="p">{</span>
+                        <span class="o">**</span><span class="n">sequence</span><span class="p">,</span>
+                        <span class="o">**</span><span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">value</span><span class="p">[</span><span class="n">train</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">batched</span><span class="o">.</span><span class="n">items</span><span class="p">()},</span>
+                        <span class="s2">"TR"</span><span class="p">:</span> <span class="n">repetition</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">trains</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="n">train</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span>
+                    <span class="p">},</span>
+                <span class="p">)</span>
+                <span class="k">for</span> <span class="n">train</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">trains</span><span class="p">)</span>
+            <span class="p">]</span>
+        <span class="p">)</span></div>
 </div>
 
 
@@ -695,10 +714,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_train</span><span class="p">(</span>
             <span class="n">angles</span><span class="p">,</span> <span class="n">turns</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">turns</span><span class="p">),</span> <span class="n">ESP</span><span class="p">,</span> <span class="n">exc_flip</span><span class="p">,</span> <span class="n">exc_phase</span>
         <span class="p">)</span></div>
-
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_echoes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">played</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">return</span> <span class="mi">2</span> <span class="o">*</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">_echoes</span><span class="p">(</span><span class="n">played</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span></div>
+</div>
 
 </pre></div>
 

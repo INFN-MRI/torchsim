@@ -2,25 +2,12 @@
 
 .. _sphx_glr_generated_autoexamples_03-sequence-optimization:
 
-Sequence optimization
----------------------
+Applications: sequence design
+-----------------------------
 
-Choosing a sequence's parameters rather than simulating the ones you were
-given.
-
-A design problem is three pieces: a simulator with the tissue it is designed
-for already fixed on it; a cost, which is a plain function of what that
-simulator records; and a :class:`~blochsim.SequenceDesign`, which holds the
-parameters inside the limits the scanner will play and runs the loop.
-
-Only the cost changes between the first two examples here. One asks for a
-picture -- sharp where sharpness is decided, with contrast where contrast is
-decided -- and the other asks for precision, choosing flip angles so that T1
-and T2 are estimated as tightly as the scan time allows.
-
-The third designs no protocol parameter at all but the samples of an RF pulse,
-through a Bloch simulation of the slice it excites, so that the excitation
-holds where the transmit field does not.
+Choose sequence parameters by gradient descent through the simulation: the
+refocusing angles of an echo train, the flip angles of a relaxometry
+protocol, and the samples of an RF pulse.
 
 
 .. raw:: html
@@ -36,7 +23,7 @@ holds where the transmit field does not.
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to design refocusing flip angles for image quality rather than for precision: first a single echo train, then a whole segmented 3D protocol in which each shot carries its own repetition time, echo train length and angles.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example you design the refocusing flip angles of a fast spin echo for image quality rather than for precision: first one echo train, then a whole segmented 3D protocol in which each shot has its own repetition time, echo train length and angles.">
 
 .. only:: html
 
@@ -47,13 +34,13 @@ holds where the transmit field does not.
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Designing echo trains for image quality</div>
+      <div class="sphx-glr-thumbnail-title">Echo train design for sharpness</div>
     </div>
 
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example you choose the flip angles of a DESPOT protocol so that a joint fit of T1 and T2 is as precise as possible [1]_. DESPOT estimates T1 from spoiled gradient-echo scans at several flip angles and T2 from balanced SSFP scans. A joint fit uses all the data for both parameters.">
 
 .. only:: html
 
@@ -64,13 +51,13 @@ holds where the transmit field does not.
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Designing a joint relaxometry protocol</div>
+      <div class="sphx-glr-thumbnail-title">Joint relaxometry protocol design</div>
     </div>
 
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to design the samples of an RF pulse directly, by gradient descent through a Bloch simulation of what they do [1]_.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In this example you design the samples of a slice-selective RF pulse by gradient descent through a Bloch simulation of what they do [1]_. Across a body at 3 T the transmit field B1 varies by about a fifth either way, and the flip angle inside the slice varies with it. You reshape a 90 degree excitation so that it stays close to 90 degrees over that range.">
 
 .. only:: html
 
@@ -81,7 +68,7 @@ holds where the transmit field does not.
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Designing an RF pulse by optimal control</div>
+      <div class="sphx-glr-thumbnail-title">RF pulse design by optimal control</div>
     </div>
 
 

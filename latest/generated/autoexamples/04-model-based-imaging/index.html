@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Model-based imaging &#8212; BlochSim Documentation</title>
+    <title>Applications: model-based reconstruction &#8212; BlochSim Documentation</title>
   
   
   
@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -67,8 +67,8 @@
     <link rel="icon" href="../../../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
-    <link rel="next" title="Reconstructing in a linear subspace" href="01-linear-subspace.html" />
-    <link rel="prev" title="Designing an RF pulse by optimal control" href="../03-sequence-optimization/03-rf-pulse-design.html" />
+    <link rel="next" title="Subspace reconstruction" href="01-linear-subspace.html" />
+    <link rel="prev" title="RF pulse design by optimal control" href="../03-sequence-optimization/03-rf-pulse-design.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
@@ -520,7 +530,7 @@
               
 
 <div id="jb-print-docs-body" class="onlyprint">
-    <h1>Model-based imaging</h1>
+    <h1>Applications: model-based reconstruction</h1>
     <!-- Table of contents -->
     <div id="print-main-content">
         <div id="jb-print-toc">
@@ -534,24 +544,14 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="model-based-imaging">
-<span id="sphx-glr-generated-autoexamples-04-model-based-imaging"></span><h1>Model-based imaging<a class="headerlink" href="#model-based-imaging" title="Link to this heading">#</a></h1>
-<p>Reconstructing parameter maps from k-space without forming the contrast images
-in between.</p>
-<p>A quantitative scan is usually reconstructed twice: once to make one image per
-contrast, and again – voxel by voxel – to turn those images into maps. The
-first step has no idea what the second one is for. Writing the signal model
-into the forward operator removes the intermediate step, and the echoes then
-constrain one another instead of being recovered separately.</p>
-<p>There are two ways to do it. A <strong>linear subspace</strong> writes the signal in the
-low-rank basis the train spans and reconstructs the coefficients, which stays
-linear and so has no local minima and no starting guess. <strong>Nonlinear inversion</strong>
-keeps the model itself inside the operator and solves for the maps directly,
-which costs more and is what a signal with no small basis needs.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong."><img alt="" src="../../../_images/sphx_glr_01-linear-subspace_thumb.png" />
-<p><a class="reference internal" href="01-linear-subspace.html"><span class="doc">Reconstructing in a linear subspace</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Reconstructing in a linear subspace</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go."><img alt="" src="../../../_images/sphx_glr_02-nonlinear-inversion_thumb.png" />
+  <section id="applications-model-based-reconstruction">
+<span id="sphx-glr-generated-autoexamples-04-model-based-imaging"></span><h1>Applications: model-based reconstruction<a class="headerlink" href="#applications-model-based-reconstruction" title="Link to this heading">#</a></h1>
+<p>Reconstruct parameter maps straight from k-space, with the signal model inside
+the forward operator: linear, in a subspace, or nonlinear.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="In this Application you reconstruct one undersampled radial multi-echo spin echo three ways: by gridding, by conjugate gradients on each echo separately, and in a linear subspace. You compare what each costs and how far its T2 map is from the truth."><img alt="" src="../../../_images/sphx_glr_01-linear-subspace_thumb.png" />
+<p><a class="reference internal" href="01-linear-subspace.html"><span class="doc">Subspace reconstruction</span></a></p>
+  <div class="sphx-glr-thumbnail-title">Subspace reconstruction</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In this Application you reconstruct T2 maps directly from k-space, with the signal model inside the forward operator, and compare the result with gridding followed by a fit."><img alt="" src="../../../_images/sphx_glr_02-nonlinear-inversion_thumb.png" />
 <p><a class="reference internal" href="02-nonlinear-inversion.html"><span class="doc">Nonlinear inversion from k-space</span></a></p>
   <div class="sphx-glr-thumbnail-title">Nonlinear inversion from k-space</div>
 </div></div><div class="toctree-wrapper compound">
@@ -575,7 +575,7 @@ which costs more and is what a signal with no small basis needs.</p>
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Designing an RF pulse by optimal control</p>
+        <p class="prev-next-title">RF pulse design by optimal control</p>
       </div>
     </a>
     <a class="right-next"
@@ -583,7 +583,7 @@ which costs more and is what a signal with no small basis needs.</p>
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Reconstructing in a linear subspace</p>
+        <p class="prev-next-title">Subspace reconstruction</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

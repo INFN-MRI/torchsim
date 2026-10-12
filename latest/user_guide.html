@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="generated/autoexamples/index.html">Examples</a></li>
@@ -532,15 +542,15 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#install">Install</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#an-environment-of-its-own">An environment of its own</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pytorch-first">PyTorch first</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#virtual-environment">Virtual environment</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pytorch">PyTorch</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim">BlochSim</a></li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#your-first-simulation">Your first simulation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#finding-your-way-around-this-documentation">Finding your way around this documentation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#getting-help-and-reporting-what-breaks">Getting help, and reporting what breaks</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#first-simulation">First simulation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#documentation-structure">Documentation structure</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#support-and-bug-reports">Support and bug reports</a></li>
 </ul>
             </nav>
         </div>
@@ -558,27 +568,27 @@
 and a map of where the rest of this documentation is.</p>
 <nav class="contents local" id="contents">
 <ul class="simple">
-<li><p><a class="reference internal" href="#install" id="id1">Install</a></p>
+<li><p><a class="reference internal" href="#installation" id="id1">Installation</a></p>
 <ul>
-<li><p><a class="reference internal" href="#an-environment-of-its-own" id="id2">An environment of its own</a></p></li>
-<li><p><a class="reference internal" href="#pytorch-first" id="id3">PyTorch first</a></p></li>
+<li><p><a class="reference internal" href="#virtual-environment" id="id2">Virtual environment</a></p></li>
+<li><p><a class="reference internal" href="#pytorch" id="id3">PyTorch</a></p></li>
 <li><p><a class="reference internal" href="#blochsim" id="id4">BlochSim</a></p></li>
 </ul>
 </li>
-<li><p><a class="reference internal" href="#your-first-simulation" id="id5">Your first simulation</a></p></li>
-<li><p><a class="reference internal" href="#finding-your-way-around-this-documentation" id="id6">Finding your way around this documentation</a></p></li>
-<li><p><a class="reference internal" href="#getting-help-and-reporting-what-breaks" id="id7">Getting help, and reporting what breaks</a></p></li>
+<li><p><a class="reference internal" href="#first-simulation" id="id5">First simulation</a></p></li>
+<li><p><a class="reference internal" href="#documentation-structure" id="id6">Documentation structure</a></p></li>
+<li><p><a class="reference internal" href="#support-and-bug-reports" id="id7">Support and bug reports</a></p></li>
 </ul>
 </nav>
-<section id="install">
-<h2><a class="toc-backref" href="#id1" role="doc-backlink">Install</a><a class="headerlink" href="#install" title="Link to this heading">#</a></h2>
+<section id="installation">
+<h2><a class="toc-backref" href="#id1" role="doc-backlink">Installation</a><a class="headerlink" href="#installation" title="Link to this heading">#</a></h2>
 <p>BlochSim is a PyTorch package with two compiled kernels behind it. <code class="docutils literal notranslate"><span class="pre">pip</span></code>
 installs the Python side and its NumPy and SciPy dependencies for you. Two
 things it cannot decide on your behalf, and which you therefore settle first:
 <strong>which build of PyTorch you want</strong>, and <strong>where you want the whole thing to
 live</strong>.</p>
-<section id="an-environment-of-its-own">
-<h3><a class="toc-backref" href="#id2" role="doc-backlink">An environment of its own</a><a class="headerlink" href="#an-environment-of-its-own" title="Link to this heading">#</a></h3>
+<section id="virtual-environment">
+<h3><a class="toc-backref" href="#id2" role="doc-backlink">Virtual environment</a><a class="headerlink" href="#virtual-environment" title="Link to this heading">#</a></h3>
 <p>Install into an isolated environment rather than the system interpreter. A
 simulation pins versions of PyTorch, NumPy and SciPy, and the phantom, coil
 and reconstruction packages the examples reach for pin their own; keeping them
@@ -620,8 +630,8 @@ uv</label><div class="sd-tab-content docutils">
 </div>
 </div>
 </section>
-<section id="pytorch-first">
-<h3><a class="toc-backref" href="#id3" role="doc-backlink">PyTorch first</a><a class="headerlink" href="#pytorch-first" title="Link to this heading">#</a></h3>
+<section id="pytorch">
+<h3><a class="toc-backref" href="#id3" role="doc-backlink">PyTorch</a><a class="headerlink" href="#pytorch" title="Link to this heading">#</a></h3>
 <p><strong>Install PyTorch before BlochSim.</strong> The wheel you want depends on hardware
 <code class="docutils literal notranslate"><span class="pre">pip</span></code> cannot see: a CPU-only build and a CUDA build have the same name and
 version, and differ only in which index they came from. Install BlochSim first
@@ -711,8 +721,8 @@ once:</p>
 any other does, apart from PyTorch initialising CUDA.</p>
 </section>
 </section>
-<section id="your-first-simulation">
-<h2><a class="toc-backref" href="#id5" role="doc-backlink">Your first simulation</a><a class="headerlink" href="#your-first-simulation" title="Link to this heading">#</a></h2>
+<section id="first-simulation">
+<h2><a class="toc-backref" href="#id5" role="doc-backlink">First simulation</a><a class="headerlink" href="#first-simulation" title="Link to this heading">#</a></h2>
 <p>The central public object in BlochSim is a
 <a class="reference internal" href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. A shipped simulator fixes the sequence;
 <code class="docutils literal notranslate"><span class="pre">simulate</span></code> receives the tissue and anything you want to vary. Asking for a
@@ -738,16 +748,16 @@ subclass when you implement a sequence.</p>
 <p>Arrays go in and come back in whatever library you wrote them in – NumPy here,
 CuPy or PyTorch elsewhere – over the same memory rather than a copy.</p>
 </section>
-<section id="finding-your-way-around-this-documentation">
-<h2><a class="toc-backref" href="#id6" role="doc-backlink">Finding your way around this documentation</a><a class="headerlink" href="#finding-your-way-around-this-documentation" title="Link to this heading">#</a></h2>
+<section id="documentation-structure">
+<h2><a class="toc-backref" href="#id6" role="doc-backlink">Documentation structure</a><a class="headerlink" href="#documentation-structure" title="Link to this heading">#</a></h2>
 <dl class="simple myst">
 <dt><a class="reference internal" href="explanations/index.html"><span class="doc">Explanations</span></a></dt><dd><p>The conceptual pages: the sequence description, the EPG physics and the
 fused implementation.</p>
 </dd>
-<dt><a class="reference internal" href="generated/autoexamples/index.html"><span class="doc">Examples</span></a></dt><dd><p>The executable Course and Tours. The Course starts with a shipped simulator,
-then shows how to implement a new sequence by subclassing
-<a class="reference internal" href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>; the Tours cover inference, design and
-model-based reconstruction.</p>
+<dt><a class="reference internal" href="generated/autoexamples/index.html"><span class="doc">Examples</span></a></dt><dd><p>The executable Course and Applications. The Course starts with a shipped
+simulator and ends with a signal model and an operator of your own; the
+Applications cover parameter mapping, sequence design, model-based
+reconstruction and synthetic data.</p>
 </dd>
 <dt><a class="reference internal" href="api/index.html"><span class="doc">API</span></a></dt><dd><p>The reference. Start at <a class="reference internal" href="api/simulators.html"><span class="doc">Simulators</span></a> for what ships, at
 <a class="reference internal" href="api/model.html"><span class="doc">Signal models</span></a> for writing your own, and at <a class="reference internal" href="api/execution.html"><span class="doc">Running a simulation</span></a> for
@@ -758,8 +768,8 @@ written in, the tests, and how a pull request is opened.</p>
 </dd>
 </dl>
 </section>
-<section id="getting-help-and-reporting-what-breaks">
-<h2><a class="toc-backref" href="#id7" role="doc-backlink">Getting help, and reporting what breaks</a><a class="headerlink" href="#getting-help-and-reporting-what-breaks" title="Link to this heading">#</a></h2>
+<section id="support-and-bug-reports">
+<h2><a class="toc-backref" href="#id7" role="doc-backlink">Support and bug reports</a><a class="headerlink" href="#support-and-bug-reports" title="Link to this heading">#</a></h2>
 <p><strong>Ask a question</strong> in
 <a class="reference external" href="https://github.com/pulserver/blochsim/discussions">Discussions</a>. How to model
 a sequence, whether a signal you got is expected, which estimator suits a
@@ -839,15 +849,15 @@ public issue. Wrong physics is a bug report, not a vulnerability.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#install">Install</a><ul class="nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#an-environment-of-its-own">An environment of its own</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pytorch-first">PyTorch first</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#virtual-environment">Virtual environment</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pytorch">PyTorch</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#blochsim">BlochSim</a></li>
 </ul>
 </li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#your-first-simulation">Your first simulation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#finding-your-way-around-this-documentation">Finding your way around this documentation</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#getting-help-and-reporting-what-breaks">Getting help, and reporting what breaks</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#first-simulation">First simulation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#documentation-structure">Documentation structure</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#support-and-bug-reports">Support and bug reports</a></li>
 </ul>
   </nav></div>
 

@@ -22,43 +22,35 @@
 PERK: kernel ridge regression
 =============================
 
-The scope of this notebook is to map a brain slice with PERK, to show what the
-size of the regression buys, and to read the error bar it reports.
+You map T1, T2 and proton density in a brain slice with PERK, vary the size of
+the regression, and read the uncertainty it reports against the Cramér-Rao
+bound.
 
-PERK never builds a dictionary. It is a kernel regression trained on signals
-drawn from a prior rather than laid on a grid, and at inference it projects a
-signal onto a fixed set of random Fourier features and reads the answer off a
-linear combination of them. Its cost per voxel does not depend on how many
-parameters are unknown, and the training is paid once.
+PERK builds no dictionary. It is a kernel regression trained on signals drawn
+from a prior instead of laid on a grid. At inference it projects a signal onto
+a fixed set of random Fourier features and reads the estimate off a linear
+combination of them. The cost per voxel does not depend on the number of
+unknown parameters, and the training is paid once.
 
-.. GENERATED FROM PYTHON SOURCE LINES 17-21
+Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
+
+.. GENERATED FROM PYTHON SOURCE LINES 20-25
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim brainweb-dl cmap
+   !pip install blochsim matplotlib brainweb-dl cmap
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 23-27
-
-The problem is stated over a simulator carrying the sequence and filled in
-by an estimator. :func:`~blochsim.execution` decides where that work runs,
-and the timings below are taken inside it.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 28-174
+.. GENERATED FROM PYTHON SOURCE LINES 25-139
 
 .. code-block:: Python
 
 
-    import time
-
     import numpy as np
     import torch
 
-    import blochsim
-    from blochsim import (
-        Subspace,
-    )
+    from blochsim import Subspace, crlb
     from blochsim.estimators import PERK, DictionaryMatcher
     from blochsim.simulators import MRFSimulator
 
@@ -69,19 +61,18 @@ and the timings below are taken inside it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 175-184
+.. GENERATED FROM PYTHON SOURCE LINES 140-148
 
 Phantom
 -------
 
-BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
-ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
-voxel holds a fraction of each tissue, and the relaxation times are weighted
-by those fractions. A third of the voxels are mixtures, so the truth is a
-continuum and not four values.
+The phantom is BrainWeb subject 0, slice 90: an axial 1 mm slice through the
+lateral ventricles. BrainWeb provides fuzzy tissue memberships, so each voxel
+holds a fraction of each tissue and its relaxation times are the
+fraction-weighted average. About a third of the voxels are mixtures, so the
+ground truth is a continuum of values rather than four.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 185-225
+.. GENERATED FROM PYTHON SOURCE LINES 148-188
 
 
 
@@ -92,26 +83,20 @@ continuum and not four values.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    Text(0.5, 0.9883529057497298, 'BrainWeb subject 0, slice 90')
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 226-233
+.. GENERATED FROM PYTHON SOURCE LINES 189-196
 
 Sequence
 --------
 
-Four hundred repetitions after an inversion, at a fixed repetition time and a
-flip angle that varies smoothly along the train. A schedule that jumped about
-would give trajectories differing by noise rather than by physics.
+The sequence is an inversion followed by 400 repetitions at TR = 10 ms. The
+flip angle varies smoothly along the train, so that the signal evolutions of
+different tissues differ by physics and not by the noise of an irregular
+schedule.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 234-243
+.. GENERATED FROM PYTHON SOURCE LINES 196-205
 
 .. code-block:: Python
 
@@ -131,28 +116,29 @@ would give trajectories differing by noise rather than by physics.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 244-249
+.. GENERATED FROM PYTHON SOURCE LINES 206-210
 
-The readouts wind the states on rather than rewinding them, so nothing
-returns transverse magnetization to the imaginary axis: the trajectory comes
-back real to within 3e-8, which halves both the dictionary and the
-arithmetic that searches it.
+The readouts advance the configuration states and do not rewind them, so no
+transverse magnetization is returned to the imaginary axis and the signal
+evolution is real to float32 precision. The regression then needs only the
+real part. These are the evolutions of white matter, grey matter and CSF:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 250-266
+.. GENERATED FROM PYTHON SOURCE LINES 210-227
 
 .. code-block:: Python
 
     fingerprints = simulator.simulate(
         T1=torch.tensor([500.0, 833.0, 2569.0]), T2=torch.tensor([70.0, 83.0, 329.0])
-    ).real
+    )
+    print(f"largest imaginary part: {fingerprints.imag.abs().max():.1e}")
+    fingerprints = fingerprints.real
 
 
 
 
 
 .. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_04-perk_002.png
-   :alt: the schedule, fingerprints
+   :alt: flip angles, signal evolutions
    :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_04-perk_002.png
    :class: sphx-glr-single-img
 
@@ -161,20 +147,22 @@ arithmetic that searches it.
 
  .. code-block:: none
 
-
-    [<matplotlib.legend.Legend object at 0x7f10c46f06e0>]
-
+    largest imaginary part: 0.0e+00
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 267-272
-
-The measurement, with noise at 2% of the peak fingerprint. One number sets
-it, and the same number is what the estimators are told to expect -- an
-estimator trained for more noise than the scan has learns to distrust the
-data and answers with the prior instead.
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 273-316
+.. GENERATED FROM PYTHON SOURCE LINES 228-235
+
+Measurement
+-----------
+
+The measurement is the evolution of every voxel at its true T1 and T2, scaled
+by its proton density, with Gaussian noise of 2% of the peak signal. The
+estimators are given the same noise level: one trained for more noise than
+the scan has trusts the data less and returns values closer to the prior.
+
+.. GENERATED FROM PYTHON SOURCE LINES 235-246
 
 .. code-block:: Python
 
@@ -196,20 +184,16 @@ data and answers with the prior instead.
 
 
 
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 317-325
+.. GENERATED FROM PYTHON SOURCE LINES 247-253
 
 Problem statement
 -----------------
 
-What is unknown, over what range, and at what noise level. Both relaxation
-times span more than a decade, so the prior is drawn logarithmically:
-uniform sampling would spend most of the budget on long T1, where the
-trajectories are nearly parallel.
+The unknowns are T1 and T2. Both span more than a decade, so the prior is
+logarithmic: uniform sampling would spend most of the training draws on long
+T1, where the evolutions are nearly parallel.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 326-331
+.. GENERATED FROM PYTHON SOURCE LINES 253-258
 
 .. code-block:: Python
 
@@ -225,17 +209,17 @@ trajectories are nearly parallel.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 332-339
+.. GENERATED FROM PYTHON SOURCE LINES 259-266
 
 Subspace basis
 --------------
 
-Four hundred contrasts do not span four hundred directions. A basis fitted to
-simulated trajectories says how many they do span; one minus the energy it
-keeps is the relative squared error of projecting through it and back.
+The 400 contrasts span far fewer than 400 independent directions.
+``Subspace.fit`` computes a basis from simulated evolutions and reports the
+fraction of their energy that a given rank retains; one minus that fraction
+is the relative squared error of projecting onto the basis and back.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 340-374
+.. GENERATED FROM PYTHON SOURCE LINES 266-296
 
 .. code-block:: Python
 
@@ -258,37 +242,30 @@ keeps is the relative squared error of projecting through it and back.
 
 
 .. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_04-perk_003.png
-   :alt: what projecting through the basis loses
+   :alt: 04 perk
    :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_04-perk_003.png
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    [<matplotlib.legend.Legend object at 0x7f10c65686b0>]
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 375-384
+.. GENERATED FROM PYTHON SOURCE LINES 297-307
 
-Four directions leave less outside the basis than the noise puts in, so
-rank 4 is used from here on.
+At rank 4 the energy left outside the basis is below the energy the noise
+adds, so rank 4 is used from here on.
 
 Training
 --------
 
-Twenty thousand parameter pairs drawn from the prior, simulated, and given
-the noise the scan has. Fitting is a linear solve against the features.
+``fit`` draws 20 000 (T1, T2) pairs from the prior, simulates them, adds the
+noise level of the scan, and solves the regularized linear system against
+1000 random Fourier features. The fitted regression maps a measurement to
+the estimates directly:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 385-450
+.. GENERATED FROM PYTHON SOURCE LINES 307-366
 
 .. code-block:: Python
-
-
 
     FEATURES = 1000
 
@@ -309,7 +286,6 @@ the noise the scan has. Fitting is a linear solve against the features.
 
 
 
-
 .. rst-class:: sphx-glr-script-out
 
  .. code-block:: none
@@ -319,18 +295,18 @@ the noise the scan has. Fitting is a linear solve against the features.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 451-459
+.. GENERATED FROM PYTHON SOURCE LINES 367-375
 
 Cost and accuracy
 -----------------
 
-Best of three passes each, after a warm-up. **model** is what the fitted
-estimator carries between volumes; **peak** is the high-water mark on the
-card while the slice was mapped, and a dash on a machine with no card. The
-dictionary row is the reference point.
+The table compares PERK at three sizes with a dictionary match at rank 4 as
+the reference. Times are the best of three passes after a warm-up. *model* is
+the memory the fitted estimator holds between volumes. *peak* is the maximum
+GPU memory allocated while mapping the slice, blank on a machine without a
+GPU. Errors are medians over the brain voxels, relative to the truth.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 460-499
+.. GENERATED FROM PYTHON SOURCE LINES 375-403
 
 
 
@@ -343,21 +319,23 @@ dictionary row is the reference point.
 
     method                       train     map     model      peak      T1      T2
     ------------------------------------------------------------------------------
-    match, rank 4                 0.8s   1.68s   1.4 MiB        --    0.6%    1.6%
-    PERK, 500 features            0.9s   0.02s   0.0 MiB        --    1.5%    9.7%
-    PERK, 1000 features           1.1s   0.03s   0.1 MiB        --    1.1%    4.9%
-    PERK, 4000 features           5.1s   0.09s   0.4 MiB        --    1.0%    5.1%
+    match, rank 4                 1.1s   1.64s   1.4 MiB        --    0.6%    1.6%
+    PERK, 500 features            1.4s   0.03s   0.0 MiB        --    2.1%   16.4%
+    PERK, 1000 features           1.8s   0.04s   0.1 MiB        --    0.5%    3.4%
+    PERK, 4000 features           9.8s   0.12s   0.4 MiB        --    0.9%    5.4%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 500-503
+.. GENERATED FROM PYTHON SOURCE LINES 404-409
 
 Maps
 ----
 
+The maps of both methods, and below them the absolute error on a scale of its
+own for each parameter.
 
-.. GENERATED FROM PYTHON SOURCE LINES 504-562
+.. GENERATED FROM PYTHON SOURCE LINES 409-459
 
 
 
@@ -383,18 +361,17 @@ Maps
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 563-571
+.. GENERATED FROM PYTHON SOURCE LINES 460-467
 
 Uncertainty
 -----------
 
-``uncertainty=True`` returns a second set of maps: how far the answer is
-expected to sit from the truth. PERK learns that at training, from the
-residuals of its own fit, so reporting it is a matrix multiply rather than a
-rerun of the volume.
+With ``uncertainty=True`` the regression returns a second set of maps, the
+expected distance of the estimate from the truth. PERK learns it during
+training from the residuals of its own fit, so reporting it costs a matrix
+multiplication and not a second pass over the volume:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 572-574
+.. GENERATED FROM PYTHON SOURCE LINES 467-469
 
 .. code-block:: Python
 
@@ -407,20 +384,21 @@ rerun of the volume.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 575-579
+.. GENERATED FROM PYTHON SOURCE LINES 470-475
 
-Read against the Cramer-Rao bound, the lowest standard deviation an unbiased
-estimate could reach from this train at this noise. The bound belongs to the
-sequence, so the gap is what the method loses.
+The reference is the Cramér-Rao bound: the lowest standard deviation an
+unbiased estimator could reach from this train at this noise level. The bound
+is a property of the sequence, so the gap between it and the spread is what
+the method loses. The bound comes from the Jacobian of the signal with respect
+to T1 and T2, scaled by the proton density:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 580-623
+.. GENERATED FROM PYTHON SOURCE LINES 475-519
 
 .. code-block:: Python
 
-    _signal, sensitivity = simulator.jacobian("T1 T2".split(), **truth)
+    _signal, sensitivity = simulator.jacobian(["T1", "T2"], **truth)
     sensitivity = sensitivity.real * density[:, None, None]
-    floor = blochsim.crlb(sensitivity, noise_variance=NOISE_STD**2, singular="infinite")
+    floor = crlb(sensitivity, noise_variance=NOISE_STD**2, singular="infinite")
     bound = {"T1": floor[:, 0].sqrt(), "T2": floor[:, 1].sqrt()}
 
 
@@ -438,32 +416,48 @@ sequence, so the gap is what the method loses.
  .. code-block:: none
 
                 PERK      CRLB     PERK   (median over the brain)
-    T1        9.5 ms    2.4 ms     1.3%
-    T2       11.7 ms    0.5 ms    14.7%
+    T1        7.6 ms    2.4 ms     1.1%
+    T2       11.9 ms    0.5 ms    16.0%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 624-637
+.. GENERATED FROM PYTHON SOURCE LINES 520-549
 
-Each row uses its own parameter's colormap. The two absolute panels share a
-scale; the third is the same spread as a percentage of the relaxation time,
-which is what says whether ten milliseconds is tight.
+The two absolute columns share a scale in each row; the third column is the
+PERK spread as a percentage of the relaxation time, which shows whether a
+spread of ten milliseconds is small.
 
-Both are largest in CSF, whose long T1 this train resolves least. The gap
-between them is not: T1 sits within a small multiple of the bound, T2
-several times above it, and it is T2 whose error moved when the feature
-count was swept. One is a sequence to redesign, the other a regression to
-enlarge.
+Both quantities are largest in CSF, whose long T1 this train resolves least.
+The gap between the spread and the bound is a separate matter: the T1 spread
+is a few times the bound, the T2 spread is more than an order of magnitude
+above it, and the T2 error changed most when the number of features was
+varied. The T1 gap points to the sequence, the T2 gap to the size of the
+regression.
 
-The number is not the noise alone. A regression trained on a prior answers
-with the prior where the data is weak, and is wrong the same way in every
-realization, so repeating the scan would never show that part.
+The spread is not the noise alone. A regression trained on a prior returns
+the prior where the data are weak, and is wrong in the same way in every
+realization, so repeating the scan would not reveal that part.
+
+Specification
+-------------
+
+What this page did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, map T1, T2 and M0 in BrainWeb subject 0, slice 90, from an
+   inversion-prepared MRF train of 400 repetitions at 2% noise. Fit a PERK
+   regression (20 000 log-uniform training draws, subspace rank 4, 500, 1000
+   and 4000 random Fourier features) and compare it with a rank-4
+   DictionaryMatcher on the cost table and the maps. Return the PERK
+   uncertainty and compare it with the Cramér-Rao bound computed from the
+   simulator Jacobian.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 21.405 seconds)
+   **Total running time of the script:** (0 minutes 31.102 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_04-perk.py:

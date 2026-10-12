@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
@@ -540,6 +550,7 @@
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#interpretation">Interpretation</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#limits">Limits</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
             </nav>
         </div>
@@ -558,50 +569,44 @@ to download the full example code or to run this example in your browser via Bin
 </div>
 <section class="sphx-glr-example-title" id="t2-mapping-by-nonlinear-least-squares">
 <span id="sphx-glr-generated-autoexamples-02-parameter-inference-03-nonlinear-least-squares-py"></span><h1>T2 mapping by nonlinear least squares<a class="headerlink" href="#t2-mapping-by-nonlinear-least-squares" title="Link to this heading">#</a></h1>
-<p>The scope of this notebook is to map T2 from a multi-echo spin echo by
-nonlinear least squares, and to compare it against a dictionary match on the
-same slice.</p>
-<p>What decides the comparison is a nuisance parameter. A magnitude
-reconstruction sits on a noise floor, so the decay does not reach zero, and
-unlike the proton density that offset does not divide out of a normalized
-match. Ignore it and T2 is biased; put it on the grid and the grid multiplies.
-A fit pays one more column of the Jacobian instead, and gives up the guarantee
-that it found the global minimum.</p>
+<p>You map T2 from a multi-echo spin echo by nonlinear least squares and compare
+the result with dictionary matching on the same slice.</p>
+<p>The comparison turns on a nuisance parameter. A magnitude reconstruction sits
+on a noise floor, so the decay does not reach zero. Unlike the proton density,
+this offset does not divide out of a normalized match: ignoring it biases T2,
+and adding it to the dictionary multiplies the number of atoms. A fit instead
+adds one column to the Jacobian, at the cost of no guarantee that it finds the
+global minimum.</p>
+<p>Prerequisites: Course lesson <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
 <div class="colab-button">
             <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/latest/examples/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.ipynb" target="_blank">
                 <img src="https://colab.research.google.com/assets/colab-badge.svg"
                 alt="Open In Colab"/>
             </a>
         </div>
-        <p>The problem is stated over a simulator carrying the sequence and filled in
-by an estimator. <a class="reference internal" href="../../blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a> decides where that work runs,
-and the timings below are taken inside it.</p>
-<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">time</span><span class="w">
-</span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
+        <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span><span class="w">
 </span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
 </span><span class="w">
-</span><span class="kn">import</span><span class="w"> </span><span class="nn">blochsim</span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><span class="n">NonlinearLeastSquares</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">MultiEchoSimulator</span></a><span class="w">
 </span></pre></div></div>
 <section id="phantom">
 <h2>Phantom<a class="headerlink" href="#phantom" title="Link to this heading">#</a></h2>
-<p>BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
-ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
-voxel holds a fraction of each tissue, and the relaxation times are weighted
-by those fractions. A third of the voxels are mixtures, so the truth is a
-continuum and not four values.</p>
-<img src="../../../_images/sphx_glr_03-nonlinear-least-squares_001.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_001.png" alt="BrainWeb subject 0, slice 90" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Text(0.5, 0.9878790357573323, 'BrainWeb subject 0, slice 90')
-</pre></div>
-</div>
-</section>
+<p>The phantom is BrainWeb subject 0, slice 90: an axial 1 mm slice through the
+lateral ventricles. BrainWeb provides fuzzy tissue memberships, so each voxel
+holds a fraction of each tissue and its T2 is the fraction-weighted average.
+About a third of the voxels are mixtures, so the ground truth is a continuum
+of values rather than four.</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">truth</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">T2_true</span></a><span class="p">[</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">mask</span></a><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span><span class="n">density</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">M0_true</span></a><span class="p">[</span><a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="numpy.ndarray"><span class="n">mask</span></a><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<img src="../../../_images/sphx_glr_03-nonlinear-least-squares_001.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_001.png" alt="BrainWeb subject 0, slice 90" class = "sphx-glr-single-img"/></section>
 <section id="measurement-and-noise-floor">
 <h2>Measurement and noise floor<a class="headerlink" href="#measurement-and-noise-floor" title="Link to this heading">#</a></h2>
-<p>Sixteen echoes out to 200 ms, scaled by the proton density and offset by a
-constant. A magnitude reconstruction rectifies the noise, so the late echoes
-measure the floor rather than zero, and a fit that does not model it absorbs
-it into T2.</p>
+<p>The sequence is a multi-echo spin echo with 16 echoes from 10 to 200 ms. The
+signal is the proton density times the T2 decay, plus a constant offset. A
+magnitude reconstruction rectifies the noise, so late echoes measure the
+floor and not zero, and a fit that does not model it absorbs it into T2.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a> <span class="o">=</span> <span class="mi">16</span><span class="w">
 </span><span class="n">TE</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">200.0</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">)</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">NOISE_STD</span></a> <span class="o">=</span> <span class="mf">0.005</span><span class="w">
@@ -613,17 +618,19 @@ it into T2.</p>
 </span><span class="n">generator</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Generator</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">manual_seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span><span class="w">
 </span><span class="n">measured</span> <span class="o">=</span> <span class="n">clean</span> <span class="o">+</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">NOISE_STD</span></a> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">clean</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">generator</span><span class="o">=</span><span class="n">generator</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<p>The short-T2 voxel is on the floor by the fourth echo, so most of its train
-says nothing about T2; the long-T2 one never reaches it.</p>
-<img src="../../../_images/sphx_glr_03-nonlinear-least-squares_002.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_002.png" alt="what is measured" class = "sphx-glr-single-img"/></section>
+<p>The 70 ms decay approaches the floor only in the last echoes, where the
+offset and T2 are hardest to separate; the long-T2 voxel never reaches it.</p>
+<img src="../../../_images/sphx_glr_03-nonlinear-least-squares_002.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_002.png" alt="03 nonlinear least squares" class = "sphx-glr-single-img"/></section>
 <section id="nonlinear-fit">
 <h2>Nonlinear fit<a class="headerlink" href="#nonlinear-fit" title="Link to this heading">#</a></h2>
-<p>What is unknown, over what range, and at what noise level. Every voxel steps
-together in the same pass, carries its own damping, accepts or rejects on its
-own, and drops out when it converges.</p>
-<p>The bounds are not clipping. Each is kept by fitting a transformed variable,
-so no iterate leaves the interval and no bound sits on the answer. That also
-puts every parameter on one scale, which is what the damping assumes.</p>
+<p><code class="docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code> takes the range of every unknown, a starting value
+and the noise level. All voxels are updated in the same pass; each carries
+its own damping, accepts or rejects its own step, and stops when it
+converges.</p>
+<p>The bounds are enforced by fitting a transformed variable, not by clipping:
+no iterate leaves the interval and no bound is active at the solution. The
+transformation also puts all parameters on a common scale, which the damping
+assumes.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">BOUNDS</span></a> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">500.0</span><span class="p">)</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">M0</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">)</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">offset</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">)</span><span class="p">}</span><span class="w">
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">START</span></a> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">:</span> <span class="mf">100.0</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">M0</span><span class="s2">&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">offset</span><span class="s2">&quot;</span><span class="p">:</span> <span class="mf">0.02</span><span class="p">}</span><span class="w">
 </span><span class="w">
@@ -639,15 +646,16 @@ puts every parameter on one scale, which is what the damping assumes.</p>
 </section>
 <section id="dictionary-match">
 <h2>Dictionary match<a class="headerlink" href="#dictionary-match" title="Link to this heading">#</a></h2>
-<p>The same problem given to a dictionary. Its grid needs no proton density: a
-match normalizes both sides, so any positive scale is free and one of the
-three parameters is gone before the grid is built. The offset survives
-normalization, so modelling it means putting it on the grid.</p>
+<p>The same problem posed to a dictionary. A match normalizes both sides, so
+any positive scale is free and M0 drops out of the grid. The offset survives
+normalization, so modelling it requires putting it on the grid. The first
+dictionary ignores the offset:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">T2_GRID</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">logspace</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <a class="sphx-glr-backref-module-numpy sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ufunc.html#numpy.ufunc" title="numpy.ufunc"><span class="n">np</span><span class="o">.</span><span class="n">log10</span></a><span class="p">(</span><span class="mf">500.0</span><span class="p">)</span><span class="p">,</span> <span class="mi">400</span><span class="p">)</span><span class="w">
 </span><span class="w">
 </span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">match</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="p">(</span><a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><span class="n">simulator</span><span class="o">.</span><span class="n">bind</span></a><span class="p">(</span><span class="n">M0</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T2</span><span class="o">=</span><span class="n">T2_GRID</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<p>With the floor on the grid, the grid is the product of the two.</p>
+<p>The second has the offset on the grid, which is then the product of the T2
+and offset grids: 400 by 40 atoms.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">offsets</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.15</span><span class="p">,</span> <span class="mi">40</span><span class="p">)</span><span class="w">
 </span><span class="n">grid_t2</span><span class="p">,</span> <span class="n">grid_offset</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">meshgrid</span><span class="p">(</span><span class="n">T2_GRID</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">indexing</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">ij</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span><span class="w">
@@ -658,54 +666,67 @@ normalization, so modelling it means putting it on the grid.</p>
 </section>
 <section id="cost-and-accuracy">
 <h2>Cost and accuracy<a class="headerlink" href="#cost-and-accuracy" title="Link to this heading">#</a></h2>
-<p>Best of three passes each, after a warm-up. <strong>model</strong> is what the fitted
-estimator carries between volumes; <strong>peak</strong> is the high-water mark on the
-card while the slice was mapped, and a dash on a machine with no card.</p>
+<p>Times are the best of three passes after a warm-up. <em>model</em> is the memory the
+fitted estimator holds between volumes. <em>peak</em> is the maximum GPU memory
+allocated while mapping the slice, blank on a machine without a GPU. The
+error is the median relative T2 error over the brain voxels.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                           atoms   train     map     model      peak      T2
 ----------------------------------------------------------------------------------
 match, T2 only                     400    0.0s   0.01s   0.1 MiB        --   17.9%
-match, T2 x 10 offsets            4000    0.0s   0.09s   0.5 MiB        --    1.8%
-match, T2 x 20 offsets            8000    0.0s   0.20s   1.1 MiB        --    1.8%
-match, T2 x 40 offsets           16000    0.0s   0.44s   2.1 MiB        --    1.8%
-match, T2 x 80 offsets           32000    0.0s   0.80s   4.3 MiB        --    1.7%
-fit, T2 + M0, floor known           --    0.0s   0.45s   0.0 MiB        --    0.6%
-fit, T2 + M0 + offset               --    0.0s   0.75s   0.0 MiB        --    1.8%
+match, T2 x 10 offsets            4000    0.0s   0.10s   0.5 MiB        --    1.8%
+match, T2 x 20 offsets            8000    0.0s   0.21s   1.1 MiB        --    1.8%
+match, T2 x 40 offsets           16000    0.0s   0.41s   2.1 MiB        --    1.8%
+match, T2 x 80 offsets           32000    0.0s   1.02s   4.3 MiB        --    1.7%
+fit, T2 + M0, floor known           --    0.0s   0.62s   0.0 MiB        --    0.6%
+fit, T2 + M0 + offset               --    0.0s   1.01s   0.0 MiB        --    1.8%
 </pre></div>
 </div>
 </section>
 <section id="interpretation">
 <h2>Interpretation<a class="headerlink" href="#interpretation" title="Link to this heading">#</a></h2>
-<p>The first row is the trap. A T2-only match is the quickest thing here and the
-most wrong, because the model it matched was not the model that produced the
-data. Nothing in the estimator says so: the residual it minimized is small,
-at the wrong T2.</p>
-<p>With the offset on the grid the match recovers, and the cost of recovering is
-the point: ten values of one nuisance is ten times the atoms and ten times
-the memory, for a parameter that cost the fit one column.</p>
-<p>The fit is the slower of the two in wall clock and stays that way here: a
-Levenberg-Marquardt loop is tens of passes where a match is one. What it does
-not do is grow. Each nuisance multiplies the grid again and adds one column
-to the Jacobian, so where the two cross is arithmetic; the memory has crossed
-already.</p>
-<img src="../../../_images/sphx_glr_03-nonlinear-least-squares_003.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_003.png" alt="time, memory" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend object at 0x7f10cf1767b0&gt;
-</pre></div>
-</div>
-</section>
+<p>The T2-only match is the fastest method here and the least accurate: the
+model it matches is not the model that produced the data. The residual it
+minimizes is small, at the wrong T2, and the estimator does not report the
+mismatch.</p>
+<p>With the offset on the grid the match recovers. The cost is the number of
+offset values: ten values multiply the number of atoms and the memory by ten,
+for a parameter that adds one column to the fit’s Jacobian.</p>
+<p>The fit is slower in wall-clock time, because a Levenberg-Marquardt loop takes
+tens of passes where a match takes one. Each additional nuisance parameter
+multiplies the number of atoms but adds one column to the Jacobian, so the
+time curves cross at some number of nuisance values, and the memory curves
+have already crossed.</p>
+<img src="../../../_images/sphx_glr_03-nonlinear-least-squares_003.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_003.png" alt="time, memory" class = "sphx-glr-single-img"/></section>
 <section id="maps">
 <h2>Maps<a class="headerlink" href="#maps" title="Link to this heading">#</a></h2>
+<p>T2 from the match without the offset, the match with it, and the fit of all
+three parameters, with the absolute error in the second row.</p>
 <img src="../../../_images/sphx_glr_03-nonlinear-least-squares_004.png" srcset="../../../_images/sphx_glr_03-nonlinear-least-squares_004.png" alt="truth, match, T2, match + offset, fit, all three" class = "sphx-glr-single-img"/></section>
 <section id="limits">
 <h2>Limits<a class="headerlink" href="#limits" title="Link to this heading">#</a></h2>
-<p>There is no guarantee. The fit started every voxel at 100 ms and landed on
-the right answer everywhere, which is a property of an exponential: the
-residual of a single decay has one minimum. A model whose residual has
-several – a fingerprinting train, a fat-water fit at a wrong field map –
-can be started in the wrong basin and stay there. A match cannot, because it
-scores every atom.</p>
+<p>The fit has no guarantee of reaching the global minimum. Here it started every
+voxel at 100 ms and converged to the correct T2 everywhere, because the
+residual of a single exponential decay has one minimum. A model whose
+residual has several, such as a fingerprinting train or a fat-water fit at a
+wrong field map, can start in the wrong basin and stay there. A match cannot,
+because it scores every atom.</p>
 <p>Equality constraints belong in the model, not in the bounds. Two fractions
-that must sum to one are written with one as the unknown and the other as
-<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">f</span></code> inside the model, so the constraint holds at every iterate.</p>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 10.407 seconds)</p>
+that sum to one are written with one as the unknown and the other as <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">f</span></code>
+inside the model, so the constraint holds at every iterate.</p>
+</section>
+<section id="specification">
+<h2>Specification<a class="headerlink" href="#specification" title="Link to this heading">#</a></h2>
+<p>What this page did, stated the way you would ask an agent for it:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim, map T2 in BrainWeb subject 0, slice 90, from a 16-echo
+multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor offset
+of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
+NonlinearLeastSquares (bounds T2 10-500 ms, M0 0.1-2, offset 0-0.2).
+Compare with a DictionaryMatcher over 400 log-spaced T2 values, without
+the offset and with 10 to 80 offset values on the grid. Report mapping
+time, estimator memory and median relative T2 error, and plot the maps.
+</pre></div>
+</div>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 12.683 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-03-nonlinear-least-squares-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />
@@ -780,6 +801,7 @@ that must sum to one are written with one as the unknown and the other as
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#interpretation">Interpretation</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#maps">Maps</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#limits">Limits</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
 </ul>
   </nav></div>
 

@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Framework &#8212; BlochSim Documentation</title>
+    <title>Course &#8212; BlochSim Documentation</title>
   
   
   
@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -67,7 +67,7 @@
     <link rel="icon" href="../../../_static/blochsim-mark.svg"/>
     <link rel="index" title="Index" href="../../../genindex.html" />
     <link rel="search" title="Search" href="../../../search.html" />
-    <link rel="next" title="Basic Usage" href="01-getting-started.html" />
+    <link rel="next" title="1. Your first simulation" href="01-first-simulation.html" />
     <link rel="prev" title="Examples" href="../index.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Examples</a></li>
@@ -520,7 +530,7 @@
               
 
 <div id="jb-print-docs-body" class="onlyprint">
-    <h1>Framework</h1>
+    <h1>Course</h1>
     <!-- Table of contents -->
     <div id="print-main-content">
         <div id="jb-print-toc">
@@ -534,30 +544,24 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="framework">
-<span id="sphx-glr-generated-autoexamples-01-framework"></span><h1>Framework<a class="headerlink" href="#framework" title="Link to this heading">#</a></h1>
-<p>How to use BlochSim, and how to extend it.</p>
-<p>The first notebook covers basic usage: simulating a signal, taking its
-derivatives, tuning the run, and reading a sequence back from the description
-a scanner streams. The second covers the physics a simulator can carry beyond
-T1 and T2.</p>
-<p>The last two are for sequences BlochSim does not ship. A <strong>signal model</strong> of
-your own is two pieces – a physics saying what each kind of event does, and a
-simulator saying what order they are played in. An <strong>operator</strong> of your own –
-a preparation, a readout – is a Python function that returns events.</p>
-<p>None of it requires touching a kernel.</p>
-<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to showcase the basic functionalities of Blochsim, including how to simulate a signal, calculating derivatives etc."><img alt="" src="../../../_images/sphx_glr_01-getting-started_thumb.png" />
-<p><a class="reference internal" href="01-getting-started.html"><span class="doc">Basic Usage</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Basic Usage</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to show the physics a simulator can carry beyond T1 and T2: the transmit field and the array that produces it, off resonance, an imperfect inversion, a second exchanging pool, a bound pool, diffusion and flow, and the shaped pulse a scanner actually plays."><img alt="" src="../../../_images/sphx_glr_02-expanded-physics_thumb.png" />
-<p><a class="reference internal" href="02-expanded-physics.html"><span class="doc">Expanded Physics</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Expanded Physics</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to write a simulator BlochSim does not ship."><img alt="" src="../../../_images/sphx_glr_03-writing-a-simulator_thumb.png" />
-<p><a class="reference internal" href="03-writing-a-simulator.html"><span class="doc">Writing a Signal Model</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Writing a Signal Model</div>
-</div><div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to show how to add a sequence module BlochSim does not ship -- a preparation, or a readout -- without touching a kernel."><img alt="" src="../../../_images/sphx_glr_04-custom-operator_thumb.png" />
-<p><a class="reference internal" href="04-custom-operator.html"><span class="doc">Writing a New Operator</span></a></p>
-  <div class="sphx-glr-thumbnail-title">Writing a New Operator</div>
+  <section id="course">
+<span id="sphx-glr-generated-autoexamples-01-framework"></span><h1>Course<a class="headerlink" href="#course" title="Link to this heading">#</a></h1>
+<p>The five lessons, in order.</p>
+<div id='sg-tag-list' class='sphx-glr-tag-list'></div><div class="sphx-glr-thumbnails"><div class="sphx-glr-thumbcontainer" tooltip="blochsim computes the signal of an MR sequence for given tissue properties, together with its derivatives with respect to those properties and to the sequence parameters. This lesson uses the fast spin echo (FSE) simulator shipped with blochsim: you simulate three tissues, change the refocusing angle, and compute the derivative of the signal with respect to T2."><img alt="" src="../../../_images/sphx_glr_01-first-simulation_thumb.png" />
+<p><a class="reference internal" href="01-first-simulation.html"><span class="doc">1. Your first simulation</span></a></p>
+  <div class="sphx-glr-thumbnail-title">1. Your first simulation</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In lesson 1 a tissue was T1 and T2. A voxel has more properties than that, and each one adds a term to the physics. In this lesson you add them to a fingerprinting train one at a time: the transmit field and the array that produces it, the shaped pulse of a real slice selection, a second exchanging pool and a bound pool, off resonance, an imperfect inversion, and diffusion and flow."><img alt="" src="../../../_images/sphx_glr_02-advanced-physics_thumb.png" />
+<p><a class="reference internal" href="02-advanced-physics.html"><span class="doc">2. Advanced physics</span></a></p>
+  <div class="sphx-glr-thumbnail-title">2. Advanced physics</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="Lessons 1 and 2 used shipped simulators. This lesson implements a new one, saturation recovery, by subclassing Simulator. The resulting class supports the same features as a shipped simulator: batched tissue inputs, derivatives with respect to tissue and sequence parameters, and the additional physics of lesson 2."><img alt="" src="../../../_images/sphx_glr_03-custom-signal-model_thumb.png" />
+<p><a class="reference internal" href="03-custom-signal-model.html"><span class="doc">3. Custom signal model</span></a></p>
+  <div class="sphx-glr-thumbnail-title">3. Custom signal model</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In lesson 3 the events were generated by the layout. They can also come from an existing sequence: a Pulseq file written with another tool, or the sequence description a scanner streams during acquisition. This lesson simulates such descriptions directly, without restating the sequence parameters."><img alt="" src="../../../_images/sphx_glr_04-description-based-simulation_thumb.png" />
+<p><a class="reference internal" href="04-description-based-simulation.html"><span class="doc">4. Description-based simulation</span></a></p>
+  <div class="sphx-glr-thumbnail-title">4. Description-based simulation</div>
+</div><div class="sphx-glr-thumbcontainer" tooltip="In lesson 3 you wrote a sequence from the operators that ship with blochsim. In this lesson you write two operators of your own: a T2 preparation, and a readout that records two samples in one repetition. An operator is a Python function that returns events, and @ composes operators into one. No kernel changes, and the new operators work in any simulator."><img alt="" src="../../../_images/sphx_glr_05-custom-operator_thumb.png" />
+<p><a class="reference internal" href="05-custom-operator.html"><span class="doc">5. Custom operator</span></a></p>
+  <div class="sphx-glr-thumbnail-title">5. Custom operator</div>
 </div></div><div class="toctree-wrapper compound">
 </div>
 </section>
@@ -583,11 +587,11 @@ a preparation, a readout – is a Python function that returns events.</p>
       </div>
     </a>
     <a class="right-next"
-       href="01-getting-started.html"
+       href="01-first-simulation.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Basic Usage</p>
+        <p class="prev-next-title">1. Your first simulation</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>

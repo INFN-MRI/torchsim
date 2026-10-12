@@ -22,42 +22,34 @@
 T2 mapping by nonlinear least squares
 =====================================
 
-The scope of this notebook is to map T2 from a multi-echo spin echo by
-nonlinear least squares, and to compare it against a dictionary match on the
-same slice.
+You map T2 from a multi-echo spin echo by nonlinear least squares and compare
+the result with dictionary matching on the same slice.
 
-What decides the comparison is a nuisance parameter. A magnitude
-reconstruction sits on a noise floor, so the decay does not reach zero, and
-unlike the proton density that offset does not divide out of a normalized
-match. Ignore it and T2 is biased; put it on the grid and the grid multiplies.
-A fit pays one more column of the Jacobian instead, and gives up the guarantee
-that it found the global minimum.
+The comparison turns on a nuisance parameter. A magnitude reconstruction sits
+on a noise floor, so the decay does not reach zero. Unlike the proton density,
+this offset does not divide out of a normalized match: ignoring it biases T2,
+and adding it to the dictionary multiplies the number of atoms. A fit instead
+adds one column to the Jacobian, at the cost of no guarantee that it finds the
+global minimum.
 
-.. GENERATED FROM PYTHON SOURCE LINES 19-23
+Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
+
+.. GENERATED FROM PYTHON SOURCE LINES 20-25
 
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install blochsim brainweb-dl cmap
+   !pip install blochsim matplotlib brainweb-dl cmap
+   !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
-.. GENERATED FROM PYTHON SOURCE LINES 25-29
-
-The problem is stated over a simulator carrying the sequence and filled in
-by an estimator. :func:`~blochsim.execution` decides where that work runs,
-and the timings below are taken inside it.
-
-
-.. GENERATED FROM PYTHON SOURCE LINES 30-173
+.. GENERATED FROM PYTHON SOURCE LINES 25-132
 
 .. code-block:: Python
 
 
-    import time
-
     import numpy as np
     import torch
 
-    import blochsim
     from blochsim.estimators import DictionaryMatcher, NonlinearLeastSquares
     from blochsim.simulators import MultiEchoSimulator
 
@@ -68,19 +60,24 @@ and the timings below are taken inside it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 174-183
+.. GENERATED FROM PYTHON SOURCE LINES 133-141
 
 Phantom
 -------
 
-BrainWeb subject 0, slice 90: an axial slice at 1 mm through the lateral
-ventricles. BrainWeb publishes fuzzy memberships rather than labels, so each
-voxel holds a fraction of each tissue, and the relaxation times are weighted
-by those fractions. A third of the voxels are mixtures, so the truth is a
-continuum and not four values.
+The phantom is BrainWeb subject 0, slice 90: an axial 1 mm slice through the
+lateral ventricles. BrainWeb provides fuzzy tissue memberships, so each voxel
+holds a fraction of each tissue and its T2 is the fraction-weighted average.
+About a third of the voxels are mixtures, so the ground truth is a continuum
+of values rather than four.
+
+.. GENERATED FROM PYTHON SOURCE LINES 141-182
+
+.. code-block:: Python
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 184-217
+    truth = torch.as_tensor(T2_true[mask].copy())
+    density = torch.as_tensor(M0_true[mask].copy())
 
 
 
@@ -91,27 +88,20 @@ continuum and not four values.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    Text(0.5, 0.9878790357573323, 'BrainWeb subject 0, slice 90')
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 218-226
+.. GENERATED FROM PYTHON SOURCE LINES 183-190
 
 Measurement and noise floor
 ---------------------------
 
-Sixteen echoes out to 200 ms, scaled by the proton density and offset by a
-constant. A magnitude reconstruction rectifies the noise, so the late echoes
-measure the floor rather than zero, and a fit that does not model it absorbs
-it into T2.
+The sequence is a multi-echo spin echo with 16 echoes from 10 to 200 ms. The
+signal is the proton density times the T2 decay, plus a constant offset. A
+magnitude reconstruction rectifies the noise, so late echoes measure the
+floor and not zero, and a fit that does not model it absorbs it into T2.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 227-238
+.. GENERATED FROM PYTHON SOURCE LINES 190-201
 
 .. code-block:: Python
 
@@ -133,19 +123,18 @@ it into T2.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 239-242
+.. GENERATED FROM PYTHON SOURCE LINES 202-204
 
-The short-T2 voxel is on the floor by the fourth echo, so most of its train
-says nothing about T2; the long-T2 one never reaches it.
+The 70 ms decay approaches the floor only in the last echoes, where the
+offset and T2 are hardest to separate; the long-T2 voxel never reaches it.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 243-294
+.. GENERATED FROM PYTHON SOURCE LINES 204-220
 
 
 
 
 .. image-sg:: /generated/autoexamples/02-parameter-inference/images/sphx_glr_03-nonlinear-least-squares_002.png
-   :alt: what is measured
+   :alt: 03 nonlinear least squares
    :srcset: /generated/autoexamples/02-parameter-inference/images/sphx_glr_03-nonlinear-least-squares_002.png
    :class: sphx-glr-single-img
 
@@ -153,21 +142,22 @@ says nothing about T2; the long-T2 one never reaches it.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 295-306
+.. GENERATED FROM PYTHON SOURCE LINES 221-233
 
 Nonlinear fit
 -------------
 
-What is unknown, over what range, and at what noise level. Every voxel steps
-together in the same pass, carries its own damping, accepts or rejects on its
-own, and drops out when it converges.
+``NonlinearLeastSquares`` takes the range of every unknown, a starting value
+and the noise level. All voxels are updated in the same pass; each carries
+its own damping, accepts or rejects its own step, and stops when it
+converges.
 
-The bounds are not clipping. Each is kept by fitting a transformed variable,
-so no iterate leaves the interval and no bound sits on the answer. That also
-puts every parameter on one scale, which is what the damping assumes.
+The bounds are enforced by fitting a transformed variable, not by clipping:
+no iterate leaves the interval and no bound is active at the solution. The
+transformation also puts all parameters on a common scale, which the damping
+assumes.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 307-349
+.. GENERATED FROM PYTHON SOURCE LINES 233-275
 
 .. code-block:: Python
 
@@ -195,18 +185,17 @@ puts every parameter on one scale, which is what the damping assumes.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 350-358
+.. GENERATED FROM PYTHON SOURCE LINES 276-283
 
 Dictionary match
 ----------------
 
-The same problem given to a dictionary. Its grid needs no proton density: a
-match normalizes both sides, so any positive scale is free and one of the
-three parameters is gone before the grid is built. The offset survives
-normalization, so modelling it means putting it on the grid.
+The same problem posed to a dictionary. A match normalizes both sides, so
+any positive scale is free and M0 drops out of the grid. The offset survives
+normalization, so modelling it requires putting it on the grid. The first
+dictionary ignores the offset:
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 359-363
+.. GENERATED FROM PYTHON SOURCE LINES 283-287
 
 .. code-block:: Python
 
@@ -221,12 +210,12 @@ normalization, so modelling it means putting it on the grid.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 364-366
+.. GENERATED FROM PYTHON SOURCE LINES 288-290
 
-With the floor on the grid, the grid is the product of the two.
+The second has the offset on the grid, which is then the product of the T2
+and offset grids: 400 by 40 atoms.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 367-402
+.. GENERATED FROM PYTHON SOURCE LINES 290-325
 
 .. code-block:: Python
 
@@ -246,17 +235,17 @@ With the floor on the grid, the grid is the product of the two.
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 403-410
+.. GENERATED FROM PYTHON SOURCE LINES 326-333
 
 Cost and accuracy
 -----------------
 
-Best of three passes each, after a warm-up. **model** is what the fitted
-estimator carries between volumes; **peak** is the high-water mark on the
-card while the slice was mapped, and a dash on a machine with no card.
+Times are the best of three passes after a warm-up. *model* is the memory the
+fitted estimator holds between volumes. *peak* is the maximum GPU memory
+allocated while mapping the slice, blank on a machine without a GPU. The
+error is the median relative T2 error over the brain voxels.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 411-449
+.. GENERATED FROM PYTHON SOURCE LINES 333-371
 
 
 
@@ -270,38 +259,37 @@ card while the slice was mapped, and a dash on a machine with no card.
     method                           atoms   train     map     model      peak      T2
     ----------------------------------------------------------------------------------
     match, T2 only                     400    0.0s   0.01s   0.1 MiB        --   17.9%
-    match, T2 x 10 offsets            4000    0.0s   0.09s   0.5 MiB        --    1.8%
-    match, T2 x 20 offsets            8000    0.0s   0.20s   1.1 MiB        --    1.8%
-    match, T2 x 40 offsets           16000    0.0s   0.44s   2.1 MiB        --    1.8%
-    match, T2 x 80 offsets           32000    0.0s   0.80s   4.3 MiB        --    1.7%
-    fit, T2 + M0, floor known           --    0.0s   0.45s   0.0 MiB        --    0.6%
-    fit, T2 + M0 + offset               --    0.0s   0.75s   0.0 MiB        --    1.8%
+    match, T2 x 10 offsets            4000    0.0s   0.10s   0.5 MiB        --    1.8%
+    match, T2 x 20 offsets            8000    0.0s   0.21s   1.1 MiB        --    1.8%
+    match, T2 x 40 offsets           16000    0.0s   0.41s   2.1 MiB        --    1.8%
+    match, T2 x 80 offsets           32000    0.0s   1.02s   4.3 MiB        --    1.7%
+    fit, T2 + M0, floor known           --    0.0s   0.62s   0.0 MiB        --    0.6%
+    fit, T2 + M0 + offset               --    0.0s   1.01s   0.0 MiB        --    1.8%
 
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 450-468
+.. GENERATED FROM PYTHON SOURCE LINES 372-389
 
 Interpretation
 --------------
 
-The first row is the trap. A T2-only match is the quickest thing here and the
-most wrong, because the model it matched was not the model that produced the
-data. Nothing in the estimator says so: the residual it minimized is small,
-at the wrong T2.
+The T2-only match is the fastest method here and the least accurate: the
+model it matches is not the model that produced the data. The residual it
+minimizes is small, at the wrong T2, and the estimator does not report the
+mismatch.
 
-With the offset on the grid the match recovers, and the cost of recovering is
-the point: ten values of one nuisance is ten times the atoms and ten times
-the memory, for a parameter that cost the fit one column.
+With the offset on the grid the match recovers. The cost is the number of
+offset values: ten values multiply the number of atoms and the memory by ten,
+for a parameter that adds one column to the fit's Jacobian.
 
-The fit is the slower of the two in wall clock and stays that way here: a
-Levenberg-Marquardt loop is tens of passes where a match is one. What it does
-not do is grow. Each nuisance multiplies the grid again and adds one column
-to the Jacobian, so where the two cross is arithmetic; the memory has crossed
-already.
+The fit is slower in wall-clock time, because a Levenberg-Marquardt loop takes
+tens of passes where a match takes one. Each additional nuisance parameter
+multiplies the number of atoms but adds one column to the Jacobian, so the
+time curves cross at some number of nuisance values, and the memory curves
+have already crossed.
 
-
-.. GENERATED FROM PYTHON SOURCE LINES 469-496
+.. GENERATED FROM PYTHON SOURCE LINES 389-419
 
 
 
@@ -312,22 +300,18 @@ already.
    :class: sphx-glr-single-img
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-
-    <matplotlib.legend.Legend object at 0x7f10cf1767b0>
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 497-500
+.. GENERATED FROM PYTHON SOURCE LINES 420-425
 
 Maps
 ----
 
+T2 from the match without the offset, the match with it, and the fit of all
+three parameters, with the absolute error in the second row.
 
-.. GENERATED FROM PYTHON SOURCE LINES 501-532
+.. GENERATED FROM PYTHON SOURCE LINES 425-448
 
 
 
@@ -341,27 +325,41 @@ Maps
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 533-547
+.. GENERATED FROM PYTHON SOURCE LINES 449-477
 
 Limits
 ------
 
-There is no guarantee. The fit started every voxel at 100 ms and landed on
-the right answer everywhere, which is a property of an exponential: the
-residual of a single decay has one minimum. A model whose residual has
-several -- a fingerprinting train, a fat-water fit at a wrong field map --
-can be started in the wrong basin and stay there. A match cannot, because it
-scores every atom.
+The fit has no guarantee of reaching the global minimum. Here it started every
+voxel at 100 ms and converged to the correct T2 everywhere, because the
+residual of a single exponential decay has one minimum. A model whose
+residual has several, such as a fingerprinting train or a fat-water fit at a
+wrong field map, can start in the wrong basin and stay there. A match cannot,
+because it scores every atom.
 
 Equality constraints belong in the model, not in the bounds. Two fractions
-that must sum to one are written with one as the unknown and the other as
-``1 - f`` inside the model, so the constraint holds at every iterate.
+that sum to one are written with one as the unknown and the other as ``1 - f``
+inside the model, so the constraint holds at every iterate.
 
+Specification
+-------------
+
+What this page did, stated the way you would ask an agent for it:
+
+.. code-block:: text
+
+   With blochsim, map T2 in BrainWeb subject 0, slice 90, from a 16-echo
+   multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor offset
+   of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
+   NonlinearLeastSquares (bounds T2 10-500 ms, M0 0.1-2, offset 0-0.2).
+   Compare with a DictionaryMatcher over 400 log-spaced T2 values, without
+   the offset and with 10 to 80 offset values on the grid. Report mapping
+   time, estimator memory and median relative T2 error, and plot the maps.
 
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 10.407 seconds)
+   **Total running time of the script:** (0 minutes 12.683 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_03-nonlinear-least-squares.py:

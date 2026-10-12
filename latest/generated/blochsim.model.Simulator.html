@@ -38,7 +38,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-dataframe.css?v=2082cf3c" />
     <link rel="stylesheet" type="text/css" href="../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
     <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=b3c09d27" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=a20394c5" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -199,11 +199,21 @@
         </ul>
         <ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../developer_guide.html">Developer Guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer_guide.html">Developer Guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/signal-model.html">Signal model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../explanations/epg.html">Extended phase graphs</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../explanations/implementation.html">How BlochSim runs it</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../explanations/sequence-design.html">Sequence design</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="autoexamples/index.html">Examples</a></li>
@@ -603,7 +613,7 @@ reaches this constructor still answers <code class="xref py py-meth docutils lit
 winding the description asks for.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)">int</a>, optional</p>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)">int</a>, optional</p>
 </dd>
 </dl>
 </dd></dl>
@@ -684,7 +694,7 @@ together: properties moved on their own would be multiplied against
 echo times still on the host.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>device</strong> (<em>torch.device</em><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Where to put it.</p>
+<dd class="field-odd"><p><strong>device</strong> (<em>torch.device</em><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a>) – Where to put it.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p>A copy. This one is left where it was.</p>
@@ -704,7 +714,7 @@ echo times still on the host.</p>
 which is how a sequence that times itself from an echo says so.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#NotImplementedError" title="(in Python v3.14)"><strong>NotImplementedError</strong></a> – If the subclass implements neither this nor <a class="reference internal" href="#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>.</p>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#NotImplementedError" title="(in Python v3.15)"><strong>NotImplementedError</strong></a> – If the subclass implements neither this nor <a class="reference internal" href="#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -753,9 +763,9 @@ how those events are to be played.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>source</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>Path</em><em> or </em><em>sequence</em>) – A <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, or a sequence in memory with pypulseq’s reading
+<li><p><strong>source</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><em>Path</em><em> or </em><em>sequence</em>) – A <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, or a sequence in memory with pypulseq’s reading
 interface – pypulseq’s own <code class="docutils literal notranslate"><span class="pre">Sequence</span></code>, or pypulseqpp’s.</p></li>
-<li><p><strong>tr_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><em>int</em></a><em>, </em><em>optional</em>) – Which repetition to read, counted in whole repetitions. Defaults to
+<li><p><strong>tr_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Which repetition to read, counted in whole repetitions. Defaults to
 the file’s <code class="docutils literal notranslate"><span class="pre">TRRef</span></code> definition, and otherwise to the first
 repetition that acquires – which is refused when the repetitions
 differ in their pulses.</p></li>
@@ -794,11 +804,12 @@ own operators rather than taken as they arrive.</p>
 exports it.</p></li>
 <li><p><strong>model</strong> (<a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><em>SpinPhysics</em></a><em>, </em><em>optional</em>) – The physics to read it with. Defaults to this simulator’s own,
 which is what naming a concrete one is for.</p></li>
-<li><p><strong>settings</strong> (<em>Any</em><em>, </em><em>optional</em>) – Run settings and tissue, as the constructor takes them.</p></li>
+<li><p><strong>settings</strong> (<em>Any</em><em>, </em><em>optional</em>) – Run settings and tissue, as the constructor takes them.
+<code class="docutils literal notranslate"><span class="pre">repetitions</span></code> defaults to this simulator’s own.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.14)"><strong>ValueError</strong></a> – If called on <a class="reference internal" href="#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> itself, which names no handlers and
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If called on <a class="reference internal" href="#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> itself, which names no handlers and
     so says nothing about how the stream is to be read.</p>
 </dd>
 </dl>

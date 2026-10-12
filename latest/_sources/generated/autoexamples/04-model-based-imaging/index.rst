@@ -2,23 +2,11 @@
 
 .. _sphx_glr_generated_autoexamples_04-model-based-imaging:
 
-Model-based imaging
--------------------
+Applications: model-based reconstruction
+----------------------------------------
 
-Reconstructing parameter maps from k-space without forming the contrast images
-in between.
-
-A quantitative scan is usually reconstructed twice: once to make one image per
-contrast, and again -- voxel by voxel -- to turn those images into maps. The
-first step has no idea what the second one is for. Writing the signal model
-into the forward operator removes the intermediate step, and the echoes then
-constrain one another instead of being recovered separately.
-
-There are two ways to do it. A **linear subspace** writes the signal in the
-low-rank basis the train spans and reconstructs the coefficients, which stays
-linear and so has no local minima and no starting guess. **Nonlinear inversion**
-keeps the model itself inside the operator and solves for the maps directly,
-which costs more and is what a signal with no small basis needs.
+Reconstruct parameter maps straight from k-space, with the signal model inside
+the forward operator: linear, in a subspace, or nonlinear.
 
 
 .. raw:: html
@@ -34,7 +22,7 @@ which costs more and is what a signal with no small basis needs.
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct one undersampled radial multi-echo spin echo three ways -- gridding, conjugate gradients per echo, and a linear subspace -- and to report what each costs and gets wrong.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In this Application you reconstruct one undersampled radial multi-echo spin echo three ways: by gridding, by conjugate gradients on each echo separately, and in a linear subspace. You compare what each costs and how far its T2 map is from the truth.">
 
 .. only:: html
 
@@ -45,13 +33,13 @@ which costs more and is what a signal with no small basis needs.
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Reconstructing in a linear subspace</div>
+      <div class="sphx-glr-thumbnail-title">Subspace reconstruction</div>
     </div>
 
 
 .. raw:: html
 
-    <div class="sphx-glr-thumbcontainer" tooltip="The scope of this notebook is to reconstruct T2 maps straight from k-space, with the signal model inside the forward operator, and to say where the time and the memory go.">
+    <div class="sphx-glr-thumbcontainer" tooltip="In this Application you reconstruct T2 maps directly from k-space, with the signal model inside the forward operator, and compare the result with gridding followed by a fit.">
 
 .. only:: html
 
