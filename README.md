@@ -23,7 +23,7 @@ blochsim ships signal models for 26 sequences (spin echo, FSE, SPGR, bSSFP,
 MPRAGE, MP2RAGE, MR fingerprinting, Look-Locker, CEST, ASL...), so for most
 work you write nothing at all.
 
-## Signal models
+## How it works
 
 1. You construct a simulator with the sequence parameters: the flip angles,
    the TR, the echo spacing.
@@ -146,7 +146,7 @@ pip install "blochsim[cu12]"  # the GPU kernels, beside a CUDA 12 build of torch
 The [User guide](https://pulserver.github.io/blochsim/latest/user_guide.html)
 covers CUDA versions, macOS and building from source.
 
-## Documentation
+## Learn more
 
 - [Course](https://pulserver.github.io/blochsim/latest/generated/autoexamples/index.html):
   four lessons, from a shipped simulator to your own signal model and your own
@@ -156,7 +156,7 @@ covers CUDA versions, macOS and building from source.
 - [Documentation](https://pulserver.github.io/blochsim/latest/), for the
   physics and every API detail.
 
-## Citation
+## How to cite
 
 If you use blochsim in your work, please cite:
 
