@@ -1,6 +1,7 @@
-# User Guide
+# User guide
 
-Installation, a first simulation, and where the rest of this documentation is.
+The platforms BlochSim supports, its installation, and where to ask for help.
+A first simulation is lesson 1 of the {doc}`Course <../examples/course>`.
 
 ```{contents}
 :local:
@@ -152,42 +153,7 @@ acquisition = acquisition.to("cuda")
 signal = acquisition.simulate(flip=torch.full((48,), 60.0, device="cuda"))
 ```
 
-## First simulation
-
-Every sequence is a {class}`~blochsim.model.Simulator`. A shipped simulator
-fixes the sequence; `simulate` takes the tissue and anything you vary, and
-`jacobian` returns the signal with its derivatives:
-
-```python
-import numpy as np
-from blochsim.simulators import MRFSimulator
-
-flip = np.concatenate(
-    (np.linspace(5.0, 60.0, 300), np.linspace(60.0, 2.0, 300), np.full(280, 2.0))
-)
-sequence = MRFSimulator(flip=flip, TR=10.0)
-signal, jacobian = sequence.jacobian(("T1", "T2"), T1=1000.0, T2=100.0)
-```
-
-`jacobian` holds the derivatives with respect to T1 and T2, one row each. The
-signal comes back in the array library you gave it: NumPy here, CuPy or
-PyTorch elsewhere. Dictionary matching, nonlinear least squares, model-based
-reconstruction and sequence design all take a simulator.
-
-Functions such as {func}`blochsim.mrf_sim` wrap the shipped simulators for a
-one-off call. {class}`~blochsim.model.Simulator` is the class to subclass for a
-sequence of your own.
-
-## Documentation structure
-
-| Section | Content |
-| --- | --- |
-| {doc}`explanations/index` | Signal models, extended phase graphs, sequence descriptions, derivatives, execution, estimation, reconstruction and design. |
-| {doc}`generated/autoexamples/index` | The Course, from a shipped simulator to a signal model and an operator of your own, and the Applications. |
-| {doc}`api/index` | Exact interfaces, units and defaults: {doc}`api/simulators` for what ships, {doc}`api/model` for writing your own. |
-| {doc}`developer_guide` | Development install, style, tests and pull requests. |
-
-## Support and bug reports
+## Getting help
 
 Ask questions in
 [Discussions](https://github.com/pulserver/blochsim/discussions): how to model

@@ -16,12 +16,33 @@ from ._contrast import across_contrasts
 
 
 class SpinEchoSimulator(Simulator):
-    """Spin echo repeated every TR, optionally behind an inversion.
+    """Spin echo with partial longitudinal recovery, in closed form.
 
-    The refocusing pulse at ``TE / 2`` inverts the magnetization recovered since
-    the excitation, so the next excitation finds ``1 - 2 exp(-(TR - TE / 2) / T1) +
-    exp(-TR / T1)`` of equilibrium [1]_, and the echo decays with T2. An inversion
-    time multiplies this by ``1 - (1 + inv_efficiency) exp(-TI / T1)``.
+    A 90-180 spin echo repeated every ``TR``, optionally behind an inversion. The
+    refocusing pulse at ``TE / 2`` inverts the magnetization recovered since the
+    excitation, so the next excitation finds
+    ``1 - 2 exp(-(TR - TE / 2) / T1) + exp(-TR / T1)`` of equilibrium [1]_, and the
+    echo decays with T2. An inversion time multiplies this by
+    ``1 - (1 + inv_efficiency) exp(-TI / T1)``. The signal is one real sample per
+    echo time.
+
+    Parameters
+    ----------
+    TE : float or array-like
+        Echo times, in ms.
+    TR : float or array-like
+        Repetition time, in ms.
+    TI : float or array-like, default=None
+        Inversion times, in ms. No inversion when not given.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Longitudinal and transverse relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion. Read only when ``TI`` is given.
 
     References
     ----------
@@ -62,20 +83,7 @@ class SpinEchoSimulator(Simulator):
         TR: float | npt.ArrayLike,
         TI: float | npt.ArrayLike | None = None,
     ) -> torch.Tensor:
-        """Return the echo amplitude.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` and ``T2`` in ms, ``inv_efficiency`` as a fraction of a perfect
-            inversion, ``M0`` scaling.
-        TE : float or array-like
-            Echo times in ms.
-        TR : float or array-like
-            Repetition time in ms.
-        TI : float or array-like, optional
-            Inversion times in ms; no inversion when not given.
-        """
+        """Return the echo amplitude."""
         timings = (TE, TR) if TI is None else (TE, TR, TI)
         held = across_contrasts(properties, *timings)
         rate = 1e3 / held["T1"]

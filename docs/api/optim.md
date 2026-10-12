@@ -11,12 +11,8 @@ Minimization of a user-written cost over bounded sequence parameters; see
 {class}`Bounded` keeps a parameter inside given limits. {func}`crlb` returns the
 Cramer-Rao lower bound on parameter variance from a signal Jacobian.
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   Bounded
-   SequenceDesign
-   crlb
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.Bounded` | An initial value and the interval a designed parameter stays in. |
+| {obj}`~blochsim.SequenceDesign` | A cost, the parameters it is minimized over, and their limits. |
+| {obj}`~blochsim.crlb` | Cramer-Rao lower bound on the variance of each parameter. |

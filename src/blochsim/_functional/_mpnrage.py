@@ -27,43 +27,55 @@ def mpnrage_sim(
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """Simulate an MPnRAGE train, every shot read.
 
-    Wraps :class:`~blochsim.simulators.MPnRAGESimulator`.
+    Magnetization-prepared spoiled gradient-echo train, one inversion
+    followed by ``nshots`` readouts, each sampled; the signal follows the
+    longitudinal recovery after the inversion. Wraps :class:`~blochsim.simulators.MPnRAGESimulator`.
 
     Parameters
     ----------
     nshots : int
         Readouts per inversion block.
-    flip : float or array-like
-        Excitation flip angle in degrees, scalar or one per shot.
+    flip : array-like
+        Excitation flip angle, in degrees; scalar, or one per shot.
     TR : float or array-like
-        Repetition time in ms.
+        Repetition time, in ms; scalar or one per shot.
     T1 : float or array-like
-        Longitudinal relaxation time in ms.
-    diff : str or tuple of str, optional
-        Parameters to differentiate with respect to; ``None`` returns the signal only.
-    B1 : float or array-like, optional
-        Transmit field scaling, a fraction of the nominal flip angle.
-    inv_efficiency : float or array-like, optional
-        Inversion efficiency, a fraction of a perfect inversion.
-    M0 : float or array-like, optional
-        Proton density scaling.
-    TI : float, optional
-        Inversion time in ms.
-    phases : float or array-like, optional
-        Excitation phases in degrees.
-    device : str or torch.device, optional
-        Device to run on; follows the inputs when ``None``.
+        Longitudinal relaxation time, in ms.
+    diff : str or tuple of str, default=None
+        Names of the properties to differentiate with respect to. ``None``
+        returns the signal alone.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    inv_efficiency : float or array-like, default=1.0
+        Inversion efficiency, as a fraction of a perfect inversion.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    TI : float, default=0.0
+        Delay from the inversion to the first excitation, in ms.
+    phases : float or array-like, default=0.0
+        Excitation RF phases, in degrees; scalar or one per shot.
+    device : str or torch.device, default=None
+        Device to run on. ``None`` follows the inputs.
     **values
-        Further tissue, protocol or run arguments accepted by
-        :meth:`~blochsim.model.Simulator.simulate`.
+        Any further property or protocol argument of the simulator, such as
+        ``B0`` or ``B1``, passed to :meth:`~blochsim.model.Simulator.simulate`.
+        Arguments given as ``None`` are dropped.
 
     Returns
     -------
-    signal : array-like
-        Signal of shape ``(..., nshots)``.
-    jacobian : array-like
-        Derivatives with respect to ``diff``, of shape ``(..., len(diff), nshots)``. Returned only
-        when ``diff`` is given; a single name drops the ``len(diff)`` axis.
+    signal : complex array-like
+        Signal of shape ``(..., nshots)``, where ``...`` is the broadcast shape of
+        the tissue properties.
+    jacobian : same array type as ``signal``
+        Derivatives of the signal with respect to ``diff``, of shape
+        ``(..., len(diff), nshots)``. Returned only when ``diff`` is given; a single name
+        omits the ``len(diff)`` axis.
+
+    Raises
+    ------
+    ValueError
+        If ``nshots`` is not positive, or ``flip`` is neither scalar nor of
+        length ``nshots``.
     """
     return evaluated(
         MPnRAGESimulator(),

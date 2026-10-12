@@ -1,4 +1,4 @@
-"""Magnetization-prepared multi-echo spoiled GRE."""
+"""MPnRAGE: inversion-prepared spoiled gradient echo, every shot read."""
 
 from __future__ import annotations
 
@@ -15,7 +15,37 @@ from ..sequence._array import as_torch, matched
 
 
 class MPnRAGESimulator(Simulator):
-    """Inversion followed by a spoiled gradient-echo train, every shot read.
+    """MPnRAGE: an inversion and a spoiled gradient-echo train, every shot read.
+
+    One inversion, then ``nshots`` spoiled gradient-echo readouts, each sampled at
+    the pulse. The signal is one complex sample per shot, along the
+    inversion-recovery curve.
+
+    Parameters
+    ----------
+    nshots : int
+        Readouts per inversion block.
+    flip : float or array-like
+        Excitation flip angle, in degrees; scalar, or one per shot.
+    TR : float or array-like
+        Repetition time, in ms; scalar or one per shot.
+    TI : float or array-like, default=0.0
+        Delay from the inversion to the first excitation, in ms.
+    phases : float or array-like, default=0.0
+        Excitation phases, in degrees; scalar or one per shot.
+    states : int, default=1
+        Configuration states; only the longitudinal state is carried.
+
+    Tissue properties
+    -----------------
+    T1 : float or array-like
+        Longitudinal relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
 
     Examples
     --------
@@ -51,20 +81,13 @@ class MPnRAGESimulator(Simulator):
         TI: float | npt.ArrayLike = 0.0,
         phases: float | npt.ArrayLike = 0.0,
     ) -> list:
-        """Return the prepared train, every shot acquired.
+        """Return the inversion and the train of excitations and readouts.
 
-        Parameters
-        ----------
-        nshots : int
-            Readouts per inversion block.
-        flip : float or array-like
-            Excitation flip angle in degrees, scalar or one per shot.
-        TR : float or array-like
-            Repetition time in ms.
-        TI : float or array-like, optional
-            Inversion time in ms.
-        phases : float or array-like, optional
-            Excitation phases in degrees.
+        Raises
+        ------
+        ValueError
+            If ``nshots`` is not positive, or ``flip`` is neither scalar nor one
+            per shot.
         """
         shots = int(as_torch(nshots).reshape(()).item())
         if shots < 1:

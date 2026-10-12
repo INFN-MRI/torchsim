@@ -45,16 +45,18 @@ class ModelOperator(torch.nn.Module):
         bound. A property bound as a map is one value per voxel.
     *unknown : str
         Names of the properties solved for, in channel order. At least one.
-    bounds : mapping, optional
-        ``{name: (low, high)}``; either end may be ``None``. Enforced by
+    bounds : mapping, default=None
+        ``{name: (low, high)}`` in the property's units; either end may be
+        ``None``, and ``None`` leaves every unknown unbounded. Enforced by
         solving for a transformed variable, so no iterate leaves the bounds.
-    scale : mapping, optional
-        ``{name: value}``, step scale of an unbounded parameter (default 1).
-        Bounded parameters are scaled by their interval.
-    amplitude : bool, optional
+    scale : mapping, default=None
+        ``{name: value}``, step scale of an unbounded parameter in its own
+        units; unlisted ones use 1. Bounded parameters are scaled by their
+        interval.
+    amplitude : bool, default=True
         Carry a complex amplitude multiplying the model output, as two extra
-        channels (real, imaginary). Defaults to ``True``.
-    subspace : Subspace, optional
+        channels (real, imaginary).
+    subspace : Subspace, default=None
         Basis the prediction is projected onto, to solve in the temporal
         basis rather than in the contrasts.
 
@@ -154,7 +156,7 @@ class ModelOperator(torch.nn.Module):
 
         Parameters
         ----------
-        shape : sequence of int, optional
+        shape : sequence of int, default=()
             Voxel shape. Empty gives one voxel.
         **values : float or array-like
             ``{name: value}`` in the property's units, scalar or broadcastable

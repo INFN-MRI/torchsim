@@ -46,28 +46,28 @@ class DictionaryMatcher(Estimator):
 
     Parameters
     ----------
-    acquisition : Simulator, optional
+    acquisition : Simulator, default=None
         The sequence being inverted, with every property that is neither
         unknown nor measured separately already fixed. Omit to give
         ``dictionary`` or signals to :meth:`fit`.
-    dictionary : torch.Tensor, optional
-        Atoms ``(n_atoms, n_contrasts)``.
-    parameters : torch.Tensor, optional
+    dictionary : torch.Tensor, default=None
+        Atoms ``(n_atoms, n_contrasts)``, real or complex.
+    parameters : torch.Tensor, default=None
         Parameter values ``(n_atoms, n_parameters)`` of the atoms. Without
         them a call returns atom indices.
-    query_chunk_size : int, optional
-        Measured signals compared at once. Default 4096.
-    dictionary_chunk_size : int, optional
-        Atoms compared at once. Default 16384.
-    top_k : int, optional
-        Candidates kept by :meth:`match`; the first is the estimate. Default 1.
-    groups : int, optional
+    query_chunk_size : int, default=4096
+        Measured signals compared at once.
+    dictionary_chunk_size : int, default=16384
+        Atoms compared at once.
+    top_k : int, default=1
+        Candidates kept by :meth:`match`; the first is the estimate.
+    groups : int, default=None
         Cluster the dictionary into this many groups and score group
         representatives first, discarding groups before scoring their atoms
         [1]_. See :attr:`grouping`.
-    prune : float, optional
+    prune : float, default=5e-3
         Fraction below its best group score within which a voxel still
-        considers a group. Larger keeps more groups. Default 5e-3, tuned on
+        considers a group. Larger keeps more groups. The default was tuned on
         280 groups of 700 atoms; raise it for smaller dictionaries.
 
     Notes
@@ -161,12 +161,12 @@ class DictionaryMatcher(Estimator):
             ``(samples, contrasts)`` -- the atoms.
         parameters : torch.Tensor
             ``(samples, parameters)`` -- what each atom stands for.
-        known : torch.Tensor, optional
+        known : torch.Tensor, default=None
             Not supported. A dictionary spans one grid of parameters, and a
             property measured per voxel would need a different sub-dictionary
             for every voxel. Estimate it instead, or use a method that takes
             it as a feature.
-        noise_std : float or torch.Tensor, optional
+        noise_std : float or torch.Tensor, default=0.0
             Accepted and unused. A matched estimate comes from a normalized
             inner product, which noise on the atoms would only degrade -- the
             dictionary is the clean model the measurement is compared to.

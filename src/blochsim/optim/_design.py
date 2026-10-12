@@ -34,9 +34,12 @@ class Bounded:
     Attributes
     ----------
     initial : array-like
-        Starting value.
+        Starting value, in the parameter's units; its shape is the shape the
+        cost receives.
     lower, upper : float or array-like
-        Limits, scalar or per element, in the parameter's units.
+        Limits, scalar or broadcastable to ``initial``, in the parameter's
+        units. ``lower`` must be below ``upper`` at every element; ``initial``
+        is clamped just inside them.
     """
 
     initial: Any
@@ -66,11 +69,13 @@ class SequenceDesign(torch.nn.Module):
     Parameters
     ----------
     cost : callable
-        Called with the designed parameters by keyword; returns a one-element
-        tensor.
-    **parameters : Bounded or torch.Tensor
-        One entry per designed parameter. A :class:`Bounded` carries its limits;
-        a bare array is unbounded. At least one.
+        Called with the designed parameters by keyword, each a tensor inside
+        its limits; returns a one-element tensor, differentiable with respect
+        to them.
+    **parameters : Bounded or array-like
+        One entry per designed parameter, under the keyword the cost reads it
+        by. A :class:`Bounded` carries its limits; a bare array is unbounded.
+        At least one.
 
     Raises
     ------
@@ -116,6 +121,11 @@ class SequenceDesign(torch.nn.Module):
     def forward(self) -> torch.Tensor:
         """Evaluate the cost at the current parameters.
 
+        Returns
+        -------
+        torch.Tensor
+            The cost, one number, attached to the autograd graph.
+
         Raises
         ------
         ValueError
@@ -140,21 +150,24 @@ class SequenceDesign(torch.nn.Module):
 
         Parameters
         ----------
-        iterations : int, optional
-            Number of updates. Defaults to 200.
-        learning_rate : float, optional
-            Adam step size, used when ``optimizer_factory`` is omitted.
-            Defaults to 0.05.
-        optimizer_factory : callable, optional
+        iterations : int, default=200
+            Number of updates, at least 1.
+        learning_rate : float, default=0.05
+            Adam step size on the unconstrained variables, used when
+        ``optimizer_factory`` is ``None``. Above 0.
+
+        optimizer_factory : callable, default=None
             Maps the list of unconstrained variables to a
-            :class:`torch.optim.Optimizer`.
-        callback : callable, optional
+            :class:`torch.optim.Optimizer`. ``None`` is Adam.
+        callback : callable, default=None
             Called after each update as ``callback(step, parameters, loss)``
             with detached values; returning ``True`` stops early.
 
         Returns
         -------
         SequenceOptimization
+            Parameters after the last update, inside their limits, and the cost
+            before each update. Early stopping shortens the history.
 
         Raises
         ------
@@ -199,12 +212,12 @@ def crlb(
         ``(..., parameters, samples)``, derivative of the signal with respect
         to each parameter. Real and imaginary parts count as separate
         measurements.
-    noise_variance : float, optional
+    noise_variance : float, default=1.0
         Variance of the noise per real measurement, in signal units squared.
-        Defaults to 1.
-    singular : {"raise", "infinite"}, optional
+
+    singular : {"raise", "infinite"}, default="raise"
         Behaviour where the parameters are not jointly identifiable: raise, or
-        return an infinite variance at those entries. Defaults to ``"raise"``.
+        return an infinite variance at those entries.
 
     Returns
     -------

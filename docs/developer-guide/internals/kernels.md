@@ -2,8 +2,8 @@
 
 How a {class}`~blochsim.SequenceDescription` becomes packed buffers, and how
 the fused CPU and CUDA kernels run them. The physics is on
-{doc}`../explanations/epg`; derivatives and device placement are on
-{doc}`../explanations/derivatives` and {doc}`../explanations/execution`.
+{doc}`../../explanations/epg`; derivatives and device placement are on
+{doc}`../../explanations/derivatives` and {doc}`../../explanations/execution`.
 
 ## Event packing
 
@@ -228,7 +228,7 @@ repetitions have not reached the state the closed form gives.
 ```
 
 A change to the physics brings a check of the same kind; see
-{doc}`../developer_guide`.
+{ref}`dev-tests`.
 
 ## Scope of the kernels
 

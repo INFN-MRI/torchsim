@@ -110,7 +110,11 @@ myst_footnote_transition = False
 
 
 # generate autosummary even if no references
-autosummary_generate = True
+# Named, not True: with True the pages to read are taken from the environment
+# left by the previous build, which is empty on a clean checkout, and no stub is
+# written at all. `api_objects.rst` carries every object list and is written
+# ahead of autosummary's own handler.
+autosummary_generate = ["api_objects.rst"]
 # autosummary_imported_members = True
 autodoc_inherit_docstrings = True
 autodoc_member_order = "bysource"
@@ -132,7 +136,8 @@ autodoc_preserve_defaults = True
 autosummary_context = {"inherited_from_torch": sorted(dir(torch.nn.Module))}
 
 napoleon_include_private_with_doc = False
-napolon_numpy_docstring = True
+napoleon_numpy_docstring = True
+napoleon_custom_sections = [("Tissue properties", "params_style")]
 napoleon_use_admonition_for_references = True
 
 
@@ -143,6 +148,7 @@ highlight_language = "python"
 #: development branch, the tag for a release. One directory of the site per
 #: version, and the switcher marks the one being read.
 DOCS_VERSION = os.environ.get("BLOCHSIM_DOCS_VERSION", "latest")
+version = release = DOCS_VERSION
 
 #: Where the pages are served from.
 PAGES_URL = "https://pulserver.github.io/blochsim"
@@ -230,7 +236,10 @@ sphinx_gallery_conf = {
             "./binder/apt.txt",
             "./binder/environment.yml",
         ],
-        "notebooks_dir": "examples",
+        # Not "examples": sphinx-gallery empties this directory of the built
+        # site before it copies the notebooks in, and `examples/` holds the
+        # landing pages.
+        "notebooks_dir": "notebooks",
         "use_jupyter_lab": True,
         # The branch holds one directory per version, and the notebooks of
         # this one are under its own.
@@ -419,6 +428,27 @@ def _cache_opens(app) -> bool:
     return True
 
 
+def _compact_signature(
+    _app, what, _name, _obj, _options, _signature, return_annotation
+):
+    """Render callable headings compactly; leave data and attributes unchanged."""
+    if what in {"function", "method", "class", "exception"}:
+        return "()", return_annotation
+    return None
+
+
+def _write_api_object_index(app) -> None:
+    """Generate every object's stub page from a page outside the navigation tree.
+
+    The API pages list their objects without ``:toctree:``; this collects the
+    same lists into an orphan page that writes the stubs, so the sidebar shows
+    the API pages without every class, method and attribute stub beneath them.
+    """
+    from api_objects import write
+
+    write(app.srcdir)
+
+
 def setup(app):
     """Wire in the figure pass, and the passes that only sometimes can run.
 
@@ -429,6 +459,10 @@ def setup(app):
     app.connect("builder-inited", _say_what_is_not_executed)
     app.connect("builder-inited", _draw_explanation_figures)
     app.connect("autodoc-skip-member", _skip_undocumented_specials)
+    app.connect("autodoc-process-signature", _compact_signature)
+    # Ahead of autosummary's own handler, which reads the sources for the
+    # objects it writes stubs for.
+    app.connect("builder-inited", _write_api_object_index, priority=100)
     if not _cache_opens(app):
         from sphinx_gallery.docs_resolv import embed_code_links
 

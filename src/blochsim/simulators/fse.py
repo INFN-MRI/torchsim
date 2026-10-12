@@ -15,7 +15,46 @@ from ..sequence._array import as_torch, matched
 
 
 class FSESimulator(Simulator):
-    """Refocused echo train, sampled at every echo.
+    """Fast (turbo) spin echo (FSE, RARE) train, sampled at every echo.
+
+    An excitation followed by one refocusing pulse per echo, spaced ``ESP``, with an
+    echo midway between consecutive pulses. The extended phase graph carries the
+    stimulated and indirect echoes of refocusing angles below 180 degrees. The signal
+    is one complex sample per echo, demodulated by the refocusing phase, from the
+    second playing of the train. Trains with several values of ``TR`` are simulated
+    separately and stacked along the leading axis.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Refocusing flip angles, in degrees, one per echo; their number sets the
+        echo train length.
+    ESP : float or array-like
+        Echo spacing, in ms.
+    phases : float or array-like, default=0.0
+        Refocusing phases, in degrees; scalar or one per echo.
+    exc_flip : float, default=90.0
+        Excitation flip angle, in degrees.
+    exc_phase : float, default=90.0
+        Excitation phase, in degrees.
+    TR : float or array-like, default=1e6
+        Repetition time, in ms; sets the longitudinal recovery between trains.
+    states : int, default=10
+        Configuration states kept by the EPG simulation.
+    repetitions : int or "auto", default=2
+        Playings of the train. The first leaves the longitudinal magnetization the
+        TR recovers to, and the second, which is recorded, starts from it; that is
+        the steady state after a 90 degree excitation. Another excitation needs
+        ``"auto"``.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
 
     Examples
     --------
@@ -50,23 +89,7 @@ class FSESimulator(Simulator):
         exc_phase: float = 90.0,
         TR: float | npt.ArrayLike = 1e6,
     ) -> list:
-        """Return the train, placed at the echo times it is timed from.
-
-        Parameters
-        ----------
-        flip : float or array-like
-            Refocusing flip angles in degrees, one per echo.
-        ESP : float or array-like
-            Echo spacing in ms.
-        phases : float or array-like, optional
-            Refocusing phases in degrees.
-        exc_flip : float, optional
-            Excitation flip angle in degrees.
-        exc_phase : float, optional
-            Excitation phase in degrees.
-        TR : float or array-like, optional
-            Repetition time in ms; sets the longitudinal recovery between trains.
-        """
+        """Return the train, placed at the echo times it is timed from."""
         angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)))
         turns = torch.deg2rad(matched(phases, angles))
         return self._train(angles, turns, turns, ESP, exc_flip, exc_phase)
@@ -142,13 +165,47 @@ class FSESimulator(Simulator):
 
 
 class HyperechoSimulator(FSESimulator):
-    """Refocused train mirrored about a central refocusing pulse.
+    """Hyperecho train: refocusing pulses mirrored about a central pulse.
 
     The pulses after the central one replay those before it in reverse order, each
     with flip angle ``-alpha`` about phase ``-phi`` (``alpha`` at ``180 - phi``
     degrees), so the last echo is the hyperecho [1]_: apart from relaxation, the
     full spin echo of the excitation. Every echo is demodulated at zero phase, the
-    axis of the central pulse.
+    axis of the central pulse. The signal is one complex sample per echo, ``2 n + 1``
+    for ``n`` flip angles.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angles of the refocusing pulses before the central one, in degrees,
+        one per echo.
+    ESP : float or array-like
+        Echo spacing, in ms.
+    phases : float or array-like, default=0.0
+        Phases of the refocusing pulses before the central one, in degrees.
+    refocusing : float, default=180.0
+        Flip angle of the central pulse, in degrees, played at zero phase.
+    exc_flip : float, default=90.0
+        Excitation flip angle, in degrees.
+    exc_phase : float, default=90.0
+        Excitation phase, in degrees.
+    TR : float or array-like, default=1e6
+        Repetition time, in ms.
+    states : int, default=None
+        Configuration states kept. When not given, sized from the whole winding,
+        since the hyperecho is brought back from the highest order the first half
+        reached.
+    repetitions : int or "auto", default=2
+        Playings of the train; the last is the signal.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
 
     Notes
     -----
@@ -188,26 +245,7 @@ class HyperechoSimulator(FSESimulator):
         exc_phase: float = 90.0,
         TR: float | npt.ArrayLike = 1e6,
     ) -> list:
-        """Return the train, placed at the echo times it is timed from.
-
-        Parameters
-        ----------
-        flip : float or array-like
-            Flip angles in degrees of the refocusing pulses before the central one,
-            one per echo; the train has twice as many and one more.
-        ESP : float or array-like
-            Echo spacing in ms.
-        phases : float or array-like, optional
-            Phases in degrees of the refocusing pulses before the central one.
-        refocusing : float, optional
-            Flip angle in degrees of the central pulse, played at zero phase.
-        exc_flip : float, optional
-            Excitation flip angle in degrees.
-        exc_phase : float, optional
-            Excitation phase in degrees.
-        TR : float or array-like, optional
-            Repetition time in ms; sets the longitudinal recovery between trains.
-        """
+        """Return the train, placed at the echo times it is timed from."""
         before = torch.deg2rad(torch.atleast_1d(as_torch(flip)))
         turns = torch.deg2rad(matched(phases, before))
         central = torch.full_like(before[..., :1], torch.pi / 180.0 * refocusing)

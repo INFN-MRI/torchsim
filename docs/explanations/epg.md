@@ -11,7 +11,7 @@
 You give a simulator a tissue, and the kernels carry its configuration states
 through every event of the sequence. This page states which physics those
 kernels hold. The derivations and the operator-by-operator detail are in
-{doc}`../internals/epg`.
+{doc}`../developer-guide/internals/epg`.
 
 ## Capabilities
 

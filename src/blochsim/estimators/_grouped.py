@@ -83,16 +83,18 @@ class Grouping:
 
         Parameters
         ----------
-        dictionary:
+        dictionary : torch.Tensor
             ``(atoms, contrasts)``, already in whatever basis the matching
             will happen in.
-        count:
+        count : int
             How many groups to make. Read :attr:`condition` afterwards to see
             whether it was too many.
 
         Returns
         -------
         Grouping
+            Clusters of about ``ceil(atoms / count)`` atoms each, with their
+            normalized mean signals.
 
         Raises
         ------
@@ -171,14 +173,14 @@ def match_in_groups(
 
     Parameters
     ----------
-    signals:
+    signals : torch.Tensor
         ``(voxels, contrasts)``, already normalized and in the dictionary's
         basis.
-    grouping:
+    grouping : Grouping
         The clustered dictionary, on the same device.
-    top_k:
+    top_k : int
         How many candidates to keep per voxel.
-    prune:
+    prune : float
         The relative threshold below the best group score.
 
     Returns
@@ -225,9 +227,9 @@ def correlate(signals: torch.Tensor, atoms: torch.Tensor) -> torch.Tensor:
 
     Parameters
     ----------
-    signals:
+    signals : torch.Tensor
         ``(voxels, contrasts)``, normalized.
-    atoms:
+    atoms : torch.Tensor
         ``(atoms, contrasts)``, normalized.
 
     Returns

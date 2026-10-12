@@ -20,12 +20,33 @@ from ._contrast import across_contrasts
 
 
 class InversionRecoverySimulator(Simulator):
-    """Longitudinal recovery from an inversion, read at a series of delays.
+    """Inversion-recovery T1 relaxometry, in closed form.
 
-    The readout samples the longitudinal magnetization alone. When the repetition
-    time is omitted, the magnetization is fully relaxed at each inversion.
-    ``offset`` is a constant added to the recovery, such as a magnitude noise
-    floor.
+    An inversion, a delay ``TI`` and a readout of the longitudinal magnetization,
+    repeated every ``TR``. The signal is
+    ``M0 (1 - (1 + inv_efficiency (1 - exp(-(TR - TI) / T1))) exp(-TI / T1)) + offset``,
+    one real sample per inversion time; with ``TR`` omitted the magnetization is
+    fully relaxed at each inversion and the bracket reduces to
+    ``1 - (1 + inv_efficiency) exp(-TI / T1)``. The excitation leaves nothing
+    longitudinal behind.
+
+    Parameters
+    ----------
+    TI : float or array-like
+        Inversion times, in ms; the trailing axis of the signal.
+    TR : float or array-like, default=None
+        Repetition time, in ms. Fully relaxed at each inversion when not given.
+
+    Tissue properties
+    -----------------
+    T1 : float or array-like
+        Longitudinal relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
+    offset : float or array-like, default=0.0
+        Constant added to the recovery, such as a magnitude noise floor.
 
     Examples
     --------
@@ -59,18 +80,7 @@ class InversionRecoverySimulator(Simulator):
         TI: float | npt.ArrayLike,
         TR: float | npt.ArrayLike | None = None,
     ) -> torch.Tensor:
-        """Return the longitudinal magnetization at each inversion time.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` in ms, ``inv_efficiency`` as a fraction of a perfect inversion,
-            ``offset`` added to the recovery, ``M0`` scaling.
-        TI : float or array-like
-            Inversion times in ms.
-        TR : float or array-like, optional
-            Repetition time in ms; fully relaxed at each inversion when not given.
-        """
+        """Return the longitudinal magnetization at each inversion time."""
         held = across_contrasts(properties, TI, 0.0 if TR is None else TR)
         rate = 1e3 / held["T1"]
         efficiency = held.get("inv_efficiency", 1.0)
@@ -83,10 +93,25 @@ class InversionRecoverySimulator(Simulator):
 
 
 class MultiEchoSimulator(Simulator):
-    """Transverse decay, read at a series of echo times.
+    """Multi-echo T2 relaxometry, in closed form.
 
-    The model is one exponential in the property ``T2``, which is T2 for a spin
-    echo and T2* for a gradient echo.
+    Monoexponential transverse decay ``M0 exp(-TE / T2) + offset``, one real
+    sample per echo time. The property ``T2`` is T2 for a spin-echo train and T2*
+    for a gradient-echo train.
+
+    Parameters
+    ----------
+    TE : float or array-like
+        Echo times, in ms; the trailing axis of the signal.
+
+    Tissue properties
+    -----------------
+    T2 : float or array-like
+        Transverse relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    offset : float or array-like, default=0.0
+        Constant added to the decay, such as a magnitude noise floor.
 
     Examples
     --------
@@ -118,27 +143,31 @@ class MultiEchoSimulator(Simulator):
         *,
         TE: float | npt.ArrayLike,
     ) -> torch.Tensor:
-        """Return the transverse magnetization at each echo time.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T2`` in ms (T2* for a gradient echo), ``offset`` added to the decay,
-            ``M0`` scaling.
-        TE : float or array-like
-            Echo times in ms.
-        """
+        """Return the transverse magnetization at each echo time."""
         held = across_contrasts(properties, TE)
         decay = torch.exp(-1e3 / held["T2"] * TE * 1e-3)
         return held.get("M0", 1.0) * decay + held.get("offset", 0.0)
 
 
 class DoubleAngleSimulator(Simulator):
-    """Excitation at a series of flip angles, scaled by the transmit field.
+    """Double-angle B1 mapping, in closed form.
 
-    A voxel turns through the nominal angle times ``B1``, so a series of angles
-    reads out ``B1``. Two angles suffice, and a ratio of two between them gives
-    ``B1`` in closed form; any set of angles can be fitted.
+    A single excitation at each nominal flip angle, read at full relaxation. A
+    voxel turns through the nominal angle times ``B1``, so the signal is
+    ``M0 sin(B1 flip)``, one real sample per angle. Two angles in the ratio of
+    two give ``B1`` in closed form; any set of angles can be fitted.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Nominal flip angles, in degrees; the trailing axis of the signal.
+
+    Tissue properties
+    -----------------
+    B1 : float or array-like
+        Transmit field, as a fraction of the nominal flip angle.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
 
     Examples
     --------
@@ -169,15 +198,7 @@ class DoubleAngleSimulator(Simulator):
         *,
         flip: float | npt.ArrayLike,
     ) -> torch.Tensor:
-        """Return the transverse magnetization each flip angle produces.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``B1`` as a fraction of the nominal transmit field, ``M0`` scaling.
-        flip : float or array-like
-            Nominal flip angles in degrees.
-        """
+        """Return the transverse magnetization each flip angle produces."""
         held = across_contrasts(properties, flip)
         turned = held.get("B1", 1.0) * (torch.pi / 180.0) * flip
         return held.get("M0", 1.0) * torch.sin(turned)

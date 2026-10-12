@@ -1,13 +1,15 @@
 # Miscellaneous
 
-Project information that is useful to keep with the documentation but is not
-part of the learning path.
+| Page | Contents |
+| --- | --- |
+| {doc}`license` | MIT license |
+| {doc}`related` | Other MR simulators |
+| {doc}`contributors` | Contributors |
 
 ```{toctree}
-:maxdepth: 1
+:hidden:
 
+license
 related
 contributors
-code_of_conduct
-license
 ```

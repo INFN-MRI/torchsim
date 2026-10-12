@@ -16,12 +16,47 @@ from ..sequence._array import arrays, as_torch, matched
 
 
 class MP2RAGESimulator(Simulator):
-    """Two gradient-echo blocks read at two inversion times, in closed form.
+    """MP2RAGE: an inversion followed by two spoiled gradient-echo blocks.
 
-    The spoiled train is sampled at the k-space centre of each block, so only the
-    longitudinal magnetization carries between shots and the steady state has a
-    closed form. The ratio of the two blocks is free of the receive bias field
-    [1]_.
+    A single inversion is followed by two blocks of spoiled gradient-echo
+    readouts, the k-space centre of each sampled at its own inversion time. The
+    signal is two real samples per voxel, one per block. Only the longitudinal
+    magnetization carries between shots, so the steady state of the repeated
+    inversion block has a closed form, evaluated by :meth:`evaluate`; the receive
+    bias field cancels in the ratio of the two samples [1]_. :meth:`layout` plays
+    the same sequence event by event.
+
+    Parameters
+    ----------
+    TI : array-like
+        The two inversion times, in ms, each from the inversion to the sampled
+        shot of its block.
+    flip : float or array-like
+        Excitation flip angle, in degrees; scalar, or one per block.
+    TRspgr : float or array-like
+        Repetition time of one readout, in ms.
+    TRmp2rage : float or array-like
+        Repetition time of the whole inversion block, in ms.
+    nshots : int or array-like
+        Readouts per block. A scalar is the total and is split evenly around the
+        sampled shot; ``(before, after)`` gives the readouts before the sampled
+        shot and from it onward, the sampled shot included in ``after``.
+    phases : float or array-like, default=0.0
+        Excitation phases, in degrees; scalar, or one per block. Read by
+        :meth:`layout` only.
+    states : int, default=1
+        Configuration states; only the longitudinal state is carried.
+    record : {"all", "acquired"}, default="acquired"
+        Samples recorded: only the two sampled shots.
+
+    Tissue properties
+    -----------------
+    T1 : float or array-like
+        Longitudinal relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
 
     References
     ----------
@@ -63,7 +98,7 @@ class MP2RAGESimulator(Simulator):
     record = "acquired"
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Return the closed-form signal."""
+        """Return the closed-form signal, two samples along a trailing axis."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def layout(
@@ -78,32 +113,11 @@ class MP2RAGESimulator(Simulator):
     ) -> list:
         """Return one inversion followed by two blocks of readouts.
 
-        Event-by-event form of the closed form of :meth:`evaluate`, for comparison
-        with a description arriving from a scanner and for trains the closed form has
-        no parameter for.
-
-        Parameters
-        ----------
-        TI : array-like
-            The two inversion times in ms, each measured to the sampled shot of its
-            block.
-        flip : float or array-like
-            Excitation flip angle in degrees, one per block or shared.
-        TRspgr : float or array-like
-            Repetition time of one readout, in ms.
-        TRmp2rage : float or array-like
-            Repetition time of the whole inversion block, in ms.
-        nshots : int or array-like
-            Readouts per block: a total, split evenly before and after the sampled
-            shot, or ``(before, after)``.
-        phases : float or array-like, optional
-            Excitation phases in degrees, one per block or shared.
-
         Raises
         ------
         ValueError
-            If an inversion time falls before its block's first excitation, or if the
-            second block does not fit inside the repetition time.
+            If an inversion time falls before its block's first excitation, or if
+            the second block does not fit inside ``TRmp2rage``.
         """
         angle = torch.deg2rad(_shared_or_two(as_torch(flip)))
         turn = torch.deg2rad(_shared_or_two(matched(phases, angle)))
@@ -153,25 +167,7 @@ class MP2RAGESimulator(Simulator):
         TRmp2rage: float | npt.ArrayLike,
         nshots: int | npt.ArrayLike,
     ) -> torch.Tensor:
-        """Return the two sampled magnetizations, along a trailing axis.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` in ms, ``inv_efficiency``, ``M0`` scaling.
-        TI : array-like
-            The two inversion times in ms, each measured to the sampled shot of its
-            block.
-        flip : float or array-like
-            Excitation flip angle in degrees, one per block or shared.
-        TRspgr : float or array-like
-            Repetition time of one readout, in ms.
-        TRmp2rage : float or array-like
-            Repetition time of the whole inversion block, in ms.
-        nshots : int or array-like
-            Readouts per block: a total, split evenly before and after the sampled
-            shot, or ``(before, after)``.
-        """
+        """Return the two sampled magnetizations along a trailing axis."""
         radians = torch.pi / 180.0
         angle = _shared_or_two(radians * flip)
         before, after = _shots_either_side(nshots)

@@ -55,13 +55,19 @@ _NOTHING: Mapping[str, Any] = MappingProxyType({})
 class _SignalModel(ABC):
     """Interface of a signal model: declared properties and a signal.
 
-    A subclass supplies :attr:`properties` and :meth:`evaluate`. The
-    constructor fixes keyword arguments under the names :meth:`simulate`
-    takes; a call overrides them.
+    A subclass supplies :attr:`properties` and :meth:`evaluate`.
+    :meth:`simulate` returns the signal and :meth:`jacobian` its derivative
+    with respect to tissue properties.
+
+    Parameters
+    ----------
+    **values : float or array-like
+        Tissue properties or sequence arguments to fix, under the names
+        :meth:`simulate` takes. A call overrides them.
 
     Attributes
     ----------
-    properties : mapping or sequence of str
+    properties : mapping or sequence of str, default=()
         Names of the exposed tissue properties. A mapping is read for its
         keys.
     bound : mapping
@@ -72,14 +78,7 @@ class _SignalModel(ABC):
     bound: Mapping[str, Any] = _NOTHING
 
     def __init__(self, **values: Any) -> None:
-        """Fix arguments on the model.
-
-        Parameters
-        ----------
-        **values : float or array-like
-            Tissue properties or sequence arguments, under the names
-            :meth:`simulate` takes.
-        """
+        """Fix arguments on the model; see the class."""
         self.bound = self._fix(values)
 
     @abstractmethod
@@ -109,7 +108,7 @@ class _SignalModel(ABC):
 
     @property
     def accepts(self) -> tuple[str, ...]:
-        """Names of every property a call may give: declared and undeclared tissue fields."""
+        """Names of every property a call may give: the declared ones and all tissue fields."""
         return tuple(dict.fromkeys((*self.exposes, *PUBLIC_PROPERTIES)))
 
     def bind(self, **values: Any) -> Any:

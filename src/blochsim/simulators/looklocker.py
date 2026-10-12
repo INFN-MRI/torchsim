@@ -46,12 +46,36 @@ def _apparent(
 
 
 class LookLockerSimulator(Simulator):
-    """Recovery from an inversion under a spoiled train of small flip angles.
+    """Look-Locker inversion recovery under a spoiled train of small flip angles.
 
     The longitudinal magnetization recovers towards a steady state below
     equilibrium at the apparent rate ``R1* = R1 - ln(cos a) / TR`` [1]_. Each
     readout records the longitudinal magnetization just before its pulse, times
-    ``sin a``.
+    ``sin a``. The signal is real, one sample per ``TI``.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angle of the readout pulses, in degrees.
+    TR : float or array-like
+        Spacing of the readout pulses, in ms.
+    TI : float or array-like
+        Time of each readout after the inversion, in ms.
+    short_TR : bool, default=False
+        Take the steady state as ``M0 R1 / R1*``, its ``TR << T1`` limit.
+    from_steady_state : bool, default=False
+        Invert the steady state rather than the equilibrium magnetization.
+
+    Tissue properties
+    -----------------
+    T1 : float or array-like
+        Longitudinal relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
 
     References
     ----------
@@ -95,24 +119,7 @@ class LookLockerSimulator(Simulator):
         short_TR: bool = False,  # noqa: N803
         from_steady_state: bool = False,
     ) -> torch.Tensor:
-        """Return the transverse magnetization each readout records.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` in ms, ``B1`` as a fraction of the nominal flip angle,
-            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.
-        flip : float or array-like
-            Flip angle of the readout pulses in degrees.
-        TR : float or array-like
-            Spacing of the readout pulses in ms.
-        TI : float or array-like
-            Time of each readout after the inversion, in ms.
-        short_TR : bool, optional
-            Take the steady state as ``M0 R1 / R1*``, its ``TR << T1`` limit.
-        from_steady_state : bool, optional
-            Invert the steady state rather than the equilibrium magnetization.
-        """
+        """Return the transverse magnetization each readout records."""
         held = across_contrasts(properties, flip, TR, TI)
         density = held.get("M0", 1.0)
         angle, apparent, steady = _apparent(held, flip, TR, short_TR)
@@ -125,12 +132,37 @@ class LookLockerSimulator(Simulator):
 
 
 class MOLLISimulator(Simulator):
-    """Look-Locker readout blocks separated by free recovery, after one inversion.
+    """Modified Look-Locker inversion recovery (MOLLI): readout blocks separated by free recovery.
 
-    Modified Look-Locker inversion recovery [1]_ reads the recovery in blocks. The
-    first block starts from the inversion; between blocks the pulses stop, and the
-    longitudinal magnetization left by a block's last readout recovers towards
-    ``M0`` for ``recovery`` ms before the next block starts from it.
+    MOLLI [1]_ reads the recovery after one inversion in blocks of Look-Locker
+    readouts. The first block starts from the inversion; between blocks the pulses
+    stop, and the longitudinal magnetization left by a block's last readout recovers
+    towards ``M0`` for ``recovery`` ms before the next block starts from it. The
+    signal is real, the blocks concatenated along the last axis.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angle of the readout pulses, in degrees.
+    TR : float or array-like
+        Spacing of the readout pulses, in ms.
+    readouts : sequence of int
+        Readouts in each block.
+    recovery : float or array-like
+        Free recovery between blocks, in ms.
+    short_TR : bool, default=False
+        Take the steady state as ``M0 R1 / R1*``, its ``TR << T1`` limit.
+
+    Tissue properties
+    -----------------
+    T1 : float or array-like
+        Longitudinal relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
 
     References
     ----------
@@ -174,24 +206,7 @@ class MOLLISimulator(Simulator):
         recovery: float | npt.ArrayLike,
         short_TR: bool = False,  # noqa: N803
     ) -> torch.Tensor:
-        """Return the transverse magnetization each readout records.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` in ms, ``B1`` as a fraction of the nominal flip angle,
-            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.
-        flip : float or array-like
-            Flip angle of the readout pulses in degrees.
-        TR : float or array-like
-            Spacing of the readout pulses in ms.
-        readouts : sequence of int
-            Readouts in each block.
-        recovery : float or array-like
-            Free recovery between blocks, in ms.
-        short_TR : bool, optional
-            Take the steady state as ``M0 R1 / R1*``, its ``TR << T1`` limit.
-        """
+        """Return the transverse magnetization each readout records."""
         counts = [int(count) for count in readouts]
         positions = torch.cat([torch.arange(count) for count in counts])
         values = arrays({"flip": flip, "TR": TR, "recovery": recovery})
@@ -215,11 +230,31 @@ class MOLLISimulator(Simulator):
 
 
 class IRbSSFPSimulator(Simulator):
-    """Recovery from an inversion under a balanced SSFP train.
+    """Inversion-recovery balanced SSFP (IR-TrueFISP) signal, in closed form.
 
     After an alpha/2 preparation the magnetization approaches the bSSFP steady
     state along one exponential, at a rate mixing R1 and R2 by the flip angle
     [1]_. ``inv_efficiency`` scales the magnetization the recovery starts from.
+    The signal is real, one sample per ``TI``.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angle of the balanced train, in degrees.
+    TI : float or array-like
+        Time of each readout after the inversion, in ms: ``TR`` times the readout
+        index.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
 
     References
     ----------
@@ -262,19 +297,7 @@ class IRbSSFPSimulator(Simulator):
         flip: float | npt.ArrayLike,
         TI: float | npt.ArrayLike,
     ) -> torch.Tensor:
-        """Return the transverse magnetization at each time after the inversion.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` and ``T2`` in ms, ``B1`` as a fraction of the nominal flip angle,
-            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.
-        flip : float or array-like
-            Flip angle of the balanced train in degrees.
-        TI : float or array-like
-            Time of each readout after the inversion, in ms: ``TR`` times the
-            readout index.
-        """
+        """Return the transverse magnetization at each time after the inversion."""
         held = across_contrasts(properties, flip, TI)
         angle = held.get("B1", 1.0) * (torch.pi / 180.0) * flip
         density = held.get("M0", 1.0)

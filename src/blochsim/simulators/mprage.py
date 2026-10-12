@@ -16,7 +16,39 @@ from ..sequence._array import as_torch, matched
 
 
 class MPRAGESimulator(Simulator):
-    """Inversion followed by a spoiled train, sampled at the k-space centre.
+    """MPRAGE: an inversion followed by a spoiled gradient-echo train.
+
+    One inversion, then a train of spoiled gradient-echo readouts of which one,
+    the k-space centre, is sampled. ``TI`` is measured from the inversion to that
+    shot. The signal is one complex sample per voxel.
+
+    Parameters
+    ----------
+    TI : float or array-like
+        Inversion time, in ms, from the inversion to the sampled shot.
+    flip : float or array-like
+        Excitation flip angle, in degrees; scalar, or one per shot.
+    TRspgr : float or array-like
+        Repetition time of one readout, in ms.
+    nshots : int or array-like
+        Readouts in the block. A scalar is the total, sampled shot included, split
+        evenly around it; ``(before, after)`` gives the readouts before and after
+        the sampled shot, so the block holds ``before + after + 1``.
+    phases : float or array-like, default=0.0
+        Excitation phases, in degrees; scalar or one per shot.
+    states : int, default=1
+        Configuration states; only the longitudinal state is carried.
+    record : {"all", "acquired"}, default="acquired"
+        Samples recorded: only the sampled shot.
+
+    Tissue properties
+    -----------------
+    T1 : float or array-like
+        Longitudinal relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
 
     Examples
     --------
@@ -52,26 +84,13 @@ class MPRAGESimulator(Simulator):
         nshots: int | npt.ArrayLike,
         phases: float | npt.ArrayLike = 0.0,
     ) -> list:
-        """Return the prepared train, with one shot marked as acquired.
-
-        Parameters
-        ----------
-        TI : float or array-like
-            Inversion time in ms, measured to the sampled shot.
-        flip : float or array-like
-            Excitation flip angle in degrees, scalar or one per shot.
-        TRspgr : float or array-like
-            Repetition time of one readout, in ms.
-        nshots : int or array-like
-            Readouts in the block: a total including the sampled shot, split evenly
-            around it, or ``(before, after)`` the sampled shot.
-        phases : float or array-like, optional
-            Excitation phases in degrees.
+        """Return the inversion and the train, with one shot marked as acquired.
 
         Raises
         ------
         ValueError
-            If the inversion time falls before the first excitation.
+            If the inversion time falls before the first excitation, or ``flip``
+            is neither scalar nor one per shot.
         """
         before, after = _shots_either_side(nshots)
         shots = before + after + 1

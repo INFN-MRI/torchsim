@@ -19,23 +19,39 @@ from .gradient_echo import GAMMA_BAR_HZ_PER_T
 
 
 class LorentzianSimulator(Simulator):
-    """Z-spectrum as equilibrium minus one Lorentzian line per pool.
+    """Z-spectrum (CEST) as equilibrium minus one Lorentzian line per pool.
 
     Each pool saturates the water signal along a Lorentzian line centred on its
     own offset [1]_, and the lines add:
 
     ``M0 (1 - sum_i A_i (W_i / 2)^2 / ((W_i / 2)^2 + (offset - shift_i)^2))``
 
-    Pool ``i``, counted from one, exposes ``pool{i}_amplitude``, ``pool{i}_width``
-    (full width at half maximum) and ``pool{i}_shift``.
+    The signal is real, the water magnetization relative to ``M0`` at each
+    saturation offset; no Bloch-McConnell evolution is run (see
+    :class:`CESTSimulator` for that).
 
     Parameters
     ----------
-    pools : int, optional
-        Number of Lorentzian lines.
-    **values
-        Properties or sequence arguments to fix, as for any
+    pools : int, default=1
+        Number of Lorentzian lines; at least 1.
+    offsets : array-like
+        Saturation offsets from water, in the unit of the pool widths and shifts
+        (conventionally ppm). Passed by keyword, as for any
         :class:`~blochsim.model.Simulator`.
+    **values
+        Properties or protocol arguments to fix.
+
+    Tissue properties
+    -----------------
+    M0 : float or array-like, default=1.0
+        Water signal off saturation.
+    pool1_amplitude, pool2_amplitude, ... : float or array-like
+        Depth of each line, as a fraction of ``M0``. There is one of each
+        property below per pool, numbered from one.
+    pool1_width, pool2_width, ... : float or array-like
+        Full width at half maximum of each line, in the unit of ``offsets``.
+    pool1_shift, pool2_shift, ... : float or array-like
+        Centre of each line, in the unit of ``offsets``.
 
     References
     ----------
@@ -88,16 +104,7 @@ class LorentzianSimulator(Simulator):
         *,
         offsets: npt.ArrayLike,
     ) -> torch.Tensor:
-        """Return the saturated water signal at each offset.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``pool{i}_amplitude`` as a fraction of ``M0``; ``pool{i}_width`` and
-            ``pool{i}_shift`` in the unit of ``offsets``; ``M0`` scaling.
-        offsets : array-like
-            Saturation offsets from water, conventionally in ppm.
-        """
+        """Return the saturated water signal at each offset."""
         held = across_contrasts(properties, offsets)
         remaining = 1.0
         for index in range(1, self.pools + 1):
@@ -109,14 +116,52 @@ class LorentzianSimulator(Simulator):
 
 
 class CESTSimulator(Simulator):
-    """Z-spectrum simulated through a train of rectangular saturation pulses.
+    """Chemical exchange saturation transfer (CEST) Z-spectrum by Bloch-McConnell simulation.
 
-    Each offset starts from equilibrium. Free water and the exchanging pools
-    (``poolB_*`` to ``poolE_*``, the Bloch-McConnell model [1]_) evolve through
-    the pulses and a spoiled delay, and the longitudinal magnetization at the read
-    is the point of the spectrum. Each pool has a ``fraction`` of ``M0``, an
-    exchange rate, relaxation times and a chemical shift in Hz. Each pulse starts
-    at the phase the previous one ended at; the delays between pulses accrue none.
+    Per saturation offset, a train of rectangular pulses, a spoiled delay and a
+    pi/2 read pulse, each starting from equilibrium. Free water and the
+    exchanging pools (``poolB_*`` to ``poolE_*``, the Bloch-McConnell model [1]_)
+    evolve through the pulses and the delay, and the longitudinal magnetization
+    at the read is the point of the spectrum. Each pulse starts at the phase the
+    previous one ended at; the delays between pulses accrue none. The signal is
+    real, with offsets on the last axis.
+
+    Parameters
+    ----------
+    offsets : array-like
+        Saturation offsets from the free water, in ppm.
+    field_strength : float, default=3.0
+        Main field, in T; converts ppm to Hz.
+    B1sat : float, default=1.0
+        Saturation pulse amplitude, in microtesla.
+    npulses : int, default=1
+        Saturation pulses per offset.
+    pulse_duration : float, default=100.0
+        Duration of each pulse, in ms; a whole number of ``dwell``.
+    interpulse_delay : float, default=0.0
+        Delay between pulses, in ms.
+    recovery : float, default=6.5
+        Spoiled delay from the last pulse to the read, in ms.
+    dwell : float, default=0.01
+        Hold time of each pulse sample, in ms.
+    states : int, default=1
+        Configuration states kept; the rotating-frame pulses and spoiled delay
+        leave nothing above order zero.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times of the free water, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of ``B1sat``.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    poolB_fraction, poolB_exchange, poolB_T1, poolB_T2, poolB_shift : float or array-like
+        An exchanging pool: fraction of ``M0``, exchange rate in Hz, T1 and T2 in
+        ms, chemical shift from the free water in Hz. Further pools take
+        ``poolC_*`` to ``poolE_*``.
 
     Notes
     -----
@@ -172,25 +217,6 @@ class CESTSimulator(Simulator):
         dwell: float = 0.01,
     ) -> list:
         """Return one saturation train and read per offset.
-
-        Parameters
-        ----------
-        offsets : array-like
-            Saturation offsets from the free water, in ppm.
-        field_strength : float, optional
-            Main field in T; converts ppm to Hz.
-        B1sat : float, optional
-            Saturation pulse amplitude in microtesla.
-        npulses : int, optional
-            Saturation pulses per offset.
-        pulse_duration : float, optional
-            Duration of each pulse in ms.
-        interpulse_delay : float, optional
-            Delay between pulses in ms.
-        recovery : float, optional
-            Spoiled delay from the last pulse to the read, in ms.
-        dwell : float, optional
-            Hold time of each pulse sample in ms.
 
         Raises
         ------
