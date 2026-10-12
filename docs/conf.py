@@ -449,6 +449,41 @@ def _write_api_object_index(app) -> None:
     write(app.srcdir)
 
 
+#: Where the README points its figures for readers on GitHub and PyPI, and
+#: what those references become once the same file is the documentation's
+#: landing page.
+README_ASSETS = (
+    "https://raw.githubusercontent.com/pulserver/blochsim/main/docs/_static/",
+    "_static/",
+)
+
+#: A README figure in two variants, chosen by the reader's colour scheme.
+_PICTURE = re.compile(
+    r"<picture>\s*<source[^>]*srcset=\"(?P<dark>[^\"]+)\"[^>]*>\s*"
+    r"<img (?P<attributes>[^>]*)src=\"(?P<light>[^\"]+)\"(?P<rest>[^>]*)>\s*</picture>"
+)
+
+
+def _readme_for_docs(text: str) -> str:
+    """The README with its figures read from this build.
+
+    A ``<picture>`` becomes the two images the theme shows one of, since the
+    theme's light and dark switch does not reach a media query.
+    """
+    text = text.replace(*README_ASSETS)
+    return _PICTURE.sub(
+        r'<img class="only-light" \g<attributes>src="\g<light>"\g<rest>>'
+        r'<img class="only-dark" \g<attributes>src="\g<dark>"\g<rest>>',
+        text,
+    )
+
+
+def _included_readme_assets(_app, _relative_path, parent_docname, content):
+    """Rewrite the README the landing page pulls in with an ``include``."""
+    if parent_docname == "index":
+        content[0] = _readme_for_docs(content[0])
+
+
 def setup(app):
     """Wire in the figure pass, and the passes that only sometimes can run.
 
@@ -460,6 +495,7 @@ def setup(app):
     app.connect("builder-inited", _draw_explanation_figures)
     app.connect("autodoc-skip-member", _skip_undocumented_specials)
     app.connect("autodoc-process-signature", _compact_signature)
+    app.connect("include-read", _included_readme_assets)
     # Ahead of autosummary's own handler, which reads the sources for the
     # objects it writes stubs for.
     app.connect("builder-inited", _write_api_object_index, priority=100)
