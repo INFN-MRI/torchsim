@@ -330,7 +330,7 @@ What this lesson did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.717 seconds)
+   **Total running time of the script:** (0 minutes 1.878 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_01-framework_01-first-simulation.py:

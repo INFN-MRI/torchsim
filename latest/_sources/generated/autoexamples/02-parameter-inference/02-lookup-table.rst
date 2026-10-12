@@ -260,12 +260,12 @@ Times are the best of three passes over the slice.
                 error     error      time      time
     -----------------------------------------------
          30     7.93%     0.88%     2.5ms     0.5ms
-         60     3.29%     0.75%     3.6ms     0.6ms
-        120     0.78%     0.71%     3.9ms     0.6ms
-        250     0.80%     0.71%     6.7ms     0.6ms
-        500     0.62%     0.71%    12.4ms     0.7ms
-       1000     0.66%     0.71%    21.9ms     0.8ms
-       2000     0.71%     0.71%    46.4ms     0.8ms
+         60     3.29%     0.75%     3.7ms     0.6ms
+        120     0.78%     0.71%     4.0ms     0.6ms
+        250     0.80%     0.71%     7.0ms     0.6ms
+        500     0.62%     0.71%    11.6ms     0.7ms
+       1000     0.66%     0.71%    23.5ms     0.8ms
+       2000     0.71%     0.71%    51.4ms     0.8ms
 
 
 
@@ -348,8 +348,8 @@ one inner product per voxel:
 
     method                      train      map     model      peak      T1      M0
     ------------------------------------------------------------------------------
-    lookup, 60 points           0.00s    0.6ms  0.00 MiB        --   0.75%   0.46%
-    match, 2000 atoms           0.00s   47.1ms  0.05 MiB        --   0.71%   0.45%
+    lookup, 60 points           0.00s    0.7ms  0.00 MiB        --   0.75%   0.46%
+    match, 2000 atoms           0.00s   49.6ms  0.05 MiB        --   0.71%   0.45%
 
 
 
@@ -374,7 +374,7 @@ What this page did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.027 seconds)
+   **Total running time of the script:** (0 minutes 2.082 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_02-lookup-table.py:

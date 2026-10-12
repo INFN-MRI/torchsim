@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**01:49.654** total execution time for 4 files **from generated/autoexamples/02-parameter-inference**:
+**01:48.102** total execution time for 4 files **from generated/autoexamples/02-parameter-inference**:
 
 .. container::
 
@@ -33,14 +33,14 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_01-dictionary-matching.py` (``01-dictionary-matching.py``)
-     - 01:01.146
+     - 01:02.040
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_04-perk.py` (``04-perk.py``)
-     - 00:33.987
+     - 00:31.203
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_03-nonlinear-least-squares.py` (``03-nonlinear-least-squares.py``)
-     - 00:12.493
+     - 00:12.777
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_02-lookup-table.py` (``02-lookup-table.py``)
-     - 00:02.027
+     - 00:02.082
      - 0.0
