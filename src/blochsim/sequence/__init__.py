@@ -6,7 +6,6 @@ __all__ = [
     "SequenceDescription",
     "ShimDefinition",
     "read_mrd_description",
-    "execution",
     "FSEReadout",
     "Operator",
     "bSSFPReadout",
@@ -16,7 +15,6 @@ __all__ = [
     "rf_definition",
     "compose_spinor",
     "Inversion",
-    "offload",
     "Readout",
     "Refocusing",
     "SampledPulse",
@@ -27,7 +25,12 @@ __all__ = [
     "SSFPFidReadout",
 ]
 
-from ._accelerators import distribute, execution, offload  # noqa: F401
+from ._accelerators import (  # noqa: F401
+    distribute,
+    execution,
+    offload,
+    pack_description,
+)
 from ._builders import (
     fse_description,  # noqa: F401
     mpnrage_description,  # noqa: F401

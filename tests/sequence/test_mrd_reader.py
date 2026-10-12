@@ -20,8 +20,7 @@ import pypulseq as pp
 import pytest
 import torch
 
-from blochsim import Excitation, SPGRReadout
-from blochsim.model import Simulator
+from blochsim import Excitation, Simulator, SPGRReadout
 from blochsim.sequence import EventType, RfUse, read_mrd_description
 from blochsim.simulators import SPGRSimulator
 

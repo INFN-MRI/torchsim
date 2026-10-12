@@ -9,7 +9,7 @@ from typing import Any
 
 import torch
 
-from ..model import Simulator
+from .._model import Simulator
 
 
 def evaluated(

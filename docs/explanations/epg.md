@@ -20,7 +20,7 @@ kernels hold. The derivations and the operator-by-operator detail are in
 - **Carries the states $F^+_k$, $F^-_k$ and $Z_k$ up to the order set by `states`.**
 
   :::{dropdown} Show code and tests
-  Code: {class}`~blochsim.model.Simulator` (`states`), `EpgEngine.simulate` (`nstates`). Tests: *a refocused train agrees echo for echo*; *a spoiled train agrees over two hundred repetitions* (`test_against_epgpy.py`).
+  Code: {class}`~blochsim.Simulator` (`states`), `EpgEngine.simulate` (`nstates`). Tests: *a refocused train agrees echo for echo*; *a spoiled train agrees over two hundred repetitions* (`test_against_epgpy.py`).
   :::
 - **Plays an unbalanced gradient as a shift by one order, and ideal spoiling as the loss of every transverse order.**
 

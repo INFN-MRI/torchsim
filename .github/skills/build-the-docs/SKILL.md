@@ -109,11 +109,11 @@ Keep the public sidebar shallow and in this order:
 The first four Framework examples are the Course. They teach the public
 abstraction in order; the remaining example sections are standalone Tours.
 
-For a new sequence, teach {class}`blochsim.model.Simulator` as the extension
+For a new sequence, teach {class}`blochsim.Simulator` as the extension
 point. A state-machine simulator has two complementary inputs: its class-level
 handlers interpret commands from an incoming Pulseq/MRD description, and
 `layout()` constructs the same sequence offline. Lower-level
-`SequenceDescription`, `SpinPhysics` and operator machinery are important
+`SequenceDescription`, the private `SpinPhysics` and operator machinery are
 reference/developer concepts, not competing user-facing sequence APIs.
 
 Functional `*_sim` calls are conveniences around shipped simulators. Do not

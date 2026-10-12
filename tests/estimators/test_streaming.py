@@ -11,11 +11,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from blochsim import (
-    PERK,
-    DictionaryMatcher,
-)
-from blochsim.estimators import _perk
+from blochsim.estimators import PERK, DictionaryMatcher, _perk
 from blochsim.sequence import execution
 from blochsim.simulators import MRFSimulator
 

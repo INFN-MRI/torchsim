@@ -9,7 +9,7 @@ The concepts behind BlochSim, one page each, in the order of a simulation.
 | {doc}`description` | Pulseq and MRD sequence descriptions |
 | {doc}`derivatives` | Forward- and reverse-mode derivatives; Cramér-Rao bound |
 | {doc}`execution` | CPU and GPU execution, chunking, binding |
-| {doc}`parameter-estimation` | Dictionary matching, lookup tables, nonlinear least squares, PERK |
+| {doc}`parameter-estimation` | Dictionary matching, lookup tables, PERK |
 | {doc}`model-based-reconstruction` | Linear subspace and nonlinear model-based reconstruction |
 | {doc}`sequence-design` | Protocol optimization against the Cramér-Rao bound |
 

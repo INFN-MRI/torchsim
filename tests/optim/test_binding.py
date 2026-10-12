@@ -14,8 +14,8 @@ from copy import copy
 import pytest
 import torch
 
-from blochsim.model import Simulator, SpinPhysics
-from blochsim.model._binding import bind
+from blochsim._model import Simulator, SpinPhysics
+from blochsim._model._binding import bind
 from blochsim.sequence import _accelerators
 from blochsim.sequence._accelerators import pack_description
 from blochsim.simulators import (

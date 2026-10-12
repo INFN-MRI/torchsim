@@ -198,6 +198,8 @@ def _rf_operator(event: SequenceEvent, operators: EventOperators) -> Any:
         RfUse.REFOCUSING: operators.refocusing,
         RfUse.INVERSION: operators.inversion,
         RfUse.SATURATION: operators.saturation,
+        RfUse.PREPARATION: operators.preparation,
+        RfUse.OTHER: operators.other,
     }.get(event.rf_use, operators.excitation)
     offered = _accepted(
         handler,
@@ -230,6 +232,8 @@ _HANDLER_SLOTS = (
     "refocusing",
     "inversion",
     "saturation",
+    "preparation",
+    "other",
     "readout",
     "delay",
 )
@@ -257,6 +261,10 @@ class EventOperators:
         Plays an inversion and holds the timeline for the recovery after it.
     saturation : callable, default=Saturation
         Plays a saturation pulse.
+    preparation : callable, default=Excitation
+        Plays a pulse tagged as a preparation.
+    other : callable, default=Excitation
+        Plays a pulse tagged as other.
     readout : callable, default=Readout
         Plays an ADC sample and the rest of its repetition: whether the
         gradient after it is balanced, unbalanced (shifting every state by one
@@ -273,6 +281,10 @@ class EventOperators:
     inversion: Callable[..., Operator] = Inversion
     #: What a saturation pulse plays.
     saturation: Callable[..., Operator] = Saturation
+    #: What a pulse tagged as a preparation plays.
+    preparation: Callable[..., Operator] = Excitation
+    #: What a pulse tagged as other plays.
+    other: Callable[..., Operator] = Excitation
     #: What a sample and the rest of its repetition play -- which is where a
     #: sequence says whether it winds the states on, spoils them, or rewinds
     #: them.
@@ -394,6 +406,24 @@ class Simulator(_SignalModel):
     recorded, and :meth:`jacobian` its derivative with respect to tissue
     properties.
 
+    Handlers
+    --------
+    A class attribute named after a kind of event binds the operator that
+    plays it, both in :meth:`layout` (as ``self.operators.<name>``) and in a
+    description or Pulseq file simulated with :meth:`from_description` or
+    :meth:`from_pulseq`:
+
+    - ``excitation``, ``refocusing``, ``inversion``, ``saturation``,
+      ``preparation``, ``other``: an RF event with that Pulseq RF use. A pulse
+      with no use is played by ``excitation``.
+    - ``readout``: an ADC event, with the gradients after it that its
+      repetition plays (balanced, unbalanced or spoiled).
+    - ``delay``: a wait, with or without a gradient.
+
+    A handler is a callable returning an :class:`~blochsim.Operator`: one of
+    the built-in operators, or a function composing them with ``@``. Handlers
+    not named keep their defaults (``Excitation`` for the last two RF uses).
+
     The constructor fixes the keywords :meth:`simulate` takes, as protocol
     parameters, tissue properties or run settings; a call overrides them.
     Subclasses document their own protocol parameters; the run settings below
@@ -406,9 +436,6 @@ class Simulator(_SignalModel):
         Protocol parameters (the arguments of :meth:`layout`) and tissue
         properties to fix. Arrays may be NumPy, CuPy or torch; the signal is
         returned in the library they were given in.
-    model : SpinPhysics, default=None
-        Replaces the class's :attr:`model`, and with it the exposed tissue
-        properties and the event operators.
     states : int, default=None
         Configuration orders carried by the extended-phase-graph simulation.
         ``None`` sizes them from the dephasing in the sequence.
@@ -420,8 +447,10 @@ class Simulator(_SignalModel):
         Which ADC events the signal holds: every one, those that acquire data,
         or those flagged as echoes.
     execution : str, torch.device or sequence of device, default=None
-        ``"auto"``, ``"cpu"`` or CUDA device(s). ``None`` follows the
-        enclosing :func:`~blochsim.execution` block.
+        ``"auto"``, ``"cpu"`` or CUDA device(s). ``"auto"`` keeps small
+        problems on the CPU, sends one that fits to the CUDA devices whole and
+        streams a larger one through them in chunks. ``None`` runs the work
+        where the tissue tensors are.
     pulse : RfDefinition, default=None
         RF waveform replacing the ideal hard pulse of definition 0, which the
         shipped operators play.
@@ -469,8 +498,6 @@ class Simulator(_SignalModel):
 
     Attributes
     ----------
-    model : SpinPhysics
-        Tissue properties and event operators.
     protocol : mapping
         Protocol parameters fixed by the constructor, as torch tensors.
     """

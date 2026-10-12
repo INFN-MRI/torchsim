@@ -105,8 +105,8 @@ def cost(real, imag):
 #
 # The real and imaginary parts of every sample are the design parameters, with
 # no limits. To respect the scanner's peak B1, you would wrap them in
-# :class:`~blochsim.Bounded`:
-from blochsim import SequenceDesign
+# :class:`~blochsim.optim.Bounded`:
+from blochsim.optim import SequenceDesign
 
 design = SequenceDesign(
     cost, real=start.clone(), imag=torch.zeros(SAMPLES, dtype=torch.float64)

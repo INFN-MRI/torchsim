@@ -239,7 +239,7 @@ recovers the true value.
 
 After $n$ shifts no state beyond order $n$ exists, and attenuation makes the
 far orders negligible before that. The orders carried are `states` on a
-{class}`~blochsim.model.Simulator` and `nstates` on `EpgEngine.simulate`; a
+{class}`~blochsim.Simulator` and `nstates` on `EpgEngine.simulate`; a
 simulator refuses `nstates`. Left unset, the count is
 $\max(8, \min(64, 1 + n_\mathrm{rep} n_\mathrm{shift}))$ for $n_\mathrm{rep}$
 repetitions of $n_\mathrm{shift}$ shift actions each.

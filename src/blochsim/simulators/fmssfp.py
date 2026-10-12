@@ -7,7 +7,7 @@ __all__ = ["fmSSFPSimulator"]
 import numpy.typing as npt
 import torch
 
-from ..model import Simulator, SpinPhysics
+from .._model import Simulator, SpinPhysics
 from ..sequence import Readout, module
 from ._pulses import excitation
 from .flash import _per_shot

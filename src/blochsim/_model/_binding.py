@@ -177,11 +177,11 @@ def bind(
     Parameters
     ----------
     simulator:
-        The protocol, whose :meth:`~blochsim.model.Simulator.describe`
+        The protocol, whose :meth:`~blochsim.Simulator.describe`
         is walked here and, if this succeeds, not again.
     values:
         The protocol arguments as
-        :meth:`~blochsim.model.Simulator.played` returns them. The
+        :meth:`~blochsim.Simulator.played` returns them. The
         floating-point arrays among them are the ones rebound.
     repetitions, record, rf_raster_time_s, device:
         The run this is for. A call differing in any of them gets no binding.

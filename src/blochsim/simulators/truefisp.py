@@ -7,7 +7,7 @@ __all__ = ["TrueFISPSimulator"]
 import numpy.typing as npt
 import torch
 
-from ..model import Simulator, SpinPhysics
+from .._model import Simulator, SpinPhysics
 from ..sequence import Readout, module
 from ._pulses import excitation, half_alpha_parts, inversion_parts
 from .flash import _per_shot

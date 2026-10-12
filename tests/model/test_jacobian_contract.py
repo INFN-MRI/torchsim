@@ -12,7 +12,7 @@ import pytest
 import torch
 
 import blochsim
-from blochsim.model import Simulator
+from blochsim import Simulator
 
 FLIP = np.ones(7) * 120.0
 ECHOES = 7

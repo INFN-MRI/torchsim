@@ -41,7 +41,7 @@ word.
 :width: 100%
 :alt: A timeline of RF, ADC and wait events for a four-echo refocused train.
 
-A four-echo refocused train, as {meth}`~blochsim.model.Simulator.describe`
+A four-echo refocused train, as {meth}`~blochsim.Simulator.describe`
 emits it. The crushers are carried by the refocusing pulses between them,
 which is why `Refocusing` is one operator rather than three. The ADCs are
 marked as echo centres, which is how a reconstruction selects samples without
@@ -75,7 +75,7 @@ are read off the rebuilt intervals.
 
 The map is refused when a recovered index is not a whole number (an entry
 draws on more than one element) or when a rebuild disagrees with a fresh
-packing at a point the map was not read at (`src/blochsim/model/_binding.py`).
+packing at a point the map was not read at (`src/blochsim/_model/_binding.py`).
 A refusal is remembered rather than retried each call. With
 `repetitions="auto"` no structure is held across calls.
 

@@ -889,7 +889,7 @@ def sample_times_us(interval_us: torch.Tensor, recorded: torch.Tensor) -> torch.
     own. That is what lets a rebinding produce the times from the intervals it
     already maps, where a repetition time reaching every later timestamp is not
     something one source element accounts for; see
-    :mod:`blochsim.model._binding`, which is where this is read.
+    :mod:`blochsim._model._binding`, which is where this is read.
 
     The sum is taken at double width. The intervals are float32 and a long
     train accumulates thousands of them, which is a rounding the samples' own

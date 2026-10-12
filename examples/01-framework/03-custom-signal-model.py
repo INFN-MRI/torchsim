@@ -4,7 +4,7 @@
 =======================
 
 Lessons 1 and 2 used shipped simulators. This lesson implements a new one,
-saturation recovery, by subclassing :class:`~blochsim.model.Simulator`. The
+saturation recovery, by subclassing :class:`~blochsim.Simulator`. The
 resulting class supports the same features as a shipped simulator: batched
 tissue inputs, derivatives with respect to tissue and sequence parameters, and
 the additional physics of lesson 2.
@@ -71,7 +71,7 @@ TISSUES = ("white matter", "grey matter", "CSF")
 import torch
 
 from blochsim import Delay, Excitation, SPGRReadout, Spoil
-from blochsim.model import Simulator
+from blochsim import Simulator
 
 
 def Saturate(flip_rad=torch.pi / 2, phase_rad=0.0):

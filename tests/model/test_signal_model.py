@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from blochsim.model import REFOCUSED, Simulator, SpinPhysics
+from blochsim._model import REFOCUSED, Simulator, SpinPhysics
 from blochsim.sequence import _simulation
 
 

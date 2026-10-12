@@ -1,19 +1,19 @@
 # Signal models
 
 ```{eval-rst}
-.. currentmodule:: blochsim.model
+.. currentmodule:: blochsim
 ```
 
 {class}`Simulator` is the base class of a pulse sequence protocol and the only
 model interface that estimators, reconstruction and sequence design consume.
 
-A subclass names an operator for each kind of event (`excitation`,
-`refocusing`, `inversion`, `saturation`, `readout`, `delay`) and implements
+A subclass binds a handler to each kind of event it plays and implements
 {meth}`~Simulator.layout`, which returns the operators of one repetition in
 playing order. A protocol with a closed form implements
 {meth}`~Simulator.evaluate` instead. The same operators interpret a description
 read by {meth}`~Simulator.from_description` or {meth}`~Simulator.from_pulseq`,
-in which case the layout is not called. The constructor takes the keywords
+in which case the layout is not called; a pulse is played by the handler its
+Pulseq RF use names. The constructor takes the keywords
 {meth}`~Simulator.simulate` takes, {meth}`~Simulator.bind` fixes more on a
 copy, and a call overrides both. See {doc}`../explanations/signal-model`.
 
@@ -50,37 +50,43 @@ class JointRelaxometry(Simulator):
 
 | Object | Description |
 | --- | --- |
-| {obj}`~blochsim.model.Simulator` | Base class of a pulse sequence protocol and its signal model. |
+| {obj}`~blochsim.Simulator` | Base class of a pulse sequence protocol and its signal model. |
 
-## Spin physics and event operators
+## Handlers
 
-{class}`SpinPhysics` declares the tissue properties of a voxel and the
-{class}`EventOperators` that realize each kind of event. Any tissue property
-may be given to any simulator; giving one enables its term.
+A class attribute named after a kind of event binds the operator that plays
+it. A handler is a built-in operator from {doc}`sequence` or a function
+composing them with `@`.
+
+| Attribute | Event | Default |
+| --- | --- | --- |
+| `excitation` | RF, use *excitation* or none | `Excitation` |
+| `refocusing` | RF, use *refocusing* | `Refocusing` |
+| `inversion` | RF, use *inversion* | `Inversion` |
+| `saturation` | RF, use *saturation* | `Saturation` |
+| `preparation` | RF, use *preparation* | `Excitation` |
+| `other` | RF, use *other* | `Excitation` |
+| `readout` | ADC, with the gradients after it | `Readout` |
+| `delay` | wait, with or without a gradient | `Delay` |
+
+## Model operator
+
+{class}`ModelOperator` is a signal model as an operator: parameter maps in,
+one image per contrast out, with analytic Jacobian-vector and adjoint
+products, a complex amplitude and box bounds. It is what a model-based
+reconstruction composes with an encoding: bartorch's `nlop.ModelOperator`
+takes it as a BART nonlinear operator, and `physics()` wraps it for deepinv.
+See {doc}`../explanations/model-based-reconstruction`.
 
 | Object | Description |
 | --- | --- |
-| {obj}`~blochsim.model.SpinPhysics` | The tissue properties a model exposes and the operators that realize its events. |
-| {obj}`~blochsim.model.EventOperators` | Operator factories, one per kind of event. |
+| {obj}`~blochsim.ModelOperator` | A signal model over parameter maps, with its derivatives. |
 
-## Operator tables
+## Temporal basis
 
-A `SpinPhysics` takes one of four predefined {class}`EventOperators`.
+{attr}`Subspace.modes` gives the basis in the layout a subspace operator reads.
+The same basis serves the estimators on {doc}`estimators`.
 
-| | Readout | Refocusing |
-| --- | --- | --- |
-| {data}`SPOILED` | ideal transverse spoiling after the sample | crushed |
-| {data}`UNBALANCED` | one unbalanced gradient after the sample | crushed |
-| {data}`BALANCED` | the repetition rewinds after the sample | uncrushed |
-| {data}`REFOCUSED` | the sample at the echo centre | crushed |
-
-```{eval-rst}
-.. autodata:: blochsim.model.SPOILED
-   :no-value:
-.. autodata:: blochsim.model.UNBALANCED
-   :no-value:
-.. autodata:: blochsim.model.BALANCED
-   :no-value:
-.. autodata:: blochsim.model.REFOCUSED
-   :no-value:
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.Subspace` | Orthonormal temporal basis of a set of signals, for subspace reconstruction. |

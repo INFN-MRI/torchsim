@@ -10,11 +10,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from blochsim import (
-    PERK,
-    DictionaryMatcher,
-    Estimator,
-)
+from blochsim.estimators import PERK, DictionaryMatcher
+from blochsim.estimators._mapping import Estimator
 from blochsim.simulators import FSESimulator, MRFSimulator
 
 ECHOES = 32
