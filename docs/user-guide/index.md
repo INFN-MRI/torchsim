@@ -176,6 +176,6 @@ naming the paper the model comes from and the figure it should reproduce.
 Report a vulnerability privately, as a draft advisory from the repository's
 [Security tab](https://github.com/pulserver/blochsim/security/advisories/new)
 or by email to the address in the
-[security policy](https://github.com/pulserver/blochsim/blob/main/.github/SECURITY.md).
+[security policy](https://github.com/pulserver/blochsim/blob/main/SECURITY.md).
 The kernels index raw pointers, so an out-of-bounds read or write reachable
 from ordinary arguments belongs there. Wrong physics is a bug report.

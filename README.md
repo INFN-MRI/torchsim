@@ -1,7 +1,7 @@
 [![Tests](https://github.com/pulserver/blochsim/actions/workflows/test.yml/badge.svg)](https://github.com/pulserver/blochsim/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/blochsim.svg)](https://pypi.org/project/blochsim/)
 [![Docs](https://img.shields.io/badge/docs-latest-2b76ad)](https://pulserver.github.io/blochsim/latest/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-ffbd28.svg)](https://github.com/pulserver/blochsim/blob/main/LICENSE.txt)
+[![License: MIT](https://img.shields.io/badge/license-MIT-ffbd28.svg)](https://github.com/pulserver/blochsim/blob/main/LICENSE)
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/pulserver/blochsim/main/docs/_static/blochsim-logo-dark.svg">
@@ -181,4 +181,4 @@ blochsim's state machine is the extended phase graph formalism
 
 ## License
 
-MIT, see [LICENSE](https://github.com/pulserver/blochsim/blob/main/LICENSE.txt).
+MIT, see [LICENSE](https://github.com/pulserver/blochsim/blob/main/LICENSE).
