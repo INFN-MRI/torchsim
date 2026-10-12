@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dynamic = ["version"]
 
 license = "MIT"
-license-files = ["LICENSE.txt"]
+license-files = ["LICENSE"]
 keywords = ["epg", "mri", "simulation", "bloch"]
 
 

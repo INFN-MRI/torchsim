@@ -21,4 +21,4 @@ body:
     id: version
     attributes:
       label: BlochSim version
-      placeholder: "0.4.1, or the commit you are on"
+      placeholder: "0.0.x, or the commit you are on"
