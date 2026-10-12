@@ -412,11 +412,10 @@ class Simulator(_SignalModel):
     states : int, default=None
         Configuration orders carried by the extended-phase-graph simulation.
         ``None`` sizes them from the dephasing in the sequence.
-    repetitions : int or "auto", default=1
-        Playings of the sequence; the last is recorded, so that the signal is
-        that of a sequence carried into the state a scanner plays it in. The
-        default is the class's own. ``"auto"`` extrapolates the steady state
-        from a few playings.
+    repetitions : int or "auto", default=None
+        Playings of the sequence; the last is recorded. ``None`` takes the
+        class's own (1 unless it declares otherwise); ``"auto"`` extrapolates
+        the steady state from a few playings.
     record : {"all", "acquired", "echo"}, default="all"
         Which ADC events the signal holds: every one, those that acquire data,
         or those flagged as echoes.
@@ -836,7 +835,7 @@ class Simulator(_SignalModel):
         ----------
         source : str, pathlib.Path or object
             A ``.seq`` file, or a pypulseq or pypulseqpp ``Sequence``.
-        tr_index : int, optional
+        tr_index : int, default=None
             Repetition to read, counted from 0. Defaults to the ``TRRef``
             definition, else the first repetition that acquires.
         **settings
@@ -878,7 +877,7 @@ class Simulator(_SignalModel):
         description : SequenceDescription
             Description decoded from an MRD stream or exported from a Pulseq
             design.
-        model : SpinPhysics, optional
+        model : SpinPhysics, default=None
             Physics to read it with. Defaults to the class's own.
         **settings
             Run settings and tissue properties, as for the constructor.

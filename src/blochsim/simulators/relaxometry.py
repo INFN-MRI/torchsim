@@ -34,7 +34,7 @@ class InversionRecoverySimulator(Simulator):
     ----------
     TI : float or array-like
         Inversion times, in ms; the trailing axis of the signal.
-    TR : float or array-like, optional
+    TR : float or array-like, default=None
         Repetition time, in ms. Fully relaxed at each inversion when not given.
 
     Tissue properties

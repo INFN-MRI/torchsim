@@ -32,7 +32,7 @@ class SpinEchoSimulator(Simulator):
         Echo times, in ms.
     TR : float or array-like
         Repetition time, in ms.
-    TI : float or array-like, optional
+    TI : float or array-like, default=None
         Inversion times, in ms. No inversion when not given.
 
     Tissue properties

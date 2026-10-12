@@ -159,47 +159,47 @@ class TissueProperties:
     ----------
     t1_ms, t2_ms : float or array-like
         Longitudinal and transverse relaxation times, in milliseconds.
-    m0 : float or array-like, optional
+    m0 : float or array-like, default=1.0
         Equilibrium magnetization, as a scaling on the signal.
-    b1 : float or array-like, optional
+    b1 : float or array-like, default=1.0
         Transmit efficiency, as a fraction of the prescribed flip angle.
-    b1_phase_rad : float or array-like, optional
+    b1_phase_rad : float or array-like, default=0.0
         Transmit phase, in radians.
-    b0_hz : float or array-like, optional
+    b0_hz : float or array-like, default=0.0
         Off-resonance, in Hz.
-    inversion_efficiency : float or array-like, optional
+    inversion_efficiency : float or array-like, default=1.0
         How much of a perfect inversion an inversion pulse achieves.
-    diffusion_um2_per_ms : float or array-like, optional
+    diffusion_um2_per_ms : float or array-like, default=0.0
         Apparent diffusion coefficient. Free water at body temperature is
         about 3.
-    velocity_m_per_s : float or array-like, optional
+    velocity_m_per_s : float or array-like, default=0.0
         Spin velocity, in m/s.
-    bound_fraction : float or array-like, optional
+    bound_fraction : float or array-like, default=0.0
         Share of the magnetization held by the macromolecule-bound pool, and
         the gate on that whole pool.
-    bound_exchange_hz : float or array-like, optional
+    bound_exchange_hz : float or array-like, default=0.0
         Exchange rate between the bound pool and the free water, in Hz.
-    t1_bound_ms : float or array-like, optional
+    t1_bound_ms : float or array-like, default=1000.0
         Longitudinal relaxation time of the bound pool, in milliseconds.
-    pool_b_fraction : float or array-like, optional
+    pool_b_fraction : float or array-like, default=0.0
         Share of the magnetization held by a chemically exchanging second
         pool, and the gate on it.
-    pool_b_exchange_hz : float or array-like, optional
+    pool_b_exchange_hz : float or array-like, default=0.0
         Exchange rate between that pool and the free water, in Hz.
-    t1_pool_b_ms, t2_pool_b_ms : float or array-like, optional
-        Its relaxation times, in milliseconds.
-    pool_b_shift_hz : float or array-like, optional
+    t1_pool_b_ms, t2_pool_b_ms : float or array-like
+        Its relaxation times, in milliseconds; 1000 and 100 by default.
+    pool_b_shift_hz : float or array-like, default=0.0
         How far it sits off the free water, in Hz.
-    pool_c_fraction, pool_d_fraction, pool_e_fraction : float or array-like, optional
+    pool_c_fraction, pool_d_fraction, pool_e_fraction : float or array-like, default=0.0
         Shares of the magnetization held by further chemically exchanging
         pools, each the gate on its pool.
-    pool_c_exchange_hz, pool_d_exchange_hz, pool_e_exchange_hz : float or array-like, optional
+    pool_c_exchange_hz, pool_d_exchange_hz, pool_e_exchange_hz : float or array-like, default=0.0
         Their exchange rates with the free water, in Hz.
-    t1_pool_c_ms, t2_pool_c_ms, t1_pool_d_ms, t2_pool_d_ms, t1_pool_e_ms, t2_pool_e_ms : float or array-like, optional
-        Their relaxation times, in milliseconds.
-    pool_c_shift_hz, pool_d_shift_hz, pool_e_shift_hz : float or array-like, optional
+    t1_pool_c_ms, t2_pool_c_ms, t1_pool_d_ms, t2_pool_d_ms, t1_pool_e_ms, t2_pool_e_ms : float or array-like
+        Their relaxation times, in milliseconds; 1000 and 100 by default.
+    pool_c_shift_hz, pool_d_shift_hz, pool_e_shift_hz : float or array-like, default=0.0
         How far each sits off the free water, in Hz.
-    t2_prime_ms : float or array-like, optional
+    t2_prime_ms : float or array-like, default=inf
         The Lorentzian field spread across the voxel, as the reciprocal of its
         angular half-width, in milliseconds. Infinite by default, which is no
         spread at all.

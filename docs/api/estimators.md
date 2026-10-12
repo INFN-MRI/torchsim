@@ -26,23 +26,15 @@ uncertainty map; its meaning depends on the method and is stated at
 
 ## The base class
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   Estimator
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.Estimator` | Base class of the mapping methods. |
 
 ## Methods
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   DictionaryMatcher
-   LookupTable
-   NonlinearLeastSquares
-   PERK
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.DictionaryMatcher` | Match signals to dictionary atoms by normalized complex inner product. |
+| {obj}`~blochsim.LookupTable` | Read one unknown back from a monotonic signal curve. |
+| {obj}`~blochsim.NonlinearLeastSquares` | Per-voxel Levenberg-Marquardt fit of the signal model. |
+| {obj}`~blochsim.PERK` | Parameter estimation via regression with kernels (PERK). |

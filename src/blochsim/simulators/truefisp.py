@@ -32,7 +32,7 @@ class TrueFISPSimulator(Simulator):
         Repetition time, in ms, pulse centre to pulse centre.
     nshots : int
         Excitations in the train.
-    TE : float, optional
+    TE : float, default=None
         Echo time, in ms, from the pulse centre. ``TR / 2`` when not given.
     pulse_duration : float, default=1.0
         Pulse duration, in ms; zero is an instantaneous rotation.
@@ -41,7 +41,7 @@ class TrueFISPSimulator(Simulator):
         its duration.
     half_alpha : bool, default=True
         Prepare the train with an alpha/2 pulse.
-    preparation : float, optional
+    preparation : float, default=None
         Time, in ms, from the start of the alpha/2 pulse to the start of the first
         pulse. ``TR / 2`` when not given. Zero is an instantaneous alpha/2
         rotation at the start of the train.
