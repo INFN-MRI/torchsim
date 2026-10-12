@@ -17,15 +17,61 @@ from ._pulses import excitation, inversion_parts
 
 
 class FLASHSimulator(Simulator):
-    """Spoiled gradient-echo train from equilibrium, optionally inverted first.
+    """Spoiled gradient-echo (FLASH, SPGR) train from equilibrium, optionally inverted first.
 
     Each excitation is a windowed sinc played sample by sample, or an
     instantaneous rotation when ``pulse_duration`` is zero. Transverse
     magnetization is spoiled ideally, or by RF spoiling with a gradient winding
     one configuration order per repetition [2]_; with ``inversion`` the train is
-    the inversion-recovery FLASH of Look-Locker T1 mapping [1]_. When ``states``
-    is not given, one order is kept under ideal spoiling and up to one per
-    repetition, to the engine's limit, under RF spoiling.
+    the inversion-recovery FLASH of Look-Locker T1 mapping [1]_. The signal is
+    one complex sample per shot, at ``TE`` after the pulse centre.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angle, in degrees; scalar or one per shot.
+    TR : float
+        Repetition time, in ms, pulse centre to pulse centre.
+    TE : float
+        Echo time, in ms, from the pulse centre; at least half the pulse and
+        ending before the next pulse.
+    nshots : int
+        Excitations in the train.
+    pulse_duration : float, default=1.0
+        Excitation duration, in ms; zero is an instantaneous rotation. A whole
+        number of ``dwell``.
+    bandwidth_time : float, default=4.0
+        Zero crossings of the Hamming-windowed sinc across the pulse.
+    inversion : {None, "ideal", "adiabatic"}, default=None
+        Preparation: none, an instantaneous inversion scaled by
+        ``inv_efficiency``, or a sampled hyperbolic secant.
+    inversion_duration : float, default=10.0
+        Duration of the adiabatic inversion, in ms.
+    inversion_phase : float, default=0.0
+        Phase of the adiabatic inversion relative to the first pulse, in degrees.
+    spoiler : float, default=0.0
+        Time between the inversion and the train, ending in a spoiler, in ms.
+    dwell : float, default=0.01
+        Hold time of each pulse sample, in ms.
+    rf_spoiling : float, default=None
+        RF-spoiling phase increment, in degrees: excitation ``n``, from zero, has
+        phase ``rf_spoiling * n * (n + 1) / 2``. Ideal spoiling when not given.
+    states : int, default=None
+        Configuration states kept. When not given, one under ideal spoiling and
+        up to one per repetition, to the engine's limit, under RF spoiling.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion; scales the ideal inversion.
 
     Notes
     -----
@@ -87,35 +133,6 @@ class FLASHSimulator(Simulator):
         rf_spoiling: float | None = None,
     ) -> list:
         """Return the train, one sample per shot.
-
-        Parameters
-        ----------
-        flip : float or array-like
-            Flip angle in degrees, scalar or one per shot.
-        TR : float
-            Repetition time in ms, pulse centre to pulse centre.
-        TE : float
-            Echo time in ms, from the pulse centre.
-        nshots : int
-            Excitations in the train.
-        pulse_duration : float, optional
-            Excitation duration in ms; zero is an instantaneous rotation.
-        bandwidth_time : float, optional
-            Zero crossings of the Hamming-windowed sinc across the pulse.
-        inversion : {None, "ideal", "adiabatic"}, optional
-            Preparation: none, an instantaneous inversion scaled by
-            ``inv_efficiency``, or a sampled hyperbolic secant.
-        inversion_duration : float, optional
-            Duration of the adiabatic inversion in ms.
-        inversion_phase : float, optional
-            Phase of the adiabatic inversion in degrees, relative to the first pulse.
-        spoiler : float, optional
-            Time in ms between inversion and train, ending in a spoiler.
-        dwell : float, optional
-            Hold time of each pulse sample in ms.
-        rf_spoiling : float, optional
-            RF-spoiling phase increment in degrees: excitation ``n``, from zero, has
-            phase ``rf_spoiling * n * (n + 1) / 2``. Ideal spoiling when not given.
 
         Raises
         ------

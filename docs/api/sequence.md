@@ -19,27 +19,23 @@ the events it plays and the time it holds the timeline; `@` composes two
 operators into one. {func}`SampledPulse` plays a waveform as one hard pulse per
 sample, with relaxation, precession and exchange between samples.
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   Operator
-   Excitation
-   Refocusing
-   Inversion
-   Saturation
-   SampledPulse
-   Readout
-   Delay
-   Dephase
-   Spoil
-   bSSFPReadout
-   SSFPFidReadout
-   SSFPEchoReadout
-   SPGRReadout
-   FSEReadout
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.Operator` | One module of a sequence: the events it plays and the time it spans. |
+| {obj}`~blochsim.Excitation` | Excitation pulse. |
+| {obj}`~blochsim.Refocusing` | Refocusing pulse, between crusher gradients by default. |
+| {obj}`~blochsim.Inversion` | Ideal inversion pulse. |
+| {obj}`~blochsim.Saturation` | Off-resonance saturation pulse that deposits power in a semisolid pool. |
+| {obj}`~blochsim.SampledPulse` | Shaped pulse played as one hard pulse per sample, with free evolution between. |
+| {obj}`~blochsim.Readout` | One ADC sample of the transverse magnetization. |
+| {obj}`~blochsim.Delay` | Delay, optionally carrying a gradient action. |
+| {obj}`~blochsim.Dephase` | Unbalanced gradient of zero duration. |
+| {obj}`~blochsim.Spoil` | Ideal transverse spoiling of zero duration. |
+| {obj}`~blochsim.bSSFPReadout` | Balanced SSFP readout: a sample, then the rest of the repetition time. |
+| {obj}`~blochsim.SSFPFidReadout` | Unbalanced SSFP readout (FISP): a sample, then one unbalanced gradient. |
+| {obj}`~blochsim.SSFPEchoReadout` | Reversed SSFP readout (PSIF): one unbalanced gradient, then a sample. |
+| {obj}`~blochsim.SPGRReadout` | Spoiled gradient-echo readout: a sample, then ideal transverse spoiling. |
+| {obj}`~blochsim.FSEReadout` | Fast spin-echo readout: the sample at a spin echo, marked as the echo centre. |
 
 ## Pulses and shims
 
@@ -49,15 +45,11 @@ each channel. A simulator takes them as `pulse=` and `shims=`.
 {func}`compose_spinor` composes the rotation a shaped pulse leaves on each
 spin, differentiably with respect to the samples.
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   rf_definition
-   ShimDefinition
-   compose_spinor
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.rf_definition` | Return the RF definition of a pulse envelope. |
+| {obj}`~blochsim.ShimDefinition` | Transmit shim: a complex weight per channel for static parallel transmit. |
+| {obj}`~blochsim.compose_spinor` | Return the Cayley-Klein pair of a shaped pulse, composed over its samples. |
 
 ## Description
 
@@ -70,11 +62,7 @@ carries ahead of its first acquisition, and
 
 Reading Pulseq needs pypulseq: `pip install blochsim[pulseq]`.
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   SequenceDescription
-   read_mrd_description
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.SequenceDescription` | Event stream and RF resources of one repetition of a sequence. |
+| {obj}`~blochsim.read_mrd_description` | Read an MRD stream up to its sequence description. |

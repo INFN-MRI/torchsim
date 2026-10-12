@@ -61,3 +61,4 @@ Thumbs.db
 .env
 .venv/
 venv/
+docs/api_objects.rst

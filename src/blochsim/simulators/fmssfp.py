@@ -14,15 +14,52 @@ from .flash import _per_shot
 
 
 class fmSSFPSimulator(Simulator):
-    """Balanced SSFP train with RF phase swept through one passband per sweep.
+    """Frequency-modulated balanced SSFP (fmSSFP) train.
 
-    Pulse ``n`` of a sweep is played ``pi + 2 pi n / nshots`` rad ahead in phase of
-    the previous pulse, so each voxel is carried once through the ``1 / TR`` period
-    of the bSSFP off-resonance profile [1]_. Each sample is demodulated by its
-    pulse's phase, and ``sweeps`` sweeps are played before the recorded one, as in
-    the radial acquisition of [2]_. Pulses are instantaneous rotations unless
-    ``pulse_duration`` is given, and are then the windowed sincs of
-    :class:`TrueFISPSimulator`.
+    The RF phase is swept through one passband per sweep: pulse ``n`` of a sweep
+    is played ``pi + 2 pi n / nshots`` rad ahead in phase of the previous pulse,
+    so each voxel is carried once through the ``1 / TR`` period of the bSSFP
+    off-resonance profile [1]_. Each sample is demodulated by its pulse's phase,
+    and ``sweeps`` sweeps are played before the recorded one, as in the radial
+    acquisition of [2]_. The signal is one complex sample per shot of the recorded
+    sweep. Pulses are instantaneous rotations unless ``pulse_duration`` is given,
+    and are then windowed sincs.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angle, in degrees; scalar or one per shot of a sweep.
+    TR : float
+        Repetition time, in ms, pulse centre to pulse centre.
+    nshots : int
+        Excitations in one sweep.
+    sweeps : int, default=1
+        Sweeps played before the recorded one.
+    TE : float, default=None
+        Echo time, in ms, from the pulse centre; ``TR / 2`` when not given.
+    pulse_duration : float, default=0.0
+        Pulse duration, in ms; zero is an instantaneous rotation. A whole number
+        of ``dwell``.
+    bandwidth_time : float, default=4.0
+        Zero crossings of the Hamming-windowed sinc across a pulse.
+    dwell : float, default=0.01
+        Hold time of each pulse sample, in ms.
+    states : int, default=1
+        Configuration states kept; a balanced train winds nothing on, so order
+        zero is the whole state.
+    repetitions : int or "auto", default=1
+        Playings of the whole train; the last is the signal.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
 
     Notes
     -----
@@ -77,25 +114,6 @@ class fmSSFPSimulator(Simulator):
         dwell: float = 0.01,
     ) -> list:
         """Return the sweeps, one sample per shot of the last.
-
-        Parameters
-        ----------
-        flip : float or array-like
-            Flip angle in degrees, scalar or one per shot of a sweep.
-        TR : float
-            Repetition time in ms, pulse centre to pulse centre.
-        nshots : int
-            Excitations in one sweep.
-        sweeps : int, optional
-            Sweeps played before the recorded one.
-        TE : float, optional
-            Echo time in ms, from the pulse centre; defaults to ``TR / 2``.
-        pulse_duration : float, optional
-            Pulse duration in ms; zero is an instantaneous rotation.
-        bandwidth_time : float, optional
-            Zero crossings of the Hamming-windowed sinc across a pulse.
-        dwell : float, optional
-            Hold time of each pulse sample in ms.
 
         Raises
         ------

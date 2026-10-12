@@ -16,11 +16,36 @@ from ._contrast import across_contrasts
 
 
 class bSSFPSimulator(Simulator):
-    """Balanced SSFP steady state, read at the echo time.
+    """Balanced steady-state free precession (bSSFP) signal at the echo time.
 
-    Closed form in the phase accrued across one TR; no state machine is run.
-    Fitting T2 to a set of these, with T1 from :class:`SPGRSimulator`, is
-    DESPOT2 [1]_.
+    Closed-form steady state of a balanced train as a function of the phase a
+    voxel accrues across one TR, phase cycling included; no state machine is run.
+    The signal is complex, with phase set by the off-resonance at ``TE``. Fitting
+    T2 to a set of these, with T1 from :class:`SPGRSimulator`, is DESPOT2 [1]_.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Excitation flip angle, in degrees.
+    TR : float or array-like
+        Repetition time, in ms.
+    TE : float or array-like, default=None
+        Echo time, in ms; ``TR / 2`` when not given.
+    phase_inc : float or array-like, default=180.0
+        Phase-cycling increment of the excitation between repetitions, in
+        degrees.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    chemshift : float or array-like, default=0.0
+        Chemical shift of the species, in Hz; enters the phase with the opposite
+        sign to ``B0``.
 
     References
     ----------
@@ -63,21 +88,7 @@ class bSSFPSimulator(Simulator):
         TE: float | npt.ArrayLike | None = None,
         phase_inc: float | npt.ArrayLike = 180.0,
     ) -> torch.Tensor:
-        """Return the transverse magnetization a TE after the excitation.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` and ``T2`` in ms, ``B0`` and ``chemshift`` in Hz, ``M0`` scaling.
-        flip : float or array-like
-            Excitation flip angle in degrees.
-        TR : float or array-like
-            Repetition time in ms.
-        TE : float or array-like, optional
-            Echo time in ms; defaults to ``TR / 2``.
-        phase_inc : float or array-like, optional
-            Linear phase-cycling increment in degrees.
-        """
+        """Return the transverse magnetization a TE after the excitation."""
         if TE is None:
             TE = TR / 2
         held = across_contrasts(properties, flip, TR, TE, phase_inc)

@@ -115,7 +115,21 @@ class TransitionTable:
         second-order pass differentiates this twice, and because storing the
         slope makes the cubic cost the same two loads.
 
-        Returns the pair; the caller applies the RF phase to ``b``.
+        The caller applies the RF phase to ``b``.
+
+        Parameters
+        ----------
+        position : torch.Tensor
+            Integer index into the slice axis of the table.
+        theta : torch.Tensor
+            Effective flip angle, in radians, broadcast against ``position``;
+            values outside ``[0, theta_max]`` read the nearest end.
+
+        Returns
+        -------
+        a, b : torch.Tensor
+            Complex Cayley-Klein pair, shaped like the broadcast of
+            ``position`` and ``theta``.
         """
         step = self.theta_max / (self.bins - 1)
         scaled = (theta / step).clamp(0.0, self.bins - 1.0)
@@ -273,7 +287,7 @@ class DynamicPairs:
         return int(self.a.shape[1])
 
     def at(self, row: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """The pair one pulse performs, one entry per voxel."""
+        """Return the pair one pulse performs, ``(voxels,)`` complex each."""
         return self.a[row], self.b[row]
 
     def rows_per_event(self, train_count: int, event_count: int) -> torch.Tensor:
@@ -285,9 +299,22 @@ class DynamicPairs:
         reads the same rows, which is what a set of pulses shared across a
         batch is; one given per train is flattened in place.
 
+        Parameters
+        ----------
+        train_count : int
+            Number of trains in the launch.
+        event_count : int
+            Events in one train.
+
+        Returns
+        -------
+        torch.Tensor
+            ``(train_count * event_count,)``, int32, contiguous.
+
         Raises
         ------
-            ValueError: if the index fits neither shape.
+        ValueError
+            If the index fits neither shape.
         """
         flat = self.index.reshape(-1).to(torch.int32)
         if flat.numel() == train_count * event_count:
@@ -396,41 +423,46 @@ def dynamic_pair(
 
     Parameters
     ----------
-    definition
+    definition : RfDefinition
         The pulse. Its complex envelope is played sample by sample at
         ``rf_raster_time_s`` and normalized by its own integral, so a voxel the
         array puts unit field on turns through exactly ``flip``. A per-channel
         envelope is the drive itself; a single one is the waveform every
         channel plays, and ``weights`` says how hard each drives it.
-    sensitivities
-        Complex per-channel transmit sensitivities, ``(voxels, channels)``.
-    weights
+    sensitivities : torch.Tensor
+        Complex per-channel transmit sensitivities, ``(voxels, channels)``, in
+        units of the nominal field.
+    weights : torch.Tensor, default=None
         Complex channel weights, ``(channels, samples)`` while the pulse plays,
-        or ``(channels,)`` for a weight they hold. Unity when not given.
-    flip
+        or ``(channels,)`` for a weight they hold. ``None`` is unity.
+    flip : torch.Tensor or float, default=1.0
         The nominal flip the event drives, in radians. Scales every channel
         alike and so still factors out of the array.
-    off_resonance_hz
-        What each voxel is off resonance by while the pulse plays. Zero when
-        not given.
-    positions
+    off_resonance_hz : torch.Tensor, default=None
+        What each voxel is off resonance by while the pulse plays, in Hz;
+        scalar or ``(voxels,)``. ``None`` is zero.
+    positions : torch.Tensor, default=None
         Where across the slice to integrate, in units of the slice thickness,
         so that the passband is ``[-0.5, 0.5]``. The slice-select gradient is
         taken to hold for the whole pulse, which makes position times the
-        definition's bandwidth the offset in Hz it adds. One location when not
-        given.
+        definition's bandwidth the offset in Hz it adds. ``None`` is one
+        location.
+    rf_raster_time_s : float, default=1e-6
+        RF raster the sample times are counted in, in seconds.
 
     Returns
     -------
-        ``(a, b)`` in ``complex64``, one entry per voxel and location with
-        **locations fastest** -- ``voxel * locations + location``, which is how
-        the kernels index an atom across a slice.
+    a, b : torch.Tensor
+        Cayley-Klein pair in ``complex64``, one entry per voxel and location
+        with **locations fastest** -- ``voxel * locations + location``, which
+        is how the kernels index an atom across a slice.
 
     Raises
     ------
-        ValueError: if the pulse has no samples, if it integrates to nothing,
-            or if the envelope, the weights and the sensitivities disagree on
-            the channel count.
+    ValueError
+        If the pulse has no samples, if it integrates to nothing, or if the
+        envelope, the weights and the sensitivities disagree on the channel
+        count.
     """
     device = sensitivities.device
     envelope = torch.as_tensor(
@@ -531,27 +563,35 @@ def transition_table(
 
     Parameters
     ----------
-    definition
+    definition : RfDefinition
         The pulse. Its complex envelope is played sample by sample at
         ``rf_raster_time_s``, and its ``bandwidth_hz`` sets how fast
         off-resonance grows away from the slice centre.
-    positions
+    positions : torch.Tensor
         Where across the slice to sample, in units of the slice thickness, so
-        that the passband is ``[-0.5, 0.5]``.
-    bins
-        Knots along the flip axis. 64 carries a sinc to about 1e-8.
-    theta_max
+        that the passband is ``[-0.5, 0.5]``; ``(points,)``.
+    bins : int, default=64
+        Knots along the flip axis, at least 2. 64 carries a sinc to about 1e-8.
+    theta_max : float, default=2 * pi
         Largest effective flip the table covers, in radians. A pulse driven
         past this reads the last knot.
+    rf_raster_time_s : float, default=1e-6
+        RF raster the sample times are counted in, in seconds.
+    device : torch.device or str, default=None
+        Device the table is built on. ``None`` is the CPU.
 
     Returns
     -------
-        The table, with slopes taken by forward-mode differentiation of the
-        same integration rather than by differencing it.
+    TransitionTable
+        The table, shaped ``(points, bins)``, with slopes taken by
+        forward-mode differentiation of the same integration rather than by
+        differencing it.
 
     Raises
     ------
-        ValueError: if the pulse has no samples, or ``bins`` is below two.
+    ValueError
+        If the pulse has no samples or integrates to nothing, or ``bins`` is
+        below two.
     """
     if bins < 2:
         raise ValueError(f"a Hermite table needs at least two knots, got {bins}")
@@ -636,13 +676,13 @@ class ExactSliceProfile:
 
     Attributes
     ----------
-    points : int or torch.Tensor
+    points : int or torch.Tensor, default=21
         Slice positions, or how many to space evenly across ``extent``.
-    extent : float
+    extent : float, default=2.0
         How many slice thicknesses the sampled positions span.
-    bins : int
+    bins : int, default=64
         Knots along the flip-angle axis. 64 carries a sinc to about 1e-8.
-    theta_max : float
+    theta_max : float, default=2 * pi
         Largest effective flip the table covers, in radians. A sequence that
         drives a pulse past this is refused rather than saturated.
     """
@@ -653,7 +693,7 @@ class ExactSliceProfile:
     theta_max: float = 2.0 * torch.pi
 
     def positions(self) -> torch.Tensor:
-        """Where across the slice the table is sampled."""
+        """Return the sampled slice positions, ``(points,)`` float64, in slice thicknesses."""
         if isinstance(self.points, int):
             if self.points < 1:
                 raise ValueError(
@@ -686,13 +726,13 @@ def exact_slice_profile(
 
     Parameters
     ----------
-    points : int or torch.Tensor, optional
+    points : int or torch.Tensor, default=21
         Slice positions, or how many to space evenly across ``extent``.
-    extent : float, optional
+    extent : float, default=2.0
         How many slice thicknesses the sampled positions span.
-    bins : int, optional
+    bins : int, default=64
         Knots along the flip-angle axis. 64 carries a sinc to about 1e-8.
-    theta_max : float, optional
+    theta_max : float, default=2 * pi
         Largest effective flip the table covers, in radians. A sequence that
         drives a pulse past this is refused rather than saturated.
 
@@ -719,9 +759,20 @@ def across_the_slice(asked: Any) -> ExactSliceProfile | None:
     close enough to a list of positions that guessing between them would
     sometimes be wrong in silence.
 
+    Parameters
+    ----------
+    asked : int, ExactSliceProfile or None
+        A number of positions, a profile, or ``None`` for no slice profile.
+
+    Returns
+    -------
+    ExactSliceProfile or None
+        ``asked`` as a profile; ``None`` stays ``None``.
+
     Raises
     ------
-        TypeError: if ``asked`` is neither a count nor a profile.
+    TypeError
+        If ``asked`` is neither a count nor a profile.
     """
     if asked is None or isinstance(asked, ExactSliceProfile):
         return asked

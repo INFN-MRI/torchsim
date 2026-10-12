@@ -12,19 +12,27 @@ import torch
 
 @dataclass(frozen=True)
 class Subspace:
-    """Orthonormal temporal basis fitted to a set of signals.
+    """Orthonormal temporal basis of a set of signals, for subspace reconstruction.
 
-    Attributes
+    The basis holds the leading left singular vectors of a dictionary of
+    simulated signals (for example an MR fingerprinting dictionary), so that a
+    series of ``contrasts`` images is described by ``rank`` coefficient images.
+    :meth:`fit` builds one from signals; :meth:`project` and :meth:`expand`
+    move between the contrast and coefficient domains. Instances are immutable.
+
+    Parameters
     ----------
     basis : torch.Tensor
-        ``(contrasts, rank)``, orthonormal; complex when the signals are.
+        Orthonormal basis of shape ``(contrasts, rank)``; complex when the
+        signals are.
     singular_values : torch.Tensor
         All singular values of the fitted signals, including those not kept.
-    dictionary : torch.Tensor, optional
-        ``(atoms, contrasts)`` signals the basis was fitted to. Set by
-        ``blochsim.sequence.simulate_subspace``, not by :meth:`fit`.
-    simulation : SimulationResult, optional
-        The recorded simulation, with sample labels.
+    dictionary : torch.Tensor, default=None
+        Signals the basis was fitted to, of shape ``(atoms, contrasts)``. Set
+        by ``blochsim.sequence.simulate_subspace``, not by :meth:`fit`.
+    simulation : SimulationResult, default=None
+        The recorded simulation the dictionary came from, with its sample
+        labels. Set by ``blochsim.sequence.simulate_subspace``.
     """
 
     basis: torch.Tensor
@@ -39,7 +47,7 @@ class Subspace:
 
     @property
     def contrasts(self) -> int:
-        """Number of contrasts the basis spans."""
+        """Number of contrasts, the length of the time axis the basis spans."""
         return int(self.basis.shape[0])
 
     @property
@@ -64,13 +72,14 @@ class Subspace:
         return self.basis.mT
 
     def project(self, signals: torch.Tensor) -> torch.Tensor:
-        """Project ``signals`` onto the basis.
+        """Project ``signals`` onto the basis, giving ``signals @ basis``.
 
         Parameters
         ----------
         signals : torch.Tensor
-            ``(..., contrasts)``. The result is computed in the wider of the
-            signals' and the basis's dtypes, on the signals' device.
+            Signals of shape ``(..., contrasts)``. The result is computed in
+            the wider of the signals' and the basis's dtypes, on the signals'
+            device.
 
         Returns
         -------
@@ -81,7 +90,7 @@ class Subspace:
         return signals.to(dtype) @ self.basis.to(dtype).to(signals.device)
 
     def expand(self, coefficients: torch.Tensor) -> torch.Tensor:
-        """Expand coefficients to contrasts.
+        """Expand coefficients to contrasts, giving ``coefficients @ basis.mH``.
 
         Parameters
         ----------
@@ -100,10 +109,14 @@ class Subspace:
     def fit(cls, signals: torch.Tensor, rank: int) -> Subspace:
         """Fit the leading ``rank`` singular directions of ``signals``.
 
+        The basis is the first ``rank`` left singular vectors of the matrix
+        whose columns are the signals; no mean is removed.
+
         Parameters
         ----------
         signals : torch.Tensor
-            ``(..., contrasts)``; leading axes are flattened.
+            Signals of shape ``(..., contrasts)``; leading axes are flattened
+            into atoms.
         rank : int
             Number of directions to keep.
 

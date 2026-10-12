@@ -13,21 +13,13 @@ work that fits is sent whole, and larger work is streamed in chunks. See
 
 ## Placement
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   execution
-   offload
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.execution` | Set where per-voxel work runs inside the block. |
+| {obj}`~blochsim.offload` | Stream host-resident volumes through CUDA devices inside the block. |
 
 ## Utilities
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   utils.b1rms
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.utils.b1rms` | Root-mean-square B1 of an RF pulse, in T. |

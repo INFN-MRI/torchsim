@@ -13,14 +13,40 @@ from ..sequence._array import as_torch
 
 
 class StimulatedEchoSimulator(Simulator):
-    """Three pulses, sampled at the spin echo of the first two and at the stimulated echo.
+    """Stimulated-echo sequence: three pulses, sampled at the spin echo and the stimulated echo.
 
     The second pulse, ``TE / 2`` after the first, forms a spin echo at ``TE`` and
     stores part of the magnetization along z, where it relaxes with T1 alone. The
     third pulse, ``TM`` after the second, returns that part to the transverse
     plane, where it forms the stimulated echo ``TE / 2`` later [1]_. The
     transverse magnetization is spoiled after the spin echo, so the second sample
-    is the stimulated echo alone.
+    is the stimulated echo alone. The signal is two complex samples, spin echo
+    then stimulated echo, along a trailing axis.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angle, in degrees; scalar, or one per pulse.
+    TE : float
+        Echo time, in ms; twice the spacing of the first two pulses, and of the
+        third pulse and the stimulated echo.
+    TM : float
+        Mixing time, in ms, from the second pulse to the third. At least
+        ``TE / 2``.
+    states : int, default=4
+        Configuration states: one order either side of the second pulse and one
+        after the third.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
 
     Notes
     -----
@@ -68,21 +94,11 @@ class StimulatedEchoSimulator(Simulator):
     ) -> list:
         """Return the three pulses and the two samples.
 
-        Parameters
-        ----------
-        flip : float or array-like
-            Flip angle in degrees, scalar or one per pulse.
-        TE : float
-            Echo time in ms; twice the spacing of the first two pulses, and of the
-            third pulse and the stimulated echo.
-        TM : float
-            Mixing time in ms, from the second pulse to the third.
-
         Raises
         ------
         ValueError
-            If the third pulse would play before the spin echo, or if ``flip`` is
-            neither scalar nor one per pulse.
+            If ``TM`` is less than ``TE / 2``, so the third pulse would play
+            before the spin echo, or ``flip`` is neither scalar nor one per pulse.
         """
         angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)).to(torch.float64))
         if angles.numel() == 1:

@@ -16,13 +16,31 @@ from ._contrast import across_contrasts
 
 
 class HSFPSimulator(Simulator):
-    """Balanced train with a slowly varying flip angle, in the hybrid state.
+    """Hybrid-state free precession (HSFP) of a balanced train, in closed form.
 
-    The magnetization stays on the spin-locked axis and only its length evolves,
-    relaxing at ``sin^2(a) / T2 + cos^2(a) / T1`` and driven by ``cos(a) / T1``
-    [1]_. The train is repeated, each pass starting from the end of the previous
-    one times ``beta``. The signal is the magnetization along the spin-locked axis
-    at each pulse, the transverse magnetization at the echo for a balanced train.
+    For a balanced train with a slowly varying flip angle, the magnetization
+    stays on the spin-locked axis and only its length evolves, relaxing at
+    ``sin^2(a) / T2 + cos^2(a) / T1`` and driven by ``cos(a) / T1`` [1]_. The
+    train is repeated, each pass starting from the end of the previous one times
+    ``beta``. The signal is the magnetization along the spin-locked axis at each
+    pulse, the transverse magnetization at the echo for a balanced train.
+
+    Parameters
+    ----------
+    flip : array-like
+        Flip-angle train, in degrees, one entry per pulse.
+    TR : float or array-like
+        Repetition time, in ms.
+    beta : float, default=-1.0
+        Factor applied to the magnetization between passes: -1 for an
+        inversion, 1 for none.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
 
     References
     ----------
@@ -65,19 +83,7 @@ class HSFPSimulator(Simulator):
         TR: float | npt.ArrayLike,
         beta: float = -1.0,
     ) -> torch.Tensor:
-        """Return the magnetization along the spin-locked axis at each pulse.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` and ``T2`` in ms, ``M0`` scaling.
-        flip : array-like
-            Flip-angle train in degrees, one entry per pulse.
-        TR : float or array-like
-            Repetition time in ms.
-        beta : float, optional
-            Factor applied between passes: -1 for an inversion, 1 for none.
-        """
+        """Return the magnetization along the spin-locked axis at each pulse."""
         held = across_contrasts(properties, flip)
         dtype = torch.promote_types(torch.as_tensor(held["T1"]).dtype, flip.dtype)
         angle = (torch.pi / 180.0) * flip.abs().to(torch.float64)

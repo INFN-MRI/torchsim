@@ -26,17 +26,19 @@ class NonlinearLeastSquares(Estimator):
 
     Parameters
     ----------
-    acquisition : Simulator, optional
+    acquisition : Simulator, default=None
         The sequence being inverted, with every property that is neither
         unknown nor measured separately already fixed.
-    bounds : mapping, optional
-        ``{name: (low, high)}``, either end ``None`` for unbounded. Enforced by
+    bounds : mapping, default=None
+        ``{name: (low, high)}`` in the property's units, either end ``None`` for
+        unbounded; ``None`` leaves every unknown unbounded. Enforced by
         a variable transform, so iterates stay inside.
-    initial : mapping, optional
-        ``{name: value}`` start, strictly inside the bound. Default is the
-        median of the training draw.
-    loop : GaussNewton, optional
-        The solver. Default is a :class:`~blochsim.recon.TrustRegion` over
+    initial : mapping, default=None
+        ``{name: value}`` start, strictly inside the bound, in the property's
+        units. ``None`` starts every unknown from the median of the training
+        draw.
+    loop : GaussNewton, default=None
+        The solver. ``None`` is a :class:`~blochsim.recon.TrustRegion` over
         :func:`~blochsim.recon.direct`, 20 iterations.
 
     Notes
@@ -118,9 +120,9 @@ class NonlinearLeastSquares(Estimator):
             the same way.
         parameters : torch.Tensor
             ``(samples, parameters)``, in the order given to :meth:`bind`.
-        known : torch.Tensor, optional
+        known : torch.Tensor, default=None
             Ignored, for the same reason.
-        noise_std : float or torch.Tensor, optional
+        noise_std : float or torch.Tensor, default=0.0
             Accepted and unused. A least-squares fit weights every contrast
             alike, which is what uniform noise implies.
 
@@ -184,7 +186,7 @@ class NonlinearLeastSquares(Estimator):
         ----------
         signals : torch.Tensor
             ``(..., contrasts)``.
-        known : torch.Tensor, optional
+        known : torch.Tensor, default=None
             ``(..., knowns)``, the properties measured separately.
 
         Returns

@@ -18,46 +18,30 @@ encoding is external: any object with `A` and `A_adjoint` composes.
 
 ## Operator
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   ModelOperator
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.ModelOperator` | A signal model over parameter maps, with its derivatives. |
 
 ## Solver
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   GaussNewton
-   Schedule
-   TrustRegion
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.GaussNewton` | Solve a nonlinear inverse problem by repeated linearization. |
+| {obj}`~blochsim.Schedule` | One damping for the whole volume, lowered geometrically. |
+| {obj}`~blochsim.TrustRegion` | Levenberg-Marquardt: per-voxel damping, raised where a step does not pay. |
 
 ## Linear solves
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   direct
-   iterative
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.direct` | Solve every voxel's damped linearized system by batched least squares. |
+| {obj}`~blochsim.iterative` | Build an inner solve from a regularized least-squares routine. |
 
 ## Temporal basis
 
 {attr}`Subspace.modes` gives the basis in the layout a subspace operator reads.
 The same basis serves the estimators on {doc}`estimators`.
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   Subspace
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.Subspace` | Orthonormal temporal basis of a set of signals, for subspace reconstruction. |

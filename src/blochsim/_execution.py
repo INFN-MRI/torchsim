@@ -120,22 +120,24 @@ def offload(
     budget_bytes: int = _DEFAULT_BUDGET_BYTES,
     lanes: int = 1,
 ) -> Iterator[None]:
-    """Context manager that streams host-resident volumes through CUDA devices.
+    """Stream host-resident volumes through CUDA devices inside the block.
 
-    Inside the block, a workload whose voxels are on the host runs on
-    ``devices`` in chunks, and the result returns on the host.
+    A per-voxel workload (a simulation or a mapping over many voxels) whose
+    tensors are on the host runs on ``devices`` in chunks of voxels sized to
+    ``budget_bytes``, and the result returns on the host. Host-to-device
+    transfers of one chunk overlap the arithmetic of another. Blocks nest; the
+    previous plan is restored on exit.
 
     Parameters
     ----------
-    devices : sequence of torch.device or str, optional
-        CUDA devices to use. Defaults to ``("cuda",)``.
-    budget_bytes : int, optional
-        Total device memory for chunk buffers, in bytes. Throughput falls
-        steeply as it shrinks. Defaults to 512 MiB.
-    lanes : int, optional
+    devices : sequence of torch.device or str, default=("cuda",)
+        CUDA devices to use; chunks are spread across all of them.
+    budget_bytes : int, default=536870912
+        Total device memory for chunk buffers, in bytes (512 MiB). Throughput
+        falls steeply as it shrinks.
+    lanes : int, default=1
         Chunks in flight per device. Each lane takes a share of the budget, so
-        more lanes give narrower chunks. Affects throughput only. Defaults
-        to 1.
+        more lanes give narrower chunks. Affects throughput only.
 
     Raises
     ------
@@ -171,28 +173,31 @@ def execution(
     lanes: int = 1,
     reserve_bytes: int = _RESERVE_BYTES,
 ) -> Iterator[None]:
-    """Context manager that sets where per-voxel work runs.
+    """Set where per-voxel work runs inside the block.
 
-    With ``"auto"``, work too small to repay a launch stays on the CPU, work
-    that fits on the devices is sent whole, and larger work is streamed in
-    chunks. Outside a block, work runs where its tensors are.
+    With ``target="auto"``, work too small to repay a device launch stays on
+    the CPU, work that fits in the free memory of the CUDA devices is sent
+    whole, and larger work is streamed in chunks. Outside a block, work runs
+    where its tensors are. Blocks nest; the previous policy is restored on
+    exit.
 
     Parameters
     ----------
-    target : {"auto", "cpu"}, torch.device or sequence of device, optional
-        ``"auto"`` decides per call from the free memory of the CUDA devices;
-        otherwise the host or the named CUDA devices are used. Defaults to
-        ``"auto"``.
-    stream : bool, optional
-        ``True`` always streams in chunks; ``False`` requires the whole volume
-        to be resident, and fails if it does not fit. Default decides per call.
-    budget_bytes : int, optional
-        Cap on device memory held while streaming, in bytes. Defaults to the
-        free memory less ``reserve_bytes``.
-    lanes : int, optional
-        Chunks in flight per device, as for :func:`offload`. Defaults to 1.
-    reserve_bytes : int, optional
-        Memory left free on each device, in bytes. Defaults to 512 MiB.
+    target : {"auto", "cpu"}, torch.device or sequence of device, default="auto"
+        ``"auto"`` decides per call from the free memory of all visible CUDA
+        devices. ``"cpu"`` (or CPU devices only) keeps work on the host.
+        Named CUDA devices restrict the choice to them.
+    stream : bool, default=None
+        ``True`` always streams in chunks. ``False`` requires the whole volume
+        to be resident and fails when it does not fit. ``None`` decides per
+        call.
+    budget_bytes : int, default=None
+        Cap on device memory held while streaming, in bytes. ``None`` uses the
+        smallest free memory among the devices less ``reserve_bytes``.
+    lanes : int, default=1
+        Chunks in flight per device, as for :func:`offload`.
+    reserve_bytes : int, default=536870912
+        Memory left free on each device, in bytes (512 MiB).
 
     Raises
     ------

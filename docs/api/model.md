@@ -48,13 +48,9 @@ class JointRelaxometry(Simulator):
     def evaluate(self, properties, **sequence): ...
 ```
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   Simulator
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.model.Simulator` | Base class of a pulse sequence protocol and its signal model. |
 
 ## Spin physics and event operators
 
@@ -62,14 +58,10 @@ class JointRelaxometry(Simulator):
 {class}`EventOperators` that realize each kind of event. Any tissue property
 may be given to any simulator; giving one enables its term.
 
-```{eval-rst}
-.. autosummary::
-   :toctree: ../generated
-   :nosignatures:
-
-   SpinPhysics
-   EventOperators
-```
+| Object | Description |
+| --- | --- |
+| {obj}`~blochsim.model.SpinPhysics` | The tissue properties a model exposes and the operators that realize its events. |
+| {obj}`~blochsim.model.EventOperators` | Operator factories, one per kind of event. |
 
 ## Operator tables
 

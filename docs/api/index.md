@@ -1,32 +1,18 @@
-# API
+# API reference
 
-The API reference follows the subpackages. A signal model is the interface
-that estimation, reconstruction and design are written against.
+The reference follows the subpackages. Conceptual background is in
+{doc}`../explanations/index`; a signal model is the interface that estimation,
+reconstruction and design are written against.
 
-{doc}`model`
-: Signal models: the physics of each event type and the simulator
-  that orders the events.
-
-{doc}`simulators`
-: The shipped sequences, as classes and as functional wrappers.
-
-{doc}`sequence`
-: Sequence descriptions: events, the operators that emit them, and
-  builders.
-
-{doc}`estimators`
-: Tissue property estimation: dictionary matching, lookup tables,
-  nonlinear least squares, kernel regression.
-
-{doc}`recon`
-: Model-based reconstruction of parameter maps from k-space, and the
-  temporal basis.
-
-{doc}`optim`
-: Sequence parameter optimization against a user-defined cost.
-
-{doc}`execution`
-: Execution policy: where per-voxel work runs.
+| Page | Module | Contents |
+| --- | --- | --- |
+| {doc}`model` | `blochsim.model` | Signal models, event physics, simulator |
+| {doc}`simulators` | `blochsim.simulators` | Shipped sequences, classes and functional wrappers |
+| {doc}`sequence` | `blochsim.sequence` | Sequence descriptions, events, operators, builders |
+| {doc}`estimators` | `blochsim.estimators` | Dictionary matching, lookup tables, nonlinear least squares, PERK |
+| {doc}`recon` | `blochsim.recon` | Model-based reconstruction, temporal basis |
+| {doc}`optim` | `blochsim.optim` | Sequence parameter optimization |
+| {doc}`execution` | `blochsim` | Execution policy |
 
 ```{toctree}
 :hidden:

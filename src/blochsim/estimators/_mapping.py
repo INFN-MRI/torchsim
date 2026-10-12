@@ -40,7 +40,7 @@ class Estimator(torch.nn.Module):
 
     Parameters
     ----------
-    acquisition : Simulator, optional
+    acquisition : Simulator, default=None
         The sequence being inverted, with every property that is neither
         unknown nor measured separately already fixed. Omit to fit from signals.
 
@@ -115,35 +115,35 @@ class Estimator(torch.nn.Module):
 
         Parameters
         ----------
-        unknown : mapping, optional
+        unknown : mapping, default=None
             Properties to estimate, ``{name: (low, high)}`` to draw uniformly
             or ``{name: values}`` to use as given. Order sets the order of the
             maps. Equivalent to the keyword form; use it for a name that
             collides with a keyword of ``fit``.
-        known : mapping or torch.Tensor, optional
+        known : mapping or torch.Tensor, default=None
             Properties measured separately, ``{name: range}`` or
             ``{name: values}``; pass the measured maps again to :meth:`map`.
             A tensor of columns when ``signals`` is given.
-        noise_std : float or torch.Tensor, optional
+        noise_std : float or torch.Tensor, default=0.0
             Standard deviation of the noise added to training signals, in
-            signal units (a fully relaxed voxel is 1). Default 0.
-        rank : int, optional
+            signal units (a fully relaxed voxel is 1).
+        rank : int, default=None
             Fit a temporal :class:`~blochsim.Subspace` of this rank to the
             training signals and work in it. Not with ``subspace``.
-        subspace : Subspace, optional
+        subspace : Subspace, default=None
             Work in a basis fitted elsewhere. Not with ``rank``.
-        seed : int, optional
+        seed : int, default=None
             Seed of the training draw.
-        samples : int, optional
+        samples : int, default=None
             Number of tissues to draw. Defaults to the length of any
             properties given as values, else 10000.
-        chunk : int, optional
-            Samples simulated at a time. Default 4096.
-        signals : torch.Tensor, optional
+        chunk : int, default=4096
+            Samples simulated at a time.
+        signals : torch.Tensor, default=None
             Training signals ``(samples, contrasts)``, used instead of
             simulating. :meth:`map` then returns a tensor unless names were
             given.
-        parameters : torch.Tensor, optional
+        parameters : torch.Tensor, default=None
             Unknowns ``(samples, unknowns)`` accompanying ``signals``.
         **ranges
             Unknown properties as keywords, as for ``unknown``.
@@ -256,8 +256,8 @@ class Estimator(torch.nn.Module):
         ----------
         samples : int
             Number of tissues to draw.
-        chunk : int, optional
-            Samples simulated at a time. Default 4096.
+        chunk : int, default=4096
+            Samples simulated at a time.
 
         Returns
         -------
@@ -331,12 +331,12 @@ class Estimator(torch.nn.Module):
         volume : array-like
             Measurement ``(..., contrasts)``; every leading axis is a voxel
             axis and is kept on the maps.
-        known : mapping or torch.Tensor, optional
+        known : mapping or torch.Tensor, default=None
             Measured maps under the names given to :meth:`fit`, each
             broadcast to the voxel shape.
-        uncertainty : bool, optional
+        uncertainty : bool, default=False
             Also return the uncertainty of each map; see
-            :meth:`uncertainty_of`. Default False.
+            :meth:`uncertainty_of`.
 
         Returns
         -------
@@ -389,7 +389,7 @@ class Estimator(torch.nn.Module):
         ----------
         volume : array-like
             Measurement ``(..., contrasts)``, as for :meth:`map`.
-        known : mapping or torch.Tensor, optional
+        known : mapping or torch.Tensor, default=None
             Measured maps, as for :meth:`map`.
 
         Returns
@@ -418,7 +418,7 @@ class Estimator(torch.nn.Module):
         ----------
         coefficients : array-like
             Subspace coefficients ``(..., rank)``; leading axes are voxel axes.
-        known : mapping, optional
+        known : mapping, default=None
             Measured maps, as for :meth:`map`.
 
         Returns

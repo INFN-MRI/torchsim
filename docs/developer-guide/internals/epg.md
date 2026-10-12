@@ -2,7 +2,7 @@
 
 The configuration-state formalism blochsim's kernels implement, operator by
 operator, and how each tissue term enters. What the kernels hold and leave out
-is summarised on {doc}`../explanations/epg`; how the operators are packed and
+is summarised on {doc}`../../explanations/epg`; how the operators are packed and
 run is {doc}`kernels`. The notation is Weigel's review [^2].
 
 ## Dephasing
