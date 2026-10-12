@@ -299,6 +299,7 @@
 <li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">Model-based reconstruction</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.ModelOperator.html">ModelOperator</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.GaussNewton.html">GaussNewton</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.Schedule.html">Schedule</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.TrustRegion.html">TrustRegion</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.direct.html">direct</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.iterative.html">iterative</a></li>
@@ -565,7 +566,7 @@ operator. The concepts are in <a class="reference internal" href="../explanation
 one image per contrast out, with analytic Jacobian-vector products, a complex
 amplitude and box bounds. It honours <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>, and <code class="docutils literal notranslate"><span class="pre">physics()</span></code> wraps
 it for deepinv. <a class="reference internal" href="../generated/blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code></a> inverts it by repeated linearization; its
-damping policy (<code class="docutils literal notranslate"><span class="pre">blochsim.recon.Schedule</span></code> for an iteratively regularized
+damping policy (<a class="reference internal" href="../generated/blochsim.Schedule.html#blochsim.Schedule" title="blochsim.Schedule"><code class="xref py py-class docutils literal notranslate"><span class="pre">Schedule</span></code></a> for an iteratively regularized
 Gauss-Newton, <a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code></a> for Levenberg-Marquardt) selects the method,
 and its linear solve is <a class="reference internal" href="../generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> or <a class="reference internal" href="../generated/blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-func docutils literal notranslate"><span class="pre">iterative()</span></code></a>. The Fourier
 encoding is external: any object with <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> composes.</p>
@@ -587,7 +588,10 @@ encoding is external: any object with <code class="docutils literal notranslate"
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GaussNewton</span></code></a></p></td>
 <td><p>Solve a nonlinear inverse problem by repeated linearization.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TrustRegion</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Schedule.html#blochsim.Schedule" title="blochsim.Schedule"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Schedule</span></code></a></p></td>
+<td><p>One damping for the whole volume, lowered geometrically.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TrustRegion</span></code></a></p></td>
 <td><p>Levenberg-Marquardt: per-voxel damping, raised where a step does not pay.</p></td>
 </tr>
 </tbody>

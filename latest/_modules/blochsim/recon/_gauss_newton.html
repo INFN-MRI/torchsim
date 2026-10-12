@@ -298,6 +298,7 @@
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.ModelOperator.html">ModelOperator</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.GaussNewton.html">GaussNewton</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.Schedule.html">Schedule</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.TrustRegion.html">TrustRegion</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.direct.html">direct</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.iterative.html">iterative</a></li>
@@ -724,6 +725,8 @@
 <span class="c1"># %% damping policies</span>
 
 
+<div class="viewcode-block" id="Schedule">
+<a class="viewcode-back" href="../../../generated/blochsim.Schedule.html#blochsim.Schedule">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Schedule</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""One damping for the whole volume, lowered geometrically.</span>
@@ -757,12 +760,17 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">minimum</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"minimum must be positive, got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
+<div class="viewcode-block" id="Schedule.begin">
+<a class="viewcode-back" href="../../../generated/blochsim.Schedule.html#blochsim.Schedule.begin">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">begin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">curvature</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Return the initial weight."""</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">initial</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">curvature</span><span class="o">.</span><span class="n">device</span>
-        <span class="p">)</span>
+        <span class="p">)</span></div>
 
+
+<div class="viewcode-block" id="Schedule.judge">
+<a class="viewcode-back" href="../../../generated/blochsim.Schedule.html#blochsim.Schedule.judge">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">judge</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">damping</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">gain</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">singular</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
@@ -770,7 +778,9 @@
         <span class="k">return</span> <span class="p">(</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">gain</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span>
             <span class="p">(</span><span class="n">damping</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">factor</span><span class="p">)</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="p">),</span>
-        <span class="p">)</span>
+        <span class="p">)</span></div>
+</div>
+
 
 
 <div class="viewcode-block" id="TrustRegion">

@@ -301,6 +301,7 @@
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.ModelOperator.html">ModelOperator</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.GaussNewton.html">GaussNewton</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Schedule.html">Schedule</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.TrustRegion.html">TrustRegion</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.direct.html">direct</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.iterative.html">iterative</a></li>
@@ -611,7 +612,7 @@ the linear solver that each Gauss-Newton step calls. Any encoding that provides
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">mrinufft</span><span class="nn">.</span><span class="nn">trajectories</span><span class="w"> </span><span class="kn">import</span> <span class="n">initialize_2D_radial</span><span class="w">
 </span><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">estimators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><span class="n">DictionaryMatcher</span></a><span class="w">
-</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">recon</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><span class="n">GaussNewton</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><span class="n">ModelOperator</span></a><span class="p">,</span> <span class="n">Schedule</span><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><span class="n">iterative</span></a><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">recon</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><span class="n">GaussNewton</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><span class="n">ModelOperator</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.Schedule.html#blochsim.Schedule" title="blochsim.Schedule"><span class="n">Schedule</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><span class="n">iterative</span></a><span class="w">
 </span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator" title="blochsim.simulators.MultiEchoSimulator"><span class="n">MultiEchoSimulator</span></a><span class="w">
 </span></pre></div></div>
 <p>The experiment is a 96 x 96 matrix read as 16 radial spokes of 192 samples per
@@ -712,11 +713,11 @@ reconstruction has no such step, because its result is the maps.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>rank 3 of 8 keeps 0.999992 of the signal
 adjoint per echo       0.0s   T2 error  30.6 ms (20.6%)
 
-tensor([[ 52.7455,  61.8838,  58.0762,  ...,  96.9138,  74.0681,  63.4068],
+tensor([[ 52.7455,  61.8838,  58.0762,  ...,  97.6754,  74.0681,  63.4068],
         [ 47.4148,  49.6994,  50.4609,  ...,  91.5832,  66.4529,  77.8758],
         [ 52.7455,  60.3607,  74.0681,  ...,  76.3527,  71.0220,  78.6373],
         ...,
-        [ 71.0220,  80.1603, 106.0521,  ...,  74.8297,  51.9840,  64.1683],
+        [ 71.0220,  80.1603, 105.2906,  ...,  74.8297,  51.9840,  64.1683],
         [103.0060, 123.5671, 128.1363,  ...,  93.8677,  64.9299,  56.5531],
         [122.0441, 109.0982, 111.3828,  ...,  82.4449,  81.6834,  69.4990]])
 </pre></div>
@@ -757,15 +758,15 @@ regularized Gauss-Newton). blochsim provides the loop and the derivative.
 solver used for the baseline; replacing that argument changes the solver, for
 example to a proximal one with a wavelet prior.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">found</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><span class="n">GaussNewton</span></a><span class="p">(</span><span class="w">
-</span>    <span class="n">Schedule</span><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">minimum</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.Schedule.html#blochsim.Schedule" title="blochsim.Schedule"><span class="n">Schedule</span></a><span class="p">(</span><span class="n">initial</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">,</span> <span class="n">factor</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">minimum</span><span class="o">=</span><span class="mf">1e-7</span><span class="p">)</span><span class="p">,</span><span class="w">
 </span>    <span class="n">solve</span><span class="o">=</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-function reference internal" href="../../blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><span class="n">iterative</span></a><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span><span class="p">,</span><span class="w">
 </span>    <span class="n">max_iterations</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span><span class="w">
 </span><span class="p">)</span><span class="o">.</span><span class="n">minimize</span><span class="p">(</span><a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><span class="n">operator</span></a><span class="p">,</span> <span class="n">kspace</span><span class="p">,</span> <span class="n">initial</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">encoding</span><span class="p">)</span><span class="w">
 </span><span class="w">
 </span><span class="n">modelled</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.ModelOperator.html#blochsim.ModelOperator.split" title="blochsim.ModelOperator.split"><span class="n">operator</span><span class="o">.</span><span class="n">split</span></a><span class="p">(</span><span class="n">found</span><span class="o">.</span><span class="n">x</span><span class="p">)</span><span class="p">[</span><span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">]</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>model-based            2.3s   T2 error  17.1 ms (12.6%)
-residual 5.529e+03 -&gt; 5.577e-01, damping 1e-03 -&gt; 8e-06
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>model-based            2.6s   T2 error  17.1 ms (12.6%)
+residual 5.529e+03 -&gt; 5.578e-01, damping 1e-03 -&gt; 8e-06
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">found.x</span></code> holds the solved variables and <code class="docutils literal notranslate"><span class="pre">operator.split</span></code> separates them
@@ -781,10 +782,10 @@ Timing the four shows which part a faster reconstruction has to speed up.</p>
 </span><span class="n">adjoint_image</span> <span class="o">=</span> <span class="n">encoding</span><span class="o">.</span><span class="n">A_adjoint</span><span class="p">(</span><span class="n">kspace</span><span class="p">)</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>per conjugate-gradient step, 3 channels solved for:
-  model    J  v      2.4 ms
-  model    J^H v     1.0 ms
-  encoding A         4.1 ms
-  encoding A^H       4.1 ms
+  model    J  v      2.9 ms
+  model    J^H v     1.2 ms
+  encoding A         4.7 ms
+  encoding A^H       4.7 ms
 the Jacobian this avoids holding: 1.7 MiB, against 0.6 MiB for a signal
 </pre></div>
 </div>
@@ -832,7 +833,7 @@ Report time and mean T2 error over the brain, the time of each Jacobian
 product, and the size of the Jacobian that the operator avoids storing.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 3.041 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 3.639 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-04-model-based-imaging-02-nonlinear-inversion-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo3.svg" style="width: 150px;" />

@@ -298,6 +298,7 @@
 <li class="toctree-l2 has-children"><a class="reference internal" href="api/recon.html">Model-based reconstruction</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.ModelOperator.html">ModelOperator</a></li>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.GaussNewton.html">GaussNewton</a></li>
+<li class="toctree-l3"><a class="reference internal" href="generated/blochsim.Schedule.html">Schedule</a></li>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.TrustRegion.html">TrustRegion</a></li>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.direct.html">direct</a></li>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.iterative.html">iterative</a></li>
@@ -523,14 +524,18 @@
 </li>
       <li><a href="generated/blochsim.ModelOperator.html#blochsim.ModelOperator.A_vjp">A_vjp() (blochsim.ModelOperator method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="generated/blochsim.Estimator.html#blochsim.Estimator.acquisition">acquisition (blochsim.Estimator attribute)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.adc_events">adc_events (blochsim.SequenceDescription property)</a>
 </li>
-      <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.anchored">anchored (blochsim.TrustRegion attribute)</a>
+      <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule.anchored">anchored (blochsim.Schedule attribute)</a>
+
+      <ul>
+        <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.anchored">(blochsim.TrustRegion attribute)</a>
 </li>
+      </ul></li>
       <li><a href="generated/blochsim.simulators.ASLSimulator.html#blochsim.simulators.ASLSimulator">ASLSimulator (class in blochsim.simulators)</a>
 </li>
   </ul></td>
@@ -545,8 +550,12 @@
 </li>
       <li><a href="generated/blochsim.Subspace.html#blochsim.Subspace.basis">basis (blochsim.Subspace attribute)</a>
 </li>
-      <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.begin">begin() (blochsim.TrustRegion method)</a>
+      <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule.begin">begin() (blochsim.Schedule method)</a>
+
+      <ul>
+        <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.begin">(blochsim.TrustRegion method)</a>
 </li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator.bind">bind() (blochsim.model.Simulator method)</a>
@@ -683,6 +692,8 @@
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule.factor">factor (blochsim.Schedule attribute)</a>
+</li>
       <li><a href="generated/blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics.fields">fields (blochsim.model.SpinPhysics property)</a>
 </li>
       <li><a href="generated/blochsim.Estimator.html#blochsim.Estimator.fit">fit() (blochsim.Estimator method)</a>
@@ -768,15 +779,19 @@
       <li><a href="generated/blochsim.ShimDefinition.html#blochsim.ShimDefinition.id">id (blochsim.ShimDefinition attribute)</a>
 </li>
       <li><a href="generated/blochsim.Bounded.html#blochsim.Bounded.initial">initial (blochsim.Bounded attribute)</a>
+
+      <ul>
+        <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule.initial">(blochsim.Schedule attribute)</a>
 </li>
+      </ul></li>
       <li><a href="generated/blochsim.ModelOperator.html#blochsim.ModelOperator.initial">initial() (blochsim.ModelOperator method)</a>
 </li>
       <li><a href="generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators.inversion">inversion() (blochsim.model.EventOperators method)</a>
 </li>
-      <li><a href="generated/blochsim.Inversion.html#blochsim.Inversion">Inversion() (in module blochsim)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="generated/blochsim.Inversion.html#blochsim.Inversion">Inversion() (in module blochsim)</a>
+</li>
       <li><a href="generated/blochsim.simulators.InversionRecoverySimulator.html#blochsim.simulators.InversionRecoverySimulator">InversionRecoverySimulator (class in blochsim.simulators)</a>
 </li>
       <li><a href="generated/blochsim.simulators.IRbSSFPSimulator.html#blochsim.simulators.IRbSSFPSimulator">IRbSSFPSimulator (class in blochsim.simulators)</a>
@@ -797,8 +812,12 @@
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.judge">judge() (blochsim.TrustRegion method)</a>
+      <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule.judge">judge() (blochsim.Schedule method)</a>
+
+      <ul>
+        <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.judge">(blochsim.TrustRegion method)</a>
 </li>
+      </ul></li>
   </ul></td>
 </tr></table>
 
@@ -865,6 +884,8 @@
         <li><a href="generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.minimize">(blochsim.SequenceDesign method)</a>
 </li>
       </ul></li>
+      <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule.minimum">minimum (blochsim.Schedule attribute)</a>
+</li>
       <li><a href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator.model">model (blochsim.model.Simulator attribute)</a>
 </li>
       <li><a href="generated/blochsim.ModelOperator.html#blochsim.ModelOperator">ModelOperator (class in blochsim)</a>
@@ -933,8 +954,12 @@
 <h2 id="P">P</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.per_voxel">per_voxel (blochsim.TrustRegion attribute)</a>
+      <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule.per_voxel">per_voxel (blochsim.Schedule attribute)</a>
+
+      <ul>
+        <li><a href="generated/blochsim.TrustRegion.html#blochsim.TrustRegion.per_voxel">(blochsim.TrustRegion attribute)</a>
 </li>
+      </ul></li>
       <li><a href="generated/blochsim.PERK.html#blochsim.PERK">PERK (class in blochsim)</a>
 </li>
       <li><a href="generated/blochsim.ShimDefinition.html#blochsim.ShimDefinition.phases_rad">phases_rad (blochsim.ShimDefinition attribute)</a>
@@ -1010,6 +1035,8 @@
       <li><a href="generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators.saturation">saturation() (blochsim.model.EventOperators method)</a>
 </li>
       <li><a href="generated/blochsim.Saturation.html#blochsim.Saturation">Saturation() (in module blochsim)</a>
+</li>
+      <li><a href="generated/blochsim.Schedule.html#blochsim.Schedule">Schedule (class in blochsim)</a>
 </li>
       <li><a href="generated/blochsim.Estimator.html#blochsim.Estimator.seed">seed (blochsim.Estimator attribute)</a>
 </li>

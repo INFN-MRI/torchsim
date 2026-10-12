@@ -299,6 +299,7 @@
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/recon.html">Model-based reconstruction</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.ModelOperator.html">ModelOperator</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.GaussNewton.html">GaussNewton</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../blochsim.Schedule.html">Schedule</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.TrustRegion.html">TrustRegion</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.direct.html">direct</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.iterative.html">iterative</a></li>
@@ -637,34 +638,30 @@ the home directory.</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.PosixPath" title="pathlib.PosixPath"><span class="n">CACHE</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-method reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path.home" title="pathlib.Path.home"><span class="n">Path</span><span class="o">.</span><span class="n">home</span></a><span class="p">(</span><span class="p">)</span> <span class="o">/</span> <span class="s2">&quot;</span><span class="s2">.cache</span><span class="s2">&quot;</span> <span class="o">/</span> <span class="s2">&quot;</span><span class="s2">blochsim</span><span class="s2">&quot;</span> <span class="o">/</span> <span class="s2">&quot;</span><span class="s2">ixi-tiny</span><span class="s2">&quot;</span><span class="w">
 </span><span class="n">subject</span> <span class="o">=</span> <a class="sphx-glr-backref-module-typing sphx-glr-backref-type-py-class reference external" href="https://docs.python.org/3/library/typing.html#typing.Generic" title="typing.Generic"><span class="n">tio</span><span class="o">.</span><span class="n">datasets</span><span class="o">.</span><span class="n">IXITiny</span></a><span class="p">(</span><span class="nb">str</span><span class="p">(</span><a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.PosixPath" title="pathlib.PosixPath"><span class="n">CACHE</span></a><span class="p">)</span><span class="p">,</span> <span class="n">download</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmphim3qbzs.zip
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmpwa2xtr3v.zip
 
 0it [00:00, ?it/s]
   0%|          | 0/233926107 [00:01&lt;?, ?it/s]
-  1%|          | 2662400/233926107 [00:01&lt;00:08, 26504592.64it/s]
-  7%|▋         | 16007168/233926107 [00:01&lt;00:02, 89145609.83it/s]
- 11%|█         | 25427968/233926107 [00:01&lt;00:02, 85109712.77it/s]
- 15%|█▌        | 35962880/233926107 [00:01&lt;00:02, 87005409.20it/s]
- 20%|█▉        | 46465024/233926107 [00:01&lt;00:02, 93050376.44it/s]
- 24%|██▎       | 55287808/233926107 [00:02&lt;00:02, 86332123.86it/s]
- 28%|██▊       | 65437696/233926107 [00:02&lt;00:01, 86917027.50it/s]
- 32%|███▏      | 74194944/233926107 [00:02&lt;00:01, 86760329.91it/s]
- 36%|███▌      | 84377600/233926107 [00:02&lt;00:01, 87613000.15it/s]
- 41%|████      | 94896128/233926107 [00:02&lt;00:01, 88383920.03it/s]
- 44%|████▍     | 103792640/233926107 [00:02&lt;00:01, 88546125.73it/s]
- 49%|████▊     | 113852416/233926107 [00:02&lt;00:01, 88096828.27it/s]
- 53%|█████▎    | 124370944/233926107 [00:02&lt;00:01, 88486489.74it/s]
- 58%|█████▊    | 134905856/233926107 [00:02&lt;00:01, 88947744.76it/s]
- 62%|██████▏   | 145424384/233926107 [00:03&lt;00:00, 88946581.58it/s]
- 67%|██████▋   | 155959296/233926107 [00:03&lt;00:00, 89319342.18it/s]
- 71%|███████   | 166477824/233926107 [00:03&lt;00:00, 89557829.18it/s]
- 75%|███████▍  | 175431680/233926107 [00:03&lt;00:00, 89339727.24it/s]
- 79%|███████▉  | 184360960/233926107 [00:03&lt;00:00, 84919930.58it/s]
- 84%|████████▍ | 195952640/233926107 [00:03&lt;00:00, 89528305.14it/s]
- 88%|████████▊ | 206487552/233926107 [00:03&lt;00:00, 89322506.73it/s]
- 93%|█████████▎| 217006080/233926107 [00:03&lt;00:00, 89694249.48it/s]
- 97%|█████████▋| 227540992/233926107 [00:03&lt;00:00, 89825252.50it/s]
-233930752it [00:05, 45679497.21it/s]
+  2%|▏         | 4464640/233926107 [00:01&lt;00:05, 38250635.08it/s]
+  4%|▍         | 9445376/233926107 [00:01&lt;00:05, 41988208.75it/s]
+  9%|▉         | 21241856/233926107 [00:01&lt;00:02, 71692288.50it/s]
+ 14%|█▍        | 33341440/233926107 [00:01&lt;00:02, 89912061.63it/s]
+ 20%|█▉        | 46014464/233926107 [00:02&lt;00:01, 100971075.36it/s]
+ 24%|██▍       | 55656448/233926107 [00:02&lt;00:01, 93656518.90it/s]
+ 28%|██▊       | 65282048/233926107 [00:02&lt;00:01, 94169390.19it/s]
+ 32%|███▏      | 74547200/233926107 [00:02&lt;00:03, 41802157.42it/s]
+ 38%|███▊      | 89300992/233926107 [00:02&lt;00:02, 58904694.39it/s]
+ 45%|████▍     | 105160704/233926107 [00:03&lt;00:01, 77625358.84it/s]
+ 50%|████▉     | 116498432/233926107 [00:03&lt;00:01, 62057447.17it/s]
+ 54%|█████▎    | 125640704/233926107 [00:03&lt;00:01, 58432837.99it/s]
+ 57%|█████▋    | 133513216/233926107 [00:03&lt;00:01, 60003140.50it/s]
+ 64%|██████▍   | 149168128/233926107 [00:03&lt;00:01, 78722545.99it/s]
+ 71%|███████   | 165945344/233926107 [00:03&lt;00:00, 97129031.43it/s]
+ 78%|███████▊  | 182722560/233926107 [00:03&lt;00:00, 112855274.77it/s]
+ 85%|████████▌ | 199499776/233926107 [00:04&lt;00:00, 125702662.33it/s]
+ 91%|█████████ | 213442560/233926107 [00:04&lt;00:00, 114310495.87it/s]
+ 97%|█████████▋| 225992704/233926107 [00:04&lt;00:00, 107414741.17it/s]
+233930752it [00:05, 42606594.09it/s]
 </pre></div>
 </div>
 </section>
@@ -706,7 +703,7 @@ Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmripr
 Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/segmentation_patch_17_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/segmentation_patch_17_model.pt
 Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/segmentation_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/segmentation_model.pt
 Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/warp_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/warp_model.pt
-128x128 slice, 5735 brain voxels; 92% are a mixture of two tissues or more
+128x128 slice, 5733 brain voxels; 92% are a mixture of two tissues or more
 </pre></div>
 </div>
 <p>The figure shows the T1-weighted contrast and the three probabilities.</p>
@@ -720,9 +717,9 @@ subject would fill the table from data.</p>
 </span><span class="n">class_T2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="mf">95.0</span><span class="p">,</span> <span class="mf">70.0</span><span class="p">,</span> <span class="mf">2000.0</span><span class="p">]</span><span class="p">)</span>  <span class="c1"># ms</span><span class="w">
 </span></pre></div></div>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>tissue           voxels     M0  T1 (ms)  T2 (ms)
-grey matter        2427   0.80     1100     95.0
-white matter       2294   0.70      650     70.0
-CSF                 571   1.00     4000   2000.0
+grey matter        2428   0.80     1100     95.0
+white matter       2297   0.70      650     70.0
+CSF                 568   1.00     4000   2000.0
 </pre></div>
 </div>
 </section>
@@ -791,7 +788,7 @@ acquisitions.</p>
 </span>    <span class="p">[</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="list"><span class="n">arms</span></a><span class="p">[</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">frame</span></a><span class="p">]</span><span class="o">.</span><span class="n">op</span><span class="p">(</span><span class="n">coil_series</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">frame</span></a><span class="p">]</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span><span class="p">)</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">frame</span></a> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">FRAMES</span></a><span class="p">)</span><span class="p">]</span><span class="w">
 </span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<img src="../../../_images/sphx_glr_01-synthetic-data_002.png" srcset="../../../_images/sphx_glr_01-synthetic-data_002.png" alt="coil 0, coil 1, coil 2, coil 3, 3 of 400 arms" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>forward NUFFT 3.5s -&gt; (400, 8, 768)
+<img src="../../../_images/sphx_glr_01-synthetic-data_002.png" srcset="../../../_images/sphx_glr_01-synthetic-data_002.png" alt="coil 0, coil 1, coil 2, coil 3, 3 of 400 arms" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>forward NUFFT 2.4s -&gt; (400, 8, 768)
 </pre></div>
 </div>
 <p>The figure shows four of the eight coil sensitivities and three of the arms.</p>
@@ -809,7 +806,7 @@ estimates them.</p>
 </span>    <span class="n">weights</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="mf">1e-6</span><span class="w">
 </span><span class="p">)</span><span class="w">
 </span></pre></div></div>
-<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>adjoint and combine 3.5s
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>adjoint and combine 2.5s
 </pre></div>
 </div>
 </section>
@@ -820,8 +817,8 @@ fully sampled series <code class="docutils literal notranslate"><span class="pre
 aliasing in a single frame exceeds the signal, but the time course of each
 voxel retains the fingerprint, which is what a fingerprinting reconstruction
 uses. Both series are normalised to their peak magnitude.</p>
-<img src="../../../_images/sphx_glr_01-synthetic-data_003.png" srcset="../../../_images/sphx_glr_01-synthetic-data_003.png" alt="frame 0, frame 200, one voxel" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>per-frame error inside the brain :  60.7%
-time-course agreement            : median 0.893, tenth percentile 0.714
+<img src="../../../_images/sphx_glr_01-synthetic-data_003.png" srcset="../../../_images/sphx_glr_01-synthetic-data_003.png" alt="frame 0, frame 200, one voxel" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>per-frame error inside the brain :  60.3%
+time-course agreement            : median 0.894, tenth percentile 0.715
 </pre></div>
 </div>
 <p>The printed error is the mean per-frame error in the brain. The time-course
@@ -896,7 +893,7 @@ each frame by the adjoint and a coil combination. Report the per-frame error
 and the time-course agreement, and save the pair with the maps and schedule.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (1 minutes 57.412 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (1 minutes 55.278 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-05-misc-01-synthetic-data-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/05-misc/01-synthetic-data.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo4.svg" style="width: 150px;" />

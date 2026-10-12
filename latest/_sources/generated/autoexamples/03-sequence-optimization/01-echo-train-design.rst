@@ -284,7 +284,7 @@ holds each angle inside the limits the scanner plays:
 
  .. code-block:: none
 
-    one train of 120 echoes designed in 0.08 s, 3.4 ms per iteration
+    one train of 120 echoes designed in 0.10 s, 3.9 ms per iteration
 
 
 
@@ -571,7 +571,7 @@ Start from the prescription of the abstract in [2]_: a 45-echo train at
 
  .. code-block:: none
 
-    a whole protocol designed in 1.19 s, 29.9 ms per iteration
+    a whole protocol designed in 1.60 s, 40.0 ms per iteration
 
 
 
@@ -666,7 +666,7 @@ References
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.210 seconds)
+   **Total running time of the script:** (0 minutes 2.735 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_03-sequence-optimization_01-echo-train-design.py:
