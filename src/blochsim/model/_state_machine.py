@@ -356,6 +356,33 @@ class Simulator(_SignalModel):
     :meth:`evaluate` directly for a closed-form signal. The constructor takes
     the keywords :meth:`simulate` takes and fixes them; a call overrides.
 
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Longitudinal and transverse relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    B1phase : float or array-like, default=0.0
+        Transmit phase, in rad.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    T2prime : float or array-like, default=inf
+        Reversible dephasing time, in ms.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion achieved by an inversion pulse.
+    D : float or array-like, default=0.0
+        Apparent diffusion coefficient, in um^2/ms.
+    v : float or array-like, default=0.0
+        Velocity along the unbalanced gradient, in m/s.
+    bound_fraction, bound_exchange, bound_T1 : float or array-like
+        Semisolid pool for magnetization transfer: fraction, exchange rate
+        in Hz and T1 in ms. A zero fraction leaves the pool out.
+    poolB_fraction, poolB_exchange, poolB_T1, poolB_T2, poolB_shift : float or array-like
+        A second exchanging water pool: fraction, exchange rate in Hz, T1 and
+        T2 in ms, chemical shift in Hz. Pools C to E take ``poolC_*`` to ``poolE_*``.
+
     Attributes
     ----------
     model : SpinPhysics

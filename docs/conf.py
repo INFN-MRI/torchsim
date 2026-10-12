@@ -132,7 +132,8 @@ autodoc_preserve_defaults = True
 autosummary_context = {"inherited_from_torch": sorted(dir(torch.nn.Module))}
 
 napoleon_include_private_with_doc = False
-napolon_numpy_docstring = True
+napoleon_numpy_docstring = True
+napoleon_custom_sections = [("Tissue properties", "params_style")]
 napoleon_use_admonition_for_references = True
 
 

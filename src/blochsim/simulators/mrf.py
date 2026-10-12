@@ -15,7 +15,39 @@ from ..sequence._array import as_torch, matched
 
 
 class MRFSimulator(Simulator):
-    """Inversion followed by a variable flip-angle train whose readouts wind on.
+    """MR fingerprinting with an unbalanced SSFP (FISP) train.
+
+    An inversion, then one excitation and one readout per TR. The readout
+    gradient is unbalanced: each TR shifts every configuration state by one
+    order. The signal is one complex sample per flip angle, from the last
+    playing of the train.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Flip angles, in degrees, one per TR; their number sets the train
+        length.
+    TR : float or array-like
+        Repetition time, in ms; scalar or one per TR.
+    TI : float or array-like, default=0.0
+        Delay from the inversion to the first excitation, in ms.
+    phases : float or array-like, default=0.0
+        RF phases, in degrees; scalar or one per TR.
+    states : int, default=10
+        Configuration states kept by the EPG simulation.
+    repetitions : int or "auto", default=1
+        Playings of the train; the last is the signal.
+
+    Tissue properties
+    -----------------
+    T1, T2 : float or array-like
+        Relaxation times, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
 
     Examples
     --------
@@ -51,19 +83,7 @@ class MRFSimulator(Simulator):
         TI: float | npt.ArrayLike = 0.0,
         phases: float | npt.ArrayLike = 0.0,
     ) -> list:
-        """Return the prepared train, one excitation and one sample per TR.
-
-        Parameters
-        ----------
-        flip : float or array-like
-            Excitation flip angles in degrees, one per repetition.
-        TR : float or array-like
-            Repetition time in ms, scalar or one per repetition.
-        TI : float or array-like, optional
-            Inversion time in ms.
-        phases : float or array-like, optional
-            Excitation phases in degrees.
-        """
+        """Return the train: inversion, then an excitation and a readout per TR."""
         angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)))
         turns = torch.deg2rad(matched(phases, angles))
         spacing_s = matched(TR, angles) * 1e-3
