@@ -1281,8 +1281,6 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">from_pulseq</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">settings</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SequenceDescription</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Read one repetition of a Pulseq sequence.</span>
 
-<span class="sd">        Requires pypulseq (``pip install blochsim[pulseq]``).</span>
-
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        source : str, Path or sequence</span>
@@ -1301,8 +1299,6 @@
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
-<span class="sd">        ImportError</span>
-<span class="sd">            If pypulseq is not installed.</span>
 <span class="sd">        ValueError</span>
 <span class="sd">            If the file declares no ``TRSize``, ``tr_index`` is out of range,</span>
 <span class="sd">            or the repetitions differ and none was named.</span>

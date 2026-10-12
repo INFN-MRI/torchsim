@@ -651,7 +651,6 @@ flow are zero without it.</p></li>
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.from_pulseq">
 <span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_pulseq</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_description.html#SequenceDescription.from_pulseq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.SequenceDescription.from_pulseq" title="Link to this definition">#</a></dt>
 <dd><p>Read one repetition of a Pulseq sequence.</p>
-<p>Requires pypulseq (<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">blochsim[pulseq]</span></code>).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -670,11 +669,8 @@ repetition.</p>
 <dd class="field-odd"><p><a class="reference internal" href="#blochsim.SequenceDescription" title="blochsim.SequenceDescription">SequenceDescription</a></p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><ul class="simple">
-<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – If pypulseq is not installed.</p></li>
-<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the file declares no <code class="docutils literal notranslate"><span class="pre">TRSize</span></code>, <code class="docutils literal notranslate"><span class="pre">tr_index</span></code> is out of range,
-    or the repetitions differ and none was named.</p></li>
-</ul>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the file declares no <code class="docutils literal notranslate"><span class="pre">TRSize</span></code>, <code class="docutils literal notranslate"><span class="pre">tr_index</span></code> is out of range,
+    or the repetitions differ and none was named.</p>
 </dd>
 </dl>
 </dd></dl>

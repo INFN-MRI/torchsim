@@ -582,9 +582,8 @@ reconstruction can thus simulate the sequence that was actually played.</p>
 </section>
 <section id="pulseq-file">
 <h2>Pulseq file<a class="headerlink" href="#pulseq-file" title="Link to this heading">#</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">from_pulseq</span></code> reads the description from a <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file; it requires the
-<code class="docutils literal notranslate"><span class="pre">pulseq</span></code> extra (<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;blochsim[pulseq]&quot;</span></code>). The file below is a
-short FSE:</p>
+<p><code class="docutils literal notranslate"><span class="pre">from_pulseq</span></code> reads the description from a <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, parsed by
+pypulseq. The file below is a short FSE:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">from_file</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-model sphx-glr-backref-type-py-method reference internal" href="../../blochsim.model.Simulator.html#blochsim.model.Simulator.from_pulseq" title="blochsim.model.Simulator.from_pulseq"><span class="n">FSESimulator</span><span class="o">.</span><span class="n">from_pulseq</span></a><span class="p">(</span><a class="sphx-glr-backref-module-pathlib sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.PosixPath" title="pathlib.PosixPath"><span class="n">SEQ_FILE</span></a><span class="p">,</span> <span class="n">states</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span><span class="w">
 </span><span class="n">file_signal</span> <span class="o">=</span> <span class="n">from_file</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="mf">80.0</span><span class="p">,</span> <span class="mf">110.0</span><span class="p">]</span><span class="p">)</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
@@ -608,7 +607,7 @@ simulate it with the FSE handlers and with the MRF handlers, to show that
 the handlers decide what happens between the events.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.964 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 2.618 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-01-framework-04-description-based-simulation-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/01-framework/04-description-based-simulation.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo.svg" style="width: 150px;" />

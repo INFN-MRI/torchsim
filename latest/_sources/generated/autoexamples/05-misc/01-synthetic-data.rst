@@ -138,8 +138,8 @@ the home directory.
 
  .. code-block:: none
 
-    Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmpkh852tzb.zip
-    0it [00:00, ?it/s]      0%|          | 0/233926107 [00:01<?, ?it/s]      0%|          | 1073152/233926107 [00:01<00:21, 10588043.97it/s]      7%|▋         | 15335424/233926107 [00:01<00:02, 87820426.74it/s]     16%|█▋        | 38281216/233926107 [00:01<00:01, 143218171.35it/s]     22%|██▏       | 50380800/233926107 [00:02<00:02, 89861268.48it/s]      27%|██▋       | 64233472/233926107 [00:02<00:01, 102219615.86it/s]     33%|███▎      | 77996032/233926107 [00:02<00:01, 109859037.12it/s]     45%|████▍     | 104865792/233926107 [00:02<00:00, 147160245.78it/s]     51%|█████▏    | 120102912/233926107 [00:02<00:00, 148346830.74it/s]     58%|█████▊    | 135315456/233926107 [00:02<00:00, 104819858.84it/s]     63%|██████▎   | 147701760/233926107 [00:02<00:00, 104246808.15it/s]     73%|███████▎  | 170795008/233926107 [00:02<00:00, 123259182.34it/s]     79%|███████▊  | 184123392/233926107 [00:03<00:00, 100809470.50it/s]     85%|████████▍ | 198729728/233926107 [00:03<00:00, 110366150.69it/s]     93%|█████████▎| 217702400/233926107 [00:03<00:00, 128749755.98it/s]     99%|█████████▉| 231989248/233926107 [00:03<00:00, 104367418.03it/s]    233930752it [00:04, 51489566.78it/s]                                
+    Downloading https://www.dropbox.com/s/ogxjwjxdv5mieah/ixi_tiny.zip?dl=1 to /tmp/tmpm2zaalyg.zip
+    0it [00:00, ?it/s]      0%|          | 0/233926107 [00:01<?, ?it/s]      7%|▋         | 17137664/233926107 [00:01<00:01, 171355559.16it/s]     21%|██        | 48570368/233926107 [00:01<00:00, 255338084.64it/s]     31%|███       | 71704576/233926107 [00:01<00:00, 244010408.44it/s]     40%|███▉      | 92807168/233926107 [00:01<00:00, 179316555.86it/s]     51%|█████     | 118251520/233926107 [00:01<00:00, 202162974.31it/s]     63%|██████▎   | 146808832/233926107 [00:01<00:00, 227079738.10it/s]     73%|███████▎  | 169869312/233926107 [00:02<00:00, 171250873.01it/s]     81%|████████  | 189079552/233926107 [00:02<00:00, 161520107.72it/s]     88%|████████▊ | 206651392/233926107 [00:02<00:00, 161289801.59it/s]     96%|█████████▌| 223764480/233926107 [00:02<00:00, 160302137.67it/s]    233930752it [00:02, 87068347.33it/s]                                
 
 
 
@@ -204,7 +204,7 @@ phantom contains partial volume.
     Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/segmentation_patch_17_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/segmentation_patch_17_model.pt
     Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/segmentation_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/segmentation_model.pt
     Downloaded https://raw.githubusercontent.com/wwu-mmll/deepmriprep/main/deepmriprep/data/models/warp_model.pt to /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/deepmriprep/data/models/warp_model.pt
-    128x128 slice, 5733 brain voxels; 92% are a mixture of two tissues or more
+    128x128 slice, 5735 brain voxels; 92% are a mixture of two tissues or more
 
 
 
@@ -238,9 +238,9 @@ subject would fill the table from data.
 
 
     tissue           voxels     M0  T1 (ms)  T2 (ms)
-    grey matter        2428   0.80     1100     95.0
-    white matter       2297   0.70      650     70.0
-    CSF                 568   1.00     4000   2000.0
+    grey matter        2427   0.80     1100     95.0
+    white matter       2294   0.70      650     70.0
+    CSF                 571   1.00     4000   2000.0
 
 
 
@@ -362,7 +362,7 @@ acquisitions.
 
  .. code-block:: none
 
-    400 arms built in 2.6s
+    400 arms built in 4.1s
 
 
 
@@ -394,7 +394,7 @@ The forward transform takes the coil-weighted image of each frame to k-space:
 
  .. code-block:: none
 
-    forward NUFFT 2.1s -> (400, 8, 768)
+    forward NUFFT 3.7s -> (400, 8, 768)
 
 
 
@@ -431,7 +431,7 @@ estimates them.
 
  .. code-block:: none
 
-    adjoint and combine 2.1s
+    adjoint and combine 3.7s
 
 
 
@@ -462,8 +462,8 @@ uses. Both series are normalised to their peak magnitude.
 
  .. code-block:: none
 
-    per-frame error inside the brain :  60.3%
-    time-course agreement            : median 0.894, tenth percentile 0.715
+    per-frame error inside the brain :  60.7%
+    time-course agreement            : median 0.893, tenth percentile 0.714
 
 
 
@@ -580,7 +580,7 @@ What this Application did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (2 minutes 5.165 seconds)
+   **Total running time of the script:** (2 minutes 1.321 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_05-misc_01-synthetic-data.py:

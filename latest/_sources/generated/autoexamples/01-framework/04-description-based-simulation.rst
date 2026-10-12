@@ -43,7 +43,7 @@ adds a custom preparation and readout.
 .. colab-link::
    :needs_gpu: 0
 
-   !pip install "blochsim[pulseq]" matplotlib
+   !pip install blochsim matplotlib
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/examples/01-framework/fse.seq
 
@@ -160,7 +160,7 @@ sequence:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 122-142
+.. GENERATED FROM PYTHON SOURCE LINES 122-141
 
 With the FSE handlers the result matches the shipped simulator up to a small
 offset: ``FSESimulator`` also applies the T1 recovery between trains, which is
@@ -179,11 +179,10 @@ reconstruction can thus simulate the sequence that was actually played.
 Pulseq file
 -----------
 
-``from_pulseq`` reads the description from a ``.seq`` file; it requires the
-``pulseq`` extra (``pip install "blochsim[pulseq]"``). The file below is a
-short FSE:
+``from_pulseq`` reads the description from a ``.seq`` file, parsed by
+pypulseq. The file below is a short FSE:
 
-.. GENERATED FROM PYTHON SOURCE LINES 142-161
+.. GENERATED FROM PYTHON SOURCE LINES 141-160
 
 .. code-block:: Python
 
@@ -209,7 +208,7 @@ short FSE:
 
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 162-182
+.. GENERATED FROM PYTHON SOURCE LINES 161-181
 
 Echo spacing, echo train length, refocusing angle and RF shapes are read
 from the file; only the tissue and the handler class are specified.
@@ -235,7 +234,7 @@ What this lesson did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.964 seconds)
+   **Total running time of the script:** (0 minutes 2.618 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_01-framework_04-description-based-simulation.py:

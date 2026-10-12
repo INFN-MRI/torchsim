@@ -632,9 +632,8 @@ pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"bloc
 </div>
 <p>The GPU kernels are compiled ahead of time and need a driver, not the CUDA
 toolkit. Install the extra that matches PyTorch’s CUDA major version; BlochSim
-refuses a mismatched one and names the extra to install. Other extras:
-<code class="docutils literal notranslate"><span class="pre">pulseq</span></code> reads <code class="docutils literal notranslate"><span class="pre">.seq</span></code> files, and <code class="docutils literal notranslate"><span class="pre">examples</span></code> brings the packages the gallery
-imports.</p>
+refuses a mismatched one and names the extra to install. The <code class="docutils literal notranslate"><span class="pre">examples</span></code> extra
+brings the packages the gallery imports.</p>
 <p>Check the installation by simulating a fast spin echo for three tissues:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">FSESimulator</span>

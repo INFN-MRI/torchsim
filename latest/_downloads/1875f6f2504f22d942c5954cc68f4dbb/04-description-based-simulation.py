@@ -24,7 +24,7 @@ adds a custom preparation and readout.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install "blochsim[pulseq]" matplotlib
+#    !pip install blochsim matplotlib
 #    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 #    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/examples/01-framework/fse.seq
 
@@ -136,9 +136,8 @@ plt.show()
 # Pulseq file
 # -----------
 #
-# ``from_pulseq`` reads the description from a ``.seq`` file; it requires the
-# ``pulseq`` extra (``pip install "blochsim[pulseq]"``). The file below is a
-# short FSE:
+# ``from_pulseq`` reads the description from a ``.seq`` file, parsed by
+# pypulseq. The file below is a short FSE:
 from_file = FSESimulator.from_pulseq(SEQ_FILE, states=20)
 file_signal = from_file.simulate(T1=1000.0, T2=torch.tensor([80.0, 110.0]))
 
