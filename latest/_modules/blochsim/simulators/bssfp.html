@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,12 +499,11 @@
 <div class="viewcode-block" id="bSSFPSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.bSSFPSimulator.html#blochsim.simulators.bSSFPSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">bSSFPSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""The balanced SSFP steady state, read at the echo time.</span>
+<span class="w">    </span><span class="sd">"""Balanced SSFP steady state, read at the echo time.</span>
 
-<span class="sd">    A balanced repetition returns the transverse magnetization to where it</span>
-<span class="sd">    started, so the steady state is a closed form in the phase a voxel accrues</span>
-<span class="sd">    across one TR and no state machine is run. Fitting T2 to a set of these,</span>
-<span class="sd">    given a T1 from :class:`SPGRSimulator`, is DESPOT2 [1]_.</span>
+<span class="sd">    Closed form in the phase accrued across one TR; no state machine is run.</span>
+<span class="sd">    Fitting T2 to a set of these, with T1 from :class:`SPGRSimulator`, is</span>
+<span class="sd">    DESPOT2 [1]_.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -537,7 +536,7 @@
 <div class="viewcode-block" id="bSSFPSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.bSSFPSimulator.html#blochsim.simulators.bSSFPSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -554,17 +553,15 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` and ``T2`` in milliseconds, ``B0`` and ``chemshift`` in Hz,</span>
-<span class="sd">            and ``M0`` as a scaling.</span>
-<span class="sd">        flip:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` and ``T2`` in ms, ``B0`` and ``chemshift`` in Hz, ``M0`` scaling.</span>
+<span class="sd">        flip : float or array-like</span>
 <span class="sd">            Excitation flip angle in degrees.</span>
-<span class="sd">        TR:</span>
-<span class="sd">            Repetition time in milliseconds.</span>
-<span class="sd">        TE:</span>
-<span class="sd">            Echo time in milliseconds, defaulting to the middle of the</span>
-<span class="sd">            repetition, where a balanced sequence refocuses.</span>
-<span class="sd">        phase_inc:</span>
+<span class="sd">        TR : float or array-like</span>
+<span class="sd">            Repetition time in ms.</span>
+<span class="sd">        TE : float or array-like, optional</span>
+<span class="sd">            Echo time in ms; defaults to ``TR / 2``.</span>
+<span class="sd">        phase_inc : float or array-like, optional</span>
 <span class="sd">            Linear phase-cycling increment in degrees.</span>
 <span class="sd">        """</span>
         <span class="k">if</span> <span class="n">TE</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -567,20 +567,20 @@
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>damping</strong> (<em>Schedule</em><em> or </em><a class="reference internal" href="blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><em>TrustRegion</em></a><em>, </em><em>optional</em>) – <code class="xref py py-class docutils literal notranslate"><span class="pre">Schedule</span></code> for an iteratively regularized Gauss-Newton,
-<a class="reference internal" href="blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code></a> for Levenberg-Marquardt.</p></li>
-<li><p><strong>solve</strong> (<em>callable</em><em>, </em><em>optional</em>) – The inner solve, called as
-<code class="docutils literal notranslate"><span class="pre">solve(linearization,</span> <span class="pre">rhs,</span> <span class="pre">damping,</span> <span class="pre">reference)</span></code>. Left out, it is
-<a class="reference internal" href="blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> where the model stands alone and <code class="docutils literal notranslate"><span class="pre">iterative()</span></code> –
-deepinv’s conjugate gradients – where an encoding operator does not
-leave independent voxels. A closure around anything else is how a
-regularizer enters.</p></li>
-<li><p><strong>max_iterations</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Most outer steps to take.</p></li>
-<li><p><strong>gradient_tolerance</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – A voxel is done when its gradient is flat or its step is short
-relative to where it stands.</p></li>
-<li><p><strong>step_tolerance</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – A voxel is done when its gradient is flat or its step is short
-relative to where it stands.</p></li>
+<li><p><strong>damping</strong> (<em>Schedule</em><em> or </em><a class="reference internal" href="blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><em>TrustRegion</em></a><em>, </em><em>optional</em>) – Damping policy: <code class="docutils literal notranslate"><span class="pre">Schedule</span></code> for iteratively regularized Gauss-Newton,
+<code class="docutils literal notranslate"><span class="pre">TrustRegion</span></code> for Levenberg-Marquardt. Defaults to <code class="docutils literal notranslate"><span class="pre">Schedule()</span></code>.</p></li>
+<li><p><strong>solve</strong> (<em>callable</em><em>, </em><em>optional</em>) – Inner solve, <code class="docutils literal notranslate"><span class="pre">solve(linearization,</span> <span class="pre">rhs,</span> <span class="pre">damping,</span> <span class="pre">reference)</span></code>.
+Defaults to <a class="reference internal" href="blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> without an encoding and <a class="reference internal" href="blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-func docutils literal notranslate"><span class="pre">iterative()</span></code></a>
+with one.</p></li>
+<li><p><strong>max_iterations</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum outer steps. Defaults to 8.</p></li>
+<li><p><strong>gradient_tolerance</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – A voxel is done when its gradient magnitude is below the first or its
+step is short relative to its norm by the second. Default 1e-8 each.</p></li>
+<li><p><strong>step_tolerance</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – A voxel is done when its gradient magnitude is below the first or its
+step is short relative to its norm by the second. Default 1e-8 each.</p></li>
 </ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">max_iterations</span></code> is below 1.</p>
 </dd>
 </dl>
 <p class="rubric">Examples</p>
@@ -589,12 +589,6 @@ relative to where it stands.</p></li>
 <span class="n">maps</span> <span class="o">=</span> <span class="n">operator</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">found</span><span class="o">.</span><span class="n">x</span><span class="p">)</span>
 </pre></div>
 </div>
-<dl class="field-list simple">
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If a per-voxel damping is asked for under an encoding operator, which
-    has mixed the voxels together and left no independent rows.</p>
-</dd>
-</dl>
 <p class="rubric">Methods</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
@@ -611,21 +605,20 @@ relative to where it stands.</p></li>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>operator</strong> – A <code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code>.</p></li>
-<li><p><strong>measured</strong> – The data. Without an encoding, <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">contrasts)</span></code> – the
-contrast images themselves. With one, whatever the encoding
-produces.</p></li>
-<li><p><strong>initial</strong> – <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code>, where to start. Build it with
+<li><p><strong>operator</strong> (<a class="reference internal" href="blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><em>ModelOperator</em></a>) – Forward model.</p></li>
+<li><p><strong>measured</strong> (<em>torch.Tensor</em>) – Data: <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">contrasts)</span></code> without an encoding, otherwise the
+encoding’s output.</p></li>
+<li><p><strong>initial</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code> start; see
 <code class="xref py py-meth docutils literal notranslate"><span class="pre">initial()</span></code>.</p></li>
-<li><p><strong>encoding</strong> – Anything with <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> – a deepinv
-<code class="docutils literal notranslate"><span class="pre">LinearPhysics</span></code>, an mri-nufft operator through its deepinv
-bridge. It sees the contrast axis first, at axis 1, which is the
-convention on that side of the line; the maps keep it last, which
-is the convention on this one.</p></li>
+<li><p><strong>encoding</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><em>object</em></a><em>, </em><em>optional</em>) – Anything with <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> (deepinv <code class="docutils literal notranslate"><span class="pre">LinearPhysics</span></code>).
+It receives the contrast axis at axis 1.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>Solution</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the damping is per voxel and an encoding is given.</p>
 </dd>
 </dl>
 </dd></dl>

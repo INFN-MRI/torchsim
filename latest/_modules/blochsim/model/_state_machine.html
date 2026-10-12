@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -720,17 +720,13 @@
 <a class="viewcode-back" href="../../../generated/blochsim.model.EventOperators.html#blochsim.model.EventOperators">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">EventOperators</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Which operator plays each kind of event.</span>
+<span class="w">    </span><span class="sd">"""Operator factories, one per kind of event.</span>
 
-<span class="sd">    Each field is an operator factory, called with the parameters the protocol</span>
-<span class="sd">    has for that event. Assigning one is how a sequence says that its readouts</span>
-<span class="sd">    wind the states on, or that its excitation is a shaped pulse rather than an</span>
-<span class="sd">    ideal rotation.</span>
-
-<span class="sd">    These are roles a sequence is written in terms of, not the tags the events</span>
-<span class="sd">    end up carrying: a factory here decides which</span>
-<span class="sd">    :class:`~blochsim.sequence.RfUse` and which</span>
-<span class="sd">    :class:`~blochsim.sequence.EventAction` its events are emitted with.</span>
+<span class="sd">    Each field is called with the protocol's parameters for that event and</span>
+<span class="sd">    decides which :class:`~blochsim.sequence.RfUse` and</span>
+<span class="sd">    :class:`~blochsim.sequence.EventAction` its events carry. Assigning one</span>
+<span class="sd">    selects, for example, a readout that winds the states on or a shaped</span>
+<span class="sd">    excitation.</span>
 <span class="sd">    """</span>
 
     <span class="c1">#: What a pulse that tips magnetization into the transverse plane plays.</span>
@@ -769,25 +765,20 @@
 <a class="viewcode-back" href="../../../generated/blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SpinPhysics</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Which properties a voxel has, and what each kind of event does to it.</span>
+<span class="w">    </span><span class="sd">"""The tissue properties a model exposes and the operators that realize its events.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    properties : mapping</span>
-<span class="sd">        ``{public name: tissue field}``. A field left unnamed is never given to</span>
-<span class="sd">        the tissue, and the kernels leave its term out -- so this is how a</span>
-<span class="sd">        model asks for off-resonance, diffusion, flow or a second pool. A name</span>
-<span class="sd">        mapped to ``None`` is the model's own and reaches the signal without</span>
-<span class="sd">        reaching the tissue.</span>
+<span class="sd">        ``{public name: tissue field}``. A name mapped to ``None`` reaches the</span>
+<span class="sd">        signal without reaching the tissue. Fields not named here are still</span>
+<span class="sd">        accepted under their public names.</span>
 <span class="sd">    operators : EventOperators</span>
-<span class="sd">        What each kind of event plays.</span>
+<span class="sd">        Operator factory for each kind of event.</span>
 <span class="sd">    fixed : mapping</span>
-<span class="sd">        Tissue fields the model pins rather than exposes, as</span>
-<span class="sd">        ``{field: value}``.</span>
+<span class="sd">        ``{tissue field: value}`` pinned rather than exposed.</span>
 <span class="sd">    definitions : mapping</span>
-<span class="sd">        The RF resources the events name. The default is one ideal hard pulse</span>
-<span class="sd">        at id 0; a model whose excitation is slice-selective supplies a shaped</span>
-<span class="sd">        definition here instead.</span>
+<span class="sd">        RF definitions by id. Defaults to one ideal hard pulse at id 0.</span>
 <span class="sd">    """</span>
 
     <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">_EMPTY</span><span class="p">)</span>
@@ -800,12 +791,15 @@
 <div class="viewcode-block" id="SpinPhysics.tissue">
 <a class="viewcode-back" href="../../../generated/blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics.tissue">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">tissue</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">TissueProperties</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Build the tissue, leaving everything undeclared at its identity.</span>
+<span class="w">        </span><span class="sd">"""Return the :class:`~blochsim.sequence.TissueProperties` for ``properties``.</span>
 
-<span class="sd">        A property the model does not expose, and one it exposes that the</span>
-<span class="sd">        caller left out, are both simply absent -- so each reaches the gate as</span>
-<span class="sd">        the scalar default :class:`TissueProperties` holds and the kernels</span>
-<span class="sd">        leave its term out.</span>
+<span class="sd">        Fields without a value stay at their scalar defaults, so the kernels</span>
+<span class="sd">        omit their terms.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``{public name: value}``.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
@@ -825,13 +819,15 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">fields</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""The public-name to tissue-field map, checked against the tissue.</span>
+<span class="w">        </span><span class="sd">"""The ``{public name: tissue field}`` map, validated against the tissue.</span>
 
-<span class="sd">        Every field a voxel has can be named, whether or not this model asked</span>
-<span class="sd">        for it: the vocabulary is the same for all of them, and giving a value</span>
-<span class="sd">        is what turns a term on. What ``properties`` adds is a model's own</span>
-<span class="sd">        spelling -- a name of its own for a field, or a name it answers to and</span>
-<span class="sd">        the tissue does not.</span>
+<span class="sd">        Every tissue field is nameable; ``properties`` adds model-specific</span>
+<span class="sd">        names.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If a name maps to a field the tissue does not have.</span>
 <span class="sd">        """</span>
         <span class="n">pairs</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">PUBLIC_PROPERTIES</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">properties</span><span class="p">}</span>
         <span class="n">unknown</span> <span class="o">=</span> <span class="p">{</span><span class="n">field</span> <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">pairs</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="n">field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">}</span>
@@ -846,37 +842,19 @@
 <div class="viewcode-block" id="Simulator">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Simulator</span><span class="p">(</span><span class="n">_SignalModel</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A protocol: what a sequence plays, and the physics behind it.</span>
+<span class="w">    </span><span class="sd">"""Base class of a pulse sequence protocol and its signal model.</span>
 
-<span class="sd">    The one thing anything downstream takes. Parameter inference, model-based</span>
-<span class="sd">    reconstruction and sequence design are written against this and never ask</span>
-<span class="sd">    how the signal is arrived at.</span>
-
-<span class="sd">    Subclasses set :attr:`model` and implement :meth:`layout`, which returns</span>
-<span class="sd">    the operators of one repetition in the order they are played. A protocol</span>
-<span class="sd">    with a closed form -- a steady state that needs no state machine --</span>
-<span class="sd">    implements :meth:`evaluate` instead and never reaches :meth:`layout`; its</span>
-<span class="sd">    :attr:`model` then carries only the property declaration, since there are</span>
-<span class="sd">    no events for operators to realize.</span>
-
-<span class="sd">    **The constructor takes the keywords** :meth:`simulate` **takes, and fixes</span>
-<span class="sd">    them; a call overrides.** So a sequence is written once with the tissue it</span>
-<span class="sd">    is being asked about already on it, and what is left to give per call is</span>
-<span class="sd">    whatever is actually varying -- the design under optimization, the map</span>
-<span class="sd">    being fitted.</span>
-
-<span class="sd">    A model that composes others rather than declaring physics of its own</span>
-<span class="sd">    names its properties in the class body and writes whatever constructor</span>
-<span class="sd">    suits it: every setting has a value at the class level, so one that never</span>
-<span class="sd">    reaches this constructor still answers :meth:`simulate`.</span>
+<span class="sd">    Subclasses set :attr:`model` and implement :meth:`layout`, or implement</span>
+<span class="sd">    :meth:`evaluate` directly for a closed-form signal. The constructor takes</span>
+<span class="sd">    the keywords :meth:`simulate` takes and fixes them; a call overrides.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
-<span class="sd">    model : SpinPhysics, optional</span>
-<span class="sd">        The physics behind the protocol.</span>
-<span class="sd">    states : int, optional</span>
-<span class="sd">        Configuration orders to carry, or ``None`` to size them from the</span>
-<span class="sd">        winding the description asks for.</span>
+<span class="sd">    model : SpinPhysics</span>
+<span class="sd">        Tissue properties and event operators.</span>
+<span class="sd">    states : int or None</span>
+<span class="sd">        Configuration orders to carry. ``None`` sizes them from the winding in</span>
+<span class="sd">        the description.</span>
 <span class="sd">    """</span>
 
     <span class="n">model</span><span class="p">:</span> <span class="n">SpinPhysics</span> <span class="o">=</span> <span class="n">SpinPhysics</span><span class="p">()</span>
@@ -906,11 +884,7 @@
     <span class="n">_resolving</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Simulator</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Refuse the base class itself.</span>
-
-<span class="sd">        Nothing is named here: no physics, no handlers, and neither a layout</span>
-<span class="sd">        nor a closed form. A sequence is what a subclass says.</span>
-<span class="sd">        """</span>
+<span class="w">        </span><span class="sd">"""Refuse to instantiate :class:`Simulator` itself."""</span>
         <span class="k">if</span> <span class="bp">cls</span> <span class="ow">is</span> <span class="n">Simulator</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="s2">"Simulator is what a sequence is written against, not a "</span>
@@ -920,20 +894,10 @@
         <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">__init_subclass__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Read handlers named in the class body into the model.</span>
+<span class="w">        </span><span class="sd">"""Move operator slots named in the class body into ``model.operators``.</span>
 
-<span class="sd">        A subclass may say what plays each kind of event by naming it, which</span>
-<span class="sd">        is the shortest way to write a sequence family:</span>
-
-<span class="sd">        .. code-block:: python</span>
-
-<span class="sd">            class SSFPMRF(Simulator):</span>
-<span class="sd">                excitation = Excitation</span>
-<span class="sd">                readout = SSFPFidReadout</span>
-
-<span class="sd">        Anything not named keeps what the base class had, and a ``model``</span>
-<span class="sd">        given outright still wins, which is what a sequence needs when it also</span>
-<span class="sd">        fixes tissue or carries a pulse shape.</span>
+<span class="sd">        Slots not named keep the base class's operators. A ``model`` defined in</span>
+<span class="sd">        the class body takes precedence.</span>
 <span class="sd">        """</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__init_subclass__</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
         <span class="n">named</span> <span class="o">=</span> <span class="p">{</span>
@@ -967,57 +931,41 @@
         <span class="n">voxel_size_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">_UNSET</span><span class="p">,</span>
         <span class="o">**</span><span class="n">protocol</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Bind the physics, the protocol and any tissue this simulator plays.</span>
+<span class="w">        </span><span class="sd">"""Fix the protocol, tissue properties and run settings of a simulator.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        model:</span>
-<span class="sd">            The physics, or ``None`` for the class's own.</span>
-<span class="sd">        states:</span>
+<span class="sd">        **protocol</span>
+<span class="sd">            Arguments of :meth:`layout` and tissue properties to fix, under</span>
+<span class="sd">            the names :meth:`simulate` takes. A call may override them.</span>
+<span class="sd">        model : SpinPhysics, optional</span>
+<span class="sd">            Replaces the class's physics.</span>
+<span class="sd">        states : int, optional</span>
 <span class="sd">            Configuration orders to carry.</span>
-<span class="sd">        repetitions:</span>
-<span class="sd">            How many times the description is played to reach the state a</span>
-<span class="sd">            scanner plays it in, of which the last is the one recorded. One --</span>
-<span class="sd">            the default, unless the sequence declares otherwise -- records the</span>
-<span class="sd">            playing that starts from equilibrium, which is the transient a</span>
-<span class="sd">            scanner plays once and never again. ``"auto"`` reads the settled</span>
-<span class="sd">            state off a handful of playings rather than running to it, and</span>
-<span class="sd">            holds no structure fixed across calls.</span>
-<span class="sd">        record:</span>
-<span class="sd">            Which ADCs the signal holds.</span>
-<span class="sd">        execution:</span>
-<span class="sd">            Where to run -- ``"auto"`` to decide per call against what the</span>
-<span class="sd">            devices have free, ``"cpu"``, or a device or list of devices.</span>
-<span class="sd">            ``None`` follows whatever :func:`~blochsim.sequence.execution`</span>
-<span class="sd">            block is in scope, which is what lets a caller decide instead.</span>
-<span class="sd">        pulse:</span>
-<span class="sd">            The waveform the events drive, taking the place of the ideal hard</span>
-<span class="sd">            rotation the shipped operators name. Giving one is what makes the</span>
-<span class="sd">            layout's pulses shaped; where across the slice to work them out is</span>
-<span class="sd">            ``across_slice``.</span>
-<span class="sd">        shims:</span>
-<span class="sd">            The transmit shims the pulses are driven on, by id, for a layout</span>
-<span class="sd">            whose operators name a ``shim_id``. One channel driven alike when</span>
-<span class="sd">            not given.</span>
-<span class="sd">        across_slice:</span>
-<span class="sd">            How many positions across the slice to integrate a shaped pulse</span>
-<span class="sd">            at, or an ``exact_slice_profile()`` saying which. ``None`` works</span>
-<span class="sd">            it out at the slice centre alone, which is the hard-pulse answer.</span>
-<span class="sd">        resolve:</span>
-<span class="sd">            Whether to hold the protocol's structure fixed across calls, so</span>
-<span class="sd">            that a call which changes only numbers rebinds them onto events</span>
-<span class="sd">            already packed. A loop that plays the same sequence with</span>
-<span class="sd">            different numbers -- a design, a dictionary sweep -- is worth</span>
-<span class="sd">            roughly eight times the whole call this way. Turning it off</span>
-<span class="sd">            rebuilds the event stream every call, which is slower and agrees</span>
-<span class="sd">            to the last bit rather than to float32 round-off.</span>
-<span class="sd">        crusher_dephasing_rad, voxel_size_m:</span>
-<span class="sd">            The unbalanced gradient the sequence plays, and the voxel it winds</span>
-<span class="sd">            across. Their ratio is what diffusion is damped by and what flow</span>
-<span class="sd">            turns each dephasing order through.</span>
-<span class="sd">        protocol:</span>
-<span class="sd">            The sequence arguments :meth:`layout` reads, and any tissue</span>
-<span class="sd">            property to fix, under the names :attr:`properties` declares.</span>
+<span class="sd">        repetitions : int or "auto", optional</span>
+<span class="sd">            Playings of the description; the last is recorded. Defaults to the</span>
+<span class="sd">            class's own (1 unless it declares otherwise). ``"auto"``</span>
+<span class="sd">            extrapolates the steady state from a few playings.</span>
+<span class="sd">        record : {"all", "acquired", "echo"}, optional</span>
+<span class="sd">            Which ADC events the signal holds.</span>
+<span class="sd">        execution : str, torch.device or sequence of device, optional</span>
+<span class="sd">            ``"auto"``, ``"cpu"`` or CUDA device(s). ``None`` follows the</span>
+<span class="sd">            enclosing :func:`~blochsim.execution` block.</span>
+<span class="sd">        pulse : RfDefinition, optional</span>
+<span class="sd">            RF waveform replacing the ideal hard pulse at definition 0.</span>
+<span class="sd">        shims : mapping, optional</span>
+<span class="sd">            Transmit shims by ``shim_id``. One channel driven alike by default.</span>
+<span class="sd">        across_slice : int or ExactSliceProfile, optional</span>
+<span class="sd">            Positions across the slice at which a shaped pulse is integrated,</span>
+<span class="sd">            or an ``exact_slice_profile()``. ``None`` uses the</span>
+<span class="sd">            slice centre only.</span>
+<span class="sd">        resolve : bool, optional</span>
+<span class="sd">            Reuse the packed event structure across calls that change only</span>
+<span class="sd">            values. Defaults to ``True``; ``False`` rebuilds it every call.</span>
+<span class="sd">        crusher_dephasing_rad : float, optional</span>
+<span class="sd">            Dephasing of the unbalanced gradient across one voxel, in rad.</span>
+<span class="sd">        voxel_size_m : float, optional</span>
+<span class="sd">            Voxel size along the unbalanced gradient, in m.</span>
 <span class="sd">        """</span>
         <span class="n">_no_renamed</span><span class="p">(</span><span class="n">protocol</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span> <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">model</span>
@@ -1068,12 +1016,19 @@
 <div class="viewcode-block" id="Simulator.bind">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.bind">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">bind</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">values</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Simulator</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""This simulator with more fixed on it, values or settings alike.</span>
+<span class="w">        </span><span class="sd">"""Return a copy with further arguments fixed.</span>
 
-<span class="sd">        A property or a protocol argument is held for the next call; a setting</span>
-<span class="sd">        -- the pulse the events drive, where across the slice to work it out,</span>
-<span class="sd">        how many orders to carry -- is applied to the copy instead, because it</span>
-<span class="sd">        changes what is simulated rather than what is simulated with.</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        **values</span>
+<span class="sd">            Tissue properties, protocol arguments and run settings (those of</span>
+<span class="sd">            the constructor, e.g. ``pulse`` and ``states``), under the names</span>
+<span class="sd">            :meth:`simulate` takes. Fixed values replace earlier ones.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Simulator</span>
+<span class="sd">            The copy; ``self`` is unchanged.</span>
 <span class="sd">        """</span>
         <span class="n">_no_renamed</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
         <span class="n">settings</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">values</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">RUN_SETTINGS</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">values</span><span class="p">}</span>
@@ -1090,24 +1045,12 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">operators</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EventOperators</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""What plays each kind of event, from this simulator's physics.</span>
-
-<span class="sd">        A layout reads its operators here. Each is resolved while a</span>
-<span class="sd">        description is being assembled and never again: what the layout</span>
-<span class="sd">        produces carries its own action word, and the run consults no slot.</span>
-<span class="sd">        """</span>
+<span class="w">        </span><span class="sd">"""The :class:`EventOperators` of :attr:`model`, read by :meth:`layout`."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">operators</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">variables</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""The protocol arguments this simulator's layout takes.</span>
-
-<span class="sd">        What a sequence is written in, as against the tissue it is played on:</span>
-<span class="sd">        :attr:`exposes` and :attr:`accepts` name the properties, this names the</span>
-<span class="sd">        flip angles, spacings and times. Everything here can be fixed on the</span>
-<span class="sd">        constructor, given at the call, or carried as a tensor a cost is</span>
-<span class="sd">        differentiated back through.</span>
-<span class="sd">        """</span>
+<span class="w">        </span><span class="sd">"""Names of the :meth:`layout` parameters, excluding ``*args`` and ``**kwargs``."""</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">inspect</span><span class="w"> </span><span class="kn">import</span> <span class="n">Parameter</span><span class="p">,</span> <span class="n">signature</span>
 
         <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
@@ -1119,22 +1062,17 @@
 <div class="viewcode-block" id="Simulator.to">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.to">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Simulator</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""This simulator, with everything it holds on ``device``.</span>
-
-<span class="sd">        A simulator carries its protocol -- echo times, a flip train -- and</span>
-<span class="sd">        whatever tissue is fixed on it, and the two have to arrive on a card</span>
-<span class="sd">        together: properties moved on their own would be multiplied against</span>
-<span class="sd">        echo times still on the host.</span>
+<span class="w">        </span><span class="sd">"""Return a copy with its protocol and fixed properties on ``device``.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        device : torch.device or str</span>
-<span class="sd">            Where to put it.</span>
+<span class="sd">            Target device.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        Simulator</span>
-<span class="sd">            A copy. This one is left where it was.</span>
+<span class="sd">            The copy; ``self`` is unchanged.</span>
 <span class="sd">        """</span>
         <span class="n">moved</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
         <span class="n">moved</span><span class="o">.</span><span class="n">protocol</span> <span class="o">=</span> <span class="n">_moved</span><span class="p">(</span><span class="n">moved</span><span class="o">.</span><span class="n">protocol</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">device</span><span class="p">))</span>
@@ -1212,11 +1150,16 @@
 <div class="viewcode-block" id="Simulator.layout">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.layout">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">layout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">protocol</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Operator</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Operator</span><span class="p">]]:</span>
-<span class="w">        </span><span class="sd">"""Return the operators of one repetition, in the order they play.</span>
+<span class="w">        </span><span class="sd">"""Return the operators of one repetition in playing order.</span>
 
-<span class="sd">        A bare operator starts where the one before it ended; one given as</span>
-<span class="sd">        ``(offset_s, operator)`` starts that far into the repetition instead,</span>
-<span class="sd">        which is how a sequence that times itself from an echo says so.</span>
+<span class="sd">        A bare operator starts where the previous one ended; an</span>
+<span class="sd">        ``(offset_s, operator)`` pair starts ``offset_s`` seconds into the</span>
+<span class="sd">        repetition.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        **protocol</span>
+<span class="sd">            The arguments named by :attr:`variables`.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
@@ -1231,12 +1174,17 @@
 <div class="viewcode-block" id="Simulator.repetition_s">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.repetition_s">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">repetition_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">played_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">protocol</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return how long one repetition lasts, given what the layout played.</span>
+<span class="w">        </span><span class="sd">"""Return the duration of one repetition in seconds.</span>
 
-<span class="sd">        The default is the span the layout covers. A sequence whose TR is</span>
-<span class="sd">        longer than what it plays -- a refocused train waiting out its</span>
-<span class="sd">        recovery -- says so here, and only a run of more than one repetition</span>
-<span class="sd">        can tell the difference.</span>
+<span class="sd">        Defaults to ``played_s``, the span the layout covers. Override when</span>
+<span class="sd">        the repetition time exceeds it.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        played_s : float or torch.Tensor</span>
+<span class="sd">            Span covered by the layout, in seconds.</span>
+<span class="sd">        **protocol</span>
+<span class="sd">            The arguments of :meth:`layout`.</span>
 <span class="sd">        """</span>
         <span class="k">del</span> <span class="n">protocol</span>
         <span class="k">return</span> <span class="n">played_s</span></div>
@@ -1245,12 +1193,10 @@
 <div class="viewcode-block" id="Simulator.played">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.played">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">played</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""Return the protocol as it will be laid out.</span>
+<span class="w">        </span><span class="sd">"""Return the protocol arguments of :meth:`layout`, arrays as torch tensors.</span>
 
-<span class="sd">        The constructor's arguments, with anything given at the call</span>
-<span class="sd">        overriding them, every array read as torch. Anything naming a run</span>
-<span class="sd">        setting is left out: those describe the run, and a layout has no use</span>
-<span class="sd">        for them.</span>
+<span class="sd">        The constructor's protocol overridden by ``sequence``; run settings are</span>
+<span class="sd">        dropped.</span>
 <span class="sd">        """</span>
         <span class="n">given</span> <span class="o">=</span> <span class="p">{</span>
             <span class="n">name</span><span class="p">:</span> <span class="n">value</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">sequence</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">RUN_SETTINGS</span>
@@ -1260,7 +1206,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">rf_raster_time_s</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""The dwell this simulator's RF shapes are sampled on."""</span>
+<span class="w">        </span><span class="sd">"""RF raster time of the shapes, in seconds."""</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_described</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_described</span><span class="o">.</span><span class="n">rf_raster_time_s</span>
         <span class="k">return</span> <span class="n">_RF_RASTER_TIME_S</span>
@@ -1268,7 +1214,19 @@
 <div class="viewcode-block" id="Simulator.describe">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.describe">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">describe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">**</span><span class="n">protocol</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SequenceDescription</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return the description this protocol plays."""</span>
+<span class="w">        </span><span class="sd">"""Return the :class:`~blochsim.sequence.SequenceDescription` of a protocol.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        **protocol</span>
+<span class="sd">            Arguments of :meth:`layout`.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        SequenceDescription</span>
+<span class="sd">            The composed layout, or the stored description when the simulator</span>
+<span class="sd">            was built by :meth:`from_description` or :meth:`from_pulseq`.</span>
+<span class="sd">        """</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_described</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_described</span>
         <span class="n">events</span><span class="p">,</span> <span class="n">played_s</span> <span class="o">=</span> <span class="n">compose</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">layout</span><span class="p">(</span><span class="o">**</span><span class="n">protocol</span><span class="p">))</span>
@@ -1295,28 +1253,29 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Simulator</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Return a simulator over one repetition of a Pulseq sequence.</span>
 
-<span class="sd">        The offline half of :meth:`from_description`: the same events, read</span>
-<span class="sd">        from the file a scanner would be given rather than from the stream it</span>
-<span class="sd">        sends back. The file states how many blocks a repetition holds, so</span>
-<span class="sd">        nothing here searches for the period; naming the simulator is what says</span>
-<span class="sd">        how those events are to be played.</span>
+<span class="sd">        The events are re-emitted through this class's operators, as in</span>
+<span class="sd">        :meth:`from_description`.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        source : str, Path or sequence</span>
-<span class="sd">            A ``.seq`` file, or a sequence in memory with pypulseq's reading</span>
-<span class="sd">            interface -- pypulseq's own ``Sequence``, or pypulseqpp's.</span>
+<span class="sd">        source : str, pathlib.Path or object</span>
+<span class="sd">            A ``.seq`` file, or a pypulseq or pypulseqpp ``Sequence``.</span>
 <span class="sd">        tr_index : int, optional</span>
-<span class="sd">            Which repetition to read, counted in whole repetitions. Defaults to</span>
-<span class="sd">            the file's ``TRRef`` definition, and otherwise to the first</span>
-<span class="sd">            repetition that acquires -- which is refused when the repetitions</span>
-<span class="sd">            differ in their pulses.</span>
-<span class="sd">        settings : Any</span>
-<span class="sd">            Run settings and tissue, as the constructor takes them.</span>
+<span class="sd">            Repetition to read, counted from 0. Defaults to the ``TRRef``</span>
+<span class="sd">            definition, else the first repetition that acquires.</span>
+<span class="sd">        **settings</span>
+<span class="sd">            Run settings and tissue properties, as for the constructor.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
-<span class="sd">            A simulator playing that repetition.</span>
+<span class="sd">        Simulator</span>
+<span class="sd">            Simulator playing that repetition.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If the file declares no ``TRSize``, ``tr_index`` is out of range,</span>
+<span class="sd">            or the repetitions differ in their pulses and none was named.</span>
 <span class="sd">        """</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">..sequence._pulseq</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_pulseq_description</span>
 
@@ -1334,36 +1293,28 @@
         <span class="n">model</span><span class="p">:</span> <span class="n">SpinPhysics</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="o">**</span><span class="n">settings</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Simulator</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return a simulator over a stream someone else assembled.</span>
+<span class="w">        </span><span class="sd">"""Return a simulator that plays an existing description.</span>
 
-<span class="sd">        This is the path a description arriving from a scanner takes:</span>
-<span class="sd">        ``FSESimulator.from_description(stream)`` says the events are to be</span>
-<span class="sd">        read as a refocused train, and the only thing left to give is the</span>
-<span class="sd">        tissue. Echo spacing, echo train length, flip angles and pulse shapes</span>
-<span class="sd">        are in the stream and are not named again.</span>
-
-<span class="sd">        Which simulator you call it on is the whole of what you choose, and it</span>
-<span class="sd">        matters. A description says what was played -- an RF pulse, tagged with</span>
-<span class="sd">        the use its designer gave it, and an ADC window -- and says nothing</span>
-<span class="sd">        about the gradients between them, because the transport carries none.</span>
-<span class="sd">        The dephasing lives in the handlers instead: a</span>
-<span class="sd">        :func:`~blochsim.SSFPFidReadout` winds one order after every sample, a</span>
-<span class="sd">        :func:`~blochsim.SSFPEchoReadout` winds it before, a</span>
-<span class="sd">        :func:`~blochsim.SPGRReadout` spoils, and a refocusing pulse is</span>
-<span class="sd">        crushed either side. So the events are re-emitted through this model's</span>
-<span class="sd">        own operators rather than taken as they arrive.</span>
+<span class="sd">        The description carries RF pulses and ADC windows but no gradients, so</span>
+<span class="sd">        its events are re-emitted through this class's operators, which supply</span>
+<span class="sd">        the dephasing (crushers, winding, spoiling). The class the method is</span>
+<span class="sd">        called on therefore selects how the events are interpreted.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        description : SequenceDescription</span>
-<span class="sd">            The stream, as the MRD client decodes it or a Pulseq design</span>
-<span class="sd">            exports it.</span>
+<span class="sd">            Description decoded from an MRD stream or exported from a Pulseq</span>
+<span class="sd">            design.</span>
 <span class="sd">        model : SpinPhysics, optional</span>
-<span class="sd">            The physics to read it with. Defaults to this simulator's own,</span>
-<span class="sd">            which is what naming a concrete one is for.</span>
-<span class="sd">        settings : Any, optional</span>
-<span class="sd">            Run settings and tissue, as the constructor takes them.</span>
-<span class="sd">            ``repetitions`` defaults to this simulator's own.</span>
+<span class="sd">            Physics to read it with. Defaults to the class's own.</span>
+<span class="sd">        **settings</span>
+<span class="sd">            Run settings and tissue properties, as for the constructor.</span>
+<span class="sd">            ``repetitions`` defaults to the class's own.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Simulator</span>
+<span class="sd">            Simulator playing the re-emitted description.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
@@ -1389,11 +1340,17 @@
 <div class="viewcode-block" id="Simulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Run one simulation of the described protocol.</span>
+<span class="w">        </span><span class="sd">"""Return the signal of one simulation of the protocol.</span>
 
-<span class="sd">        ``states``, ``repetitions``, ``record``, ``device`` and ``execution``</span>
-<span class="sd">        describe the run and are taken here, each falling back to what the</span>
-<span class="sd">        constructor was given; everything else overrides a protocol argument.</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            Tissue property values by public name.</span>
+<span class="sd">        **sequence</span>
+<span class="sd">            Run settings (``states``, ``repetitions``, ``record``,</span>
+<span class="sd">            ``device``, ``execution``, ``across_slice``), each defaulting to</span>
+<span class="sd">            the constructor's, and protocol arguments overriding the</span>
+<span class="sd">            constructor's.</span>
 <span class="sd">        """</span>
         <span class="n">given</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">sequence</span><span class="p">)</span>
         <span class="n">states</span> <span class="o">=</span> <span class="n">given</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"states"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">states</span><span class="p">)</span>

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -565,49 +565,33 @@
 <dt class="sig sig-object py" id="blochsim.DictionaryMatcher">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">DictionaryMatcher</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">acquisition</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">dictionary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parameters</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query_chunk_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4096</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dictionary_chunk_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">16384</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">groups</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prune</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5e-3</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/estimators/_dictionary.html#DictionaryMatcher"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.DictionaryMatcher" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.Estimator.html#blochsim.Estimator" title="blochsim.estimators._mapping.Estimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Estimator</span></code></a></p>
-<p>Match signals using normalized complex inner products.</p>
+<p>Match signals to dictionary atoms by normalized complex inner product.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><em>Simulator</em></a><em>, </em><em>optional</em>) – The sequence being inverted: a simulator that ships with BlochSim, one
-written by subclassing <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>, or any other
-<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. Every tissue property that is
-neither unknown nor measured separately is fixed on it beforehand, with
-the constructor or <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><code class="xref py py-meth docutils literal notranslate"><span class="pre">bind()</span></code></a>. Leave it
-out to fit from signals handed to <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code> directly.</p></li>
-<li><p><strong>dictionary</strong> (<em>torch.Tensor</em><em>, </em><em>optional</em>) – Simulated atoms shaped <code class="docutils literal notranslate"><span class="pre">(n_atoms,</span> <span class="pre">n_contrasts)</span></code>. Leave it out and
-give an <code class="docutils literal notranslate"><span class="pre">acquisition</span></code> instead, and the atoms are simulated from it.</p></li>
-<li><p><strong>parameters</strong> (<em>torch.Tensor</em><em>, </em><em>optional</em>) – Parameter values shaped <code class="docutils literal notranslate"><span class="pre">(n_atoms,</span> <span class="pre">n_parameters)</span></code>. If provided, a
-call returns parameter estimates; otherwise it returns atom indices.</p></li>
-<li><p><strong>query_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum measured signals compared at once.</p></li>
-<li><p><strong>dictionary_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum dictionary atoms compared at once.</p></li>
-<li><p><strong>top_k</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Number of candidates retained by <a class="reference internal" href="#blochsim.DictionaryMatcher.match" title="blochsim.DictionaryMatcher.match"><code class="xref py py-meth docutils literal notranslate"><span class="pre">match()</span></code></a>. The first is the
-conventional dictionary-matching estimate.</p></li>
-<li><p><strong>groups</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Cluster the dictionary into this many groups and match against their
-representative signals first, ruling out whole groups before any atom
-in them is scored. Read <a class="reference internal" href="#blochsim.DictionaryMatcher.grouping" title="blochsim.DictionaryMatcher.grouping"><code class="xref py py-attr docutils literal notranslate"><span class="pre">grouping</span></code></a> afterwards: its <code class="docutils literal notranslate"><span class="pre">condition</span></code>
-says whether the representatives are still distinct enough to prune
-with, and its <code class="docutils literal notranslate"><span class="pre">compression</span></code> says how much shorter an inner product
-inside a group is.</p></li>
-<li><p><strong>prune</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – How far below its best group score a voxel still considers a group,
-as a fraction of that score. Larger keeps more groups and costs more.
-The default is the value Cauley et al. <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> tuned on 280 groups of
-700 atoms; on a smaller dictionary or a coarser parameter grid it can rule
-out the group actually holding the match, which shows up as a handful
-of voxels landing several grid steps away. Widening it is the fix.</p></li>
+<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><em>Simulator</em></a><em>, </em><em>optional</em>) – The sequence being inverted, with every property that is neither
+unknown nor measured separately already fixed. Omit to give
+<code class="docutils literal notranslate"><span class="pre">dictionary</span></code> or signals to <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code>.</p></li>
+<li><p><strong>dictionary</strong> (<em>torch.Tensor</em><em>, </em><em>optional</em>) – Atoms <code class="docutils literal notranslate"><span class="pre">(n_atoms,</span> <span class="pre">n_contrasts)</span></code>.</p></li>
+<li><p><strong>parameters</strong> (<em>torch.Tensor</em><em>, </em><em>optional</em>) – Parameter values <code class="docutils literal notranslate"><span class="pre">(n_atoms,</span> <span class="pre">n_parameters)</span></code> of the atoms. Without
+them a call returns atom indices.</p></li>
+<li><p><strong>query_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Measured signals compared at once. Default 4096.</p></li>
+<li><p><strong>dictionary_chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Atoms compared at once. Default 16384.</p></li>
+<li><p><strong>top_k</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Candidates kept by <a class="reference internal" href="#blochsim.DictionaryMatcher.match" title="blochsim.DictionaryMatcher.match"><code class="xref py py-meth docutils literal notranslate"><span class="pre">match()</span></code></a>; the first is the estimate. Default 1.</p></li>
+<li><p><strong>groups</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Cluster the dictionary into this many groups and score group
+representatives first, discarding groups before scoring their atoms
+<a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. See <a class="reference internal" href="#blochsim.DictionaryMatcher.grouping" title="blochsim.DictionaryMatcher.grouping"><code class="xref py py-attr docutils literal notranslate"><span class="pre">grouping</span></code></a>.</p></li>
+<li><p><strong>prune</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Fraction below its best group score within which a voxel still
+considers a group. Larger keeps more groups. Default 5e-3, tuned on
+280 groups of 700 atoms; raise it for smaller dictionaries.</p></li>
 </ul>
 </dd>
 </dl>
 <p class="rubric">Notes</p>
-<p>Compression comes first and is global: one temporal basis for the whole
-dictionary, which the signals are in too. Grouping then clusters within
-that basis, so the two savings multiply – the basis shortens every inner
-product, the grouping cuts how many are taken. State a <code class="docutils literal notranslate"><span class="pre">rank</span></code> and the
-dictionary it matches against is compressed to <code class="docutils literal notranslate"><span class="pre">(atoms,</span> <span class="pre">rank)</span></code>.</p>
-<p>The expensive operation is a matrix product. Torch therefore dispatches
-directly to the installed CPU BLAS or cuBLAS implementation; a separate
-C++ or CUDA matrix-multiplication kernel would duplicate a faster
-vendor implementation. Chunking bounds the temporary score matrix.</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">rank</span></code> given to <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code> compresses the dictionary to
+<code class="docutils literal notranslate"><span class="pre">(atoms,</span> <span class="pre">rank)</span></code> before grouping. The estimator also returns an <code class="docutils literal notranslate"><span class="pre">M0</span></code>
+map, computed from the match score and atom norms without touching atoms.
+Volumes are streamed under <a class="reference internal" href="blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>.</p>
 <div class="admonition-references admonition">
 <p class="admonition-title">References</p>
 <aside class="footnote-list brackets">
@@ -626,19 +610,19 @@ for MR fingerprinting reconstruction”, Magnetic Resonance in Medicine
 <td><p>Fit the estimator over a sampling of the tissue it will meet.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_coefficients</span></code></p></td>
-<td><p>Map coefficients that are already in this estimator's basis.</p></td>
+<td><p>Map coefficients already in this estimator's basis.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">map</span></code></p></td>
-<td><p>Estimate the tissue a measurement came from.</p></td>
+<td><p>Estimate the tissue parameters of a measured volume.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.DictionaryMatcher.match" title="blochsim.DictionaryMatcher.match"><code class="xref py py-obj docutils literal notranslate"><span class="pre">match</span></code></a></p></td>
-<td><p>Return the top matching atoms, scores, scales, and parameters.</p></td>
+<td><p>Find the best-matching atoms of each measured signal.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">training_set</span></code></p></td>
-<td><p>Simulate a training set: signals, unknowns, and knowns.</p></td>
+<td><p>Simulate a training set from the properties given to <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code>.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">uncertainty_of</span></code></p></td>
-<td><p>The standard deviation the measurement noise leaves on each map.</p></td>
+<td><p>Uncertainty of each map, as a standard deviation in the map's units.</p></td>
 </tr>
 </tbody>
 </table>
@@ -652,13 +636,32 @@ for MR fingerprinting reconstruction”, Magnetic Resonance in Medicine
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.DictionaryMatcher.grouping">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">grouping</span></span><a class="headerlink" href="#blochsim.DictionaryMatcher.grouping" title="Link to this definition">#</a></dt>
-<dd><p>How the dictionary was clustered, or <code class="docutils literal notranslate"><span class="pre">None</span></code> if it was not.</p>
+<dd><p>Clustering of the dictionary, or <code class="docutils literal notranslate"><span class="pre">None</span></code> without <code class="docutils literal notranslate"><span class="pre">groups</span></code>.</p>
+<p>Its <code class="docutils literal notranslate"><span class="pre">condition</span></code> is the condition number of the representatives and
+<code class="docutils literal notranslate"><span class="pre">compression</span></code> the factor by which in-group inner products shorten.</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.DictionaryMatcher.match">
 <span class="sig-name descname"><span class="pre">match</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">signals</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/estimators/_dictionary.html#DictionaryMatcher.match"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.DictionaryMatcher.match" title="Link to this definition">#</a></dt>
-<dd><p>Return the top matching atoms, scores, scales, and parameters.</p>
+<dd><p>Find the best-matching atoms of each measured signal.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>signals</strong> (<em>torch.Tensor</em>) – Measurements <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">contrasts)</span></code>.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Fields shaped <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">top_k)</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>MatchResult</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#RuntimeError" title="(in Python v3.15)"><strong>RuntimeError</strong></a> – If there is no dictionary.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the contrast count differs from the dictionary’s.</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>

@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -498,7 +498,7 @@
 <div class="viewcode-block" id="FSESimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">FSESimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A refocused echo train, sampled at every echo.</span>
+<span class="w">    </span><span class="sd">"""Refocused echo train, sampled at every echo.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -542,14 +542,15 @@
 <span class="sd">        flip : float or array-like</span>
 <span class="sd">            Refocusing flip angles in degrees, one per echo.</span>
 <span class="sd">        ESP : float or array-like</span>
-<span class="sd">            Echo spacing in milliseconds.</span>
+<span class="sd">            Echo spacing in ms.</span>
 <span class="sd">        phases : float or array-like, optional</span>
 <span class="sd">            Refocusing phases in degrees.</span>
-<span class="sd">        exc_flip, exc_phase : float, optional</span>
-<span class="sd">            The excitation, in degrees.</span>
+<span class="sd">        exc_flip : float, optional</span>
+<span class="sd">            Excitation flip angle in degrees.</span>
+<span class="sd">        exc_phase : float, optional</span>
+<span class="sd">            Excitation phase in degrees.</span>
 <span class="sd">        TR : float or array-like, optional</span>
-<span class="sd">            Repetition time in milliseconds, which sets how far the</span>
-<span class="sd">            longitudinal magnetization recovers before the next train.</span>
+<span class="sd">            Repetition time in ms; sets the longitudinal recovery between trains.</span>
 <span class="sd">        """</span>
         <span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">as_torch</span><span class="p">(</span><span class="n">flip</span><span class="p">)))</span>
         <span class="n">turns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">matched</span><span class="p">(</span><span class="n">phases</span><span class="p">,</span> <span class="n">angles</span><span class="p">))</span>
@@ -592,7 +593,7 @@
 <div class="viewcode-block" id="FSESimulator.repetition_s">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator.repetition_s">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">repetition_s</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">played_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">protocol</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return the TR, which the train waits out before the next one."""</span>
+<span class="w">        </span><span class="sd">"""Return ``TR`` in seconds, 1e6 ms when not given."""</span>
         <span class="k">del</span> <span class="n">played_s</span>
         <span class="k">return</span> <span class="n">protocol</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"TR"</span><span class="p">,</span> <span class="mf">1e6</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-3</span></div>
 
@@ -600,12 +601,10 @@
 <div class="viewcode-block" id="FSESimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Simulate the train, one train at a time where each has its own TR.</span>
+<span class="w">        </span><span class="sd">"""Return the signal at every echo.</span>
 
-<span class="sd">        The engine plays a batch of trains on one clock, so trains that wait</span>
-<span class="sd">        out different repetition times are run separately and stacked along</span>
-<span class="sd">        the train axis, the leading axis of ``TR`` and of every per-echo</span>
-<span class="sd">        argument batched with it.</span>
+<span class="sd">        Trains with different ``TR`` are simulated separately and stacked along the</span>
+<span class="sd">        leading axis of ``TR`` and of the per-echo arguments batched with it.</span>
 <span class="sd">        """</span>
         <span class="n">played</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)</span>
         <span class="n">repetition</span> <span class="o">=</span> <span class="n">played</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"TR"</span><span class="p">)</span>
@@ -638,17 +637,18 @@
 <div class="viewcode-block" id="HyperechoSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.HyperechoSimulator.html#blochsim.simulators.HyperechoSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">HyperechoSimulator</span><span class="p">(</span><span class="n">FSESimulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A refocused train mirrored about a central refocusing pulse.</span>
+<span class="w">    </span><span class="sd">"""Refocused train mirrored about a central refocusing pulse.</span>
 
-<span class="sd">    The pulses after the central one replay those before it in reverse order,</span>
-<span class="sd">    each with the opposite flip angle about the opposite phase -- ``-alpha``</span>
-<span class="sd">    about ``-phi``, which is ``alpha`` at ``180 - phi`` degrees -- so every</span>
-<span class="sd">    coherence pathway the first half split is brought back by the last echo,</span>
-<span class="sd">    the hyperecho [1]_. But for relaxation, that echo is the full spin echo of</span>
-<span class="sd">    the excitation, whatever the flip angles before it. Every echo is</span>
-<span class="sd">    demodulated at zero phase, the axis of the central pulse. With one flip</span>
-<span class="sd">    angle at zero phase throughout, this is the sequence BART's ``epg`` plays</span>
-<span class="sd">    as Hyperecho.</span>
+<span class="sd">    The pulses after the central one replay those before it in reverse order, each</span>
+<span class="sd">    with flip angle ``-alpha`` about phase ``-phi`` (``alpha`` at ``180 - phi``</span>
+<span class="sd">    degrees), so the last echo is the hyperecho [1]_: apart from relaxation, the</span>
+<span class="sd">    full spin echo of the excitation. Every echo is demodulated at zero phase, the</span>
+<span class="sd">    axis of the central pulse.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    With one flip angle at zero phase throughout, this is the sequence BART's</span>
+<span class="sd">    ``epg`` plays as Hyperecho.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -690,19 +690,20 @@
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        flip : float or array-like</span>
-<span class="sd">            Flip angles in degrees of the refocusing pulses before the central</span>
-<span class="sd">            one, one per echo; the train holds twice as many and one more.</span>
+<span class="sd">            Flip angles in degrees of the refocusing pulses before the central one,</span>
+<span class="sd">            one per echo; the train has twice as many and one more.</span>
 <span class="sd">        ESP : float or array-like</span>
-<span class="sd">            Echo spacing in milliseconds.</span>
+<span class="sd">            Echo spacing in ms.</span>
 <span class="sd">        phases : float or array-like, optional</span>
 <span class="sd">            Phases in degrees of the refocusing pulses before the central one.</span>
 <span class="sd">        refocusing : float, optional</span>
 <span class="sd">            Flip angle in degrees of the central pulse, played at zero phase.</span>
-<span class="sd">        exc_flip, exc_phase : float, optional</span>
-<span class="sd">            The excitation, in degrees.</span>
+<span class="sd">        exc_flip : float, optional</span>
+<span class="sd">            Excitation flip angle in degrees.</span>
+<span class="sd">        exc_phase : float, optional</span>
+<span class="sd">            Excitation phase in degrees.</span>
 <span class="sd">        TR : float or array-like, optional</span>
-<span class="sd">            Repetition time in milliseconds, which sets how far the</span>
-<span class="sd">            longitudinal magnetization recovers before the next train.</span>
+<span class="sd">            Repetition time in ms; sets the longitudinal recovery between trains.</span>
 <span class="sd">        """</span>
         <span class="n">before</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">as_torch</span><span class="p">(</span><span class="n">flip</span><span class="p">)))</span>
         <span class="n">turns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">matched</span><span class="p">(</span><span class="n">phases</span><span class="p">,</span> <span class="n">before</span><span class="p">))</span>

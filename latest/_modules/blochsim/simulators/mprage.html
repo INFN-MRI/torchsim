@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,7 +499,7 @@
 <div class="viewcode-block" id="MPRAGESimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MPRAGESimulator.html#blochsim.simulators.MPRAGESimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">MPRAGESimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""An inversion followed by a spoiled train, sampled at the k-space centre.</span>
+<span class="w">    </span><span class="sd">"""Inversion followed by a spoiled train, sampled at the k-space centre.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -542,22 +542,21 @@
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        TI : float or array-like</span>
-<span class="sd">            Inversion time in milliseconds, measured to the sampled shot.</span>
+<span class="sd">            Inversion time in ms, measured to the sampled shot.</span>
 <span class="sd">        flip : float or array-like</span>
 <span class="sd">            Excitation flip angle in degrees, scalar or one per shot.</span>
 <span class="sd">        TRspgr : float or array-like</span>
-<span class="sd">            Repetition time in milliseconds of one readout.</span>
+<span class="sd">            Repetition time of one readout, in ms.</span>
 <span class="sd">        nshots : int or array-like</span>
-<span class="sd">            Readouts in the inversion block, either the total -- split as</span>
-<span class="sd">            evenly as an odd centre allows -- or ``(before, after)`` the shot</span>
-<span class="sd">            that samples the k-space centre.</span>
+<span class="sd">            Readouts in the block: a total including the sampled shot, split evenly</span>
+<span class="sd">            around it, or ``(before, after)`` the sampled shot.</span>
 <span class="sd">        phases : float or array-like, optional</span>
 <span class="sd">            Excitation phases in degrees.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        ValueError</span>
-<span class="sd">            If the inversion time falls before the train's first excitation.</span>
+<span class="sd">            If the inversion time falls before the first excitation.</span>
 <span class="sd">        """</span>
         <span class="n">before</span><span class="p">,</span> <span class="n">after</span> <span class="o">=</span> <span class="n">_shots_either_side</span><span class="p">(</span><span class="n">nshots</span><span class="p">)</span>
         <span class="n">shots</span> <span class="o">=</span> <span class="n">before</span> <span class="o">+</span> <span class="n">after</span> <span class="o">+</span> <span class="mi">1</span>
@@ -594,7 +593,7 @@
 <div class="viewcode-block" id="MPRAGESimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MPRAGESimulator.html#blochsim.simulators.MPRAGESimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return the one sample the train acquires."""</span>
+<span class="w">        </span><span class="sd">"""Return the acquired sample."""</span>
         <span class="k">return</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">evaluate</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">sequence</span><span class="p">)[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span></div>
 </div>
 

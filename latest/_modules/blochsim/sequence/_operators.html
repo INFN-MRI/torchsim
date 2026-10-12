@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -552,16 +552,18 @@
 <a class="viewcode-back" href="../../../generated/blochsim.Operator.html#blochsim.Operator">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""One module of a sequence: what it plays, and how long it lasts.</span>
+<span class="w">    </span><span class="sd">"""One module of a sequence: the events it plays and the time it spans.</span>
+
+<span class="sd">    ``a @ b`` plays two operators back to back as one operator.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    emit : callable</span>
-<span class="sd">        Given the absolute time the module starts, in seconds, the events it</span>
-<span class="sd">        plays.</span>
+<span class="sd">        Maps the module's start time in seconds to the tuple of</span>
+<span class="sd">        ``SequenceEvent`` it plays.</span>
 <span class="sd">    duration_s : float or torch.Tensor, optional</span>
-<span class="sd">        What the module holds the timeline for. Zero for a module that plays</span>
-<span class="sd">        instantaneously and leaves the next one to start where it did.</span>
+<span class="sd">        Time the module holds the timeline, in seconds. Zero leaves the next</span>
+<span class="sd">        module to start at the same time.</span>
 <span class="sd">    """</span>
 
     <span class="n">emit</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span>
@@ -570,12 +572,7 @@
 <div class="viewcode-block" id="Operator.__matmul__">
 <a class="viewcode-back" href="../../../generated/blochsim.Operator.html#blochsim.Operator.__matmul__">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="fm">__matmul__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="n">Operator</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""``a @ b``: the two played back to back, as one operator.</span>
-
-<span class="sd">        The same thing :func:`module` does for a list, spelled for the common</span>
-<span class="sd">        case of joining two -- a sample and the gradient after it, a pulse and</span>
-<span class="sd">        its crusher -- so a handler reads as the composition it is.</span>
-<span class="sd">        """</span>
+<span class="w">        </span><span class="sd">"""Play ``self`` then ``other`` as one operator; durations add."""</span>
         <span class="k">return</span> <span class="n">module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">,</span> <span class="n">duration_s</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">duration_s</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span class="n">duration_s</span><span class="p">)</span></div>
 </div>
 
@@ -584,24 +581,24 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">compose</span><span class="p">(</span>
     <span class="o">*</span><span class="n">parts</span><span class="p">:</span> <span class="n">Operator</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Operator</span><span class="p">],</span> <span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Lay operators out and return their events and the span they cover.</span>
+<span class="w">    </span><span class="sd">"""Lay operators out in time and return their events and end time.</span>
 
-<span class="sd">    A bare operator starts where the one before it ended. One given as</span>
-<span class="sd">    ``(offset_s, operator)`` starts that far after ``start_s`` instead, which</span>
-<span class="sd">    is how a sequence that times itself from an echo rather than by</span>
-<span class="sd">    accumulating says so.</span>
+<span class="sd">    A bare operator starts where the previous one ended. An ``(offset_s,</span>
+<span class="sd">    operator)`` pair starts ``offset_s`` after ``start_s``.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    parts : Operator or tuple, optional</span>
-<span class="sd">        The operators, in the order they play.</span>
+<span class="sd">    *parts : Operator or tuple, optional</span>
+<span class="sd">        Operators in play order, or ``(offset_s, operator)`` pairs.</span>
 <span class="sd">    start_s : float or torch.Tensor, optional</span>
-<span class="sd">        When the first one starts.</span>
+<span class="sd">        Start time of the first operator, in seconds.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
-<span class="sd">    tuple</span>
-<span class="sd">        The events at absolute times, and where the last one ended.</span>
+<span class="sd">    events : tuple of SequenceEvent</span>
+<span class="sd">        Events at absolute times.</span>
+<span class="sd">    end_s : float or torch.Tensor</span>
+<span class="sd">        End time of the last operator, in seconds.</span>
 <span class="sd">    """</span>
     <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">cursor</span> <span class="o">=</span> <span class="n">start_s</span>
@@ -614,12 +611,16 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">module</span><span class="p">(</span><span class="o">*</span><span class="n">parts</span><span class="p">:</span> <span class="n">Operator</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Operator</span><span class="p">],</span> <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Package several operators as one that can be placed and repeated.</span>
+<span class="w">    </span><span class="sd">"""Package operators as one operator.</span>
 
-<span class="sd">    Offsets inside are relative to wherever the module itself is placed, which</span>
-<span class="sd">    is what lets a shot -- a pulse, a sample some way into the repetition, and</span>
-<span class="sd">    the rest of the repetition after it -- be one thing a caller lays down</span>
-<span class="sd">    once.</span>
+<span class="sd">    Offsets inside ``parts`` are relative to the start of the module.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    *parts : Operator or tuple</span>
+<span class="sd">        Operators in play order, or ``(offset_s, operator)`` pairs.</span>
+<span class="sd">    duration_s : float or torch.Tensor</span>
+<span class="sd">        Time the module holds the timeline, in seconds.</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
@@ -641,7 +642,29 @@
     <span class="n">shim_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="n">action</span><span class="p">:</span> <span class="n">EventAction</span> <span class="o">=</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return a pulse that tips magnetization into the transverse plane."""</span>
+<span class="w">    </span><span class="sd">"""Return an excitation pulse.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    flip_rad : float or torch.Tensor</span>
+<span class="sd">        Flip angle, in radians.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    definition_id : int, optional</span>
+<span class="sd">        RF definition played; 0 is the ideal pulse.</span>
+<span class="sd">    frequency_hz : float or torch.Tensor, optional</span>
+<span class="sd">        Frequency offset, in Hz.</span>
+<span class="sd">    shim_id : int, optional</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
+<span class="sd">    action : EventAction, optional</span>
+<span class="sd">        Gradient action played around the pulse.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
         <span class="k">return</span> <span class="p">(</span>
@@ -673,11 +696,28 @@
     <span class="n">frequency_hz</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
     <span class="n">shim_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return a pulse the sequence sits between crushers, unless told otherwise.</span>
+<span class="w">    </span><span class="sd">"""Return a refocusing pulse, between crusher gradients by default.</span>
 
-<span class="sd">    ``crushed`` is what makes the pair of unbalanced gradients around the</span>
-<span class="sd">    pulse part of the module rather than something the caller remembers to</span>
-<span class="sd">    add.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    flip_rad : float or torch.Tensor</span>
+<span class="sd">        Flip angle, in radians.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    definition_id : int, optional</span>
+<span class="sd">        RF definition played; 0 is the ideal pulse.</span>
+<span class="sd">    frequency_hz : float or torch.Tensor, optional</span>
+<span class="sd">        Frequency offset, in Hz.</span>
+<span class="sd">    shim_id : int, optional</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
+<span class="sd">    crushed : bool, optional</span>
+<span class="sd">        Play an unbalanced gradient before and after the pulse.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
     <span class="n">action</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">EventAction</span><span class="o">.</span><span class="n">CRUSH_BEFORE</span> <span class="o">|</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">CRUSH_AFTER</span>
@@ -712,12 +752,26 @@
     <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
     <span class="n">definition_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return an ideal inversion, scaled by the tissue's inversion efficiency.</span>
+<span class="w">    </span><span class="sd">"""Return an ideal inversion pulse.</span>
 
-<span class="sd">    The kernels answer this with ``Mz -&gt; -efficiency * Mz`` on every order and</span>
-<span class="sd">    no rotation at all, so the pulse deposits nothing in a bound pool. A</span>
-<span class="sd">    preparation whose saturation matters is an :func:`excitation` or a</span>
-<span class="sd">    :func:`saturation` carrying a real waveform instead.</span>
+<span class="sd">    The kernels apply ``Mz -&gt; -efficiency * Mz`` on every order with no</span>
+<span class="sd">    rotation, so the pulse deposits no power in a bound pool. Use</span>
+<span class="sd">    :func:`Saturation` for a preparation whose saturation matters.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    flip_rad : float or torch.Tensor, optional</span>
+<span class="sd">        Nominal flip angle, in radians.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    definition_id : int, optional</span>
+<span class="sd">        RF definition played; 0 is the ideal pulse.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
@@ -748,10 +802,27 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Return an off-resonance pulse that deposits power in a semisolid pool.</span>
 
-<span class="sd">    The deposit follows the waveform ``definition_id`` names and the offset it</span>
-<span class="sd">    is played at, read against the tissue's lineshape, so this is an</span>
-<span class="sd">    :class:`RfUse.EXCITATION` carrying a real shape rather than an ideal</span>
-<span class="sd">    rotation.</span>
+<span class="sd">    The deposit follows the waveform of ``definition_id`` and ``offset_hz``,</span>
+<span class="sd">    read against the tissue lineshape.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    definition_id : int</span>
+<span class="sd">        RF definition played.</span>
+<span class="sd">    flip_rad : float or torch.Tensor</span>
+<span class="sd">        Flip angle, in radians.</span>
+<span class="sd">    offset_hz : float or torch.Tensor, optional</span>
+<span class="sd">        Frequency offset from the centre frequency, in Hz.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    shim_id : int, optional</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
@@ -782,52 +853,42 @@
     <span class="n">definition_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="n">shim_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return a pulse played as one hard pulse per sample, with free precession between.</span>
+<span class="w">    </span><span class="sd">"""Return a pulse played as one hard pulse per sample, with free evolution between.</span>
 
-<span class="sd">    Each sample of the waveform turns the magnetization through its own area</span>
-<span class="sd">    at the middle of its dwell, and between two samples the magnetization</span>
-<span class="sd">    precesses at each pool's own frequency, relaxes and exchanges. This is the</span>
-<span class="sd">    hard-pulse approximation [1]_, second order in the dwell with the turns</span>
-<span class="sd">    centred; it is what a pulse needs whenever relaxation or exchange during</span>
-<span class="sd">    it matters, a saturation pulse above all, which an instantaneous rotation</span>
-<span class="sd">    leaves out.</span>
-
-<span class="sd">    A real waveform turns through its signed area, so the negative lobes of a</span>
-<span class="sd">    sinc turn the other way; a complex one turns about the axis its phase</span>
-<span class="sd">    names. Played ``offset_hz`` off the centre frequency, the axis advances by</span>
-<span class="sd">    ``-2 pi offset_hz`` radians per second from the start of the pulse, which</span>
-<span class="sd">    puts a voxel whose ``B0`` is the offset on resonance. A ``phase_rad`` or</span>
-<span class="sd">    ``offset_hz`` with one value per train plays one train per value.</span>
-
-<span class="sd">    Every sample names ``definition_id``, which decides what it deposits in a</span>
-<span class="sd">    semisolid pool: the ideal definition deposits nothing, and a rectangular</span>
-<span class="sd">    one a dwell long deposits what the sample does. A semisolid pool reads its</span>
-<span class="sd">    lineshape at the offset, so a definition other than the ideal one takes a</span>
-<span class="sd">    single offset for every train.</span>
+<span class="sd">    Each sample rotates the magnetization through its area at the middle of</span>
+<span class="sd">    its dwell; between samples each pool precesses, relaxes and exchanges</span>
+<span class="sd">    (hard-pulse approximation [1]_). A complex waveform rotates about the axis</span>
+<span class="sd">    given by its phase; a real one rotates through its signed area. An</span>
+<span class="sd">    ``offset_hz`` advances the rotation axis by ``-2 pi offset_hz`` rad/s from</span>
+<span class="sd">    the start of the pulse. A ``phase_rad`` or ``offset_hz`` with one value per</span>
+<span class="sd">    train plays one train per value.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    waveform_rad_per_s : array-like or torch.Tensor</span>
-<span class="sd">        The nutation rate, gamma times B1, one sample per dwell, in rad/s.</span>
+<span class="sd">    waveform_rad_per_s : array-like</span>
+<span class="sd">        Nutation rate (gamma times B1), one sample per dwell, in rad/s.</span>
 <span class="sd">    dwell_s : float</span>
-<span class="sd">        How long each sample is held, in seconds.</span>
+<span class="sd">        Sample duration, in seconds.</span>
 <span class="sd">    phase_rad : float or torch.Tensor, optional</span>
-<span class="sd">        The phase the whole pulse is played at.</span>
+<span class="sd">        Phase of the whole pulse, in radians.</span>
 <span class="sd">    offset_hz : float or torch.Tensor, optional</span>
-<span class="sd">        How far off the centre frequency the pulse is played.</span>
-<span class="sd">    definition_id, shim_id : int, optional</span>
-<span class="sd">        The definition and transmit shim every sample names.</span>
+<span class="sd">        Frequency offset from the centre frequency, in Hz.</span>
+<span class="sd">    definition_id : int, optional</span>
+<span class="sd">        RF definition every sample names; sets the power deposited in a</span>
+<span class="sd">        semisolid pool. Non-zero requires a single offset.</span>
+<span class="sd">    shim_id : int, optional</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    Operator</span>
-<span class="sd">        The pulse, holding the timeline for every sample's dwell.</span>
+<span class="sd">        Holds the timeline for ``len(waveform) * dwell_s``.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
 <span class="sd">    ValueError</span>
-<span class="sd">        If the waveform is empty or the dwell is not positive, or if a</span>
-<span class="sd">        definition other than the ideal one is played at more than one</span>
+<span class="sd">        If the waveform is empty or not one-dimensional, ``dwell_s`` is not</span>
+<span class="sd">        positive, or a non-zero ``definition_id`` is played at more than one</span>
 <span class="sd">        offset.</span>
 
 <span class="sd">    References</span>
@@ -901,11 +962,24 @@
     <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
     <span class="n">action</span><span class="p">:</span> <span class="n">EventAction</span> <span class="o">=</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return one sample of the transverse magnetization, demodulated by a phase.</span>
+<span class="w">    </span><span class="sd">"""Return one ADC sample of the transverse magnetization.</span>
 
-<span class="sd">    ``action`` is what the sequence plays after the sample -- ``SPOIL_AFTER``</span>
-<span class="sd">    for a spoiled gradient echo, ``SHIFT_AFTER`` for an unbalanced one, and</span>
-<span class="sd">    nothing for a train that rewinds.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    role : AdcRole, optional</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, optional</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    action : EventAction, optional</span>
+<span class="sd">        Gradient action played after the sample, e.g. ``SPOIL_AFTER``.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
@@ -926,11 +1000,18 @@
 <div class="viewcode-block" id="Delay">
 <a class="viewcode-back" href="../../../generated/blochsim.Delay.html#blochsim.Delay">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">Delay</span><span class="p">(</span><span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">EventAction</span> <span class="o">=</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return time passing, and whatever the sequence plays across it.</span>
+<span class="w">    </span><span class="sd">"""Return a delay, optionally carrying a gradient action.</span>
 
-<span class="sd">    :meth:`SequenceEvent.wait` takes no action, so a delay that spoils or</span>
-<span class="sd">    winds the states is built here rather than by the caller reaching for the</span>
-<span class="sd">    raw constructor.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    duration_s : float or torch.Tensor</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    action : EventAction, optional</span>
+<span class="sd">        Gradient action played at the start of the delay.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
@@ -945,13 +1026,10 @@
 <div class="viewcode-block" id="Dephase">
 <a class="viewcode-back" href="../../../generated/blochsim.Dephase.html#blochsim.Dephase">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">Dephase</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return an unbalanced gradient, taking no time to play.</span>
+<span class="w">    </span><span class="sd">"""Return an unbalanced gradient of zero duration.</span>
 
-<span class="sd">    Every configuration order winds on by one: this is the crusher a</span>
-<span class="sd">    refocusing pulse sits between and the unbalanced gradient an SSFP-FID</span>
-<span class="sd">    readout is followed by, which are the same winding played in two places.</span>
-<span class="sd">    How far it dephases is the description's ``crusher_dephasing_rad``, one</span>
-<span class="sd">    figure for the whole sequence.</span>
+<span class="sd">    Every configuration order advances by one. The dephasing across a voxel</span>
+<span class="sd">    is the description's ``crusher_dephasing_rad``.</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span>
         <span class="k">lambda</span> <span class="n">start_s</span><span class="p">:</span> <span class="p">(</span>
@@ -966,11 +1044,9 @@
 <div class="viewcode-block" id="Spoil">
 <a class="viewcode-back" href="../../../generated/blochsim.Spoil.html#blochsim.Spoil">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">Spoil</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return ideal transverse spoiling, taking no time to play.</span>
+<span class="w">    </span><span class="sd">"""Return ideal transverse spoiling of zero duration.</span>
 
-<span class="sd">    Every transverse order is discarded rather than wound on, which is what a</span>
-<span class="sd">    spoiled gradient echo assumes its spoiler and its RF phase cycling achieve</span>
-<span class="sd">    together.</span>
+<span class="sd">    Every transverse order is discarded.</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span>
         <span class="k">lambda</span> <span class="n">start_s</span><span class="p">:</span> <span class="p">(</span>
@@ -991,11 +1067,22 @@
     <span class="n">role</span><span class="p">:</span> <span class="n">AdcRole</span> <span class="o">=</span> <span class="n">AdcRole</span><span class="o">.</span><span class="n">SINGLE</span><span class="p">,</span>
     <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return a sample the repetition rewinds after.</span>
+<span class="w">    </span><span class="sd">"""Return a sample followed by no gradient action (balanced readout).</span>
 
-<span class="sd">    The states are left where they were, which is what makes the sequence</span>
-<span class="sd">    balanced. ``duration_s`` is what is left of the repetition after the</span>
-<span class="sd">    sample.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, optional</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, optional</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
         <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
@@ -1016,7 +1103,20 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Return a sample followed by one unbalanced gradient.</span>
 
-<span class="sd">    ``duration_s`` is what is left of the repetition after the sample.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, optional</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, optional</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
         <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
@@ -1036,17 +1136,26 @@
     <span class="n">role</span><span class="p">:</span> <span class="n">AdcRole</span> <span class="o">=</span> <span class="n">AdcRole</span><span class="o">.</span><span class="n">SINGLE</span><span class="p">,</span>
     <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return one unbalanced gradient, then the sample the echo forms at.</span>
+<span class="w">    </span><span class="sd">"""Return one unbalanced gradient followed by the sample.</span>
 
-<span class="sd">    The repetition's other sample. An unbalanced train winds every order on</span>
-<span class="sd">    once per repetition, so the order the next pulse would refocus sits at</span>
-<span class="sd">    zero once the gradient has played -- which is where this reads it, and</span>
-<span class="sd">    what makes the sample an echo of the *previous* excitation rather than a</span>
-<span class="sd">    free induction decay after this one. It is the strongly T2-weighted half</span>
-<span class="sd">    of a reversed-FISP pair, and it takes the same ideal winding</span>
-<span class="sd">    :func:`SSFPFidReadout` does, in the other order.</span>
+<span class="sd">    The sample reads the echo of the previous excitation (the T2-weighted</span>
+<span class="sd">    half of a reversed-FISP pair). The winding is that of</span>
+<span class="sd">    :func:`SSFPFidReadout`, in the other order.</span>
 
-<span class="sd">    ``duration_s`` is what is left of the repetition after the sample.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, optional</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, optional</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
         <span class="n">Dephase</span><span class="p">(),</span>
@@ -1068,7 +1177,20 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Return a sample followed by ideal transverse spoiling.</span>
 
-<span class="sd">    ``duration_s`` is what is left of the repetition after the sample.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, optional</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, optional</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
         <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
@@ -1089,10 +1211,21 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Return the sample at a spin echo, marked as the echo centre.</span>
 
-<span class="sd">    A refocused train dephases around its pulses rather than after its</span>
-<span class="sd">    samples, so nothing is played here -- what distinguishes this readout is</span>
-<span class="sd">    that the sample is the centre of an echo, which is what a reconstruction</span>
-<span class="sd">    reads it as. ``duration_s`` is what is left of the echo spacing after it.</span>
+<span class="sd">    No gradient action is played; dephasing is carried by the refocusing</span>
+<span class="sd">    pulses.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, optional</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, optional</span>
+<span class="sd">        Echo spacing remaining after the sample, in seconds.</span>
+<span class="sd">    is_echo : bool, optional</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
         <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">AdcRole</span><span class="o">.</span><span class="n">ECHO_CENTER</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
@@ -1121,11 +1254,14 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">register_operator</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">factory</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Operator</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Make an operator reachable by name.</span>
+<span class="w">    </span><span class="sd">"""Register an operator factory under a name.</span>
 
-<span class="sd">    A stream that arrives already labelled -- from an MRD file, or from any</span>
-<span class="sd">    generator that names what it plays -- dispatches through this rather than</span>
-<span class="sd">    through the caller's own mapping.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Case-insensitive; underscores are read as hyphens.</span>
+<span class="sd">    factory : callable</span>
+<span class="sd">        Returns an ``Operator``.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
@@ -1139,7 +1275,12 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">operator</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Operator</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Look up an operator factory by name.</span>
+<span class="w">    </span><span class="sd">"""Return the registered operator factory for a name.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Case-insensitive; underscores are read as hyphens.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>

@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -497,18 +497,18 @@
 <div class="viewcode-block" id="TrueFISPSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.TrueFISPSimulator.html#blochsim.simulators.TrueFISPSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">TrueFISPSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A balanced SSFP train from equilibrium, optionally inverted first.</span>
+<span class="w">    </span><span class="sd">"""Balanced SSFP train from equilibrium, optionally inverted first.</span>
 
-<span class="sd">    The pulses alternate in phase and each sample is demodulated by the phase</span>
-<span class="sd">    of its own pulse. An alpha/2 pulse of opposite phase, played before the</span>
-<span class="sd">    train, damps the oscillation of the approach to the steady state [1]_;</span>
-<span class="sd">    after an inversion, the train is the inversion-recovery TrueFISP whose</span>
-<span class="sd">    recovery curve carries T1, T2 and the proton density together [2]_. Every</span>
-<span class="sd">    pulse is a windowed sinc played sample by sample, so the magnetization</span>
-<span class="sd">    relaxes, precesses off resonance and exchanges between pools while it</span>
-<span class="sd">    plays, unless ``pulse_duration`` is zero and each is an instantaneous</span>
-<span class="sd">    rotation. This is the sequence BART's ``sim`` plays as ``BSSFP`` and</span>
-<span class="sd">    ``IR-BSSFP``, and with instantaneous pulses the one its ``epg`` plays as</span>
+<span class="sd">    Pulses alternate in phase and each sample is demodulated by its pulse's phase.</span>
+<span class="sd">    An alpha/2 pulse of opposite phase before the train damps the approach to the</span>
+<span class="sd">    steady state [1]_; after an inversion the train is the inversion-recovery</span>
+<span class="sd">    TrueFISP [2]_. Each pulse is a windowed sinc played sample by sample, or an</span>
+<span class="sd">    instantaneous rotation when ``pulse_duration`` is zero.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Corresponds to the sequences BART's ``sim`` plays as ``BSSFP`` and</span>
+<span class="sd">    ``IR-BSSFP``, and with instantaneous pulses to the one its ``epg`` plays as</span>
 <span class="sd">    bSSFP.</span>
 
 <span class="sd">    References</span>
@@ -574,47 +574,39 @@
 <span class="sd">        flip : float or array-like</span>
 <span class="sd">            Flip angle in degrees, scalar or one per shot.</span>
 <span class="sd">        TR : float</span>
-<span class="sd">            Repetition time in milliseconds, pulse centre to pulse centre.</span>
+<span class="sd">            Repetition time in ms, pulse centre to pulse centre.</span>
 <span class="sd">        nshots : int</span>
 <span class="sd">            Excitations in the train.</span>
 <span class="sd">        TE : float, optional</span>
-<span class="sd">            Echo time in milliseconds, from the centre of the pulse; half the</span>
-<span class="sd">            repetition time when not given, where a balanced train refocuses.</span>
+<span class="sd">            Echo time in ms, from the pulse centre; defaults to ``TR / 2``.</span>
 <span class="sd">        pulse_duration : float, optional</span>
-<span class="sd">            Duration of each pulse in milliseconds. Zero plays each as an</span>
-<span class="sd">            instantaneous rotation.</span>
+<span class="sd">            Pulse duration in ms; zero is an instantaneous rotation.</span>
 <span class="sd">        bandwidth_time : float, optional</span>
-<span class="sd">            Zero crossings of the Hamming-windowed sinc across the pulse.</span>
+<span class="sd">            Zero crossings of the Hamming-windowed sinc across a pulse.</span>
 <span class="sd">        half_alpha : bool, optional</span>
-<span class="sd">            Whether an alpha/2 pulse prepares the train.</span>
+<span class="sd">            Prepare the train with an alpha/2 pulse.</span>
 <span class="sd">        preparation : float, optional</span>
-<span class="sd">            Time in milliseconds from the start of the alpha/2 pulse to the</span>
-<span class="sd">            start of the train's first pulse, half the repetition time when not</span>
-<span class="sd">            given. Zero is an instantaneous alpha/2 rotation at the start of</span>
-<span class="sd">            the train.</span>
+<span class="sd">            Time in ms from the start of the alpha/2 pulse to the start of the first</span>
+<span class="sd">            pulse; defaults to ``TR / 2``. Zero is an instantaneous alpha/2 rotation</span>
+<span class="sd">            at the start of the train.</span>
 <span class="sd">        inversion : {None, "ideal", "adiabatic"}, optional</span>
-<span class="sd">            What comes before the preparation: nothing, an instantaneous</span>
-<span class="sd">            inversion scaled by ``inv_efficiency``, or a hyperbolic secant</span>
-<span class="sd">            played sample by sample.</span>
+<span class="sd">            Preceding the preparation: none, an instantaneous inversion scaled by</span>
+<span class="sd">            ``inv_efficiency``, or a sampled hyperbolic secant.</span>
 <span class="sd">        inversion_duration : float, optional</span>
-<span class="sd">            Duration of the adiabatic inversion in milliseconds.</span>
+<span class="sd">            Duration of the adiabatic inversion in ms.</span>
 <span class="sd">        inversion_phase : float, optional</span>
-<span class="sd">            Phase of the adiabatic inversion in degrees, relative to the</span>
-<span class="sd">            train's first pulse, which decides where the transverse</span>
-<span class="sd">            magnetization the inversion leaves points.</span>
+<span class="sd">            Phase of the adiabatic inversion in degrees, relative to the first pulse.</span>
 <span class="sd">        spoiler : float, optional</span>
-<span class="sd">            Time in milliseconds between the inversion and the preparation, at</span>
-<span class="sd">            the end of which the transverse magnetization is spoiled.</span>
+<span class="sd">            Time in ms between inversion and preparation, ending in a spoiler.</span>
 <span class="sd">        dwell : float, optional</span>
-<span class="sd">            How long each sample of a pulse is held, in milliseconds.</span>
+<span class="sd">            Hold time of each pulse sample in ms.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        ValueError</span>
 <span class="sd">            If the sample falls inside the pulse or after the next one, if the</span>
-<span class="sd">            preparation is shorter than its pulse, if ``flip`` is neither</span>
-<span class="sd">            scalar nor one per shot, or if a pulse is not a whole number of</span>
-<span class="sd">            samples.</span>
+<span class="sd">            preparation is shorter than its pulse, if ``flip`` is neither scalar nor</span>
+<span class="sd">            one per shot, or if a pulse is not a whole number of samples.</span>
 <span class="sd">        """</span>
         <span class="n">pulse_s</span><span class="p">,</span> <span class="n">dwell_s</span> <span class="o">=</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">pulse_duration</span><span class="p">,</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">dwell</span>
         <span class="n">repetition_s</span> <span class="o">=</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">TR</span>

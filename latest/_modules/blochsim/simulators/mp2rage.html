@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -501,11 +501,10 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">MP2RAGESimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Two gradient-echo blocks read at two inversion times, in closed form.</span>
 
-<span class="sd">    The train is spoiled and sampled at the k-space centre of each block, so</span>
-<span class="sd">    only the longitudinal magnetization carries between shots and the steady</span>
-<span class="sd">    state it settles into has a closed form. Combining the two blocks into one</span>
-<span class="sd">    ratio gives an image free of the receive bias field, which is what the</span>
-<span class="sd">    sequence is for [1]_.</span>
+<span class="sd">    The spoiled train is sampled at the k-space centre of each block, so only the</span>
+<span class="sd">    longitudinal magnetization carries between shots and the steady state has a</span>
+<span class="sd">    closed form. The ratio of the two blocks is free of the receive bias field</span>
+<span class="sd">    [1]_.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -549,7 +548,7 @@
 <div class="viewcode-block" id="MP2RAGESimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MP2RAGESimulator.html#blochsim.simulators.MP2RAGESimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -565,37 +564,34 @@
         <span class="n">nshots</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">npt</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span>
         <span class="n">phases</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">npt</span><span class="o">.</span><span class="n">ArrayLike</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return the whole train: one inversion, then two blocks of readouts.</span>
+<span class="w">        </span><span class="sd">"""Return one inversion followed by two blocks of readouts.</span>
 
-<span class="sd">        The closed form of :meth:`evaluate` is what a lookup table is built</span>
-<span class="sd">        from, because it costs one expression per T1. This is the same</span>
-<span class="sd">        sequence written out event by event, which is what a description</span>
-<span class="sd">        arriving from a scanner is compared against and what carries a train</span>
-<span class="sd">        the closed form has no parameter for.</span>
+<span class="sd">        Event-by-event form of the closed form of :meth:`evaluate`, for comparison</span>
+<span class="sd">        with a description arriving from a scanner and for trains the closed form has</span>
+<span class="sd">        no parameter for.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        TI : array-like</span>
-<span class="sd">            The two inversion times in milliseconds, each measured to the</span>
-<span class="sd">            sampled shot of its block.</span>
+<span class="sd">            The two inversion times in ms, each measured to the sampled shot of its</span>
+<span class="sd">            block.</span>
 <span class="sd">        flip : float or array-like</span>
-<span class="sd">            Excitation flip angle in degrees, one per block or one shared.</span>
+<span class="sd">            Excitation flip angle in degrees, one per block or shared.</span>
 <span class="sd">        TRspgr : float or array-like</span>
-<span class="sd">            Repetition time in milliseconds of one readout.</span>
+<span class="sd">            Repetition time of one readout, in ms.</span>
 <span class="sd">        TRmp2rage : float or array-like</span>
-<span class="sd">            Repetition time in milliseconds of the whole inversion block.</span>
+<span class="sd">            Repetition time of the whole inversion block, in ms.</span>
 <span class="sd">        nshots : int or array-like</span>
-<span class="sd">            Readouts per block, either the total -- halved for each block --</span>
-<span class="sd">            or ``(before, after)`` the sampled shot.</span>
+<span class="sd">            Readouts per block: a total, split evenly before and after the sampled</span>
+<span class="sd">            shot, or ``(before, after)``.</span>
 <span class="sd">        phases : float or array-like, optional</span>
-<span class="sd">            Excitation phases in degrees, one per block or one shared.</span>
+<span class="sd">            Excitation phases in degrees, one per block or shared.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        ValueError</span>
-<span class="sd">            If either inversion time falls before its block's first</span>
-<span class="sd">            excitation, or if the second block does not fit inside the</span>
-<span class="sd">            repetition time.</span>
+<span class="sd">            If an inversion time falls before its block's first excitation, or if the</span>
+<span class="sd">            second block does not fit inside the repetition time.</span>
 <span class="sd">        """</span>
         <span class="n">angle</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">_shared_or_two</span><span class="p">(</span><span class="n">as_torch</span><span class="p">(</span><span class="n">flip</span><span class="p">)))</span>
         <span class="n">turn</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">_shared_or_two</span><span class="p">(</span><span class="n">matched</span><span class="p">(</span><span class="n">phases</span><span class="p">,</span> <span class="n">angle</span><span class="p">)))</span>
@@ -650,21 +646,20 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` in milliseconds, ``M0`` as a scaling, and the inversion</span>
-<span class="sd">            efficiency.</span>
-<span class="sd">        TI:</span>
-<span class="sd">            The two inversion times in milliseconds, measured to the sampled</span>
-<span class="sd">            shot of each block.</span>
-<span class="sd">        flip:</span>
-<span class="sd">            Excitation flip angle in degrees, one per block or one shared.</span>
-<span class="sd">        TRspgr:</span>
-<span class="sd">            Repetition time in milliseconds of one readout.</span>
-<span class="sd">        TRmp2rage:</span>
-<span class="sd">            Repetition time in milliseconds of the whole inversion block.</span>
-<span class="sd">        nshots:</span>
-<span class="sd">            Readouts per block, either the total -- halved for each block --</span>
-<span class="sd">            or ``(before, after)`` the sampled shot.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` in ms, ``inv_efficiency``, ``M0`` scaling.</span>
+<span class="sd">        TI : array-like</span>
+<span class="sd">            The two inversion times in ms, each measured to the sampled shot of its</span>
+<span class="sd">            block.</span>
+<span class="sd">        flip : float or array-like</span>
+<span class="sd">            Excitation flip angle in degrees, one per block or shared.</span>
+<span class="sd">        TRspgr : float or array-like</span>
+<span class="sd">            Repetition time of one readout, in ms.</span>
+<span class="sd">        TRmp2rage : float or array-like</span>
+<span class="sd">            Repetition time of the whole inversion block, in ms.</span>
+<span class="sd">        nshots : int or array-like</span>
+<span class="sd">            Readouts per block: a total, split evenly before and after the sampled</span>
+<span class="sd">            shot, or ``(before, after)``.</span>
 <span class="sd">        """</span>
         <span class="n">radians</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">180.0</span>
         <span class="n">angle</span> <span class="o">=</span> <span class="n">_shared_or_two</span><span class="p">(</span><span class="n">radians</span> <span class="o">*</span> <span class="n">flip</span><span class="p">)</span>

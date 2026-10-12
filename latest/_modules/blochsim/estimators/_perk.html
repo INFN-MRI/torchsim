@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,57 +499,56 @@
 <div class="viewcode-block" id="PERK">
 <a class="viewcode-back" href="../../../generated/blochsim.PERK.html#blochsim.PERK">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PERK</span><span class="p">(</span><span class="n">Estimator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Parameter estimation via regression with kernels.</span>
+<span class="w">    </span><span class="sd">"""Parameter estimation via regression with kernels (PERK).</span>
 
-<span class="sd">    This is the random-Fourier-feature form of PERK [1]_. Training accumulates</span>
-<span class="sd">    the</span>
-<span class="sd">    required covariances in chunks, so memory depends on the feature order</span>
-<span class="sd">    rather than the number of simulated training samples. Estimation uses only</span>
-<span class="sd">    ``cos`` and matrix multiplication and therefore dispatches to optimized</span>
-<span class="sd">    Torch CPU/CUDA kernels without a separate native implementation.</span>
+<span class="sd">    Kernel ridge regression from signals to parameters with Gaussian random</span>
+<span class="sd">    Fourier features [1]_. Training accumulates covariances in chunks, so</span>
+<span class="sd">    memory follows ``n_features``, not the number of training samples.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    acquisition : Simulator, optional</span>
-<span class="sd">        The sequence being inverted: a simulator that ships with BlochSim, one</span>
-<span class="sd">        written by subclassing :class:`~blochsim.model.Simulator`, or any other</span>
-<span class="sd">        :class:`~blochsim.model.Simulator`. Every tissue property that is</span>
-<span class="sd">        neither unknown nor measured separately is fixed on it beforehand, with</span>
-<span class="sd">        the constructor or :meth:`~blochsim.model.Simulator.bind`. Leave it</span>
-<span class="sd">        out to fit from signals handed to :meth:`fit` directly.</span>
+<span class="sd">        The sequence being inverted, with every property that is neither</span>
+<span class="sd">        unknown nor measured separately already fixed. Omit to fit from</span>
+<span class="sd">        signals passed to :meth:`fit`.</span>
 <span class="sd">    n_features : int, optional</span>
-<span class="sd">        Number of random Fourier features. The default is ``1000``.</span>
-<span class="sd">    length_scale : float or tensor, optional</span>
-<span class="sd">        Gaussian-kernel length scale for every signal/known-parameter feature.</span>
-<span class="sd">        ``None`` estimates it from the training standard deviation.</span>
+<span class="sd">        Number of random Fourier features. Default 1000.</span>
+<span class="sd">    length_scale : float or torch.Tensor, optional</span>
+<span class="sd">        Gaussian-kernel length scale per input feature. ``None`` estimates it</span>
+<span class="sd">        from the training standard deviation.</span>
 <span class="sd">    regularization : float, optional</span>
-<span class="sd">        Tikhonov parameter added to the feature covariance. The default is</span>
-<span class="sd">        ``1e-5``.</span>
+<span class="sd">        Tikhonov term added to the feature covariance. Default 1e-5.</span>
 <span class="sd">    chunk_size : int, optional</span>
-<span class="sd">        Maximum samples transformed at once. The default is ``65536``.</span>
+<span class="sd">        Maximum samples transformed at once. Default 65536.</span>
 <span class="sd">    feature_seed : int, optional</span>
-<span class="sd">        Seed used for the fixed random feature map. Separate from the seed</span>
-<span class="sd">        :meth:`fit` draws the training set with.</span>
+<span class="sd">        Seed of the random feature map, separate from the ``seed`` of</span>
+<span class="sd">        :meth:`fit`. ``None`` draws one at random.</span>
 <span class="sd">    complex_mode : {"cartesian", "magnitude"}, optional</span>
-<span class="sd">        Representation used for complex signals. Magnitude data are often</span>
-<span class="sd">        preferable when image phase is a nuisance parameter.</span>
+<span class="sd">        Complex signals enter as interleaved real and imaginary parts</span>
+<span class="sd">        (``"cartesian"``) or as magnitudes. Default ``"cartesian"``.</span>
 <span class="sd">    normalize : bool, optional</span>
-<span class="sd">        Normalize every signal vector before feature projection. This removes</span>
-<span class="sd">        an unknown global scale when it is not itself a target.</span>
+<span class="sd">        Normalize each signal to unit norm before the feature map, discarding</span>
+<span class="sd">        its amplitude. The estimator then also returns an ``M0`` map, learned</span>
+<span class="sd">        as the reciprocal norm of the training fingerprints. Default False.</span>
 <span class="sd">    stream : bool, optional</span>
-<span class="sd">        Simulate the training set a chunk at a time and accumulate the</span>
-<span class="sd">        covariances as it goes, so memory follows the feature order rather</span>
-<span class="sd">        than the number of training samples. The dictionary is never held, and</span>
-<span class="sd">        so cannot have a basis estimated from it: a ``rank`` given to</span>
-<span class="sd">        :meth:`fit` needs the default. A basis fitted elsewhere, passed to</span>
-<span class="sd">        :meth:`fit` as ``subspace=``, streams perfectly well -- each chunk is</span>
-<span class="sd">        projected as it is simulated.</span>
+<span class="sd">        Simulate the training set chunk by chunk without holding it. Not</span>
+<span class="sd">        compatible with a ``rank`` passed to :meth:`fit`; a ``subspace`` is</span>
+<span class="sd">        accepted. Default False.</span>
+<span class="sd">    uncertainty : bool, optional</span>
+<span class="sd">        Learn the error model behind ``uncertainty=True`` in :meth:`map` at the</span>
+<span class="sd">        cost of a second pass over the training source. Default True.</span>
 
 <span class="sd">    Notes</span>
 <span class="sd">    -----</span>
-<span class="sd">    Cartesian complex signals are represented as interleaved real/imaginary</span>
-<span class="sd">    features. The learned estimator remains differentiable with respect to its</span>
-<span class="sd">    input, which permits its use inside a larger reconstruction network.</span>
+<span class="sd">    The stated uncertainty is the regression's total expected error, learned</span>
+<span class="sd">    from the absolute residuals of its own training fit and scaled by</span>
+<span class="sd">    ``sqrt(pi / 2)`` to a standard deviation for a Gaussian error. It includes</span>
+<span class="sd">    the pull of the training prior as well as noise, so it exceeds the scatter</span>
+<span class="sd">    over repeated noise realizations. It is valid at the signal amplitude the</span>
+<span class="sd">    training set was simulated at.</span>
+
+<span class="sd">    Estimation is differentiable with respect to the signals. Volumes are</span>
+<span class="sd">    streamed under :func:`~blochsim.execution`.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>

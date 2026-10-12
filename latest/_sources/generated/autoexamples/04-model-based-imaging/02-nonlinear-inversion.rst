@@ -377,7 +377,7 @@ example to a proximal one with a wavelet prior.
 
  .. code-block:: none
 
-    model-based            2.9s   T2 error  17.1 ms (12.6%)
+    model-based            2.3s   T2 error  17.1 ms (12.6%)
     residual 5.529e+03 -> 5.577e-01, damping 1e-03 -> 8e-06
 
 
@@ -413,10 +413,10 @@ Timing the four shows which part a faster reconstruction has to speed up.
  .. code-block:: none
 
     per conjugate-gradient step, 3 channels solved for:
-      model    J  v      3.7 ms
-      model    J^H v     1.3 ms
-      encoding A         5.4 ms
-      encoding A^H       5.1 ms
+      model    J  v      2.4 ms
+      model    J^H v     1.0 ms
+      encoding A         4.1 ms
+      encoding A^H       4.1 ms
     the Jacobian this avoids holding: 1.7 MiB, against 0.6 MiB for a signal
 
 
@@ -485,7 +485,7 @@ What this Application did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.874 seconds)
+   **Total running time of the script:** (0 minutes 3.041 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_04-model-based-imaging_02-nonlinear-inversion.py:

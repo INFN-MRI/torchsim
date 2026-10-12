@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -564,16 +564,11 @@
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.simulators.</span></span><span class="sig-name descname"><span class="pre">MultiGradientEchoSimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/gradient_echo.html#MultiGradientEchoSimulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.MultiGradientEchoSimulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model._state_machine.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a></p>
 <p>Water and fat, dephasing and decaying across a gradient-echo train.</p>
-<p>Fat is a multi-peak spectrum <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> at a fixed set of chemical shifts, so
-its signal at each echo is a known complex modulation and what is left to
-fit per voxel is how much fat there is, the transverse decay and the
-off-resonance. Each model BART’s multi-echo fits use is a subset of the
-properties: water and fat with a shared or separate T2*, water alone with
-T2*, and off-resonance alone.</p>
-<p><code class="docutils literal notranslate"><span class="pre">fat_fraction</span></code> and <code class="docutils literal notranslate"><span class="pre">fat_phase</span></code> span the water and fat signals: with a
-complex scale in front, water is <code class="docutils literal notranslate"><span class="pre">(1</span> <span class="pre">-</span> <span class="pre">fat_fraction)</span></code> of it and fat
-<code class="docutils literal notranslate"><span class="pre">fat_fraction</span></code> of it rotated by <code class="docutils literal notranslate"><span class="pre">fat_phase</span></code>. Leaving <code class="docutils literal notranslate"><span class="pre">T2star</span></code> out
-means no decay, and leaving <code class="docutils literal notranslate"><span class="pre">fat_T2star</span></code> out gives fat water’s T2*.</p>
+<p>Fat is a multi-peak spectrum <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> at fixed chemical shifts, so per voxel only
+the fat amount, the transverse decay and the off-resonance remain to be
+fitted. Water is <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">fat_fraction</span></code> of a complex scale and fat
+<code class="docutils literal notranslate"><span class="pre">fat_fraction</span></code> of it, rotated by <code class="docutils literal notranslate"><span class="pre">fat_phase</span></code>. Omitting <code class="docutils literal notranslate"><span class="pre">T2star</span></code> means no
+decay; omitting <code class="docutils literal notranslate"><span class="pre">fat_T2star</span></code> gives fat the water <code class="docutils literal notranslate"><span class="pre">T2star</span></code>.</p>
 <div class="admonition-references admonition">
 <p class="admonition-title">References</p>
 <aside class="footnote-list brackets">
@@ -600,31 +595,31 @@ characterization of the liver fat 1H MR spectrum”, NMR in Biomedicine
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.MultiGradientEchoSimulator.evaluate" title="blochsim.simulators.MultiGradientEchoSimulator.evaluate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></a></p></td>
-<td><p>Evaluate the closed form, no state machine and no description.</p></td>
+<td><p>Return the closed-form signal.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></p></td>
-<td><p>Return the operators of one repetition, in the order they play.</p></td>
+<td><p>Return the operators of one repetition in playing order.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></p></td>
-<td><p>Return how long one repetition lasts, given what the layout played.</p></td>
+<td><p>Return the duration of one repetition in seconds.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -635,7 +630,7 @@ characterization of the liver fat 1H MR spectrum”, NMR in Biomedicine
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.simulators.MultiGradientEchoSimulator.evaluate">
 <span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">properties</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/gradient_echo.html#MultiGradientEchoSimulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.MultiGradientEchoSimulator.evaluate" title="Link to this definition">#</a></dt>
-<dd><p>Evaluate the closed form, no state machine and no description.</p>
+<dd><p>Return the closed-form signal.</p>
 </dd></dl>
 
 </dd></dl>

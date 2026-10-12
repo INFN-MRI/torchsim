@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -559,41 +559,27 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.direct">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">direct</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">linearization</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rhs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">damping</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reference</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_gauss_newton.html#direct"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.direct" title="Link to this definition">#</a></dt>
-<dd><p>Solve every voxel’s linearized system outright, all of them at once.</p>
-<p>Where nothing has mixed the voxels together the problem is a stack of
-small independent least-squares systems, one per voxel, and a batched
-factorization over the whole stack is the Levenberg-Marquardt step itself
-– not a general linear solver, which is why this is here and a conjugate
-gradient is not.</p>
-<p>The damping enters as extra rows rather than as a ridge on the normal
-equations:</p>
-<blockquote>
-<div><p>[ J^T        ] d  =  [ rhs           ]
-[ sqrt(a) I  ]       [ sqrt(a) z     ]</p>
-</div></blockquote>
-<p>which is the same minimizer without squaring the condition number, and
-which has full column rank for any positive damping – so there is no
-singular case to detect and none to work around.</p>
-<p>A complex contrast is two real measurements, because what is minimized is
-the squared modulus.</p>
+<dd><p>Solve every voxel’s damped linearized system by batched least squares.</p>
+<p>Valid only for a voxel-diagonal Jacobian. The damping enters as extra rows
+<code class="docutils literal notranslate"><span class="pre">sqrt(a)</span> <span class="pre">I</span> <span class="pre">d</span> <span class="pre">=</span> <span class="pre">sqrt(a)</span> <span class="pre">z</span></code> rather than as a ridge on the normal equations.
+A complex contrast counts as two real measurements.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>linearization</strong> (<em>Linearization</em>) – The derivative, which must carry its blocks.</p></li>
+<li><p><strong>linearization</strong> (<em>Linearization</em>) – Derivative carrying its <code class="docutils literal notranslate"><span class="pre">blocks</span></code>.</p></li>
 <li><p><strong>rhs</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(voxels,</span> <span class="pre">contrasts)</span></code>, <code class="docutils literal notranslate"><span class="pre">y</span> <span class="pre">-</span> <span class="pre">F(x)</span></code>.</p></li>
-<li><p><strong>damping</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(voxels,</span> <span class="pre">1)</span></code> or one number.</p></li>
-<li><p><strong>reference</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(voxels,</span> <span class="pre">channels)</span></code>, what the damping pulls towards.</p></li>
+<li><p><strong>damping</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(voxels,</span> <span class="pre">1)</span></code> or a single value.</p></li>
+<li><p><strong>reference</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(voxels,</span> <span class="pre">channels)</span></code>, point the damping pulls towards.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p><code class="docutils literal notranslate"><span class="pre">(voxels,</span> <span class="pre">channels)</span></code>.</p>
+<dd class="field-even"><p><code class="docutils literal notranslate"><span class="pre">(voxels,</span> <span class="pre">channels)</span></code> step.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>torch.Tensor</p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the linearization carries no blocks, which is what an encoding
-    operator in front of the model leaves.</p>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the linearization carries no blocks.</p>
 </dd>
 </dl>
 </dd></dl>

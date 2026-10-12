@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -564,7 +564,7 @@
 <dt class="sig sig-object py" id="blochsim.simulators.MPRAGESimulator">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.simulators.</span></span><span class="sig-name descname"><span class="pre">MPRAGESimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/mprage.html#MPRAGESimulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.MPRAGESimulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model._state_machine.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a></p>
-<p>An inversion followed by a spoiled train, sampled at the k-space centre.</p>
+<p>Inversion followed by a spoiled train, sampled at the k-space centre.</p>
 <p class="rubric">Examples</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MPRAGESimulator</span>
 
@@ -576,31 +576,31 @@
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.MPRAGESimulator.evaluate" title="blochsim.simulators.MPRAGESimulator.evaluate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></a></p></td>
-<td><p>Return the one sample the train acquires.</p></td>
+<td><p>Return the acquired sample.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.MPRAGESimulator.layout" title="blochsim.simulators.MPRAGESimulator.layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></a></p></td>
 <td><p>Return the prepared train, with one shot marked as acquired.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <a class="reference internal" href="#blochsim.simulators.MPRAGESimulator.layout" title="blochsim.simulators.MPRAGESimulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></p></td>
-<td><p>Return how long one repetition lasts, given what the layout played.</p></td>
+<td><p>Return the duration of one repetition in seconds.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -615,17 +615,16 @@
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>TI</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Inversion time in milliseconds, measured to the sampled shot.</p></li>
+<li><p><strong>TI</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Inversion time in ms, measured to the sampled shot.</p></li>
 <li><p><strong>flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Excitation flip angle in degrees, scalar or one per shot.</p></li>
-<li><p><strong>TRspgr</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Repetition time in milliseconds of one readout.</p></li>
-<li><p><strong>nshots</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> or </em><em>array-like</em>) – Readouts in the inversion block, either the total – split as
-evenly as an odd centre allows – or <code class="docutils literal notranslate"><span class="pre">(before,</span> <span class="pre">after)</span></code> the shot
-that samples the k-space centre.</p></li>
+<li><p><strong>TRspgr</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Repetition time of one readout, in ms.</p></li>
+<li><p><strong>nshots</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em> or </em><em>array-like</em>) – Readouts in the block: a total including the sampled shot, split evenly
+around it, or <code class="docutils literal notranslate"><span class="pre">(before,</span> <span class="pre">after)</span></code> the sampled shot.</p></li>
 <li><p><strong>phases</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – Excitation phases in degrees.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the inversion time falls before the train’s first excitation.</p>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the inversion time falls before the first excitation.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -633,7 +632,7 @@ that samples the k-space centre.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.simulators.MPRAGESimulator.evaluate">
 <span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">properties</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/mprage.html#MPRAGESimulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.MPRAGESimulator.evaluate" title="Link to this definition">#</a></dt>
-<dd><p>Return the one sample the train acquires.</p>
+<dd><p>Return the acquired sample.</p>
 </dd></dl>
 
 </dd></dl>

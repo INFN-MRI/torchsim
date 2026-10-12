@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -479,7 +479,7 @@
                 <article class="bd-article">
                   
   <h1>Source code for blochsim.utils._b1rms</h1><div class="highlight"><pre>
-<span></span><span class="sd">"""B1 rms estimation subroutines."""</span>
+<span></span><span class="sd">"""B1 rms estimation."""</span>
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"b1rms"</span><span class="p">]</span>
 
@@ -493,24 +493,21 @@
 <div class="viewcode-block" id="b1rms">
 <a class="viewcode-back" href="../../../generated/blochsim.utils.b1rms.html#blochsim.utils.b1rms">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">b1rms</span><span class="p">(</span><span class="n">duration</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">rf_envelope</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">ArrayLike</span><span class="p">,</span> <span class="n">rescale</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""</span>
-<span class="sd">    Compute root-mean-squared B1 for a given RF pulse.</span>
+<span class="w">    </span><span class="sd">"""Compute the root-mean-square B1 of an RF pulse.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    duration : float</span>
-<span class="sd">        RF pulse duration in ``[s]``.</span>
-<span class="sd">    rf_envelope : npt.ArrayLike</span>
-<span class="sd">        RF waveform temporal envelope in ``[T]``.</span>
+<span class="sd">        Pulse duration in s.</span>
+<span class="sd">    rf_envelope : array-like</span>
+<span class="sd">        RF waveform envelope in T, uniformly sampled over ``duration``.</span>
 <span class="sd">    rescale : bool, optional</span>
-<span class="sd">        If ``True``, rescale pulse to compute B1 rms for a</span>
-<span class="sd">        ``1 [rad]`` pulse. The default is ``False``.</span>
+<span class="sd">        Scale the pulse to a 1 rad flip angle first. Defaults to ``False``.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    float</span>
-<span class="sd">        B1 rms for the input RF pulse.</span>
-
+<span class="sd">        B1 rms in T.</span>
 <span class="sd">    """</span>
     <span class="n">dt</span> <span class="o">=</span> <span class="n">duration</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">rf_envelope</span><span class="p">)</span>  <span class="c1"># sampling time in [s]</span>
 

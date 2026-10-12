@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3 current active"><a class="current reference internal" href="#">b1rms</a></li>
@@ -559,18 +559,17 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.utils.b1rms">
 <span class="sig-prename descclassname"><span class="pre">blochsim.utils.</span></span><span class="sig-name descname"><span class="pre">b1rms</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">duration</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rf_envelope</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rescale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/utils/_b1rms.html#b1rms"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.utils.b1rms" title="Link to this definition">#</a></dt>
-<dd><p>Compute root-mean-squared B1 for a given RF pulse.</p>
+<dd><p>Compute the root-mean-square B1 of an RF pulse.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – RF pulse duration in <code class="docutils literal notranslate"><span class="pre">[s]</span></code>.</p></li>
-<li><p><strong>rf_envelope</strong> (<em>npt.ArrayLike</em>) – RF waveform temporal envelope in <code class="docutils literal notranslate"><span class="pre">[T]</span></code>.</p></li>
-<li><p><strong>rescale</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a><em>, </em><em>optional</em>) – If <code class="docutils literal notranslate"><span class="pre">True</span></code>, rescale pulse to compute B1 rms for a
-<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">[rad]</span></code> pulse. The default is <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p></li>
+<li><p><strong>duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Pulse duration in s.</p></li>
+<li><p><strong>rf_envelope</strong> (<em>array-like</em>) – RF waveform envelope in T, uniformly sampled over <code class="docutils literal notranslate"><span class="pre">duration</span></code>.</p></li>
+<li><p><strong>rescale</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a><em>, </em><em>optional</em>) – Scale the pulse to a 1 rad flip angle first. Defaults to <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>B1 rms for the input RF pulse.</p>
+<dd class="field-even"><p>B1 rms in T.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a></p>

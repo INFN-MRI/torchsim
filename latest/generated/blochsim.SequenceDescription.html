@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -574,21 +574,16 @@
 <dt class="sig sig-object py" id="blochsim.SequenceDescription">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">SequenceDescription</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">subsequence_index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tr_duration_us</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">events</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rf_definitions</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shim_definitions</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crusher_dephasing_rad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voxel_size_m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rf_raster_time_s</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-06</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_description.html#SequenceDescription"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.SequenceDescription" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>Event stream and RF resources for one sequence or subsequence.</p>
-<p><code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code> is the dephasing the sequence’s unbalanced
-gradient winds across one voxel of <code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code>. Their ratio sets the
-b-factor diffusion is damped by and the phase each dephasing order turns
-through under flow, so a dephasing of zero leaves both terms out however
-large the coefficient behind them.</p>
-<p><code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code> also stands on its own: spins cross a voxel of that size
-at their own speed whether or not a gradient is playing, which is what
-washes the voxel out and replaces it with unexcited magnetization. Leaving
-it <code class="docutils literal notranslate"><span class="pre">None</span></code> declares no voxel, and a spin velocity then has nothing to
-cross.</p>
+<p>Event stream and RF resources of one repetition of a sequence.</p>
+<p>The ratio <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span> <span class="pre">/</span> <span class="pre">voxel_size_m</span></code> sets the b-factor
+diffusion is damped by and the phase each dephasing order acquires under
+flow; a zero dephasing leaves both out. <code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code> also sets the
+distance a moving spin crosses, which washes out the voxel; <code class="docutils literal notranslate"><span class="pre">None</span></code>
+declares no voxel, so spin velocity has no effect.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.subsequence_index">
 <span class="sig-name descname"><span class="pre">subsequence_index</span></span><a class="headerlink" href="#blochsim.SequenceDescription.subsequence_index" title="Link to this definition">#</a></dt>
-<dd><p>Which subsequence of a multi-part acquisition this is.</p>
+<dd><p>Index of this subsequence within a multi-part acquisition.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)">int</a></p>
@@ -599,8 +594,7 @@ cross.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.tr_duration_us">
 <span class="sig-name descname"><span class="pre">tr_duration_us</span></span><a class="headerlink" href="#blochsim.SequenceDescription.tr_duration_us" title="Link to this definition">#</a></dt>
-<dd><p>How long one playing of this stream holds the timeline, in
-microseconds.</p>
+<dd><p>Duration of one playing of the stream, in microseconds.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a> or torch.Tensor</p>
@@ -611,7 +605,7 @@ microseconds.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.events">
 <span class="sig-name descname"><span class="pre">events</span></span><a class="headerlink" href="#blochsim.SequenceDescription.events" title="Link to this definition">#</a></dt>
-<dd><p>The stream itself, in the order it is played.</p>
+<dd><p>Events in play order.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)">tuple</a> of SequenceEvent</p>
@@ -622,7 +616,7 @@ microseconds.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.rf_definitions">
 <span class="sig-name descname"><span class="pre">rf_definitions</span></span><a class="headerlink" href="#blochsim.SequenceDescription.rf_definitions" title="Link to this definition">#</a></dt>
-<dd><p><code class="docutils literal notranslate"><span class="pre">{id:</span> <span class="pre">RfDefinition}</span></code> – the pulses the RF events name.</p>
+<dd><p><code class="docutils literal notranslate"><span class="pre">{id:</span> <span class="pre">RfDefinition}</span></code> for the pulses the RF events name.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a></p>
@@ -633,7 +627,7 @@ microseconds.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.shim_definitions">
 <span class="sig-name descname"><span class="pre">shim_definitions</span></span><a class="headerlink" href="#blochsim.SequenceDescription.shim_definitions" title="Link to this definition">#</a></dt>
-<dd><p><code class="docutils literal notranslate"><span class="pre">{id:</span> <span class="pre">ShimDefinition}</span></code> – the transmit shims the RF events drive.</p>
+<dd><p><code class="docutils literal notranslate"><span class="pre">{id:</span> <span class="pre">ShimDefinition}</span></code> for the shims the RF events name.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a></p>
@@ -644,8 +638,8 @@ microseconds.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.crusher_dephasing_rad">
 <span class="sig-name descname"><span class="pre">crusher_dephasing_rad</span></span><a class="headerlink" href="#blochsim.SequenceDescription.crusher_dephasing_rad" title="Link to this definition">#</a></dt>
-<dd><p>Dephasing wound across one voxel by the sequence’s unbalanced
-gradient.</p>
+<dd><p>Dephasing wound across one voxel by the unbalanced gradient, in
+radians.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a></p>
@@ -656,8 +650,7 @@ gradient.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.voxel_size_m">
 <span class="sig-name descname"><span class="pre">voxel_size_m</span></span><a class="headerlink" href="#blochsim.SequenceDescription.voxel_size_m" title="Link to this definition">#</a></dt>
-<dd><p>The voxel a spin crosses, and the length the dephasing is wound
-across. <code class="docutils literal notranslate"><span class="pre">None</span></code> declares no voxel.</p>
+<dd><p>Voxel length the dephasing is wound across, in metres.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a>, optional</p>
@@ -668,9 +661,8 @@ across. <code class="docutils literal notranslate"><span class="pre">None</span>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.rf_raster_time_s">
 <span class="sig-name descname"><span class="pre">rf_raster_time_s</span></span><a class="headerlink" href="#blochsim.SequenceDescription.rf_raster_time_s" title="Link to this definition">#</a></dt>
-<dd><p>The dwell the RF shapes are sampled on. A pulse is integrated against
-it, so a stream carrying shapes on a 2 microsecond raster and read on a
-1 microsecond one turns half the angle it should.</p>
+<dd><p>Dwell the RF shapes are sampled on, in seconds. Pulses are integrated
+against it.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a></p>
@@ -682,13 +674,13 @@ it, so a stream carrying shapes on a 2 microsecond raster and read on a
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.SequenceDescription.from_operators" title="blochsim.SequenceDescription.from_operators"><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_operators</span></code></a></p></td>
-<td><p>Lay operators out end to end and return the stream they make.</p></td>
+<td><p>Build a description by laying operators out end to end.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.SequenceDescription.from_pulseq" title="blochsim.SequenceDescription.from_pulseq"><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></a></p></td>
-<td><p>Return what one repetition of a Pulseq sequence plays.</p></td>
+<td><p>Read one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.SequenceDescription.plot" title="blochsim.SequenceDescription.plot"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot</span></code></a></p></td>
-<td><p>Draw the stream: pulses as stems, samples as markers.</p></td>
+<td><p>Plot the events: RF as stems of height equal to the flip, ADC as markers.</p></td>
 </tr>
 </tbody>
 </table>
@@ -696,25 +688,25 @@ it, so a stream carrying shapes on a 2 microsecond raster and read on a
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.from_operators">
 <span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_operators</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">parts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rf_definitions</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shim_definitions</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subsequence_index</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crusher_dephasing_rad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voxel_size_m</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_s</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_description.html#SequenceDescription.from_operators"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.SequenceDescription.from_operators" title="Link to this definition">#</a></dt>
-<dd><p>Lay operators out end to end and return the stream they make.</p>
-<p>The other way in besides a scanner: what a sequence written here plays,
-in the same object one that arrived would be read into.</p>
+<dd><p>Build a description by laying operators out end to end.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>parts</strong> (<a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator"><em>Operator</em></a><em>, </em><em>optional</em>) – The operators, in the order they play.</p></li>
-<li><p><strong>rf_definitions</strong> (<em>mapping</em><em>, </em><em>optional</em>) – The pulses the events drive, by id. One ideal pulse under id zero
-when not given, which is what an operator naming no shape asks for.</p></li>
-<li><p><strong>shim_definitions</strong> (<em>mapping</em><em>, </em><em>optional</em>) – The transmit shims the pulses are driven on, by id.</p></li>
-<li><p><strong>subsequence_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Which subsequence of a scan this is.</p></li>
-<li><p><strong>crusher_dephasing_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The turn one crusher puts across a voxel. Diffusion and flow are
-read off it and are zero without it.</p></li>
-<li><p><strong>voxel_size_m</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The distance that turn is put across.</p></li>
-<li><p><strong>start_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – When the first operator starts.</p></li>
+<li><p><strong>*parts</strong> (<a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator"><em>Operator</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><em>tuple</em></a><em>, </em><em>optional</em>) – Operators in play order, or <code class="docutils literal notranslate"><span class="pre">(offset_s,</span> <span class="pre">operator)</span></code> pairs.</p></li>
+<li><p><strong>rf_definitions</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{id:</span> <span class="pre">RfDefinition}</span></code>. One ideal pulse under id 0 when not given.</p></li>
+<li><p><strong>shim_definitions</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{id:</span> <span class="pre">ShimDefinition}</span></code>.</p></li>
+<li><p><strong>subsequence_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Index of the subsequence within a scan.</p></li>
+<li><p><strong>crusher_dephasing_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Dephasing of one crusher across a voxel, in radians. Diffusion and
+flow are zero without it.</p></li>
+<li><p><strong>voxel_size_m</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Voxel length the dephasing is wound across, in metres.</p></li>
+<li><p><strong>start_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – Start time of the first operator, in seconds.</p></li>
 </ul>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>The stream, lasting as long as the operators laid out end to end.</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Lasting as long as the operators laid out end to end.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#blochsim.SequenceDescription" title="blochsim.SequenceDescription">SequenceDescription</a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -722,19 +714,27 @@ read off it and are zero without it.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.from_pulseq">
 <span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_pulseq</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">source</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">settings</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_description.html#SequenceDescription.from_pulseq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.SequenceDescription.from_pulseq" title="Link to this definition">#</a></dt>
-<dd><p>Return what one repetition of a Pulseq sequence plays.</p>
+<dd><p>Read one repetition of a Pulseq sequence.</p>
+<p>Requires pypulseq (<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">blochsim[pulseq]</span></code>).</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>source</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><em>Path</em><em> or </em><em>sequence</em>) – A <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, or a sequence in memory with pypulseq’s reading
-interface – pypulseq’s own <code class="docutils literal notranslate"><span class="pre">Sequence</span></code>, or pypulseqpp’s.</p></li>
-<li><p><strong>settings</strong> (<em>Any</em>) – <code class="docutils literal notranslate"><span class="pre">tr_index</span></code> to name which repetition to read, and the
-<code class="docutils literal notranslate"><span class="pre">subsequence_index</span></code>, <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code> and
-<code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code> the description carries.</p></li>
+<li><p><strong>source</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><em>Path</em><em> or </em><em>sequence</em>) – A <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, or an in-memory pypulseq or pypulseqpp
+<code class="docutils literal notranslate"><span class="pre">Sequence</span></code>.</p></li>
+<li><p><strong>**settings</strong> – <code class="docutils literal notranslate"><span class="pre">tr_index</span></code>, <code class="docutils literal notranslate"><span class="pre">subsequence_index</span></code>, <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code> and
+<code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code>, as for <code class="docutils literal notranslate"><span class="pre">read_pulseq_description</span></code>: <code class="docutils literal notranslate"><span class="pre">tr_index</span></code>
+is the repetition to read, in whole <code class="docutils literal notranslate"><span class="pre">TRSize</span></code> windows.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>The stream, in the same object a scanner’s own would arrive in.</p>
+<dd class="field-even"><p><a class="reference internal" href="#blochsim.SequenceDescription" title="blochsim.SequenceDescription">SequenceDescription</a></p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – If pypulseq is not installed.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the file declares no <code class="docutils literal notranslate"><span class="pre">TRSize</span></code>, <code class="docutils literal notranslate"><span class="pre">tr_index</span></code> is out of range,
+    or the repetitions differ and none was named.</p></li>
+</ul>
 </dd>
 </dl>
 </dd></dl>
@@ -742,23 +742,19 @@ interface – pypulseq’s own <code class="docutils literal notranslate"><span 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.SequenceDescription.plot">
 <span class="sig-name descname"><span class="pre">plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">axis</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">upto_s</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_description.html#SequenceDescription.plot"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.SequenceDescription.plot" title="Link to this definition">#</a></dt>
-<dd><p>Draw the stream: pulses as stems, samples as markers.</p>
-<p>What a layout actually laid down, which is easier to check here than
-in the signal it produces. A pulse’s stem is as tall as the angle it
-turns.</p>
+<dd><p>Plot the events: RF as stems of height equal to the flip, ADC as markers.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>axis</strong> (<a class="reference external" href="https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes" title="(in Matplotlib v3.11.2)"><em>matplotlib.axes.Axes</em></a><em>, </em><em>optional</em>) – Where to draw. A new figure when not given.</p></li>
-<li><p><strong>upto_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Stop after this much of the stream, for a repetition long enough
-that all of it is a smear.</p></li>
+<li><p><strong>axis</strong> (<a class="reference external" href="https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes" title="(in Matplotlib v3.11.2)"><em>matplotlib.axes.Axes</em></a><em>, </em><em>optional</em>) – Axes to draw on; a new figure when not given.</p></li>
+<li><p><strong>upto_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Plot events up to this time, in seconds.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>The axis drawn on.</p>
+<dd class="field-even"><p><a class="reference external" href="https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html#matplotlib.axes.Axes" title="(in Matplotlib v3.11.2)">matplotlib.axes.Axes</a></p>
 </dd>
 <dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – if matplotlib is not installed, which is not a: dependency of this package.</p>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – If matplotlib is not installed.</p>
 </dd>
 </dl>
 </dd></dl>

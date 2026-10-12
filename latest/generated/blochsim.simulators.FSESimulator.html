@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -565,7 +565,7 @@
 <dt class="sig sig-object py" id="blochsim.simulators.FSESimulator">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.simulators.</span></span><span class="sig-name descname"><span class="pre">FSESimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/fse.html#FSESimulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.FSESimulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model._state_machine.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a></p>
-<p>A refocused echo train, sampled at every echo.</p>
+<p>Refocused echo train, sampled at every echo.</p>
 <p class="rubric">Examples</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">FSESimulator</span>
@@ -578,31 +578,31 @@
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.FSESimulator.evaluate" title="blochsim.simulators.FSESimulator.evaluate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></a></p></td>
-<td><p>Simulate the train, one train at a time where each has its own TR.</p></td>
+<td><p>Return the signal at every echo.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.FSESimulator.layout" title="blochsim.simulators.FSESimulator.layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></a></p></td>
 <td><p>Return the train, placed at the echo times it is timed from.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <a class="reference internal" href="#blochsim.simulators.FSESimulator.layout" title="blochsim.simulators.FSESimulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.FSESimulator.repetition_s" title="blochsim.simulators.FSESimulator.repetition_s"><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></a></p></td>
-<td><p>Return the TR, which the train waits out before the next one.</p></td>
+<td><p>Return <code class="docutils literal notranslate"><span class="pre">TR</span></code> in seconds, 1e6 ms when not given.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -618,12 +618,11 @@
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Refocusing flip angles in degrees, one per echo.</p></li>
-<li><p><strong>ESP</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Echo spacing in milliseconds.</p></li>
+<li><p><strong>ESP</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Echo spacing in ms.</p></li>
 <li><p><strong>phases</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – Refocusing phases in degrees.</p></li>
-<li><p><strong>exc_flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The excitation, in degrees.</p></li>
-<li><p><strong>exc_phase</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The excitation, in degrees.</p></li>
-<li><p><strong>TR</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – Repetition time in milliseconds, which sets how far the
-longitudinal magnetization recovers before the next train.</p></li>
+<li><p><strong>exc_flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Excitation flip angle in degrees.</p></li>
+<li><p><strong>exc_phase</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Excitation phase in degrees.</p></li>
+<li><p><strong>TR</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – Repetition time in ms; sets the longitudinal recovery between trains.</p></li>
 </ul>
 </dd>
 </dl>
@@ -632,17 +631,15 @@ longitudinal magnetization recovers before the next train.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.simulators.FSESimulator.repetition_s">
 <span class="sig-name descname"><span class="pre">repetition_s</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">played_s</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">protocol</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/fse.html#FSESimulator.repetition_s"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.FSESimulator.repetition_s" title="Link to this definition">#</a></dt>
-<dd><p>Return the TR, which the train waits out before the next one.</p>
+<dd><p>Return <code class="docutils literal notranslate"><span class="pre">TR</span></code> in seconds, 1e6 ms when not given.</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.simulators.FSESimulator.evaluate">
 <span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">properties</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/fse.html#FSESimulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.FSESimulator.evaluate" title="Link to this definition">#</a></dt>
-<dd><p>Simulate the train, one train at a time where each has its own TR.</p>
-<p>The engine plays a batch of trains on one clock, so trains that wait
-out different repetition times are run separately and stacked along
-the train axis, the leading axis of <code class="docutils literal notranslate"><span class="pre">TR</span></code> and of every per-echo
-argument batched with it.</p>
+<dd><p>Return the signal at every echo.</p>
+<p>Trains with different <code class="docutils literal notranslate"><span class="pre">TR</span></code> are simulated separately and stacked along the
+leading axis of <code class="docutils literal notranslate"><span class="pre">TR</span></code> and of the per-echo arguments batched with it.</p>
 </dd></dl>
 
 </dd></dl>

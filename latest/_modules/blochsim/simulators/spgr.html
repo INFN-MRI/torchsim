@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,12 +499,11 @@
 <div class="viewcode-block" id="SPGRSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.SPGRSimulator.html#blochsim.simulators.SPGRSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">SPGRSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""The spoiled gradient-echo steady state, read at the echo time.</span>
+<span class="w">    </span><span class="sd">"""Spoiled gradient-echo steady state, read at the echo time.</span>
 
-<span class="sd">    Spoiling leaves no transverse magnetization to carry over, so the steady</span>
-<span class="sd">    state is the Ernst expression [1]_ in closed form and no state machine is</span>
-<span class="sd">    run. Fitting T1 to a set of these at different flip angles is DESPOT1</span>
-<span class="sd">    [2]_.</span>
+<span class="sd">    Spoiling leaves no transverse magnetization to carry over, so the steady state</span>
+<span class="sd">    is the Ernst expression [1]_ in closed form. Fitting T1 to several flip angles</span>
+<span class="sd">    is DESPOT1 [2]_.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -541,7 +540,7 @@
 <div class="viewcode-block" id="SPGRSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.SPGRSimulator.html#blochsim.simulators.SPGRSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -557,15 +556,15 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` and ``T2star`` in milliseconds, ``B0`` and ``chemshift`` in</span>
-<span class="sd">            Hz, and ``M0`` as a scaling.</span>
-<span class="sd">        flip:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` and ``T2star`` in ms, ``B0`` and ``chemshift`` in Hz, ``M0``</span>
+<span class="sd">            scaling.</span>
+<span class="sd">        flip : float or array-like</span>
 <span class="sd">            Excitation flip angle in degrees.</span>
-<span class="sd">        TR:</span>
-<span class="sd">            Repetition time in milliseconds.</span>
-<span class="sd">        TE:</span>
-<span class="sd">            Echo time in milliseconds.</span>
+<span class="sd">        TR : float or array-like</span>
+<span class="sd">            Repetition time in ms.</span>
+<span class="sd">        TE : float or array-like</span>
+<span class="sd">            Echo time in ms.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="p">,</span> <span class="n">TE</span><span class="p">)</span>
         <span class="n">angle</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">180.0</span> <span class="o">*</span> <span class="n">flip</span>

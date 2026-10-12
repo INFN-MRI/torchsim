@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -505,14 +505,10 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">InversionRecoverySimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Longitudinal recovery from an inversion, read at a series of delays.</span>
 
-<span class="sd">    A spin echo long enough after the inversion samples the longitudinal</span>
-<span class="sd">    magnetization alone, so the contrast is the recovery curve itself. The</span>
-<span class="sd">    repetition time bounds how much the magnetization has recovered by the</span>
-<span class="sd">    time the next inversion arrives; leave it out for a fully relaxed one.</span>
-
-<span class="sd">    ``offset`` is a constant added to the recovery, which is what a magnitude</span>
-<span class="sd">    reconstruction's noise floor looks like to a fit and what stops the</span>
-<span class="sd">    fitted T1 absorbing it.</span>
+<span class="sd">    The readout samples the longitudinal magnetization alone. When the repetition</span>
+<span class="sd">    time is omitted, the magnetization is fully relaxed at each inversion.</span>
+<span class="sd">    ``offset`` is a constant added to the recovery, such as a magnitude noise</span>
+<span class="sd">    floor.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -538,7 +534,7 @@
 <div class="viewcode-block" id="InversionRecoverySimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.InversionRecoverySimulator.html#blochsim.simulators.InversionRecoverySimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -553,15 +549,13 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` in milliseconds, ``M0`` as a scaling, ``inv_efficiency``</span>
-<span class="sd">            as a fraction of a perfect inversion, and ``offset`` as a constant</span>
-<span class="sd">            added to the recovery.</span>
-<span class="sd">        TI:</span>
-<span class="sd">            Inversion times in milliseconds.</span>
-<span class="sd">        TR:</span>
-<span class="sd">            Repetition time in milliseconds. Left out, the magnetization is</span>
-<span class="sd">            fully relaxed when each inversion arrives.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` in ms, ``inv_efficiency`` as a fraction of a perfect inversion,</span>
+<span class="sd">            ``offset`` added to the recovery, ``M0`` scaling.</span>
+<span class="sd">        TI : float or array-like</span>
+<span class="sd">            Inversion times in ms.</span>
+<span class="sd">        TR : float or array-like, optional</span>
+<span class="sd">            Repetition time in ms; fully relaxed at each inversion when not given.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">TI</span><span class="p">,</span> <span class="mf">0.0</span> <span class="k">if</span> <span class="n">TR</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">TR</span><span class="p">)</span>
         <span class="n">rate</span> <span class="o">=</span> <span class="mf">1e3</span> <span class="o">/</span> <span class="n">held</span><span class="p">[</span><span class="s2">"T1"</span><span class="p">]</span>
@@ -580,9 +574,8 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">MultiEchoSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Transverse decay, read at a series of echo times.</span>
 
-<span class="sd">    A multi-echo spin echo decays with T2 and a multi-echo gradient echo with</span>
-<span class="sd">    T2*; which one is being measured is a property of the sequence that</span>
-<span class="sd">    produced the data, and the model is the same exponential either way.</span>
+<span class="sd">    The model is one exponential in the property ``T2``, which is T2 for a spin</span>
+<span class="sd">    echo and T2* for a gradient echo.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -607,7 +600,7 @@
 <div class="viewcode-block" id="MultiEchoSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MultiEchoSimulator.html#blochsim.simulators.MultiEchoSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -621,11 +614,11 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T2`` in milliseconds -- or T2* for a gradient echo -- ``M0`` as</span>
-<span class="sd">            a scaling, and ``offset`` as a constant added to the decay.</span>
-<span class="sd">        TE:</span>
-<span class="sd">            Echo times in milliseconds.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T2`` in ms (T2* for a gradient echo), ``offset`` added to the decay,</span>
+<span class="sd">            ``M0`` scaling.</span>
+<span class="sd">        TE : float or array-like</span>
+<span class="sd">            Echo times in ms.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">TE</span><span class="p">)</span>
         <span class="n">decay</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">1e3</span> <span class="o">/</span> <span class="n">held</span><span class="p">[</span><span class="s2">"T2"</span><span class="p">]</span> <span class="o">*</span> <span class="n">TE</span> <span class="o">*</span> <span class="mf">1e-3</span><span class="p">)</span>
@@ -638,11 +631,9 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">DoubleAngleSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Excitation at a series of flip angles, scaled by the transmit field.</span>
 
-<span class="sd">    What a voxel actually turns through is the nominal angle times the local</span>
-<span class="sd">    transmit efficiency, so a series of angles reads that efficiency out.</span>
-<span class="sd">    Two angles are enough, and where the second is twice the first their</span>
-<span class="sd">    ratio gives ``B1`` in closed form -- but nothing here requires that, so</span>
-<span class="sd">    any set of angles can be fitted.</span>
+<span class="sd">    A voxel turns through the nominal angle times ``B1``, so a series of angles</span>
+<span class="sd">    reads out ``B1``. Two angles suffice, and a ratio of two between them gives</span>
+<span class="sd">    ``B1`` in closed form; any set of angles can be fitted.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -666,7 +657,7 @@
 <div class="viewcode-block" id="DoubleAngleSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.DoubleAngleSimulator.html#blochsim.simulators.DoubleAngleSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -680,11 +671,9 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``B1`` as a fraction of the nominal transmit -- one where the</span>
-<span class="sd">            pulse turns through exactly the angle it asks for -- and ``M0`` as</span>
-<span class="sd">            a scaling.</span>
-<span class="sd">        flip:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``B1`` as a fraction of the nominal transmit field, ``M0`` scaling.</span>
+<span class="sd">        flip : float or array-like</span>
 <span class="sd">            Nominal flip angles in degrees.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">flip</span><span class="p">)</span>

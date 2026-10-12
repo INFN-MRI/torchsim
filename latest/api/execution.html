@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Running a simulation &#8212; BlochSim Documentation</title>
+    <title>Execution &#8212; BlochSim Documentation</title>
   
   
   
@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">Running a simulation</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">Execution</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -532,7 +532,7 @@
               
 
 <div id="jb-print-docs-body" class="onlyprint">
-    <h1>Running a simulation</h1>
+    <h1>Execution</h1>
     <!-- Table of contents -->
     <div id="print-main-content">
         <div id="jb-print-toc">
@@ -542,9 +542,7 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-engine">The engine</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#transmit-calibration">Transmit calibration</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#where-the-work-runs">Where the work runs</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#placement">Placement</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#utilities">Utilities</a></li>
 </ul>
             </nav>
@@ -557,48 +555,22 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section class="tex2jax_ignore mathjax_ignore" id="running-a-simulation">
-<h1>Running a simulation<a class="headerlink" href="#running-a-simulation" title="Link to this heading">#</a></h1>
-<p>The differentiable state machine a sequence description is run on, what the
-transmit chain does to the pulses it asked for, and where the per-voxel work
-is placed.</p>
-<p>Simulating a volume and mapping one are both per-voxel, and both outgrow a card
-long before they outgrow a host. What to do about that is one policy – stay on
-the host when a launch would not repay itself, cross whole when the problem
-fits, stream through in chunks when it does not, and spread across as many
-cards as there are – and it is stated once, around the call.</p>
-<section id="the-engine">
-<h2>The engine<a class="headerlink" href="#the-engine" title="Link to this heading">#</a></h2>
-<p>The engine runs a <a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code></a> directly, which is what
-you reach for when a builder or an interpreter handed you a description rather
-than a simulator. A <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> wraps it and is how a
-sequence is usually written; see <a class="reference internal" href="model.html"><span class="doc">Signal models</span></a>.</p>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
-<tbody>
-</tbody>
-</table>
-</div>
-</section>
-<section id="transmit-calibration">
-<h2>Transmit calibration<a class="headerlink" href="#transmit-calibration" title="Link to this heading">#</a></h2>
-<p>What the transmit chain does to the pulse the description asked for: the
-amplitude a flip angle needs, and the profile a finite-bandwidth pulse leaves
-across the slice.</p>
-<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
-<tbody>
-</tbody>
-</table>
-</div>
-</section>
-<section id="where-the-work-runs">
-<h2>Where the work runs<a class="headerlink" href="#where-the-work-runs" title="Link to this heading">#</a></h2>
+  <section class="tex2jax_ignore mathjax_ignore" id="execution">
+<h1>Execution<a class="headerlink" href="#execution" title="Link to this heading">#</a></h1>
+<p>Context managers that set where per-voxel work runs: on the host, on one
+device, or streamed in chunks through several.</p>
+<p>Under a policy, work too small to repay a device launch stays on the host,
+work that fits is sent whole, and larger work is streamed in chunks. See
+<a class="reference internal" href="../explanations/execution.html"><span class="doc">Execution</span></a>.</p>
+<section id="placement">
+<h2>Placement<a class="headerlink" href="#placement" title="Link to this heading">#</a></h2>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-obj docutils literal notranslate"><span class="pre">execution</span></code></a></p></td>
-<td><p>Choose where work runs inside the block.</p></td>
+<td><p>Context manager that sets where per-voxel work runs.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.offload.html#blochsim.offload" title="blochsim.offload"><code class="xref py py-obj docutils literal notranslate"><span class="pre">offload</span></code></a></p></td>
-<td><p>Run host-resident volumes on CUDA without holding them there.</p></td>
+<td><p>Context manager that streams host-resident volumes through CUDA devices.</p></td>
 </tr>
 </tbody>
 </table>
@@ -609,7 +581,7 @@ across the slice.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.utils.b1rms.html#blochsim.utils.b1rms" title="blochsim.utils.b1rms"><code class="xref py py-obj docutils literal notranslate"><span class="pre">utils.b1rms</span></code></a></p></td>
-<td><p>Compute root-mean-squared B1 for a given RF pulse.</p></td>
+<td><p>Compute the root-mean-square B1 of an RF pulse.</p></td>
 </tr>
 </tbody>
 </table>
@@ -664,9 +636,7 @@ across the slice.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-engine">The engine</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#transmit-calibration">Transmit calibration</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#where-the-work-runs">Where the work runs</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#placement">Placement</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#utilities">Utilities</a></li>
 </ul>
   </nav></div>

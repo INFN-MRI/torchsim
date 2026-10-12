@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -576,32 +576,17 @@
 <dt class="sig sig-object py" id="blochsim.model.Simulator">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">Simulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">_SignalModel</span></code></p>
-<p>A protocol: what a sequence plays, and the physics behind it.</p>
-<p>The one thing anything downstream takes. Parameter inference, model-based
-reconstruction and sequence design are written against this and never ask
-how the signal is arrived at.</p>
-<p>Subclasses set <a class="reference internal" href="#blochsim.model.Simulator.model" title="blochsim.model.Simulator.model"><code class="xref py py-attr docutils literal notranslate"><span class="pre">model</span></code></a> and implement <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, which returns
-the operators of one repetition in the order they are played. A protocol
-with a closed form – a steady state that needs no state machine –
-implements <a class="reference internal" href="#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a> instead and never reaches <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>; its
-<a class="reference internal" href="#blochsim.model.Simulator.model" title="blochsim.model.Simulator.model"><code class="xref py py-attr docutils literal notranslate"><span class="pre">model</span></code></a> then carries only the property declaration, since there are
-no events for operators to realize.</p>
-<p><strong>The constructor takes the keywords</strong> <code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> <strong>takes, and fixes
-them; a call overrides.</strong> So a sequence is written once with the tissue it
-is being asked about already on it, and what is left to give per call is
-whatever is actually varying – the design under optimization, the map
-being fitted.</p>
-<p>A model that composes others rather than declaring physics of its own
-names its properties in the class body and writes whatever constructor
-suits it: every setting has a value at the class level, so one that never
-reaches this constructor still answers <code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code>.</p>
+<p>Base class of a pulse sequence protocol and its signal model.</p>
+<p>Subclasses set <a class="reference internal" href="#blochsim.model.Simulator.model" title="blochsim.model.Simulator.model"><code class="xref py py-attr docutils literal notranslate"><span class="pre">model</span></code></a> and implement <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, or implement
+<a class="reference internal" href="#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-meth docutils literal notranslate"><span class="pre">evaluate()</span></code></a> directly for a closed-form signal. The constructor takes
+the keywords <code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> takes and fixes them; a call overrides.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.model">
 <span class="sig-name descname"><span class="pre">model</span></span><a class="headerlink" href="#blochsim.model.Simulator.model" title="Link to this definition">#</a></dt>
-<dd><p>The physics behind the protocol.</p>
+<dd><p>Tissue properties and event operators.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics">SpinPhysics</a>, optional</p>
+<dd class="field-odd"><p><a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics">SpinPhysics</a></p>
 </dd>
 </dl>
 </dd></dl>
@@ -609,11 +594,11 @@ reaches this constructor still answers <code class="xref py py-meth docutils lit
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.states">
 <span class="sig-name descname"><span class="pre">states</span></span><a class="headerlink" href="#blochsim.model.Simulator.states" title="Link to this definition">#</a></dt>
-<dd><p>Configuration orders to carry, or <code class="docutils literal notranslate"><span class="pre">None</span></code> to size them from the
-winding the description asks for.</p>
+<dd><p>Configuration orders to carry. <code class="docutils literal notranslate"><span class="pre">None</span></code> sizes them from the winding in
+the description.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)">int</a>, optional</p>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)">int</a> or None</p>
 </dd>
 </dl>
 </dd></dl>
@@ -622,31 +607,31 @@ winding the description asks for.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></a></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></a></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.Simulator.evaluate" title="blochsim.model.Simulator.evaluate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></a></p></td>
-<td><p>Run one simulation of the described protocol.</p></td>
+<td><p>Return the signal of one simulation of the protocol.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></a></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.Simulator.from_pulseq" title="blochsim.model.Simulator.from_pulseq"><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></a></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></a></p></td>
-<td><p>Return the operators of one repetition, in the order they play.</p></td>
+<td><p>Return the operators of one repetition in playing order.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.Simulator.played" title="blochsim.model.Simulator.played"><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></a></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.Simulator.repetition_s" title="blochsim.model.Simulator.repetition_s"><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></a></p></td>
-<td><p>Return how long one repetition lasts, given what the layout played.</p></td>
+<td><p>Return the duration of one repetition in seconds.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -657,47 +642,44 @@ winding the description asks for.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.bind">
 <span class="sig-name descname"><span class="pre">bind</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">values</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.bind"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.bind" title="Link to this definition">#</a></dt>
-<dd><p>This simulator with more fixed on it, values or settings alike.</p>
-<p>A property or a protocol argument is held for the next call; a setting
-– the pulse the events drive, where across the slice to work it out,
-how many orders to carry – is applied to the copy instead, because it
-changes what is simulated rather than what is simulated with.</p>
+<dd><p>Return a copy with further arguments fixed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>**values</strong> – Tissue properties, protocol arguments and run settings (those of
+the constructor, e.g. <code class="docutils literal notranslate"><span class="pre">pulse</span></code> and <code class="docutils literal notranslate"><span class="pre">states</span></code>), under the names
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">simulate()</span></code> takes. Fixed values replace earlier ones.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The copy; <code class="docutils literal notranslate"><span class="pre">self</span></code> is unchanged.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#blochsim.model.Simulator" title="blochsim.model.Simulator">Simulator</a></p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.operators">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">operators</span></span><a class="headerlink" href="#blochsim.model.Simulator.operators" title="Link to this definition">#</a></dt>
-<dd><p>What plays each kind of event, from this simulator’s physics.</p>
-<p>A layout reads its operators here. Each is resolved while a
-description is being assembled and never again: what the layout
-produces carries its own action word, and the run consults no slot.</p>
+<dd><p>The <a class="reference internal" href="blochsim.model.EventOperators.html#blochsim.model.EventOperators" title="blochsim.model.EventOperators"><code class="xref py py-class docutils literal notranslate"><span class="pre">EventOperators</span></code></a> of <a class="reference internal" href="#blochsim.model.Simulator.model" title="blochsim.model.Simulator.model"><code class="xref py py-attr docutils literal notranslate"><span class="pre">model</span></code></a>, read by <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>.</p>
 </dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.variables">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">variables</span></span><a class="headerlink" href="#blochsim.model.Simulator.variables" title="Link to this definition">#</a></dt>
-<dd><p>The protocol arguments this simulator’s layout takes.</p>
-<p>What a sequence is written in, as against the tissue it is played on:
-<code class="xref py py-attr docutils literal notranslate"><span class="pre">exposes</span></code> and <code class="xref py py-attr docutils literal notranslate"><span class="pre">accepts</span></code> name the properties, this names the
-flip angles, spacings and times. Everything here can be fixed on the
-constructor, given at the call, or carried as a tensor a cost is
-differentiated back through.</p>
+<dd><p>Names of the <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a> parameters, excluding <code class="docutils literal notranslate"><span class="pre">*args</span></code> and <code class="docutils literal notranslate"><span class="pre">**kwargs</span></code>.</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.to">
 <span class="sig-name descname"><span class="pre">to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.to"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.to" title="Link to this definition">#</a></dt>
-<dd><p>This simulator, with everything it holds on <code class="docutils literal notranslate"><span class="pre">device</span></code>.</p>
-<p>A simulator carries its protocol – echo times, a flip train – and
-whatever tissue is fixed on it, and the two have to arrive on a card
-together: properties moved on their own would be multiplied against
-echo times still on the host.</p>
+<dd><p>Return a copy with its protocol and fixed properties on <code class="docutils literal notranslate"><span class="pre">device</span></code>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>device</strong> (<em>torch.device</em><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a>) – Where to put it.</p>
+<dd class="field-odd"><p><strong>device</strong> (<em>torch.device</em><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a>) – Target device.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A copy. This one is left where it was.</p>
+<dd class="field-even"><p>The copy; <code class="docutils literal notranslate"><span class="pre">self</span></code> is unchanged.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference internal" href="#blochsim.model.Simulator" title="blochsim.model.Simulator">Simulator</a></p>
@@ -708,13 +690,16 @@ echo times still on the host.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.layout">
 <span class="sig-name descname"><span class="pre">layout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">protocol</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.layout" title="Link to this definition">#</a></dt>
-<dd><p>Return the operators of one repetition, in the order they play.</p>
-<p>A bare operator starts where the one before it ended; one given as
-<code class="docutils literal notranslate"><span class="pre">(offset_s,</span> <span class="pre">operator)</span></code> starts that far into the repetition instead,
-which is how a sequence that times itself from an echo says so.</p>
+<dd><p>Return the operators of one repetition in playing order.</p>
+<p>A bare operator starts where the previous one ended; an
+<code class="docutils literal notranslate"><span class="pre">(offset_s,</span> <span class="pre">operator)</span></code> pair starts <code class="docutils literal notranslate"><span class="pre">offset_s</span></code> seconds into the
+repetition.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#NotImplementedError" title="(in Python v3.15)"><strong>NotImplementedError</strong></a> – If the subclass implements neither this nor <a class="reference internal" href="#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>.</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>**protocol</strong> – The arguments named by <a class="reference internal" href="#blochsim.model.Simulator.variables" title="blochsim.model.Simulator.variables"><code class="xref py py-attr docutils literal notranslate"><span class="pre">variables</span></code></a>.</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#NotImplementedError" title="(in Python v3.15)"><strong>NotImplementedError</strong></a> – If the subclass implements neither this nor <a class="reference internal" href="#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -722,58 +707,75 @@ which is how a sequence that times itself from an echo says so.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.repetition_s">
 <span class="sig-name descname"><span class="pre">repetition_s</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">played_s</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">protocol</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.repetition_s"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.repetition_s" title="Link to this definition">#</a></dt>
-<dd><p>Return how long one repetition lasts, given what the layout played.</p>
-<p>The default is the span the layout covers. A sequence whose TR is
-longer than what it plays – a refocused train waiting out its
-recovery – says so here, and only a run of more than one repetition
-can tell the difference.</p>
+<dd><p>Return the duration of one repetition in seconds.</p>
+<p>Defaults to <code class="docutils literal notranslate"><span class="pre">played_s</span></code>, the span the layout covers. Override when
+the repetition time exceeds it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>played_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em>) – Span covered by the layout, in seconds.</p></li>
+<li><p><strong>**protocol</strong> – The arguments of <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>.</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.played">
 <span class="sig-name descname"><span class="pre">played</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.played"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.played" title="Link to this definition">#</a></dt>
-<dd><p>Return the protocol as it will be laid out.</p>
-<p>The constructor’s arguments, with anything given at the call
-overriding them, every array read as torch. Anything naming a run
-setting is left out: those describe the run, and a layout has no use
-for them.</p>
+<dd><p>Return the protocol arguments of <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, arrays as torch tensors.</p>
+<p>The constructor’s protocol overridden by <code class="docutils literal notranslate"><span class="pre">sequence</span></code>; run settings are
+dropped.</p>
 </dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.rf_raster_time_s">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">rf_raster_time_s</span></span><a class="headerlink" href="#blochsim.model.Simulator.rf_raster_time_s" title="Link to this definition">#</a></dt>
-<dd><p>The dwell this simulator’s RF shapes are sampled on.</p>
+<dd><p>RF raster time of the shapes, in seconds.</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.describe">
 <span class="sig-name descname"><span class="pre">describe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">protocol</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.describe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.describe" title="Link to this definition">#</a></dt>
-<dd><p>Return the description this protocol plays.</p>
+<dd><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>**protocol</strong> – Arguments of <a class="reference internal" href="#blochsim.model.Simulator.layout" title="blochsim.model.Simulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The composed layout, or the stored description when the simulator
+was built by <a class="reference internal" href="#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> or <a class="reference internal" href="#blochsim.model.Simulator.from_pulseq" title="blochsim.model.Simulator.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_pulseq()</span></code></a>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription">SequenceDescription</a></p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.from_pulseq">
 <span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_pulseq</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">source</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">tr_index</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">settings</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.from_pulseq"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.from_pulseq" title="Link to this definition">#</a></dt>
 <dd><p>Return a simulator over one repetition of a Pulseq sequence.</p>
-<p>The offline half of <a class="reference internal" href="#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>: the same events, read
-from the file a scanner would be given rather than from the stream it
-sends back. The file states how many blocks a repetition holds, so
-nothing here searches for the period; naming the simulator is what says
-how those events are to be played.</p>
+<p>The events are re-emitted through this class’s operators, as in
+<a class="reference internal" href="#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>source</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><em>Path</em><em> or </em><em>sequence</em>) – A <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, or a sequence in memory with pypulseq’s reading
-interface – pypulseq’s own <code class="docutils literal notranslate"><span class="pre">Sequence</span></code>, or pypulseqpp’s.</p></li>
-<li><p><strong>tr_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Which repetition to read, counted in whole repetitions. Defaults to
-the file’s <code class="docutils literal notranslate"><span class="pre">TRRef</span></code> definition, and otherwise to the first
-repetition that acquires – which is refused when the repetitions
-differ in their pulses.</p></li>
-<li><p><strong>settings</strong> (<em>Any</em>) – Run settings and tissue, as the constructor takes them.</p></li>
+<li><p><strong>source</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="(in Python v3.15)"><em>pathlib.Path</em></a><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><em>object</em></a>) – A <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file, or a pypulseq or pypulseqpp <code class="docutils literal notranslate"><span class="pre">Sequence</span></code>.</p></li>
+<li><p><strong>tr_index</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Repetition to read, counted from 0. Defaults to the <code class="docutils literal notranslate"><span class="pre">TRRef</span></code>
+definition, else the first repetition that acquires.</p></li>
+<li><p><strong>**settings</strong> – Run settings and tissue properties, as for the constructor.</p></li>
 </ul>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>A simulator playing that repetition.</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Simulator playing that repetition.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#blochsim.model.Simulator" title="blochsim.model.Simulator">Simulator</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the file declares no <code class="docutils literal notranslate"><span class="pre">TRSize</span></code>, <code class="docutils literal notranslate"><span class="pre">tr_index</span></code> is out of range,
+    or the repetitions differ in their pulses and none was named.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -781,32 +783,26 @@ differ in their pulses.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.from_description">
 <span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_description</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">description</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">settings</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.from_description"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.from_description" title="Link to this definition">#</a></dt>
-<dd><p>Return a simulator over a stream someone else assembled.</p>
-<p>This is the path a description arriving from a scanner takes:
-<code class="docutils literal notranslate"><span class="pre">FSESimulator.from_description(stream)</span></code> says the events are to be
-read as a refocused train, and the only thing left to give is the
-tissue. Echo spacing, echo train length, flip angles and pulse shapes
-are in the stream and are not named again.</p>
-<p>Which simulator you call it on is the whole of what you choose, and it
-matters. A description says what was played – an RF pulse, tagged with
-the use its designer gave it, and an ADC window – and says nothing
-about the gradients between them, because the transport carries none.
-The dephasing lives in the handlers instead: a
-<a class="reference internal" href="blochsim.SSFPFidReadout.html#blochsim.SSFPFidReadout" title="blochsim.SSFPFidReadout"><code class="xref py py-func docutils literal notranslate"><span class="pre">SSFPFidReadout()</span></code></a> winds one order after every sample, a
-<a class="reference internal" href="blochsim.SSFPEchoReadout.html#blochsim.SSFPEchoReadout" title="blochsim.SSFPEchoReadout"><code class="xref py py-func docutils literal notranslate"><span class="pre">SSFPEchoReadout()</span></code></a> winds it before, a
-<a class="reference internal" href="blochsim.SPGRReadout.html#blochsim.SPGRReadout" title="blochsim.SPGRReadout"><code class="xref py py-func docutils literal notranslate"><span class="pre">SPGRReadout()</span></code></a> spoils, and a refocusing pulse is
-crushed either side. So the events are re-emitted through this model’s
-own operators rather than taken as they arrive.</p>
+<dd><p>Return a simulator that plays an existing description.</p>
+<p>The description carries RF pulses and ADC windows but no gradients, so
+its events are re-emitted through this class’s operators, which supply
+the dephasing (crushers, winding, spoiling). The class the method is
+called on therefore selects how the events are interpreted.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>description</strong> (<a class="reference internal" href="blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription"><em>SequenceDescription</em></a>) – The stream, as the MRD client decodes it or a Pulseq design
-exports it.</p></li>
-<li><p><strong>model</strong> (<a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><em>SpinPhysics</em></a><em>, </em><em>optional</em>) – The physics to read it with. Defaults to this simulator’s own,
-which is what naming a concrete one is for.</p></li>
-<li><p><strong>settings</strong> (<em>Any</em><em>, </em><em>optional</em>) – Run settings and tissue, as the constructor takes them.
-<code class="docutils literal notranslate"><span class="pre">repetitions</span></code> defaults to this simulator’s own.</p></li>
+<li><p><strong>description</strong> (<a class="reference internal" href="blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription"><em>SequenceDescription</em></a>) – Description decoded from an MRD stream or exported from a Pulseq
+design.</p></li>
+<li><p><strong>model</strong> (<a class="reference internal" href="blochsim.model.SpinPhysics.html#blochsim.model.SpinPhysics" title="blochsim.model.SpinPhysics"><em>SpinPhysics</em></a><em>, </em><em>optional</em>) – Physics to read it with. Defaults to the class’s own.</p></li>
+<li><p><strong>**settings</strong> – Run settings and tissue properties, as for the constructor.
+<code class="docutils literal notranslate"><span class="pre">repetitions</span></code> defaults to the class’s own.</p></li>
 </ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Simulator playing the re-emitted description.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#blochsim.model.Simulator" title="blochsim.model.Simulator">Simulator</a></p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
 <dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If called on <a class="reference internal" href="#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> itself, which names no handlers and
@@ -818,10 +814,18 @@ which is what naming a concrete one is for.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.model.Simulator.evaluate">
 <span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">properties</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#Simulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.Simulator.evaluate" title="Link to this definition">#</a></dt>
-<dd><p>Run one simulation of the described protocol.</p>
-<p><code class="docutils literal notranslate"><span class="pre">states</span></code>, <code class="docutils literal notranslate"><span class="pre">repetitions</span></code>, <code class="docutils literal notranslate"><span class="pre">record</span></code>, <code class="docutils literal notranslate"><span class="pre">device</span></code> and <code class="docutils literal notranslate"><span class="pre">execution</span></code>
-describe the run and are taken here, each falling back to what the
-constructor was given; everything else overrides a protocol argument.</p>
+<dd><p>Return the signal of one simulation of the protocol.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>properties</strong> (<em>mapping</em>) – Tissue property values by public name.</p></li>
+<li><p><strong>**sequence</strong> – Run settings (<code class="docutils literal notranslate"><span class="pre">states</span></code>, <code class="docutils literal notranslate"><span class="pre">repetitions</span></code>, <code class="docutils literal notranslate"><span class="pre">record</span></code>,
+<code class="docutils literal notranslate"><span class="pre">device</span></code>, <code class="docutils literal notranslate"><span class="pre">execution</span></code>, <code class="docutils literal notranslate"><span class="pre">across_slice</span></code>), each defaulting to
+the constructor’s, and protocol arguments overriding the
+constructor’s.</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 </dd></dl>

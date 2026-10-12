@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -542,10 +542,10 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-operator">The operator</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-loop">The loop</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#linear-solvers">Linear solvers</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-temporal-basis">The temporal basis</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#operator">Operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#solver">Solver</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#linear-solves">Linear solves</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#temporal-basis">Temporal basis</a></li>
 </ul>
             </nav>
         </div>
@@ -559,32 +559,18 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="model-based-reconstruction">
 <h1>Model-based reconstruction<a class="headerlink" href="#model-based-reconstruction" title="Link to this heading">#</a></h1>
-<p>Solving for parameter maps straight from k-space, with the signal model inside
-the forward operator rather than applied to images someone else reconstructed.</p>
-<p><a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a> is that model as an operator: parameter maps in, one
-image per contrast out, with an analytic derivative that never builds a
-Jacobian, a complex amplitude for proton density and receive phase, and the
-same box bounds <a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-class docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a> takes. It honours
-<a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>, and <code class="docutils literal notranslate"><span class="pre">physics()</span></code> hands it to deepinv.</p>
-<p><a class="reference internal" href="../generated/blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code></a> inverts the chain by repeated linearization. Which damping
-it carries decides which method it is – <code class="xref py py-class docutils literal notranslate"><span class="pre">Schedule</span></code> for an iteratively
-regularized Gauss-Newton, <a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code></a> for Levenberg-Marquardt, which
-is what <a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-class docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a> runs. How the linearized problem is
-solved is a callable, and mostly it is somebody else’s: <a class="reference internal" href="../generated/blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-func docutils literal notranslate"><span class="pre">iterative()</span></code></a> takes
-any <code class="xref py py-class docutils literal notranslate"><span class="pre">LeastSquares</span></code>, which minimizes exactly what a Gauss-Newton step
-leaves, and falls back to deepinv’s <code class="docutils literal notranslate"><span class="pre">least_squares</span></code> when given nothing.
-There is no conjugate gradient written here, and no name to pass – one of
-deepinv’s others is that function with its argument bound.
-<a class="reference internal" href="../generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> is the exception and is not a general solver – it is the batched
-damped least-squares over a voxel-diagonal Jacobian that <em>is</em> the
-Levenberg-Marquardt step. A closure around a proximal solver from elsewhere is
-how a regularizer enters.</p>
-<p>The Fourier encoding is not here and never will be. Anything exposing <code class="docutils literal notranslate"><span class="pre">A</span></code> and
-<code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> composes – an mri-nufft operator through its deepinv bridge, say
-– and <a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace.modes" title="blochsim.Subspace.modes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Subspace.modes</span></code></a> hands the temporal basis to a subspace operator in
-the layout it reads.</p>
-<section id="the-operator">
-<h2>The operator<a class="headerlink" href="#the-operator" title="Link to this heading">#</a></h2>
+<p>Parameter maps solved from k-space with the signal model inside the forward
+operator. The concepts are in <a class="reference internal" href="../explanations/model-based-reconstruction.html"><span class="doc">Model-based reconstruction</span></a>.</p>
+<p><a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a> is the signal model as an operator: parameter maps in,
+one image per contrast out, with analytic Jacobian-vector products, a complex
+amplitude and box bounds. It honours <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>, and <code class="docutils literal notranslate"><span class="pre">physics()</span></code> wraps
+it for deepinv. <a class="reference internal" href="../generated/blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code></a> inverts it by repeated linearization; its
+damping policy (<code class="docutils literal notranslate"><span class="pre">blochsim.recon.Schedule</span></code> for an iteratively regularized
+Gauss-Newton, <a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code></a> for Levenberg-Marquardt) selects the method,
+and its linear solve is <a class="reference internal" href="../generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> or <a class="reference internal" href="../generated/blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-func docutils literal notranslate"><span class="pre">iterative()</span></code></a>. The Fourier
+encoding is external: any object with <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">A_adjoint</span></code> composes.</p>
+<section id="operator">
+<h2>Operator<a class="headerlink" href="#operator" title="Link to this heading">#</a></h2>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ModelOperator</span></code></a></p></td>
@@ -594,43 +580,42 @@ the layout it reads.</p>
 </table>
 </div>
 </section>
-<section id="the-loop">
-<h2>The loop<a class="headerlink" href="#the-loop" title="Link to this heading">#</a></h2>
+<section id="solver">
+<h2>Solver<a class="headerlink" href="#solver" title="Link to this heading">#</a></h2>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GaussNewton</span></code></a></p></td>
 <td><p>Solve a nonlinear inverse problem by repeated linearization.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.TrustRegion.html#blochsim.TrustRegion" title="blochsim.TrustRegion"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TrustRegion</span></code></a></p></td>
-<td><p>Each voxel its own damping, raised when a step does not pay.</p></td>
+<td><p>Levenberg-Marquardt: per-voxel damping, raised where a step does not pay.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-<section id="linear-solvers">
-<h2>Linear solvers<a class="headerlink" href="#linear-solvers" title="Link to this heading">#</a></h2>
+<section id="linear-solves">
+<h2>Linear solves<a class="headerlink" href="#linear-solves" title="Link to this heading">#</a></h2>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-obj docutils literal notranslate"><span class="pre">direct</span></code></a></p></td>
-<td><p>Solve every voxel's linearized system outright, all of them at once.</p></td>
+<td><p>Solve every voxel's damped linearized system by batched least squares.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.iterative.html#blochsim.iterative" title="blochsim.iterative"><code class="xref py py-obj docutils literal notranslate"><span class="pre">iterative</span></code></a></p></td>
-<td><p>The inner solve, by a regularized linear least-squares routine.</p></td>
+<td><p>Build an inner solve from a regularized least-squares routine.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-<section id="the-temporal-basis">
-<h2>The temporal basis<a class="headerlink" href="#the-temporal-basis" title="Link to this heading">#</a></h2>
-<p>The signals a train can produce do not fill the space its contrasts span, so a
-basis of a dozen or so directions carries them to a known error. The same basis
-serves a subspace reconstruction here and the estimators on <a class="reference internal" href="estimators.html"><span class="doc">Parameter estimation</span></a>.</p>
+<section id="temporal-basis">
+<h2>Temporal basis<a class="headerlink" href="#temporal-basis" title="Link to this heading">#</a></h2>
+<p><a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace.modes" title="blochsim.Subspace.modes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">Subspace.modes</span></code></a> gives the basis in the layout a subspace operator reads.
+The same basis serves the estimators on <a class="reference internal" href="estimators.html"><span class="doc">Parameter estimation</span></a>.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Subspace</span></code></a></p></td>
-<td><p>A temporal basis fitted to a set of signals.</p></td>
+<td><p>Orthonormal temporal basis fitted to a set of signals.</p></td>
 </tr>
 </tbody>
 </table>
@@ -685,10 +670,10 @@ serves a subspace reconstruction here and the estimators on <a class="reference 
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-operator">The operator</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-loop">The loop</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#linear-solvers">Linear solvers</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#the-temporal-basis">The temporal basis</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#operator">Operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#solver">Solver</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#linear-solves">Linear solves</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#temporal-basis">Temporal basis</a></li>
 </ul>
   </nav></div>
 

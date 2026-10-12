@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -535,11 +535,11 @@
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    TE:</span>
-<span class="sd">        Echo times in milliseconds.</span>
-<span class="sd">    field_strength:</span>
-<span class="sd">        Main field in tesla.</span>
-<span class="sd">    spectrum:</span>
+<span class="sd">    TE : torch.Tensor</span>
+<span class="sd">        Echo times in ms.</span>
+<span class="sd">    field_strength : float or torch.Tensor</span>
+<span class="sd">        Main field in T.</span>
+<span class="sd">    spectrum : str</span>
 <span class="sd">        A key of :data:`FAT_SPECTRA`.</span>
 
 <span class="sd">    Returns</span>
@@ -600,17 +600,11 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">MultiGradientEchoSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Water and fat, dephasing and decaying across a gradient-echo train.</span>
 
-<span class="sd">    Fat is a multi-peak spectrum [1]_ at a fixed set of chemical shifts, so</span>
-<span class="sd">    its signal at each echo is a known complex modulation and what is left to</span>
-<span class="sd">    fit per voxel is how much fat there is, the transverse decay and the</span>
-<span class="sd">    off-resonance. Each model BART's multi-echo fits use is a subset of the</span>
-<span class="sd">    properties: water and fat with a shared or separate T2*, water alone with</span>
-<span class="sd">    T2*, and off-resonance alone.</span>
-
-<span class="sd">    ``fat_fraction`` and ``fat_phase`` span the water and fat signals: with a</span>
-<span class="sd">    complex scale in front, water is ``(1 - fat_fraction)`` of it and fat</span>
-<span class="sd">    ``fat_fraction`` of it rotated by ``fat_phase``. Leaving ``T2star`` out</span>
-<span class="sd">    means no decay, and leaving ``fat_T2star`` out gives fat water's T2*.</span>
+<span class="sd">    Fat is a multi-peak spectrum [1]_ at fixed chemical shifts, so per voxel only</span>
+<span class="sd">    the fat amount, the transverse decay and the off-resonance remain to be</span>
+<span class="sd">    fitted. Water is ``1 - fat_fraction`` of a complex scale and fat</span>
+<span class="sd">    ``fat_fraction`` of it, rotated by ``fat_phase``. Omitting ``T2star`` means no</span>
+<span class="sd">    decay; omitting ``fat_T2star`` gives fat the water ``T2star``.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -644,7 +638,7 @@
 <div class="viewcode-block" id="MultiGradientEchoSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MultiGradientEchoSimulator.html#blochsim.simulators.MultiGradientEchoSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -660,15 +654,14 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T2star`` and ``fat_T2star`` in milliseconds, ``B0`` in Hz,</span>
-<span class="sd">            ``fat_fraction`` as a fraction of the signal, ``fat_phase`` in</span>
-<span class="sd">            degrees, and ``M0`` as a scaling.</span>
-<span class="sd">        TE:</span>
-<span class="sd">            Echo times in milliseconds.</span>
-<span class="sd">        field_strength:</span>
-<span class="sd">            Main field in tesla, which sets the fat peaks' frequencies.</span>
-<span class="sd">        fat_spectrum:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T2star`` and ``fat_T2star`` in ms, ``B0`` in Hz, ``fat_fraction`` as a</span>
+<span class="sd">            fraction of the signal, ``fat_phase`` in degrees, ``M0`` scaling.</span>
+<span class="sd">        TE : float or array-like</span>
+<span class="sd">            Echo times in ms.</span>
+<span class="sd">        field_strength : float or array-like, optional</span>
+<span class="sd">            Main field in T; sets the fat peak frequencies.</span>
+<span class="sd">        fat_spectrum : str, optional</span>
 <span class="sd">            A key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">TE</span><span class="p">)</span>
@@ -679,17 +672,14 @@
 <div class="viewcode-block" id="IRMultiGradientEchoSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.IRMultiGradientEchoSimulator.html#blochsim.simulators.IRMultiGradientEchoSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">IRMultiGradientEchoSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A multi-gradient-echo train read at a series of inversion times.</span>
+<span class="w">    </span><span class="sd">"""Multi-gradient-echo train read at a series of inversion times.</span>
 
-<span class="sd">    Water and fat each recover from the inversion along their own apparent</span>
-<span class="sd">    T1, ``1 - (1 + inv_efficiency) exp(-TI / T1)``, as a Look-Locker readout</span>
-<span class="sd">    does, and each echo train then dephases and decays as in</span>
-<span class="sd">    :class:`MultiGradientEchoSimulator`. ``TI`` and ``TE`` give one contrast</span>
-<span class="sd">    per entry, so a train of echoes after each of several inversion times is</span>
-<span class="sd">    the flattened grid of the two.</span>
-
-<span class="sd">    ``fat_T1`` and ``fat_inv_efficiency`` default to water's, which is the</span>
-<span class="sd">    model with one recovery for both.</span>
+<span class="sd">    Water and fat each recover as ``1 - (1 + inv_efficiency) exp(-TI / T1)``, and</span>
+<span class="sd">    each echo train then dephases and decays as in</span>
+<span class="sd">    :class:`MultiGradientEchoSimulator`. ``TI`` and ``TE`` give one contrast per</span>
+<span class="sd">    entry, so an echo train after each of several inversion times is their</span>
+<span class="sd">    flattened grid. ``fat_T1`` and ``fat_inv_efficiency`` default to the water</span>
+<span class="sd">    values.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -727,7 +717,7 @@
 <div class="viewcode-block" id="IRMultiGradientEchoSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.IRMultiGradientEchoSimulator.html#blochsim.simulators.IRMultiGradientEchoSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -744,18 +734,18 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1``, ``fat_T1``, ``T2star`` and ``fat_T2star`` in milliseconds,</span>
-<span class="sd">            ``B0`` in Hz, ``inv_efficiency`` and ``fat_inv_efficiency`` as</span>
-<span class="sd">            fractions of a perfect inversion, ``fat_fraction`` as a fraction</span>
-<span class="sd">            of the signal, ``fat_phase`` in degrees, and ``M0`` as a scaling.</span>
-<span class="sd">        TI:</span>
-<span class="sd">            Inversion times in milliseconds.</span>
-<span class="sd">        TE:</span>
-<span class="sd">            Echo times in milliseconds.</span>
-<span class="sd">        field_strength:</span>
-<span class="sd">            Main field in tesla, which sets the fat peaks' frequencies.</span>
-<span class="sd">        fat_spectrum:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1``, ``fat_T1``, ``T2star`` and ``fat_T2star`` in ms; ``B0`` in Hz;</span>
+<span class="sd">            ``inv_efficiency`` and ``fat_inv_efficiency`` as fractions of a perfect</span>
+<span class="sd">            inversion; ``fat_fraction`` as a fraction of the signal; ``fat_phase`` in</span>
+<span class="sd">            degrees; ``M0`` scaling.</span>
+<span class="sd">        TI : float or array-like</span>
+<span class="sd">            Inversion times in ms.</span>
+<span class="sd">        TE : float or array-like</span>
+<span class="sd">            Echo times in ms.</span>
+<span class="sd">        field_strength : float or array-like, optional</span>
+<span class="sd">            Main field in T; sets the fat peak frequencies.</span>
+<span class="sd">        fat_spectrum : str, optional</span>
 <span class="sd">            A key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">TI</span><span class="p">,</span> <span class="n">TE</span><span class="p">)</span>

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -564,11 +564,9 @@
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.simulators.</span></span><span class="sig-name descname"><span class="pre">DoubleAngleSimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/relaxometry.html#DoubleAngleSimulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.DoubleAngleSimulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model._state_machine.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a></p>
 <p>Excitation at a series of flip angles, scaled by the transmit field.</p>
-<p>What a voxel actually turns through is the nominal angle times the local
-transmit efficiency, so a series of angles reads that efficiency out.
-Two angles are enough, and where the second is twice the first their
-ratio gives <code class="docutils literal notranslate"><span class="pre">B1</span></code> in closed form – but nothing here requires that, so
-any set of angles can be fitted.</p>
+<p>A voxel turns through the nominal angle times <code class="docutils literal notranslate"><span class="pre">B1</span></code>, so a series of angles
+reads out <code class="docutils literal notranslate"><span class="pre">B1</span></code>. Two angles suffice, and a ratio of two between them gives
+<code class="docutils literal notranslate"><span class="pre">B1</span></code> in closed form; any set of angles can be fitted.</p>
 <p class="rubric">Examples</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">DoubleAngleSimulator</span>
 
@@ -584,31 +582,31 @@ any set of angles can be fitted.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.DoubleAngleSimulator.evaluate" title="blochsim.simulators.DoubleAngleSimulator.evaluate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></a></p></td>
-<td><p>Evaluate the closed form, no state machine and no description.</p></td>
+<td><p>Return the closed-form signal.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></p></td>
-<td><p>Return the operators of one repetition, in the order they play.</p></td>
+<td><p>Return the operators of one repetition in playing order.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></p></td>
-<td><p>Return how long one repetition lasts, given what the layout played.</p></td>
+<td><p>Return the duration of one repetition in seconds.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -619,7 +617,7 @@ any set of angles can be fitted.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.simulators.DoubleAngleSimulator.evaluate">
 <span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">properties</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/relaxometry.html#DoubleAngleSimulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.DoubleAngleSimulator.evaluate" title="Link to this definition">#</a></dt>
-<dd><p>Evaluate the closed form, no state machine and no description.</p>
+<dd><p>Return the closed-form signal.</p>
 </dd></dl>
 
 </dd></dl>

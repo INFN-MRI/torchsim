@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -507,51 +507,44 @@
     <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="o">**</span><span class="n">values</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""</span>
-<span class="sd">    MPRAGE simulator wrapper.</span>
+<span class="w">    </span><span class="sd">"""Simulate the sampled MPRAGE shot in closed form.</span>
+
+<span class="sd">    Wraps :class:`~blochsim.simulators.MPRAGESimulator`.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    TI : float</span>
-<span class="sd">        Inversion time (s) in milliseconds.</span>
-<span class="sd">    flip : float | npt.ArrayLike</span>
-<span class="sd">        Flip angle train in degrees of shape ``(2,)``.</span>
-<span class="sd">        If scalar, assume same angle for both blocks.</span>
+<span class="sd">        Inversion time in ms, measured to the sampled shot.</span>
+<span class="sd">    flip : float</span>
+<span class="sd">        Excitation flip angle in degrees.</span>
 <span class="sd">    TRspgr : float</span>
-<span class="sd">        Repetition time in milliseconds for each SPGR readout.</span>
-<span class="sd">    nshots : int | npt.ArrayLike</span>
-<span class="sd">        Number of SPGR readout within the inversion block of shape ``(npre, npost)``</span>
-<span class="sd">        If scalar, assume ``npre == npost == 0.5 * nshots``. Usually, this</span>
-<span class="sd">        is the number of slice encoding lines ``(nshots = nz / Rz)``,</span>
-<span class="sd">        i.e., the number of slices divided by the total acceleration factor along ``z``.</span>
-<span class="sd">    T1 : float | npt.ArrayLike</span>
-<span class="sd">        Longitudinal relaxation time in milliseconds.</span>
-<span class="sd">    diff : str | tuple[str], optional</span>
-<span class="sd">        Arguments to get the signal derivative with respect to.</span>
-<span class="sd">        The default is ``None`` (no differentation).</span>
-<span class="sd">    inv_efficiency : float | npt.ArrayLike, optional</span>
-<span class="sd">        Inversion efficiency map, default is ``1.0``.</span>
+<span class="sd">        Repetition time of one readout, in ms.</span>
+<span class="sd">    nshots : int or array-like</span>
+<span class="sd">        Readouts in the block: a total including the sampled shot, split evenly</span>
+<span class="sd">        around it, or ``(before, after)`` the sampled shot.</span>
+<span class="sd">    T1 : float or array-like</span>
+<span class="sd">        Longitudinal relaxation time in ms.</span>
+<span class="sd">    diff : str or tuple of str, optional</span>
+<span class="sd">        Parameters to differentiate with respect to; ``None`` returns the signal only.</span>
+<span class="sd">    inv_efficiency : float or array-like, optional</span>
+<span class="sd">        Inversion efficiency, a fraction of a perfect inversion.</span>
 <span class="sd">    M0 : float or array-like, optional</span>
-<span class="sd">        Proton density scaling factor, default is ``1.0``.</span>
+<span class="sd">        Proton density scaling.</span>
 <span class="sd">    phases : float or array-like, optional</span>
-<span class="sd">        Sequence phase schedule in degrees. The default is ``0.0``.</span>
-<span class="sd">    **values : optional</span>
-<span class="sd">        Additional call-time tissue, protocol or run settings accepted by</span>
-<span class="sd">        ``Simulator.simulate``. Settings fixed only at simulator construction</span>
-<span class="sd">        remain class-interface features.</span>
-<span class="sd">    device : str | torch.device, optional</span>
-<span class="sd">        Computational device for simulation.</span>
-<span class="sd">        The default is ``None`` (infer from input).</span>
+<span class="sd">        Excitation phases in degrees.</span>
+<span class="sd">    device : str or torch.device, optional</span>
+<span class="sd">        Device to run on; follows the inputs when ``None``.</span>
+<span class="sd">    **values</span>
+<span class="sd">        Further tissue, protocol or run arguments accepted by</span>
+<span class="sd">        :meth:`~blochsim.model.Simulator.simulate`.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
-<span class="sd">    sig : npt.ArrayLike</span>
-<span class="sd">        Signal evolution of shape ``(...,)``.</span>
-<span class="sd">    jac : npt.ArrayLike</span>
-<span class="sd">        Derivatives of signal wrt ``diff`` parameters,</span>
-<span class="sd">        of shape ``(..., len(diff))``.</span>
-<span class="sd">        Not returned if ``diff`` is ``None``.</span>
-
+<span class="sd">    signal : array-like</span>
+<span class="sd">        Signal of shape ``(...)``.</span>
+<span class="sd">    jacobian : array-like</span>
+<span class="sd">        Derivatives with respect to ``diff``, of shape ``(..., len(diff))``. Returned only</span>
+<span class="sd">        when ``diff`` is given; a single name drops the ``len(diff)`` axis.</span>
 <span class="sd">    """</span>
     <span class="k">return</span> <span class="n">evaluated</span><span class="p">(</span>
         <span class="n">MPRAGESimulator</span><span class="p">(),</span>

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -560,10 +560,18 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.Delay">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">Delay</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">duration_s</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">EventAction.NONE</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_operators.html#Delay"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.Delay" title="Link to this definition">#</a></dt>
-<dd><p>Return time passing, and whatever the sequence plays across it.</p>
-<p><code class="xref py py-meth docutils literal notranslate"><span class="pre">SequenceEvent.wait()</span></code> takes no action, so a delay that spoils or
-winds the states is built here rather than by the caller reaching for the
-raw constructor.</p>
+<dd><p>Return a delay, optionally carrying a gradient action.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>duration_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em>) – Time held on the timeline, in seconds.</p></li>
+<li><p><strong>action</strong> (<em>EventAction</em><em>, </em><em>optional</em>) – Gradient action played at the start of the delay.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator">Operator</a></p>
+</dd>
+</dl>
 </dd></dl>
 
 <section id="examples-using-blochsim-delay">

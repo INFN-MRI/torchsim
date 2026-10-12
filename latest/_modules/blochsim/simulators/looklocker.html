@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -531,12 +531,10 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">LookLockerSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Recovery from an inversion under a spoiled train of small flip angles.</span>
 
-<span class="sd">    Each pulse tips a little of the longitudinal magnetization away, so the</span>
-<span class="sd">    recovery runs towards a steady state below equilibrium at the apparent</span>
-<span class="sd">    rate ``R1* = R1 - ln(cos a) / TR`` [1]_, and each readout records the</span>
-<span class="sd">    longitudinal magnetization just ahead of its pulse, times ``sin a``.</span>
-<span class="sd">    Reading the recovery at a set of times after the inversion gives T1, the</span>
-<span class="sd">    flip angle's efficiency ``B1`` and the proton density together.</span>
+<span class="sd">    The longitudinal magnetization recovers towards a steady state below</span>
+<span class="sd">    equilibrium at the apparent rate ``R1* = R1 - ln(cos a) / TR`` [1]_. Each</span>
+<span class="sd">    readout records the longitudinal magnetization just before its pulse, times</span>
+<span class="sd">    ``sin a``.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -569,7 +567,7 @@
 <div class="viewcode-block" id="LookLockerSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.LookLockerSimulator.html#blochsim.simulators.LookLockerSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -587,22 +585,19 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` in milliseconds, ``B1`` as a fraction of the nominal flip</span>
-<span class="sd">            angle, ``inv_efficiency`` as a fraction of a perfect inversion,</span>
-<span class="sd">            and ``M0`` as a scaling.</span>
-<span class="sd">        flip:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` in ms, ``B1`` as a fraction of the nominal flip angle,</span>
+<span class="sd">            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.</span>
+<span class="sd">        flip : float or array-like</span>
 <span class="sd">            Flip angle of the readout pulses in degrees.</span>
-<span class="sd">        TR:</span>
-<span class="sd">            Spacing of the readout pulses in milliseconds.</span>
-<span class="sd">        TI:</span>
-<span class="sd">            Time of each readout after the inversion, in milliseconds.</span>
-<span class="sd">        short_TR:</span>
-<span class="sd">            Take the steady state as ``M0 R1 / R1*``, its limit for</span>
-<span class="sd">            ``TR &lt;&lt; T1``.</span>
-<span class="sd">        from_steady_state:</span>
-<span class="sd">            Invert the steady state rather than the equilibrium</span>
-<span class="sd">            magnetization.</span>
+<span class="sd">        TR : float or array-like</span>
+<span class="sd">            Spacing of the readout pulses in ms.</span>
+<span class="sd">        TI : float or array-like</span>
+<span class="sd">            Time of each readout after the inversion, in ms.</span>
+<span class="sd">        short_TR : bool, optional</span>
+<span class="sd">            Take the steady state as ``M0 R1 / R1*``, its ``TR &lt;&lt; T1`` limit.</span>
+<span class="sd">        from_steady_state : bool, optional</span>
+<span class="sd">            Invert the steady state rather than the equilibrium magnetization.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="p">,</span> <span class="n">TI</span><span class="p">)</span>
         <span class="n">density</span> <span class="o">=</span> <span class="n">held</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"M0"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
@@ -621,11 +616,10 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">MOLLISimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Look-Locker readout blocks separated by free recovery, after one inversion.</span>
 
-<span class="sd">    Modified Look-Locker inversion recovery [1]_ reads the recovery in</span>
-<span class="sd">    blocks, one per heartbeat. The first block starts from the inversion;</span>
-<span class="sd">    between blocks the pulses stop, and the longitudinal magnetization the</span>
-<span class="sd">    last readout of a block recorded recovers towards ``M0`` for</span>
-<span class="sd">    ``recovery`` milliseconds before the next block starts from it.</span>
+<span class="sd">    Modified Look-Locker inversion recovery [1]_ reads the recovery in blocks. The</span>
+<span class="sd">    first block starts from the inversion; between blocks the pulses stop, and the</span>
+<span class="sd">    longitudinal magnetization left by a block's last readout recovers towards</span>
+<span class="sd">    ``M0`` for ``recovery`` ms before the next block starts from it.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -658,7 +652,7 @@
 <div class="viewcode-block" id="MOLLISimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MOLLISimulator.html#blochsim.simulators.MOLLISimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">))</span></div>
 
 
@@ -676,21 +670,19 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` in milliseconds, ``B1`` as a fraction of the nominal flip</span>
-<span class="sd">            angle, ``inv_efficiency`` as a fraction of a perfect inversion,</span>
-<span class="sd">            and ``M0`` as a scaling.</span>
-<span class="sd">        flip:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` in ms, ``B1`` as a fraction of the nominal flip angle,</span>
+<span class="sd">            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.</span>
+<span class="sd">        flip : float or array-like</span>
 <span class="sd">            Flip angle of the readout pulses in degrees.</span>
-<span class="sd">        TR:</span>
-<span class="sd">            Spacing of the readout pulses in milliseconds.</span>
-<span class="sd">        readouts:</span>
-<span class="sd">            How many readouts each block holds.</span>
-<span class="sd">        recovery:</span>
-<span class="sd">            Free recovery between blocks, in milliseconds.</span>
-<span class="sd">        short_TR:</span>
-<span class="sd">            Take the steady state as ``M0 R1 / R1*``, its limit for</span>
-<span class="sd">            ``TR &lt;&lt; T1``.</span>
+<span class="sd">        TR : float or array-like</span>
+<span class="sd">            Spacing of the readout pulses in ms.</span>
+<span class="sd">        readouts : sequence of int</span>
+<span class="sd">            Readouts in each block.</span>
+<span class="sd">        recovery : float or array-like</span>
+<span class="sd">            Free recovery between blocks, in ms.</span>
+<span class="sd">        short_TR : bool, optional</span>
+<span class="sd">            Take the steady state as ``M0 R1 / R1*``, its ``TR &lt;&lt; T1`` limit.</span>
 <span class="sd">        """</span>
         <span class="n">counts</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">count</span><span class="p">)</span> <span class="k">for</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">readouts</span><span class="p">]</span>
         <span class="n">positions</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">count</span><span class="p">)</span> <span class="k">for</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">counts</span><span class="p">])</span>
@@ -720,12 +712,9 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">IRbSSFPSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Recovery from an inversion under a balanced SSFP train.</span>
 
-<span class="sd">    After an alpha/2 preparation the balanced train drives the magnetization</span>
-<span class="sd">    along one exponential towards the bSSFP steady state, at a rate that</span>
-<span class="sd">    mixes R1 and R2 by the flip angle [1]_, so the recovery curve yields T1,</span>
-<span class="sd">    T2 and the proton density together. The signal is read at a series of</span>
-<span class="sd">    times after the inversion; ``inv_efficiency`` scales the magnetization</span>
-<span class="sd">    the recovery starts from.</span>
+<span class="sd">    After an alpha/2 preparation the magnetization approaches the bSSFP steady</span>
+<span class="sd">    state along one exponential, at a rate mixing R1 and R2 by the flip angle</span>
+<span class="sd">    [1]_. ``inv_efficiency`` scales the magnetization the recovery starts from.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -760,7 +749,7 @@
 <div class="viewcode-block" id="IRbSSFPSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.IRbSSFPSimulator.html#blochsim.simulators.IRbSSFPSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -775,15 +764,14 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` and ``T2`` in milliseconds, ``B1`` as a fraction of the</span>
-<span class="sd">            nominal flip angle, ``inv_efficiency`` as a fraction of a perfect</span>
-<span class="sd">            inversion, and ``M0`` as a scaling.</span>
-<span class="sd">        flip:</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` and ``T2`` in ms, ``B1`` as a fraction of the nominal flip angle,</span>
+<span class="sd">            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.</span>
+<span class="sd">        flip : float or array-like</span>
 <span class="sd">            Flip angle of the balanced train in degrees.</span>
-<span class="sd">        TI:</span>
-<span class="sd">            Time of each readout after the inversion, in milliseconds: the</span>
-<span class="sd">            repetition time times the readout's index.</span>
+<span class="sd">        TI : float or array-like</span>
+<span class="sd">            Time of each readout after the inversion, in ms: ``TR`` times the</span>
+<span class="sd">            readout index.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">flip</span><span class="p">,</span> <span class="n">TI</span><span class="p">)</span>
         <span class="n">angle</span> <span class="o">=</span> <span class="n">held</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"B1"</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mf">180.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">flip</span>

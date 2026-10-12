@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -542,6 +542,7 @@
             </div>
             <nav aria-label="Page">
                 <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-platforms">Supported platforms</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#virtual-environment">Virtual environment</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pytorch">PyTorch</a></li>
@@ -564,42 +565,63 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="user-guide">
 <h1>User Guide<a class="headerlink" href="#user-guide" title="Link to this heading">#</a></h1>
-<p>Everything you need to go from an empty environment to a simulated echo train,
-and a map of where the rest of this documentation is.</p>
+<p>Installation, a first simulation, and where the rest of this documentation is.</p>
 <nav class="contents local" id="contents">
 <ul class="simple">
-<li><p><a class="reference internal" href="#installation" id="id1">Installation</a></p>
+<li><p><a class="reference internal" href="#supported-platforms" id="id1">Supported platforms</a></p></li>
+<li><p><a class="reference internal" href="#installation" id="id2">Installation</a></p>
 <ul>
-<li><p><a class="reference internal" href="#virtual-environment" id="id2">Virtual environment</a></p></li>
-<li><p><a class="reference internal" href="#pytorch" id="id3">PyTorch</a></p></li>
-<li><p><a class="reference internal" href="#blochsim" id="id4">BlochSim</a></p></li>
+<li><p><a class="reference internal" href="#virtual-environment" id="id3">Virtual environment</a></p></li>
+<li><p><a class="reference internal" href="#pytorch" id="id4">PyTorch</a></p></li>
+<li><p><a class="reference internal" href="#blochsim" id="id5">BlochSim</a></p></li>
 </ul>
 </li>
-<li><p><a class="reference internal" href="#first-simulation" id="id5">First simulation</a></p></li>
-<li><p><a class="reference internal" href="#documentation-structure" id="id6">Documentation structure</a></p></li>
-<li><p><a class="reference internal" href="#support-and-bug-reports" id="id7">Support and bug reports</a></p></li>
+<li><p><a class="reference internal" href="#first-simulation" id="id6">First simulation</a></p></li>
+<li><p><a class="reference internal" href="#documentation-structure" id="id7">Documentation structure</a></p></li>
+<li><p><a class="reference internal" href="#support-and-bug-reports" id="id8">Support and bug reports</a></p></li>
 </ul>
 </nav>
+<section id="supported-platforms">
+<h2><a class="toc-backref" href="#id1" role="doc-backlink">Supported platforms</a><a class="headerlink" href="#supported-platforms" title="Link to this heading">#</a></h2>
+<p>BlochSim supports Python 3.10 and later; CI tests 3.10 and 3.14 on Linux,
+macOS and Windows. One wheel per platform serves every supported interpreter,
+because the kernels are built against the CPython stable ABI.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Platform</p></th>
+<th class="head"><p>Wheels</p></th>
+<th class="head"><p>GPU kernels</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Linux</p></td>
+<td><p>x86-64 and aarch64, glibc and musl</p></td>
+<td><p>x86-64, through the <code class="docutils literal notranslate"><span class="pre">cu12</span></code> or <code class="docutils literal notranslate"><span class="pre">cu13</span></code> extra</p></td>
+</tr>
+<tr class="row-odd"><td><p>macOS</p></td>
+<td><p>Apple silicon and Intel</p></td>
+<td><p>none</p></td>
+</tr>
+<tr class="row-even"><td><p>Windows</p></td>
+<td><p>x86-64</p></td>
+<td><p>none</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Elsewhere, <code class="docutils literal notranslate"><span class="pre">pip</span></code> builds the C++ kernels from source, which needs a C++17
+compiler and CMake. There is no pure-Python fallback.</p>
+</section>
 <section id="installation">
-<h2><a class="toc-backref" href="#id1" role="doc-backlink">Installation</a><a class="headerlink" href="#installation" title="Link to this heading">#</a></h2>
-<p>BlochSim is a PyTorch package with two compiled kernels behind it. <code class="docutils literal notranslate"><span class="pre">pip</span></code>
-installs the Python side and its NumPy and SciPy dependencies for you. Two
-things it cannot decide on your behalf, and which you therefore settle first:
-<strong>which build of PyTorch you want</strong>, and <strong>where you want the whole thing to
-live</strong>.</p>
+<h2><a class="toc-backref" href="#id2" role="doc-backlink">Installation</a><a class="headerlink" href="#installation" title="Link to this heading">#</a></h2>
 <section id="virtual-environment">
-<h3><a class="toc-backref" href="#id2" role="doc-backlink">Virtual environment</a><a class="headerlink" href="#virtual-environment" title="Link to this heading">#</a></h3>
-<p>Install into an isolated environment rather than the system interpreter. A
-simulation pins versions of PyTorch, NumPy and SciPy, and the phantom, coil
-and reconstruction packages the examples reach for pin their own; keeping them
-apart from the rest of the machine is what lets you delete a bad combination
-by deleting a directory.</p>
-<p>Any of these works. Pick the one you already use.</p>
+<h3><a class="toc-backref" href="#id3" role="doc-backlink">Virtual environment</a><a class="headerlink" href="#virtual-environment" title="Link to this heading">#</a></h3>
+<p>Install into an environment of its own, so the PyTorch, NumPy and SciPy
+versions a simulation pins stay apart from the rest of the machine.</p>
 <div class="sd-tab-set docutils">
 <input checked="checked" id="sd-tab-item-0" name="sd-tab-set-0" type="radio">
 <label class="sd-tab-label" data-sync-group="tab" data-sync-id="venv" for="sd-tab-item-0">
 venv</label><div class="sd-tab-content docutils">
-<p>Ships with Python, nothing to install first:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>~/envs/blochsim
 <span class="nb">source</span><span class="w"> </span>~/envs/blochsim/bin/activate<span class="w">     </span><span class="c1"># Windows: ~\envs\blochsim\Scripts\activate</span>
 python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
@@ -609,124 +631,101 @@ python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </sp
 <input id="sd-tab-item-1" name="sd-tab-set-0" type="radio">
 <label class="sd-tab-label" data-sync-group="tab" data-sync-id="conda" for="sd-tab-item-1">
 conda</label><div class="sd-tab-content docutils">
-<p>Useful when you also want a specific Python, or non-Python libraries
-beside it:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>blochsim<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12
 conda<span class="w"> </span>activate<span class="w"> </span>blochsim
 </pre></div>
 </div>
-<p>Install BlochSim itself with <code class="docutils literal notranslate"><span class="pre">pip</span></code> inside that environment; there is no
-conda package.</p>
+<p>Install BlochSim with <code class="docutils literal notranslate"><span class="pre">pip</span></code> inside the environment; there is no conda package.</p>
 </div>
 <input id="sd-tab-item-2" name="sd-tab-set-0" type="radio">
 <label class="sd-tab-label" data-sync-group="tab" data-sync-id="uv" for="sd-tab-item-2">
 uv</label><div class="sd-tab-content docutils">
-<p>The fastest of the three, and it resolves the whole set at once:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>venv<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.12<span class="w"> </span>~/envs/blochsim
 <span class="nb">source</span><span class="w"> </span>~/envs/blochsim/bin/activate
 </pre></div>
 </div>
-<p>Read <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">pip</span> <span class="pre">install</span></code> for <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> in everything that follows.</p>
+<p>Read <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">pip</span> <span class="pre">install</span></code> for <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> below.</p>
 </div>
 </div>
 </section>
 <section id="pytorch">
-<h3><a class="toc-backref" href="#id3" role="doc-backlink">PyTorch</a><a class="headerlink" href="#pytorch" title="Link to this heading">#</a></h3>
-<p><strong>Install PyTorch before BlochSim.</strong> The wheel you want depends on hardware
-<code class="docutils literal notranslate"><span class="pre">pip</span></code> cannot see: a CPU-only build and a CUDA build have the same name and
-version, and differ only in which index they came from. Install BlochSim first
-and you get whichever build the default index happens to serve, which is
-usually not the one you meant.</p>
-<p>Choose by what you will run on:</p>
+<h3><a class="toc-backref" href="#id4" role="doc-backlink">PyTorch</a><a class="headerlink" href="#pytorch" title="Link to this heading">#</a></h3>
+<p>Install PyTorch first. A CPU build and a CUDA build share a name and a
+version, and differ only in the index they come from, so <code class="docutils literal notranslate"><span class="pre">pip</span></code> cannot choose
+for you.</p>
 <div class="sd-tab-set docutils">
 <input checked="checked" id="sd-tab-item-3" name="sd-tab-set-1" type="radio">
 <label class="sd-tab-label" data-sync-group="tab" data-sync-id="cpu" for="sd-tab-item-3">
 CPU only</label><div class="sd-tab-content docutils">
-<p>A laptop, a login node, or a machine with no NVIDIA card. This is also
-the smallest download by a wide margin:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>torch<span class="w"> </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/cpu
 </pre></div>
 </div>
-<p>Everything in BlochSim runs here. The state machine has a threaded,
-vectorized C++ kernel behind it, so a dictionary of a few thousand atoms
-is seconds rather than minutes.</p>
+<p>Everything in BlochSim runs on the CPU, on threaded C++ kernels.</p>
 </div>
 <input id="sd-tab-item-4" name="sd-tab-set-1" type="radio">
 <label class="sd-tab-label" data-sync-group="tab" data-sync-id="cuda" for="sd-tab-item-4">
 NVIDIA GPU</label><div class="sd-tab-content docutils">
-<p>Check which CUDA versions the current PyTorch release ships wheels for
-on <a class="reference external" href="https://pytorch.org/get-started/locally/">pytorch.org/get-started</a>,
-pick the one your driver supports, and install from that index –
-<code class="docutils literal notranslate"><span class="pre">cu128</span></code> below stands for whichever tag you chose:</p>
+<p>Pick the CUDA tag your driver supports on
+<a class="reference external" href="https://pytorch.org/get-started/locally/">pytorch.org</a>; <code class="docutils literal notranslate"><span class="pre">cu128</span></code> stands for it
+below:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>torch<span class="w"> </span>--index-url<span class="w"> </span>https://download.pytorch.org/whl/cu128
 </pre></div>
 </div>
-<p>The GPU kernels are compiled into the Linux x86-64 wheel of BlochSim; you do
-not need the CUDA toolkit, only a driver new enough for the build you
-picked. Built from source, they are compiled wherever CMake finds <code class="docutils literal notranslate"><span class="pre">nvcc</span></code>.</p>
 </div>
 <input id="sd-tab-item-5" name="sd-tab-set-1" type="radio">
 <label class="sd-tab-label" data-sync-group="tab" data-sync-id="mac" for="sd-tab-item-5">
 Apple silicon</label><div class="sd-tab-content docutils">
-<p>The default wheel is the right one:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>torch
 </pre></div>
 </div>
-<p>The simulation runs on the CPU kernels. There is no Metal path: the
-fused state machine exists as C++ for the CPU and as CUDA for NVIDIA
-cards.</p>
+<p>There is no Metal path; the simulation runs on the CPU kernels.</p>
 </div>
 </div>
-<p>Then check that the build is the one you wanted, <em>before</em> installing anything
-on top of it:</p>
+<p>Check the build before installing on top of it:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"</span>
 </pre></div>
 </div>
-<p>A CUDA build prints a version and <code class="docutils literal notranslate"><span class="pre">True</span></code>; a CPU build prints <code class="docutils literal notranslate"><span class="pre">None</span></code> and
+<p>A CUDA build prints a CUDA version and <code class="docutils literal notranslate"><span class="pre">True</span></code>; a CPU build prints <code class="docutils literal notranslate"><span class="pre">None</span></code> and
 <code class="docutils literal notranslate"><span class="pre">False</span></code>.</p>
 </section>
 <section id="blochsim">
-<h3><a class="toc-backref" href="#id4" role="doc-backlink">BlochSim</a><a class="headerlink" href="#blochsim" title="Link to this heading">#</a></h3>
-<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>blochsim
+<h3><a class="toc-backref" href="#id5" role="doc-backlink">BlochSim</a><a class="headerlink" href="#blochsim" title="Link to this heading">#</a></h3>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>blochsim<span class="w">            </span><span class="c1"># CPU kernels</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"blochsim[cu12]"</span><span class="w">    </span><span class="c1"># plus the GPU kernels, for a CUDA 12 PyTorch</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"blochsim[cu13]"</span><span class="w">    </span><span class="c1"># plus the GPU kernels, for a CUDA 13 PyTorch</span>
 </pre></div>
 </div>
-<p>Where a wheel exists for your platform this is the whole of it. Where one does
-not, <code class="docutils literal notranslate"><span class="pre">pip</span></code> builds the two C++ extensions from source and you need a C++17
-compiler on the path – <code class="docutils literal notranslate"><span class="pre">build-essential</span></code> on Debian and Ubuntu, <code class="docutils literal notranslate"><span class="pre">gcc-c++</span></code>
-on Fedora, the Command Line Tools on macOS, the Visual Studio Build Tools on
-Windows. There is no pure-Python fallback: the extensions <em>are</em> the CPU state
-machine, and a run that cannot find one raises rather than quietly running
-something slower.</p>
-<p>To check the install, simulate a fast spin echo train and read three tissues at
-once:</p>
+<p>The GPU kernels are compiled ahead of time and need a driver, not the CUDA
+toolkit. Install the extra that matches PyTorch’s CUDA major version; BlochSim
+refuses a mismatched one and names the extra to install. Other extras:
+<code class="docutils literal notranslate"><span class="pre">pulseq</span></code> reads <code class="docutils literal notranslate"><span class="pre">.seq</span></code> files, and <code class="docutils literal notranslate"><span class="pre">examples</span></code> brings the packages the gallery
+imports.</p>
+<p>Check the installation by simulating a fast spin echo for three tissues:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">FSESimulator</span>
 
 <span class="n">acquisition</span> <span class="o">=</span> <span class="n">FSESimulator</span><span class="p">(</span>
-    <span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>
-    <span class="n">TR</span><span class="o">=</span><span class="mf">3000.0</span><span class="p">,</span>
+    <span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span>                                   <span class="c1"># ms</span>
+    <span class="n">TR</span><span class="o">=</span><span class="mf">3000.0</span><span class="p">,</span>                                 <span class="c1"># ms</span>
     <span class="n">T1</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">830.0</span><span class="p">,</span> <span class="mf">1330.0</span><span class="p">,</span> <span class="mf">4000.0</span><span class="p">]),</span>  <span class="c1"># ms</span>
-    <span class="n">T2</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">80.0</span><span class="p">,</span> <span class="mf">110.0</span><span class="p">,</span> <span class="mf">2000.0</span><span class="p">]),</span>
+    <span class="n">T2</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">80.0</span><span class="p">,</span> <span class="mf">110.0</span><span class="p">,</span> <span class="mf">2000.0</span><span class="p">]),</span>    <span class="c1"># ms</span>
 <span class="p">)</span>
 <span class="n">signal</span> <span class="o">=</span> <span class="n">acquisition</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">48</span><span class="p">,),</span> <span class="mf">60.0</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>  <span class="c1"># torch.Size([3, 48])</span>
 </pre></div>
 </div>
-<p>On a card, hand it tissue that already lives there and the whole run follows:</p>
+<p>On a GPU, move the simulator and give it tensors on the same device:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">acquisition</span> <span class="o">=</span> <span class="n">acquisition</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="s2">"cuda"</span><span class="p">)</span>
 <span class="n">signal</span> <span class="o">=</span> <span class="n">acquisition</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">((</span><span class="mi">48</span><span class="p">,),</span> <span class="mf">60.0</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">))</span>
 </pre></div>
 </div>
-<p>The kernels are compiled ahead of time, so the first GPU call costs what
-any other does, apart from PyTorch initialising CUDA.</p>
 </section>
 </section>
 <section id="first-simulation">
-<h2><a class="toc-backref" href="#id5" role="doc-backlink">First simulation</a><a class="headerlink" href="#first-simulation" title="Link to this heading">#</a></h2>
-<p>The central public object in BlochSim is a
-<a class="reference internal" href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. A shipped simulator fixes the sequence;
-<code class="docutils literal notranslate"><span class="pre">simulate</span></code> receives the tissue and anything you want to vary. Asking for a
-Jacobian is the same model and the same protocol:</p>
+<h2><a class="toc-backref" href="#id6" role="doc-backlink">First simulation</a><a class="headerlink" href="#first-simulation" title="Link to this heading">#</a></h2>
+<p>Every sequence is a <a class="reference internal" href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. A shipped simulator
+fixes the sequence; <code class="docutils literal notranslate"><span class="pre">simulate</span></code> takes the tissue and anything you vary, and
+<code class="docutils literal notranslate"><span class="pre">jacobian</span></code> returns the signal with its derivatives:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">blochsim.simulators</span><span class="w"> </span><span class="kn">import</span> <span class="n">MRFSimulator</span>
 
@@ -737,68 +736,63 @@ Jacobian is the same model and the same protocol:</p>
 <span class="n">signal</span><span class="p">,</span> <span class="n">jacobian</span> <span class="o">=</span> <span class="n">sequence</span><span class="o">.</span><span class="n">jacobian</span><span class="p">((</span><span class="s2">"T1"</span><span class="p">,</span> <span class="s2">"T2"</span><span class="p">),</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="mf">100.0</span><span class="p">)</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">signal</span></code> is the forward pass; <code class="docutils literal notranslate"><span class="pre">jacobian</span></code> holds its derivatives with
-respect to T1 and T2. Dictionary fitting, nonlinear least squares,
-model-based reconstruction and sequence design all consume the same simulator
-interface.</p>
-<p>Functional calls such as <a class="reference internal" href="generated/blochsim.mrf_sim.html#blochsim.mrf_sim" title="blochsim.mrf_sim"><code class="xref py py-func docutils literal notranslate"><span class="pre">blochsim.mrf_sim()</span></code></a> are convenience wrappers
-around the shipped simulator classes. They are useful for a one-off call, but
-<a class="reference internal" href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> is the interface to learn and the class to
-subclass when you implement a sequence.</p>
-<p>Arrays go in and come back in whatever library you wrote them in – NumPy here,
-CuPy or PyTorch elsewhere – over the same memory rather than a copy.</p>
+<p><code class="docutils literal notranslate"><span class="pre">jacobian</span></code> holds the derivatives with respect to T1 and T2, one row each. The
+signal comes back in the array library you gave it: NumPy here, CuPy or
+PyTorch elsewhere. Dictionary matching, nonlinear least squares, model-based
+reconstruction and sequence design all take a simulator.</p>
+<p>Functions such as <a class="reference internal" href="generated/blochsim.mrf_sim.html#blochsim.mrf_sim" title="blochsim.mrf_sim"><code class="xref py py-func docutils literal notranslate"><span class="pre">blochsim.mrf_sim()</span></code></a> wrap the shipped simulators for a
+one-off call. <a class="reference internal" href="generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> is the class to subclass for a
+sequence of your own.</p>
 </section>
 <section id="documentation-structure">
-<h2><a class="toc-backref" href="#id6" role="doc-backlink">Documentation structure</a><a class="headerlink" href="#documentation-structure" title="Link to this heading">#</a></h2>
-<dl class="simple myst">
-<dt><a class="reference internal" href="explanations/index.html"><span class="doc">Explanations</span></a></dt><dd><p>The conceptual pages: the sequence description, the EPG physics and the
-fused implementation.</p>
-</dd>
-<dt><a class="reference internal" href="generated/autoexamples/index.html"><span class="doc">Examples</span></a></dt><dd><p>The executable Course and Applications. The Course starts with a shipped
-simulator and ends with a signal model and an operator of your own; the
-Applications cover parameter mapping, sequence design, model-based
-reconstruction and synthetic data.</p>
-</dd>
-<dt><a class="reference internal" href="api/index.html"><span class="doc">API</span></a></dt><dd><p>The reference. Start at <a class="reference internal" href="api/simulators.html"><span class="doc">Simulators</span></a> for what ships, at
-<a class="reference internal" href="api/model.html"><span class="doc">Signal models</span></a> for writing your own, and at <a class="reference internal" href="api/execution.html"><span class="doc">Running a simulation</span></a> for
-placing a run across devices.</p>
-</dd>
-<dt><a class="reference internal" href="developer_guide.html"><span class="doc">Developer Guide</span></a></dt><dd><p>Setting up to change BlochSim: the editable install, the style the code is
-written in, the tests, and how a pull request is opened.</p>
-</dd>
-</dl>
+<h2><a class="toc-backref" href="#id7" role="doc-backlink">Documentation structure</a><a class="headerlink" href="#documentation-structure" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Section</p></th>
+<th class="head"><p>Content</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference internal" href="explanations/index.html"><span class="doc">Explanations</span></a></p></td>
+<td><p>Signal models, extended phase graphs, sequence descriptions, derivatives, execution, estimation, reconstruction and design.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/autoexamples/index.html"><span class="doc">Examples</span></a></p></td>
+<td><p>The Course, from a shipped simulator to a signal model and an operator of your own, and the Applications.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api/index.html"><span class="doc">API</span></a></p></td>
+<td><p>Exact interfaces, units and defaults: <a class="reference internal" href="api/simulators.html"><span class="doc">Simulators</span></a> for what ships, <a class="reference internal" href="api/model.html"><span class="doc">Signal models</span></a> for writing your own.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="developer_guide.html"><span class="doc">Developer Guide</span></a></p></td>
+<td><p>Development install, style, tests and pull requests.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 </section>
 <section id="support-and-bug-reports">
-<h2><a class="toc-backref" href="#id7" role="doc-backlink">Support and bug reports</a><a class="headerlink" href="#support-and-bug-reports" title="Link to this heading">#</a></h2>
-<p><strong>Ask a question</strong> in
-<a class="reference external" href="https://github.com/pulserver/blochsim/discussions">Discussions</a>. How to model
-a sequence, whether a signal you got is expected, which estimator suits a
-problem – these belong there, and the answer is then findable by whoever asks
-next.</p>
-<p><strong>Report a bug</strong> in
-<a class="reference external" href="https://github.com/pulserver/blochsim/issues/new/choose">Issues</a>, where a
-form asks for what a fix needs:</p>
+<h2><a class="toc-backref" href="#id8" role="doc-backlink">Support and bug reports</a><a class="headerlink" href="#support-and-bug-reports" title="Link to this heading">#</a></h2>
+<p>Ask questions in
+<a class="reference external" href="https://github.com/pulserver/blochsim/discussions">Discussions</a>: how to model
+a sequence, whether a signal is expected, which estimator suits a problem.</p>
+<p>Report bugs in
+<a class="reference external" href="https://github.com/pulserver/blochsim/issues/new/choose">Issues</a>. The form
+asks for:</p>
 <ul class="simple">
-<li><p>the shortest script that reproduces it, pasted whole – a sequence is enough
-numbers that a description of it leaves the run ambiguous;</p></li>
-<li><p>what you expected instead, and why. A signal that surprises you is not yet a
-bug: say which analytic case, published figure or alternative simulator you
-are comparing against;</p></li>
+<li><p>the shortest script that reproduces it;</p></li>
+<li><p>what you expected, and the reference you compare against: a closed form, a
+published figure or another simulator;</p></li>
 <li><p>the full traceback, if it raises;</p></li>
-<li><p>the environment, as the form’s command prints it – BlochSim, PyTorch, CUDA,
-Python;</p></li>
-<li><p>whether you have seen it on the CPU kernels, the CUDA kernels, or both. That
-difference is often the whole diagnosis.</p></li>
+<li><p>the environment, as the form’s command prints it;</p></li>
+<li><p>whether it happens on the CPU kernels, the GPU kernels, or both.</p></li>
 </ul>
-<p><strong>Ask for a feature</strong> – a sequence, a physical effect, an estimator – through
-the same form chooser. Name the paper the model comes from and the figure it
-would have to reproduce; that is what makes it implementable.</p>
-<p><strong>Report a vulnerability</strong> privately instead: open a draft advisory from the
-repository’s <a class="reference external" href="https://github.com/pulserver/blochsim/security/advisories/new">Security tab</a>,
-or email the address in the <a class="reference external" href="https://github.com/pulserver/blochsim/blob/main/.github/SECURITY.md">security policy</a>.
-The kernels index raw pointers, so anything reachable from ordinary arguments
-that reads or writes out of bounds is worth reporting that way rather than in a
-public issue. Wrong physics is a bug report, not a vulnerability.</p>
+<p>Request a sequence, a physical effect or an estimator through the same form,
+naming the paper the model comes from and the figure it should reproduce.</p>
+<p>Report a vulnerability privately, as a draft advisory from the repository’s
+<a class="reference external" href="https://github.com/pulserver/blochsim/security/advisories/new">Security tab</a>
+or by email to the address in the
+<a class="reference external" href="https://github.com/pulserver/blochsim/blob/main/.github/SECURITY.md">security policy</a>.
+The kernels index raw pointers, so an out-of-bounds read or write reachable
+from ordinary arguments belongs there. Wrong physics is a bug report.</p>
 </section>
 </section>
 
@@ -849,6 +843,7 @@ public issue. Wrong physics is a bug report, not a vulnerability.</p>
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-platforms">Supported platforms</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation">Installation</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#virtual-environment">Virtual environment</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pytorch">PyTorch</a></li>

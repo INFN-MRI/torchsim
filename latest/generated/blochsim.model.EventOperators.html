@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -568,32 +568,29 @@
 <dt class="sig sig-object py" id="blochsim.model.EventOperators">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.model.</span></span><span class="sig-name descname"><span class="pre">EventOperators</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">excitation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">Excitation&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">refocusing</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">Refocusing&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inversion</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">Inversion&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">saturation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">Saturation&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">readout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">Readout&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delay</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">Delay&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/model/_state_machine.html#EventOperators"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.model.EventOperators" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>Which operator plays each kind of event.</p>
-<p>Each field is an operator factory, called with the parameters the protocol
-has for that event. Assigning one is how a sequence says that its readouts
-wind the states on, or that its excitation is a shaped pulse rather than an
-ideal rotation.</p>
-<p>These are roles a sequence is written in terms of, not the tags the events
-end up carrying: a factory here decides which
-<code class="xref py py-class docutils literal notranslate"><span class="pre">RfUse</span></code> and which
-<code class="xref py py-class docutils literal notranslate"><span class="pre">EventAction</span></code> its events are emitted with.</p>
+<p>Operator factories, one per kind of event.</p>
+<p>Each field is called with the protocol’s parameters for that event and
+decides which <code class="xref py py-class docutils literal notranslate"><span class="pre">RfUse</span></code> and
+<code class="xref py py-class docutils literal notranslate"><span class="pre">EventAction</span></code> its events carry. Assigning one
+selects, for example, a readout that winds the states on or a shaped
+excitation.</p>
 <p class="rubric">Methods</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.EventOperators.delay" title="blochsim.model.EventOperators.delay"><code class="xref py py-obj docutils literal notranslate"><span class="pre">delay</span></code></a></p></td>
-<td><p>Return time passing, and whatever the sequence plays across it.</p></td>
+<td><p>Return a delay, optionally carrying a gradient action.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.EventOperators.excitation" title="blochsim.model.EventOperators.excitation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">excitation</span></code></a></p></td>
-<td><p>Return a pulse that tips magnetization into the transverse plane.</p></td>
+<td><p>Return an excitation pulse.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.EventOperators.inversion" title="blochsim.model.EventOperators.inversion"><code class="xref py py-obj docutils literal notranslate"><span class="pre">inversion</span></code></a></p></td>
-<td><p>Return an ideal inversion, scaled by the tissue's inversion efficiency.</p></td>
+<td><p>Return an ideal inversion pulse.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.EventOperators.readout" title="blochsim.model.EventOperators.readout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">readout</span></code></a></p></td>
-<td><p>Return one sample of the transverse magnetization, demodulated by a phase.</p></td>
+<td><p>Return one ADC sample of the transverse magnetization.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.model.EventOperators.refocusing" title="blochsim.model.EventOperators.refocusing"><code class="xref py py-obj docutils literal notranslate"><span class="pre">refocusing</span></code></a></p></td>
-<td><p>Return a pulse the sequence sits between crushers, unless told otherwise.</p></td>
+<td><p>Return a refocusing pulse, between crusher gradients by default.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.model.EventOperators.saturation" title="blochsim.model.EventOperators.saturation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">saturation</span></code></a></p></td>
 <td><p>Return an off-resonance pulse that deposits power in a semisolid pool.</p></td>

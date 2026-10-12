@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -498,17 +498,20 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">StimulatedEchoSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Three pulses, sampled at the spin echo of the first two and at the stimulated echo.</span>
 
-<span class="sd">    The second pulse, ``TE / 2`` after the first, refocuses part of the</span>
-<span class="sd">    transverse magnetization into a spin echo at ``TE`` and stores part of it</span>
-<span class="sd">    along z, where it relaxes with T1 alone; the third pulse, ``TM`` after the</span>
-<span class="sd">    second, returns that part to the transverse plane, where it rephases into</span>
-<span class="sd">    the stimulated echo ``TE / 2`` later [1]_. With instantaneous pulses about</span>
-<span class="sd">    x, the two samples are ``i M0 sin(a1) sin^2(a2 / 2) exp(-TE / T2)`` and</span>
-<span class="sd">    ``i M0 sin(a1) sin(a2) sin(a3) exp(-TE / T2) exp(-TM / T1) / 2``, whatever</span>
-<span class="sd">    the off-resonance. The transverse magnetization is spoiled after the spin</span>
-<span class="sd">    echo, so the second sample is the stimulated echo alone. With one flip</span>
-<span class="sd">    angle, and ``TE`` twice and ``TM`` three times its own echo time, this is</span>
-<span class="sd">    the sequence BART's ``epg`` plays as Spinecho.</span>
+<span class="sd">    The second pulse, ``TE / 2`` after the first, forms a spin echo at ``TE`` and</span>
+<span class="sd">    stores part of the magnetization along z, where it relaxes with T1 alone. The</span>
+<span class="sd">    third pulse, ``TM`` after the second, returns that part to the transverse</span>
+<span class="sd">    plane, where it forms the stimulated echo ``TE / 2`` later [1]_. The</span>
+<span class="sd">    transverse magnetization is spoiled after the spin echo, so the second sample</span>
+<span class="sd">    is the stimulated echo alone.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    For instantaneous pulses about x the samples are</span>
+<span class="sd">    ``i M0 sin(a1) sin^2(a2 / 2) exp(-TE / T2)`` and</span>
+<span class="sd">    ``i M0 sin(a1) sin(a2) sin(a3) exp(-TE / T2) exp(-TM / T1) / 2``, independent</span>
+<span class="sd">    of off-resonance. With one flip angle, ``TE`` twice and ``TM`` three times</span>
+<span class="sd">    BART's echo time, this is the sequence BART's ``epg`` plays as Spinecho.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -555,16 +558,16 @@
 <span class="sd">        flip : float or array-like</span>
 <span class="sd">            Flip angle in degrees, scalar or one per pulse.</span>
 <span class="sd">        TE : float</span>
-<span class="sd">            Echo time in milliseconds: twice the spacing of the first two</span>
-<span class="sd">            pulses, and of the third pulse and the stimulated echo.</span>
+<span class="sd">            Echo time in ms; twice the spacing of the first two pulses, and of the</span>
+<span class="sd">            third pulse and the stimulated echo.</span>
 <span class="sd">        TM : float</span>
-<span class="sd">            Mixing time in milliseconds, from the second pulse to the third.</span>
+<span class="sd">            Mixing time in ms, from the second pulse to the third.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        ValueError</span>
-<span class="sd">            If the third pulse would play before the spin echo, or if ``flip``</span>
-<span class="sd">            is neither scalar nor one per pulse.</span>
+<span class="sd">            If the third pulse would play before the spin echo, or if ``flip`` is</span>
+<span class="sd">            neither scalar nor one per pulse.</span>
 <span class="sd">        """</span>
         <span class="n">angles</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">as_torch</span><span class="p">(</span><span class="n">flip</span><span class="p">))</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">angles</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>

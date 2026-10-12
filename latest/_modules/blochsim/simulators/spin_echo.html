@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,14 +499,12 @@
 <div class="viewcode-block" id="SpinEchoSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.SpinEchoSimulator.html#blochsim.simulators.SpinEchoSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">SpinEchoSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A spin echo repeated every TR, optionally behind an inversion.</span>
+<span class="w">    </span><span class="sd">"""Spin echo repeated every TR, optionally behind an inversion.</span>
 
-<span class="sd">    The refocusing pulse at ``TE / 2`` inverts what has recovered since the</span>
-<span class="sd">    excitation, so the longitudinal magnetization the next excitation finds</span>
-<span class="sd">    is ``1 - 2 exp(-(TR - TE / 2) / T1) + exp(-TR / T1)`` of equilibrium</span>
-<span class="sd">    [1]_, and the echo decays with T2. An inversion time multiplies this by</span>
-<span class="sd">    the recovery from the inversion, ``1 - (1 + inv_efficiency)</span>
-<span class="sd">    exp(-TI / T1)``.</span>
+<span class="sd">    The refocusing pulse at ``TE / 2`` inverts the magnetization recovered since</span>
+<span class="sd">    the excitation, so the next excitation finds ``1 - 2 exp(-(TR - TE / 2) / T1) +</span>
+<span class="sd">    exp(-TR / T1)`` of equilibrium [1]_, and the echo decays with T2. An inversion</span>
+<span class="sd">    time multiplies this by ``1 - (1 + inv_efficiency) exp(-TI / T1)``.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -538,7 +536,7 @@
 <div class="viewcode-block" id="SpinEchoSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.SpinEchoSimulator.html#blochsim.simulators.SpinEchoSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -554,15 +552,15 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` and ``T2`` in milliseconds, ``inv_efficiency`` as a</span>
-<span class="sd">            fraction of a perfect inversion, and ``M0`` as a scaling.</span>
-<span class="sd">        TE:</span>
-<span class="sd">            Echo times in milliseconds.</span>
-<span class="sd">        TR:</span>
-<span class="sd">            Repetition time in milliseconds.</span>
-<span class="sd">        TI:</span>
-<span class="sd">            Inversion times in milliseconds, or ``None`` for no inversion.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` and ``T2`` in ms, ``inv_efficiency`` as a fraction of a perfect</span>
+<span class="sd">            inversion, ``M0`` scaling.</span>
+<span class="sd">        TE : float or array-like</span>
+<span class="sd">            Echo times in ms.</span>
+<span class="sd">        TR : float or array-like</span>
+<span class="sd">            Repetition time in ms.</span>
+<span class="sd">        TI : float or array-like, optional</span>
+<span class="sd">            Inversion times in ms; no inversion when not given.</span>
 <span class="sd">        """</span>
         <span class="n">timings</span> <span class="o">=</span> <span class="p">(</span><span class="n">TE</span><span class="p">,</span> <span class="n">TR</span><span class="p">)</span> <span class="k">if</span> <span class="n">TI</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">(</span><span class="n">TE</span><span class="p">,</span> <span class="n">TR</span><span class="p">,</span> <span class="n">TI</span><span class="p">)</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">*</span><span class="n">timings</span><span class="p">)</span>

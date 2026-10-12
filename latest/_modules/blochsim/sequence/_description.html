@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -1053,20 +1053,19 @@
 <a class="viewcode-back" href="../../../generated/blochsim.ShimDefinition.html#blochsim.ShimDefinition">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">ShimDefinition</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""One transmit-shim definition: a complex weight per channel.</span>
+<span class="w">    </span><span class="sd">"""Transmit shim: a complex weight per channel for static parallel transmit.</span>
 
-<span class="sd">    The weights hold for the whole pulse, and every channel plays the same</span>
-<span class="sd">    waveform -- static parallel transmit. :mod:`._transmit` combines them with</span>
-<span class="sd">    the per-channel sensitivities into the field a voxel sees.</span>
+<span class="sd">    Every channel plays the same waveform; the weights hold for the whole</span>
+<span class="sd">    pulse.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    id : int</span>
-<span class="sd">        What an RF event names this shim by.</span>
+<span class="sd">        Identifier RF events name the shim by.</span>
 <span class="sd">    magnitudes : tuple of float</span>
-<span class="sd">        One weight per transmit channel.</span>
+<span class="sd">        Weight per transmit channel.</span>
 <span class="sd">    phases_rad : tuple of float</span>
-<span class="sd">        One phase per transmit channel, in radians.</span>
+<span class="sd">        Phase per transmit channel, in radians.</span>
 <span class="sd">    """</span>
 
     <span class="nb">id</span><span class="p">:</span> <span class="nb">int</span>
@@ -1079,43 +1078,34 @@
 <a class="viewcode-back" href="../../../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SequenceDescription</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Event stream and RF resources for one sequence or subsequence.</span>
+<span class="w">    </span><span class="sd">"""Event stream and RF resources of one repetition of a sequence.</span>
 
-<span class="sd">    ``crusher_dephasing_rad`` is the dephasing the sequence's unbalanced</span>
-<span class="sd">    gradient winds across one voxel of ``voxel_size_m``. Their ratio sets the</span>
-<span class="sd">    b-factor diffusion is damped by and the phase each dephasing order turns</span>
-<span class="sd">    through under flow, so a dephasing of zero leaves both terms out however</span>
-<span class="sd">    large the coefficient behind them.</span>
-
-<span class="sd">    ``voxel_size_m`` also stands on its own: spins cross a voxel of that size</span>
-<span class="sd">    at their own speed whether or not a gradient is playing, which is what</span>
-<span class="sd">    washes the voxel out and replaces it with unexcited magnetization. Leaving</span>
-<span class="sd">    it ``None`` declares no voxel, and a spin velocity then has nothing to</span>
-<span class="sd">    cross.</span>
+<span class="sd">    The ratio ``crusher_dephasing_rad / voxel_size_m`` sets the b-factor</span>
+<span class="sd">    diffusion is damped by and the phase each dephasing order acquires under</span>
+<span class="sd">    flow; a zero dephasing leaves both out. ``voxel_size_m`` also sets the</span>
+<span class="sd">    distance a moving spin crosses, which washes out the voxel; ``None``</span>
+<span class="sd">    declares no voxel, so spin velocity has no effect.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    subsequence_index : int</span>
-<span class="sd">        Which subsequence of a multi-part acquisition this is.</span>
+<span class="sd">        Index of this subsequence within a multi-part acquisition.</span>
 <span class="sd">    tr_duration_us : float or torch.Tensor</span>
-<span class="sd">        How long one playing of this stream holds the timeline, in</span>
-<span class="sd">        microseconds.</span>
+<span class="sd">        Duration of one playing of the stream, in microseconds.</span>
 <span class="sd">    events : tuple of SequenceEvent</span>
-<span class="sd">        The stream itself, in the order it is played.</span>
+<span class="sd">        Events in play order.</span>
 <span class="sd">    rf_definitions : dict</span>
-<span class="sd">        ``{id: RfDefinition}`` -- the pulses the RF events name.</span>
+<span class="sd">        ``{id: RfDefinition}`` for the pulses the RF events name.</span>
 <span class="sd">    shim_definitions : dict</span>
-<span class="sd">        ``{id: ShimDefinition}`` -- the transmit shims the RF events drive.</span>
+<span class="sd">        ``{id: ShimDefinition}`` for the shims the RF events name.</span>
 <span class="sd">    crusher_dephasing_rad : float</span>
-<span class="sd">        Dephasing wound across one voxel by the sequence's unbalanced</span>
-<span class="sd">        gradient.</span>
+<span class="sd">        Dephasing wound across one voxel by the unbalanced gradient, in</span>
+<span class="sd">        radians.</span>
 <span class="sd">    voxel_size_m : float, optional</span>
-<span class="sd">        The voxel a spin crosses, and the length the dephasing is wound</span>
-<span class="sd">        across. ``None`` declares no voxel.</span>
+<span class="sd">        Voxel length the dephasing is wound across, in metres.</span>
 <span class="sd">    rf_raster_time_s : float</span>
-<span class="sd">        The dwell the RF shapes are sampled on. A pulse is integrated against</span>
-<span class="sd">        it, so a stream carrying shapes on a 2 microsecond raster and read on a</span>
-<span class="sd">        1 microsecond one turns half the angle it should.</span>
+<span class="sd">        Dwell the RF shapes are sampled on, in seconds. Pulses are integrated</span>
+<span class="sd">        against it.</span>
 <span class="sd">    """</span>
 
     <span class="n">subsequence_index</span><span class="p">:</span> <span class="nb">int</span>
@@ -1140,33 +1130,30 @@
         <span class="n">voxel_size_m</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SequenceDescription</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Lay operators out end to end and return the stream they make.</span>
-
-<span class="sd">        The other way in besides a scanner: what a sequence written here plays,</span>
-<span class="sd">        in the same object one that arrived would be read into.</span>
+<span class="w">        </span><span class="sd">"""Build a description by laying operators out end to end.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        parts : Operator, optional</span>
-<span class="sd">            The operators, in the order they play.</span>
+<span class="sd">        *parts : Operator or tuple, optional</span>
+<span class="sd">            Operators in play order, or ``(offset_s, operator)`` pairs.</span>
 <span class="sd">        rf_definitions : mapping, optional</span>
-<span class="sd">            The pulses the events drive, by id. One ideal pulse under id zero</span>
-<span class="sd">            when not given, which is what an operator naming no shape asks for.</span>
+<span class="sd">            ``{id: RfDefinition}``. One ideal pulse under id 0 when not given.</span>
 <span class="sd">        shim_definitions : mapping, optional</span>
-<span class="sd">            The transmit shims the pulses are driven on, by id.</span>
+<span class="sd">            ``{id: ShimDefinition}``.</span>
 <span class="sd">        subsequence_index : int, optional</span>
-<span class="sd">            Which subsequence of a scan this is.</span>
+<span class="sd">            Index of the subsequence within a scan.</span>
 <span class="sd">        crusher_dephasing_rad : float, optional</span>
-<span class="sd">            The turn one crusher puts across a voxel. Diffusion and flow are</span>
-<span class="sd">            read off it and are zero without it.</span>
+<span class="sd">            Dephasing of one crusher across a voxel, in radians. Diffusion and</span>
+<span class="sd">            flow are zero without it.</span>
 <span class="sd">        voxel_size_m : float, optional</span>
-<span class="sd">            The distance that turn is put across.</span>
+<span class="sd">            Voxel length the dephasing is wound across, in metres.</span>
 <span class="sd">        start_s : float or torch.Tensor, optional</span>
-<span class="sd">            When the first operator starts.</span>
+<span class="sd">            Start time of the first operator, in seconds.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
-<span class="sd">            The stream, lasting as long as the operators laid out end to end.</span>
+<span class="sd">        SequenceDescription</span>
+<span class="sd">            Lasting as long as the operators laid out end to end.</span>
 <span class="sd">        """</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">._operators</span><span class="w"> </span><span class="kn">import</span> <span class="n">compose</span>
 
@@ -1188,21 +1175,31 @@
 <a class="viewcode-back" href="../../../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_pulseq">[docs]</a>
     <span class="nd">@classmethod</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">from_pulseq</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">settings</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SequenceDescription</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return what one repetition of a Pulseq sequence plays.</span>
+<span class="w">        </span><span class="sd">"""Read one repetition of a Pulseq sequence.</span>
+
+<span class="sd">        Requires pypulseq (``pip install blochsim[pulseq]``).</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        source : str, Path or sequence</span>
-<span class="sd">            A ``.seq`` file, or a sequence in memory with pypulseq's reading</span>
-<span class="sd">            interface -- pypulseq's own ``Sequence``, or pypulseqpp's.</span>
-<span class="sd">        settings : Any</span>
-<span class="sd">            ``tr_index`` to name which repetition to read, and the</span>
-<span class="sd">            ``subsequence_index``, ``crusher_dephasing_rad`` and</span>
-<span class="sd">            ``voxel_size_m`` the description carries.</span>
+<span class="sd">            A ``.seq`` file, or an in-memory pypulseq or pypulseqpp</span>
+<span class="sd">            ``Sequence``.</span>
+<span class="sd">        **settings</span>
+<span class="sd">            ``tr_index``, ``subsequence_index``, ``crusher_dephasing_rad`` and</span>
+<span class="sd">            ``voxel_size_m``, as for ``read_pulseq_description``: ``tr_index``</span>
+<span class="sd">            is the repetition to read, in whole ``TRSize`` windows.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
-<span class="sd">            The stream, in the same object a scanner's own would arrive in.</span>
+<span class="sd">        SequenceDescription</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ImportError</span>
+<span class="sd">            If pypulseq is not installed.</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If the file declares no ``TRSize``, ``tr_index`` is out of range,</span>
+<span class="sd">            or the repetitions differ and none was named.</span>
 <span class="sd">        """</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">._pulseq</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_pulseq_description</span>
 
@@ -1212,28 +1209,23 @@
 <div class="viewcode-block" id="SequenceDescription.plot">
 <a class="viewcode-back" href="../../../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.plot">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">plot</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">upto_s</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Draw the stream: pulses as stems, samples as markers.</span>
-
-<span class="sd">        What a layout actually laid down, which is easier to check here than</span>
-<span class="sd">        in the signal it produces. A pulse's stem is as tall as the angle it</span>
-<span class="sd">        turns.</span>
+<span class="w">        </span><span class="sd">"""Plot the events: RF as stems of height equal to the flip, ADC as markers.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        axis : matplotlib.axes.Axes, optional</span>
-<span class="sd">            Where to draw. A new figure when not given.</span>
+<span class="sd">            Axes to draw on; a new figure when not given.</span>
 <span class="sd">        upto_s : float, optional</span>
-<span class="sd">            Stop after this much of the stream, for a repetition long enough</span>
-<span class="sd">            that all of it is a smear.</span>
+<span class="sd">            Plot events up to this time, in seconds.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
-<span class="sd">            The axis drawn on.</span>
+<span class="sd">        matplotlib.axes.Axes</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
-<span class="sd">            ImportError: if matplotlib is not installed, which is not a</span>
-<span class="sd">                dependency of this package.</span>
+<span class="sd">        ImportError</span>
+<span class="sd">            If matplotlib is not installed.</span>
 <span class="sd">        """</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
@@ -1330,57 +1322,41 @@
     <span class="n">band_bandwidth_hz</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">rf_raster_time_s</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">RfDefinition</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return the definition of a pulse from the envelope a scanner plays.</span>
+<span class="w">    </span><span class="sd">"""Return the RF definition of a pulse envelope.</span>
 
-<span class="sd">    The envelope is whatever a designer or a Pulseq block hands over -- a</span>
-<span class="sd">    complex waveform on a uniform raster, in any amplitude units, one row per</span>
-<span class="sd">    transmit channel where there is more than one. What it is scaled to does</span>
-<span class="sd">    not matter and must not be relied on: it is rescaled here so that its</span>
-<span class="sd">    integral is ``1 / (2 pi)`` seconds, which is what makes an event's</span>
-<span class="sd">    amplitude, written in radians, the flip that event turns. A pulse handed</span>
-<span class="sd">    over peak-normalized and left that way turns a fraction of a degree and</span>
-<span class="sd">    returns a signal of nothing, which is the one mistake this exists to stop.</span>
-
-<span class="sd">    The pulse's own phase is kept rather than divided out, so a linear-phase</span>
-<span class="sd">    pulse keeps the axis it turns about.</span>
+<span class="sd">    The envelope is rescaled so that it integrates to ``1 / (2 pi)`` seconds,</span>
+<span class="sd">    making an event amplitude in radians the flip angle in radians. The</span>
+<span class="sd">    waveform's own phase is kept.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    waveform : array-like</span>
-<span class="sd">        The complex envelope, ``(samples,)`` or ``(channels, samples)``.</span>
+<span class="sd">        Complex envelope in arbitrary amplitude units, ``(samples,)`` or</span>
+<span class="sd">        ``(channels, samples)``.</span>
 <span class="sd">    dwell_s : float</span>
-<span class="sd">        How long one sample is held, in seconds.</span>
+<span class="sd">        Sample duration, in seconds.</span>
 <span class="sd">    bandwidth_hz : float, optional</span>
-<span class="sd">        The pulse's bandwidth, which the slice select is quoted against. Zero</span>
-<span class="sd">        -- the default -- is a pulse that selects nothing and stays on the</span>
-<span class="sd">        instant operator, and a non-zero one is what makes a pulse slice</span>
-<span class="sd">        selective. There is no separate flag for that, here or in the stream a</span>
-<span class="sd">        description arrives on.</span>
+<span class="sd">        Pulse bandwidth, in Hz. Non-zero makes the pulse slice-selective.</span>
 <span class="sd">    definition_id : int, optional</span>
-<span class="sd">        The identifier events name this pulse by.</span>
+<span class="sd">        Identifier events name the pulse by.</span>
 <span class="sd">    band_frequency_offsets_hz : sequence of float, optional</span>
-<span class="sd">        Where each band sits, for a multiband pulse. One band at zero when not</span>
-<span class="sd">        given.</span>
+<span class="sd">        Band centres of a multiband pulse, in Hz; one to eight values. One</span>
+<span class="sd">        band at 0 Hz when not given.</span>
 <span class="sd">    band_bandwidth_hz : float, optional</span>
-<span class="sd">        The bandwidth of one band, defaulting to ``bandwidth_hz``.</span>
+<span class="sd">        Bandwidth of one band, in Hz. Defaults to ``bandwidth_hz``.</span>
 <span class="sd">    rf_raster_time_s : float, optional</span>
-<span class="sd">        The raster the sample times are written against, which is the one the</span>
-<span class="sd">        run will read them back with. Sample times are carried in units of it</span>
-<span class="sd">        rather than in seconds, so a pulse whose dwell is not the raster still</span>
-<span class="sd">        says how long it lasts.</span>
+<span class="sd">        RF raster the sample times are expressed in, in seconds.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    RfDefinition</span>
-<span class="sd">        The pulse, scaled so an event amplitude in radians is a flip in</span>
-<span class="sd">        radians.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
 <span class="sd">    ValueError</span>
-<span class="sd">        If the envelope is empty, if ``dwell_s`` is not positive, or if the</span>
-<span class="sd">        waveform integrates to nothing and so has no flip angle to be read</span>
-<span class="sd">        against.</span>
+<span class="sd">        If the envelope is empty, ``dwell_s`` or ``rf_raster_time_s`` is not</span>
+<span class="sd">        positive, the band count is outside one to eight, or the waveform</span>
+<span class="sd">        integrates to zero.</span>
 <span class="sd">    """</span>
     <span class="n">samples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">waveform</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">samples</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>

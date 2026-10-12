@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,18 +499,13 @@
 <div class="viewcode-block" id="HSFPSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.HSFPSimulator.html#blochsim.simulators.HSFPSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">HSFPSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A balanced train whose flip angle varies slowly, in the hybrid state.</span>
+<span class="w">    </span><span class="sd">"""Balanced train with a slowly varying flip angle, in the hybrid state.</span>
 
-<span class="sd">    With the flip angle varied slowly enough, the magnetization stays on the</span>
-<span class="sd">    spin-locked axis the train defines and only its length evolves, relaxing</span>
-<span class="sd">    at ``sin^2(a) / T2 + cos^2(a) / T1`` and driven by ``cos(a) / T1`` [1]_.</span>
-<span class="sd">    The train is played repeatedly and the recorded pass starts from where the</span>
-<span class="sd">    previous one ended, times ``beta``: ``-1`` for an inversion between</span>
-<span class="sd">    passes, which is what makes the answer sensitive to T1 and T2 at once, and</span>
-<span class="sd">    ``1`` for none.</span>
-
-<span class="sd">    The signal is the magnetization along the spin-locked axis at each pulse,</span>
-<span class="sd">    which for a balanced train is the transverse magnetization at the echo.</span>
+<span class="sd">    The magnetization stays on the spin-locked axis and only its length evolves,</span>
+<span class="sd">    relaxing at ``sin^2(a) / T2 + cos^2(a) / T1`` and driven by ``cos(a) / T1``</span>
+<span class="sd">    [1]_. The train is repeated, each pass starting from the end of the previous</span>
+<span class="sd">    one times ``beta``. The signal is the magnetization along the spin-locked axis</span>
+<span class="sd">    at each pulse, the transverse magnetization at the echo for a balanced train.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -544,7 +539,7 @@
 <div class="viewcode-block" id="HSFPSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.HSFPSimulator.html#blochsim.simulators.HSFPSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -560,14 +555,14 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``T1`` and ``T2`` in milliseconds, and ``M0`` as a scaling.</span>
-<span class="sd">        flip:</span>
-<span class="sd">            The flip-angle train in degrees, one entry per pulse.</span>
-<span class="sd">        TR:</span>
-<span class="sd">            Repetition time in milliseconds.</span>
-<span class="sd">        beta:</span>
-<span class="sd">            What connects the end of one pass to the start of the next.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``T1`` and ``T2`` in ms, ``M0`` scaling.</span>
+<span class="sd">        flip : array-like</span>
+<span class="sd">            Flip-angle train in degrees, one entry per pulse.</span>
+<span class="sd">        TR : float or array-like</span>
+<span class="sd">            Repetition time in ms.</span>
+<span class="sd">        beta : float, optional</span>
+<span class="sd">            Factor applied between passes: -1 for an inversion, 1 for none.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">flip</span><span class="p">)</span>
         <span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">promote_types</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">held</span><span class="p">[</span><span class="s2">"T1"</span><span class="p">])</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">flip</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>

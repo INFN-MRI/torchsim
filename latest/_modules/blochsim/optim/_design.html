@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -479,32 +479,10 @@
                 <article class="bd-article">
                   
   <h1>Source code for blochsim.optim._design</h1><div class="highlight"><pre>
-<span></span><span class="sd">"""Stating a sequence-design problem, and solving it.</span>
+<span></span><span class="sd">"""Sequence design: a cost over bounded parameters, minimized by gradient descent.</span>
 
-<span class="sd">A design problem is three things, and this module is one object for each.</span>
-
-<span class="sd">The **acquisition** is a simulator with the tissue it is being designed for</span>
-<span class="sd">already fixed on it, so only the parameters under design are left to give. It</span>
-<span class="sd">answers the same two questions any simulator does -- what is recorded, and how</span>
-<span class="sd">that changes with the tissue -- which is what lets a cost be written against</span>
-<span class="sd">the simulator's own vocabulary.</span>
-
-<span class="sd">The **cost** is a plain function the user writes. It takes the parameters</span>
-<span class="sd">being designed by name, asks its acquisitions what they record, and returns</span>
-<span class="sd">one number. Nothing about it is registered or declared.</span>
-
-<span class="sd">:class:`SequenceDesign` holds the cost and the parameters, each with the</span>
-<span class="sd">limits it may move between, and :meth:`SequenceDesign.minimize` runs the loop.</span>
-<span class="sd">The gradient is reverse-mode autograd on the cost: the engine reads which of</span>
-<span class="sd">its inputs carry one and picks its kernel from that, so a design loop needs no</span>
-<span class="sd">derivative of its own.</span>
-
-<span class="sd">The two families this has to carry look nothing alike, which is the point.</span>
-<span class="sd">A quantitative sequence is designed for **precision** -- the cost is a</span>
-<span class="sd">Cramer-Rao bound on what it estimates, and reads the acquisition's Jacobian.</span>
-<span class="sd">An anatomical sequence is designed for **image quality** -- the cost is a</span>
-<span class="sd">property of the point spread function the echo train produces, and reads the</span>
-<span class="sd">signal alone. Both are the same object with a different function in it.</span>
+<span class="sd">The cost is a user function of the designed parameters (by keyword) returning</span>
+<span class="sd">one number; the gradient is reverse-mode autograd through it.</span>
 <span class="sd">"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
@@ -531,17 +509,17 @@
 <a class="viewcode-back" href="../../../generated/blochsim.Bounded.html#blochsim.Bounded">[docs]</a>
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Bounded</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""An initial value and the range it is allowed to move in.</span>
+<span class="w">    </span><span class="sd">"""An initial value and the interval a designed parameter stays in.</span>
+
+<span class="sd">    The limits are enforced exactly by optimizing a logit-transformed</span>
+<span class="sd">    variable, so no iterate leaves them.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    initial : array-like</span>
-<span class="sd">        Where the design starts.</span>
+<span class="sd">        Starting value.</span>
 <span class="sd">    lower, upper : float or array-like</span>
-<span class="sd">        The limits, either scalars or values per element. They are enforced</span>
-<span class="sd">        exactly, by optimizing a variable the limits are a sigmoid of, so no</span>
-<span class="sd">        iterate is ever outside them -- which matters when the bound is what</span>
-<span class="sd">        the scanner can actually play.</span>
+<span class="sd">        Limits, scalar or per element, in the parameter's units.</span>
 <span class="sd">    """</span>
 
     <span class="n">initial</span><span class="p">:</span> <span class="n">Any</span>
@@ -552,14 +530,14 @@
 
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">SequenceOptimization</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""The designed parameters and the loss at every step that reached them.</span>
+<span class="w">    </span><span class="sd">"""Result of :meth:`SequenceDesign.minimize`.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    parameters : dict</span>
-<span class="sd">        ``{name: value}`` at the last step, inside the limits each was given.</span>
+<span class="sd">        ``{name: value}`` at the last step, inside their limits.</span>
 <span class="sd">    loss : torch.Tensor</span>
-<span class="sd">        The cost after every step, so convergence is read rather than assumed.</span>
+<span class="sd">        Cost at each step.</span>
 <span class="sd">    """</span>
 
     <span class="n">parameters</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
@@ -569,17 +547,26 @@
 <div class="viewcode-block" id="SequenceDesign">
 <a class="viewcode-back" href="../../../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">SequenceDesign</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A cost, the parameters it is minimized over, and the limits on them.</span>
+<span class="w">    </span><span class="sd">"""A cost, the parameters it is minimized over, and their limits.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    cost : callable</span>
-<span class="sd">        Called with the designed parameters by keyword, returning one number.</span>
-<span class="sd">        Everything sequence-specific lives here: what is simulated, what is</span>
-<span class="sd">        measured about it, and what is penalized.</span>
-<span class="sd">    parameters : Bounded or torch.Tensor, optional</span>
-<span class="sd">        One entry per designed parameter. A :class:`Bounded` carries its own</span>
-<span class="sd">        limits; a bare array is left free.</span>
+<span class="sd">        Called with the designed parameters by keyword; returns a one-element</span>
+<span class="sd">        tensor.</span>
+<span class="sd">    **parameters : Bounded or torch.Tensor</span>
+<span class="sd">        One entry per designed parameter. A :class:`Bounded` carries its limits;</span>
+<span class="sd">        a bare array is unbounded. At least one.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If no parameter is given, or a lower limit is not below its upper.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    A preference (a soft penalty) belongs in the cost; a hard scanner limit</span>
+<span class="sd">    belongs in :class:`Bounded`.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -589,12 +576,6 @@
 <span class="sd">            sharpness, flip=Bounded(torch.full((8, 120), 120.0), 20.0, 180.0)</span>
 <span class="sd">        )</span>
 <span class="sd">        result = design.minimize(iterations=120)</span>
-
-<span class="sd">    Notes</span>
-<span class="sd">    -----</span>
-<span class="sd">    A feasibility term the scanner would merely prefer belongs in the cost,</span>
-<span class="sd">    where it trades against everything else. A limit the scanner cannot exceed</span>
-<span class="sd">    belongs in :class:`Bounded`, where no iterate can cross it.</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cost</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="o">**</span><span class="n">parameters</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -614,7 +595,7 @@
 <div class="viewcode-block" id="SequenceDesign.values">
 <a class="viewcode-back" href="../../../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.values">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">values</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""The designed parameters as the cost sees them, inside their limits."""</span>
+<span class="w">        </span><span class="sd">"""Return the parameters as passed to the cost, inside their limits."""</span>
         <span class="k">return</span> <span class="p">{</span>
             <span class="n">name</span><span class="p">:</span> <span class="n">_constrained</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_limits</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
@@ -624,7 +605,13 @@
 <div class="viewcode-block" id="SequenceDesign.forward">
 <a class="viewcode-back" href="../../../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign.forward">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the cost at the parameters as they stand."""</span>
+<span class="w">        </span><span class="sd">"""Evaluate the cost at the current parameters.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If the cost does not return one number.</span>
+<span class="sd">        """</span>
         <span class="n">loss</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cost</span><span class="p">(</span><span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">loss</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"a design cost must return one number"</span><span class="p">)</span>
@@ -643,25 +630,30 @@
         <span class="n">callback</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">bool</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span>
         <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SequenceOptimization</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Run the design to ``iterations`` steps.</span>
+<span class="w">        </span><span class="sd">"""Minimize the cost over the designed parameters.</span>
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        iterations : int, optional</span>
-<span class="sd">            How many updates to take.</span>
+<span class="sd">            Number of updates. Defaults to 200.</span>
 <span class="sd">        learning_rate : float, optional</span>
 <span class="sd">            Adam step size, used when ``optimizer_factory`` is omitted.</span>
+<span class="sd">            Defaults to 0.05.</span>
 <span class="sd">        optimizer_factory : callable, optional</span>
-<span class="sd">            Called with the unconstrained variables, returning the optimizer</span>
-<span class="sd">            to drive them.</span>
+<span class="sd">            Maps the list of unconstrained variables to a</span>
+<span class="sd">            :class:`torch.optim.Optimizer`.</span>
 <span class="sd">        callback : callable, optional</span>
-<span class="sd">            Called after each update with the step number, the parameters and</span>
-<span class="sd">            the loss, both detached. Returning ``True`` stops early.</span>
+<span class="sd">            Called after each update as ``callback(step, parameters, loss)``</span>
+<span class="sd">            with detached values; returning ``True`` stops early.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        SequenceOptimization</span>
-<span class="sd">            The parameters as they finished, and the loss at every step.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If ``iterations`` or ``learning_rate`` is not positive.</span>
 <span class="sd">        """</span>
         <span class="k">if</span> <span class="n">iterations</span> <span class="o">&lt;</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">learning_rate</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"iterations and learning_rate must be positive"</span><span class="p">)</span>
@@ -697,41 +689,32 @@
     <span class="n">noise_variance</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
     <span class="n">singular</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"raise"</span><span class="p">,</span> <span class="s2">"infinite"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"raise"</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""The lowest variance an unbiased estimate of each parameter can have.</span>
+<span class="w">    </span><span class="sd">"""Cramer-Rao lower bound on the variance of each parameter.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    jacobian : torch.Tensor</span>
-<span class="sd">        ``(..., parameters, samples)`` -- the derivative of the signal with</span>
-<span class="sd">        respect to each parameter being estimated. Real and imaginary parts</span>
-<span class="sd">        are counted as separate measurements, which is what independent</span>
-<span class="sd">        Gaussian noise on the two channels means.</span>
+<span class="sd">        ``(..., parameters, samples)``, derivative of the signal with respect</span>
+<span class="sd">        to each parameter. Real and imaginary parts count as separate</span>
+<span class="sd">        measurements.</span>
 <span class="sd">    noise_variance : float, optional</span>
-<span class="sd">        The variance of that noise, in the units the signal is in.</span>
+<span class="sd">        Variance of the noise per real measurement, in signal units squared.</span>
+<span class="sd">        Defaults to 1.</span>
 <span class="sd">    singular : {"raise", "infinite"}, optional</span>
-<span class="sd">        What to do where the parameters are not jointly identifiable. The</span>
-<span class="sd">        default refuses, which is right for a design being scored: a</span>
-<span class="sd">        sequence that cannot separate its parameters has no bound to</span>
-<span class="sd">        report. ``"infinite"`` answers with an infinite variance at those</span>
-<span class="sd">        entries instead, which is what a map wants, since one voxel of</span>
-<span class="sd">        background need not stop the rest from being read.</span>
+<span class="sd">        Behaviour where the parameters are not jointly identifiable: raise, or</span>
+<span class="sd">        return an infinite variance at those entries. Defaults to ``"raise"``.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    torch.Tensor</span>
-<span class="sd">        ``(..., parameters)``, the diagonal of the inverse Fisher matrix. What</span>
-<span class="sd">        to do with it is the design's: summing gives A-optimality, dividing by</span>
-<span class="sd">        the parameter values first makes the sum dimensionless and so weights</span>
-<span class="sd">        a short and a long relaxation time comparably.</span>
+<span class="sd">        ``(..., parameters)``, diagonal of the inverse Fisher matrix.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
 <span class="sd">    ValueError</span>
-<span class="sd">        If the Jacobian has no parameter axis.</span>
+<span class="sd">        If the Jacobian has no parameter axis, or ``singular`` is invalid.</span>
 <span class="sd">    torch.linalg.LinAlgError</span>
-<span class="sd">        If the parameters are not jointly identifiable from these samples,</span>
-<span class="sd">        which is a singular Fisher matrix and says the design cannot work at</span>
-<span class="sd">        all rather than that it is imprecise.</span>
+<span class="sd">        If the Fisher matrix is singular and ``singular="raise"``.</span>
 <span class="sd">    """</span>
     <span class="k">if</span> <span class="n">jacobian</span><span class="o">.</span><span class="n">ndim</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"a Jacobian is (..., parameters, samples)"</span><span class="p">)</span>

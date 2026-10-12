@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -632,40 +632,33 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">compose_spinor</span><span class="p">(</span>
     <span class="n">drive</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">turn_z</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">|</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""The Cayley-Klein pair a shaped pulse leaves, sample by sample.</span>
+<span class="w">    </span><span class="sd">"""Return the Cayley-Klein pair of a shaped pulse, composed over its samples.</span>
 
-<span class="sd">    One SU(2) element per raster sample, composed in the order the scanner</span>
-<span class="sd">    plays them. Each is the rotation about the effective field a spin sees</span>
-<span class="sd">    while that sample lasts: the RF in the transverse plane, the gradient</span>
-<span class="sd">    along z.</span>
+<span class="sd">    One SU(2) rotation per sample, composed in play order, about the effective</span>
+<span class="sd">    field ``(drive.real, drive.imag, turn_z)``.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    drive</span>
-<span class="sd">        The transverse field per sample, radians turned per sample. A tensor</span>
-<span class="sd">        with the sample axis first, or any iterable of per-sample tensors --</span>
-<span class="sd">        which is how a per-voxel field is composed without ever holding one</span>
-<span class="sd">        for every sample at once.</span>
-<span class="sd">    turn_z</span>
-<span class="sd">        The longitudinal turn per sample, radians, one per spin. A tensor is</span>
-<span class="sd">        the turn every sample makes -- a gradient the scanner holds -- and an</span>
-<span class="sd">        iterable of per-sample tensors is one it moves, in the same form</span>
-<span class="sd">        ``drive`` takes.</span>
+<span class="sd">    drive : torch.Tensor or iterable of torch.Tensor</span>
+<span class="sd">        Transverse field per sample, in radians per sample: a tensor with the</span>
+<span class="sd">        sample axis first, or an iterable of per-sample tensors.</span>
+<span class="sd">    turn_z : torch.Tensor or iterable of torch.Tensor</span>
+<span class="sd">        Longitudinal turn per sample, in radians, one per spin. A tensor holds</span>
+<span class="sd">        for every sample (a static gradient); an iterable gives one tensor per</span>
+<span class="sd">        sample.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    a, b : torch.Tensor</span>
-<span class="sd">        Complex128, shaped like the turn. Each sample turns the magnetisation</span>
-<span class="sd">        right-handedly about ``(drive.real, drive.imag, turn_z)`` by that</span>
-<span class="sd">        vector's length, so a spin starting along ``+z`` ends with</span>
-<span class="sd">        ``Mxy = -2 conj(a b)`` and ``Mz = |a|^2 - |b|^2``. A real drive of</span>
+<span class="sd">        Complex128, shaped like the turn. Each sample rotates right-handedly by</span>
+<span class="sd">        the length of the effective-field vector, so a spin along ``+z`` ends</span>
+<span class="sd">        with ``Mxy = -2 conj(a b)`` and ``Mz = |a|^2 - |b|^2``. A real drive of</span>
 <span class="sd">        area ``t`` on resonance gives ``(cos(t/2), -i sin(t/2))``.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
 <span class="sd">    ValueError</span>
-<span class="sd">        If a moving gradient runs out before the pulse does, or the other way</span>
-<span class="sd">        about.</span>
+<span class="sd">        If an iterable ``turn_z`` and ``drive`` differ in length.</span>
 <span class="sd">    """</span>
     <span class="n">held</span> <span class="o">=</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">turn_z</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">held</span><span class="p">:</span>

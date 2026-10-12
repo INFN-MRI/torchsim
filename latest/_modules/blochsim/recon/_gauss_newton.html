@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -479,42 +479,15 @@
                 <article class="bd-article">
                   
   <h1>Source code for blochsim.recon._gauss_newton</h1><div class="highlight"><pre>
-<span></span><span class="sd">"""Inverting the forward operator, one linearized problem at a time.</span>
+<span></span><span class="sd">"""Gauss-Newton inversion of the forward operator.</span>
 
-<span class="sd">Every Newton-type method for a nonlinear inverse problem does the same thing:</span>
-<span class="sd">linearize where it stands, solve the linear problem that leaves, step, repeat.</span>
+<span class="sd">Each step solves the linearized problem</span>
 
 <span class="sd">    x_{n+1} = x_n + argmin_d || DF(x_n) d + F(x_n) - y ||^2 + a_n R(x_n + d)</span>
 
-<span class="sd">What separates the methods is *how the linear problem is solved* and *where the</span>
-<span class="sd">damping comes from*, and both belong to the caller.</span>
-
-<span class="sd">The linear solve is a callable, and mostly it is somebody else's.</span>
-<span class="sd">:func:`iterative` takes any :class:`LeastSquares` -- anything minimizing</span>
-<span class="sd">``||A d - b||^2 + (1/g) ||d - z||^2`` from products with the Jacobian alone,</span>
-<span class="sd">which is exactly what a Gauss-Newton step leaves. Given nothing it reaches</span>
-<span class="sd">deepinv's ``least_squares``. There is no conjugate gradient written here and</span>
-<span class="sd">there should not be: a package that ships its own is one more copy of an</span>
-<span class="sd">algorithm nobody wanted three of.</span>
-
-<span class="sd">:func:`direct` is the exception, and only because it is not a general linear</span>
-<span class="sd">solver: where the operator is voxel-diagonal the problem is a stack of small</span>
-<span class="sd">independent least-squares systems, and one batched factorization over all of</span>
-<span class="sd">them is the Levenberg-Marquardt step itself. That factorization is</span>
-<span class="sd">:func:`torch.linalg.lstsq`.</span>
-
-<span class="sd">Anything with the same signature does, and wrapping an external proximal</span>
-<span class="sd">solver is how a regularizer enters -- which is the difference between an</span>
-<span class="sd">iteratively regularized Gauss-Newton solved by conjugate gradients and one</span>
-<span class="sd">solved by FISTA under an L1 prior.</span>
-
-<span class="sd">The damping is a policy. :class:`Schedule` lowers one number geometrically and</span>
-<span class="sd">accepts every step, which is the iteratively regularized Gauss-Newton the</span>
-<span class="sd">model-based reconstruction literature runs. :class:`TrustRegion` gives each</span>
-<span class="sd">voxel its own damping, accepts or rejects on whether the step actually helped,</span>
-<span class="sd">and retires voxels as they converge -- which is Levenberg-Marquardt. The</span>
-<span class="sd">second is the first with the bookkeeping that independent rows make possible,</span>
-<span class="sd">and the two land in the same place on a problem both can solve.</span>
+<span class="sd">with a caller-chosen linear solve (:func:`direct`, :func:`iterative`, or any</span>
+<span class="sd">callable of the same signature) and damping policy (:class:`Schedule`,</span>
+<span class="sd">:class:`TrustRegion`).</span>
 <span class="sd">"""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
@@ -542,23 +515,17 @@
 
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Linearization</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""The forward operator's derivative at one point, as products with it.</span>
-
-<span class="sd">    A Gauss-Newton step never needs the Jacobian, only what it does to a</span>
-<span class="sd">    vector, so that is what this carries. :attr:`blocks` is the exception and</span>
-<span class="sd">    is filled in only where the operator is voxel-diagonal: there the Jacobian</span>
-<span class="sd">    really is a stack of small independent matrices and factorizing them</span>
-<span class="sd">    outright beats iterating.</span>
+<span class="w">    </span><span class="sd">"""The forward operator's derivative at one point, as products.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    matvec : callable</span>
 <span class="sd">        ``d -&gt; J d``, from map space to measurement space.</span>
 <span class="sd">    rmatvec : callable</span>
-<span class="sd">        ``v -&gt; J^H v``, back again, real because the maps are.</span>
+<span class="sd">        ``v -&gt; J^H v``, real.</span>
 <span class="sd">    blocks : torch.Tensor, optional</span>
-<span class="sd">        ``(voxels, channels, contrasts)`` where the operator is voxel-diagonal,</span>
-<span class="sd">        ``None`` where an encoding has mixed the voxels together.</span>
+<span class="sd">        ``(voxels, channels, contrasts)`` per-voxel Jacobian; ``None`` where an</span>
+<span class="sd">        encoding has mixed the voxels.</span>
 <span class="sd">    """</span>
 
     <span class="n">matvec</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
@@ -568,24 +535,21 @@
 
 <span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Solution</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""What a solve returned, and what it did to get there.</span>
+<span class="w">    </span><span class="sd">"""Result of :meth:`GaussNewton.minimize`.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    x : torch.Tensor</span>
-<span class="sd">        The maps, as the variables that were solved for. Pass them through</span>
+<span class="sd">        Solved-for variables; pass through</span>
 <span class="sd">        :meth:`~blochsim.recon.ModelOperator.split` for the properties.</span>
 <span class="sd">    cost : torch.Tensor</span>
-<span class="sd">        The squared residual after each step, so convergence is read rather</span>
-<span class="sd">        than assumed.</span>
+<span class="sd">        Squared residual before the first step and after each step.</span>
 <span class="sd">    damping : torch.Tensor</span>
-<span class="sd">        The damping each step ran at, averaged over the voxels where each</span>
-<span class="sd">        carries its own.</span>
+<span class="sd">        Damping of each step, averaged over voxels where it is per voxel.</span>
 <span class="sd">    iterations : int</span>
-<span class="sd">        How many steps were taken.</span>
+<span class="sd">        Steps taken.</span>
 <span class="sd">    unconverged : int</span>
-<span class="sd">        How many voxels were still moving when the loop stopped. Zero for a</span>
-<span class="sd">        solve that ran to its tolerance.</span>
+<span class="sd">        Voxels still moving when the loop stopped (0 under an encoding).</span>
 <span class="sd">    """</span>
 
     <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
@@ -600,29 +564,27 @@
 
 <span class="nd">@runtime_checkable</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">LeastSquares</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A regularized linear least-squares solve, in deepinv's calling shape.</span>
+<span class="w">    </span><span class="sd">"""Regularized linear least-squares solve, in deepinv's calling shape.</span>
 
-<span class="sd">    Minimize ``||A d - y||^2 + (1/gamma) ||d - z||^2`` given only products</span>
-<span class="sd">    with the operator and its adjoint. ``deepinv.optim.linear.least_squares``</span>
-<span class="sd">    satisfies this, and so does anything a caller writes to the same</span>
-<span class="sd">    signature; :func:`iterative` takes either.</span>
+<span class="sd">    Minimizes ``||A d - y||^2 + (1/gamma) ||d - z||^2`` from products with the</span>
+<span class="sd">    operator and its adjoint. ``deepinv.optim.linear.least_squares`` conforms.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    A : callable</span>
-<span class="sd">        The forward product, ``d -&gt; A d``.</span>
+<span class="sd">        Forward product ``d -&gt; A d``.</span>
 <span class="sd">    AT : callable</span>
-<span class="sd">        The adjoint product, ``r -&gt; A^H r``.</span>
+<span class="sd">        Adjoint product ``r -&gt; A^H r``.</span>
 <span class="sd">    y : torch.Tensor</span>
-<span class="sd">        The right-hand side.</span>
+<span class="sd">        Right-hand side.</span>
 <span class="sd">    z : torch.Tensor</span>
-<span class="sd">        What the regularizer pulls the solution towards.</span>
+<span class="sd">        Point the regularizer pulls towards.</span>
 <span class="sd">    gamma : float or torch.Tensor or None</span>
-<span class="sd">        The reciprocal of the damping, or ``None`` where there is none.</span>
+<span class="sd">        Reciprocal of the damping; ``None`` for no damping.</span>
 <span class="sd">    max_iter : int</span>
-<span class="sd">        Most iterations to take.</span>
+<span class="sd">        Maximum iterations.</span>
 <span class="sd">    tol : float</span>
-<span class="sd">        Stop when the residual has fallen this far relative to the data.</span>
+<span class="sd">        Relative residual tolerance.</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span>
@@ -644,47 +606,28 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">iterative</span><span class="p">(</span>
     <span class="n">solver</span><span class="p">:</span> <span class="n">LeastSquares</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">max_iter</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-6</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""The inner solve, by a regularized linear least-squares routine.</span>
-
-<span class="sd">    A Gauss-Newton step leaves ``||A d - b||^2 + (1/g) ||d - z||^2`` once the</span>
-<span class="sd">    damping and its reference are in it, and asks only for products with the</span>
-<span class="sd">    Jacobian, so it does not care whether an encoding operator sits in front</span>
-<span class="sd">    of the model. Any :class:`LeastSquares` minimizes exactly that.</span>
+<span class="w">    </span><span class="sd">"""Build an inner solve from a regularized least-squares routine.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    solver : LeastSquares, optional</span>
-<span class="sd">        Anything matching :class:`LeastSquares`. The default is deepinv's</span>
-<span class="sd">        ``least_squares``, which is conjugate gradients. One of its others is</span>
-<span class="sd">        that same function with the argument bound::</span>
-
-<span class="sd">            from functools import partial</span>
-<span class="sd">            from deepinv.optim.linear import least_squares</span>
-
-<span class="sd">            iterative(partial(least_squares, solver="lsqr"))</span>
-
-<span class="sd">        Which one suits depends on the problem and is worth measuring:</span>
-<span class="sd">        conjugate gradients works on the normal equations, so on a small</span>
-<span class="sd">        well-scaled system it stops on a tolerance the squared condition</span>
-<span class="sd">        number has already spoiled, while LSQR and MINRES reach what a direct</span>
-<span class="sd">        solve reaches -- and on a large encoded problem inside a fixed</span>
-<span class="sd">        iteration budget the ordering reverses.</span>
+<span class="sd">        Routine minimizing the damped linear problem. Defaults to deepinv's</span>
+<span class="sd">        ``least_squares`` (conjugate gradients); ``partial(least_squares,</span>
+<span class="sd">        solver="lsqr")`` selects another.</span>
 <span class="sd">    max_iter : int, optional</span>
-<span class="sd">        Most inner iterations per Gauss-Newton step.</span>
+<span class="sd">        Maximum inner iterations per Gauss-Newton step. Defaults to 50.</span>
 <span class="sd">    tol : float, optional</span>
-<span class="sd">        Stop when the residual has fallen this far relative to the data.</span>
+<span class="sd">        Relative residual tolerance. Defaults to 1e-6.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    callable</span>
-<span class="sd">        An inner solve, to give :class:`GaussNewton` as ``solve=``.</span>
+<span class="sd">        Inner solve, for :class:`GaussNewton` ``solve=``.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
 <span class="sd">    ImportError</span>
-<span class="sd">        If no solver is given and deepinv is not installed. BlochSim does not</span>
-<span class="sd">        depend on it: pass a :class:`LeastSquares` of your own, or use</span>
-<span class="sd">        :func:`direct` where the model stands alone.</span>
+<span class="sd">        If no solver is given and deepinv is not installed.</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">solve</span><span class="p">(</span>
@@ -736,48 +679,32 @@
     <span class="n">damping</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">reference</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Solve every voxel's linearized system outright, all of them at once.</span>
+<span class="w">    </span><span class="sd">"""Solve every voxel's damped linearized system by batched least squares.</span>
 
-<span class="sd">    Where nothing has mixed the voxels together the problem is a stack of</span>
-<span class="sd">    small independent least-squares systems, one per voxel, and a batched</span>
-<span class="sd">    factorization over the whole stack is the Levenberg-Marquardt step itself</span>
-<span class="sd">    -- not a general linear solver, which is why this is here and a conjugate</span>
-<span class="sd">    gradient is not.</span>
-
-<span class="sd">    The damping enters as extra rows rather than as a ridge on the normal</span>
-<span class="sd">    equations:</span>
-
-<span class="sd">        [ J^T        ] d  =  [ rhs           ]</span>
-<span class="sd">        [ sqrt(a) I  ]       [ sqrt(a) z     ]</span>
-
-<span class="sd">    which is the same minimizer without squaring the condition number, and</span>
-<span class="sd">    which has full column rank for any positive damping -- so there is no</span>
-<span class="sd">    singular case to detect and none to work around.</span>
-
-<span class="sd">    A complex contrast is two real measurements, because what is minimized is</span>
-<span class="sd">    the squared modulus.</span>
+<span class="sd">    Valid only for a voxel-diagonal Jacobian. The damping enters as extra rows</span>
+<span class="sd">    ``sqrt(a) I d = sqrt(a) z`` rather than as a ridge on the normal equations.</span>
+<span class="sd">    A complex contrast counts as two real measurements.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    linearization : Linearization</span>
-<span class="sd">        The derivative, which must carry its blocks.</span>
+<span class="sd">        Derivative carrying its ``blocks``.</span>
 <span class="sd">    rhs : torch.Tensor</span>
 <span class="sd">        ``(voxels, contrasts)``, ``y - F(x)``.</span>
 <span class="sd">    damping : torch.Tensor</span>
-<span class="sd">        ``(voxels, 1)`` or one number.</span>
+<span class="sd">        ``(voxels, 1)`` or a single value.</span>
 <span class="sd">    reference : torch.Tensor</span>
-<span class="sd">        ``(voxels, channels)``, what the damping pulls towards.</span>
+<span class="sd">        ``(voxels, channels)``, point the damping pulls towards.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    torch.Tensor</span>
-<span class="sd">        ``(voxels, channels)``.</span>
+<span class="sd">        ``(voxels, channels)`` step.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
 <span class="sd">    ValueError</span>
-<span class="sd">        If the linearization carries no blocks, which is what an encoding</span>
-<span class="sd">        operator in front of the model leaves.</span>
+<span class="sd">        If the linearization carries no blocks.</span>
 <span class="sd">    """</span>
     <span class="n">blocks</span> <span class="o">=</span> <span class="n">linearization</span><span class="o">.</span><span class="n">blocks</span>
     <span class="k">if</span> <span class="n">blocks</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -801,20 +728,17 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">Schedule</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""One damping for the whole volume, lowered geometrically.</span>
 
-<span class="sd">    The iteratively regularized part of an iteratively regularized</span>
-<span class="sd">    Gauss-Newton: early steps are held close to the starting guess, where the</span>
-<span class="sd">    linearization is trustworthy, and the hold is released as the iterate</span>
-<span class="sd">    settles. Every step is accepted.</span>
+<span class="sd">    Iteratively regularized Gauss-Newton: steps are pulled towards the</span>
+<span class="sd">    starting guess with a weight that decays each step. Every step is accepted.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    initial : float</span>
-<span class="sd">        The first weight.</span>
+<span class="sd">        First weight. Defaults to 1.</span>
 <span class="sd">    factor : float</span>
-<span class="sd">        What it is multiplied by after each step.</span>
+<span class="sd">        Multiplier applied after each step, in (0, 1). Defaults to 1/3.</span>
 <span class="sd">    minimum : float</span>
-<span class="sd">        The floor, so late steps stay regularized rather than becoming a bare</span>
-<span class="sd">        Gauss-Newton on an ill-posed problem.</span>
+<span class="sd">        Floor of the weight. Defaults to 1e-3.</span>
 <span class="sd">    """</span>
 
     <span class="n">initial</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span>
@@ -834,7 +758,7 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"minimum must be positive, got </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">begin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">curvature</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""The weight to start at, given the curvature at the starting point."""</span>
+<span class="w">        </span><span class="sd">"""Return the initial weight."""</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">initial</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">curvature</span><span class="o">.</span><span class="n">device</span>
         <span class="p">)</span>
@@ -842,7 +766,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">judge</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">damping</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">gain</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">singular</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""Take the step, and lower the weight for the next one."""</span>
+<span class="w">        </span><span class="sd">"""Accept every step and lower the weight."""</span>
         <span class="k">return</span> <span class="p">(</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">gain</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">bool</span><span class="p">),</span>
             <span class="p">(</span><span class="n">damping</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">factor</span><span class="p">)</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">minimum</span><span class="p">),</span>
@@ -853,18 +777,16 @@
 <a class="viewcode-back" href="../../../generated/blochsim.TrustRegion.html#blochsim.TrustRegion">[docs]</a>
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">TrustRegion</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Each voxel its own damping, raised when a step does not pay.</span>
+<span class="w">    </span><span class="sd">"""Levenberg-Marquardt: per-voxel damping, raised where a step does not pay.</span>
 
-<span class="sd">    Levenberg-Marquardt. A step is taken only where it actually lowered the</span>
-<span class="sd">    residual; where it did not, the damping goes up and the step is tried</span>
-<span class="sd">    again shorter. That needs the voxels to be independent, so it applies to a</span>
-<span class="sd">    model with no encoding in front of it.</span>
+<span class="sd">    A step is accepted per voxel only if it lowers the residual. Requires</span>
+<span class="sd">    independent voxels, so no encoding operator.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
 <span class="sd">    tau : float</span>
-<span class="sd">        Sets the first damping, as this times the largest curvature the</span>
-<span class="sd">        starting point shows. Small where the guess is good.</span>
+<span class="sd">        First damping as a multiple of the largest diagonal curvature at the</span>
+<span class="sd">        start. Defaults to 1e-2.</span>
 <span class="sd">    """</span>
 
     <span class="n">tau</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-2</span>
@@ -881,7 +803,7 @@
 <div class="viewcode-block" id="TrustRegion.begin">
 <a class="viewcode-back" href="../../../generated/blochsim.TrustRegion.html#blochsim.TrustRegion.begin">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">begin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">curvature</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Scale the first damping to the curvature the starting point shows."""</span>
+<span class="w">        </span><span class="sd">"""Return the initial per-voxel damping from the curvature."""</span>
         <span class="n">damping</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tau</span> <span class="o">*</span> <span class="n">curvature</span><span class="o">.</span><span class="n">diagonal</span><span class="p">(</span><span class="n">dim1</span><span class="o">=-</span><span class="mi">2</span><span class="p">,</span> <span class="n">dim2</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_rising</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">damping</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">damping</span></div>
@@ -892,12 +814,7 @@
     <span class="k">def</span><span class="w"> </span><span class="nf">judge</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">damping</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">gain</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">singular</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""Accept where the step paid, and move the damping either way.</span>
-
-<span class="sd">        The Nielsen update: a step that predicted its own gain well lets the</span>
-<span class="sd">        damping fall a long way, one that barely paid lets it fall a little,</span>
-<span class="sd">        and a rejected step doubles it and doubles the doubling.</span>
-<span class="sd">        """</span>
+<span class="w">        </span><span class="sd">"""Accept steps with positive gain and update the damping (Nielsen)."""</span>
         <span class="n">better</span> <span class="o">=</span> <span class="p">(</span><span class="n">gain</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">singular</span>
         <span class="n">rising</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rising</span>
         <span class="n">lowered</span> <span class="o">=</span> <span class="n">damping</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="p">(</span><span class="mf">2.0</span> <span class="o">*</span> <span class="n">gain</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="mf">3.0</span><span class="p">)</span>
@@ -908,7 +825,7 @@
 <div class="viewcode-block" id="TrustRegion.retire">
 <a class="viewcode-back" href="../../../generated/blochsim.TrustRegion.html#blochsim.TrustRegion.retire">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">retire</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keep</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Close up after the converged voxels have been written out."""</span>
+<span class="w">        </span><span class="sd">"""Drop the state of retired voxels."""</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_rising</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rising</span><span class="p">[</span><span class="n">keep</span><span class="p">]</span></div>
 </div>
 
@@ -925,20 +842,22 @@
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    damping : Schedule or TrustRegion, optional</span>
-<span class="sd">        :class:`Schedule` for an iteratively regularized Gauss-Newton,</span>
-<span class="sd">        :class:`TrustRegion` for Levenberg-Marquardt.</span>
+<span class="sd">        Damping policy: ``Schedule`` for iteratively regularized Gauss-Newton,</span>
+<span class="sd">        ``TrustRegion`` for Levenberg-Marquardt. Defaults to ``Schedule()``.</span>
 <span class="sd">    solve : callable, optional</span>
-<span class="sd">        The inner solve, called as</span>
-<span class="sd">        ``solve(linearization, rhs, damping, reference)``. Left out, it is</span>
-<span class="sd">        :func:`direct` where the model stands alone and ``iterative()`` --</span>
-<span class="sd">        deepinv's conjugate gradients -- where an encoding operator does not</span>
-<span class="sd">        leave independent voxels. A closure around anything else is how a</span>
-<span class="sd">        regularizer enters.</span>
+<span class="sd">        Inner solve, ``solve(linearization, rhs, damping, reference)``.</span>
+<span class="sd">        Defaults to :func:`direct` without an encoding and :func:`iterative`</span>
+<span class="sd">        with one.</span>
 <span class="sd">    max_iterations : int, optional</span>
-<span class="sd">        Most outer steps to take.</span>
+<span class="sd">        Maximum outer steps. Defaults to 8.</span>
 <span class="sd">    gradient_tolerance, step_tolerance : float, optional</span>
-<span class="sd">        A voxel is done when its gradient is flat or its step is short</span>
-<span class="sd">        relative to where it stands.</span>
+<span class="sd">        A voxel is done when its gradient magnitude is below the first or its</span>
+<span class="sd">        step is short relative to its norm by the second. Default 1e-8 each.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If ``max_iterations`` is below 1.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -947,12 +866,6 @@
 <span class="sd">        loop = GaussNewton(Schedule(initial=1.0))</span>
 <span class="sd">        found = loop.minimize(operator, kspace, start, encoding=nufft)</span>
 <span class="sd">        maps = operator.split(found.x)</span>
-
-<span class="sd">    Raises</span>
-<span class="sd">    ------</span>
-<span class="sd">    ValueError</span>
-<span class="sd">        If a per-voxel damping is asked for under an encoding operator, which</span>
-<span class="sd">        has mixed the voxels together and left no independent rows.</span>
 <span class="sd">    """</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
@@ -987,25 +900,26 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        operator:</span>
-<span class="sd">            A :class:`~blochsim.recon.ModelOperator`.</span>
-<span class="sd">        measured:</span>
-<span class="sd">            The data. Without an encoding, ``(..., contrasts)`` -- the</span>
-<span class="sd">            contrast images themselves. With one, whatever the encoding</span>
-<span class="sd">            produces.</span>
-<span class="sd">        initial:</span>
-<span class="sd">            ``(..., channels)``, where to start. Build it with</span>
+<span class="sd">        operator : ModelOperator</span>
+<span class="sd">            Forward model.</span>
+<span class="sd">        measured : torch.Tensor</span>
+<span class="sd">            Data: ``(..., contrasts)`` without an encoding, otherwise the</span>
+<span class="sd">            encoding's output.</span>
+<span class="sd">        initial : torch.Tensor</span>
+<span class="sd">            ``(..., channels)`` start; see</span>
 <span class="sd">            :meth:`~blochsim.recon.ModelOperator.initial`.</span>
-<span class="sd">        encoding:</span>
-<span class="sd">            Anything with ``A`` and ``A_adjoint`` -- a deepinv</span>
-<span class="sd">            ``LinearPhysics``, an mri-nufft operator through its deepinv</span>
-<span class="sd">            bridge. It sees the contrast axis first, at axis 1, which is the</span>
-<span class="sd">            convention on that side of the line; the maps keep it last, which</span>
-<span class="sd">            is the convention on this one.</span>
+<span class="sd">        encoding : object, optional</span>
+<span class="sd">            Anything with ``A`` and ``A_adjoint`` (deepinv ``LinearPhysics``).</span>
+<span class="sd">            It receives the contrast axis at axis 1.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        Solution</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If the damping is per voxel and an encoding is given.</span>
 <span class="sd">        """</span>
         <span class="n">solve</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">solve</span> <span class="ow">or</span> <span class="p">(</span><span class="n">direct</span> <span class="k">if</span> <span class="n">encoding</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">iterative</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">encoding</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">damping</span><span class="p">,</span> <span class="s2">"per_voxel"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -563,11 +563,13 @@
 <dt class="sig sig-object py" id="blochsim.Bounded">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">Bounded</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">initial</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lower</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">upper</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/optim/_design.html#Bounded"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.Bounded" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>An initial value and the range it is allowed to move in.</p>
+<p>An initial value and the interval a designed parameter stays in.</p>
+<p>The limits are enforced exactly by optimizing a logit-transformed
+variable, so no iterate leaves them.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.Bounded.initial">
 <span class="sig-name descname"><span class="pre">initial</span></span><a class="headerlink" href="#blochsim.Bounded.initial" title="Link to this definition">#</a></dt>
-<dd><p>Where the design starts.</p>
+<dd><p>Starting value.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>array-like</p>
@@ -578,10 +580,7 @@
 <dl class="py attribute">
 <dt class="sig sig-object py">
 <span class="sig-name descname"><span class="pre">lower,</span> <span class="pre">upper</span></span></dt>
-<dd><p>The limits, either scalars or values per element. They are enforced
-exactly, by optimizing a variable the limits are a sigmoid of, so no
-iterate is ever outside them – which matters when the bound is what
-the scanner can actually play.</p>
+<dd><p>Limits, scalar or per element, in the parameter’s units.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a> or array-like</p>

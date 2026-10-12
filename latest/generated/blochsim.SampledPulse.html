@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -559,45 +559,35 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.SampledPulse">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">SampledPulse</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">waveform_rad_per_s</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dwell_s</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">phase_rad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset_hz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">definition_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shim_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_operators.html#SampledPulse"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.SampledPulse" title="Link to this definition">#</a></dt>
-<dd><p>Return a pulse played as one hard pulse per sample, with free precession between.</p>
-<p>Each sample of the waveform turns the magnetization through its own area
-at the middle of its dwell, and between two samples the magnetization
-precesses at each pool’s own frequency, relaxes and exchanges. This is the
-hard-pulse approximation <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>, second order in the dwell with the turns
-centred; it is what a pulse needs whenever relaxation or exchange during
-it matters, a saturation pulse above all, which an instantaneous rotation
-leaves out.</p>
-<p>A real waveform turns through its signed area, so the negative lobes of a
-sinc turn the other way; a complex one turns about the axis its phase
-names. Played <code class="docutils literal notranslate"><span class="pre">offset_hz</span></code> off the centre frequency, the axis advances by
-<code class="docutils literal notranslate"><span class="pre">-2</span> <span class="pre">pi</span> <span class="pre">offset_hz</span></code> radians per second from the start of the pulse, which
-puts a voxel whose <code class="docutils literal notranslate"><span class="pre">B0</span></code> is the offset on resonance. A <code class="docutils literal notranslate"><span class="pre">phase_rad</span></code> or
-<code class="docutils literal notranslate"><span class="pre">offset_hz</span></code> with one value per train plays one train per value.</p>
-<p>Every sample names <code class="docutils literal notranslate"><span class="pre">definition_id</span></code>, which decides what it deposits in a
-semisolid pool: the ideal definition deposits nothing, and a rectangular
-one a dwell long deposits what the sample does. A semisolid pool reads its
-lineshape at the offset, so a definition other than the ideal one takes a
-single offset for every train.</p>
+<dd><p>Return a pulse played as one hard pulse per sample, with free evolution between.</p>
+<p>Each sample rotates the magnetization through its area at the middle of
+its dwell; between samples each pool precesses, relaxes and exchanges
+(hard-pulse approximation <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>). A complex waveform rotates about the axis
+given by its phase; a real one rotates through its signed area. An
+<code class="docutils literal notranslate"><span class="pre">offset_hz</span></code> advances the rotation axis by <code class="docutils literal notranslate"><span class="pre">-2</span> <span class="pre">pi</span> <span class="pre">offset_hz</span></code> rad/s from
+the start of the pulse. A <code class="docutils literal notranslate"><span class="pre">phase_rad</span></code> or <code class="docutils literal notranslate"><span class="pre">offset_hz</span></code> with one value per
+train plays one train per value.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>waveform_rad_per_s</strong> (<em>array-like</em><em> or </em><em>torch.Tensor</em>) – The nutation rate, gamma times B1, one sample per dwell, in rad/s.</p></li>
-<li><p><strong>dwell_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – How long each sample is held, in seconds.</p></li>
-<li><p><strong>phase_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – The phase the whole pulse is played at.</p></li>
-<li><p><strong>offset_hz</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – How far off the centre frequency the pulse is played.</p></li>
-<li><p><strong>definition_id</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – The definition and transmit shim every sample names.</p></li>
-<li><p><strong>shim_id</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – The definition and transmit shim every sample names.</p></li>
+<li><p><strong>waveform_rad_per_s</strong> (<em>array-like</em>) – Nutation rate (gamma times B1), one sample per dwell, in rad/s.</p></li>
+<li><p><strong>dwell_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Sample duration, in seconds.</p></li>
+<li><p><strong>phase_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – Phase of the whole pulse, in radians.</p></li>
+<li><p><strong>offset_hz</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – Frequency offset from the centre frequency, in Hz.</p></li>
+<li><p><strong>definition_id</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – RF definition every sample names; sets the power deposited in a
+semisolid pool. Non-zero requires a single offset.</p></li>
+<li><p><strong>shim_id</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Transmit shim definition; 0 for none.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The pulse, holding the timeline for every sample’s dwell.</p>
+<dd class="field-even"><p>Holds the timeline for <code class="docutils literal notranslate"><span class="pre">len(waveform)</span> <span class="pre">*</span> <span class="pre">dwell_s</span></code>.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator">Operator</a></p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the waveform is empty or the dwell is not positive, or if a
-    definition other than the ideal one is played at more than one
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the waveform is empty or not one-dimensional, <code class="docutils literal notranslate"><span class="pre">dwell_s</span></code> is not
+    positive, or a non-zero <code class="docutils literal notranslate"><span class="pre">definition_id</span></code> is played at more than one
     offset.</p>
 </dd>
 </dl>

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3 current active"><a class="current reference internal" href="#">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -559,27 +559,23 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.offload">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">offload</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">devices</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('cuda',)</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">budget_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">_DEFAULT_BUDGET_BYTES</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lanes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_execution.html#offload"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.offload" title="Link to this definition">#</a></dt>
-<dd><p>Run host-resident volumes on CUDA without holding them there.</p>
-<p>Inside the block a workload whose voxels are on the host still runs on
-<code class="docutils literal notranslate"><span class="pre">devices</span></code>, in chunks sized so that the device buffers stay within
-<code class="docutils literal notranslate"><span class="pre">budget_bytes</span></code> in total. The result comes back on the host.</p>
-<p>The budget buys memory with time, and steeply once the chunks get small: a
-chunk both fills the device less well and pays its own launch and transfer
-latency, so quartering the budget costs far more than a quarter of the
-throughput. Give it as much as the card can spare.</p>
-<p><code class="docutils literal notranslate"><span class="pre">lanes</span></code> is how many chunks may be in flight per device. A lane owns a
-stream and its own buffers, so a second one lets a chunk’s transfer overlap
-another chunk’s arithmetic – but it takes its share out of the same
-budget, and every chunk gets narrower as a result. Narrower chunks lose
-more than the overlap recovers except when the volume was barely splitting
-to begin with, so one lane is the default and raising it is worth measuring
-before believing. A machine that overlaps transfers better than this one
-would move that balance.</p>
-<p>Whatever <code class="docutils literal notranslate"><span class="pre">lanes</span></code> is set to, it changes only throughput: what makes a
-volume larger than the card runnable at all is the chunking.</p>
+<dd><p>Context manager that streams host-resident volumes through CUDA devices.</p>
+<p>Inside the block, a workload whose voxels are on the host runs on
+<code class="docutils literal notranslate"><span class="pre">devices</span></code> in chunks, and the result returns on the host.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – if <code class="docutils literal notranslate"><span class="pre">devices</span></code> is empty, names a device that is not CUDA,: or if <code class="docutils literal notranslate"><span class="pre">budget_bytes</span></code> or <code class="docutils literal notranslate"><span class="pre">lanes</span></code> is not positive.</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>devices</strong> (<em>sequence</em><em> of </em><em>torch.device</em><em> or </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><em>optional</em>) – CUDA devices to use. Defaults to <code class="docutils literal notranslate"><span class="pre">(&quot;cuda&quot;,)</span></code>.</p></li>
+<li><p><strong>budget_bytes</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Total device memory for chunk buffers, in bytes. Throughput falls
+steeply as it shrinks. Defaults to 512 MiB.</p></li>
+<li><p><strong>lanes</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Chunks in flight per device. Each lane takes a share of the budget, so
+more lanes give narrower chunks. Affects throughput only. Defaults
+to 1.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">devices</span></code> is empty or contains a non-CUDA device, or if
+    <code class="docutils literal notranslate"><span class="pre">budget_bytes</span></code> or <code class="docutils literal notranslate"><span class="pre">lanes</span></code> is not positive.</p>
 </dd>
 </dl>
 </dd></dl>

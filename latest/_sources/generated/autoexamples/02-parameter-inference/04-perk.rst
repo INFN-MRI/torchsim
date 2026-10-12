@@ -319,10 +319,10 @@ GPU. Errors are medians over the brain voxels, relative to the truth.
 
     method                       train     map     model      peak      T1      T2
     ------------------------------------------------------------------------------
-    match, rank 4                 1.1s   1.64s   1.4 MiB        --    0.6%    1.6%
-    PERK, 500 features            1.4s   0.03s   0.0 MiB        --    2.1%   16.4%
-    PERK, 1000 features           1.8s   0.04s   0.1 MiB        --    0.5%    3.4%
-    PERK, 4000 features           9.8s   0.12s   0.4 MiB        --    0.9%    5.4%
+    match, rank 4                 1.0s   1.48s   1.4 MiB        --    0.6%    1.6%
+    PERK, 500 features            1.2s   0.02s   0.0 MiB        --    1.4%   12.2%
+    PERK, 1000 features           1.6s   0.04s   0.1 MiB        --    0.9%    5.7%
+    PERK, 4000 features           8.7s   0.10s   0.4 MiB        --    0.9%    4.3%
 
 
 
@@ -416,8 +416,8 @@ to T1 and T2, scaled by the proton density:
  .. code-block:: none
 
                 PERK      CRLB     PERK   (median over the brain)
-    T1        7.6 ms    2.4 ms     1.1%
-    T2       11.9 ms    0.5 ms    16.0%
+    T1        8.6 ms    2.4 ms     1.2%
+    T2       11.4 ms    0.5 ms    14.8%
 
 
 
@@ -457,7 +457,7 @@ What this page did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 31.102 seconds)
+   **Total running time of the script:** (0 minutes 27.175 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_02-parameter-inference_04-perk.py:

@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -502,22 +502,23 @@
 <div class="viewcode-block" id="LorentzianSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.LorentzianSimulator.html#blochsim.simulators.LorentzianSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">LorentzianSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A Z-spectrum as equilibrium minus one Lorentzian line per pool.</span>
+<span class="w">    </span><span class="sd">"""Z-spectrum as equilibrium minus one Lorentzian line per pool.</span>
 
-<span class="sd">    Each pool saturates the water signal along a Lorentzian line centred on</span>
-<span class="sd">    its own offset [1]_, and the lines add:</span>
+<span class="sd">    Each pool saturates the water signal along a Lorentzian line centred on its</span>
+<span class="sd">    own offset [1]_, and the lines add:</span>
 
 <span class="sd">    ``M0 (1 - sum_i A_i (W_i / 2)^2 / ((W_i / 2)^2 + (offset - shift_i)^2))``</span>
 
-<span class="sd">    Pool ``i``, counted from one, exposes ``pool{i}_amplitude``,</span>
-<span class="sd">    ``pool{i}_width`` (the full width at half maximum) and ``pool{i}_shift``.</span>
+<span class="sd">    Pool ``i``, counted from one, exposes ``pool{i}_amplitude``, ``pool{i}_width``</span>
+<span class="sd">    (full width at half maximum) and ``pool{i}_shift``.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    pools:</span>
-<span class="sd">        How many Lorentzian lines.</span>
+<span class="sd">    pools : int, optional</span>
+<span class="sd">        Number of Lorentzian lines.</span>
 <span class="sd">    **values</span>
-<span class="sd">        Properties or sequence arguments to fix, as for any simulator.</span>
+<span class="sd">        Properties or sequence arguments to fix, as for any</span>
+<span class="sd">        :class:`~blochsim.model.Simulator`.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -563,7 +564,7 @@
 <div class="viewcode-block" id="LorentzianSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.LorentzianSimulator.html#blochsim.simulators.LorentzianSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -577,12 +578,11 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``pool{i}_amplitude`` as a fraction of ``M0``, ``pool{i}_width``</span>
-<span class="sd">            and ``pool{i}_shift`` in the unit of ``offsets``, and ``M0`` as a</span>
-<span class="sd">            scaling.</span>
-<span class="sd">        offsets:</span>
-<span class="sd">            Saturation frequency offsets from water, conventionally in ppm.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``pool{i}_amplitude`` as a fraction of ``M0``; ``pool{i}_width`` and</span>
+<span class="sd">            ``pool{i}_shift`` in the unit of ``offsets``; ``M0`` scaling.</span>
+<span class="sd">        offsets : array-like</span>
+<span class="sd">            Saturation offsets from water, conventionally in ppm.</span>
 <span class="sd">        """</span>
         <span class="n">held</span> <span class="o">=</span> <span class="n">across_contrasts</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="n">offsets</span><span class="p">)</span>
         <span class="n">remaining</span> <span class="o">=</span> <span class="mf">1.0</span>
@@ -598,19 +598,18 @@
 <div class="viewcode-block" id="CESTSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.CESTSimulator.html#blochsim.simulators.CESTSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CESTSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A Z-spectrum simulated through a train of saturation pulses, pool by pool.</span>
+<span class="w">    </span><span class="sd">"""Z-spectrum simulated through a train of rectangular saturation pulses.</span>
 
-<span class="sd">    At each offset the magnetization starts from equilibrium, a train of</span>
-<span class="sd">    rectangular pulses saturates it while the free water and every exchanging</span>
-<span class="sd">    pool precess at their own frequency, relax and exchange, and the</span>
-<span class="sd">    longitudinal magnetization left once a spoiled delay has passed is the</span>
-<span class="sd">    point of the spectrum. The pools are the Bloch-McConnell model's [1]_:</span>
-<span class="sd">    ``poolB_*`` to ``poolE_*`` beside the free water, each a fraction of</span>
-<span class="sd">    ``M0`` with its own exchange rate, relaxation times and chemical shift in</span>
-<span class="sd">    Hz. Each pulse starts at the phase the one before it ended at, so the</span>
-<span class="sd">    train is continuous in phase over the time the pulses play and not over</span>
-<span class="sd">    the delays between them, which is how a Pulseq CEST protocol accumulates</span>
-<span class="sd">    it. This is the sequence BART's ``sim`` plays as ``CEST``.</span>
+<span class="sd">    Each offset starts from equilibrium. Free water and the exchanging pools</span>
+<span class="sd">    (``poolB_*`` to ``poolE_*``, the Bloch-McConnell model [1]_) evolve through</span>
+<span class="sd">    the pulses and a spoiled delay, and the longitudinal magnetization at the read</span>
+<span class="sd">    is the point of the spectrum. Each pool has a ``fraction`` of ``M0``, an</span>
+<span class="sd">    exchange rate, relaxation times and a chemical shift in Hz. Each pulse starts</span>
+<span class="sd">    at the phase the previous one ended at; the delays between pulses accrue none.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Corresponds to the sequence BART's ``sim`` plays as ``CEST``.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -668,22 +667,21 @@
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
 <span class="sd">        offsets : array-like</span>
-<span class="sd">            Saturation frequency offsets from the free water, in ppm.</span>
+<span class="sd">            Saturation offsets from the free water, in ppm.</span>
 <span class="sd">        field_strength : float, optional</span>
-<span class="sd">            Main field in tesla, which turns an offset in ppm into Hz.</span>
+<span class="sd">            Main field in T; converts ppm to Hz.</span>
 <span class="sd">        B1sat : float, optional</span>
-<span class="sd">            Amplitude of each saturation pulse in microtesla.</span>
+<span class="sd">            Saturation pulse amplitude in microtesla.</span>
 <span class="sd">        npulses : int, optional</span>
 <span class="sd">            Saturation pulses per offset.</span>
 <span class="sd">        pulse_duration : float, optional</span>
-<span class="sd">            Duration of each pulse in milliseconds.</span>
+<span class="sd">            Duration of each pulse in ms.</span>
 <span class="sd">        interpulse_delay : float, optional</span>
-<span class="sd">            Time between two pulses in milliseconds.</span>
+<span class="sd">            Delay between pulses in ms.</span>
 <span class="sd">        recovery : float, optional</span>
-<span class="sd">            Time in milliseconds from the end of the last pulse to the read,</span>
-<span class="sd">            over which the transverse magnetization is spoiled.</span>
+<span class="sd">            Spoiled delay from the last pulse to the read, in ms.</span>
 <span class="sd">        dwell : float, optional</span>
-<span class="sd">            How long each sample of a pulse is held, in milliseconds.</span>
+<span class="sd">            Hold time of each pulse sample in ms.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>

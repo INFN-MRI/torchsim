@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -564,16 +564,15 @@
 <dt class="sig sig-object py" id="blochsim.simulators.HyperechoSimulator">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.simulators.</span></span><span class="sig-name descname"><span class="pre">HyperechoSimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/fse.html#HyperechoSimulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.HyperechoSimulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.fse.FSESimulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">FSESimulator</span></code></a></p>
-<p>A refocused train mirrored about a central refocusing pulse.</p>
-<p>The pulses after the central one replay those before it in reverse order,
-each with the opposite flip angle about the opposite phase – <code class="docutils literal notranslate"><span class="pre">-alpha</span></code>
-about <code class="docutils literal notranslate"><span class="pre">-phi</span></code>, which is <code class="docutils literal notranslate"><span class="pre">alpha</span></code> at <code class="docutils literal notranslate"><span class="pre">180</span> <span class="pre">-</span> <span class="pre">phi</span></code> degrees – so every
-coherence pathway the first half split is brought back by the last echo,
-the hyperecho <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. But for relaxation, that echo is the full spin echo of
-the excitation, whatever the flip angles before it. Every echo is
-demodulated at zero phase, the axis of the central pulse. With one flip
-angle at zero phase throughout, this is the sequence BART’s <code class="docutils literal notranslate"><span class="pre">epg</span></code> plays
-as Hyperecho.</p>
+<p>Refocused train mirrored about a central refocusing pulse.</p>
+<p>The pulses after the central one replay those before it in reverse order, each
+with flip angle <code class="docutils literal notranslate"><span class="pre">-alpha</span></code> about phase <code class="docutils literal notranslate"><span class="pre">-phi</span></code> (<code class="docutils literal notranslate"><span class="pre">alpha</span></code> at <code class="docutils literal notranslate"><span class="pre">180</span> <span class="pre">-</span> <span class="pre">phi</span></code>
+degrees), so the last echo is the hyperecho <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>: apart from relaxation, the
+full spin echo of the excitation. Every echo is demodulated at zero phase, the
+axis of the central pulse.</p>
+<p class="rubric">Notes</p>
+<p>With one flip angle at zero phase throughout, this is the sequence BART’s
+<code class="docutils literal notranslate"><span class="pre">epg</span></code> plays as Hyperecho.</p>
 <div class="admonition-references admonition">
 <p class="admonition-title">References</p>
 <aside class="footnote-list brackets">
@@ -600,31 +599,31 @@ Medicine 46.1 (2001), pp. 6-12. <a class="reference external" href="https://doi.
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></p></td>
-<td><p>Simulate the train, one train at a time where each has its own TR.</p></td>
+<td><p>Return the signal at every echo.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.HyperechoSimulator.layout" title="blochsim.simulators.HyperechoSimulator.layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></a></p></td>
 <td><p>Return the train, placed at the echo times it is timed from.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <a class="reference internal" href="#blochsim.simulators.HyperechoSimulator.layout" title="blochsim.simulators.HyperechoSimulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></p></td>
-<td><p>Return the TR, which the train waits out before the next one.</p></td>
+<td><p>Return <code class="docutils literal notranslate"><span class="pre">TR</span></code> in seconds, 1e6 ms when not given.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -644,15 +643,14 @@ Medicine 46.1 (2001), pp. 6-12. <a class="reference external" href="https://doi.
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Flip angles in degrees of the refocusing pulses before the central
-one, one per echo; the train holds twice as many and one more.</p></li>
-<li><p><strong>ESP</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Echo spacing in milliseconds.</p></li>
+<li><p><strong>flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Flip angles in degrees of the refocusing pulses before the central one,
+one per echo; the train has twice as many and one more.</p></li>
+<li><p><strong>ESP</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Echo spacing in ms.</p></li>
 <li><p><strong>phases</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – Phases in degrees of the refocusing pulses before the central one.</p></li>
 <li><p><strong>refocusing</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Flip angle in degrees of the central pulse, played at zero phase.</p></li>
-<li><p><strong>exc_flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The excitation, in degrees.</p></li>
-<li><p><strong>exc_phase</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The excitation, in degrees.</p></li>
-<li><p><strong>TR</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – Repetition time in milliseconds, which sets how far the
-longitudinal magnetization recovers before the next train.</p></li>
+<li><p><strong>exc_flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Excitation flip angle in degrees.</p></li>
+<li><p><strong>exc_phase</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Excitation phase in degrees.</p></li>
+<li><p><strong>TR</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – Repetition time in ms; sets the longitudinal recovery between trains.</p></li>
 </ul>
 </dd>
 </dl>

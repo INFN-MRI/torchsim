@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -560,44 +560,25 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.iterative">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">iterative</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">solver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">50</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-6</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_gauss_newton.html#iterative"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.iterative" title="Link to this definition">#</a></dt>
-<dd><p>The inner solve, by a regularized linear least-squares routine.</p>
-<p>A Gauss-Newton step leaves <code class="docutils literal notranslate"><span class="pre">||A</span> <span class="pre">d</span> <span class="pre">-</span> <span class="pre">b||^2</span> <span class="pre">+</span> <span class="pre">(1/g)</span> <span class="pre">||d</span> <span class="pre">-</span> <span class="pre">z||^2</span></code> once the
-damping and its reference are in it, and asks only for products with the
-Jacobian, so it does not care whether an encoding operator sits in front
-of the model. Any <code class="xref py py-class docutils literal notranslate"><span class="pre">LeastSquares</span></code> minimizes exactly that.</p>
+<dd><p>Build an inner solve from a regularized least-squares routine.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>solver</strong> (<em>LeastSquares</em><em>, </em><em>optional</em>) – <p>Anything matching <code class="xref py py-class docutils literal notranslate"><span class="pre">LeastSquares</span></code>. The default is deepinv’s
-<code class="docutils literal notranslate"><span class="pre">least_squares</span></code>, which is conjugate gradients. One of its others is
-that same function with the argument bound:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">deepinv.optim.linear</span><span class="w"> </span><span class="kn">import</span> <span class="n">least_squares</span>
-
-<span class="n">iterative</span><span class="p">(</span><span class="n">partial</span><span class="p">(</span><span class="n">least_squares</span><span class="p">,</span> <span class="n">solver</span><span class="o">=</span><span class="s2">"lsqr"</span><span class="p">))</span>
-</pre></div>
-</div>
-<p>Which one suits depends on the problem and is worth measuring:
-conjugate gradients works on the normal equations, so on a small
-well-scaled system it stops on a tolerance the squared condition
-number has already spoiled, while LSQR and MINRES reach what a direct
-solve reaches – and on a large encoded problem inside a fixed
-iteration budget the ordering reverses.</p>
-</p></li>
-<li><p><strong>max_iter</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Most inner iterations per Gauss-Newton step.</p></li>
-<li><p><strong>tol</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Stop when the residual has fallen this far relative to the data.</p></li>
+<li><p><strong>solver</strong> (<em>LeastSquares</em><em>, </em><em>optional</em>) – Routine minimizing the damped linear problem. Defaults to deepinv’s
+<code class="docutils literal notranslate"><span class="pre">least_squares</span></code> (conjugate gradients); <code class="docutils literal notranslate"><span class="pre">partial(least_squares,</span>
+<span class="pre">solver=&quot;lsqr&quot;)</span></code> selects another.</p></li>
+<li><p><strong>max_iter</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum inner iterations per Gauss-Newton step. Defaults to 50.</p></li>
+<li><p><strong>tol</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Relative residual tolerance. Defaults to 1e-6.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>An inner solve, to give <a class="reference internal" href="blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code></a> as <code class="docutils literal notranslate"><span class="pre">solve=</span></code>.</p>
+<dd class="field-even"><p>Inner solve, for <a class="reference internal" href="blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code></a> <code class="docutils literal notranslate"><span class="pre">solve=</span></code>.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>callable</p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – If no solver is given and deepinv is not installed. BlochSim does not
-    depend on it: pass a <code class="xref py py-class docutils literal notranslate"><span class="pre">LeastSquares</span></code> of your own, or use
-    <a class="reference internal" href="blochsim.direct.html#blochsim.direct" title="blochsim.direct"><code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code></a> where the model stands alone.</p>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – If no solver is given and deepinv is not installed.</p>
 </dd>
 </dl>
 </dd></dl>

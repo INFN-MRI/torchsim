@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -557,93 +557,29 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="parameter-estimation">
 <h1>Parameter estimation<a class="headerlink" href="#parameter-estimation" title="Link to this heading">#</a></h1>
-<p>Estimating tissue properties from a measured volume. An estimator is made from
-the acquisition it inverts and whatever settings the method itself has;
-<code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code> states what is unknown and over what range, draws the
-training set from that acquisition, and <code class="xref py py-meth docutils literal notranslate"><span class="pre">map()</span></code> returns one named
-map per unknown:</p>
+<p>Estimators map a measured volume to tissue parameter maps. An estimator is
+made from the acquisition it inverts, <a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator.fit" title="blochsim.Estimator.fit"><code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code></a> states the
+unknowns and their ranges and draws the training set from the acquisition, and
+<a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator.map" title="blochsim.Estimator.map"><code class="xref py py-meth docutils literal notranslate"><span class="pre">map()</span></code></a> returns one named map per unknown:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">fitter</span> <span class="o">=</span> <span class="n">PERK</span><span class="p">(</span><span class="n">acquisition</span><span class="p">,</span> <span class="n">n_features</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
 <span class="n">fitter</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">T1</span><span class="o">=</span><span class="p">(</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">3000.0</span><span class="p">),</span> <span class="n">T2</span><span class="o">=</span><span class="p">(</span><span class="mf">10.0</span><span class="p">,</span> <span class="mf">300.0</span><span class="p">),</span> <span class="n">noise_std</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
 <span class="n">maps</span> <span class="o">=</span> <span class="n">fitter</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">volume</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>The sampling belongs to the fit rather than to the estimator, so one estimator
-can be fitted over a different range without being rebuilt. The properties are
-named as keywords; a mapping given positionally is the same thing, and is the
-way to name one that collides with a keyword <code class="docutils literal notranslate"><span class="pre">fit</span></code> itself takes. Handing
-arrays in instead – a dictionary that came from somewhere else – is
-<code class="docutils literal notranslate"><span class="pre">fit(signals=...,</span> <span class="pre">parameters=...)</span></code>, and then <code class="xref py py-meth docutils literal notranslate"><span class="pre">map()</span></code> returns the
-parameter columns as a tensor rather than named maps. Every method is
-an <a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator" title="blochsim.Estimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Estimator</span></code></a>, which is where all of that lives; a method itself is
-only what its two tensor steps do, so writing another one is subclassing it.</p>
-<p><code class="docutils literal notranslate"><span class="pre">map(volume,</span> <span class="pre">uncertainty=True)</span></code> returns a second set of maps: how far the
-answer is expected to sit from the truth, which is also
-<code class="xref py py-meth docutils literal notranslate"><span class="pre">uncertainty_of()</span></code> on its own. <a class="reference internal" href="../generated/blochsim.PERK.html#blochsim.PERK" title="blochsim.PERK"><code class="xref py py-class docutils literal notranslate"><span class="pre">PERK</span></code></a> learns it while it
-fits, by regressing what its own answers were wrong by on the same features,
-so reporting one is a matrix multiply rather than a rerun; it costs a second
-walk of the training source, which <code class="docutils literal notranslate"><span class="pre">PERK(...,</span> <span class="pre">uncertainty=False)</span></code> declines.
-<a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-class docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a> reports the standard error of its own fit, the
-inverse Fisher matrix at the solution. <a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a> and
-<a class="reference internal" href="../generated/blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><code class="xref py py-class docutils literal notranslate"><span class="pre">LookupTable</span></code></a> answer with a grid point, which does not move a little
-when the noise does, and say so rather than inventing a number.</p>
-<p>What PERK reports is the whole error and not the noise alone: a regression
-trained on a prior answers with the prior where the data is weak, and is wrong
-that way in every realization. Read against <a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>, the lowest standard
-deviation an unbiased estimate could reach on this sequence, the gap is what
-the method is losing rather than what the acquisition cannot deliver. It is
-learned at the signal amplitude the training set was simulated at, so a
-measurement scaled well away from that is outside what it can speak for.</p>
-<p>Both also answer with <strong>M0</strong>, and neither simulates a fingerprint to do it.
-A match normalizes both sides, so its score is a cosine: the measurement’s own
-length times the score, divided by the atom’s length – one number stored per
-atom – is the least-squares scale already, and
-a match’s <code class="docutils literal notranslate"><span class="pre">densities</span></code> is that, equal to <code class="docutils literal notranslate"><span class="pre">scales.abs()</span></code>
-without touching an atom. <code class="docutils literal notranslate"><span class="pre">PERK(...,</span> <span class="pre">normalize=True)</span></code> learns the same quantity
-instead: normalized features carry no amplitude, so what the regression is
-taught alongside the relaxation times is one over the length of the
-fingerprint they imply. It is one more row in the same linear solve, and the
-parameter rows come out unchanged.</p>
-<p><a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a> and <a class="reference internal" href="../generated/blochsim.PERK.html#blochsim.PERK" title="blochsim.PERK"><code class="xref py py-class docutils literal notranslate"><span class="pre">PERK</span></code></a> honour <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>, so a
-volume larger than a card is streamed through it and a second card halves the
-work. <code class="docutils literal notranslate"><span class="pre">PERK(...,</span> <span class="pre">stream=True)</span></code> does the same for training: the dictionary is
-simulated a chunk at a time and the covariances accumulate as it goes, so
-memory follows the feature order rather than the number of training samples.
-The dictionary is then never held, and so cannot have a basis read off it –
-a <code class="docutils literal notranslate"><span class="pre">rank</span></code> needs the default.</p>
-<p>A <code class="docutils literal notranslate"><span class="pre">rank</span></code> given to <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code> puts the estimator to work in a temporal
-<a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><code class="xref py py-class docutils literal notranslate"><span class="pre">Subspace</span></code></a>, and leaves that basis on it as <code class="xref py py-attr docutils literal notranslate"><span class="pre">subspace</span></code>
-whichever method fitted it. That is what a subspace reconstruction is handed;
-what it returns is already in the basis, so <code class="xref py py-meth docutils literal notranslate"><span class="pre">from_coefficients()</span></code>
-reads the maps off it without projecting a second time.</p>
-<p><code class="docutils literal notranslate"><span class="pre">subspace=</span></code> is the other direction: work in a basis fitted elsewhere – the
-one another estimator carries, or one <code class="xref py py-func docutils literal notranslate"><span class="pre">simulate_subspace()</span></code> produced –
-rather than fitting one here. That is how the reconstruction and the estimator
-reading its coefficients come to hold the same basis by construction rather
-than by both being asked for the same rank. A borrowed basis streams, too,
-since each chunk can be projected as it is simulated.</p>
-<p>Where a model has a single unknown its atoms lie on a curve rather than filling
-a space, and <a class="reference internal" href="../generated/blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><code class="xref py py-class docutils literal notranslate"><span class="pre">LookupTable</span></code></a> reads the answer off that curve by
-interpolating between them – which is how an MP2RAGE T1 map is made, and what
-removes the grid spacing from the estimate.</p>
-<p>A dictionary is already clustered before anything is done to it – neighbouring
-tissues make nearly parallel signals – so <a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a> can be
-given a <code class="docutils literal notranslate"><span class="pre">groups=</span></code> count and match against one representative signal per group
-first, ruling out whole groups before any atom in them is scored. Compression
-comes first and is global, so the clustering happens inside the one basis the
-signals are in and the two savings multiply.</p>
-<p><a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-class docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a> fits the model itself rather than a sampling of
-it, so a third parameter costs a third column of the Jacobian instead of
-multiplying a grid. Every voxel steps together and carries its own damping.
-Bounds are given as <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">(low,</span> <span class="pre">high)}</span></code> and kept by fitting a transformed
-variable, so no iterate ever leaves the interval; an equality constraint is
-written into the model instead, by leaving out the degree of freedom it
-removes.</p>
+<p><code class="docutils literal notranslate"><span class="pre">fit(signals=...,</span> <span class="pre">parameters=...)</span></code> takes arrays instead, and <code class="docutils literal notranslate"><span class="pre">map</span></code> then returns
+the parameter columns as a tensor. A <code class="docutils literal notranslate"><span class="pre">rank</span></code> or <code class="docutils literal notranslate"><span class="pre">subspace</span></code> given to <code class="docutils literal notranslate"><span class="pre">fit</span></code> works
+in a temporal <a class="reference internal" href="../generated/blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><code class="xref py py-class docutils literal notranslate"><span class="pre">Subspace</span></code></a>, left on the estimator as
+<a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator.subspace" title="blochsim.Estimator.subspace"><code class="xref py py-attr docutils literal notranslate"><span class="pre">subspace</span></code></a>. <a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-class docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a> and <a class="reference internal" href="../generated/blochsim.PERK.html#blochsim.PERK" title="blochsim.PERK"><code class="xref py py-class docutils literal notranslate"><span class="pre">PERK</span></code></a>
+honour <a class="reference internal" href="../generated/blochsim.execution.html#blochsim.execution" title="blochsim.execution"><code class="xref py py-func docutils literal notranslate"><span class="pre">execution()</span></code></a>. <code class="docutils literal notranslate"><span class="pre">map(volume,</span> <span class="pre">uncertainty=True)</span></code> also returns an
+uncertainty map; its meaning depends on the method and is stated at
+<a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator.uncertainty_of" title="blochsim.Estimator.uncertainty_of"><code class="xref py py-meth docutils literal notranslate"><span class="pre">uncertainty_of()</span></code></a>. See the
+<a class="reference internal" href="../explanations/parameter-estimation.html"><span class="doc">Parameter estimation</span></a> page for the methods.</p>
 <section id="the-base-class">
 <h2>The base class<a class="headerlink" href="#the-base-class" title="Link to this heading">#</a></h2>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Estimator.html#blochsim.Estimator" title="blochsim.Estimator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Estimator</span></code></a></p></td>
-<td><p>What every mapping method is, and the machinery all of them share.</p></td>
+<td><p>Base class of the mapping methods.</p></td>
 </tr>
 </tbody>
 </table>
@@ -654,16 +590,16 @@ removes.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.DictionaryMatcher.html#blochsim.DictionaryMatcher" title="blochsim.DictionaryMatcher"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DictionaryMatcher</span></code></a></p></td>
-<td><p>Match signals using normalized complex inner products.</p></td>
+<td><p>Match signals to dictionary atoms by normalized complex inner product.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.LookupTable.html#blochsim.LookupTable" title="blochsim.LookupTable"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LookupTable</span></code></a></p></td>
 <td><p>Read one unknown back from a monotonic signal curve.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares" title="blochsim.NonlinearLeastSquares"><code class="xref py py-obj docutils literal notranslate"><span class="pre">NonlinearLeastSquares</span></code></a></p></td>
-<td><p>Levenberg-Marquardt, stepping every voxel together.</p></td>
+<td><p>Per-voxel Levenberg-Marquardt fit of the signal model.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.PERK.html#blochsim.PERK" title="blochsim.PERK"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PERK</span></code></a></p></td>
-<td><p>Parameter estimation via regression with kernels.</p></td>
+<td><p>Parameter estimation via regression with kernels (PERK).</p></td>
 </tr>
 </tbody>
 </table>

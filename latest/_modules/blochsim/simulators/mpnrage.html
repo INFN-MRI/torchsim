@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -498,7 +498,7 @@
 <div class="viewcode-block" id="MPnRAGESimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MPnRAGESimulator.html#blochsim.simulators.MPnRAGESimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">MPnRAGESimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""An inversion followed by a spoiled gradient-echo train, every shot read.</span>
+<span class="w">    </span><span class="sd">"""Inversion followed by a spoiled gradient-echo train, every shot read.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -545,9 +545,9 @@
 <span class="sd">        flip : float or array-like</span>
 <span class="sd">            Excitation flip angle in degrees, scalar or one per shot.</span>
 <span class="sd">        TR : float or array-like</span>
-<span class="sd">            Repetition time in milliseconds.</span>
+<span class="sd">            Repetition time in ms.</span>
 <span class="sd">        TI : float or array-like, optional</span>
-<span class="sd">            Inversion time in milliseconds.</span>
+<span class="sd">            Inversion time in ms.</span>
 <span class="sd">        phases : float or array-like, optional</span>
 <span class="sd">            Excitation phases in degrees.</span>
 <span class="sd">        """</span>
@@ -574,7 +574,7 @@
 <div class="viewcode-block" id="MPnRAGESimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.MPnRAGESimulator.html#blochsim.simulators.MPnRAGESimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Return the train the inversion recovers through."""</span>
+<span class="w">        </span><span class="sd">"""Return the signal at every shot."""</span>
         <span class="k">return</span> <span class="mi">1</span><span class="n">j</span> <span class="o">*</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">evaluate</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">sequence</span><span class="p">)</span></div>
 </div>
 

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -564,21 +564,18 @@
 <dt class="sig sig-object py" id="blochsim.simulators.FLASHSimulator">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.simulators.</span></span><span class="sig-name descname"><span class="pre">FLASHSimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/flash.html#FLASHSimulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.FLASHSimulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model._state_machine.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a></p>
-<p>A spoiled gradient-echo train from equilibrium, optionally inverted first.</p>
-<p>Every excitation is a windowed sinc played sample by sample, so the
-magnetization relaxes, precesses off resonance and exchanges between pools
-while the pulse plays, unless <code class="docutils literal notranslate"><span class="pre">pulse_duration</span></code> is zero and it is an
-instantaneous rotation. The transverse magnetization is spoiled after each
-sample: ideally, or with <code class="docutils literal notranslate"><span class="pre">rf_spoiling</span></code> by a quadratic cycle of the
-excitation phase and a gradient that winds one configuration order per
-repetition <a class="footnote-reference brackets" href="#id4" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>, the sample then demodulated by its pulse’s phase. With
-<code class="docutils literal notranslate"><span class="pre">inversion</span></code> the train is the inversion-recovery FLASH of Look-Locker T1
-mapping <a class="footnote-reference brackets" href="#id3" id="id2" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. This is the sequence BART’s <code class="docutils literal notranslate"><span class="pre">sim</span></code> plays as <code class="docutils literal notranslate"><span class="pre">FLASH</span></code> and
-<code class="docutils literal notranslate"><span class="pre">IR-FLASH</span></code>, and with instantaneous pulses and the sample at the pulse,
+<p>Spoiled gradient-echo train from equilibrium, optionally inverted first.</p>
+<p>Each excitation is a windowed sinc played sample by sample, or an
+instantaneous rotation when <code class="docutils literal notranslate"><span class="pre">pulse_duration</span></code> is zero. Transverse
+magnetization is spoiled ideally, or by RF spoiling with a gradient winding
+one configuration order per repetition <a class="footnote-reference brackets" href="#id4" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>; with <code class="docutils literal notranslate"><span class="pre">inversion</span></code> the train is
+the inversion-recovery FLASH of Look-Locker T1 mapping <a class="footnote-reference brackets" href="#id3" id="id2" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. When <code class="docutils literal notranslate"><span class="pre">states</span></code>
+is not given, one order is kept under ideal spoiling and up to one per
+repetition, to the engine’s limit, under RF spoiling.</p>
+<p class="rubric">Notes</p>
+<p>Corresponds to the sequences BART’s <code class="docutils literal notranslate"><span class="pre">sim</span></code> plays as <code class="docutils literal notranslate"><span class="pre">FLASH</span></code> and
+<code class="docutils literal notranslate"><span class="pre">IR-FLASH</span></code>, and with instantaneous pulses and the sample at the pulse to
 the one its <code class="docutils literal notranslate"><span class="pre">epg</span></code> plays as FLASH.</p>
-<p>The configuration orders are sized from the winding when <code class="docutils literal notranslate"><span class="pre">states</span></code> is not
-given: one under ideal spoiling, and one per repetition up to the engine’s
-limit under RF spoiling.</p>
 <div class="admonition-references admonition">
 <p class="admonition-title">References</p>
 <aside class="footnote-list brackets">
@@ -614,31 +611,31 @@ Medicine 21.2 (1991), pp. 251-263.
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.FLASHSimulator.evaluate" title="blochsim.simulators.FLASHSimulator.evaluate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></a></p></td>
 <td><p>Simulate the train, on one configuration order unless it winds.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.FLASHSimulator.layout" title="blochsim.simulators.FLASHSimulator.layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></a></p></td>
 <td><p>Return the train, one sample per shot.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <a class="reference internal" href="#blochsim.simulators.FLASHSimulator.layout" title="blochsim.simulators.FLASHSimulator.layout"><code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code></a>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></p></td>
-<td><p>Return how long one repetition lasts, given what the layout played.</p></td>
+<td><p>Return the duration of one repetition in seconds.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -654,31 +651,25 @@ Medicine 21.2 (1991), pp. 251-263.
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>flip</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – Flip angle in degrees, scalar or one per shot.</p></li>
-<li><p><strong>TR</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Repetition time in milliseconds, pulse centre to pulse centre.</p></li>
-<li><p><strong>TE</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Echo time in milliseconds, from the centre of the pulse.</p></li>
+<li><p><strong>TR</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Repetition time in ms, pulse centre to pulse centre.</p></li>
+<li><p><strong>TE</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a>) – Echo time in ms, from the pulse centre.</p></li>
 <li><p><strong>nshots</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a>) – Excitations in the train.</p></li>
-<li><p><strong>pulse_duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Duration of each excitation in milliseconds. Zero plays each as an
-instantaneous rotation.</p></li>
+<li><p><strong>pulse_duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Excitation duration in ms; zero is an instantaneous rotation.</p></li>
 <li><p><strong>bandwidth_time</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Zero crossings of the Hamming-windowed sinc across the pulse.</p></li>
-<li><p><strong>inversion</strong> (<em>{None</em><em>, </em><em>&quot;ideal&quot;</em><em>, </em><em>&quot;adiabatic&quot;}</em><em>, </em><em>optional</em>) – What prepares the train: nothing, an instantaneous inversion
-scaled by <code class="docutils literal notranslate"><span class="pre">inv_efficiency</span></code>, or a hyperbolic secant played sample
-by sample.</p></li>
-<li><p><strong>inversion_duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Duration of the adiabatic inversion in milliseconds.</p></li>
-<li><p><strong>inversion_phase</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Phase of the adiabatic inversion in degrees, relative to the
-train’s first pulse, which decides where the transverse
-magnetization the inversion leaves points.</p></li>
-<li><p><strong>spoiler</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Time in milliseconds between the inversion and the train, at the
-end of which the transverse magnetization is spoiled.</p></li>
-<li><p><strong>dwell</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – How long each sample of a pulse is held, in milliseconds.</p></li>
-<li><p><strong>rf_spoiling</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – The RF spoiling increment in degrees: the n-th excitation, counted
-from zero, is played at <code class="docutils literal notranslate"><span class="pre">rf_spoiling</span> <span class="pre">*</span> <span class="pre">n</span> <span class="pre">(n</span> <span class="pre">+</span> <span class="pre">1)</span> <span class="pre">/</span> <span class="pre">2</span></code>. Not given,
-the transverse magnetization is spoiled ideally.</p></li>
+<li><p><strong>inversion</strong> (<em>{None</em><em>, </em><em>&quot;ideal&quot;</em><em>, </em><em>&quot;adiabatic&quot;}</em><em>, </em><em>optional</em>) – Preparation: none, an instantaneous inversion scaled by
+<code class="docutils literal notranslate"><span class="pre">inv_efficiency</span></code>, or a sampled hyperbolic secant.</p></li>
+<li><p><strong>inversion_duration</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Duration of the adiabatic inversion in ms.</p></li>
+<li><p><strong>inversion_phase</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Phase of the adiabatic inversion in degrees, relative to the first pulse.</p></li>
+<li><p><strong>spoiler</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Time in ms between inversion and train, ending in a spoiler.</p></li>
+<li><p><strong>dwell</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – Hold time of each pulse sample in ms.</p></li>
+<li><p><strong>rf_spoiling</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em>, </em><em>optional</em>) – RF-spoiling phase increment in degrees: excitation <code class="docutils literal notranslate"><span class="pre">n</span></code>, from zero, has
+phase <code class="docutils literal notranslate"><span class="pre">rf_spoiling</span> <span class="pre">*</span> <span class="pre">n</span> <span class="pre">*</span> <span class="pre">(n</span> <span class="pre">+</span> <span class="pre">1)</span> <span class="pre">/</span> <span class="pre">2</span></code>. Ideal spoiling when not given.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the sample falls inside the pulse or after the next one, if
-    <code class="docutils literal notranslate"><span class="pre">flip</span></code> is neither scalar nor one per shot, or if a pulse is not
-    a whole number of samples.</p>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the sample falls inside the pulse or after the next one, if <code class="docutils literal notranslate"><span class="pre">flip</span></code>
+    is neither scalar nor one per shot, or if a pulse is not a whole number
+    of samples.</p>
 </dd>
 </dl>
 </dd></dl>

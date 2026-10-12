@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,64 +499,39 @@
 <div class="viewcode-block" id="NonlinearLeastSquares">
 <a class="viewcode-back" href="../../../generated/blochsim.NonlinearLeastSquares.html#blochsim.NonlinearLeastSquares">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">NonlinearLeastSquares</span><span class="p">(</span><span class="n">Estimator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Levenberg-Marquardt, stepping every voxel together.</span>
+<span class="w">    </span><span class="sd">"""Per-voxel Levenberg-Marquardt fit of the signal model.</span>
 
-<span class="sd">    Where a dictionary spans a grid whose size is the product of the parameter</span>
-<span class="sd">    ranges, a nonlinear fit walks downhill from a starting guess and pays</span>
-<span class="sd">    nothing for a third parameter beyond a third column of the Jacobian. What</span>
-<span class="sd">    it gives up is the guarantee: it finds a local minimum of the residual,</span>
-<span class="sd">    and which one depends on where it started.</span>
-
-<span class="sd">    This is an :class:`~blochsim.Estimator` face on</span>
-<span class="sd">    :class:`~blochsim.recon.GaussNewton`, and holds no algorithm of its own.</span>
-<span class="sd">    Fitting images voxel by voxel and reconstructing maps from k-space are the</span>
-<span class="sd">    same loop over the same :class:`~blochsim.recon.ModelOperator` with</span>
-<span class="sd">    nothing encoding the voxels together, so what is here is only the</span>
-<span class="sd">    adaptation: where the fit starts, and what the training set is for.</span>
-
-<span class="sd">    The loop it runs by default carries a per-voxel trust region, so every</span>
-<span class="sd">    voxel takes its step in the same pass, carries its own damping, accepts or</span>
-<span class="sd">    rejects on its own, and drops out when it has converged -- and the</span>
-<span class="sd">    remaining ones close up, so late iterations cost only what is left.</span>
+<span class="sd">    Fits the model itself, so each extra unknown adds one Jacobian column</span>
+<span class="sd">    rather than a dictionary axis. The result is a local minimum that depends</span>
+<span class="sd">    on the starting point. All voxels step together with their own trust</span>
+<span class="sd">    region and leave the loop on convergence. A face on</span>
+<span class="sd">    :class:`~blochsim.recon.GaussNewton`.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    acquisition : Simulator, optional</span>
-<span class="sd">        The sequence being inverted: a simulator that ships with BlochSim, one</span>
-<span class="sd">        written by subclassing :class:`~blochsim.model.Simulator`, or any other</span>
-<span class="sd">        :class:`~blochsim.model.Simulator`. Every tissue property that is</span>
-<span class="sd">        neither unknown nor measured separately is fixed on it beforehand, with</span>
-<span class="sd">        the constructor or :meth:`~blochsim.model.Simulator.bind`. Leave it</span>
-<span class="sd">        out to fit from signals handed to :meth:`fit` directly.</span>
+<span class="sd">        The sequence being inverted, with every property that is neither</span>
+<span class="sd">        unknown nor measured separately already fixed.</span>
 <span class="sd">    bounds : mapping, optional</span>
-<span class="sd">        ``{name: (low, high)}``, either end ``None`` for unbounded. A bound is</span>
-<span class="sd">        kept by fitting a transformed variable rather than by clipping a</span>
-<span class="sd">        result, so no iterate ever leaves the interval and the bound cannot be</span>
-<span class="sd">        sitting exactly on the answer. It also puts every parameter on the</span>
-<span class="sd">        same scale whatever its units, which is what the damping term assumes.</span>
+<span class="sd">        ``{name: (low, high)}``, either end ``None`` for unbounded. Enforced by</span>
+<span class="sd">        a variable transform, so iterates stay inside.</span>
 <span class="sd">    initial : mapping, optional</span>
-<span class="sd">        ``{name: value}`` to start from, which must be strictly inside that</span>
-<span class="sd">        property's bound. Without one, :meth:`fit` takes the median of the</span>
-<span class="sd">        parameters the training set drew.</span>
+<span class="sd">        ``{name: value}`` start, strictly inside the bound. Default is the</span>
+<span class="sd">        median of the training draw.</span>
 <span class="sd">    loop : GaussNewton, optional</span>
-<span class="sd">        The solve to run, and where every knob it has lives -- how many steps,</span>
-<span class="sd">        how the damping moves, which tolerance stops a voxel. The default is</span>
-<span class="sd">        Levenberg-Marquardt: a :class:`~blochsim.recon.TrustRegion` over</span>
-<span class="sd">        :func:`~blochsim.recon.direct`, twenty steps.</span>
+<span class="sd">        The solver. Default is a :class:`~blochsim.recon.TrustRegion` over</span>
+<span class="sd">        :func:`~blochsim.recon.direct`, 20 iterations.</span>
 
 <span class="sd">    Notes</span>
 <span class="sd">    -----</span>
-<span class="sd">    **Equality constraints are written into the model, not declared here.**</span>
-<span class="sd">    A constraint that fixes one parameter in terms of the others removes a</span>
-<span class="sd">    degree of freedom, so the way to impose it is to not have that freedom:</span>
-<span class="sd">    write the model in terms of the parameters that remain. For a fat-water</span>
-<span class="sd">    fit where the two fractions must sum to one, make the fat fraction ``f``</span>
-<span class="sd">    the only unknown and write water as ``1 - f`` inside the model. The</span>
-<span class="sd">    constraint then holds identically at every iterate, rather than being</span>
-<span class="sd">    restored after each one.</span>
+<span class="sd">    An equality constraint is written into the model by removing the degree</span>
+<span class="sd">    of freedom it fixes: for a fat-water fit with fractions summing to one,</span>
+<span class="sd">    make the fat fraction ``f`` the only unknown and use ``1 - f`` for water.</span>
 
-<span class="sd">    The solve is iterative and runs without building a graph, so an estimate</span>
-<span class="sd">    carries no gradient with respect to the measurement.</span>
+<span class="sd">    The estimate carries no gradient with respect to the measurement. The</span>
+<span class="sd">    stated uncertainty is the inverse-Fisher standard error at the solution</span>
+<span class="sd">    (a linearization, as :func:`~blochsim.crlb`), zero when the training noise</span>
+<span class="sd">    is zero.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -602,7 +577,7 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">fitted</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Whether a model and a starting point are both in place."""</span>
+<span class="w">        </span><span class="sd">"""Whether a model and a starting point are in place."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">acquisition</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_start</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_fit_arrays</span><span class="p">(</span>

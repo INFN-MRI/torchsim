@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -498,43 +498,27 @@
 <span class="k">class</span><span class="w"> </span><span class="nc">LookupTable</span><span class="p">(</span><span class="n">Estimator</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Read one unknown back from a monotonic signal curve.</span>
 
-<span class="sd">    Where a model has a single unknown, a dictionary match degenerates: the</span>
-<span class="sd">    atoms lie on a curve rather than filling a space, and the nearest one is</span>
-<span class="sd">    found by looking along it. Interpolating between the two nearest atoms</span>
-<span class="sd">    then costs nothing and removes the grid spacing from the answer entirely,</span>
-<span class="sd">    which is what a matched estimate is otherwise limited by.</span>
-
-<span class="sd">    This is how an MP2RAGE T1 map is made [1]_. The two inversion-recovery</span>
-<span class="sd">    blocks are combined into one ratio per voxel, that ratio is a monotonic</span>
-<span class="sd">    function of T1 over the range a brain spans, and the map is the inverse of</span>
-<span class="sd">    that function.</span>
+<span class="sd">    Linear interpolation between the two nearest atoms of a one-parameter</span>
+<span class="sd">    model removes the dictionary grid spacing from the estimate. The classic</span>
+<span class="sd">    use is the MP2RAGE T1 map [1]_.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
 <span class="sd">    acquisition : Simulator, optional</span>
-<span class="sd">        The sequence being inverted: a simulator that ships with BlochSim, one</span>
-<span class="sd">        written by subclassing :class:`~blochsim.model.Simulator`, or any other</span>
-<span class="sd">        :class:`~blochsim.model.Simulator`. Every tissue property that is</span>
-<span class="sd">        neither unknown nor measured separately is fixed on it beforehand, with</span>
-<span class="sd">        the constructor or :meth:`~blochsim.model.Simulator.bind`. Leave it</span>
-<span class="sd">        out to fit from signals handed to :meth:`fit` directly.</span>
+<span class="sd">        The sequence being inverted, with every property that is neither</span>
+<span class="sd">        unknown nor measured separately already fixed. Omit to give signals</span>
+<span class="sd">        to :meth:`fit`.</span>
 <span class="sd">    combine : callable, optional</span>
-<span class="sd">        Reduce a model's contrasts to the one number the curve is in, called</span>
-<span class="sd">        as ``combine(signals)`` on ``(..., contrasts)`` and returning</span>
-<span class="sd">        ``(...)``. Which combination makes a curve monotonic is a property of</span>
-<span class="sd">        the sequence, not of the table, so it is stated here rather than</span>
-<span class="sd">        assumed -- for MP2RAGE it is the unified image. A model with a single</span>
-<span class="sd">        contrast needs none.</span>
+<span class="sd">        Reduces ``(..., contrasts)`` signals to the ``(...)`` values the curve</span>
+<span class="sd">        is in, for example the MP2RAGE unified image. Not needed for a</span>
+<span class="sd">        single-contrast model.</span>
 <span class="sd">    monotonic : bool, optional</span>
-<span class="sd">        Restrict the table to the longest monotonic run of the curve. A</span>
-<span class="sd">        signal curve that turns back on itself has no inverse where it turns,</span>
-<span class="sd">        and the turning points lie outside the range of interest.</span>
+<span class="sd">        Keep only the longest monotonic run of the curve. Default True.</span>
 
 <span class="sd">    Notes</span>
 <span class="sd">    -----</span>
-<span class="sd">    A lookup is a binary search and one linear blend per voxel, so this</span>
-<span class="sd">    estimator runs where its signals already are. Streaming a volume to a card</span>
-<span class="sd">    for it would spend more time on the transfer than on the search.</span>
+<span class="sd">    Signals outside :attr:`span` are read as the nearer endpoint. The lookup</span>
+<span class="sd">    runs where the signals are and is not streamed.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -588,17 +572,12 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">points</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""How many points the table keeps."""</span>
+<span class="w">        </span><span class="sd">"""Number of points in the table."""</span>
         <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">intensity</span><span class="o">.</span><span class="n">numel</span><span class="p">())</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">span</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">"""The signal range the table covers, low to high.</span>
-
-<span class="sd">        A measurement outside it is read as the nearer endpoint, so a wide</span>
-<span class="sd">        span is what stops a noisy background from pinning the map to a value</span>
-<span class="sd">        the model never produced.</span>
-<span class="sd">        """</span>
+<span class="w">        </span><span class="sd">"""Signal range ``(low, high)`` covered by the table."""</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">fitted</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"the table has no curve to span"</span><span class="p">)</span>
         <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">intensity</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">intensity</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>

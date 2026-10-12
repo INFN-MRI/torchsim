@@ -1,9 +1,7 @@
 # Developer Guide
 
-How to set up to change BlochSim: what has to be on the machine, how to
-install the source so your edits take effect, the style the code is written
-in, how to run the tests and build these pages, and how a pull request is
-opened.
+Setting up to change BlochSim: prerequisites, the editable install, style,
+tests, the documentation build and pull requests.
 
 ```{contents}
 :local:
@@ -12,51 +10,44 @@ opened.
 
 ## Prerequisites
 
-Beyond what the {doc}`user_guide` asks of everyone -- an isolated environment
-and a PyTorch build chosen for your hardware -- working on the source needs:
+Besides the environment and PyTorch build of the {doc}`user_guide`, you need:
 
-**A C++17 compiler.** The CPU state machine and the PERK kernel are C++
-extensions built from `src/blochsim/_epg_cpu.cpp` and
-`src/blochsim/_perk_cpu.cpp`. An install from source compiles them, and
-there is no Python fallback to fall back to.
+- **A C++17 compiler and CMake.** The CPU kernels (`src/blochsim/_epg_cpu.cpp`,
+  `_perk_cpu.cpp`) are compiled at install, and there is no Python fallback.
 
-::::{tab-set}
+  ::::{tab-set}
 
-:::{tab-item} Linux
-:sync: linux
+  :::{tab-item} Linux
+  :sync: linux
 
-```sh
-sudo apt install build-essential      # Debian, Ubuntu
-sudo dnf install gcc-c++ make         # Fedora, RHEL
-```
-:::
+  ```sh
+  sudo apt install build-essential      # Debian, Ubuntu
+  sudo dnf install gcc-c++ make         # Fedora, RHEL
+  ```
+  :::
 
-:::{tab-item} macOS
-:sync: mac
+  :::{tab-item} macOS
+  :sync: mac
 
-```sh
-xcode-select --install
-```
-:::
+  ```sh
+  xcode-select --install
+  ```
+  :::
 
-:::{tab-item} Windows
-:sync: windows
+  :::{tab-item} Windows
+  :sync: windows
 
-Install the **Visual Studio Build Tools** with the "Desktop development
-with C++" workload, then build from the *Developer Command Prompt* so
-the compiler is on the path.
-:::
+  The Visual Studio Build Tools with the "Desktop development with C++"
+  workload; build from the *Developer Command Prompt*.
+  :::
 
-::::
+  ::::
 
-**Git**, and a fork of https://github.com/pulserver/blochsim if you intend to
-open a pull request.
-
-**The CUDA toolkit and an NVIDIA card, if you want to touch the GPU kernels.**
-They are C++ compiled ahead of time by `nvcc`, which CMake uses wherever it
-finds it. The same kernels are also compiled for the host, so you can develop
-and test them without a card -- see {ref}`dev-tests` -- but only a card runs
-them for real.
+- **Git**, and a fork of <https://github.com/pulserver/blochsim> to open a
+  pull request from.
+- **The CUDA toolkit**, only to compile the GPU kernels for a card. CMake
+  compiles them wherever it finds `nvcc`; on Linux they are also compiled for
+  the host, so they can be tested without one (see {ref}`dev-tests`).
 
 ## Development installation
 
@@ -67,29 +58,10 @@ pip install -e ".[dev]"
 pre-commit install
 ```
 
-The `dev` extra is the whole toolchain in one command: the formatter and
-linter, the test runner, the documentation build, and the phantom, coil,
-reconstruction and NUFFT packages the gallery examples import while they
-execute. It is `test`, `doc` and `examples` together, and any of those three
-installs on its own when that is all you want.
-
-`pre-commit install` is the second line for a reason: installing the package
-puts the hooks *available*, and this is what puts them *in effect*. See
-{ref}`dev-style` for what they check and how to step around one.
-
-An editable install puts the Python sources on the path, so an edit under
-`src/blochsim` takes effect on the next import with nothing to rebuild. The
-C++ extensions are different -- they are compiled artifacts:
-
-```sh
-pip install -e ".[dev]"          # after editing any .cpp
-```
-
-**Check that the build actually succeeded.** A failed compile leaves the
-previously built `.so` importable, so the suite runs green against a kernel
-that no longer corresponds to the source you are reading. Read the exit status
-of the install, not the last lines of its output, and confirm the extension is
-the one you just built:
+The `dev` extra is `test`, `doc` and `examples` plus ruff, mypy and
+pre-commit. Python edits take effect on the next import. A C++ edit needs the
+install again, and a failed compile leaves the previous extension importable,
+so check the exit status and which file is loaded:
 
 ```sh
 pip install -e ".[dev]" ; echo "exit: $?"
@@ -98,138 +70,66 @@ python -c "import blochsim._epg_cpu as k; print(k.__file__)"
 
 ### Source layout
 
-`src/blochsim/sequence/`
-: The description an acquisition is assembled from -- events, operators,
-  builders -- and the dispatch that turns one into a kernel launch:
-  `_epg_gpu.py` and `_pools_gpu.py` for the GPU kernels, whose source is
-  `src/blochsim/_epg_kernels.hpp` and `_pools_kernels.hpp`. The shared
-  parameter ABI, which the Python dispatch, the C++ extension and the GPU
-  kernels all read, is `_parameters.py`.
+| Path | Content |
+| --- | --- |
+| `src/blochsim/sequence/` | Events, operators and builders, and the dispatch to the kernels. `_parameters.py` is the parameter ABI the Python dispatch, the C++ extension and the GPU kernels share. |
+| `src/blochsim/model/` | The signal model: physics, the simulator that orders events, and the binding that resolves a protocol's structure once. |
+| `src/blochsim/_epg_cpu.cpp`, `_perk_cpu.cpp` | The CPU kernels. Every GPU path exists here too; the two agree to float32 round-off. |
+| `src/blochsim/_epg_kernels.hpp`, `_pools_kernels.hpp` | The GPU kernels. |
+| `src/blochsim/simulators/`, `estimators/`, `recon/`, `optim/` | Shipped sequences, and what is built on them. |
+| `tests/`, `examples/`, `docs/` | Tests mirrored by subpackage, gallery scripts, Sphinx sources. |
 
-`src/blochsim/model/`
-: What a signal model is: the physics, the simulator that orders its events,
-  and the binding that resolves a protocol's structure once and rebinds its
-  values per call.
-
-`src/blochsim/_epg_cpu.cpp`, `src/blochsim/_perk_cpu.cpp`
-: The CPU kernels. Every path the GPU has -- forward, forward-mode,
-  adjoint, forward-over-reverse, the real-subspace specialization, the pool
-  models -- exists here too, and the two agree to float32 round-off.
-
-`src/blochsim/simulators/`, `estimators/`, `recon/`, `optim/`
-: The sequences that ship, and what is built on top of them.
-
-`tests/`, `examples/`, `docs/`
-: Mirrored by subpackage, executed by the gallery, and built by Sphinx
-  respectively.
-
-{doc}`internals/kernels` describes how those pieces fit together; read it
-before changing any of them.
+Read {doc}`internals/kernels` before changing any of the kernels.
 
 (dev-style)=
 
 ## Style
 
-**Formatting is automated, so do not argue with it.** One tool does all of it:
-`ruff format` is the formatter and ruff's `I` rules are the import sorter, so
-the style is decided in one place. Ruff also runs pycodestyle, pyflakes,
-bugbear, quote, pydocstyle, pyupgrade and annotation rules, with the
-**numpydoc** docstring convention. Public functions and classes carry
-annotations; the settings are in `pyproject.toml` and are the authority.
+`ruff format` formats and ruff's `I` rules sort imports. `ruff check` also
+runs pycodestyle, pyflakes, bugbear, pydocstyle (numpydoc convention),
+pyupgrade and annotation rules. `pyproject.toml` holds the whole
+configuration.
 
 ### Pre-commit hooks
 
-`pip install -e ".[dev]"` puts `pre-commit` on the path. Registering the hook
-is a second, separate step, and until you take it nothing runs on commit:
+After `pre-commit install`, every commit checks the staged files.
+`.pre-commit-config.yaml` pins the ruff version, so your commit and CI are
+judged by the same build.
 
 ```sh
-pre-commit install
+pre-commit run --all-files      # what CI runs
+pre-commit run ruff-format      # one hook
+pre-commit autoupdate           # move the pinned versions forward
 ```
 
-From then on every `git commit` checks the files you staged. The first run
-downloads and builds the hook environments, so give it a minute; afterwards it
-is a second or two.
-
-```sh
-pre-commit run --all-files      # the whole tree, which is what CI does
-pre-commit run ruff-format      # one hook, on the staged files
-pre-commit run --files src/blochsim/model/_signal.py
-pre-commit autoupdate           # move the pinned hook versions forward
-```
-
-`.pre-commit-config.yaml` pins the ruff version, so the formatter that judges
-your commit and the one that judges the pull request are the same build. That
-matters: rules move between ruff releases, and `pyproject.toml` sets
-`required-version = ">=0.14"` so an older ruff refuses to run rather than
-report findings this configuration cannot express. Running the two steps by
-hand is the same thing as the hooks, at whatever ruff you happen to have:
-
-```sh
-ruff format .
-ruff check . --fix
-```
-
-**A hook that rewrites a file fails the commit.** `ruff format`, `ruff check
---fix` and the whitespace hooks fix what they find rather than only complaining
-about it, and a run that changed something exits non-zero so you see what it
-did. Nothing is lost -- the fixes are in your working tree. Look at them,
-`git add` them, and commit again; the second attempt passes.
+A hook that rewrites a file fails the commit and leaves the fix in the working
+tree: review it, `git add` it and commit again.
 
 ### Hook bypass
 
-Skip one hook, which is the smallest hammer and usually the right one:
-
 ```sh
-SKIP=ruff-check git commit -m "..."
-SKIP=ruff-check,ruff-format git commit -m "..."
+SKIP=ruff-check git commit -m "..."     # one hook
+git commit --no-verify -m "..."         # all hooks
 ```
 
-Skip all of them -- a work-in-progress commit on a branch of your own, or a
-merge you did not write:
+CI runs every hook on every branch, so a bypass only defers the failure. A
+rule that does not fit this code belongs in `ignore` or `per-file-ignores` in
+`pyproject.toml`, with a comment.
 
-```sh
-git commit --no-verify -m "..."
-```
+### Docstrings and comments
 
-Both are local conveniences, not exemptions. CI runs
-`pre-commit run --all-files` over the whole tree on every branch, so a bypass
-defers the failure to the pull request rather than avoiding it. Clean it up in
-a follow-up commit before you ask for review.
-
-If a hook is wrong rather than inconvenient, the fix is the configuration and
-not the flag: a rule that fights the way this code is written belongs in
-`ignore` or `per-file-ignores` in `pyproject.toml`, with a comment saying why.
-Several are already there.
-
-**A docstring carries what a caller needs to call it**: one line of what it
-does, then Parameters, Returns, Raises. Types belong in the prose of the
-docstring, where they can be qualified ("array-like, one per echo"), rather
-than in the rendered signature -- the API pages are built with typehints off
-for exactly that reason. The annotations stay in the source for editors and
-for mypy.
-
-**Write for someone reading the code as it is now.** This is the rule most
-worth internalizing here, and it is enforced in review:
-
-- Never write text whose subject is the history of the code. No "used to", no
-  "previously", no "this replaces the old X", no naming a bug that has been
-  fixed or the change that fixed it.
-- Do not justify the present shape by contrast with a shape that is gone.
-- Do not restate what the code plainly says.
-
-A comment earns its place by explaining a non-obvious algorithm, or a choice a
-reader would otherwise undo. Even then, prefer a well-named function, or a
-test whose name states the invariant -- those cannot go stale silently, and a
-stale comment actively misleads the next reader. When you are tempted to
-explain *why not the other way*, write a test instead.
-
-The same applies to these pages. The documentation describes what BlochSim
-does and why that is right on its own terms; it is not a changelog.
-
-**Units are public at the edges and internal underneath.** A caller writes
-milliseconds, degrees and Hz; a description timestamps in microseconds and
-carries radians. Convert at the boundary, and name the unit in the identifier
-(`duration_s`, `flip_rad`, `t1_ms`) rather than in a comment beside it.
+- **Docstrings** are numpydoc: a one-line summary, then Parameters, Returns,
+  Raises. Each parameter is one or two lines: what it is, its unit, a
+  non-obvious constraint. Types go in the docstring, where they can be
+  qualified, because the API pages are built with typehints off.
+- **Write for the code as it is now.** No "used to", "previously" or "this
+  replaces"; no fixed bugs; no restating what the code says.
+- **A comment explains a non-obvious algorithm or a choice a reader would
+  undo.** Prefer a well-named function, or a test whose name states the
+  invariant.
+- **Units are public at the edges.** A caller writes milliseconds, degrees and
+  Hz; a description carries microseconds and radians. Convert at the boundary
+  and name the unit in the identifier (`duration_s`, `flip_rad`, `t1_ms`).
 
 (dev-tests)=
 
@@ -237,30 +137,21 @@ carries radians. Convert at the boundary, and name the unit in the identifier
 
 ```sh
 pytest tests/                     # everything, with coverage
-pytest tests/epg/                 # one area
 pytest tests/epg/test_shift.py -k inversion
-pytest tests/ -n auto             # xdist, across cores
+pytest tests/ -n auto             # across cores
 ```
 
-Coverage is on by default through `addopts`, and reports to the terminal and
-to `coverage.xml`.
+Coverage is on through `addopts` and writes `coverage.xml`. `tests/epg/` pins
+each operator of the state machine against a closed form; the other
+directories mirror the subpackages.
 
-`tests/` mirrors the source: `epg/` pins the state machine operator by
-operator against closed forms -- the shift, the RF rotation, relaxation,
-diffusion, flow, spoiling, the two-pool and three-pool longitudinal steps --
-while `sequence/`, `model/`, `estimators/`, `recon/` and `optim/`
-cover the layers above.
+On Linux the GPU kernels are also compiled for the host, and
+`tests/sequence/test_host_kernels.py` and `test_many_pools_host.py` hold them
+to the C++ kernels. Tests that need a card skip without one.
 
-**The GPU kernels run without a card.** On Linux the install compiles them
-for the host as well, one program at a time over host tensors, and
-`tests/sequence/test_host_kernels.py` and `test_many_pools_host.py` hold that
-build to the C++ kernels. That is how the GPU kernels are verified on a
-machine with no card; the tests that need one skip themselves.
-
-When you change physics, add the test that pins it against something outside
-BlochSim: a closed form, a published figure, or an isochromat summation you
-write in the test itself. The `tests/epg` files are written that way, and
-each states its invariant in its module docstring.
+A change to the physics comes with a test against something outside BlochSim:
+a closed form, a published figure, or an isochromat summation written in the
+test.
 
 ## Documentation build
 
@@ -268,38 +159,21 @@ each states its invariant in its module docstring.
 bash scripts/build_docs.sh              # incremental
 bash scripts/build_docs.sh --clean      # re-execute every example
 PYTHON_BIN=~/envs/blochsim/bin/python bash scripts/build_docs.sh
-```
-
-The script checks that the interpreter it is given can import BlochSim and the
-documentation extensions, then builds into `docs/build/html`. Two things
-happen during the build that make it slower than a plain Sphinx run and are
-the point of it: **sphinx-gallery executes every example**, and **the figures
-of the explanation pages are re-rendered** by
-`docs/explanation_figures.py`, which simulates them with the BlochSim in
-your working tree. A figure on those pages is therefore never older than the
-code it illustrates. Read them:
-
-```sh
 python -m http.server --directory docs/build/html 8000
 ```
 
-and open `localhost:8000`.
-
-To add a figure to an explanation page, write a function in
-`docs/explanation_figures.py` that returns a Matplotlib figure, register it
-in the `FIGURES` mapping at the bottom, and reference the file it writes with a
-`figure` directive. To add a gallery example, drop a script into the right
-`examples/` section -- the numeric prefix orders it, and the module
-docstring becomes the page's introduction.
+The build executes every gallery example and re-renders the explanation
+figures from `docs/explanation_figures.py` with the BlochSim in your working
+tree. To add a figure, write a function returning a Matplotlib figure,
+register it in `FIGURES`, and reference the file it writes with a `figure`
+directive. To add an example, add a script to its `examples/` section: the
+numeric prefix orders it and the module docstring opens the page.
 
 ## Pull requests
 
-1. **Branch from** `main`, in your fork. One subject per branch; a
-   refactor and a fix in the same diff cost the reviewer more than they save
-   you.
-2. **Make the change, with a test that fails without it.** For a physics
-   change that test is against something outside BlochSim, as above.
-3. **Run what CI runs**, so you find out here rather than there:
+1. Branch from `main` in your fork, one subject per branch.
+2. Make the change with a test that fails without it.
+3. Run what CI runs:
 
    ```sh
    pre-commit run --all-files
@@ -307,27 +181,20 @@ docstring becomes the page's introduction.
    bash scripts/build_docs.sh
    ```
 
-4. **Open the pull request.** A template asks for what the change does, how it
-   was checked -- the command and what it printed, since "tests pass" does not
-   say which ones -- and the checklist above.
-5. **CI runs** the same pre-commit hooks, then the tests on Linux, macOS and
-   Windows at both ends of the supported Python range, compiling the kernels
-   fresh on each. Read the Docs builds the pages for the pull request. All of
-   it has to be green.
-6. **Review** is a conversation about the code, not about you; the same
-   applies in the other direction when you review. Push follow-up commits
-   rather than force-pushing over the discussion, so a reviewer can read what
-   changed.
+4. Open the pull request. The template asks what the change does and how it
+   was checked: the command and what it printed.
+5. CI runs the hooks, the tests on Linux, macOS and Windows at Python 3.10 and
+   3.14 with the kernels compiled fresh, and the documentation build. All of
+   it has to pass.
+6. Answer review with follow-up commits rather than a force-push, so the
+   reviewer can see what changed.
 
-Everything here happens under the {doc}`misc/code_of_conduct`, which applies
-to issues, discussions, pull requests and reviews alike. BlochSim is released
-under the {doc}`misc/license`, and a contribution is released under the same
-terms; {doc}`misc/contributors` is generated from the repository history.
+Contributions follow the {doc}`misc/code_of_conduct` and are released under
+the {doc}`misc/license`.
 
 ## Internals
 
-The implementation behind the explanation pages: the derivations, the format
-rules and the kernels, for whoever changes them.
+Derivations, format rules and kernels, for whoever changes them.
 
 ```{toctree}
 :maxdepth: 1

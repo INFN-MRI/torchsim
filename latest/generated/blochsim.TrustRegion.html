@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -568,16 +568,14 @@
 <dt class="sig sig-object py" id="blochsim.TrustRegion">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">TrustRegion</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">anchored</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">per_voxel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_gauss_newton.html#TrustRegion"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.TrustRegion" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/builtins/functions.html#object" title="(in Python v3.15)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
-<p>Each voxel its own damping, raised when a step does not pay.</p>
-<p>Levenberg-Marquardt. A step is taken only where it actually lowered the
-residual; where it did not, the damping goes up and the step is tried
-again shorter. That needs the voxels to be independent, so it applies to a
-model with no encoding in front of it.</p>
+<p>Levenberg-Marquardt: per-voxel damping, raised where a step does not pay.</p>
+<p>A step is accepted per voxel only if it lowers the residual. Requires
+independent voxels, so no encoding operator.</p>
 <dl class="py attribute">
 <dt class="sig sig-object py" id="blochsim.TrustRegion.tau">
 <span class="sig-name descname"><span class="pre">tau</span></span><a class="headerlink" href="#blochsim.TrustRegion.tau" title="Link to this definition">#</a></dt>
-<dd><p>Sets the first damping, as this times the largest curvature the
-starting point shows. Small where the guess is good.</p>
+<dd><p>First damping as a multiple of the largest diagonal curvature at the
+start. Defaults to 1e-2.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)">float</a></p>
@@ -589,13 +587,13 @@ starting point shows. Small where the guess is good.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.TrustRegion.begin" title="blochsim.TrustRegion.begin"><code class="xref py py-obj docutils literal notranslate"><span class="pre">begin</span></code></a></p></td>
-<td><p>Scale the first damping to the curvature the starting point shows.</p></td>
+<td><p>Return the initial per-voxel damping from the curvature.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.TrustRegion.judge" title="blochsim.TrustRegion.judge"><code class="xref py py-obj docutils literal notranslate"><span class="pre">judge</span></code></a></p></td>
-<td><p>Accept where the step paid, and move the damping either way.</p></td>
+<td><p>Accept steps with positive gain and update the damping (Nielsen).</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.TrustRegion.retire" title="blochsim.TrustRegion.retire"><code class="xref py py-obj docutils literal notranslate"><span class="pre">retire</span></code></a></p></td>
-<td><p>Close up after the converged voxels have been written out.</p></td>
+<td><p>Drop the state of retired voxels.</p></td>
 </tr>
 </tbody>
 </table>
@@ -615,22 +613,19 @@ starting point shows. Small where the guess is good.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.TrustRegion.begin">
 <span class="sig-name descname"><span class="pre">begin</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">curvature</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_gauss_newton.html#TrustRegion.begin"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.TrustRegion.begin" title="Link to this definition">#</a></dt>
-<dd><p>Scale the first damping to the curvature the starting point shows.</p>
+<dd><p>Return the initial per-voxel damping from the curvature.</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.TrustRegion.judge">
 <span class="sig-name descname"><span class="pre">judge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">damping</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gain</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">singular</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_gauss_newton.html#TrustRegion.judge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.TrustRegion.judge" title="Link to this definition">#</a></dt>
-<dd><p>Accept where the step paid, and move the damping either way.</p>
-<p>The Nielsen update: a step that predicted its own gain well lets the
-damping fall a long way, one that barely paid lets it fall a little,
-and a rejected step doubles it and doubles the doubling.</p>
+<dd><p>Accept steps with positive gain and update the damping (Nielsen).</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.TrustRegion.retire">
 <span class="sig-name descname"><span class="pre">retire</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">keep</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_gauss_newton.html#TrustRegion.retire"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.TrustRegion.retire" title="Link to this definition">#</a></dt>
-<dd><p>Close up after the converged voxels have been written out.</p>
+<dd><p>Drop the state of retired voxels.</p>
 </dd></dl>
 
 </dd></dl>

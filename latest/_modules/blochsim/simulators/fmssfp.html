@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -497,19 +497,19 @@
 <div class="viewcode-block" id="fmSSFPSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.fmSSFPSimulator.html#blochsim.simulators.fmSSFPSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">fmSSFPSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A balanced SSFP train whose RF frequency is swept through one passband per sweep.</span>
+<span class="w">    </span><span class="sd">"""Balanced SSFP train with RF phase swept through one passband per sweep.</span>
 
-<span class="sd">    The n-th pulse of a sweep, counted from zero, is played ``pi + 2 pi n /</span>
-<span class="sd">    nshots`` radians ahead of the pulse before it. A phase increment acts on</span>
-<span class="sd">    the magnetization as an off-resonance of ``increment / (2 pi TR)``, so</span>
-<span class="sd">    across one sweep of ``nshots`` repetitions every voxel is carried once</span>
-<span class="sd">    through the period ``1 / TR`` of the balanced SSFP off-resonance profile</span>
-<span class="sd">    [1]_. Each sample is demodulated by the phase of its own pulse, and</span>
-<span class="sd">    ``sweeps`` sweeps are played before the one recorded, which is how the</span>
-<span class="sd">    radial acquisition of [2]_ is prepared. The pulses are instantaneous</span>
-<span class="sd">    rotations unless ``pulse_duration`` is given, and are then the windowed</span>
-<span class="sd">    sincs :class:`TrueFISPSimulator` plays. This is the sequence BART's ``epg``</span>
-<span class="sd">    plays as fmSSFP.</span>
+<span class="sd">    Pulse ``n`` of a sweep is played ``pi + 2 pi n / nshots`` rad ahead in phase of</span>
+<span class="sd">    the previous pulse, so each voxel is carried once through the ``1 / TR`` period</span>
+<span class="sd">    of the bSSFP off-resonance profile [1]_. Each sample is demodulated by its</span>
+<span class="sd">    pulse's phase, and ``sweeps`` sweeps are played before the recorded one, as in</span>
+<span class="sd">    the radial acquisition of [2]_. Pulses are instantaneous rotations unless</span>
+<span class="sd">    ``pulse_duration`` is given, and are then the windowed sincs of</span>
+<span class="sd">    :class:`TrueFISPSimulator`.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Corresponds to the sequence BART's ``epg`` plays as fmSSFP.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -568,28 +568,26 @@
 <span class="sd">        flip : float or array-like</span>
 <span class="sd">            Flip angle in degrees, scalar or one per shot of a sweep.</span>
 <span class="sd">        TR : float</span>
-<span class="sd">            Repetition time in milliseconds, pulse centre to pulse centre.</span>
+<span class="sd">            Repetition time in ms, pulse centre to pulse centre.</span>
 <span class="sd">        nshots : int</span>
 <span class="sd">            Excitations in one sweep.</span>
 <span class="sd">        sweeps : int, optional</span>
-<span class="sd">            Sweeps played before the one recorded.</span>
+<span class="sd">            Sweeps played before the recorded one.</span>
 <span class="sd">        TE : float, optional</span>
-<span class="sd">            Echo time in milliseconds, from the centre of the pulse; half the</span>
-<span class="sd">            repetition time when not given, where a balanced train refocuses.</span>
+<span class="sd">            Echo time in ms, from the pulse centre; defaults to ``TR / 2``.</span>
 <span class="sd">        pulse_duration : float, optional</span>
-<span class="sd">            Duration of each pulse in milliseconds. Zero plays each as an</span>
-<span class="sd">            instantaneous rotation.</span>
+<span class="sd">            Pulse duration in ms; zero is an instantaneous rotation.</span>
 <span class="sd">        bandwidth_time : float, optional</span>
 <span class="sd">            Zero crossings of the Hamming-windowed sinc across a pulse.</span>
 <span class="sd">        dwell : float, optional</span>
-<span class="sd">            How long each sample of a pulse is held, in milliseconds.</span>
+<span class="sd">            Hold time of each pulse sample in ms.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        ValueError</span>
-<span class="sd">            If the sample falls inside the pulse or after the next one, if</span>
-<span class="sd">            ``sweeps`` is negative, if ``flip`` is neither scalar nor one per</span>
-<span class="sd">            shot, or if a pulse is not a whole number of samples.</span>
+<span class="sd">            If the sample falls inside the pulse or after the next one, if ``sweeps``</span>
+<span class="sd">            is negative, if ``flip`` is neither scalar nor one per shot, or if a pulse</span>
+<span class="sd">            is not a whole number of samples.</span>
 <span class="sd">        """</span>
         <span class="n">pulse_s</span><span class="p">,</span> <span class="n">dwell_s</span> <span class="o">=</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">pulse_duration</span><span class="p">,</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">dwell</span>
         <span class="n">repetition_s</span> <span class="o">=</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">TR</span>

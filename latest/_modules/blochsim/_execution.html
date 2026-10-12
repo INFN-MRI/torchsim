@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -603,33 +603,28 @@
     <span class="n">budget_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">_DEFAULT_BUDGET_BYTES</span><span class="p">,</span>
     <span class="n">lanes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="kc">None</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Run host-resident volumes on CUDA without holding them there.</span>
+<span class="w">    </span><span class="sd">"""Context manager that streams host-resident volumes through CUDA devices.</span>
 
-<span class="sd">    Inside the block a workload whose voxels are on the host still runs on</span>
-<span class="sd">    ``devices``, in chunks sized so that the device buffers stay within</span>
-<span class="sd">    ``budget_bytes`` in total. The result comes back on the host.</span>
+<span class="sd">    Inside the block, a workload whose voxels are on the host runs on</span>
+<span class="sd">    ``devices`` in chunks, and the result returns on the host.</span>
 
-<span class="sd">    The budget buys memory with time, and steeply once the chunks get small: a</span>
-<span class="sd">    chunk both fills the device less well and pays its own launch and transfer</span>
-<span class="sd">    latency, so quartering the budget costs far more than a quarter of the</span>
-<span class="sd">    throughput. Give it as much as the card can spare.</span>
-
-<span class="sd">    ``lanes`` is how many chunks may be in flight per device. A lane owns a</span>
-<span class="sd">    stream and its own buffers, so a second one lets a chunk's transfer overlap</span>
-<span class="sd">    another chunk's arithmetic -- but it takes its share out of the same</span>
-<span class="sd">    budget, and every chunk gets narrower as a result. Narrower chunks lose</span>
-<span class="sd">    more than the overlap recovers except when the volume was barely splitting</span>
-<span class="sd">    to begin with, so one lane is the default and raising it is worth measuring</span>
-<span class="sd">    before believing. A machine that overlaps transfers better than this one</span>
-<span class="sd">    would move that balance.</span>
-
-<span class="sd">    Whatever ``lanes`` is set to, it changes only throughput: what makes a</span>
-<span class="sd">    volume larger than the card runnable at all is the chunking.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    devices : sequence of torch.device or str, optional</span>
+<span class="sd">        CUDA devices to use. Defaults to ``("cuda",)``.</span>
+<span class="sd">    budget_bytes : int, optional</span>
+<span class="sd">        Total device memory for chunk buffers, in bytes. Throughput falls</span>
+<span class="sd">        steeply as it shrinks. Defaults to 512 MiB.</span>
+<span class="sd">    lanes : int, optional</span>
+<span class="sd">        Chunks in flight per device. Each lane takes a share of the budget, so</span>
+<span class="sd">        more lanes give narrower chunks. Affects throughput only. Defaults</span>
+<span class="sd">        to 1.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
-<span class="sd">        ValueError: if ``devices`` is empty, names a device that is not CUDA,</span>
-<span class="sd">            or if ``budget_bytes`` or ``lanes`` is not positive.</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If ``devices`` is empty or contains a non-CUDA device, or if</span>
+<span class="sd">        ``budget_bytes`` or ``lanes`` is not positive.</span>
 <span class="sd">    """</span>
     <span class="k">global</span> <span class="n">_OFFLOAD</span>
     <span class="n">resolved</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">devices</span><span class="p">)</span>
@@ -662,26 +657,34 @@
     <span class="n">lanes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
     <span class="n">reserve_bytes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">_RESERVE_BYTES</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterator</span><span class="p">[</span><span class="kc">None</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Choose where work runs inside the block.</span>
+<span class="w">    </span><span class="sd">"""Context manager that sets where per-voxel work runs.</span>
 
-<span class="sd">    ``target`` is ``"auto"`` to decide per call, ``"cpu"`` to insist on the</span>
-<span class="sd">    host, or a device or list of devices to insist on those. Deciding weighs</span>
-<span class="sd">    the problem against what each card has free right now: work too small to</span>
-<span class="sd">    repay a launch stays on the CPU, work that fits goes across in one piece,</span>
-<span class="sd">    and work that does not is streamed through in chunks.</span>
+<span class="sd">    With ``"auto"``, work too small to repay a launch stays on the CPU, work</span>
+<span class="sd">    that fits on the devices is sent whole, and larger work is streamed in</span>
+<span class="sd">    chunks. Outside a block, work runs where its tensors are.</span>
 
-<span class="sd">    ``stream`` overrules that last step -- ``False`` demands the whole volume</span>
-<span class="sd">    be resident and lets it fail if it will not fit, ``True`` streams even when</span>
-<span class="sd">    it would have fit. ``budget_bytes`` caps what streaming may hold, and</span>
-<span class="sd">    defaults to what the devices report free less ``reserve_bytes``. ``lanes``</span>
-<span class="sd">    is passed to :func:`offload` for streamed work and rarely wants changing.</span>
-
-<span class="sd">    Outside a block, work runs wherever its tensors already are.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    target : {"auto", "cpu"}, torch.device or sequence of device, optional</span>
+<span class="sd">        ``"auto"`` decides per call from the free memory of the CUDA devices;</span>
+<span class="sd">        otherwise the host or the named CUDA devices are used. Defaults to</span>
+<span class="sd">        ``"auto"``.</span>
+<span class="sd">    stream : bool, optional</span>
+<span class="sd">        ``True`` always streams in chunks; ``False`` requires the whole volume</span>
+<span class="sd">        to be resident, and fails if it does not fit. Default decides per call.</span>
+<span class="sd">    budget_bytes : int, optional</span>
+<span class="sd">        Cap on device memory held while streaming, in bytes. Defaults to the</span>
+<span class="sd">        free memory less ``reserve_bytes``.</span>
+<span class="sd">    lanes : int, optional</span>
+<span class="sd">        Chunks in flight per device, as for :func:`offload`. Defaults to 1.</span>
+<span class="sd">    reserve_bytes : int, optional</span>
+<span class="sd">        Memory left free on each device, in bytes. Defaults to 512 MiB.</span>
 
 <span class="sd">    Raises</span>
 <span class="sd">    ------</span>
-<span class="sd">        ValueError: for an empty device list, a non-CUDA device, or a</span>
-<span class="sd">            non-positive ``budget_bytes`` or ``lanes``.</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If the device list is empty or contains a non-CUDA device, or if</span>
+<span class="sd">        ``budget_bytes`` or ``lanes`` is not positive.</span>
 <span class="sd">    """</span>
     <span class="k">global</span> <span class="n">_EXECUTION</span>
     <span class="k">if</span> <span class="n">lanes</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>

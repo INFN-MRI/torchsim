@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -503,12 +503,11 @@
 <div class="viewcode-block" id="DiffusionSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.DiffusionSimulator.html#blochsim.simulators.DiffusionSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">DiffusionSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Attenuation by Gaussian diffusion, at a series of b-values.</span>
+<span class="w">    </span><span class="sd">"""Attenuation by Gaussian diffusion at a series of b-values.</span>
 
-<span class="sd">    The signal is ``M0 exp(-b D)`` for an isotropic ``D`` [1]_, or</span>
-<span class="sd">    ``M0 exp(-b g^T D g)`` for a diffusion tensor along unit gradient</span>
-<span class="sd">    directions ``g``, which is what giving ``directions`` asks for: the six</span>
-<span class="sd">    entries of :data:`TENSOR` are then the properties, and ``D`` is not.</span>
+<span class="sd">    The signal is ``M0 exp(-b D)`` for an isotropic ``D`` [1]_. With</span>
+<span class="sd">    ``directions`` it is ``M0 exp(-b g^T D g)`` for unit gradient directions ``g``,</span>
+<span class="sd">    and the six entries of :data:`TENSOR` are the properties in place of ``D``.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -540,7 +539,7 @@
 <div class="viewcode-block" id="DiffusionSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.DiffusionSimulator.html#blochsim.simulators.DiffusionSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -555,13 +554,12 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``D`` or the entries of :data:`TENSOR` in square micrometres per</span>
-<span class="sd">            millisecond, and ``M0`` as a scaling.</span>
-<span class="sd">        b:</span>
-<span class="sd">            b-values in seconds per square millimetre.</span>
-<span class="sd">        directions:</span>
-<span class="sd">            Unit gradient directions, ``(len(b), 3)``, for a tensor.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``D`` or the entries of :data:`TENSOR` in um^2/ms; ``M0`` scaling.</span>
+<span class="sd">        b : float or array-like</span>
+<span class="sd">            b-values in s/mm^2.</span>
+<span class="sd">        directions : array-like, optional</span>
+<span class="sd">            Unit gradient directions of shape ``(len(b), 3)``; selects the tensor model.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>

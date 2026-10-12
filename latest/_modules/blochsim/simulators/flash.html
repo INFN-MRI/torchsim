@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -500,23 +500,21 @@
 <div class="viewcode-block" id="FLASHSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.FLASHSimulator.html#blochsim.simulators.FLASHSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">FLASHSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""A spoiled gradient-echo train from equilibrium, optionally inverted first.</span>
+<span class="w">    </span><span class="sd">"""Spoiled gradient-echo train from equilibrium, optionally inverted first.</span>
 
-<span class="sd">    Every excitation is a windowed sinc played sample by sample, so the</span>
-<span class="sd">    magnetization relaxes, precesses off resonance and exchanges between pools</span>
-<span class="sd">    while the pulse plays, unless ``pulse_duration`` is zero and it is an</span>
-<span class="sd">    instantaneous rotation. The transverse magnetization is spoiled after each</span>
-<span class="sd">    sample: ideally, or with ``rf_spoiling`` by a quadratic cycle of the</span>
-<span class="sd">    excitation phase and a gradient that winds one configuration order per</span>
-<span class="sd">    repetition [2]_, the sample then demodulated by its pulse's phase. With</span>
-<span class="sd">    ``inversion`` the train is the inversion-recovery FLASH of Look-Locker T1</span>
-<span class="sd">    mapping [1]_. This is the sequence BART's ``sim`` plays as ``FLASH`` and</span>
-<span class="sd">    ``IR-FLASH``, and with instantaneous pulses and the sample at the pulse,</span>
+<span class="sd">    Each excitation is a windowed sinc played sample by sample, or an</span>
+<span class="sd">    instantaneous rotation when ``pulse_duration`` is zero. Transverse</span>
+<span class="sd">    magnetization is spoiled ideally, or by RF spoiling with a gradient winding</span>
+<span class="sd">    one configuration order per repetition [2]_; with ``inversion`` the train is</span>
+<span class="sd">    the inversion-recovery FLASH of Look-Locker T1 mapping [1]_. When ``states``</span>
+<span class="sd">    is not given, one order is kept under ideal spoiling and up to one per</span>
+<span class="sd">    repetition, to the engine's limit, under RF spoiling.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Corresponds to the sequences BART's ``sim`` plays as ``FLASH`` and</span>
+<span class="sd">    ``IR-FLASH``, and with instantaneous pulses and the sample at the pulse to</span>
 <span class="sd">    the one its ``epg`` plays as FLASH.</span>
-
-<span class="sd">    The configuration orders are sized from the winding when ``states`` is not</span>
-<span class="sd">    given: one under ideal spoiling, and one per repetition up to the engine's</span>
-<span class="sd">    limit under RF spoiling.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -580,42 +578,36 @@
 <span class="sd">        flip : float or array-like</span>
 <span class="sd">            Flip angle in degrees, scalar or one per shot.</span>
 <span class="sd">        TR : float</span>
-<span class="sd">            Repetition time in milliseconds, pulse centre to pulse centre.</span>
+<span class="sd">            Repetition time in ms, pulse centre to pulse centre.</span>
 <span class="sd">        TE : float</span>
-<span class="sd">            Echo time in milliseconds, from the centre of the pulse.</span>
+<span class="sd">            Echo time in ms, from the pulse centre.</span>
 <span class="sd">        nshots : int</span>
 <span class="sd">            Excitations in the train.</span>
 <span class="sd">        pulse_duration : float, optional</span>
-<span class="sd">            Duration of each excitation in milliseconds. Zero plays each as an</span>
-<span class="sd">            instantaneous rotation.</span>
+<span class="sd">            Excitation duration in ms; zero is an instantaneous rotation.</span>
 <span class="sd">        bandwidth_time : float, optional</span>
 <span class="sd">            Zero crossings of the Hamming-windowed sinc across the pulse.</span>
 <span class="sd">        inversion : {None, "ideal", "adiabatic"}, optional</span>
-<span class="sd">            What prepares the train: nothing, an instantaneous inversion</span>
-<span class="sd">            scaled by ``inv_efficiency``, or a hyperbolic secant played sample</span>
-<span class="sd">            by sample.</span>
+<span class="sd">            Preparation: none, an instantaneous inversion scaled by</span>
+<span class="sd">            ``inv_efficiency``, or a sampled hyperbolic secant.</span>
 <span class="sd">        inversion_duration : float, optional</span>
-<span class="sd">            Duration of the adiabatic inversion in milliseconds.</span>
+<span class="sd">            Duration of the adiabatic inversion in ms.</span>
 <span class="sd">        inversion_phase : float, optional</span>
-<span class="sd">            Phase of the adiabatic inversion in degrees, relative to the</span>
-<span class="sd">            train's first pulse, which decides where the transverse</span>
-<span class="sd">            magnetization the inversion leaves points.</span>
+<span class="sd">            Phase of the adiabatic inversion in degrees, relative to the first pulse.</span>
 <span class="sd">        spoiler : float, optional</span>
-<span class="sd">            Time in milliseconds between the inversion and the train, at the</span>
-<span class="sd">            end of which the transverse magnetization is spoiled.</span>
+<span class="sd">            Time in ms between inversion and train, ending in a spoiler.</span>
 <span class="sd">        dwell : float, optional</span>
-<span class="sd">            How long each sample of a pulse is held, in milliseconds.</span>
+<span class="sd">            Hold time of each pulse sample in ms.</span>
 <span class="sd">        rf_spoiling : float, optional</span>
-<span class="sd">            The RF spoiling increment in degrees: the n-th excitation, counted</span>
-<span class="sd">            from zero, is played at ``rf_spoiling * n (n + 1) / 2``. Not given,</span>
-<span class="sd">            the transverse magnetization is spoiled ideally.</span>
+<span class="sd">            RF-spoiling phase increment in degrees: excitation ``n``, from zero, has</span>
+<span class="sd">            phase ``rf_spoiling * n * (n + 1) / 2``. Ideal spoiling when not given.</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        ValueError</span>
-<span class="sd">            If the sample falls inside the pulse or after the next one, if</span>
-<span class="sd">            ``flip`` is neither scalar nor one per shot, or if a pulse is not</span>
-<span class="sd">            a whole number of samples.</span>
+<span class="sd">            If the sample falls inside the pulse or after the next one, if ``flip``</span>
+<span class="sd">            is neither scalar nor one per shot, or if a pulse is not a whole number</span>
+<span class="sd">            of samples.</span>
 <span class="sd">        """</span>
         <span class="n">pulse_s</span><span class="p">,</span> <span class="n">dwell_s</span> <span class="o">=</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">pulse_duration</span><span class="p">,</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">dwell</span>
         <span class="n">repetition_s</span><span class="p">,</span> <span class="n">echo_s</span> <span class="o">=</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">TR</span><span class="p">,</span> <span class="mf">1e-3</span> <span class="o">*</span> <span class="n">TE</span>

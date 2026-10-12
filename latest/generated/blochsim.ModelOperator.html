@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -574,36 +574,37 @@
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">ModelOperator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">acquisition</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">unknown</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">amplitude</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subspace</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code></p>
 <p>A signal model over parameter maps, with its derivatives.</p>
-<p>Maps are stacked on the <strong>last</strong> axis, as everywhere else in BlochSim:
-<code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code> in, <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">contrasts)</span></code> out, every leading axis a
-voxel axis. <a class="reference internal" href="#blochsim.ModelOperator.physics" title="blochsim.ModelOperator.physics"><code class="xref py py-meth docutils literal notranslate"><span class="pre">physics()</span></code></a> is where that flips to the channel-first
-convention deepinv and mri-nufft use, and it is the only place it flips.</p>
+<p>Maps are stacked on the last axis: <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code> in,
+<code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">contrasts)</span></code> out, every leading axis a voxel axis. Only
+<a class="reference internal" href="#blochsim.ModelOperator.physics" title="blochsim.ModelOperator.physics"><code class="xref py py-meth docutils literal notranslate"><span class="pre">physics()</span></code></a> moves the channel axis to the front, as deepinv expects.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><em>Simulator</em></a>) – The sequence being inverted, with every property that is not being
-solved for already fixed on it. A property bound as a map – a
-measured B1, a known T1 – is one value per voxel and rides along.</p></li>
-<li><p><strong>unknown</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a><em>, </em><em>optional</em>) – The property names being solved for, in the order their channels
-appear. At least one.</p></li>
-<li><p><strong>bounds</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">(low,</span> <span class="pre">high)}</span></code>, either end <code class="docutils literal notranslate"><span class="pre">None</span></code> for unbounded. A bound is
-kept by solving for a transformed variable, so no iterate is ever
-outside it – which matters more here than in a fit, because the model
-is evaluated at every voxel to predict every k-space sample and one
-voxel out of range corrupts the whole residual. A two-sided bound also
-puts the parameter on a scale of order one whatever its units, which
-is the preconditioning a mixed parameter set needs.</p></li>
-<li><p><strong>scale</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value}</span></code>, the size of a step in a parameter left unbounded.
-Bounded parameters are already scaled by their interval.</p></li>
-<li><p><strong>amplitude</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a><em>, </em><em>optional</em>) – Whether to carry a complex amplitude multiplying the model output.
-On, which is what a reconstruction wants; off for a fit whose model
-already exposes its own proton density.</p></li>
-<li><p><strong>subspace</strong> (<a class="reference internal" href="blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><em>Subspace</em></a><em>, </em><em>optional</em>) – A <a class="reference internal" href="blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><code class="xref py py-class docutils literal notranslate"><span class="pre">Subspace</span></code></a> the prediction is projected through, for
-a reconstruction that solves in the temporal basis rather than in the
-contrasts.</p></li>
+<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><em>Simulator</em></a>) – Sequence being inverted, with every property not solved for already
+bound. A property bound as a map is one value per voxel.</p></li>
+<li><p><strong>*unknown</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><em>str</em></a>) – Names of the properties solved for, in channel order. At least one.</p></li>
+<li><p><strong>bounds</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">(low,</span> <span class="pre">high)}</span></code>; either end may be <code class="docutils literal notranslate"><span class="pre">None</span></code>. Enforced by
+solving for a transformed variable, so no iterate leaves the bounds.</p></li>
+<li><p><strong>scale</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value}</span></code>, step scale of an unbounded parameter (default 1).
+Bounded parameters are scaled by their interval.</p></li>
+<li><p><strong>amplitude</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a><em>, </em><em>optional</em>) – Carry a complex amplitude multiplying the model output, as two extra
+channels (real, imaginary). Defaults to <code class="docutils literal notranslate"><span class="pre">True</span></code>.</p></li>
+<li><p><strong>subspace</strong> (<a class="reference internal" href="blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><em>Subspace</em></a><em>, </em><em>optional</em>) – Basis the prediction is projected onto, to solve in the temporal
+basis rather than in the contrasts.</p></li>
 </ul>
 </dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If nothing is unknown, a bound or scale names a property that is not
+    unknown, a bound is not increasing, or a scale is not positive.</p>
+</dd>
 </dl>
+<p class="rubric">Notes</p>
+<p>The operator follows the device of the maps it is called with; <code class="docutils literal notranslate"><span class="pre">to()</span></code>
+moves nothing.</p>
+<p>An equality constraint is imposed by writing the model on the remaining
+parameters. For fat-water fractions that sum to one, make the fat fraction
+the only unknown and write water as <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">f</span></code> inside the model; the
+constraint then holds exactly at every iterate.</p>
 <p class="rubric">Examples</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">operator</span> <span class="o">=</span> <span class="n">ModelOperator</span><span class="p">(</span>
     <span class="n">MultiEchoSimulator</span><span class="p">(</span><span class="n">TE</span><span class="o">=</span><span class="n">echo_times</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">),</span>
@@ -614,24 +615,6 @@ contrasts.</p></li>
 <span class="n">images</span> <span class="o">=</span> <span class="n">operator</span><span class="o">.</span><span class="n">A</span><span class="p">(</span><span class="n">maps</span><span class="p">)</span>          <span class="c1"># (128, 128, echoes), complex</span>
 </pre></div>
 </div>
-<p class="rubric">Notes</p>
-<p>The operator holds nothing on a device of its own. It follows the maps it
-is called with, taking the sequence and any bound tissue along, so there
-is nothing here to move and <code class="docutils literal notranslate"><span class="pre">to()</span></code> moves nothing.</p>
-<p><strong>Equality constraints are written into the model, not declared here.</strong>
-A constraint that fixes one parameter in terms of the others removes a
-degree of freedom, so the way to impose it is to not have that freedom:
-write the model on the parameters that remain. For a fat-water separation
-whose two fractions must sum to one, make the fat fraction <code class="docutils literal notranslate"><span class="pre">f</span></code> the only
-unknown and write water as <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">f</span></code> inside the model. The constraint then
-holds identically at every Gauss-Newton iterate, to the bit, rather than
-being restored after each one.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If nothing is unknown, if a bound or a scale names something that is
-    not unknown, or if a bound is not increasing.</p>
-</dd>
-</dl>
 <p class="rubric">Methods</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
@@ -639,25 +622,25 @@ being restored after each one.</p>
 <td><p>The name a reconstruction knows the forward operator by.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-obj docutils literal notranslate"><span class="pre">A_jvp</span></code></a></p></td>
-<td><p>The directional derivative <code class="docutils literal notranslate"><span class="pre">J</span> <span class="pre">d</span></code>, in one forward-mode pass.</p></td>
+<td><p>Directional derivative <code class="docutils literal notranslate"><span class="pre">J</span> <span class="pre">d</span></code> by one forward-mode pass.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.ModelOperator.A_vjp" title="blochsim.ModelOperator.A_vjp"><code class="xref py py-obj docutils literal notranslate"><span class="pre">A_vjp</span></code></a></p></td>
-<td><p>The adjoint product <code class="docutils literal notranslate"><span class="pre">J^H</span> <span class="pre">v</span></code>, in one reverse-mode pass.</p></td>
+<td><p>Adjoint product <code class="docutils literal notranslate"><span class="pre">J^H</span> <span class="pre">v</span></code> by one reverse-mode pass.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.ModelOperator.initial" title="blochsim.ModelOperator.initial"><code class="xref py py-obj docutils literal notranslate"><span class="pre">initial</span></code></a></p></td>
-<td><p>Maps to start from, as the variables actually solved for.</p></td>
+<td><p>Build starting variables from property values.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.ModelOperator.jacobian" title="blochsim.ModelOperator.jacobian"><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></a></p></td>
-<td><p>The derivative block of every voxel, built.</p></td>
+<td><p>Build the derivative block of every voxel.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.ModelOperator.physics" title="blochsim.ModelOperator.physics"><code class="xref py py-obj docutils literal notranslate"><span class="pre">physics</span></code></a></p></td>
-<td><p>This operator as a <code class="xref py py-class docutils literal notranslate"><span class="pre">deepinv.physics.Physics</span></code>.</p></td>
+<td><p>Wrap the operator as a <code class="xref py py-class docutils literal notranslate"><span class="pre">deepinv.physics.Physics</span></code>.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.ModelOperator.select" title="blochsim.ModelOperator.select"><code class="xref py py-obj docutils literal notranslate"><span class="pre">select</span></code></a></p></td>
-<td><p>This operator over a subset of the voxels.</p></td>
+<td><p>Restrict the operator to a subset of the voxels.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#blochsim.ModelOperator.split" title="blochsim.ModelOperator.split"><code class="xref py py-obj docutils literal notranslate"><span class="pre">split</span></code></a></p></td>
-<td><p>The maps <code class="docutils literal notranslate"><span class="pre">x</span></code> stands for, in their own units.</p></td>
+<td><p>Convert solved-for variables to properties in their own units.</p></td>
 </tr>
 </tbody>
 </table>
@@ -665,26 +648,26 @@ being restored after each one.</p>
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.channels">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">channels</span></span><a class="headerlink" href="#blochsim.ModelOperator.channels" title="Link to this definition">#</a></dt>
-<dd><p>How many map channels <code class="docutils literal notranslate"><span class="pre">x</span></code> carries.</p>
+<dd><p>Number of map channels of <code class="docutils literal notranslate"><span class="pre">x</span></code>.</p>
 </dd></dl>
 
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.names">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">names</span></span><a class="headerlink" href="#blochsim.ModelOperator.names" title="Link to this definition">#</a></dt>
-<dd><p>What each channel of <code class="docutils literal notranslate"><span class="pre">x</span></code> is, in order.</p>
+<dd><p>Channel names of <code class="docutils literal notranslate"><span class="pre">x</span></code>, in order.</p>
 </dd></dl>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.split">
 <span class="sig-name descname"><span class="pre">split</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.split"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.split" title="Link to this definition">#</a></dt>
-<dd><p>The maps <code class="docutils literal notranslate"><span class="pre">x</span></code> stands for, in their own units.</p>
+<dd><p>Convert solved-for variables to properties in their own units.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>x</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code>, the variables being solved for.</p>
+<dd class="field-odd"><p><strong>x</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code>, the variables.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>One entry per unknown, inside its bound, plus <code class="docutils literal notranslate"><span class="pre">&quot;amplitude&quot;</span></code>
-complex where one is carried.</p>
+<dd class="field-even"><p>One entry per unknown, inside its bound, plus complex
+<code class="docutils literal notranslate"><span class="pre">&quot;amplitude&quot;</span></code> where carried.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)">dict</a></p>
@@ -695,18 +678,15 @@ complex where one is carried.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.initial">
 <span class="sig-name descname"><span class="pre">initial</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">values</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.initial"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.initial" title="Link to this definition">#</a></dt>
-<dd><p>Maps to start from, as the variables actually solved for.</p>
+<dd><p>Build starting variables from property values.</p>
+<p>Inverse of <a class="reference internal" href="#blochsim.ModelOperator.split" title="blochsim.ModelOperator.split"><code class="xref py py-meth docutils literal notranslate"><span class="pre">split()</span></code></a>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>shape</strong> (<em>sequence</em><em> of </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – The voxel shape. Empty gives one voxel.</p></li>
-<li><p><strong>values</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value}</span></code> in the property’s own units, one value or one
-per voxel – a map broadcasts against <code class="docutils literal notranslate"><span class="pre">shape</span></code>, which is what
-turns known parameters into a state and makes this the inverse of
-<a class="reference internal" href="#blochsim.ModelOperator.split" title="blochsim.ModelOperator.split"><code class="xref py py-meth docutils literal notranslate"><span class="pre">split()</span></code></a>. An unknown left out starts at the middle of its
-bound, and a one-sided or absent bound has no middle, so it must
-be given. The amplitude starts at one unless <code class="docutils literal notranslate"><span class="pre">amplitude=</span></code> says
-otherwise.</p></li>
+<li><p><strong>shape</strong> (<em>sequence</em><em> of </em><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Voxel shape. Empty gives one voxel.</p></li>
+<li><p><strong>**values</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>array-like</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value}</span></code> in the property’s units, scalar or broadcastable
+to <code class="docutils literal notranslate"><span class="pre">shape</span></code>. An unknown left out starts at the middle of its
+two-sided bound. <code class="docutils literal notranslate"><span class="pre">amplitude</span></code> (complex) defaults to 1.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
@@ -716,8 +696,8 @@ otherwise.</p></li>
 <dd class="field-odd"><p>torch.Tensor</p>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>
-<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If a property with no two-sided bound is left out, or if a value
-    sits on a bound – a value on a bound has no unconstrained image.</p>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If an unknown with no two-sided bound is left out, or a value is
+    not strictly inside its bound.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -725,17 +705,15 @@ otherwise.</p></li>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.select">
 <span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">keep</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.select"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.select" title="Link to this definition">#</a></dt>
-<dd><p>This operator over a subset of the voxels.</p>
-<p>A property bound as a map – a measured B1, a known efficiency – has
-one value per voxel, so a loop that retires the voxels it has finished
-has to take the maps with it. Anything that is not one value per voxel
-is left alone.</p>
+<dd><p>Restrict the operator to a subset of the voxels.</p>
+<p>Properties bound as per-voxel maps are indexed by <code class="docutils literal notranslate"><span class="pre">keep</span></code>; other
+bound values are unchanged.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>keep</strong> (<em>torch.Tensor</em>) – An index or a boolean mask over the voxel axis.</p>
+<dd class="field-odd"><p><strong>keep</strong> (<em>torch.Tensor</em>) – Index or boolean mask over the voxel axis.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A copy over those voxels.</p>
+<dd class="field-even"><p>Copy over those voxels; <code class="docutils literal notranslate"><span class="pre">self</span></code> if no bound property is a map.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><a class="reference internal" href="#blochsim.ModelOperator" title="blochsim.ModelOperator">ModelOperator</a></p>
@@ -746,7 +724,7 @@ is left alone.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.forward">
 <span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.forward" title="Link to this definition">#</a></dt>
-<dd><p>The contrasts these maps record.</p>
+<dd><p>Predict the contrasts of the maps.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>x</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code>.</p>
@@ -769,9 +747,7 @@ is left alone.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.A_jvp">
 <span class="sig-name descname"><span class="pre">A_jvp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.A_jvp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.A_jvp" title="Link to this definition">#</a></dt>
-<dd><p>The directional derivative <code class="docutils literal notranslate"><span class="pre">J</span> <span class="pre">d</span></code>, in one forward-mode pass.</p>
-<p>One pass whatever the channel count – the step itself is the tangent,
-so nothing is built column by column.</p>
+<dd><p>Directional derivative <code class="docutils literal notranslate"><span class="pre">J</span> <span class="pre">d</span></code> by one forward-mode pass.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -791,11 +767,9 @@ so nothing is built column by column.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.A_vjp">
 <span class="sig-name descname"><span class="pre">A_vjp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.A_vjp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.A_vjp" title="Link to this definition">#</a></dt>
-<dd><p>The adjoint product <code class="docutils literal notranslate"><span class="pre">J^H</span> <span class="pre">v</span></code>, in one reverse-mode pass.</p>
-<p>Real, because the maps are: what comes back is the real part of the
-conjugate product, which is the gradient direction of the squared
-modulus and the adjoint of <a class="reference internal" href="#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_jvp()</span></code></a> under the real inner
-product.</p>
+<dd><p>Adjoint product <code class="docutils literal notranslate"><span class="pre">J^H</span> <span class="pre">v</span></code> by one reverse-mode pass.</p>
+<p>The result is the real part of the conjugate product, the adjoint of
+<a class="reference internal" href="#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_jvp()</span></code></a> under the real inner product.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -815,10 +789,9 @@ product.</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.jacobian">
 <span class="sig-name descname"><span class="pre">jacobian</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.jacobian"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.jacobian" title="Link to this definition">#</a></dt>
-<dd><p>The derivative block of every voxel, built.</p>
-<p>Wanted where the blocks are solved outright, which is the voxel-wise
-fit; a Gauss-Newton step under an encoding operator wants
-<a class="reference internal" href="#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_jvp()</span></code></a> and <a class="reference internal" href="#blochsim.ModelOperator.A_vjp" title="blochsim.ModelOperator.A_vjp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_vjp()</span></code></a> instead and never sees a block.</p>
+<dd><p>Build the derivative block of every voxel.</p>
+<p>Used by voxel-wise fits; use <a class="reference internal" href="#blochsim.ModelOperator.A_jvp" title="blochsim.ModelOperator.A_jvp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_jvp()</span></code></a> and <a class="reference internal" href="#blochsim.ModelOperator.A_vjp" title="blochsim.ModelOperator.A_vjp"><code class="xref py py-meth docutils literal notranslate"><span class="pre">A_vjp()</span></code></a> under an
+encoding operator.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><p><strong>x</strong> (<em>torch.Tensor</em>) – <code class="docutils literal notranslate"><span class="pre">(...,</span> <span class="pre">channels)</span></code>.</p>
@@ -835,30 +808,25 @@ fit; a Gauss-Newton step under an encoding operator wants
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.ModelOperator.physics">
 <span class="sig-name descname"><span class="pre">physics</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/recon/_operator.html#ModelOperator.physics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.ModelOperator.physics" title="Link to this definition">#</a></dt>
-<dd><p>This operator as a <code class="xref py py-class docutils literal notranslate"><span class="pre">deepinv.physics.Physics</span></code>.</p>
-<p>The wrapper is where the map axis moves to the front, because that is
-the convention deepinv and mri-nufft share: <code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">channels,</span> <span class="pre">*xyz)</span></code>
-in, <code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">contrasts,</span> <span class="pre">*xyz)</span></code> out. Composing it with an encoding
-operator – <code class="docutils literal notranslate"><span class="pre">encoding</span> <span class="pre">*</span> <span class="pre">operator.physics()</span></code> – gives a
-<code class="docutils literal notranslate"><span class="pre">ComposedPhysics</span></code> every deepinv optimizer and prior applies to.</p>
+<dd><p>Wrap the operator as a <code class="xref py py-class docutils literal notranslate"><span class="pre">deepinv.physics.Physics</span></code>.</p>
+<p>The channel axis moves to the front: <code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">channels,</span> <span class="pre">*xyz)</span></code> in,
+<code class="docutils literal notranslate"><span class="pre">(batch,</span> <span class="pre">contrasts,</span> <span class="pre">*xyz)</span></code> out. <code class="docutils literal notranslate"><span class="pre">encoding</span> <span class="pre">*</span> <span class="pre">operator.physics()</span></code>
+composes with an encoding operator.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>kwargs</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><em>dict</em></a><em>, </em><em>optional</em>) – Passed to <code class="xref py py-class docutils literal notranslate"><span class="pre">deepinv.physics.Physics</span></code>, so a noise model can
-be given.</p>
+<dd class="field-odd"><p><strong>**kwargs</strong> – Passed to <code class="xref py py-class docutils literal notranslate"><span class="pre">deepinv.physics.Physics</span></code>, e.g. a noise model.</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>deepinv.physics.Physics</p>
 </dd>
 <dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – If deepinv is not installed. BlochSim does not depend on it.</p>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ImportError" title="(in Python v3.15)"><strong>ImportError</strong></a> – If deepinv is not installed.</p>
 </dd>
 </dl>
 <p class="rubric">Notes</p>
-<p>A <code class="docutils literal notranslate"><span class="pre">ComposedPhysics</span></code> takes its Jacobian products by automatic
-differentiation through the whole chain, so composing this way gives
-up the analytic derivative below.
-<code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code> chains the two operators’ own
-products instead, and keeps it.</p>
+<p>A deepinv <code class="docutils literal notranslate"><span class="pre">ComposedPhysics</span></code> differentiates the chain by autograd, not
+by the analytic products of this class. <code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code>
+chains the analytic products.</p>
 </dd></dl>
 
 </dd></dl>

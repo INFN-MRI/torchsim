@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -546,32 +546,26 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="api">
 <h1>API<a class="headerlink" href="#api" title="Link to this heading">#</a></h1>
-<p>BlochSim is organized around one idea: a <strong>signal model</strong> is the only thing a
-sequence has to supply, and everything else – differentiation, execution
-across devices, estimation, reconstruction, design – is written once against
-that interface.</p>
-<p>The pages below follow the subpackages.</p>
+<p>The API reference follows the subpackages. A signal model is the interface
+that estimation, reconstruction and design are written against.</p>
 <dl class="simple myst">
-<dt><a class="reference internal" href="model.html"><span class="doc">Signal models</span></a></dt><dd><p>What a sequence of your own is written from: the physics, saying
-what each kind of event does to the spins, and a simulator saying what
-order they are played in.</p>
+<dt><a class="reference internal" href="model.html"><span class="doc">Signal models</span></a></dt><dd><p>Signal models: the physics of each event type and the simulator
+that orders the events.</p>
 </dd>
-<dt><a class="reference internal" href="simulators.html"><span class="doc">Simulators</span></a></dt><dd><p>The sequences that ship with BlochSim, as classes and as one-call
-functional wrappers.</p>
+<dt><a class="reference internal" href="simulators.html"><span class="doc">Simulators</span></a></dt><dd><p>The shipped sequences, as classes and as functional wrappers.</p>
 </dd>
-<dt><a class="reference internal" href="sequence.html"><span class="doc">Sequences</span></a></dt><dd><p>The device-agnostic description an acquisition is assembled from: events,
-the operators that emit them, and builders for whole sequences.</p>
+<dt><a class="reference internal" href="sequence.html"><span class="doc">Sequences</span></a></dt><dd><p>Sequence descriptions: events, the operators that emit them, and
+builders.</p>
 </dd>
-<dt><a class="reference internal" href="estimators.html"><span class="doc">Parameter estimation</span></a></dt><dd><p>Estimating tissue properties from a measured volume: dictionary matching,
-lookup tables, nonlinear least squares, kernel regression.</p>
+<dt><a class="reference internal" href="estimators.html"><span class="doc">Parameter estimation</span></a></dt><dd><p>Tissue property estimation: dictionary matching, lookup tables,
+nonlinear least squares, kernel regression.</p>
 </dd>
-<dt><a class="reference internal" href="recon.html"><span class="doc">Model-based reconstruction</span></a></dt><dd><p>Solving for parameter maps straight from k-space, with the signal model
-inside the forward operator, and the temporal basis that makes it cheap.</p>
+<dt><a class="reference internal" href="recon.html"><span class="doc">Model-based reconstruction</span></a></dt><dd><p>Model-based reconstruction of parameter maps from k-space, and the
+temporal basis.</p>
 </dd>
-<dt><a class="reference internal" href="optim.html"><span class="doc">Sequence design</span></a></dt><dd><p>Choosing a sequence’s parameters by minimizing a cost you write.</p>
+<dt><a class="reference internal" href="optim.html"><span class="doc">Sequence design</span></a></dt><dd><p>Sequence parameter optimization against a user-defined cost.</p>
 </dd>
-<dt><a class="reference internal" href="execution.html"><span class="doc">Running a simulation</span></a></dt><dd><p>Running a description: the differentiable engine, transmit calibration,
-and where a per-voxel workload is placed.</p>
+<dt><a class="reference internal" href="execution.html"><span class="doc">Execution</span></a></dt><dd><p>Execution policy: where per-voxel work runs.</p>
 </dd>
 </dl>
 <div class="toctree-wrapper compound">

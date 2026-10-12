@@ -310,7 +310,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -499,17 +499,14 @@
 <div class="viewcode-block" id="ASLSimulator">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.ASLSimulator.html#blochsim.simulators.ASLSimulator">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">ASLSimulator</span><span class="p">(</span><span class="n">Simulator</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""The label-control difference of arterial spin labelling, over time.</span>
+<span class="w">    </span><span class="sd">"""Label-control difference of arterial spin labelling, over time.</span>
 
-<span class="sd">    The general kinetic model [1]_: labelled blood arrives after the arterial</span>
-<span class="sd">    transit time ``ATT``, is delivered at the blood flow ``CBF`` for the</span>
-<span class="sd">    labelling duration, and relaxes with the blood's T1 before it arrives and</span>
-<span class="sd">    with the tissue's apparent T1, ``1 / (1 / T1 + f / lambda)``, once it has</span>
-<span class="sd">    exchanged into tissue. Continuous and pseudo-continuous labelling deliver</span>
-<span class="sd">    a bolus of constant concentration; pulsed labelling one whose tail left</span>
-<span class="sd">    the labelling slab earlier and has relaxed for longer. The defaults for</span>
-<span class="sd">    the blood's T1, the partition coefficient and the labelling efficiency</span>
-<span class="sd">    are the consensus values at 3 T [2]_.</span>
+<span class="sd">    General kinetic model [1]_ for continuous, pseudo-continuous and pulsed</span>
+<span class="sd">    labelling. Blood labelled for ``tau`` arrives after ``ATT``, is delivered at</span>
+<span class="sd">    rate ``CBF``, and relaxes with ``T1_blood`` before arrival and with the</span>
+<span class="sd">    apparent tissue T1, ``1 / (1 / T1 + f / lambda)``, after exchange. The default</span>
+<span class="sd">    ``T1_blood``, ``partition`` and labelling efficiency are the 3 T consensus</span>
+<span class="sd">    values [2]_.</span>
 
 <span class="sd">    References</span>
 <span class="sd">    ----------</span>
@@ -550,7 +547,7 @@
 <div class="viewcode-block" id="ASLSimulator.evaluate">
 <a class="viewcode-back" href="../../../generated/blochsim.simulators.ASLSimulator.html#blochsim.simulators.ASLSimulator.evaluate">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">properties</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="o">**</span><span class="n">sequence</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">"""Evaluate the closed form, no state machine and no description."""</span>
+<span class="w">        </span><span class="sd">"""Return the closed-form signal."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signal</span><span class="p">(</span><span class="n">properties</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">played</span><span class="p">(</span><span class="o">**</span><span class="n">sequence</span><span class="p">)))</span></div>
 
 
@@ -567,26 +564,22 @@
 
 <span class="sd">        Parameters</span>
 <span class="sd">        ----------</span>
-<span class="sd">        properties:</span>
-<span class="sd">            ``CBF`` in ml/100 g/min, ``ATT``, ``T1`` and ``T1_blood`` in</span>
-<span class="sd">            milliseconds (``T1_blood`` 1650 when not given), ``partition`` as</span>
-<span class="sd">            the blood-brain partition coefficient in ml/g (0.9 when not</span>
-<span class="sd">            given), and ``M0`` as the tissue's equilibrium magnetization.</span>
-<span class="sd">        t:</span>
-<span class="sd">            Times from the start of labelling, in milliseconds.</span>
-<span class="sd">        tau:</span>
-<span class="sd">            Labelling duration in milliseconds.</span>
-<span class="sd">        labelling:</span>
-<span class="sd">            ``"continuous"`` for continuous and pseudo-continuous labelling,</span>
-<span class="sd">            ``"pulsed"`` for pulsed.</span>
-<span class="sd">        efficiency:</span>
-<span class="sd">            Labelling efficiency; 0.85 for continuous labelling and 0.98 for</span>
-<span class="sd">            pulsed when not given.</span>
+<span class="sd">        properties : mapping</span>
+<span class="sd">            ``CBF`` in ml/100 g/min; ``ATT``, ``T1`` and ``T1_blood`` in ms</span>
+<span class="sd">            (``T1_blood`` defaults to 1650); ``partition`` in ml/g (0.9); ``M0`` scaling.</span>
+<span class="sd">        t : float or array-like</span>
+<span class="sd">            Times from the start of labelling, in ms.</span>
+<span class="sd">        tau : float or array-like</span>
+<span class="sd">            Labelling duration in ms.</span>
+<span class="sd">        labelling : {"continuous", "pulsed"}, optional</span>
+<span class="sd">            Continuous (including pseudo-continuous) or pulsed labelling.</span>
+<span class="sd">        efficiency : float or array-like, optional</span>
+<span class="sd">            Labelling efficiency; defaults to 0.85 (continuous) or 0.98 (pulsed).</span>
 
 <span class="sd">        Raises</span>
 <span class="sd">        ------</span>
 <span class="sd">        ValueError</span>
-<span class="sd">            If ``labelling`` is neither of the two.</span>
+<span class="sd">            If ``labelling`` is neither ``"continuous"`` nor ``"pulsed"``.</span>
 <span class="sd">        """</span>
         <span class="k">if</span> <span class="n">labelling</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"continuous"</span><span class="p">,</span> <span class="s2">"pulsed"</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>

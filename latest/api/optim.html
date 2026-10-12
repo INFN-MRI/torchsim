@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -546,25 +546,21 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="sequence-design">
 <h1>Sequence design<a class="headerlink" href="#sequence-design" title="Link to this heading">#</a></h1>
-<p>Choosing a sequence’s parameters by minimizing a cost you write. The
-acquisition is a simulator with the tissue it is designed for already fixed on
-it; the cost is a plain function of what it records; a
-<a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a> holds the parameters and runs the loop.</p>
-<p><a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a> holds a parameter inside the limits the scanner will play, by
-optimizing a transformed variable – no iterate is ever outside them.
-<a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a> turns the derivative of a signal with respect to tissue into the
-lowest variance an unbiased estimate of it can have, which is the cost a
-precision-driven design minimizes.</p>
+<p>Minimization of a user-written cost over bounded sequence parameters; see
+<a class="reference internal" href="../explanations/sequence-design.html"><span class="doc">Sequence design</span></a>.</p>
+<p><a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a> holds the cost and the parameters and runs the loop.
+<a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a> keeps a parameter inside given limits. <a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a> returns the
+Cramer-Rao lower bound on parameter variance from a signal Jacobian.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Bounded.html#blochsim.Bounded" title="blochsim.Bounded"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bounded</span></code></a></p></td>
-<td><p>An initial value and the range it is allowed to move in.</p></td>
+<td><p>An initial value and the interval a designed parameter stays in.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.SequenceDesign.html#blochsim.SequenceDesign" title="blochsim.SequenceDesign"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a></p></td>
-<td><p>A cost, the parameters it is minimized over, and the limits on them.</p></td>
+<td><p>A cost, the parameters it is minimized over, and their limits.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-obj docutils literal notranslate"><span class="pre">crlb</span></code></a></p></td>
-<td><p>The lowest variance an unbiased estimate of each parameter can have.</p></td>
+<td><p>Cramer-Rao lower bound on the variance of each parameter.</p></td>
 </tr>
 </tbody>
 </table>

@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -560,12 +560,9 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.Dephase">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">Dephase</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_operators.html#Dephase"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.Dephase" title="Link to this definition">#</a></dt>
-<dd><p>Return an unbalanced gradient, taking no time to play.</p>
-<p>Every configuration order winds on by one: this is the crusher a
-refocusing pulse sits between and the unbalanced gradient an SSFP-FID
-readout is followed by, which are the same winding played in two places.
-How far it dephases is the description’s <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code>, one
-figure for the whole sequence.</p>
+<dd><p>Return an unbalanced gradient of zero duration.</p>
+<p>Every configuration order advances by one. The dephasing across a voxel
+is the description’s <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code>.</p>
 </dd></dl>
 
 <section id="examples-using-blochsim-dephase">

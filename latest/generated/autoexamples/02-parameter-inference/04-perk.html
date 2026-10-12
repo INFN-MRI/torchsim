@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../blochsim.utils.b1rms.html">b1rms</a></li>
@@ -713,10 +713,10 @@ GPU memory allocated while mapping the slice, blank on a machine without a
 GPU. Errors are medians over the brain voxels, relative to the truth.</p>
 <div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>method                       train     map     model      peak      T1      T2
 ------------------------------------------------------------------------------
-match, rank 4                 1.1s   1.64s   1.4 MiB        --    0.6%    1.6%
-PERK, 500 features            1.4s   0.03s   0.0 MiB        --    2.1%   16.4%
-PERK, 1000 features           1.8s   0.04s   0.1 MiB        --    0.5%    3.4%
-PERK, 4000 features           9.8s   0.12s   0.4 MiB        --    0.9%    5.4%
+match, rank 4                 1.0s   1.48s   1.4 MiB        --    0.6%    1.6%
+PERK, 500 features            1.2s   0.02s   0.0 MiB        --    1.4%   12.2%
+PERK, 1000 features           1.6s   0.04s   0.1 MiB        --    0.9%    5.7%
+PERK, 4000 features           8.7s   0.10s   0.4 MiB        --    0.9%    4.3%
 </pre></div>
 </div>
 </section>
@@ -748,8 +748,8 @@ to T1 and T2, scaled by the proton density:</p>
 </span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">bound</span></a> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;</span><span class="s2">T1</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">floor</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">:</span> <span class="n">floor</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="p">)</span><span class="p">}</span><span class="w">
 </span></pre></div></div>
 <img src="../../../_images/sphx_glr_04-perk_006.png" srcset="../../../_images/sphx_glr_04-perk_006.png" alt="PERK, CRLB, PERK, relative" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>            PERK      CRLB     PERK   (median over the brain)
-T1        7.6 ms    2.4 ms     1.1%
-T2       11.9 ms    0.5 ms    16.0%
+T1        8.6 ms    2.4 ms     1.2%
+T2       11.4 ms    0.5 ms    14.8%
 </pre></div>
 </div>
 <p>The two absolute columns share a scale in each row; the third column is the
@@ -777,7 +777,7 @@ uncertainty and compare it with the Cramér-Rao bound computed from the
 simulator Jacobian.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 31.102 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 27.175 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-02-parameter-inference-04-perk-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/examples/generated/autoexamples/02-parameter-inference/04-perk.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo1.svg" style="width: 150px;" />

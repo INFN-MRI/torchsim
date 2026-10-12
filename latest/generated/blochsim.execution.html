@@ -68,7 +68,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="offload" href="blochsim.offload.html" />
-    <link rel="prev" title="Running a simulation" href="../api/execution.html" />
+    <link rel="prev" title="Execution" href="../api/execution.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="" />
@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 current active has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l3 current active"><a class="current reference internal" href="#">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -560,21 +560,27 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.execution">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">execution</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'auto'</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">stream</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">budget_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lanes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reserve_bytes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">_RESERVE_BYTES</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/_execution.html#execution"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.execution" title="Link to this definition">#</a></dt>
-<dd><p>Choose where work runs inside the block.</p>
-<p><code class="docutils literal notranslate"><span class="pre">target</span></code> is <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> to decide per call, <code class="docutils literal notranslate"><span class="pre">&quot;cpu&quot;</span></code> to insist on the
-host, or a device or list of devices to insist on those. Deciding weighs
-the problem against what each card has free right now: work too small to
-repay a launch stays on the CPU, work that fits goes across in one piece,
-and work that does not is streamed through in chunks.</p>
-<p><code class="docutils literal notranslate"><span class="pre">stream</span></code> overrules that last step – <code class="docutils literal notranslate"><span class="pre">False</span></code> demands the whole volume
-be resident and lets it fail if it will not fit, <code class="docutils literal notranslate"><span class="pre">True</span></code> streams even when
-it would have fit. <code class="docutils literal notranslate"><span class="pre">budget_bytes</span></code> caps what streaming may hold, and
-defaults to what the devices report free less <code class="docutils literal notranslate"><span class="pre">reserve_bytes</span></code>. <code class="docutils literal notranslate"><span class="pre">lanes</span></code>
-is passed to <a class="reference internal" href="blochsim.offload.html#blochsim.offload" title="blochsim.offload"><code class="xref py py-func docutils literal notranslate"><span class="pre">offload()</span></code></a> for streamed work and rarely wants changing.</p>
-<p>Outside a block, work runs wherever its tensors already are.</p>
+<dd><p>Context manager that sets where per-voxel work runs.</p>
+<p>With <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, work too small to repay a launch stays on the CPU, work
+that fits on the devices is sent whole, and larger work is streamed in
+chunks. Outside a block, work runs where its tensors are.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Raises<span class="colon">:</span></dt>
-<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – for an empty device list, a non-CUDA device, or a: non-positive <code class="docutils literal notranslate"><span class="pre">budget_bytes</span></code> or <code class="docutils literal notranslate"><span class="pre">lanes</span></code>.</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>{&quot;auto&quot;</em><em>, </em><em>&quot;cpu&quot;}</em><em>, </em><em>torch.device</em><em> or </em><em>sequence</em><em> of </em><em>device</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> decides per call from the free memory of the CUDA devices;
+otherwise the host or the named CUDA devices are used. Defaults to
+<code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>.</p></li>
+<li><p><strong>stream</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">True</span></code> always streams in chunks; <code class="docutils literal notranslate"><span class="pre">False</span></code> requires the whole volume
+to be resident, and fails if it does not fit. Default decides per call.</p></li>
+<li><p><strong>budget_bytes</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Cap on device memory held while streaming, in bytes. Defaults to the
+free memory less <code class="docutils literal notranslate"><span class="pre">reserve_bytes</span></code>.</p></li>
+<li><p><strong>lanes</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Chunks in flight per device, as for <a class="reference internal" href="blochsim.offload.html#blochsim.offload" title="blochsim.offload"><code class="xref py py-func docutils literal notranslate"><span class="pre">offload()</span></code></a>. Defaults to 1.</p></li>
+<li><p><strong>reserve_bytes</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – Memory left free on each device, in bytes. Defaults to 512 MiB.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError" title="(in Python v3.15)"><strong>ValueError</strong></a> – If the device list is empty or contains a non-CUDA device, or if
+    <code class="docutils literal notranslate"><span class="pre">budget_bytes</span></code> or <code class="docutils literal notranslate"><span class="pre">lanes</span></code> is not positive.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -616,7 +622,7 @@ is passed to <a class="reference internal" href="blochsim.offload.html#blochsim.
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Running a simulation</p>
+        <p class="prev-next-title">Execution</p>
       </div>
     </a>
     <a class="right-next"

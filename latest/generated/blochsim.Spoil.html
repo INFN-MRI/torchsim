@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -560,10 +560,8 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.Spoil">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">Spoil</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_operators.html#Spoil"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.Spoil" title="Link to this definition">#</a></dt>
-<dd><p>Return ideal transverse spoiling, taking no time to play.</p>
-<p>Every transverse order is discarded rather than wound on, which is what a
-spoiled gradient echo assumes its spoiler and its RF phase cycling achieve
-together.</p>
+<dd><p>Return ideal transverse spoiling of zero duration.</p>
+<p>Every transverse order is discarded.</p>
 </dd></dl>
 
 <section id="examples-using-blochsim-spoil">

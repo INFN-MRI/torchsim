@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../generated/blochsim.utils.b1rms.html">b1rms</a></li>
@@ -558,64 +558,58 @@
                   
   <section class="tex2jax_ignore mathjax_ignore" id="sequences">
 <h1>Sequences<a class="headerlink" href="#sequences" title="Link to this heading">#</a></h1>
-<p>Device-agnostic description of an acquisition, shared by the interpreter, the
-estimators and the sequence optimizer. A description is a list of events with
-the timing and the tissue interaction each one carries; nothing in it names a
-vendor or a device.</p>
-<p>This page is the description and what it is assembled from. Writing a
-simulator out of these is on <a class="reference internal" href="model.html"><span class="doc">Signal models</span></a>, running one is on <a class="reference internal" href="execution.html"><span class="doc">Running a simulation</span></a>,
-and the temporal basis a run spans is on <a class="reference internal" href="recon.html"><span class="doc">Model-based reconstruction</span></a>.</p>
+<p>Device-agnostic description of an acquisition: a list of events with the
+timing and tissue interaction each carries, shared by the interpreter, the
+estimators and the sequence optimizer.</p>
+<p>Simulators are written on <a class="reference internal" href="model.html"><span class="doc">Signal models</span></a>, run on <a class="reference internal" href="execution.html"><span class="doc">Execution</span></a>, and the
+temporal basis a run spans is on <a class="reference internal" href="recon.html"><span class="doc">Model-based reconstruction</span></a>. Concepts are in
+<a class="reference internal" href="../explanations/description.html"><span class="doc">Sequence description</span></a>.</p>
 <section id="operators">
 <h2>Operators<a class="headerlink" href="#operators" title="Link to this heading">#</a></h2>
-<p>The modules a sequence is assembled from. An operator is a Python function
-returning the events it plays and how long it holds the timeline, and <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>
-composes two into one – so a preparation or a readout BlochSim does not ship
-reaches the fused kernels with no change to them.</p>
-<p>The five readouts differ only in what they play around the sample, which is
-what separates a spoiled, an unbalanced, a balanced and a refocused train.
-<a class="reference internal" href="../generated/blochsim.SampledPulse.html#blochsim.SampledPulse" title="blochsim.SampledPulse"><code class="xref py py-func docutils literal notranslate"><span class="pre">SampledPulse()</span></code></a> plays a waveform as one hard pulse per sample, with
-relaxation, precession and exchange between samples, for a pulse whose
-duration matters to the signal.</p>
+<p>Modules a sequence is assembled from. An operator is a function returning
+the events it plays and the time it holds the timeline; <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> composes two
+operators into one. <a class="reference internal" href="../generated/blochsim.SampledPulse.html#blochsim.SampledPulse" title="blochsim.SampledPulse"><code class="xref py py-func docutils literal notranslate"><span class="pre">SampledPulse()</span></code></a> plays a waveform as one hard pulse per
+sample, with relaxation, precession and exchange between samples.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Operator</span></code></a></p></td>
-<td><p>One module of a sequence: what it plays, and how long it lasts.</p></td>
+<td><p>One module of a sequence: the events it plays and the time it spans.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Excitation.html#blochsim.Excitation" title="blochsim.Excitation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Excitation</span></code></a></p></td>
-<td><p>Return a pulse that tips magnetization into the transverse plane.</p></td>
+<td><p>Return an excitation pulse.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Refocusing.html#blochsim.Refocusing" title="blochsim.Refocusing"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Refocusing</span></code></a></p></td>
-<td><p>Return a pulse the sequence sits between crushers, unless told otherwise.</p></td>
+<td><p>Return a refocusing pulse, between crusher gradients by default.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Inversion.html#blochsim.Inversion" title="blochsim.Inversion"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Inversion</span></code></a></p></td>
-<td><p>Return an ideal inversion, scaled by the tissue's inversion efficiency.</p></td>
+<td><p>Return an ideal inversion pulse.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Saturation.html#blochsim.Saturation" title="blochsim.Saturation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Saturation</span></code></a></p></td>
 <td><p>Return an off-resonance pulse that deposits power in a semisolid pool.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.SampledPulse.html#blochsim.SampledPulse" title="blochsim.SampledPulse"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SampledPulse</span></code></a></p></td>
-<td><p>Return a pulse played as one hard pulse per sample, with free precession between.</p></td>
+<td><p>Return a pulse played as one hard pulse per sample, with free evolution between.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Readout.html#blochsim.Readout" title="blochsim.Readout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Readout</span></code></a></p></td>
-<td><p>Return one sample of the transverse magnetization, demodulated by a phase.</p></td>
+<td><p>Return one ADC sample of the transverse magnetization.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Delay.html#blochsim.Delay" title="blochsim.Delay"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Delay</span></code></a></p></td>
-<td><p>Return time passing, and whatever the sequence plays across it.</p></td>
+<td><p>Return a delay, optionally carrying a gradient action.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.Dephase.html#blochsim.Dephase" title="blochsim.Dephase"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Dephase</span></code></a></p></td>
-<td><p>Return an unbalanced gradient, taking no time to play.</p></td>
+<td><p>Return an unbalanced gradient of zero duration.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.Spoil.html#blochsim.Spoil" title="blochsim.Spoil"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Spoil</span></code></a></p></td>
-<td><p>Return ideal transverse spoiling, taking no time to play.</p></td>
+<td><p>Return ideal transverse spoiling of zero duration.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.bSSFPReadout.html#blochsim.bSSFPReadout" title="blochsim.bSSFPReadout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">bSSFPReadout</span></code></a></p></td>
-<td><p>Return a sample the repetition rewinds after.</p></td>
+<td><p>Return a sample followed by no gradient action (balanced readout).</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.SSFPFidReadout.html#blochsim.SSFPFidReadout" title="blochsim.SSFPFidReadout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SSFPFidReadout</span></code></a></p></td>
 <td><p>Return a sample followed by one unbalanced gradient.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.SSFPEchoReadout.html#blochsim.SSFPEchoReadout" title="blochsim.SSFPEchoReadout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SSFPEchoReadout</span></code></a></p></td>
-<td><p>Return one unbalanced gradient, then the sample the echo forms at.</p></td>
+<td><p>Return one unbalanced gradient followed by the sample.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.SPGRReadout.html#blochsim.SPGRReadout" title="blochsim.SPGRReadout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SPGRReadout</span></code></a></p></td>
 <td><p>Return a sample followed by ideal transverse spoiling.</p></td>
@@ -629,24 +623,21 @@ duration matters to the signal.</p>
 </section>
 <section id="pulses-and-shims">
 <h2>Pulses and shims<a class="headerlink" href="#pulses-and-shims" title="Link to this heading">#</a></h2>
-<p>An ideal pulse turns the whole voxel through one angle. <a class="reference internal" href="../generated/blochsim.rf_definition.html#blochsim.rf_definition" title="blochsim.rf_definition"><code class="xref py py-func docutils literal notranslate"><span class="pre">rf_definition()</span></code></a>
-takes a complex envelope instead – one row per transmit channel – so a
-selective excitation is integrated over the slice rather than scaled, and
-<a class="reference internal" href="../generated/blochsim.ShimDefinition.html#blochsim.ShimDefinition" title="blochsim.ShimDefinition"><code class="xref py py-class docutils literal notranslate"><span class="pre">ShimDefinition</span></code></a> gives the amplitude and phase each channel is driven
-at. A simulator takes them as <code class="docutils literal notranslate"><span class="pre">pulse=</span></code> and <code class="docutils literal notranslate"><span class="pre">shims=</span></code>.</p>
-<p><a class="reference internal" href="../generated/blochsim.compose_spinor.html#blochsim.compose_spinor" title="blochsim.compose_spinor"><code class="xref py py-func docutils literal notranslate"><span class="pre">compose_spinor()</span></code></a> is the rotation a shaped pulse leaves on each spin,
-composed sample by sample in torch so that derivatives reach the samples: how
-a pulse’s own samples are designed rather than chosen.</p>
+<p><a class="reference internal" href="../generated/blochsim.rf_definition.html#blochsim.rf_definition" title="blochsim.rf_definition"><code class="xref py py-func docutils literal notranslate"><span class="pre">rf_definition()</span></code></a> builds an RF definition from a complex envelope, one row
+per transmit channel. <a class="reference internal" href="../generated/blochsim.ShimDefinition.html#blochsim.ShimDefinition" title="blochsim.ShimDefinition"><code class="xref py py-class docutils literal notranslate"><span class="pre">ShimDefinition</span></code></a> holds the amplitude and phase of
+each channel. A simulator takes them as <code class="docutils literal notranslate"><span class="pre">pulse=</span></code> and <code class="docutils literal notranslate"><span class="pre">shims=</span></code>.
+<a class="reference internal" href="../generated/blochsim.compose_spinor.html#blochsim.compose_spinor" title="blochsim.compose_spinor"><code class="xref py py-func docutils literal notranslate"><span class="pre">compose_spinor()</span></code></a> composes the rotation a shaped pulse leaves on each
+spin, differentiably with respect to the samples.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.rf_definition.html#blochsim.rf_definition" title="blochsim.rf_definition"><code class="xref py py-obj docutils literal notranslate"><span class="pre">rf_definition</span></code></a></p></td>
-<td><p>Return the definition of a pulse from the envelope a scanner plays.</p></td>
+<td><p>Return the RF definition of a pulse envelope.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.ShimDefinition.html#blochsim.ShimDefinition" title="blochsim.ShimDefinition"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ShimDefinition</span></code></a></p></td>
-<td><p>One transmit-shim definition: a complex weight per channel.</p></td>
+<td><p>Transmit shim: a complex weight per channel for static parallel transmit.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.compose_spinor.html#blochsim.compose_spinor" title="blochsim.compose_spinor"><code class="xref py py-obj docutils literal notranslate"><span class="pre">compose_spinor</span></code></a></p></td>
-<td><p>The Cayley-Klein pair a shaped pulse leaves, sample by sample.</p></td>
+<td><p>Return the Cayley-Klein pair of a shaped pulse, composed over its samples.</p></td>
 </tr>
 </tbody>
 </table>
@@ -654,20 +645,17 @@ a pulse’s own samples are designed rather than chosen.</p>
 </section>
 <section id="description">
 <h2>Description<a class="headerlink" href="#description" title="Link to this heading">#</a></h2>
-<p>The event stream itself: what a layout composes to, and what a sequence
-arriving from a scanner is read into.
-<a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_operators" title="blochsim.SequenceDescription.from_operators"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SequenceDescription.from_operators()</span></code></a> builds one directly,
-<a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_pulseq" title="blochsim.SequenceDescription.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SequenceDescription.from_pulseq()</span></code></a> reads one out of a Pulseq <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file
-or a sequence a design holds in memory, <a class="reference internal" href="../generated/blochsim.read_mrd_description.html#blochsim.read_mrd_description" title="blochsim.read_mrd_description"><code class="xref py py-func docutils literal notranslate"><span class="pre">read_mrd_description()</span></code></a> reads the
-ones an MRD stream carries ahead of its first acquisition,
-and <a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> runs any of them.</p>
-<p>Reading a <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file needs pypulseq, which parses the format and computes the
-gradient trajectory the echo is found on: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">blochsim[pulseq]</span></code>.
-Nothing else in the package imports it.</p>
+<p>The event stream a layout composes to, or a scanner sequence is read into.
+<a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_operators" title="blochsim.SequenceDescription.from_operators"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SequenceDescription.from_operators()</span></code></a> builds one from operators,
+<a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription.from_pulseq" title="blochsim.SequenceDescription.from_pulseq"><code class="xref py py-meth docutils literal notranslate"><span class="pre">SequenceDescription.from_pulseq()</span></code></a> reads a Pulseq <code class="docutils literal notranslate"><span class="pre">.seq</span></code> file or an
+in-memory sequence, <a class="reference internal" href="../generated/blochsim.read_mrd_description.html#blochsim.read_mrd_description" title="blochsim.read_mrd_description"><code class="xref py py-func docutils literal notranslate"><span class="pre">read_mrd_description()</span></code></a> reads those an MRD stream
+carries ahead of its first acquisition, and
+<a class="reference internal" href="../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.from_description" title="blochsim.model.Simulator.from_description"><code class="xref py py-meth docutils literal notranslate"><span class="pre">from_description()</span></code></a> simulates any of them.</p>
+<p>Reading Pulseq needs pypulseq: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">blochsim[pulseq]</span></code>.</p>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SequenceDescription</span></code></a></p></td>
-<td><p>Event stream and RF resources for one sequence or subsequence.</p></td>
+<td><p>Event stream and RF resources of one repetition of a sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="../generated/blochsim.read_mrd_description.html#blochsim.read_mrd_description" title="blochsim.read_mrd_description"><code class="xref py py-obj docutils literal notranslate"><span class="pre">read_mrd_description</span></code></a></p></td>
 <td><p>Read an MRD stream up to its sequence description.</p></td>

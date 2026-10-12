@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -563,16 +563,12 @@
 <dt class="sig sig-object py" id="blochsim.simulators.HSFPSimulator">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.simulators.</span></span><span class="sig-name descname"><span class="pre">HSFPSimulator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/hsfp.html#HSFPSimulator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.HSFPSimulator" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model._state_machine.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a></p>
-<p>A balanced train whose flip angle varies slowly, in the hybrid state.</p>
-<p>With the flip angle varied slowly enough, the magnetization stays on the
-spin-locked axis the train defines and only its length evolves, relaxing
-at <code class="docutils literal notranslate"><span class="pre">sin^2(a)</span> <span class="pre">/</span> <span class="pre">T2</span> <span class="pre">+</span> <span class="pre">cos^2(a)</span> <span class="pre">/</span> <span class="pre">T1</span></code> and driven by <code class="docutils literal notranslate"><span class="pre">cos(a)</span> <span class="pre">/</span> <span class="pre">T1</span></code> <a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>.
-The train is played repeatedly and the recorded pass starts from where the
-previous one ended, times <code class="docutils literal notranslate"><span class="pre">beta</span></code>: <code class="docutils literal notranslate"><span class="pre">-1</span></code> for an inversion between
-passes, which is what makes the answer sensitive to T1 and T2 at once, and
-<code class="docutils literal notranslate"><span class="pre">1</span></code> for none.</p>
-<p>The signal is the magnetization along the spin-locked axis at each pulse,
-which for a balanced train is the transverse magnetization at the echo.</p>
+<p>Balanced train with a slowly varying flip angle, in the hybrid state.</p>
+<p>The magnetization stays on the spin-locked axis and only its length evolves,
+relaxing at <code class="docutils literal notranslate"><span class="pre">sin^2(a)</span> <span class="pre">/</span> <span class="pre">T2</span> <span class="pre">+</span> <span class="pre">cos^2(a)</span> <span class="pre">/</span> <span class="pre">T1</span></code> and driven by <code class="docutils literal notranslate"><span class="pre">cos(a)</span> <span class="pre">/</span> <span class="pre">T1</span></code>
+<a class="footnote-reference brackets" href="#id2" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>. The train is repeated, each pass starting from the end of the previous
+one times <code class="docutils literal notranslate"><span class="pre">beta</span></code>. The signal is the magnetization along the spin-locked axis
+at each pulse, the transverse magnetization at the echo for a balanced train.</p>
 <div class="admonition-references admonition">
 <p class="admonition-title">References</p>
 <aside class="footnote-list brackets">
@@ -602,31 +598,31 @@ resonance”, Communications Physics 2 (2019), 73.
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">bind</span></code></p></td>
-<td><p>This simulator with more fixed on it, values or settings alike.</p></td>
+<td><p>Return a copy with further arguments fixed.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">describe</span></code></p></td>
-<td><p>Return the description this protocol plays.</p></td>
+<td><p>Return the <code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code> of a protocol.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#blochsim.simulators.HSFPSimulator.evaluate" title="blochsim.simulators.HSFPSimulator.evaluate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">evaluate</span></code></a></p></td>
-<td><p>Evaluate the closed form, no state machine and no description.</p></td>
+<td><p>Return the closed-form signal.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_description</span></code></p></td>
-<td><p>Return a simulator over a stream someone else assembled.</p></td>
+<td><p>Return a simulator that plays an existing description.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_pulseq</span></code></p></td>
 <td><p>Return a simulator over one repetition of a Pulseq sequence.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jacobian</span></code></p></td>
-<td><p>Return the signal and its derivative with respect to <code class="docutils literal notranslate"><span class="pre">diff</span></code>.</p></td>
+<td><p>Return the signal and its derivative with respect to tissue properties.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">layout</span></code></p></td>
-<td><p>Return the operators of one repetition, in the order they play.</p></td>
+<td><p>Return the operators of one repetition in playing order.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">played</span></code></p></td>
-<td><p>Return the protocol as it will be laid out.</p></td>
+<td><p>Return the protocol arguments of <code class="xref py py-meth docutils literal notranslate"><span class="pre">layout()</span></code>, arrays as torch tensors.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">repetition_s</span></code></p></td>
-<td><p>Return how long one repetition lasts, given what the layout played.</p></td>
+<td><p>Return the duration of one repetition in seconds.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></p></td>
 <td><p>Return the recorded signal.</p></td>
@@ -637,7 +633,7 @@ resonance”, Communications Physics 2 (2019), 73.
 <dl class="py method">
 <dt class="sig sig-object py" id="blochsim.simulators.HSFPSimulator.evaluate">
 <span class="sig-name descname"><span class="pre">evaluate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">properties</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">sequence</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/simulators/hsfp.html#HSFPSimulator.evaluate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.simulators.HSFPSimulator.evaluate" title="Link to this definition">#</a></dt>
-<dd><p>Evaluate the closed form, no state machine and no description.</p>
+<dd><p>Return the closed-form signal.</p>
 </dd></dl>
 
 </dd></dl>

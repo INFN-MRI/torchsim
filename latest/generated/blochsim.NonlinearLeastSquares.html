@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -564,57 +564,34 @@
 <dt class="sig sig-object py" id="blochsim.NonlinearLeastSquares">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">NonlinearLeastSquares</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">acquisition</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">initial</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loop</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/estimators/_nlls.html#NonlinearLeastSquares"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.NonlinearLeastSquares" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <a class="reference internal" href="blochsim.Estimator.html#blochsim.Estimator" title="blochsim.estimators._mapping.Estimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Estimator</span></code></a></p>
-<p>Levenberg-Marquardt, stepping every voxel together.</p>
-<p>Where a dictionary spans a grid whose size is the product of the parameter
-ranges, a nonlinear fit walks downhill from a starting guess and pays
-nothing for a third parameter beyond a third column of the Jacobian. What
-it gives up is the guarantee: it finds a local minimum of the residual,
-and which one depends on where it started.</p>
-<p>This is an <a class="reference internal" href="blochsim.Estimator.html#blochsim.Estimator" title="blochsim.Estimator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Estimator</span></code></a> face on
-<code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code>, and holds no algorithm of its own.
-Fitting images voxel by voxel and reconstructing maps from k-space are the
-same loop over the same <code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code> with
-nothing encoding the voxels together, so what is here is only the
-adaptation: where the fit starts, and what the training set is for.</p>
-<p>The loop it runs by default carries a per-voxel trust region, so every
-voxel takes its step in the same pass, carries its own damping, accepts or
-rejects on its own, and drops out when it has converged – and the
-remaining ones close up, so late iterations cost only what is left.</p>
+<p>Per-voxel Levenberg-Marquardt fit of the signal model.</p>
+<p>Fits the model itself, so each extra unknown adds one Jacobian column
+rather than a dictionary axis. The result is a local minimum that depends
+on the starting point. All voxels step together with their own trust
+region and leave the loop on convergence. A face on
+<code class="xref py py-class docutils literal notranslate"><span class="pre">GaussNewton</span></code>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><em>Simulator</em></a><em>, </em><em>optional</em>) – The sequence being inverted: a simulator that ships with BlochSim, one
-written by subclassing <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>, or any other
-<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a>. Every tissue property that is
-neither unknown nor measured separately is fixed on it beforehand, with
-the constructor or <a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator.bind" title="blochsim.model.Simulator.bind"><code class="xref py py-meth docutils literal notranslate"><span class="pre">bind()</span></code></a>. Leave it
-out to fit from signals handed to <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code> directly.</p></li>
-<li><p><strong>bounds</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">(low,</span> <span class="pre">high)}</span></code>, either end <code class="docutils literal notranslate"><span class="pre">None</span></code> for unbounded. A bound is
-kept by fitting a transformed variable rather than by clipping a
-result, so no iterate ever leaves the interval and the bound cannot be
-sitting exactly on the answer. It also puts every parameter on the
-same scale whatever its units, which is what the damping term assumes.</p></li>
-<li><p><strong>initial</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value}</span></code> to start from, which must be strictly inside that
-property’s bound. Without one, <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code> takes the median of the
-parameters the training set drew.</p></li>
-<li><p><strong>loop</strong> (<a class="reference internal" href="blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><em>GaussNewton</em></a><em>, </em><em>optional</em>) – The solve to run, and where every knob it has lives – how many steps,
-how the damping moves, which tolerance stops a voxel. The default is
-Levenberg-Marquardt: a <code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code> over
-<code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code>, twenty steps.</p></li>
+<li><p><strong>acquisition</strong> (<a class="reference internal" href="blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><em>Simulator</em></a><em>, </em><em>optional</em>) – The sequence being inverted, with every property that is neither
+unknown nor measured separately already fixed.</p></li>
+<li><p><strong>bounds</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">(low,</span> <span class="pre">high)}</span></code>, either end <code class="docutils literal notranslate"><span class="pre">None</span></code> for unbounded. Enforced by
+a variable transform, so iterates stay inside.</p></li>
+<li><p><strong>initial</strong> (<em>mapping</em><em>, </em><em>optional</em>) – <code class="docutils literal notranslate"><span class="pre">{name:</span> <span class="pre">value}</span></code> start, strictly inside the bound. Default is the
+median of the training draw.</p></li>
+<li><p><strong>loop</strong> (<a class="reference internal" href="blochsim.GaussNewton.html#blochsim.GaussNewton" title="blochsim.GaussNewton"><em>GaussNewton</em></a><em>, </em><em>optional</em>) – The solver. Default is a <code class="xref py py-class docutils literal notranslate"><span class="pre">TrustRegion</span></code> over
+<code class="xref py py-func docutils literal notranslate"><span class="pre">direct()</span></code>, 20 iterations.</p></li>
 </ul>
 </dd>
 </dl>
 <p class="rubric">Notes</p>
-<p><strong>Equality constraints are written into the model, not declared here.</strong>
-A constraint that fixes one parameter in terms of the others removes a
-degree of freedom, so the way to impose it is to not have that freedom:
-write the model in terms of the parameters that remain. For a fat-water
-fit where the two fractions must sum to one, make the fat fraction <code class="docutils literal notranslate"><span class="pre">f</span></code>
-the only unknown and write water as <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">f</span></code> inside the model. The
-constraint then holds identically at every iterate, rather than being
-restored after each one.</p>
-<p>The solve is iterative and runs without building a graph, so an estimate
-carries no gradient with respect to the measurement.</p>
+<p>An equality constraint is written into the model by removing the degree
+of freedom it fixes: for a fat-water fit with fractions summing to one,
+make the fat fraction <code class="docutils literal notranslate"><span class="pre">f</span></code> the only unknown and use <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">f</span></code> for water.</p>
+<p>The estimate carries no gradient with respect to the measurement. The
+stated uncertainty is the inverse-Fisher standard error at the solution
+(a linearization, as <a class="reference internal" href="blochsim.crlb.html#blochsim.crlb" title="blochsim.crlb"><code class="xref py py-func docutils literal notranslate"><span class="pre">crlb()</span></code></a>), zero when the training noise
+is zero.</p>
 <p class="rubric">Examples</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">fit</span> <span class="o">=</span> <span class="n">NonlinearLeastSquares</span><span class="p">(</span>
     <span class="n">FSESimulator</span><span class="p">(</span><span class="n">ESP</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">1800.0</span><span class="p">,</span> <span class="n">flip</span><span class="o">=</span><span class="n">train</span><span class="p">),</span>
@@ -638,16 +615,16 @@ carries no gradient with respect to the measurement.</p>
 <td><p>Fit the estimator over a sampling of the tissue it will meet.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">from_coefficients</span></code></p></td>
-<td><p>Map coefficients that are already in this estimator's basis.</p></td>
+<td><p>Map coefficients already in this estimator's basis.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">map</span></code></p></td>
-<td><p>Estimate the tissue a measurement came from.</p></td>
+<td><p>Estimate the tissue parameters of a measured volume.</p></td>
 </tr>
 <tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">training_set</span></code></p></td>
-<td><p>Simulate a training set: signals, unknowns, and knowns.</p></td>
+<td><p>Simulate a training set from the properties given to <code class="xref py py-meth docutils literal notranslate"><span class="pre">fit()</span></code>.</p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">uncertainty_of</span></code></p></td>
-<td><p>The standard deviation the measurement noise leaves on each map.</p></td>
+<td><p>Uncertainty of each map, as a standard deviation in the map's units.</p></td>
 </tr>
 </tbody>
 </table>
@@ -661,7 +638,7 @@ carries no gradient with respect to the measurement.</p>
 <dl class="py property">
 <dt class="sig sig-object py" id="blochsim.NonlinearLeastSquares.fitted">
 <span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">fitted</span></span><a class="headerlink" href="#blochsim.NonlinearLeastSquares.fitted" title="Link to this definition">#</a></dt>
-<dd><p>Whether a model and a starting point are both in place.</p>
+<dd><p>Whether a model and a starting point are in place.</p>
 </dd></dl>
 
 </dd></dl>

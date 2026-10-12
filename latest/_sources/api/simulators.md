@@ -1,9 +1,9 @@
 # Simulators
 
-The sequences that ship with BlochSim. A constructor takes the keywords
-{meth}`~blochsim.model.Simulator.simulate` takes and fixes them, so a
-sequence and the tissue it is being asked about are written down together and
-what is left to give at the call is whatever is actually varying.
+The sequences that ship with BlochSim, as {class}`~blochsim.model.Simulator`
+subclasses. A constructor fixes protocol arguments, the keywords of
+{meth}`~blochsim.model.Simulator.simulate`; tissue properties are given at the
+call. See the {doc}`../explanations/signal-model` page.
 
 ## Closed form
 
@@ -34,7 +34,7 @@ Signals that have an analytic expression, evaluated in one pass.
 
 ## State machine
 
-Trains that have to be played out, run on the extended phase graph engine.
+Trains that are played out event by event on the extended phase graph engine ({doc}`../explanations/epg`).
 
 ```{eval-rst}
 .. autosummary::
@@ -55,18 +55,13 @@ Trains that have to be played out, run on the extended phase graph engine.
 
 ## Functional wrappers
 
-The `*_sim` functions are convenience calls for a subset of the shipped
-simulators: protocol and tissue go into one function call, with an optional
-Jacobian. They are not a second extension API. New sequence families are
-implemented as {class}`~blochsim.model.Simulator` subclasses, so they can use
-both an offline {meth}`~blochsim.model.Simulator.layout` and the same handlers
-when a Pulseq/MRD description arrives from a scanner.
+The `*_sim` functions evaluate a subset of the simulators in one call, with an
+optional Jacobian. They are not an extension API: new sequence families are
+{class}`~blochsim.model.Simulator` subclasses. The classes are preferred when a
+sequence is reused, bound to a protocol, or passed to an estimator,
+reconstruction or design object.
 
-Prefer the simulator classes whenever the same sequence is reused, bound to a
-protocol, passed to an estimator/reconstruction/design object, or constructed
-from a description. The wrappers remain useful for compact one-off calls.
-
-### Analytical
+### Closed-form wrappers
 
 ```{eval-rst}
 .. autosummary::
@@ -77,7 +72,7 @@ from a description. The wrappers remain useful for compact one-off calls.
    blochsim.spgr_sim
 ```
 
-### Iterative
+### State-machine wrappers
 
 ```{eval-rst}
 .. autosummary::

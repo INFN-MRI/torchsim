@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -560,15 +560,23 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.SSFPEchoReadout">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">SSFPEchoReadout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">phase_rad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration_s</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">role</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">AdcRole.SINGLE</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_echo</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_operators.html#SSFPEchoReadout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.SSFPEchoReadout" title="Link to this definition">#</a></dt>
-<dd><p>Return one unbalanced gradient, then the sample the echo forms at.</p>
-<p>The repetition’s other sample. An unbalanced train winds every order on
-once per repetition, so the order the next pulse would refocus sits at
-zero once the gradient has played – which is where this reads it, and
-what makes the sample an echo of the <em>previous</em> excitation rather than a
-free induction decay after this one. It is the strongly T2-weighted half
-of a reversed-FISP pair, and it takes the same ideal winding
-<a class="reference internal" href="blochsim.SSFPFidReadout.html#blochsim.SSFPFidReadout" title="blochsim.SSFPFidReadout"><code class="xref py py-func docutils literal notranslate"><span class="pre">SSFPFidReadout()</span></code></a> does, in the other order.</p>
-<p><code class="docutils literal notranslate"><span class="pre">duration_s</span></code> is what is left of the repetition after the sample.</p>
+<dd><p>Return one unbalanced gradient followed by the sample.</p>
+<p>The sample reads the echo of the previous excitation (the T2-weighted
+half of a reversed-FISP pair). The winding is that of
+<a class="reference internal" href="blochsim.SSFPFidReadout.html#blochsim.SSFPFidReadout" title="blochsim.SSFPFidReadout"><code class="xref py py-func docutils literal notranslate"><span class="pre">SSFPFidReadout()</span></code></a>, in the other order.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>phase_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – Demodulation phase, in radians.</p></li>
+<li><p><strong>duration_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – Repetition time remaining after the sample, in seconds.</p></li>
+<li><p><strong>role</strong> (<em>AdcRole</em><em>, </em><em>optional</em>) – Role of the sample in the event stream.</p></li>
+<li><p><strong>is_echo</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><em>bool</em></a><em>, </em><em>optional</em>) – Whether the sample is at the k-space origin.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator">Operator</a></p>
+</dd>
+</dl>
 </dd></dl>
 
 <section id="examples-using-blochsim-ssfpechoreadout">

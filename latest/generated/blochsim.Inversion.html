@@ -311,7 +311,7 @@
 <li class="toctree-l3"><a class="reference internal" href="blochsim.crlb.html">crlb</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Running a simulation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../api/execution.html">Execution</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.execution.html">execution</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.offload.html">offload</a></li>
 <li class="toctree-l3"><a class="reference internal" href="blochsim.utils.b1rms.html">b1rms</a></li>
@@ -559,11 +559,23 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="blochsim.Inversion">
 <span class="sig-prename descclassname"><span class="pre">blochsim.</span></span><span class="sig-name descname"><span class="pre">Inversion</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration_s</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flip_rad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">torch.pi</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">phase_rad</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">definition_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/blochsim/sequence/_operators.html#Inversion"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#blochsim.Inversion" title="Link to this definition">#</a></dt>
-<dd><p>Return an ideal inversion, scaled by the tissue’s inversion efficiency.</p>
-<p>The kernels answer this with <code class="docutils literal notranslate"><span class="pre">Mz</span> <span class="pre">-&gt;</span> <span class="pre">-efficiency</span> <span class="pre">*</span> <span class="pre">Mz</span></code> on every order and
-no rotation at all, so the pulse deposits nothing in a bound pool. A
-preparation whose saturation matters is an <code class="xref py py-func docutils literal notranslate"><span class="pre">excitation()</span></code> or a
-<code class="xref py py-func docutils literal notranslate"><span class="pre">saturation()</span></code> carrying a real waveform instead.</p>
+<dd><p>Return an ideal inversion pulse.</p>
+<p>The kernels apply <code class="docutils literal notranslate"><span class="pre">Mz</span> <span class="pre">-&gt;</span> <span class="pre">-efficiency</span> <span class="pre">*</span> <span class="pre">Mz</span></code> on every order with no
+rotation, so the pulse deposits no power in a bound pool. Use
+<a class="reference internal" href="blochsim.Saturation.html#blochsim.Saturation" title="blochsim.Saturation"><code class="xref py py-func docutils literal notranslate"><span class="pre">Saturation()</span></code></a> for a preparation whose saturation matters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>duration_s</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – Time held on the timeline, in seconds.</p></li>
+<li><p><strong>flip_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – Nominal flip angle, in radians.</p></li>
+<li><p><strong>phase_rad</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><em>float</em></a><em> or </em><em>torch.Tensor</em><em>, </em><em>optional</em>) – RF phase, in radians.</p></li>
+<li><p><strong>definition_id</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><em>int</em></a><em>, </em><em>optional</em>) – RF definition played; 0 is the ideal pulse.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference internal" href="blochsim.Operator.html#blochsim.Operator" title="blochsim.Operator">Operator</a></p>
+</dd>
+</dl>
 </dd></dl>
 
 <span class="target" id="sphx-glr-backref-blochsim-inversion"></span></section>
