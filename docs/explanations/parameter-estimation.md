@@ -11,7 +11,7 @@
 You give an estimator the simulator of your acquisition and the range of each
 unknown, and it returns parameter maps from a measured volume.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -63,14 +63,14 @@ unknown, and it returns parameter maps from a measured volume.
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **Spatial regularization.** Every estimator is voxel-wise; a spatial prior belongs to {doc}`model-based-reconstruction`.
 - **Neural-network estimators.** PERK's estimate is differentiable with respect to the signal, so it can sit inside one.
 - **A global minimum** for nonlinear least squares, whose answer depends on its starting point.
 - **Declared equality constraints.** Two fractions summing to one are written into the model, with one of them as the unknown.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/parameter_estimation.png
 :width: 100%
@@ -83,7 +83,7 @@ the fine dictionary at one to two orders of magnitude more time. PERK is least
 accurate at the short-T2 end of its prior. Times are measured at build time.
 ```
 
-### What each method needs
+### Data requirements
 
 - **Dictionary matching:** a grid. A subspace shortens each inner product to the rank; grouping reduces how many are taken. A `prune` set too small can exclude the group holding the match.
 - **Lookup table:** one unknown, and a `combine` that is monotonic in it, such as the MP2RAGE unified image.
@@ -107,7 +107,7 @@ holds at the signal amplitude it was trained at. Both are read against
 {func}`~blochsim.crlb`, the bound for an unbiased estimator. Grid methods raise
 `NotImplementedError` when asked for one.
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/02-parameter-inference/01-dictionary-matching`: an MRF train matched in full, in a rank-4 subspace, and in 32 groups.
 - {doc}`../generated/autoexamples/02-parameter-inference/02-lookup-table`: MP2RAGE T1 by lookup table and by dictionary, against the number of grid points.

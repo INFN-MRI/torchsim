@@ -13,7 +13,7 @@ reconstruction runs. Each simulator accepts scalar and tensor-valued inputs;
 tensor-valued inputs are simulated in parallel, over multiple CPU threads or on
 a GPU.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -65,13 +65,13 @@ a GPU.
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **Placement without a request.** With no {func}`~blochsim.execution` block and no `execution=`, nothing moves a tensor between host and card.
 - **Multi-node execution.** Several cards in one process are supported; several processes or machines are not.
 - **Thresholds measured on your machine.** The work below which the host is preferred is a fixed constant, not measured where it runs.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/execution_policy.png
 :width: 100%
@@ -81,7 +81,7 @@ The four routes `execution("auto")` chooses between, per call, from the work
 in the problem and the free memory each card reports.
 ```
 
-### Choosing a route
+### Route selection
 
 The policy is a context manager: it applies to every call inside the block,
 nests, and is restored on exit, including after an exception. A simulator also
@@ -109,7 +109,7 @@ round-off, since the same product is formed in a different order. What each
 declared tissue property costs is on {doc}`signal-model`; the packed buffers
 and the kernels are on {doc}`../internals/kernels`.
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/01-framework/01-first-simulation`: a simulation forced onto the host.
 - {doc}`../generated/autoexamples/02-parameter-inference/01-dictionary-matching`: a dictionary match under `execution()`.

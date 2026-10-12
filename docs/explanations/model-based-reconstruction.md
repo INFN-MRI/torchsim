@@ -11,7 +11,7 @@
 You reconstruct parameter maps directly from k-space, with the signal model
 inside the forward operator rather than fitted to images afterwards.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -53,13 +53,13 @@ inside the forward operator rather than fitted to images afterwards.
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **The encoding**: sampling, non-uniform FFT, coil sensitivities, density compensation. Any object with `A` and `A_adjoint` composes: an mri-nufft operator through its deepinv bridge, a deepinv `LinearPhysics`, or a bartorch operator through `bartorch.interop.to_deepinv`.
 - **A general linear solver.** {func}`~blochsim.iterative` calls deepinv's `least_squares` or any callable with its signature; {func}`~blochsim.direct` serves only a model with no encoding in front of it.
 - **Regularizers**, which enter as a closure around a proximal solver passed as `solve`.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/model_based_reconstruction.png
 :width: 100%
@@ -73,7 +73,7 @@ operator and the loop. Errors are the mean relative T2 error inside the
 phantom.
 ```
 
-### The forward operator
+### Forward operator
 
 The forward operator is the chain $F = P\,\mathcal{F}\,C\,M$ of sampling,
 Fourier encoding, coil sensitivities and the signal model. Only $M$ depends on
@@ -105,7 +105,7 @@ with {func}`~blochsim.direct` is {class}`~blochsim.NonlinearLeastSquares`. Compo
 `physics()` instead lets deepinv differentiate the whole chain by autograd,
 which gives up these analytic products.
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/04-model-based-imaging/01-linear-subspace`: radial multi-echo T2 by gridding, per-echo CG, and a rank-3 subspace with mri-nufft.
 - {doc}`../generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion`: the same data reconstructed by Gauss-Newton with the model inside the operator.

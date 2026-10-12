@@ -11,7 +11,7 @@
 You choose protocol parameters, such as flip angles, repetition times or echo
 train lengths, by minimizing a cost computed from what the sequence records.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -48,14 +48,14 @@ train lengths, by minimizing a cost computed from what the sequence records.
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **Hardware and safety limits** other than box limits on a parameter: gradient, PNS and SAR constraints enter as penalty terms you write, or are checked by sequence design tools such as pypulseqpp.
 - **Global optimization.** The optimizer descends from the starting values, and the result depends on them.
 - **Predefined costs** other than {func}`~blochsim.crlb`. A blur, contrast or power term is a function you write.
 - **Writing the designed protocol** to a Pulseq file.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/sequence_design.png
 :width: 100%
@@ -67,7 +67,7 @@ summed relative Cramér-Rao bounds of T1 and T2. The angles collapse onto a few
 values; one bSSFP angle ends at its 70° limit.
 ```
 
-### The cost
+### Cost function
 
 The cost takes the designed parameters by keyword and returns one number. A
 precision design asks its simulators for {meth}`~blochsim.model.Simulator.jacobian`
@@ -90,7 +90,7 @@ preference such as RF power or scan time belongs in the cost as a penalty. The
 number of free variables is a choice of parameterization: a 120-echo train can
 be written as a function of three control angles and designed over those.
 
-### What a design returns
+### Design result
 
 {meth}`~blochsim.SequenceDesign.minimize` runs Adam (200 steps, learning rate
 0.05 by default; `optimizer_factory` replaces it) and returns a
@@ -98,7 +98,7 @@ be written as a function of three control angles and designed over those.
 their limits, and `loss`, the cost at every step, from which convergence is
 read.
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/03-sequence-optimization/01-echo-train-design`: refocusing angles of a fast spin echo designed for sharpness, contrast and RF power, then a segmented 3D protocol.
 - {doc}`../generated/autoexamples/03-sequence-optimization/02-joint-relaxometry`: a DESPOT protocol designed against the Cramér-Rao bound and checked by fitting a BrainWeb slice.

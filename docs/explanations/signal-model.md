@@ -12,7 +12,7 @@ You give blochsim a sequence and a tissue, and it returns the signal and its
 derivatives. The sequence is written once, as a signal model, and the 26
 shipped simulators are written the same way as any you add.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -64,13 +64,13 @@ shipped simulators are written the same way as any you add.
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **Gradient waveforms and spatial encoding**, which belong to sequence design tools such as pypulseqpp. An event dephases by whole configuration orders.
 - **The reconstruction encoding**, which a model-based reconstruction takes from mri-nufft or bartorch.
 - **Safety checks** on gradients, PNS or SAR.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/signal_model.png
 :width: 100%
@@ -97,7 +97,7 @@ seconds and radians. The first call builds the description; later calls
 rebind the numbers onto it. What is read from a file or stream is in
 {doc}`description`, and the tissue physics in {doc}`epg`.
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/01-framework/01-first-simulation`: a shipped simulator over three tissues.
 - {doc}`../generated/autoexamples/01-framework/03-custom-signal-model`: a new signal model against its closed form.

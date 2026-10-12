@@ -12,7 +12,7 @@ You ask for the derivative of the signal with respect to tissue properties to
 fit, map or bound them, and with respect to the sequence to design it. Both
 are computed by the same fused kernels that compute the signal.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -64,13 +64,13 @@ are computed by the same fused kernels that compute the signal.
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **Derivatives beyond the second order.** A third is refused rather than returned incomplete (*a third derivative is refused*, `test_vjp.py`).
 - **Forward mode with respect to sequence parameters** through {meth}`~blochsim.model.Simulator.jacobian`, and reverse mode through NumPy or CuPy inputs: a gradient belongs to a torch tensor (*reverse mode still needs torch*, `test_array_backends.py`).
 - **A full Jacobian with respect to the sequence.** Each reverse-mode pass gives the gradient of one scalar cost.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/derivative_cost.png
 :width: 100%
@@ -82,7 +82,7 @@ machine that built this page; the ratios depend on the schedule and the
 hardware.
 ```
 
-### Forward mode for tissue
+### Forward-mode tissue derivatives
 
 Voxels are independent, so a tangent of ones along one property gives that
 property's derivative in every voxel in one pass. The cost scales with the
@@ -90,7 +90,7 @@ number of properties differentiated and not with the voxels or samples. The
 kernels carry a tangent beside each state value (dual arithmetic), so each
 operator is differentiated exactly rather than by finite differences.
 
-### Reverse mode for the sequence
+### Reverse-mode sequence derivatives
 
 A design cost is one number over tens to hundreds of flip angles. The adjoint
 kernel walks the event stream backwards over the states a forward sweep kept,
@@ -108,7 +108,7 @@ $F^{-1}$. A design that minimizes a bound therefore differentiates a Jacobian
 with respect to the sequence: forward mode inside reverse mode, both in the
 kernels.
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/01-framework/01-first-simulation`: a Jacobian from a functional form.
 - {doc}`../generated/autoexamples/02-parameter-inference/04-perk`: a reported uncertainty against the Cramer-Rao bound.

@@ -14,7 +14,7 @@ parameters. This page states what such a description gives a simulator. How
 the handlers then play it is on {doc}`signal-model`; the reading rules and the
 wire format are in {doc}`../internals/description`.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -66,14 +66,14 @@ wire format are in {doc}`../internals/description`.
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **Gradient moments.** A description holds one crusher moment for the whole sequence, `crusher_dephasing_rad` across `voxel_size_m`, given by the caller; neither file nor stream supplies it.
 - **A slice-select gradient that varies under the pulse**, as in VERSE or ramp sampling: a file's pulse is selected by the gradient at its centre.
 - **Pulses with a time shape of their own**, sampled unevenly in a Pulseq file, which are refused.
 - **A gradient that belongs to no pulse or readout**, such as a preparation's own spoiler, which no handler reinstates.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/sequence_description.png
 :width: 100%
@@ -110,7 +110,7 @@ Timestamps count from the start of the repetition read, not of the scan, so a
 description does not depend on where in the file it was taken. The repetition
 lasts the sum of its block durations.
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/01-framework/04-description-based-simulation`: a description inspected, then simulated from a Pulseq file and through two sets of handlers.
 - {doc}`../generated/autoexamples/01-framework/02-advanced-physics`: a shaped pulse from an RF definition, integrated across the slice.

@@ -13,7 +13,7 @@ through every event of the sequence. This page states which physics those
 kernels hold. The derivations and the operator-by-operator detail are in
 {doc}`../internals/epg`.
 
-## What blochsim does
+## Capabilities
 
 ::::{container} capabilities
 
@@ -60,14 +60,14 @@ kernels hold. The derivations and the operator-by-operator detail are in
 
 ::::
 
-## What blochsim leaves out
+## Division of responsibility
 
 - **Gradient moments other than one per sequence.** Every unbalanced gradient winds one order, and diffusion and flow are scaled by one crusher moment, `crusher_dephasing_rad` across `voxel_size_m`. A bipolar pair or a velocity-encoding lobe has no representation.
 - **Isochromat simulation.** A field distribution within the voxel is the Lorentzian $T_2'$ term on the samples, not a spatial ensemble.
 - **Exchange between second pools.** Each exchanges with the free water alone, and the semisolid pool's $T_2$ is fixed at 12 µs.
 - **Relaxation during a tabulated rotation.** A slice-profile or per-voxel rotation is a pure rotation; {func}`~blochsim.SampledPulse` is the route when relaxation during the pulse matters.
 
-## How it works
+## Method
 
 ```{figure} /generated/figures/epg_mechanism.png
 :width: 100%
@@ -86,7 +86,7 @@ A shift adds one order, and relaxation makes the far orders negligible. When
 contain, clamped to 8–64. The truncation error falls geometrically with the
 number of orders, so a second run with more of them measures it.
 
-### Which rotation a pulse takes
+### Pulse rotation
 
 The RF definition decides, not the call: a rectangle without slice selection
 is an instantaneous rotation, any other shape a Cayley–Klein pair tabulated
@@ -103,7 +103,7 @@ precesses the states interval by interval and $T_2'$ is refused.
 The formalism follows Hennig[^1] and Weigel[^2], the second pools Malik et
 al.[^3]
 
-## See it run
+## Examples
 
 - {doc}`../generated/autoexamples/01-framework/02-advanced-physics`: each tissue term added to a fingerprinting train in turn.
 - {doc}`../generated/autoexamples/03-sequence-optimization/01-echo-train-design`: refocusing flip angles of a fast spin echo designed through its simulated echo train.

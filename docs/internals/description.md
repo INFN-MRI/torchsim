@@ -55,7 +55,7 @@ read for two things only: the k-space trajectory that places each ADC event,
 and the slice-select amplitude under each pulse's isocentre, the magnitude of
 the vector the three axes play there.
 
-### Which repetition
+### Repetition selection
 
 The `TRSize` definition states how many blocks one repetition holds, and
 reading is refused without it: the period is declared by the design, not

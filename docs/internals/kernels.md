@@ -230,7 +230,7 @@ repetitions have not reached the state the closed form gives.
 A change to the physics brings a check of the same kind; see
 {doc}`../developer_guide`.
 
-## What the kernels do not represent
+## Scope of the kernels
 
 - **Gradient waveforms.** A description declares one crusher moment for the
   whole sequence and dephasing is quantized to whole orders, so a bipolar
