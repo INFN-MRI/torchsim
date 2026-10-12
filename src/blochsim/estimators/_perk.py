@@ -24,36 +24,37 @@ class PERK(Estimator):
 
     Parameters
     ----------
-    acquisition : Simulator, optional
+    acquisition : Simulator, default=None
         The sequence being inverted, with every property that is neither
         unknown nor measured separately already fixed. Omit to fit from
         signals passed to :meth:`fit`.
-    n_features : int, optional
-        Number of random Fourier features. Default 1000.
-    length_scale : float or torch.Tensor, optional
-        Gaussian-kernel length scale per input feature. ``None`` estimates it
-        from the training standard deviation.
-    regularization : float, optional
-        Tikhonov term added to the feature covariance. Default 1e-5.
-    chunk_size : int, optional
-        Maximum samples transformed at once. Default 65536.
-    feature_seed : int, optional
+    n_features : int, default=1000
+        Number of random Fourier features.
+    length_scale : float or torch.Tensor, default=None
+        Gaussian-kernel length scale per input feature, in signal units.
+        ``None`` estimates it from the training standard deviation.
+    regularization : float, default=1e-5
+        Tikhonov term added to the feature covariance.
+    chunk_size : int, default=65536
+        Maximum samples transformed at once.
+    feature_seed : int, default=None
         Seed of the random feature map, separate from the ``seed`` of
         :meth:`fit`. ``None`` draws one at random.
-    complex_mode : {"cartesian", "magnitude"}, optional
+    complex_mode : {"cartesian", "magnitude"}, default="cartesian"
         Complex signals enter as interleaved real and imaginary parts
-        (``"cartesian"``) or as magnitudes. Default ``"cartesian"``.
-    normalize : bool, optional
+        (``"cartesian"``) or as magnitudes.
+    normalize : bool, default=False
         Normalize each signal to unit norm before the feature map, discarding
         its amplitude. The estimator then also returns an ``M0`` map, learned
-        as the reciprocal norm of the training fingerprints. Default False.
-    stream : bool, optional
+        as the reciprocal norm of the training fingerprints.
+    stream : bool, default=False
         Simulate the training set chunk by chunk without holding it. Not
         compatible with a ``rank`` passed to :meth:`fit`; a ``subspace`` is
-        accepted. Default False.
-    uncertainty : bool, optional
-        Learn the error model behind ``uncertainty=True`` in :meth:`map` at the
-        cost of a second pass over the training source. Default True.
+        accepted.
+    uncertainty : bool, default=True
+        Learn the error model that :meth:`~Estimator.map` reads with
+        ``uncertainty=True``, at the cost of a second pass over the training
+        source. With ``False`` that request raises.
 
     Notes
     -----
@@ -143,9 +144,9 @@ class PERK(Estimator):
             sample dimensions are flattened.
         parameters : torch.Tensor
             Unknown target parameters shaped ``(samples, ..., n_parameters)``.
-        known : torch.Tensor, optional
+        known : torch.Tensor, default=None
             Known parameters appended to the regression features.
-        noise_std : float or torch.Tensor, optional
+        noise_std : float or torch.Tensor, default=0.0
             Standard deviation of Gaussian training noise. Independent noise
             is added to real and imaginary channels for complex signals.
 

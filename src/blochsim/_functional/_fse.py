@@ -29,47 +29,57 @@ def fse_sim(
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """Simulate a fast spin echo train.
 
-    Wraps :class:`~blochsim.simulators.FSESimulator`.
+    Fast (turbo) spin echo: an excitation followed by a train of refocusing
+    pulses, with one echo sampled midway between each pair, simulated with
+    extended phase graphs. The train is played twice by default so that the
+    recorded echoes start from the longitudinal magnetization left by the
+    previous train. Wraps :class:`~blochsim.simulators.FSESimulator`.
 
     Parameters
     ----------
-    flip : float or array-like
-        Refocusing flip angles in degrees, one per echo.
+    flip : array-like
+        Refocusing flip angles, in degrees, one per echo; their number is the
+        echo train length.
     ESP : float
-        Echo spacing in ms.
+        Echo spacing, in ms.
     T1 : float or array-like
-        Longitudinal relaxation time in ms.
+        Longitudinal relaxation time, in ms.
     T2 : float or array-like
-        Transverse relaxation time in ms.
-    phases : float or array-like, optional
-        Refocusing phases in degrees.
-    TR : float or array-like, optional
-        Repetition time in ms.
-    exc_flip : float, optional
-        Excitation flip angle in degrees.
-    exc_phase : float, optional
-        Excitation phase in degrees.
-    diff : str or tuple of str, optional
-        Parameters to differentiate with respect to; ``None`` returns the signal only.
-    B1 : float or array-like, optional
-        Transmit field scaling, a fraction of the nominal flip angle.
-    M0 : float or array-like, optional
-        Proton density scaling.
-    states : int, optional
-        Configuration orders retained (EPG).
-    device : str or torch.device, optional
-        Device to run on; follows the inputs when ``None``.
+        Transverse relaxation time, in ms.
+    phases : float or array-like, default=0.0
+        Refocusing RF phases, in degrees; scalar or one per echo.
+    TR : float or array-like, default=1e6
+        Repetition time, in ms, setting the longitudinal recovery between
+        trains. The default is effectively full recovery.
+    exc_flip : float, default=90.0
+        Excitation flip angle, in degrees.
+    exc_phase : float, default=90.0
+        Excitation RF phase, in degrees.
+    diff : str or tuple of str, default=None
+        Names of the properties to differentiate with respect to. ``None``
+        returns the signal alone.
+    B1 : float or array-like, default=1.0
+        Transmit field, as a fraction of the nominal flip angle.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    states : int, default=10
+        Configuration orders retained by the extended-phase-graph simulation.
+    device : str or torch.device, default=None
+        Device to run on. ``None`` follows the inputs.
     **values
-        Further tissue, protocol or run arguments accepted by
-        :meth:`~blochsim.model.Simulator.simulate`.
+        Any further property or protocol argument of the simulator, such as
+        ``B0`` or ``B1``, passed to :meth:`~blochsim.model.Simulator.simulate`.
+        Arguments given as ``None`` are dropped.
 
     Returns
     -------
-    signal : array-like
-        Signal of shape ``(..., len(flip))``.
-    jacobian : array-like
-        Derivatives with respect to ``diff``, of shape ``(..., len(diff), len(flip))``. Returned only
-        when ``diff`` is given; a single name drops the ``len(diff)`` axis.
+    signal : complex array-like
+        Signal of shape ``(..., len(flip))``, where ``...`` is the broadcast shape of
+        the tissue properties.
+    jacobian : same array type as ``signal``
+        Derivatives of the signal with respect to ``diff``, of shape
+        ``(..., len(diff), len(flip))``. Returned only when ``diff`` is given; a single name
+        omits the ``len(diff)`` axis.
     """
     return evaluated(
         FSESimulator(),

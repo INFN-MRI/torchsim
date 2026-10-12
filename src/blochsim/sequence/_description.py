@@ -29,7 +29,7 @@ _trapezoid = getattr(np, "trapezoid", None) or np.trapz
 
 
 class EventType(IntEnum):
-    """State-machine event type used by Pulserver SEQDESC streams."""
+    """Kind of a state-machine event, in the numbering of Pulserver SEQDESC streams."""
 
     WAIT = 0
     RF = 1
@@ -77,7 +77,7 @@ class RfMode(IntEnum):
 
 
 class RfUse(IntEnum):
-    """Pulseq RF-use tag.
+    """Pulseq RF-use tag of a pulse.
 
     The whole tag set, not the subset the operators that ship here happen to
     emit. A file written elsewhere may carry any of them, and an operator
@@ -94,7 +94,12 @@ class RfUse(IntEnum):
 
 
 class AdcRole(IntEnum):
-    """Relationship between ADC events in a canonical event stream."""
+    """Role of an ADC event among those that make up one echo.
+
+    ``NON_ACQUIRED`` is a window that is not sampled, ``SINGLE`` an echo read
+    by one event, ``ECHO_CENTER`` the event of a multi-event echo that sits at
+    its centre, and ``NON_CENTER`` the others.
+    """
 
     NON_ACQUIRED = 0
     SINGLE = 1
@@ -131,7 +136,18 @@ class SequenceEvent:
 
     @classmethod
     def wait(cls, timestamp_us: Any) -> SequenceEvent:
-        """Create a timing-only event."""
+        """Create an event that only marks a time.
+
+        Parameters
+        ----------
+        timestamp_us : float or torch.Tensor
+            Time of the event, in microseconds from the start of the stream.
+
+        Returns
+        -------
+        SequenceEvent
+            A ``WAIT`` event with no payload and no gradient action.
+        """
         return cls(EventType.WAIT, timestamp_us)
 
     @classmethod
@@ -147,7 +163,36 @@ class SequenceEvent:
         slice_select_gradient_hz_per_m: Any = 0.0,
         action: EventAction = EventAction.NONE,
     ) -> SequenceEvent:
-        """Create an RF event using the Pulserver SEQDESC field order."""
+        """Create an RF event in the Pulserver SEQDESC field order.
+
+        Parameters
+        ----------
+        timestamp_us : float or torch.Tensor
+            Time of the pulse, in microseconds from the start of the stream.
+        definition_id : int
+            Key of the :class:`RfDefinition` played; 0 is the ideal pulse.
+        use : RfUse
+            Pulseq RF-use tag; selects the operator a model plays it with.
+        amplitude_hz : float or torch.Tensor
+            Amplitude of the occurrence, in the units the definition is
+            normalized to. For the definitions built here and for a Pulseq
+            file it is the flip angle in radians.
+        phase_rad : float or torch.Tensor, default=0.0
+            Phase offset, in radians.
+        frequency_hz : float or torch.Tensor, default=0.0
+            Frequency offset from the centre frequency, in Hz.
+        shim_id : int, default=0
+            Key of the :class:`ShimDefinition` driving the channels; 0 for none.
+        slice_select_gradient_hz_per_m : float or torch.Tensor, default=0.0
+            Slice-select gradient played with the pulse, in Hz/m.
+        action : EventAction, default=EventAction.NONE
+            Gradient action played around the event.
+
+        Returns
+        -------
+        SequenceEvent
+            An ``RF`` event.
+        """
         return cls(
             EventType.RF,
             timestamp_us,
@@ -173,57 +218,89 @@ class SequenceEvent:
         is_echo: bool = True,
         action: EventAction = EventAction.NONE,
     ) -> SequenceEvent:
-        """Create an ADC event using the Pulserver SEQDESC field order."""
+        """Create an ADC event in the Pulserver SEQDESC field order.
+
+        Parameters
+        ----------
+        timestamp_us : float or torch.Tensor
+            Time of the sample, in microseconds from the start of the stream.
+        role : AdcRole, default=AdcRole.SINGLE
+            Role of the sample among the events of one echo.
+        phase_rad : float or torch.Tensor, default=0.0
+            Demodulation phase, in radians.
+        is_echo : bool, default=True
+            Whether the sample is at the k-space origin.
+        action : EventAction, default=EventAction.NONE
+            Gradient action played after the sample.
+
+        Returns
+        -------
+        SequenceEvent
+            An ``ADC`` event.
+        """
         return cls(EventType.ADC, timestamp_us, (role, phase_rad, int(is_echo)), action)
 
     @property
     def rf_definition_id(self) -> int:
+        """Key of the RF definition played (RF events)."""
         self._require(EventType.RF)
         return int(self.params[0])
 
     @property
     def rf_use(self) -> RfUse:
+        """Pulseq RF-use tag (RF events)."""
         self._require(EventType.RF)
         return RfUse(int(self.params[1]))
 
     @property
     def rf_amplitude_hz(self) -> Any:
+        """Amplitude of the pulse, in the units of its definition (RF events).
+
+        The flip angle in radians for the definitions built here and for a
+        Pulseq file.
+        """
         self._require(EventType.RF)
         return self.params[2]
 
     @property
     def rf_phase_rad(self) -> Any:
+        """Phase offset, in radians (RF events)."""
         self._require(EventType.RF)
         return self.params[3]
 
     @property
     def rf_frequency_hz(self) -> Any:
+        """Frequency offset, in Hz (RF events)."""
         self._require(EventType.RF)
         return self.params[4]
 
     @property
     def rf_shim_id(self) -> int:
+        """Key of the transmit shim, 0 for none (RF events)."""
         self._require(EventType.RF)
         return int(self.params[5])
 
     @property
     def slice_select_gradient_hz_per_m(self) -> Any:
+        """Slice-select gradient played with the pulse, in Hz/m (RF events)."""
         self._require(EventType.RF)
         return self.params[6]
 
     @property
     def adc_role(self) -> AdcRole:
+        """Role of the sample among the events of one echo (ADC events)."""
         self._require(EventType.ADC)
         return AdcRole(int(self.params[0]))
 
     @property
     def adc_phase_rad(self) -> Any:
+        """Demodulation phase, in radians (ADC events)."""
         self._require(EventType.ADC)
         return self.params[1]
 
     @property
     def is_echo(self) -> bool:
-        """Whether this ADC position reaches the k-space origin."""
+        """Whether the sample is at the k-space origin (ADC events)."""
         self._require(EventType.ADC)
         return bool(int(self.params[2]))
 
@@ -250,7 +327,19 @@ class RfShape:
     samples: Any = field(repr=False, compare=False)
 
     def decompress(self, scale: float = 1.0) -> np.ndarray:
-        """Return the decoded shape."""
+        """Decode the shape.
+
+        Parameters
+        ----------
+        scale : float, default=1.0
+            Factor applied to the decoded samples, e.g. ``2 * pi`` to turn a
+            phase in cycles into radians.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(num_uncompressed,)``, float32.
+        """
         return decompress_shape(self.samples, self.num_uncompressed, scale=scale)
 
 
@@ -276,13 +365,13 @@ class RfDefinition:
         is read against.
     magnitude : RfShape or tuple of RfShape
         The envelope, or one envelope per transmit channel.
-    phase : RfShape or tuple of RfShape, optional
+    phase : RfShape or tuple of RfShape, default=None
         The phase, matching ``magnitude``. ``None`` for a pulse of constant
         phase.
-    time : RfShape, optional
+    time : RfShape, default=None
         Sample times, for a pulse on a non-uniform raster. ``None`` for a
         uniform one.
-    gradient : RfShape, optional
+    gradient : RfShape, default=None
         The slice-select gradient per sample, in units ``bandwidth_hz`` is
         quoted at. ``None`` where the gradient holds.
     """
@@ -325,7 +414,20 @@ class RfDefinition:
         return len(self.magnitude) if isinstance(self.magnitude, tuple) else 1
 
     def channel_envelopes(self) -> np.ndarray:
-        """Return the normalized complex envelope per channel, ``(C, N)``."""
+        """Return the normalized complex envelope per channel.
+
+        The phase shapes are in cycles and are converted to radians.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(channels, samples)``, complex.
+
+        Raises
+        ------
+        ValueError
+            If the magnitude and phase, or the channels, differ in length.
+        """
         magnitudes = (
             self.magnitude if isinstance(self.magnitude, tuple) else (self.magnitude,)
         )
@@ -378,10 +480,16 @@ class RfDefinition:
         constant case exactly. What a spin at a normalized position accrues
         while sample ``s`` lasts is ``bandwidth_hz * position * g[s]`` in Hz.
 
+        Returns
+        -------
+        numpy.ndarray or None
+            ``(samples,)`` relative gradient; ``None`` when the gradient holds.
+
         Raises
         ------
-            ValueError: if the gradient and the envelope disagree on how many
-                samples the pulse has.
+        ValueError
+            If the gradient and the envelope disagree on how many samples the
+            pulse has.
         """
         if self.gradient is None:
             return None
@@ -406,10 +514,21 @@ class RfDefinition:
         is held constant across a sample, so a longer sample turns further and
         lets a spin off the slice centre accrue more phase.
 
+        Parameters
+        ----------
+        rf_raster_time_s : float, default=1e-6
+            RF raster that the sample times are counted in, in seconds.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``(samples,)``, float64, in seconds.
+
         Raises
         ------
-            ValueError: if the declared times and the envelope disagree on how
-                many samples the pulse has, or the times do not advance.
+        ValueError
+            If the declared times and the envelope disagree on how many
+            samples the pulse has, or the times do not advance.
         """
         samples = int(self.channel_envelopes().shape[1])
         if self.time is None or samples < 2:
@@ -432,6 +551,12 @@ class RfDefinition:
 
         Memoized on the (immutable) definition: every event naming this pulse
         asks the same question, and answering it reads the whole envelope.
+
+        Returns
+        -------
+        RfMode
+            ``DYNAMIC`` for several transmit channels, ``INSTANT`` for a
+            constant envelope without slice selection, else ``PROFILED``.
         """
         cached = getattr(self, "_mode_cache", None)
         if cached is not None:
@@ -472,6 +597,22 @@ class RfDefinition:
         sequence typically reuses one definition for every refocusing pulse and
         re-evaluates it on every simulation, so the result is memoized on the
         (immutable) definition.
+
+        Parameters
+        ----------
+        rf_raster_time_s : float, default=1e-6
+            RF raster that the sample times are counted in, in seconds.
+
+        Returns
+        -------
+        complex
+            Integral of the combined envelope over time, in seconds; 0 for a
+            single sample.
+
+        Raises
+        ------
+        ValueError
+            If the declared times and the envelope differ in length.
         """
         cache = getattr(self, "_integral_cache", None)
         if cache is None:
@@ -515,6 +656,17 @@ class RfDefinition:
 
         In 1/s. A pulse with no area saturates nothing that a flip angle can
         describe, so it reports zero.
+
+        Parameters
+        ----------
+        rf_raster_time_s : float, default=1e-6
+            RF raster that the sample times are counted in, in seconds.
+
+        Returns
+        -------
+        float
+            Saturation per squared flip angle (rad), before the lineshape at
+            the offset; negative or zero.
         """
         cache = getattr(self, "_saturation_cache", None)
         if cache is None:
@@ -549,6 +701,20 @@ class RfDefinition:
 
         Tensor amplitudes remain tensors, so both reverse- and forward-mode
         automatic differentiation pass through a description unchanged.
+
+        Parameters
+        ----------
+        amplitude_hz : float or torch.Tensor
+            Scale applied to the normalized envelope, in Hz.
+        rf_raster_time_s : float, default=1e-6
+            RF raster that the sample times are counted in, in seconds.
+
+        Returns
+        -------
+        flip_rad : float or torch.Tensor
+            Flip angle, ``2 pi |amplitude * integral|``, in radians.
+        integral_phase_rad : float or torch.Tensor
+            Phase of ``amplitude * integral``, in radians.
         """
         area = self.integral(rf_raster_time_s=rf_raster_time_s)
         try:
@@ -615,7 +781,7 @@ class SequenceDescription:
     crusher_dephasing_rad : float
         Dephasing wound across one voxel by the unbalanced gradient, in
         radians.
-    voxel_size_m : float, optional
+    voxel_size_m : float, default=None
         Voxel length the dephasing is wound across, in metres.
     rf_raster_time_s : float
         Dwell the RF shapes are sampled on, in seconds. Pulses are integrated
@@ -646,20 +812,20 @@ class SequenceDescription:
 
         Parameters
         ----------
-        *parts : Operator or tuple, optional
+        *parts : Operator or tuple
             Operators in play order, or ``(offset_s, operator)`` pairs.
-        rf_definitions : mapping, optional
+        rf_definitions : mapping, default=None
             ``{id: RfDefinition}``. One ideal pulse under id 0 when not given.
-        shim_definitions : mapping, optional
+        shim_definitions : mapping, default=None
             ``{id: ShimDefinition}``.
-        subsequence_index : int, optional
+        subsequence_index : int, default=0
             Index of the subsequence within a scan.
-        crusher_dephasing_rad : float, optional
+        crusher_dephasing_rad : float, default=0.0
             Dephasing of one crusher across a voxel, in radians. Diffusion and
             flow are zero without it.
-        voxel_size_m : float, optional
+        voxel_size_m : float, default=None
             Voxel length the dephasing is wound across, in metres.
-        start_s : float or torch.Tensor, optional
+        start_s : float or torch.Tensor, default=0.0
             Start time of the first operator, in seconds.
 
         Returns
@@ -701,6 +867,8 @@ class SequenceDescription:
         Returns
         -------
         SequenceDescription
+            One repetition, with events in microseconds from the start of the
+            repetition.
 
         Raises
         ------
@@ -719,14 +887,15 @@ class SequenceDescription:
 
         Parameters
         ----------
-        axis : matplotlib.axes.Axes, optional
+        axis : matplotlib.axes.Axes, default=None
             Axes to draw on; a new figure when not given.
-        upto_s : float, optional
+        upto_s : float, default=None
             Plot events up to this time, in seconds.
 
         Returns
         -------
         matplotlib.axes.Axes
+            The axes drawn on; time in ms against flip angle in degrees.
 
         Raises
         ------
@@ -775,7 +944,30 @@ def decompress_shape(
     *,
     scale: float = 1.0,
 ) -> np.ndarray:
-    """Decode Pulseq derivative/run-length shape compression."""
+    """Decode a Pulseq derivative and run-length encoded shape.
+
+    Parameters
+    ----------
+    packed : array-like
+        Encoded samples; the shape is stored as its differences, with a run
+        of equal differences written as the value twice and a repeat count.
+    num_uncompressed : int
+        Number of samples the shape decodes to. An array of that length is
+        taken as already decoded.
+    scale : float, default=1.0
+        Factor applied to the decoded samples.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(num_uncompressed,)``, float32.
+
+    Raises
+    ------
+    ValueError
+        If the length is negative, or the encoding is truncated, has an
+        invalid repeat count or does not expand to ``num_uncompressed``.
+    """
     packed = np.asarray(packed, dtype=np.float32).reshape(-1)
     if num_uncompressed < 0:
         raise ValueError("negative uncompressed shape length")
@@ -837,21 +1029,23 @@ def rf_definition(
         ``(channels, samples)``.
     dwell_s : float
         Sample duration, in seconds.
-    bandwidth_hz : float, optional
+    bandwidth_hz : float, default=0.0
         Pulse bandwidth, in Hz. Non-zero makes the pulse slice-selective.
-    definition_id : int, optional
+    definition_id : int, default=0
         Identifier events name the pulse by.
-    band_frequency_offsets_hz : sequence of float, optional
-        Band centres of a multiband pulse, in Hz; one to eight values. One
-        band at 0 Hz when not given.
-    band_bandwidth_hz : float, optional
-        Bandwidth of one band, in Hz. Defaults to ``bandwidth_hz``.
-    rf_raster_time_s : float, optional
+    band_frequency_offsets_hz : sequence of float, default=None
+        Band centres of a multiband pulse, in Hz; one to eight values. ``None``
+        is one band at 0 Hz.
+    band_bandwidth_hz : float, default=None
+        Bandwidth of one band, in Hz. ``None`` is ``bandwidth_hz``.
+    rf_raster_time_s : float, default=1e-6
         RF raster the sample times are expressed in, in seconds.
 
     Returns
     -------
     RfDefinition
+        Normalized envelope as magnitude and phase (in cycles) shapes on the
+        sample times ``0, dwell_s, 2 dwell_s, ...``.
 
     Raises
     ------
@@ -936,7 +1130,7 @@ def ideal_rf_definition(definition_id: int = 0) -> RfDefinition:
 
     Parameters
     ----------
-    definition_id : int, optional
+    definition_id : int, default=0
         The identifier events name this pulse by.
 
     Returns

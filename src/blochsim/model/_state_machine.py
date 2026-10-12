@@ -242,8 +242,27 @@ class EventOperators:
     Each field is called with the protocol's parameters for that event and
     decides which :class:`~blochsim.sequence.RfUse` and
     :class:`~blochsim.sequence.EventAction` its events carry. Assigning one
-    selects, for example, a readout that winds the states on or a shaped
-    excitation.
+    selects, for example, a readout followed by an unbalanced gradient or a
+    shaped excitation. The presets :data:`BALANCED`, :data:`UNBALANCED`,
+    :data:`SPOILED` and :data:`REFOCUSED` cover the standard sequence
+    families.
+
+    Parameters
+    ----------
+    excitation : callable, default=Excitation
+        Plays a pulse that tips magnetization into the transverse plane.
+    refocusing : callable, default=Refocusing
+        Plays a refocusing pulse, with the crusher gradients it sits between.
+    inversion : callable, default=Inversion
+        Plays an inversion and holds the timeline for the recovery after it.
+    saturation : callable, default=Saturation
+        Plays a saturation pulse.
+    readout : callable, default=Readout
+        Plays an ADC sample and the rest of its repetition: whether the
+        gradient after it is balanced, unbalanced (shifting every state by one
+        order) or followed by spoiling.
+    delay : callable, default=Delay
+        Plays a wait.
     """
 
     #: What a pulse that tips magnetization into the transverse plane plays.
@@ -281,18 +300,27 @@ REFOCUSED = EventOperators(readout=FSEReadout)
 class SpinPhysics:
     """The tissue properties a model exposes and the operators that realize its events.
 
-    Attributes
+    A :class:`Simulator` subclass assigns one as its ``model``. The properties
+    are the keys a caller may pass to :meth:`Simulator.simulate`; the
+    operators decide what each kind of event does to the spins (ideal or
+    shaped excitation, balanced, unbalanced or spoiled readout).
+
+    Parameters
     ----------
-    properties : mapping
+    properties : mapping, default={}
         ``{public name: tissue field}``. A name mapped to ``None`` reaches the
-        signal without reaching the tissue. Fields not named here are still
-        accepted under their public names.
-    operators : EventOperators
-        Operator factory for each kind of event.
-    fixed : mapping
-        ``{tissue field: value}`` pinned rather than exposed.
-    definitions : mapping
-        RF definitions by id. Defaults to one ideal hard pulse at id 0.
+        signal without reaching the tissue, as for a closed form. Tissue
+        fields not named here are still accepted under their public names.
+    operators : EventOperators, default=EventOperators()
+        Operator factory for each kind of event: one of :data:`BALANCED`,
+        :data:`UNBALANCED`, :data:`SPOILED`, :data:`REFOCUSED`, or a custom
+        :class:`EventOperators`.
+    fixed : mapping, default={}
+        ``{tissue field: value}`` pinned rather than exposed, such as the
+        ``t2_ms`` a spoiled sequence does not depend on.
+    definitions : mapping, default={0: ideal hard pulse}
+        RF definitions by id, in :class:`~blochsim.sequence.RfDefinition`
+        form. The shipped operators play definition 0.
     """
 
     properties: Mapping[str, str | None] = field(default_factory=lambda: _EMPTY)
@@ -306,12 +334,18 @@ class SpinPhysics:
         """Return the :class:`~blochsim.sequence.TissueProperties` for ``properties``.
 
         Fields without a value stay at their scalar defaults, so the kernels
-        omit their terms.
+        omit their terms. Values in :attr:`fixed` are applied first and are
+        overridden by a given property.
 
         Parameters
         ----------
         properties : mapping
-            ``{public name: value}``.
+            ``{public name: value}``, in public units (ms, degrees, Hz).
+
+        Returns
+        -------
+        TissueProperties
+            The values under the tissue's field names.
 
         Raises
         ------
@@ -352,9 +386,60 @@ class SpinPhysics:
 class Simulator(_SignalModel):
     """Base class of a pulse sequence protocol and its signal model.
 
-    Subclasses set :attr:`model` and implement :meth:`layout`, or implement
-    :meth:`evaluate` directly for a closed-form signal. The constructor takes
-    the keywords :meth:`simulate` takes and fixes them; a call overrides.
+    A subclass sets :attr:`model`, which says which tissue properties are
+    exposed and how each kind of event is played, and implements
+    :meth:`layout`, which returns the events of one repetition from the
+    protocol parameters. A closed-form signal implements :meth:`evaluate`
+    instead. :meth:`simulate` returns the complex signal of the ADC events
+    recorded, and :meth:`jacobian` its derivative with respect to tissue
+    properties.
+
+    The constructor fixes the keywords :meth:`simulate` takes, as protocol
+    parameters, tissue properties or run settings; a call overrides them.
+    Subclasses document their own protocol parameters; the run settings below
+    are common to all of them, and a subclass may change their class-level
+    defaults.
+
+    Parameters
+    ----------
+    **protocol : float or array-like
+        Protocol parameters (the arguments of :meth:`layout`) and tissue
+        properties to fix. Arrays may be NumPy, CuPy or torch; the signal is
+        returned in the library they were given in.
+    model : SpinPhysics, default=None
+        Replaces the class's :attr:`model`, and with it the exposed tissue
+        properties and the event operators.
+    states : int, default=None
+        Configuration orders carried by the extended-phase-graph simulation.
+        ``None`` sizes them from the dephasing in the sequence.
+    repetitions : int or "auto", default=1
+        Playings of the sequence; the last is recorded, so that the signal is
+        that of a sequence carried into the state a scanner plays it in. The
+        default is the class's own. ``"auto"`` extrapolates the steady state
+        from a few playings.
+    record : {"all", "acquired", "echo"}, default="all"
+        Which ADC events the signal holds: every one, those that acquire data,
+        or those flagged as echoes.
+    execution : str, torch.device or sequence of device, default=None
+        ``"auto"``, ``"cpu"`` or CUDA device(s). ``None`` follows the
+        enclosing :func:`~blochsim.execution` block.
+    pulse : RfDefinition, default=None
+        RF waveform replacing the ideal hard pulse of definition 0, which the
+        shipped operators play.
+    shims : mapping, default=None
+        Transmit shims by ``shim_id``. By default one channel drives every
+        pulse alike.
+    across_slice : int or ExactSliceProfile, default=None
+        Number of positions across the slice at which a shaped ``pulse`` is
+        integrated, or an ``exact_slice_profile()``. ``None`` uses the slice
+        centre only.
+    resolve : bool, default=True
+        Reuse the packed event structure across calls that change only
+        values. ``False`` rebuilds it every call.
+    crusher_dephasing_rad : float, default=0.0
+        Dephasing of the unbalanced gradient across one voxel, in rad.
+    voxel_size_m : float, default=None
+        Voxel size along the unbalanced gradient, in m.
 
     Tissue properties
     -----------------
@@ -387,9 +472,8 @@ class Simulator(_SignalModel):
     ----------
     model : SpinPhysics
         Tissue properties and event operators.
-    states : int or None
-        Configuration orders to carry. ``None`` sizes them from the winding in
-        the description.
+    protocol : mapping
+        Protocol parameters fixed by the constructor, as torch tensors.
     """
 
     model: SpinPhysics = SpinPhysics()
@@ -466,42 +550,7 @@ class Simulator(_SignalModel):
         voxel_size_m: float | None = _UNSET,
         **protocol: Any,
     ) -> None:
-        """Fix the protocol, tissue properties and run settings of a simulator.
-
-        Parameters
-        ----------
-        **protocol
-            Arguments of :meth:`layout` and tissue properties to fix, under
-            the names :meth:`simulate` takes. A call may override them.
-        model : SpinPhysics, optional
-            Replaces the class's physics.
-        states : int, optional
-            Configuration orders to carry.
-        repetitions : int or "auto", optional
-            Playings of the description; the last is recorded. Defaults to the
-            class's own (1 unless it declares otherwise). ``"auto"``
-            extrapolates the steady state from a few playings.
-        record : {"all", "acquired", "echo"}, optional
-            Which ADC events the signal holds.
-        execution : str, torch.device or sequence of device, optional
-            ``"auto"``, ``"cpu"`` or CUDA device(s). ``None`` follows the
-            enclosing :func:`~blochsim.execution` block.
-        pulse : RfDefinition, optional
-            RF waveform replacing the ideal hard pulse at definition 0.
-        shims : mapping, optional
-            Transmit shims by ``shim_id``. One channel driven alike by default.
-        across_slice : int or ExactSliceProfile, optional
-            Positions across the slice at which a shaped pulse is integrated,
-            or an ``exact_slice_profile()``. ``None`` uses the
-            slice centre only.
-        resolve : bool, optional
-            Reuse the packed event structure across calls that change only
-            values. Defaults to ``True``; ``False`` rebuilds it every call.
-        crusher_dephasing_rad : float, optional
-            Dephasing of the unbalanced gradient across one voxel, in rad.
-        voxel_size_m : float, optional
-            Voxel size along the unbalanced gradient, in m.
-        """
+        """Fix the protocol, tissue properties and run settings; see the class."""
         _no_renamed(protocol)
         self.model = model if model is not None else type(self).model
         if pulse is not None:
@@ -582,7 +631,7 @@ class Simulator(_SignalModel):
 
     @property
     def variables(self) -> tuple[str, ...]:
-        """Names of the :meth:`layout` parameters, excluding ``*args`` and ``**kwargs``."""
+        """Names of the :meth:`layout` parameters: the protocol a call takes."""
         from inspect import Parameter, signature
 
         return tuple(
@@ -681,12 +730,19 @@ class Simulator(_SignalModel):
 
         A bare operator starts where the previous one ended; an
         ``(offset_s, operator)`` pair starts ``offset_s`` seconds into the
-        repetition.
+        repetition. A subclass overrides this with the protocol parameters as
+        keyword-only arguments, in ms and degrees, and documents them on the
+        class.
 
         Parameters
         ----------
         **protocol
             The arguments named by :attr:`variables`.
+
+        Returns
+        -------
+        sequence of Operator or (float, Operator)
+            Operators from :attr:`operators`.
 
         Raises
         ------
@@ -718,6 +774,11 @@ class Simulator(_SignalModel):
 
         The constructor's protocol overridden by ``sequence``; run settings are
         dropped.
+
+        Parameters
+        ----------
+        **sequence
+            Protocol arguments of this call.
         """
         given = {
             name: value for name, value in sequence.items() if name not in RUN_SETTINGS
@@ -726,7 +787,7 @@ class Simulator(_SignalModel):
 
     @property
     def rf_raster_time_s(self) -> float:
-        """RF raster time of the shapes, in seconds."""
+        """RF raster time of the pulse shapes, in seconds."""
         if self._described is not None:
             return self._described.rf_raster_time_s
         return _RF_RASTER_TIME_S
@@ -854,12 +915,20 @@ class Simulator(_SignalModel):
         Parameters
         ----------
         properties : mapping
-            Tissue property values by public name.
+            Tissue property values by public name, as torch tensors in public
+            units (ms, degrees, Hz).
         **sequence
             Run settings (``states``, ``repetitions``, ``record``,
             ``device``, ``execution``, ``across_slice``), each defaulting to
             the constructor's, and protocol arguments overriding the
             constructor's.
+
+        Returns
+        -------
+        torch.Tensor
+            Complex signal of the recorded ADC events, of shape
+            ``(*voxel_shape, samples)``; with scalar properties there is no
+            voxel axis.
         """
         given = dict(sequence)
         states = given.pop("states", self.states)

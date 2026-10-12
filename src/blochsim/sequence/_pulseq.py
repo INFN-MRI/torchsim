@@ -330,22 +330,27 @@ def read_pulseq_description(
     source : str, Path or sequence
         A ``.seq`` file, or a sequence in memory with pypulseq's reading
         interface -- pypulseq's own ``Sequence``, or pypulseqpp's.
-    tr_index : int, optional
+    tr_index : int, default=None
         Which repetition to describe, counted in whole ``TRSize`` windows.
-        Defaults to the ``TRRef`` definition when the file carries one, and
+        ``None`` is the ``TRRef`` definition when the file carries one, and
         otherwise to the first repetition that acquires -- which is refused
         when the repetitions play different pulses, since a simulation then has
         to be told which one it stands for.
-    subsequence_index : int, optional
+    subsequence_index : int, default=0
         Which subsequence of a scan this is.
-    crusher_dephasing_rad, voxel_size_m : float, optional
-        The unbalanced gradient the sequence plays and the voxel it winds
-        across, which is what diffusion and flow are read off.
+    crusher_dephasing_rad : float, default=0.0
+        Dephasing wound across one voxel by the unbalanced gradient the
+        sequence plays, in radians; diffusion and flow are read off it and are
+        zero without it.
+    voxel_size_m : float, default=None
+        Voxel length the dephasing is wound across, in metres. ``None``
+        declares no voxel, so spin velocity has no effect.
 
     Returns
     -------
-        The stream, in the same object a description arriving from a scanner is
-        read into.
+    SequenceDescription
+        One repetition, with event times in microseconds from its start. It is
+        the object a description arriving from a scanner is read into.
 
     Raises
     ------

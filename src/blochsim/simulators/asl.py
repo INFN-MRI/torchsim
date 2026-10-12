@@ -16,14 +16,42 @@ from ._contrast import across_contrasts
 
 
 class ASLSimulator(Simulator):
-    """Label-control difference of arterial spin labelling, over time.
+    """Arterial spin labelling (ASL) control-label difference signal, in closed form.
 
     General kinetic model [1]_ for continuous, pseudo-continuous and pulsed
     labelling. Blood labelled for ``tau`` arrives after ``ATT``, is delivered at
     rate ``CBF``, and relaxes with ``T1_blood`` before arrival and with the
-    apparent tissue T1, ``1 / (1 / T1 + f / lambda)``, after exchange. The default
-    ``T1_blood``, ``partition`` and labelling efficiency are the 3 T consensus
-    values [2]_.
+    apparent tissue T1, ``1 / (1 / T1 + f / lambda)``, after exchange. The signal
+    is the real magnetization difference, zero before the labelled blood arrives.
+    The default ``T1_blood``, ``partition`` and labelling efficiency are the 3 T
+    consensus values [2]_.
+
+    Parameters
+    ----------
+    t : float or array-like
+        Times from the start of labelling, in ms.
+    tau : float or array-like
+        Labelling duration, in ms.
+    labelling : {"continuous", "pulsed"}, default="continuous"
+        Continuous (including pseudo-continuous) or pulsed labelling.
+    efficiency : float or array-like, default=None
+        Labelling efficiency; 0.85 for continuous and 0.98 for pulsed labelling
+        when not given.
+
+    Tissue properties
+    -----------------
+    CBF : float or array-like
+        Cerebral blood flow, in ml/100 g/min.
+    ATT : float or array-like
+        Arterial transit time, in ms.
+    T1 : float or array-like
+        Tissue longitudinal relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization of tissue.
+    T1_blood : float or array-like, default=1650.0
+        Longitudinal relaxation time of blood, in ms.
+    partition : float or array-like, default=0.9
+        Blood-brain partition coefficient, in ml/g.
 
     References
     ----------
@@ -75,20 +103,6 @@ class ASLSimulator(Simulator):
         efficiency: float | npt.ArrayLike | None = None,
     ) -> torch.Tensor:
         """Return the magnetization difference at each time.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``CBF`` in ml/100 g/min; ``ATT``, ``T1`` and ``T1_blood`` in ms
-            (``T1_blood`` defaults to 1650); ``partition`` in ml/g (0.9); ``M0`` scaling.
-        t : float or array-like
-            Times from the start of labelling, in ms.
-        tau : float or array-like
-            Labelling duration in ms.
-        labelling : {"continuous", "pulsed"}, optional
-            Continuous (including pseudo-continuous) or pulsed labelling.
-        efficiency : float or array-like, optional
-            Labelling efficiency; defaults to 0.85 (continuous) or 0.98 (pulsed).
 
         Raises
         ------

@@ -42,7 +42,7 @@ class Linearization:
         ``d -> J d``, from map space to measurement space.
     rmatvec : callable
         ``v -> J^H v``, real.
-    blocks : torch.Tensor, optional
+    blocks : torch.Tensor, default=None
         ``(voxels, channels, contrasts)`` per-voxel Jacobian; ``None`` where an
         encoding has mixed the voxels.
     """
@@ -127,14 +127,14 @@ def iterative(
 
     Parameters
     ----------
-    solver : LeastSquares, optional
-        Routine minimizing the damped linear problem. Defaults to deepinv's
+    solver : LeastSquares, default=None
+        Routine minimizing the damped linear problem. ``None`` is deepinv's
         ``least_squares`` (conjugate gradients); ``partial(least_squares,
         solver="lsqr")`` selects another.
-    max_iter : int, optional
-        Maximum inner iterations per Gauss-Newton step. Defaults to 50.
-    tol : float, optional
-        Relative residual tolerance. Defaults to 1e-6.
+    max_iter : int, default=50
+        Maximum inner iterations per Gauss-Newton step.
+    tol : float, default=1e-6
+        Relative residual tolerance.
 
     Returns
     -------
@@ -244,14 +244,15 @@ class Schedule:
     Iteratively regularized Gauss-Newton: steps are pulled towards the
     starting guess with a weight that decays each step. Every step is accepted.
 
-    Attributes
+    Parameters
     ----------
-    initial : float
-        First weight. Defaults to 1.
-    factor : float
-        Multiplier applied after each step, in (0, 1). Defaults to 1/3.
-    minimum : float
-        Floor of the weight. Defaults to 1e-3.
+    initial : float, default=1.0
+        First weight, on the squared norm of the step from the starting guess
+        in the solved-for variables.
+    factor : float, default=1/3
+        Multiplier applied after each step, in (0, 1).
+    minimum : float, default=1e-3
+        Floor of the weight, above 0.
     """
 
     initial: float = 1.0
@@ -293,11 +294,11 @@ class TrustRegion:
     A step is accepted per voxel only if it lowers the residual. Requires
     independent voxels, so no encoding operator.
 
-    Attributes
+    Parameters
     ----------
-    tau : float
-        First damping as a multiple of the largest diagonal curvature at the
-        start. Defaults to 1e-2.
+    tau : float, default=1e-2
+        First damping, as a multiple of the largest diagonal element of the
+        Gauss-Newton curvature ``J^H J`` of each voxel at the start. Above 0.
     """
 
     tau: float = 1e-2
@@ -340,18 +341,18 @@ class GaussNewton:
 
     Parameters
     ----------
-    damping : Schedule or TrustRegion, optional
+    damping : Schedule or TrustRegion, default=None
         Damping policy: ``Schedule`` for iteratively regularized Gauss-Newton,
-        ``TrustRegion`` for Levenberg-Marquardt. Defaults to ``Schedule()``.
-    solve : callable, optional
-        Inner solve, ``solve(linearization, rhs, damping, reference)``.
-        Defaults to :func:`direct` without an encoding and :func:`iterative`
-        with one.
-    max_iterations : int, optional
-        Maximum outer steps. Defaults to 8.
-    gradient_tolerance, step_tolerance : float, optional
+        ``TrustRegion`` for Levenberg-Marquardt. ``None`` is ``Schedule()``.
+    solve : callable, default=None
+        Inner solve, ``solve(linearization, rhs, damping, reference)``
+        returning the step. ``None`` is :func:`direct` without an encoding and
+        :func:`iterative` with one.
+    max_iterations : int, default=8
+        Maximum outer steps, at least 1.
+    gradient_tolerance, step_tolerance : float, default=1e-8
         A voxel is done when its gradient magnitude is below the first or its
-        step is short relative to its norm by the second. Default 1e-8 each.
+        step is short relative to its norm by the second.
 
     Raises
     ------
@@ -405,13 +406,15 @@ class GaussNewton:
         initial : torch.Tensor
             ``(..., channels)`` start; see
             :meth:`~blochsim.recon.ModelOperator.initial`.
-        encoding : object, optional
+        encoding : object, default=None
             Anything with ``A`` and ``A_adjoint`` (deepinv ``LinearPhysics``).
             It receives the contrast axis at axis 1.
 
         Returns
         -------
         Solution
+            Solved-for variables ``x`` of shape ``(..., channels)``, with the
+            cost history and iteration counts.
 
         Raises
         ------

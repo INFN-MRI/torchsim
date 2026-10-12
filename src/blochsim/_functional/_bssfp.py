@@ -27,43 +27,53 @@ def bssfp_sim(
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
     """Simulate the balanced SSFP steady-state signal.
 
-    Wraps :class:`~blochsim.simulators.bSSFPSimulator`.
+    Balanced steady-state free precession (bSSFP, TrueFISP, FIESTA) with
+    alternating RF phase, evaluated in closed form at the echo time; no state
+    machine is run. The signal depends on the phase accrued across one TR, so
+    ``B0`` and ``chemshift`` produce the characteristic banding. Wraps
+    :class:`~blochsim.simulators.bSSFPSimulator`.
 
     Parameters
     ----------
     flip : float or array-like
-        Excitation flip angle in degrees.
+        Excitation flip angle, in degrees. An array adds a trailing contrast
+        axis.
     TE : float or array-like
-        Echo time in ms.
+        Echo time, in ms, measured from the excitation.
     TR : float
-        Repetition time in ms.
+        Repetition time, in ms.
     T1 : float or array-like
-        Longitudinal relaxation time in ms.
+        Longitudinal relaxation time, in ms.
     T2 : float or array-like
-        Transverse relaxation time in ms.
-    diff : str or tuple of str, optional
-        Parameters to differentiate with respect to; ``None`` returns the signal only.
-    phase_inc : float, optional
-        Linear phase-cycling increment in degrees.
-    B0 : float or array-like, optional
-        Off-resonance in Hz.
-    chemshift : float or array-like, optional
-        Chemical shift in Hz.
-    M0 : float or array-like, optional
-        Proton density scaling.
-    device : str or torch.device, optional
-        Device to run on; follows the inputs when ``None``.
+        Transverse relaxation time, in ms.
+    diff : str or tuple of str, default=None
+        Names of the properties to differentiate with respect to. ``None``
+        returns the signal alone.
+    phase_inc : float, default=180.0
+        RF phase increment between successive excitations, in degrees. The
+        default is the alternating phase of the standard balanced sequence.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    chemshift : float or array-like, default=0.0
+        Chemical shift of the spins, in Hz, added to the off-resonance.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    device : str or torch.device, default=None
+        Device to run on. ``None`` follows the inputs.
     **values
-        Further tissue, protocol or run arguments accepted by
-        :meth:`~blochsim.model.Simulator.simulate`.
+        Any further property or protocol argument of the simulator, such as
+        ``B0`` or ``B1``, passed to :meth:`~blochsim.model.Simulator.simulate`.
+        Arguments given as ``None`` are dropped.
 
     Returns
     -------
-    signal : array-like
-        Signal of shape ``(..., len(flip))``.
-    jacobian : array-like
-        Derivatives with respect to ``diff``, of shape ``(..., len(diff), len(flip))``. Returned only
-        when ``diff`` is given; a single name drops the ``len(diff)`` axis.
+    signal : complex array-like
+        Signal of shape ``(..., len(flip))``, where ``...`` is the broadcast shape of
+        the tissue properties.
+    jacobian : same array type as ``signal``
+        Derivatives of the signal with respect to ``diff``, of shape
+        ``(..., len(diff), len(flip))``. Returned only when ``diff`` is given; a single name
+        omits the ``len(diff)`` axis.
     """
     return evaluated(
         bSSFPSimulator(),

@@ -21,16 +21,16 @@ class LookupTable(Estimator):
 
     Parameters
     ----------
-    acquisition : Simulator, optional
+    acquisition : Simulator, default=None
         The sequence being inverted, with every property that is neither
         unknown nor measured separately already fixed. Omit to give signals
         to :meth:`fit`.
-    combine : callable, optional
+    combine : callable, default=None
         Reduces ``(..., contrasts)`` signals to the ``(...)`` values the curve
         is in, for example the MP2RAGE unified image. Not needed for a
         single-contrast model.
-    monotonic : bool, optional
-        Keep only the longest monotonic run of the curve. Default True.
+    monotonic : bool, default=True
+        Keep only the longest monotonic run of the curve.
 
     Notes
     -----
@@ -117,10 +117,10 @@ class LookupTable(Estimator):
             column is expected.
         parameters : torch.Tensor
             ``(samples, 1)`` or ``(samples,)`` -- the single unknown.
-        known : torch.Tensor, optional
+        known : torch.Tensor, default=None
             Not supported. A table is one curve, and a property measured per
             voxel would need a curve for every voxel.
-        noise_std : float or torch.Tensor, optional
+        noise_std : float or torch.Tensor, default=0.0
             Accepted and unused. The table is the clean model a measurement is
             read against.
 
@@ -173,7 +173,7 @@ class LookupTable(Estimator):
         signals : torch.Tensor
             ``(..., contrasts)``, reduced by ``combine`` as in :meth:`fit`.
             Values outside the table's span are read as the nearer endpoint.
-        known : torch.Tensor, optional
+        known : torch.Tensor, default=None
             Not supported.
 
         Returns

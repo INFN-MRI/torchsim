@@ -115,13 +115,38 @@ def _water_and_fat(
 
 
 class MultiGradientEchoSimulator(Simulator):
-    """Water and fat, dephasing and decaying across a gradient-echo train.
+    """Multi-gradient-echo signal of water and fat, in closed form.
 
     Fat is a multi-peak spectrum [1]_ at fixed chemical shifts, so per voxel only
     the fat amount, the transverse decay and the off-resonance remain to be
     fitted. Water is ``1 - fat_fraction`` of a complex scale and fat
     ``fat_fraction`` of it, rotated by ``fat_phase``. Omitting ``T2star`` means no
-    decay; omitting ``fat_T2star`` gives fat the water ``T2star``.
+    decay; omitting ``fat_T2star`` gives fat the water ``T2star``. The signal is
+    complex, one sample per echo time.
+
+    Parameters
+    ----------
+    TE : float or array-like
+        Echo times, in ms.
+    field_strength : float or array-like, default=3.0
+        Main field, in T; sets the fat peak frequencies.
+    fat_spectrum : str, default="hamilton2011"
+        Fat spectrum, a key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.
+
+    Tissue properties
+    -----------------
+    T2star : float or array-like, default=None
+        Transverse relaxation time of water, in ms; no decay when not given.
+    fat_T2star : float or array-like, default=None
+        Transverse relaxation time of fat, in ms; ``T2star`` when not given.
+    M0 : float or array-like, default=1.0
+        Complex scale of water plus fat.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    fat_fraction : float or array-like, default=0.0
+        Fat as a fraction of the signal at zero echo time.
+    fat_phase : float or array-like, default=0.0
+        Phase of fat relative to water, in degrees.
 
     References
     ----------
@@ -164,33 +189,53 @@ class MultiGradientEchoSimulator(Simulator):
         field_strength: float | npt.ArrayLike = 3.0,
         fat_spectrum: str = "hamilton2011",
     ) -> torch.Tensor:
-        """Return the transverse magnetization at each echo time.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T2star`` and ``fat_T2star`` in ms, ``B0`` in Hz, ``fat_fraction`` as a
-            fraction of the signal, ``fat_phase`` in degrees, ``M0`` scaling.
-        TE : float or array-like
-            Echo times in ms.
-        field_strength : float or array-like, optional
-            Main field in T; sets the fat peak frequencies.
-        fat_spectrum : str, optional
-            A key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.
-        """
+        """Return the transverse magnetization at each echo time."""
         held = across_contrasts(properties, TE)
         return _water_and_fat(held, 1.0, 1.0, TE, field_strength, fat_spectrum)
 
 
 class IRMultiGradientEchoSimulator(Simulator):
-    """Multi-gradient-echo train read at a series of inversion times.
+    """Inversion-recovery multi-gradient-echo signal of water and fat, in closed form.
 
     Water and fat each recover as ``1 - (1 + inv_efficiency) exp(-TI / T1)``, and
     each echo train then dephases and decays as in
     :class:`MultiGradientEchoSimulator`. ``TI`` and ``TE`` give one contrast per
     entry, so an echo train after each of several inversion times is their
-    flattened grid. ``fat_T1`` and ``fat_inv_efficiency`` default to the water
-    values.
+    flattened grid. The signal is complex.
+
+    Parameters
+    ----------
+    TI : float or array-like
+        Inversion times, in ms.
+    TE : float or array-like
+        Echo times, in ms.
+    field_strength : float or array-like, default=3.0
+        Main field, in T; sets the fat peak frequencies.
+    fat_spectrum : str, default="hamilton2011"
+        Fat spectrum, a key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.
+
+    Tissue properties
+    -----------------
+    T1 : float or array-like
+        Longitudinal relaxation time of water, in ms.
+    fat_T1 : float or array-like, default=None
+        Longitudinal relaxation time of fat, in ms; ``T1`` when not given.
+    T2star : float or array-like, default=None
+        Transverse relaxation time of water, in ms; no decay when not given.
+    fat_T2star : float or array-like, default=None
+        Transverse relaxation time of fat, in ms; ``T2star`` when not given.
+    M0 : float or array-like, default=1.0
+        Complex scale of water plus fat.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    inv_efficiency : float or array-like, default=1.0
+        Fraction of a perfect inversion.
+    fat_inv_efficiency : float or array-like, default=None
+        Inversion efficiency of fat; ``inv_efficiency`` when not given.
+    fat_fraction : float or array-like, default=0.0
+        Fat as a fraction of the signal.
+    fat_phase : float or array-like, default=0.0
+        Phase of fat relative to water, in degrees.
 
     Examples
     --------
@@ -238,24 +283,7 @@ class IRMultiGradientEchoSimulator(Simulator):
         field_strength: float | npt.ArrayLike = 3.0,
         fat_spectrum: str = "hamilton2011",
     ) -> torch.Tensor:
-        """Return the transverse magnetization at each inversion and echo time.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1``, ``fat_T1``, ``T2star`` and ``fat_T2star`` in ms; ``B0`` in Hz;
-            ``inv_efficiency`` and ``fat_inv_efficiency`` as fractions of a perfect
-            inversion; ``fat_fraction`` as a fraction of the signal; ``fat_phase`` in
-            degrees; ``M0`` scaling.
-        TI : float or array-like
-            Inversion times in ms.
-        TE : float or array-like
-            Echo times in ms.
-        field_strength : float or array-like, optional
-            Main field in T; sets the fat peak frequencies.
-        fat_spectrum : str, optional
-            A key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.
-        """
+        """Return the transverse magnetization at each inversion and echo time."""
         held = across_contrasts(properties, TI, TE)
         inversion_s = TI * 1e-3
         water_rate = 1e3 / held["T1"]

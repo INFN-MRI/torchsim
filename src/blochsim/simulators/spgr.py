@@ -16,11 +16,34 @@ from ._contrast import across_contrasts
 
 
 class SPGRSimulator(Simulator):
-    """Spoiled gradient-echo steady state, read at the echo time.
+    """Spoiled gradient echo (SPGR, FLASH) steady state, in closed form.
 
     Spoiling leaves no transverse magnetization to carry over, so the steady state
-    is the Ernst expression [1]_ in closed form. Fitting T1 to several flip angles
-    is DESPOT1 [2]_.
+    is the Ernst expression [1]_,
+    ``M0 (1 - E1) sin(a) / (1 - E1 cos(a)) exp(-TE / T2*)`` with
+    ``E1 = exp(-TR / T1)``, times the phase ``exp(i 2 pi (chemshift - B0) TE)``
+    accrued to the echo. The signal is one complex sample; fitting T1 to several
+    flip angles is DESPOT1 [2]_.
+
+    Parameters
+    ----------
+    flip : float or array-like
+        Excitation flip angle, in degrees.
+    TR : float or array-like
+        Repetition time, in ms.
+    TE : float or array-like
+        Echo time, in ms.
+
+    Tissue properties
+    -----------------
+    T1, T2star : float or array-like
+        Longitudinal relaxation time and effective transverse relaxation time, in ms.
+    M0 : float or array-like, default=1.0
+        Equilibrium magnetization.
+    B0 : float or array-like, default=0.0
+        Off-resonance, in Hz.
+    chemshift : float or array-like, default=0.0
+        Chemical shift, in Hz.
 
     References
     ----------
@@ -66,20 +89,7 @@ class SPGRSimulator(Simulator):
         TR: float | npt.ArrayLike,
         TE: float | npt.ArrayLike,
     ) -> torch.Tensor:
-        """Return the transverse magnetization a TE after the excitation.
-
-        Parameters
-        ----------
-        properties : mapping
-            ``T1`` and ``T2star`` in ms, ``B0`` and ``chemshift`` in Hz, ``M0``
-            scaling.
-        flip : float or array-like
-            Excitation flip angle in degrees.
-        TR : float or array-like
-            Repetition time in ms.
-        TE : float or array-like
-            Echo time in ms.
-        """
+        """Return the transverse magnetization a TE after the excitation."""
         held = across_contrasts(properties, flip, TR, TE)
         angle = torch.pi / 180.0 * flip
         repetition_s = TR * 1e-3
