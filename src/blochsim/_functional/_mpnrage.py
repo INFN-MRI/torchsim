@@ -25,50 +25,45 @@ def mpnrage_sim(
     device: str | torch.device | None = None,
     **values: Any,
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-    """
-    MPnRAGE simulator wrapper.
+    """Simulate an MPnRAGE train, every shot read.
+
+    Wraps :class:`~blochsim.simulators.MPnRAGESimulator`.
 
     Parameters
     ----------
     nshots : int
-        Number of SPGR shots per inversion block.
-    flip : float | npt.ArrayLike
-        Flip angle train in degrees.
-    TR : float | npt.ArrayLike
-        Repetition time in milliseconds.
-    T1 : float | npt.ArrayLike
-        Longitudinal relaxation time in milliseconds.
-    diff : str | tuple[str], optional
-        Arguments to get the signal derivative with respect to.
-        The default is ``None`` (no differentation).
-    B1 : float | npt.ArrayLike, optional
-        Flip angle scaling map, default is ``1.0``.
-    inv_efficiency : float | npt.ArrayLike, optional
-        Inversion efficiency map, default is ``1.0``.
+        Readouts per inversion block.
+    flip : float or array-like
+        Excitation flip angle in degrees, scalar or one per shot.
+    TR : float or array-like
+        Repetition time in ms.
+    T1 : float or array-like
+        Longitudinal relaxation time in ms.
+    diff : str or tuple of str, optional
+        Parameters to differentiate with respect to; ``None`` returns the signal only.
+    B1 : float or array-like, optional
+        Transmit field scaling, a fraction of the nominal flip angle.
+    inv_efficiency : float or array-like, optional
+        Inversion efficiency, a fraction of a perfect inversion.
     M0 : float or array-like, optional
-        Proton density scaling factor, default is ``1.0``.
-    TI : float | npt.ArrayLike, optional
-        Inversion time in milliseconds.
-        The default is ``0.0``.
+        Proton density scaling.
+    TI : float, optional
+        Inversion time in ms.
     phases : float or array-like, optional
-        Sequence phase schedule in degrees. The default is ``0.0``.
-    **values : optional
-        Additional call-time tissue, protocol or run settings accepted by
-        ``Simulator.simulate``. Settings fixed only at simulator construction
-        remain class-interface features.
-    device : str | torch.device, optional
-        Computational device for simulation.
-        The default is ``None`` (infer from input).
+        Excitation phases in degrees.
+    device : str or torch.device, optional
+        Device to run on; follows the inputs when ``None``.
+    **values
+        Further tissue, protocol or run arguments accepted by
+        :meth:`~blochsim.model.Simulator.simulate`.
 
     Returns
     -------
-    sig : npt.ArrayLike
-        Signal evolution of shape ``(..., len(flip))``.
-    jac : npt.ArrayLike
-        Derivatives of signal wrt ``diff`` parameters,
-        of shape ``(..., len(diff), len(flip))``.
-        Not returned if ``diff`` is ``None``.
-
+    signal : array-like
+        Signal of shape ``(..., nshots)``.
+    jacobian : array-like
+        Derivatives with respect to ``diff``, of shape ``(..., len(diff), nshots)``. Returned only
+        when ``diff`` is given; a single name drops the ``len(diff)`` axis.
     """
     return evaluated(
         MPnRAGESimulator(),

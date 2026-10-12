@@ -1,35 +1,16 @@
 """The signal model as an operator a reconstruction can compose with.
 
 A physics-based reconstruction writes the forward operator as a chain
+``F = P . F . C . M``: sampling, Fourier encoding, coil sensitivities and the
+signal model ``M``. :class:`ModelOperator` supplies ``M`` for any simulator and
+composes with an external encoding (mri-nufft, deepinv) rather than
+reimplementing it.
 
-    F = P . F . C . M
-
--- sampling, Fourier encoding, coil sensitivities, and the signal model --
-and solves for the parameter maps ``M`` is evaluated at. Everything to the
-left of ``M`` is encoding, is the same for every quantitative sequence ever
-written, and is not ours: mri-nufft supplies it, with a deepinv bridge, and
-this module composes with it rather than reimplementing it.
-
-``M`` is the part that changes with the sequence, and it is the part a user
-should have to write. :class:`ModelOperator` turns any
-simulator into it: parameter maps in, one image per
-contrast out, with derivatives, bounds and the complex amplitude a
-reconstruction needs, and nothing about Fourier encoding anywhere in it.
-
-**The derivatives never build a Jacobian.** The model is voxel-diagonal, so
-its Jacobian is a stack of small blocks, but a Gauss-Newton step never needs
-the blocks -- it needs products with them. One forward-mode pass gives
-``J d`` for the whole volume whatever the parameter count, and one reverse
-pass gives ``J^H v``. :meth:`ModelOperator.jacobian` materializes the blocks
-for the one caller that wants them, the voxel-wise fit, where they are solved
-outright.
-
-**The amplitude is complex and the model is not.** Proton density and receive
-phase multiply whatever the sequence does, so they are carried here as one
-complex map rather than written into every model. Its two Jacobian columns are
-the model output itself, times one and times i, so it costs no pass at all --
-and a model recast on its free parameters alone, which is how an equality
-constraint is imposed, needs exactly this scale and now gets it for nothing.
+The model is voxel-diagonal, so ``J d`` is one forward-mode pass and ``J^H v``
+one reverse-mode pass over the volume; no Jacobian is built except by
+:meth:`ModelOperator.jacobian`. Proton density and receive phase are carried as
+one complex amplitude multiplying the model output; its two Jacobian columns
+are the output times one and times i.
 """
 
 from __future__ import annotations
@@ -53,39 +34,45 @@ _AMPLITUDE = ("amplitude.real", "amplitude.imag")
 class ModelOperator(torch.nn.Module):
     """A signal model over parameter maps, with its derivatives.
 
-    Maps are stacked on the **last** axis, as everywhere else in BlochSim:
-    ``(..., channels)`` in, ``(..., contrasts)`` out, every leading axis a
-    voxel axis. :meth:`physics` is where that flips to the channel-first
-    convention deepinv and mri-nufft use, and it is the only place it flips.
+    Maps are stacked on the last axis: ``(..., channels)`` in,
+    ``(..., contrasts)`` out, every leading axis a voxel axis. Only
+    :meth:`physics` moves the channel axis to the front, as deepinv expects.
 
     Parameters
     ----------
     acquisition : Simulator
-        The sequence being inverted, with every property that is not being
-        solved for already fixed on it. A property bound as a map -- a
-        measured B1, a known T1 -- is one value per voxel and rides along.
-    unknown : str, optional
-        The property names being solved for, in the order their channels
-        appear. At least one.
+        Sequence being inverted, with every property not solved for already
+        bound. A property bound as a map is one value per voxel.
+    *unknown : str
+        Names of the properties solved for, in channel order. At least one.
     bounds : mapping, optional
-        ``{name: (low, high)}``, either end ``None`` for unbounded. A bound is
-        kept by solving for a transformed variable, so no iterate is ever
-        outside it -- which matters more here than in a fit, because the model
-        is evaluated at every voxel to predict every k-space sample and one
-        voxel out of range corrupts the whole residual. A two-sided bound also
-        puts the parameter on a scale of order one whatever its units, which
-        is the preconditioning a mixed parameter set needs.
+        ``{name: (low, high)}``; either end may be ``None``. Enforced by
+        solving for a transformed variable, so no iterate leaves the bounds.
     scale : mapping, optional
-        ``{name: value}``, the size of a step in a parameter left unbounded.
-        Bounded parameters are already scaled by their interval.
+        ``{name: value}``, step scale of an unbounded parameter (default 1).
+        Bounded parameters are scaled by their interval.
     amplitude : bool, optional
-        Whether to carry a complex amplitude multiplying the model output.
-        On, which is what a reconstruction wants; off for a fit whose model
-        already exposes its own proton density.
+        Carry a complex amplitude multiplying the model output, as two extra
+        channels (real, imaginary). Defaults to ``True``.
     subspace : Subspace, optional
-        A :class:`~blochsim.Subspace` the prediction is projected through, for
-        a reconstruction that solves in the temporal basis rather than in the
-        contrasts.
+        Basis the prediction is projected onto, to solve in the temporal
+        basis rather than in the contrasts.
+
+    Raises
+    ------
+    ValueError
+        If nothing is unknown, a bound or scale names a property that is not
+        unknown, a bound is not increasing, or a scale is not positive.
+
+    Notes
+    -----
+    The operator follows the device of the maps it is called with; ``to()``
+    moves nothing.
+
+    An equality constraint is imposed by writing the model on the remaining
+    parameters. For fat-water fractions that sum to one, make the fat fraction
+    the only unknown and write water as ``1 - f`` inside the model; the
+    constraint then holds exactly at every iterate.
 
     Examples
     --------
@@ -98,27 +85,6 @@ class ModelOperator(torch.nn.Module):
         )
         maps = operator.initial((128, 128), T2=80.0)
         images = operator.A(maps)          # (128, 128, echoes), complex
-
-    Notes
-    -----
-    The operator holds nothing on a device of its own. It follows the maps it
-    is called with, taking the sequence and any bound tissue along, so there
-    is nothing here to move and ``to()`` moves nothing.
-
-    **Equality constraints are written into the model, not declared here.**
-    A constraint that fixes one parameter in terms of the others removes a
-    degree of freedom, so the way to impose it is to not have that freedom:
-    write the model on the parameters that remain. For a fat-water separation
-    whose two fractions must sum to one, make the fat fraction ``f`` the only
-    unknown and write water as ``1 - f`` inside the model. The constraint then
-    holds identically at every Gauss-Newton iterate, to the bit, rather than
-    being restored after each one.
-
-    Raises
-    ------
-    ValueError
-        If nothing is unknown, if a bound or a scale names something that is
-        not unknown, or if a bound is not increasing.
     """
 
     def __init__(
@@ -156,46 +122,44 @@ class ModelOperator(torch.nn.Module):
 
     @property
     def channels(self) -> int:
-        """How many map channels ``x`` carries."""
+        """Number of map channels of ``x``."""
         return len(self.unknown) + 2 * self.amplitude
 
     @property
     def names(self) -> tuple[str, ...]:
-        """What each channel of ``x`` is, in order."""
+        """Channel names of ``x``, in order."""
         return self.unknown + (_AMPLITUDE if self.amplitude else ())
 
     def split(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        """The maps ``x`` stands for, in their own units.
+        """Convert solved-for variables to properties in their own units.
 
         Parameters
         ----------
         x : torch.Tensor
-            ``(..., channels)``, the variables being solved for.
+            ``(..., channels)``, the variables.
 
         Returns
         -------
         dict
-            One entry per unknown, inside its bound, plus ``"amplitude"``
-            complex where one is carried.
+            One entry per unknown, inside its bound, plus complex
+            ``"amplitude"`` where carried.
         """
         given, rho = self._named(x)
         return given if rho is None else {**given, "amplitude": rho}
 
     def initial(self, shape: Sequence[int] = (), **values: Any) -> torch.Tensor:
-        """Maps to start from, as the variables actually solved for.
+        """Build starting variables from property values.
+
+        Inverse of :meth:`split`.
 
         Parameters
         ----------
         shape : sequence of int, optional
-            The voxel shape. Empty gives one voxel.
-        values : float or array-like, optional
-            ``{name: value}`` in the property's own units, one value or one
-            per voxel -- a map broadcasts against ``shape``, which is what
-            turns known parameters into a state and makes this the inverse of
-            :meth:`split`. An unknown left out starts at the middle of its
-            bound, and a one-sided or absent bound has no middle, so it must
-            be given. The amplitude starts at one unless ``amplitude=`` says
-            otherwise.
+            Voxel shape. Empty gives one voxel.
+        **values : float or array-like
+            ``{name: value}`` in the property's units, scalar or broadcastable
+            to ``shape``. An unknown left out starts at the middle of its
+            two-sided bound. ``amplitude`` (complex) defaults to 1.
 
         Returns
         -------
@@ -205,8 +169,8 @@ class ModelOperator(torch.nn.Module):
         Raises
         ------
         ValueError
-            If a property with no two-sided bound is left out, or if a value
-            sits on a bound -- a value on a bound has no unconstrained image.
+            If an unknown with no two-sided bound is left out, or a value is
+            not strictly inside its bound.
         """
         stray = set(values) - set(self.unknown) - {"amplitude"}
         if stray:
@@ -244,22 +208,20 @@ class ModelOperator(torch.nn.Module):
     # -- the operator -------------------------------------------------------
 
     def select(self, keep: torch.Tensor) -> ModelOperator:
-        """This operator over a subset of the voxels.
+        """Restrict the operator to a subset of the voxels.
 
-        A property bound as a map -- a measured B1, a known efficiency -- has
-        one value per voxel, so a loop that retires the voxels it has finished
-        has to take the maps with it. Anything that is not one value per voxel
-        is left alone.
+        Properties bound as per-voxel maps are indexed by ``keep``; other
+        bound values are unchanged.
 
         Parameters
         ----------
         keep : torch.Tensor
-            An index or a boolean mask over the voxel axis.
+            Index or boolean mask over the voxel axis.
 
         Returns
         -------
         ModelOperator
-            A copy over those voxels.
+            Copy over those voxels; ``self`` if no bound property is a map.
         """
         declared = set(self.acquisition.exposes)
         narrowed = {
@@ -275,7 +237,7 @@ class ModelOperator(torch.nn.Module):
         return chosen
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """The contrasts these maps record.
+        """Predict the contrasts of the maps.
 
         Parameters
         ----------
@@ -293,10 +255,7 @@ class ModelOperator(torch.nn.Module):
     A = forward
 
     def A_jvp(self, x: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
-        """The directional derivative ``J d``, in one forward-mode pass.
-
-        One pass whatever the channel count -- the step itself is the tangent,
-        so nothing is built column by column.
+        """Directional derivative ``J d`` by one forward-mode pass.
 
         Parameters
         ----------
@@ -316,12 +275,10 @@ class ModelOperator(torch.nn.Module):
         )
 
     def A_vjp(self, x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-        """The adjoint product ``J^H v``, in one reverse-mode pass.
+        """Adjoint product ``J^H v`` by one reverse-mode pass.
 
-        Real, because the maps are: what comes back is the real part of the
-        conjugate product, which is the gradient direction of the squared
-        modulus and the adjoint of :meth:`A_jvp` under the real inner
-        product.
+        The result is the real part of the conjugate product, the adjoint of
+        :meth:`A_jvp` under the real inner product.
 
         Parameters
         ----------
@@ -342,11 +299,10 @@ class ModelOperator(torch.nn.Module):
         )
 
     def jacobian(self, x: torch.Tensor) -> torch.Tensor:
-        """The derivative block of every voxel, built.
+        """Build the derivative block of every voxel.
 
-        Wanted where the blocks are solved outright, which is the voxel-wise
-        fit; a Gauss-Newton step under an encoding operator wants
-        :meth:`A_jvp` and :meth:`A_vjp` instead and never sees a block.
+        Used by voxel-wise fits; use :meth:`A_jvp` and :meth:`A_vjp` under an
+        encoding operator.
 
         Parameters
         ----------
@@ -363,19 +319,16 @@ class ModelOperator(torch.nn.Module):
         )
 
     def physics(self, **kwargs: Any) -> Any:
-        """This operator as a :class:`deepinv.physics.Physics`.
+        """Wrap the operator as a :class:`deepinv.physics.Physics`.
 
-        The wrapper is where the map axis moves to the front, because that is
-        the convention deepinv and mri-nufft share: ``(batch, channels, *xyz)``
-        in, ``(batch, contrasts, *xyz)`` out. Composing it with an encoding
-        operator -- ``encoding * operator.physics()`` -- gives a
-        ``ComposedPhysics`` every deepinv optimizer and prior applies to.
+        The channel axis moves to the front: ``(batch, channels, *xyz)`` in,
+        ``(batch, contrasts, *xyz)`` out. ``encoding * operator.physics()``
+        composes with an encoding operator.
 
         Parameters
         ----------
-        kwargs : dict, optional
-            Passed to :class:`deepinv.physics.Physics`, so a noise model can
-            be given.
+        **kwargs
+            Passed to :class:`deepinv.physics.Physics`, e.g. a noise model.
 
         Returns
         -------
@@ -384,15 +337,13 @@ class ModelOperator(torch.nn.Module):
         Raises
         ------
         ImportError
-            If deepinv is not installed. BlochSim does not depend on it.
+            If deepinv is not installed.
 
         Notes
         -----
-        A ``ComposedPhysics`` takes its Jacobian products by automatic
-        differentiation through the whole chain, so composing this way gives
-        up the analytic derivative below.
-        :class:`~blochsim.recon.GaussNewton` chains the two operators' own
-        products instead, and keeps it.
+        A deepinv ``ComposedPhysics`` differentiates the chain by autograd, not
+        by the analytic products of this class. :class:`~blochsim.recon.GaussNewton`
+        chains the analytic products.
         """
         try:
             from deepinv.physics import Physics

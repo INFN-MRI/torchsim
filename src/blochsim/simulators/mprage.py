@@ -16,7 +16,7 @@ from ..sequence._array import as_torch, matched
 
 
 class MPRAGESimulator(Simulator):
-    """An inversion followed by a spoiled train, sampled at the k-space centre.
+    """Inversion followed by a spoiled train, sampled at the k-space centre.
 
     Examples
     --------
@@ -57,22 +57,21 @@ class MPRAGESimulator(Simulator):
         Parameters
         ----------
         TI : float or array-like
-            Inversion time in milliseconds, measured to the sampled shot.
+            Inversion time in ms, measured to the sampled shot.
         flip : float or array-like
             Excitation flip angle in degrees, scalar or one per shot.
         TRspgr : float or array-like
-            Repetition time in milliseconds of one readout.
+            Repetition time of one readout, in ms.
         nshots : int or array-like
-            Readouts in the inversion block, either the total -- split as
-            evenly as an odd centre allows -- or ``(before, after)`` the shot
-            that samples the k-space centre.
+            Readouts in the block: a total including the sampled shot, split evenly
+            around it, or ``(before, after)`` the sampled shot.
         phases : float or array-like, optional
             Excitation phases in degrees.
 
         Raises
         ------
         ValueError
-            If the inversion time falls before the train's first excitation.
+            If the inversion time falls before the first excitation.
         """
         before, after = _shots_either_side(nshots)
         shots = before + after + 1
@@ -106,7 +105,7 @@ class MPRAGESimulator(Simulator):
         return parts
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Return the one sample the train acquires."""
+        """Return the acquired sample."""
         return 1j * super().evaluate(properties, **sequence)[..., 0]
 
 

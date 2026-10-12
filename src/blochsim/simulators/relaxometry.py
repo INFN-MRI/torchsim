@@ -22,14 +22,10 @@ from ._contrast import across_contrasts
 class InversionRecoverySimulator(Simulator):
     """Longitudinal recovery from an inversion, read at a series of delays.
 
-    A spin echo long enough after the inversion samples the longitudinal
-    magnetization alone, so the contrast is the recovery curve itself. The
-    repetition time bounds how much the magnetization has recovered by the
-    time the next inversion arrives; leave it out for a fully relaxed one.
-
-    ``offset`` is a constant added to the recovery, which is what a magnitude
-    reconstruction's noise floor looks like to a fit and what stops the
-    fitted T1 absorbing it.
+    The readout samples the longitudinal magnetization alone. When the repetition
+    time is omitted, the magnetization is fully relaxed at each inversion.
+    ``offset`` is a constant added to the recovery, such as a magnitude noise
+    floor.
 
     Examples
     --------
@@ -53,7 +49,7 @@ class InversionRecoverySimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -67,15 +63,13 @@ class InversionRecoverySimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` in milliseconds, ``M0`` as a scaling, ``inv_efficiency``
-            as a fraction of a perfect inversion, and ``offset`` as a constant
-            added to the recovery.
-        TI:
-            Inversion times in milliseconds.
-        TR:
-            Repetition time in milliseconds. Left out, the magnetization is
-            fully relaxed when each inversion arrives.
+        properties : mapping
+            ``T1`` in ms, ``inv_efficiency`` as a fraction of a perfect inversion,
+            ``offset`` added to the recovery, ``M0`` scaling.
+        TI : float or array-like
+            Inversion times in ms.
+        TR : float or array-like, optional
+            Repetition time in ms; fully relaxed at each inversion when not given.
         """
         held = across_contrasts(properties, TI, 0.0 if TR is None else TR)
         rate = 1e3 / held["T1"]
@@ -91,9 +85,8 @@ class InversionRecoverySimulator(Simulator):
 class MultiEchoSimulator(Simulator):
     """Transverse decay, read at a series of echo times.
 
-    A multi-echo spin echo decays with T2 and a multi-echo gradient echo with
-    T2*; which one is being measured is a property of the sequence that
-    produced the data, and the model is the same exponential either way.
+    The model is one exponential in the property ``T2``, which is T2 for a spin
+    echo and T2* for a gradient echo.
 
     Examples
     --------
@@ -116,7 +109,7 @@ class MultiEchoSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -129,11 +122,11 @@ class MultiEchoSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T2`` in milliseconds -- or T2* for a gradient echo -- ``M0`` as
-            a scaling, and ``offset`` as a constant added to the decay.
-        TE:
-            Echo times in milliseconds.
+        properties : mapping
+            ``T2`` in ms (T2* for a gradient echo), ``offset`` added to the decay,
+            ``M0`` scaling.
+        TE : float or array-like
+            Echo times in ms.
         """
         held = across_contrasts(properties, TE)
         decay = torch.exp(-1e3 / held["T2"] * TE * 1e-3)
@@ -143,11 +136,9 @@ class MultiEchoSimulator(Simulator):
 class DoubleAngleSimulator(Simulator):
     """Excitation at a series of flip angles, scaled by the transmit field.
 
-    What a voxel actually turns through is the nominal angle times the local
-    transmit efficiency, so a series of angles reads that efficiency out.
-    Two angles are enough, and where the second is twice the first their
-    ratio gives ``B1`` in closed form -- but nothing here requires that, so
-    any set of angles can be fitted.
+    A voxel turns through the nominal angle times ``B1``, so a series of angles
+    reads out ``B1``. Two angles suffice, and a ratio of two between them gives
+    ``B1`` in closed form; any set of angles can be fitted.
 
     Examples
     --------
@@ -169,7 +160,7 @@ class DoubleAngleSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -182,11 +173,9 @@ class DoubleAngleSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``B1`` as a fraction of the nominal transmit -- one where the
-            pulse turns through exactly the angle it asks for -- and ``M0`` as
-            a scaling.
-        flip:
+        properties : mapping
+            ``B1`` as a fraction of the nominal transmit field, ``M0`` scaling.
+        flip : float or array-like
             Nominal flip angles in degrees.
         """
         held = across_contrasts(properties, flip)

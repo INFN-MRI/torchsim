@@ -120,33 +120,28 @@ def offload(
     budget_bytes: int = _DEFAULT_BUDGET_BYTES,
     lanes: int = 1,
 ) -> Iterator[None]:
-    """Run host-resident volumes on CUDA without holding them there.
+    """Context manager that streams host-resident volumes through CUDA devices.
 
-    Inside the block a workload whose voxels are on the host still runs on
-    ``devices``, in chunks sized so that the device buffers stay within
-    ``budget_bytes`` in total. The result comes back on the host.
+    Inside the block, a workload whose voxels are on the host runs on
+    ``devices`` in chunks, and the result returns on the host.
 
-    The budget buys memory with time, and steeply once the chunks get small: a
-    chunk both fills the device less well and pays its own launch and transfer
-    latency, so quartering the budget costs far more than a quarter of the
-    throughput. Give it as much as the card can spare.
-
-    ``lanes`` is how many chunks may be in flight per device. A lane owns a
-    stream and its own buffers, so a second one lets a chunk's transfer overlap
-    another chunk's arithmetic -- but it takes its share out of the same
-    budget, and every chunk gets narrower as a result. Narrower chunks lose
-    more than the overlap recovers except when the volume was barely splitting
-    to begin with, so one lane is the default and raising it is worth measuring
-    before believing. A machine that overlaps transfers better than this one
-    would move that balance.
-
-    Whatever ``lanes`` is set to, it changes only throughput: what makes a
-    volume larger than the card runnable at all is the chunking.
+    Parameters
+    ----------
+    devices : sequence of torch.device or str, optional
+        CUDA devices to use. Defaults to ``("cuda",)``.
+    budget_bytes : int, optional
+        Total device memory for chunk buffers, in bytes. Throughput falls
+        steeply as it shrinks. Defaults to 512 MiB.
+    lanes : int, optional
+        Chunks in flight per device. Each lane takes a share of the budget, so
+        more lanes give narrower chunks. Affects throughput only. Defaults
+        to 1.
 
     Raises
     ------
-        ValueError: if ``devices`` is empty, names a device that is not CUDA,
-            or if ``budget_bytes`` or ``lanes`` is not positive.
+    ValueError
+        If ``devices`` is empty or contains a non-CUDA device, or if
+        ``budget_bytes`` or ``lanes`` is not positive.
     """
     global _OFFLOAD
     resolved = tuple(torch.device(value) for value in devices)
@@ -176,26 +171,34 @@ def execution(
     lanes: int = 1,
     reserve_bytes: int = _RESERVE_BYTES,
 ) -> Iterator[None]:
-    """Choose where work runs inside the block.
+    """Context manager that sets where per-voxel work runs.
 
-    ``target`` is ``"auto"`` to decide per call, ``"cpu"`` to insist on the
-    host, or a device or list of devices to insist on those. Deciding weighs
-    the problem against what each card has free right now: work too small to
-    repay a launch stays on the CPU, work that fits goes across in one piece,
-    and work that does not is streamed through in chunks.
+    With ``"auto"``, work too small to repay a launch stays on the CPU, work
+    that fits on the devices is sent whole, and larger work is streamed in
+    chunks. Outside a block, work runs where its tensors are.
 
-    ``stream`` overrules that last step -- ``False`` demands the whole volume
-    be resident and lets it fail if it will not fit, ``True`` streams even when
-    it would have fit. ``budget_bytes`` caps what streaming may hold, and
-    defaults to what the devices report free less ``reserve_bytes``. ``lanes``
-    is passed to :func:`offload` for streamed work and rarely wants changing.
-
-    Outside a block, work runs wherever its tensors already are.
+    Parameters
+    ----------
+    target : {"auto", "cpu"}, torch.device or sequence of device, optional
+        ``"auto"`` decides per call from the free memory of the CUDA devices;
+        otherwise the host or the named CUDA devices are used. Defaults to
+        ``"auto"``.
+    stream : bool, optional
+        ``True`` always streams in chunks; ``False`` requires the whole volume
+        to be resident, and fails if it does not fit. Default decides per call.
+    budget_bytes : int, optional
+        Cap on device memory held while streaming, in bytes. Defaults to the
+        free memory less ``reserve_bytes``.
+    lanes : int, optional
+        Chunks in flight per device, as for :func:`offload`. Defaults to 1.
+    reserve_bytes : int, optional
+        Memory left free on each device, in bytes. Defaults to 512 MiB.
 
     Raises
     ------
-        ValueError: for an empty device list, a non-CUDA device, or a
-            non-positive ``budget_bytes`` or ``lanes``.
+    ValueError
+        If the device list is empty or contains a non-CUDA device, or if
+        ``budget_bytes`` or ``lanes`` is not positive.
     """
     global _EXECUTION
     if lanes <= 0:

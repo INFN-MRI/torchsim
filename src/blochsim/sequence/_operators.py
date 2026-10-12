@@ -69,52 +69,49 @@ _TO_US = 1e6
 
 @dataclass(frozen=True)
 class Operator:
-    """One module of a sequence: what it plays, and how long it lasts.
+    """One module of a sequence: the events it plays and the time it spans.
+
+    ``a @ b`` plays two operators back to back as one operator.
 
     Parameters
     ----------
     emit : callable
-        Given the absolute time the module starts, in seconds, the events it
-        plays.
+        Maps the module's start time in seconds to the tuple of
+        ``SequenceEvent`` it plays.
     duration_s : float or torch.Tensor, optional
-        What the module holds the timeline for. Zero for a module that plays
-        instantaneously and leaves the next one to start where it did.
+        Time the module holds the timeline, in seconds. Zero leaves the next
+        module to start at the same time.
     """
 
     emit: Callable[[Any], tuple[SequenceEvent, ...]]
     duration_s: Any = 0.0
 
     def __matmul__(self, other: Operator) -> Operator:
-        """``a @ b``: the two played back to back, as one operator.
-
-        The same thing :func:`module` does for a list, spelled for the common
-        case of joining two -- a sample and the gradient after it, a pulse and
-        its crusher -- so a handler reads as the composition it is.
-        """
+        """Play ``self`` then ``other`` as one operator; durations add."""
         return module(self, other, duration_s=self.duration_s + other.duration_s)
 
 
 def compose(
     *parts: Operator | tuple[Any, Operator], start_s: Any = 0.0
 ) -> tuple[tuple[SequenceEvent, ...], Any]:
-    """Lay operators out and return their events and the span they cover.
+    """Lay operators out in time and return their events and end time.
 
-    A bare operator starts where the one before it ended. One given as
-    ``(offset_s, operator)`` starts that far after ``start_s`` instead, which
-    is how a sequence that times itself from an echo rather than by
-    accumulating says so.
+    A bare operator starts where the previous one ended. An ``(offset_s,
+    operator)`` pair starts ``offset_s`` after ``start_s``.
 
     Parameters
     ----------
-    parts : Operator or tuple, optional
-        The operators, in the order they play.
+    *parts : Operator or tuple, optional
+        Operators in play order, or ``(offset_s, operator)`` pairs.
     start_s : float or torch.Tensor, optional
-        When the first one starts.
+        Start time of the first operator, in seconds.
 
     Returns
     -------
-    tuple
-        The events at absolute times, and where the last one ended.
+    events : tuple of SequenceEvent
+        Events at absolute times.
+    end_s : float or torch.Tensor
+        End time of the last operator, in seconds.
     """
     events: list[SequenceEvent] = []
     cursor = start_s
@@ -127,12 +124,16 @@ def compose(
 
 
 def module(*parts: Operator | tuple[Any, Operator], duration_s: Any) -> Operator:
-    """Package several operators as one that can be placed and repeated.
+    """Package operators as one operator.
 
-    Offsets inside are relative to wherever the module itself is placed, which
-    is what lets a shot -- a pulse, a sample some way into the repetition, and
-    the rest of the repetition after it -- be one thing a caller lays down
-    once.
+    Offsets inside ``parts`` are relative to the start of the module.
+
+    Parameters
+    ----------
+    *parts : Operator or tuple
+        Operators in play order, or ``(offset_s, operator)`` pairs.
+    duration_s : float or torch.Tensor
+        Time the module holds the timeline, in seconds.
     """
 
     def emit(start_s: Any) -> tuple[SequenceEvent, ...]:
@@ -152,7 +153,29 @@ def Excitation(
     shim_id: int = 0,
     action: EventAction = EventAction.NONE,
 ) -> Operator:
-    """Return a pulse that tips magnetization into the transverse plane."""
+    """Return an excitation pulse.
+
+    Parameters
+    ----------
+    flip_rad : float or torch.Tensor
+        Flip angle, in radians.
+    phase_rad : float or torch.Tensor, optional
+        RF phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Time held on the timeline, in seconds.
+    definition_id : int, optional
+        RF definition played; 0 is the ideal pulse.
+    frequency_hz : float or torch.Tensor, optional
+        Frequency offset, in Hz.
+    shim_id : int, optional
+        Transmit shim definition; 0 for none.
+    action : EventAction, optional
+        Gradient action played around the pulse.
+
+    Returns
+    -------
+    Operator
+    """
 
     def emit(start_s: Any) -> tuple[SequenceEvent, ...]:
         return (
@@ -181,11 +204,28 @@ def Refocusing(
     frequency_hz: Any = 0.0,
     shim_id: int = 0,
 ) -> Operator:
-    """Return a pulse the sequence sits between crushers, unless told otherwise.
+    """Return a refocusing pulse, between crusher gradients by default.
 
-    ``crushed`` is what makes the pair of unbalanced gradients around the
-    pulse part of the module rather than something the caller remembers to
-    add.
+    Parameters
+    ----------
+    flip_rad : float or torch.Tensor
+        Flip angle, in radians.
+    phase_rad : float or torch.Tensor, optional
+        RF phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Time held on the timeline, in seconds.
+    definition_id : int, optional
+        RF definition played; 0 is the ideal pulse.
+    frequency_hz : float or torch.Tensor, optional
+        Frequency offset, in Hz.
+    shim_id : int, optional
+        Transmit shim definition; 0 for none.
+    crushed : bool, optional
+        Play an unbalanced gradient before and after the pulse.
+
+    Returns
+    -------
+    Operator
     """
     action = (
         EventAction.CRUSH_BEFORE | EventAction.CRUSH_AFTER
@@ -217,12 +257,26 @@ def Inversion(
     phase_rad: Any = 0.0,
     definition_id: int = 0,
 ) -> Operator:
-    """Return an ideal inversion, scaled by the tissue's inversion efficiency.
+    """Return an ideal inversion pulse.
 
-    The kernels answer this with ``Mz -> -efficiency * Mz`` on every order and
-    no rotation at all, so the pulse deposits nothing in a bound pool. A
-    preparation whose saturation matters is an :func:`excitation` or a
-    :func:`saturation` carrying a real waveform instead.
+    The kernels apply ``Mz -> -efficiency * Mz`` on every order with no
+    rotation, so the pulse deposits no power in a bound pool. Use
+    :func:`Saturation` for a preparation whose saturation matters.
+
+    Parameters
+    ----------
+    duration_s : float or torch.Tensor, optional
+        Time held on the timeline, in seconds.
+    flip_rad : float or torch.Tensor, optional
+        Nominal flip angle, in radians.
+    phase_rad : float or torch.Tensor, optional
+        RF phase, in radians.
+    definition_id : int, optional
+        RF definition played; 0 is the ideal pulse.
+
+    Returns
+    -------
+    Operator
     """
 
     def emit(start_s: Any) -> tuple[SequenceEvent, ...]:
@@ -250,10 +304,27 @@ def Saturation(
 ) -> Operator:
     """Return an off-resonance pulse that deposits power in a semisolid pool.
 
-    The deposit follows the waveform ``definition_id`` names and the offset it
-    is played at, read against the tissue's lineshape, so this is an
-    :class:`RfUse.EXCITATION` carrying a real shape rather than an ideal
-    rotation.
+    The deposit follows the waveform of ``definition_id`` and ``offset_hz``,
+    read against the tissue lineshape.
+
+    Parameters
+    ----------
+    definition_id : int
+        RF definition played.
+    flip_rad : float or torch.Tensor
+        Flip angle, in radians.
+    offset_hz : float or torch.Tensor, optional
+        Frequency offset from the centre frequency, in Hz.
+    phase_rad : float or torch.Tensor, optional
+        RF phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Time held on the timeline, in seconds.
+    shim_id : int, optional
+        Transmit shim definition; 0 for none.
+
+    Returns
+    -------
+    Operator
     """
 
     def emit(start_s: Any) -> tuple[SequenceEvent, ...]:
@@ -281,52 +352,42 @@ def SampledPulse(
     definition_id: int = 0,
     shim_id: int = 0,
 ) -> Operator:
-    """Return a pulse played as one hard pulse per sample, with free precession between.
+    """Return a pulse played as one hard pulse per sample, with free evolution between.
 
-    Each sample of the waveform turns the magnetization through its own area
-    at the middle of its dwell, and between two samples the magnetization
-    precesses at each pool's own frequency, relaxes and exchanges. This is the
-    hard-pulse approximation [1]_, second order in the dwell with the turns
-    centred; it is what a pulse needs whenever relaxation or exchange during
-    it matters, a saturation pulse above all, which an instantaneous rotation
-    leaves out.
-
-    A real waveform turns through its signed area, so the negative lobes of a
-    sinc turn the other way; a complex one turns about the axis its phase
-    names. Played ``offset_hz`` off the centre frequency, the axis advances by
-    ``-2 pi offset_hz`` radians per second from the start of the pulse, which
-    puts a voxel whose ``B0`` is the offset on resonance. A ``phase_rad`` or
-    ``offset_hz`` with one value per train plays one train per value.
-
-    Every sample names ``definition_id``, which decides what it deposits in a
-    semisolid pool: the ideal definition deposits nothing, and a rectangular
-    one a dwell long deposits what the sample does. A semisolid pool reads its
-    lineshape at the offset, so a definition other than the ideal one takes a
-    single offset for every train.
+    Each sample rotates the magnetization through its area at the middle of
+    its dwell; between samples each pool precesses, relaxes and exchanges
+    (hard-pulse approximation [1]_). A complex waveform rotates about the axis
+    given by its phase; a real one rotates through its signed area. An
+    ``offset_hz`` advances the rotation axis by ``-2 pi offset_hz`` rad/s from
+    the start of the pulse. A ``phase_rad`` or ``offset_hz`` with one value per
+    train plays one train per value.
 
     Parameters
     ----------
-    waveform_rad_per_s : array-like or torch.Tensor
-        The nutation rate, gamma times B1, one sample per dwell, in rad/s.
+    waveform_rad_per_s : array-like
+        Nutation rate (gamma times B1), one sample per dwell, in rad/s.
     dwell_s : float
-        How long each sample is held, in seconds.
+        Sample duration, in seconds.
     phase_rad : float or torch.Tensor, optional
-        The phase the whole pulse is played at.
+        Phase of the whole pulse, in radians.
     offset_hz : float or torch.Tensor, optional
-        How far off the centre frequency the pulse is played.
-    definition_id, shim_id : int, optional
-        The definition and transmit shim every sample names.
+        Frequency offset from the centre frequency, in Hz.
+    definition_id : int, optional
+        RF definition every sample names; sets the power deposited in a
+        semisolid pool. Non-zero requires a single offset.
+    shim_id : int, optional
+        Transmit shim definition; 0 for none.
 
     Returns
     -------
     Operator
-        The pulse, holding the timeline for every sample's dwell.
+        Holds the timeline for ``len(waveform) * dwell_s``.
 
     Raises
     ------
     ValueError
-        If the waveform is empty or the dwell is not positive, or if a
-        definition other than the ideal one is played at more than one
+        If the waveform is empty or not one-dimensional, ``dwell_s`` is not
+        positive, or a non-zero ``definition_id`` is played at more than one
         offset.
 
     References
@@ -397,11 +458,24 @@ def Readout(
     duration_s: Any = 0.0,
     action: EventAction = EventAction.NONE,
 ) -> Operator:
-    """Return one sample of the transverse magnetization, demodulated by a phase.
+    """Return one ADC sample of the transverse magnetization.
 
-    ``action`` is what the sequence plays after the sample -- ``SPOIL_AFTER``
-    for a spoiled gradient echo, ``SHIFT_AFTER`` for an unbalanced one, and
-    nothing for a train that rewinds.
+    Parameters
+    ----------
+    phase_rad : float or torch.Tensor, optional
+        Demodulation phase, in radians.
+    role : AdcRole, optional
+        Role of the sample in the event stream.
+    is_echo : bool, optional
+        Whether the sample is at the k-space origin.
+    duration_s : float or torch.Tensor, optional
+        Time held on the timeline, in seconds.
+    action : EventAction, optional
+        Gradient action played after the sample, e.g. ``SPOIL_AFTER``.
+
+    Returns
+    -------
+    Operator
     """
 
     def emit(start_s: Any) -> tuple[SequenceEvent, ...]:
@@ -419,11 +493,18 @@ def Readout(
 
 
 def Delay(duration_s: Any, *, action: EventAction = EventAction.NONE) -> Operator:
-    """Return time passing, and whatever the sequence plays across it.
+    """Return a delay, optionally carrying a gradient action.
 
-    :meth:`SequenceEvent.wait` takes no action, so a delay that spoils or
-    winds the states is built here rather than by the caller reaching for the
-    raw constructor.
+    Parameters
+    ----------
+    duration_s : float or torch.Tensor
+        Time held on the timeline, in seconds.
+    action : EventAction, optional
+        Gradient action played at the start of the delay.
+
+    Returns
+    -------
+    Operator
     """
 
     def emit(start_s: Any) -> tuple[SequenceEvent, ...]:
@@ -435,13 +516,10 @@ def Delay(duration_s: Any, *, action: EventAction = EventAction.NONE) -> Operato
 
 
 def Dephase() -> Operator:
-    """Return an unbalanced gradient, taking no time to play.
+    """Return an unbalanced gradient of zero duration.
 
-    Every configuration order winds on by one: this is the crusher a
-    refocusing pulse sits between and the unbalanced gradient an SSFP-FID
-    readout is followed by, which are the same winding played in two places.
-    How far it dephases is the description's ``crusher_dephasing_rad``, one
-    figure for the whole sequence.
+    Every configuration order advances by one. The dephasing across a voxel
+    is the description's ``crusher_dephasing_rad``.
     """
     return Operator(
         lambda start_s: (
@@ -453,11 +531,9 @@ def Dephase() -> Operator:
 
 
 def Spoil() -> Operator:
-    """Return ideal transverse spoiling, taking no time to play.
+    """Return ideal transverse spoiling of zero duration.
 
-    Every transverse order is discarded rather than wound on, which is what a
-    spoiled gradient echo assumes its spoiler and its RF phase cycling achieve
-    together.
+    Every transverse order is discarded.
     """
     return Operator(
         lambda start_s: (
@@ -475,11 +551,22 @@ def bSSFPReadout(
     role: AdcRole = AdcRole.SINGLE,
     is_echo: bool = True,
 ) -> Operator:
-    """Return a sample the repetition rewinds after.
+    """Return a sample followed by no gradient action (balanced readout).
 
-    The states are left where they were, which is what makes the sequence
-    balanced. ``duration_s`` is what is left of the repetition after the
-    sample.
+    Parameters
+    ----------
+    phase_rad : float or torch.Tensor, optional
+        Demodulation phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Repetition time remaining after the sample, in seconds.
+    role : AdcRole, optional
+        Role of the sample in the event stream.
+    is_echo : bool, optional
+        Whether the sample is at the k-space origin.
+
+    Returns
+    -------
+    Operator
     """
     return module(
         Readout(phase_rad, role=role, is_echo=is_echo),
@@ -497,7 +584,20 @@ def SSFPFidReadout(
 ) -> Operator:
     """Return a sample followed by one unbalanced gradient.
 
-    ``duration_s`` is what is left of the repetition after the sample.
+    Parameters
+    ----------
+    phase_rad : float or torch.Tensor, optional
+        Demodulation phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Repetition time remaining after the sample, in seconds.
+    role : AdcRole, optional
+        Role of the sample in the event stream.
+    is_echo : bool, optional
+        Whether the sample is at the k-space origin.
+
+    Returns
+    -------
+    Operator
     """
     return module(
         Readout(phase_rad, role=role, is_echo=is_echo),
@@ -514,17 +614,26 @@ def SSFPEchoReadout(
     role: AdcRole = AdcRole.SINGLE,
     is_echo: bool = True,
 ) -> Operator:
-    """Return one unbalanced gradient, then the sample the echo forms at.
+    """Return one unbalanced gradient followed by the sample.
 
-    The repetition's other sample. An unbalanced train winds every order on
-    once per repetition, so the order the next pulse would refocus sits at
-    zero once the gradient has played -- which is where this reads it, and
-    what makes the sample an echo of the *previous* excitation rather than a
-    free induction decay after this one. It is the strongly T2-weighted half
-    of a reversed-FISP pair, and it takes the same ideal winding
-    :func:`SSFPFidReadout` does, in the other order.
+    The sample reads the echo of the previous excitation (the T2-weighted
+    half of a reversed-FISP pair). The winding is that of
+    :func:`SSFPFidReadout`, in the other order.
 
-    ``duration_s`` is what is left of the repetition after the sample.
+    Parameters
+    ----------
+    phase_rad : float or torch.Tensor, optional
+        Demodulation phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Repetition time remaining after the sample, in seconds.
+    role : AdcRole, optional
+        Role of the sample in the event stream.
+    is_echo : bool, optional
+        Whether the sample is at the k-space origin.
+
+    Returns
+    -------
+    Operator
     """
     return module(
         Dephase(),
@@ -543,7 +652,20 @@ def SPGRReadout(
 ) -> Operator:
     """Return a sample followed by ideal transverse spoiling.
 
-    ``duration_s`` is what is left of the repetition after the sample.
+    Parameters
+    ----------
+    phase_rad : float or torch.Tensor, optional
+        Demodulation phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Repetition time remaining after the sample, in seconds.
+    role : AdcRole, optional
+        Role of the sample in the event stream.
+    is_echo : bool, optional
+        Whether the sample is at the k-space origin.
+
+    Returns
+    -------
+    Operator
     """
     return module(
         Readout(phase_rad, role=role, is_echo=is_echo),
@@ -561,10 +683,21 @@ def FSEReadout(
 ) -> Operator:
     """Return the sample at a spin echo, marked as the echo centre.
 
-    A refocused train dephases around its pulses rather than after its
-    samples, so nothing is played here -- what distinguishes this readout is
-    that the sample is the centre of an echo, which is what a reconstruction
-    reads it as. ``duration_s`` is what is left of the echo spacing after it.
+    No gradient action is played; dephasing is carried by the refocusing
+    pulses.
+
+    Parameters
+    ----------
+    phase_rad : float or torch.Tensor, optional
+        Demodulation phase, in radians.
+    duration_s : float or torch.Tensor, optional
+        Echo spacing remaining after the sample, in seconds.
+    is_echo : bool, optional
+        Whether the sample is at the k-space origin.
+
+    Returns
+    -------
+    Operator
     """
     return module(
         Readout(phase_rad, role=AdcRole.ECHO_CENTER, is_echo=is_echo),
@@ -592,11 +725,14 @@ _REGISTRY: dict[str, Callable[..., Operator]] = {
 
 
 def register_operator(name: str, factory: Callable[..., Operator]) -> None:
-    """Make an operator reachable by name.
+    """Register an operator factory under a name.
 
-    A stream that arrives already labelled -- from an MRD file, or from any
-    generator that names what it plays -- dispatches through this rather than
-    through the caller's own mapping.
+    Parameters
+    ----------
+    name : str
+        Case-insensitive; underscores are read as hyphens.
+    factory : callable
+        Returns an ``Operator``.
 
     Raises
     ------
@@ -610,7 +746,12 @@ def register_operator(name: str, factory: Callable[..., Operator]) -> None:
 
 
 def operator(name: str) -> Callable[..., Operator]:
-    """Look up an operator factory by name.
+    """Return the registered operator factory for a name.
+
+    Parameters
+    ----------
+    name : str
+        Case-insensitive; underscores are read as hyphens.
 
     Raises
     ------

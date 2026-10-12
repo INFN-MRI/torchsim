@@ -20,26 +20,18 @@ class MatchResult:
 
     Attributes
     ----------
-    parameters : torch.Tensor, optional
-        ``(..., candidates, parameters)`` -- the parameter values of the atoms
-        that matched. ``None`` where the dictionary carries no parameter
-        values, which is what a matcher fitted to signals alone has.
+    parameters : torch.Tensor or None
+        ``(..., candidates, parameters)``; ``None`` if the dictionary has no
+        parameter values.
     indices : torch.Tensor
-        ``(..., candidates)`` -- which atom each candidate is, into the
-        dictionary as it was fitted.
+        ``(..., candidates)`` atom indices into the fitted dictionary.
     scores : torch.Tensor
-        ``(..., candidates)`` -- how well each candidate matched, as the
-        normalized inner product the search maximized.
+        ``(..., candidates)`` normalized inner products the search maximized.
     scales : torch.Tensor
-        ``(..., candidates)`` -- the complex amplitude the measurement is of
-        the atom, which is the least-squares scale and carries the proton
-        density and the receive phase.
+        ``(..., candidates)`` complex least-squares amplitude of the atom in
+        the measurement (proton density and receive phase).
     densities : torch.Tensor
-        ``(..., candidates)`` -- the size of that amplitude, which is the
-        proton density. Equal to ``scales.abs()``, and read off the score and
-        the atom's own length rather than by touching the atom: a match scores
-        ``|<y_hat, a_hat>|``, so multiplying by the measurement's length and
-        dividing by the atom's is the least-squares scale already.
+        ``(..., candidates)`` proton density, equal to ``scales.abs()``.
     """
 
     parameters: torch.Tensor | None
@@ -50,57 +42,40 @@ class MatchResult:
 
 
 class DictionaryMatcher(Estimator):
-    """Match signals using normalized complex inner products.
+    """Match signals to dictionary atoms by normalized complex inner product.
 
     Parameters
     ----------
     acquisition : Simulator, optional
-        The sequence being inverted: a simulator that ships with BlochSim, one
-        written by subclassing :class:`~blochsim.model.Simulator`, or any other
-        :class:`~blochsim.model.Simulator`. Every tissue property that is
-        neither unknown nor measured separately is fixed on it beforehand, with
-        the constructor or :meth:`~blochsim.model.Simulator.bind`. Leave it
-        out to fit from signals handed to :meth:`fit` directly.
+        The sequence being inverted, with every property that is neither
+        unknown nor measured separately already fixed. Omit to give
+        ``dictionary`` or signals to :meth:`fit`.
     dictionary : torch.Tensor, optional
-        Simulated atoms shaped ``(n_atoms, n_contrasts)``. Leave it out and
-        give an ``acquisition`` instead, and the atoms are simulated from it.
+        Atoms ``(n_atoms, n_contrasts)``.
     parameters : torch.Tensor, optional
-        Parameter values shaped ``(n_atoms, n_parameters)``. If provided, a
-        call returns parameter estimates; otherwise it returns atom indices.
+        Parameter values ``(n_atoms, n_parameters)`` of the atoms. Without
+        them a call returns atom indices.
     query_chunk_size : int, optional
-        Maximum measured signals compared at once.
+        Measured signals compared at once. Default 4096.
     dictionary_chunk_size : int, optional
-        Maximum dictionary atoms compared at once.
+        Atoms compared at once. Default 16384.
     top_k : int, optional
-        Number of candidates retained by :meth:`match`. The first is the
-        conventional dictionary-matching estimate.
+        Candidates kept by :meth:`match`; the first is the estimate. Default 1.
     groups : int, optional
-        Cluster the dictionary into this many groups and match against their
-        representative signals first, ruling out whole groups before any atom
-        in them is scored. Read :attr:`grouping` afterwards: its ``condition``
-        says whether the representatives are still distinct enough to prune
-        with, and its ``compression`` says how much shorter an inner product
-        inside a group is.
+        Cluster the dictionary into this many groups and score group
+        representatives first, discarding groups before scoring their atoms
+        [1]_. See :attr:`grouping`.
     prune : float, optional
-        How far below its best group score a voxel still considers a group,
-        as a fraction of that score. Larger keeps more groups and costs more.
-        The default is the value Cauley et al. [1]_ tuned on 280 groups of
-        700 atoms; on a smaller dictionary or a coarser parameter grid it can rule
-        out the group actually holding the match, which shows up as a handful
-        of voxels landing several grid steps away. Widening it is the fix.
+        Fraction below its best group score within which a voxel still
+        considers a group. Larger keeps more groups. Default 5e-3, tuned on
+        280 groups of 700 atoms; raise it for smaller dictionaries.
 
     Notes
     -----
-    Compression comes first and is global: one temporal basis for the whole
-    dictionary, which the signals are in too. Grouping then clusters within
-    that basis, so the two savings multiply -- the basis shortens every inner
-    product, the grouping cuts how many are taken. State a ``rank`` and the
-    dictionary it matches against is compressed to ``(atoms, rank)``.
-
-    The expensive operation is a matrix product. Torch therefore dispatches
-    directly to the installed CPU BLAS or cuBLAS implementation; a separate
-    C++ or CUDA matrix-multiplication kernel would duplicate a faster
-    vendor implementation. Chunking bounds the temporary score matrix.
+    A ``rank`` given to :meth:`fit` compresses the dictionary to
+    ``(atoms, rank)`` before grouping. The estimator also returns an ``M0``
+    map, computed from the match score and atom norms without touching atoms.
+    Volumes are streamed under :func:`~blochsim.execution`.
 
     References
     ----------
@@ -152,7 +127,11 @@ class DictionaryMatcher(Estimator):
 
     @property
     def grouping(self) -> Grouping | None:
-        """How the dictionary was clustered, or ``None`` if it was not."""
+        """Clustering of the dictionary, or ``None`` without ``groups``.
+
+        Its ``condition`` is the condition number of the representatives and
+        ``compression`` the factor by which in-group inner products shorten.
+        """
         return self._grouping
 
     def _apply(self, *args: Any, **kwargs: Any) -> DictionaryMatcher:
@@ -306,7 +285,25 @@ class DictionaryMatcher(Estimator):
 
     @torch.no_grad()
     def match(self, signals: torch.Tensor) -> MatchResult:
-        """Return the top matching atoms, scores, scales, and parameters."""
+        """Find the best-matching atoms of each measured signal.
+
+        Parameters
+        ----------
+        signals : torch.Tensor
+            Measurements ``(..., contrasts)``.
+
+        Returns
+        -------
+        MatchResult
+            Fields shaped ``(..., top_k)``.
+
+        Raises
+        ------
+        RuntimeError
+            If there is no dictionary.
+        ValueError
+            If the contrast count differs from the dictionary's.
+        """
         if not self.fitted:
             raise RuntimeError("the matcher has no dictionary to match against")
         signals = torch.as_tensor(signals)

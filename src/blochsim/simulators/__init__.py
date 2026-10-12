@@ -1,8 +1,7 @@
-"""The sequences that ship with BlochSim, as simulators.
+"""The sequences that ship with BlochSim, as :class:`~blochsim.model.Simulator` subclasses.
 
-Each names its protocol arguments at construction and its tissue properties
-at the call, so parameter inference, sequence optimization and a
-reconstruction pipeline take all of them the same way.
+Protocol arguments are fixed at construction and tissue properties are given
+at the call.
 """
 
 from __future__ import annotations

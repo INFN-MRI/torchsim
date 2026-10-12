@@ -15,7 +15,7 @@ from ..sequence._array import as_torch, matched
 
 
 class MPnRAGESimulator(Simulator):
-    """An inversion followed by a spoiled gradient-echo train, every shot read.
+    """Inversion followed by a spoiled gradient-echo train, every shot read.
 
     Examples
     --------
@@ -60,9 +60,9 @@ class MPnRAGESimulator(Simulator):
         flip : float or array-like
             Excitation flip angle in degrees, scalar or one per shot.
         TR : float or array-like
-            Repetition time in milliseconds.
+            Repetition time in ms.
         TI : float or array-like, optional
-            Inversion time in milliseconds.
+            Inversion time in ms.
         phases : float or array-like, optional
             Excitation phases in degrees.
         """
@@ -86,5 +86,5 @@ class MPnRAGESimulator(Simulator):
         return parts
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Return the train the inversion recovers through."""
+        """Return the signal at every shot."""
         return 1j * super().evaluate(properties, **sequence)

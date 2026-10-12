@@ -15,43 +15,27 @@ from ._mapping import Estimator
 class LookupTable(Estimator):
     """Read one unknown back from a monotonic signal curve.
 
-    Where a model has a single unknown, a dictionary match degenerates: the
-    atoms lie on a curve rather than filling a space, and the nearest one is
-    found by looking along it. Interpolating between the two nearest atoms
-    then costs nothing and removes the grid spacing from the answer entirely,
-    which is what a matched estimate is otherwise limited by.
-
-    This is how an MP2RAGE T1 map is made [1]_. The two inversion-recovery
-    blocks are combined into one ratio per voxel, that ratio is a monotonic
-    function of T1 over the range a brain spans, and the map is the inverse of
-    that function.
+    Linear interpolation between the two nearest atoms of a one-parameter
+    model removes the dictionary grid spacing from the estimate. The classic
+    use is the MP2RAGE T1 map [1]_.
 
     Parameters
     ----------
     acquisition : Simulator, optional
-        The sequence being inverted: a simulator that ships with BlochSim, one
-        written by subclassing :class:`~blochsim.model.Simulator`, or any other
-        :class:`~blochsim.model.Simulator`. Every tissue property that is
-        neither unknown nor measured separately is fixed on it beforehand, with
-        the constructor or :meth:`~blochsim.model.Simulator.bind`. Leave it
-        out to fit from signals handed to :meth:`fit` directly.
+        The sequence being inverted, with every property that is neither
+        unknown nor measured separately already fixed. Omit to give signals
+        to :meth:`fit`.
     combine : callable, optional
-        Reduce a model's contrasts to the one number the curve is in, called
-        as ``combine(signals)`` on ``(..., contrasts)`` and returning
-        ``(...)``. Which combination makes a curve monotonic is a property of
-        the sequence, not of the table, so it is stated here rather than
-        assumed -- for MP2RAGE it is the unified image. A model with a single
-        contrast needs none.
+        Reduces ``(..., contrasts)`` signals to the ``(...)`` values the curve
+        is in, for example the MP2RAGE unified image. Not needed for a
+        single-contrast model.
     monotonic : bool, optional
-        Restrict the table to the longest monotonic run of the curve. A
-        signal curve that turns back on itself has no inverse where it turns,
-        and the turning points lie outside the range of interest.
+        Keep only the longest monotonic run of the curve. Default True.
 
     Notes
     -----
-    A lookup is a binary search and one linear blend per voxel, so this
-    estimator runs where its signals already are. Streaming a volume to a card
-    for it would spend more time on the transfer than on the search.
+    Signals outside :attr:`span` are read as the nearer endpoint. The lookup
+    runs where the signals are and is not streamed.
 
     References
     ----------
@@ -105,17 +89,12 @@ class LookupTable(Estimator):
 
     @property
     def points(self) -> int:
-        """How many points the table keeps."""
+        """Number of points in the table."""
         return int(self.intensity.numel())
 
     @property
     def span(self) -> tuple[float, float]:
-        """The signal range the table covers, low to high.
-
-        A measurement outside it is read as the nearer endpoint, so a wide
-        span is what stops a noisy background from pinning the map to a value
-        the model never produced.
-        """
+        """Signal range ``(low, high)`` covered by the table."""
         if not self.fitted:
             raise RuntimeError("the table has no curve to span")
         return float(self.intensity[0]), float(self.intensity[-1])

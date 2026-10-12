@@ -16,18 +16,13 @@ from ._contrast import across_contrasts
 
 
 class HSFPSimulator(Simulator):
-    """A balanced train whose flip angle varies slowly, in the hybrid state.
+    """Balanced train with a slowly varying flip angle, in the hybrid state.
 
-    With the flip angle varied slowly enough, the magnetization stays on the
-    spin-locked axis the train defines and only its length evolves, relaxing
-    at ``sin^2(a) / T2 + cos^2(a) / T1`` and driven by ``cos(a) / T1`` [1]_.
-    The train is played repeatedly and the recorded pass starts from where the
-    previous one ended, times ``beta``: ``-1`` for an inversion between
-    passes, which is what makes the answer sensitive to T1 and T2 at once, and
-    ``1`` for none.
-
-    The signal is the magnetization along the spin-locked axis at each pulse,
-    which for a balanced train is the transverse magnetization at the echo.
+    The magnetization stays on the spin-locked axis and only its length evolves,
+    relaxing at ``sin^2(a) / T2 + cos^2(a) / T1`` and driven by ``cos(a) / T1``
+    [1]_. The train is repeated, each pass starting from the end of the previous
+    one times ``beta``. The signal is the magnetization along the spin-locked axis
+    at each pulse, the transverse magnetization at the echo for a balanced train.
 
     References
     ----------
@@ -59,7 +54,7 @@ class HSFPSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -74,14 +69,14 @@ class HSFPSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` and ``T2`` in milliseconds, and ``M0`` as a scaling.
-        flip:
-            The flip-angle train in degrees, one entry per pulse.
-        TR:
-            Repetition time in milliseconds.
-        beta:
-            What connects the end of one pass to the start of the next.
+        properties : mapping
+            ``T1`` and ``T2`` in ms, ``M0`` scaling.
+        flip : array-like
+            Flip-angle train in degrees, one entry per pulse.
+        TR : float or array-like
+            Repetition time in ms.
+        beta : float, optional
+            Factor applied between passes: -1 for an inversion, 1 for none.
         """
         held = across_contrasts(properties, flip)
         dtype = torch.promote_types(torch.as_tensor(held["T1"]).dtype, flip.dtype)

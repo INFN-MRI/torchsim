@@ -16,57 +16,56 @@ from ._mapping import Estimator
 
 
 class PERK(Estimator):
-    """Parameter estimation via regression with kernels.
+    """Parameter estimation via regression with kernels (PERK).
 
-    This is the random-Fourier-feature form of PERK [1]_. Training accumulates
-    the
-    required covariances in chunks, so memory depends on the feature order
-    rather than the number of simulated training samples. Estimation uses only
-    ``cos`` and matrix multiplication and therefore dispatches to optimized
-    Torch CPU/CUDA kernels without a separate native implementation.
+    Kernel ridge regression from signals to parameters with Gaussian random
+    Fourier features [1]_. Training accumulates covariances in chunks, so
+    memory follows ``n_features``, not the number of training samples.
 
     Parameters
     ----------
     acquisition : Simulator, optional
-        The sequence being inverted: a simulator that ships with BlochSim, one
-        written by subclassing :class:`~blochsim.model.Simulator`, or any other
-        :class:`~blochsim.model.Simulator`. Every tissue property that is
-        neither unknown nor measured separately is fixed on it beforehand, with
-        the constructor or :meth:`~blochsim.model.Simulator.bind`. Leave it
-        out to fit from signals handed to :meth:`fit` directly.
+        The sequence being inverted, with every property that is neither
+        unknown nor measured separately already fixed. Omit to fit from
+        signals passed to :meth:`fit`.
     n_features : int, optional
-        Number of random Fourier features. The default is ``1000``.
-    length_scale : float or tensor, optional
-        Gaussian-kernel length scale for every signal/known-parameter feature.
-        ``None`` estimates it from the training standard deviation.
+        Number of random Fourier features. Default 1000.
+    length_scale : float or torch.Tensor, optional
+        Gaussian-kernel length scale per input feature. ``None`` estimates it
+        from the training standard deviation.
     regularization : float, optional
-        Tikhonov parameter added to the feature covariance. The default is
-        ``1e-5``.
+        Tikhonov term added to the feature covariance. Default 1e-5.
     chunk_size : int, optional
-        Maximum samples transformed at once. The default is ``65536``.
+        Maximum samples transformed at once. Default 65536.
     feature_seed : int, optional
-        Seed used for the fixed random feature map. Separate from the seed
-        :meth:`fit` draws the training set with.
+        Seed of the random feature map, separate from the ``seed`` of
+        :meth:`fit`. ``None`` draws one at random.
     complex_mode : {"cartesian", "magnitude"}, optional
-        Representation used for complex signals. Magnitude data are often
-        preferable when image phase is a nuisance parameter.
+        Complex signals enter as interleaved real and imaginary parts
+        (``"cartesian"``) or as magnitudes. Default ``"cartesian"``.
     normalize : bool, optional
-        Normalize every signal vector before feature projection. This removes
-        an unknown global scale when it is not itself a target.
+        Normalize each signal to unit norm before the feature map, discarding
+        its amplitude. The estimator then also returns an ``M0`` map, learned
+        as the reciprocal norm of the training fingerprints. Default False.
     stream : bool, optional
-        Simulate the training set a chunk at a time and accumulate the
-        covariances as it goes, so memory follows the feature order rather
-        than the number of training samples. The dictionary is never held, and
-        so cannot have a basis estimated from it: a ``rank`` given to
-        :meth:`fit` needs the default. A basis fitted elsewhere, passed to
-        :meth:`fit` as ``subspace=``, streams perfectly well -- each chunk is
-        projected as it is simulated.
+        Simulate the training set chunk by chunk without holding it. Not
+        compatible with a ``rank`` passed to :meth:`fit`; a ``subspace`` is
+        accepted. Default False.
+    uncertainty : bool, optional
+        Learn the error model behind ``uncertainty=True`` in :meth:`map` at the
+        cost of a second pass over the training source. Default True.
 
     Notes
     -----
-    Cartesian complex signals are represented as interleaved real/imaginary
-    features. The learned estimator remains differentiable with respect to its
-    input, which permits its use inside a larger reconstruction network.
+    The stated uncertainty is the regression's total expected error, learned
+    from the absolute residuals of its own training fit and scaled by
+    ``sqrt(pi / 2)`` to a standard deviation for a Gaussian error. It includes
+    the pull of the training prior as well as noise, so it exceeds the scatter
+    over repeated noise realizations. It is valid at the signal amplitude the
+    training set was simulated at.
+
+    Estimation is differentiable with respect to the signals. Volumes are
+    streamed under :func:`~blochsim.execution`.
 
     References
     ----------

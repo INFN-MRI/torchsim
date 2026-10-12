@@ -54,11 +54,11 @@ def fat_modulation(
 
     Parameters
     ----------
-    TE:
-        Echo times in milliseconds.
-    field_strength:
-        Main field in tesla.
-    spectrum:
+    TE : torch.Tensor
+        Echo times in ms.
+    field_strength : float or torch.Tensor
+        Main field in T.
+    spectrum : str
         A key of :data:`FAT_SPECTRA`.
 
     Returns
@@ -117,17 +117,11 @@ def _water_and_fat(
 class MultiGradientEchoSimulator(Simulator):
     """Water and fat, dephasing and decaying across a gradient-echo train.
 
-    Fat is a multi-peak spectrum [1]_ at a fixed set of chemical shifts, so
-    its signal at each echo is a known complex modulation and what is left to
-    fit per voxel is how much fat there is, the transverse decay and the
-    off-resonance. Each model BART's multi-echo fits use is a subset of the
-    properties: water and fat with a shared or separate T2*, water alone with
-    T2*, and off-resonance alone.
-
-    ``fat_fraction`` and ``fat_phase`` span the water and fat signals: with a
-    complex scale in front, water is ``(1 - fat_fraction)`` of it and fat
-    ``fat_fraction`` of it rotated by ``fat_phase``. Leaving ``T2star`` out
-    means no decay, and leaving ``fat_T2star`` out gives fat water's T2*.
+    Fat is a multi-peak spectrum [1]_ at fixed chemical shifts, so per voxel only
+    the fat amount, the transverse decay and the off-resonance remain to be
+    fitted. Water is ``1 - fat_fraction`` of a complex scale and fat
+    ``fat_fraction`` of it, rotated by ``fat_phase``. Omitting ``T2star`` means no
+    decay; omitting ``fat_T2star`` gives fat the water ``T2star``.
 
     References
     ----------
@@ -159,7 +153,7 @@ class MultiGradientEchoSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -174,15 +168,14 @@ class MultiGradientEchoSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T2star`` and ``fat_T2star`` in milliseconds, ``B0`` in Hz,
-            ``fat_fraction`` as a fraction of the signal, ``fat_phase`` in
-            degrees, and ``M0`` as a scaling.
-        TE:
-            Echo times in milliseconds.
-        field_strength:
-            Main field in tesla, which sets the fat peaks' frequencies.
-        fat_spectrum:
+        properties : mapping
+            ``T2star`` and ``fat_T2star`` in ms, ``B0`` in Hz, ``fat_fraction`` as a
+            fraction of the signal, ``fat_phase`` in degrees, ``M0`` scaling.
+        TE : float or array-like
+            Echo times in ms.
+        field_strength : float or array-like, optional
+            Main field in T; sets the fat peak frequencies.
+        fat_spectrum : str, optional
             A key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.
         """
         held = across_contrasts(properties, TE)
@@ -190,17 +183,14 @@ class MultiGradientEchoSimulator(Simulator):
 
 
 class IRMultiGradientEchoSimulator(Simulator):
-    """A multi-gradient-echo train read at a series of inversion times.
+    """Multi-gradient-echo train read at a series of inversion times.
 
-    Water and fat each recover from the inversion along their own apparent
-    T1, ``1 - (1 + inv_efficiency) exp(-TI / T1)``, as a Look-Locker readout
-    does, and each echo train then dephases and decays as in
-    :class:`MultiGradientEchoSimulator`. ``TI`` and ``TE`` give one contrast
-    per entry, so a train of echoes after each of several inversion times is
-    the flattened grid of the two.
-
-    ``fat_T1`` and ``fat_inv_efficiency`` default to water's, which is the
-    model with one recovery for both.
+    Water and fat each recover as ``1 - (1 + inv_efficiency) exp(-TI / T1)``, and
+    each echo train then dephases and decays as in
+    :class:`MultiGradientEchoSimulator`. ``TI`` and ``TE`` give one contrast per
+    entry, so an echo train after each of several inversion times is their
+    flattened grid. ``fat_T1`` and ``fat_inv_efficiency`` default to the water
+    values.
 
     Examples
     --------
@@ -236,7 +226,7 @@ class IRMultiGradientEchoSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -252,18 +242,18 @@ class IRMultiGradientEchoSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1``, ``fat_T1``, ``T2star`` and ``fat_T2star`` in milliseconds,
-            ``B0`` in Hz, ``inv_efficiency`` and ``fat_inv_efficiency`` as
-            fractions of a perfect inversion, ``fat_fraction`` as a fraction
-            of the signal, ``fat_phase`` in degrees, and ``M0`` as a scaling.
-        TI:
-            Inversion times in milliseconds.
-        TE:
-            Echo times in milliseconds.
-        field_strength:
-            Main field in tesla, which sets the fat peaks' frequencies.
-        fat_spectrum:
+        properties : mapping
+            ``T1``, ``fat_T1``, ``T2star`` and ``fat_T2star`` in ms; ``B0`` in Hz;
+            ``inv_efficiency`` and ``fat_inv_efficiency`` as fractions of a perfect
+            inversion; ``fat_fraction`` as a fraction of the signal; ``fat_phase`` in
+            degrees; ``M0`` scaling.
+        TI : float or array-like
+            Inversion times in ms.
+        TE : float or array-like
+            Echo times in ms.
+        field_strength : float or array-like, optional
+            Main field in T; sets the fat peak frequencies.
+        fat_spectrum : str, optional
             A key of :data:`~blochsim.simulators.gradient_echo.FAT_SPECTRA`.
         """
         held = across_contrasts(properties, TI, TE)

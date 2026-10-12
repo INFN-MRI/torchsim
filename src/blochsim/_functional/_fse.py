@@ -27,58 +27,49 @@ def fse_sim(
     device: str | torch.device | None = None,
     **values: Any,
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-    """
-    Fast Spin Echo simulator wrapper.
+    """Simulate a fast spin echo train.
+
+    Wraps :class:`~blochsim.simulators.FSESimulator`.
 
     Parameters
     ----------
-    flip : float | npt.ArrayLike
-        Refocusing flip angle train in degrees.
+    flip : float or array-like
+        Refocusing flip angles in degrees, one per echo.
     ESP : float
-        Echo spacing in milliseconds.
-    phases : float | npt.ArrayLike, optional
-        Refocusing flip angle phases in degrees.
-        The default is ``0.0``.
-    TR : float | npt.ArrayLike, optional
-        Repetition time in milliseconds.
-        The default is ``1e6``.
+        Echo spacing in ms.
+    T1 : float or array-like
+        Longitudinal relaxation time in ms.
+    T2 : float or array-like
+        Transverse relaxation time in ms.
+    phases : float or array-like, optional
+        Refocusing phases in degrees.
+    TR : float or array-like, optional
+        Repetition time in ms.
     exc_flip : float, optional
-        Excitation flip angle train in degrees.
-        The default is ``90.0``.
+        Excitation flip angle in degrees.
     exc_phase : float, optional
-        Excitation flip angle phase in degrees.
-        The default is ``90.0``.
-    T1 : float | npt.ArrayLike
-        Longitudinal relaxation time in milliseconds.
-    T2 : float | npt.ArrayLike
-        Transverse relaxation time in milliseconds.
-    diff : str | tuple[str], optional
-        Arguments to get the signal derivative with respect to.
-        The default is ``None`` (no differentation).
-    B1 : float | npt.ArrayLike, optional
-        Flip angle scaling map, default is ``1.0``.
+        Excitation phase in degrees.
+    diff : str or tuple of str, optional
+        Parameters to differentiate with respect to; ``None`` returns the signal only.
+    B1 : float or array-like, optional
+        Transmit field scaling, a fraction of the nominal flip angle.
     M0 : float or array-like, optional
-        Proton density scaling factor, default is ``1.0``.
+        Proton density scaling.
     states : int, optional
-        Number of EPG states to be retained.
-        The default is ``10``.
-    **values : optional
-        Additional call-time tissue, protocol or run settings accepted by
-        ``Simulator.simulate``. Settings fixed only at simulator construction
-        remain class-interface features.
-    device : str | torch.device, optional
-        Computational device for simulation.
-        The default is ``None`` (infer from input).
+        Configuration orders retained (EPG).
+    device : str or torch.device, optional
+        Device to run on; follows the inputs when ``None``.
+    **values
+        Further tissue, protocol or run arguments accepted by
+        :meth:`~blochsim.model.Simulator.simulate`.
 
     Returns
     -------
-    sig : npt.ArrayLike
-        Signal evolution of shape ``(..., len(flip))``.
-    jac : npt.ArrayLike
-        Derivatives of signal wrt ``diff`` parameters,
-        of shape ``(..., len(diff), len(flip))``.
-        Not returned if ``diff`` is ``None``.
-
+    signal : array-like
+        Signal of shape ``(..., len(flip))``.
+    jacobian : array-like
+        Derivatives with respect to ``diff``, of shape ``(..., len(diff), len(flip))``. Returned only
+        when ``diff`` is given; a single name drops the ``len(diff)`` axis.
     """
     return evaluated(
         FSESimulator(),

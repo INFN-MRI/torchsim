@@ -1,4 +1,4 @@
-"""B1 rms estimation subroutines."""
+"""B1 rms estimation."""
 
 __all__ = ["b1rms"]
 
@@ -10,24 +10,21 @@ gamma = 2 * np.pi * 42.58 * 1e6
 
 
 def b1rms(duration: float, rf_envelope: npt.ArrayLike, rescale: bool = False) -> float:
-    """
-    Compute root-mean-squared B1 for a given RF pulse.
+    """Compute the root-mean-square B1 of an RF pulse.
 
     Parameters
     ----------
     duration : float
-        RF pulse duration in ``[s]``.
-    rf_envelope : npt.ArrayLike
-        RF waveform temporal envelope in ``[T]``.
+        Pulse duration in s.
+    rf_envelope : array-like
+        RF waveform envelope in T, uniformly sampled over ``duration``.
     rescale : bool, optional
-        If ``True``, rescale pulse to compute B1 rms for a
-        ``1 [rad]`` pulse. The default is ``False``.
+        Scale the pulse to a 1 rad flip angle first. Defaults to ``False``.
 
     Returns
     -------
     float
-        B1 rms for the input RF pulse.
-
+        B1 rms in T.
     """
     dt = duration / len(rf_envelope)  # sampling time in [s]
 

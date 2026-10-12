@@ -17,23 +17,21 @@ from ._pulses import excitation, inversion_parts
 
 
 class FLASHSimulator(Simulator):
-    """A spoiled gradient-echo train from equilibrium, optionally inverted first.
+    """Spoiled gradient-echo train from equilibrium, optionally inverted first.
 
-    Every excitation is a windowed sinc played sample by sample, so the
-    magnetization relaxes, precesses off resonance and exchanges between pools
-    while the pulse plays, unless ``pulse_duration`` is zero and it is an
-    instantaneous rotation. The transverse magnetization is spoiled after each
-    sample: ideally, or with ``rf_spoiling`` by a quadratic cycle of the
-    excitation phase and a gradient that winds one configuration order per
-    repetition [2]_, the sample then demodulated by its pulse's phase. With
-    ``inversion`` the train is the inversion-recovery FLASH of Look-Locker T1
-    mapping [1]_. This is the sequence BART's ``sim`` plays as ``FLASH`` and
-    ``IR-FLASH``, and with instantaneous pulses and the sample at the pulse,
+    Each excitation is a windowed sinc played sample by sample, or an
+    instantaneous rotation when ``pulse_duration`` is zero. Transverse
+    magnetization is spoiled ideally, or by RF spoiling with a gradient winding
+    one configuration order per repetition [2]_; with ``inversion`` the train is
+    the inversion-recovery FLASH of Look-Locker T1 mapping [1]_. When ``states``
+    is not given, one order is kept under ideal spoiling and up to one per
+    repetition, to the engine's limit, under RF spoiling.
+
+    Notes
+    -----
+    Corresponds to the sequences BART's ``sim`` plays as ``FLASH`` and
+    ``IR-FLASH``, and with instantaneous pulses and the sample at the pulse to
     the one its ``epg`` plays as FLASH.
-
-    The configuration orders are sized from the winding when ``states`` is not
-    given: one under ideal spoiling, and one per repetition up to the engine's
-    limit under RF spoiling.
 
     References
     ----------
@@ -95,42 +93,36 @@ class FLASHSimulator(Simulator):
         flip : float or array-like
             Flip angle in degrees, scalar or one per shot.
         TR : float
-            Repetition time in milliseconds, pulse centre to pulse centre.
+            Repetition time in ms, pulse centre to pulse centre.
         TE : float
-            Echo time in milliseconds, from the centre of the pulse.
+            Echo time in ms, from the pulse centre.
         nshots : int
             Excitations in the train.
         pulse_duration : float, optional
-            Duration of each excitation in milliseconds. Zero plays each as an
-            instantaneous rotation.
+            Excitation duration in ms; zero is an instantaneous rotation.
         bandwidth_time : float, optional
             Zero crossings of the Hamming-windowed sinc across the pulse.
         inversion : {None, "ideal", "adiabatic"}, optional
-            What prepares the train: nothing, an instantaneous inversion
-            scaled by ``inv_efficiency``, or a hyperbolic secant played sample
-            by sample.
+            Preparation: none, an instantaneous inversion scaled by
+            ``inv_efficiency``, or a sampled hyperbolic secant.
         inversion_duration : float, optional
-            Duration of the adiabatic inversion in milliseconds.
+            Duration of the adiabatic inversion in ms.
         inversion_phase : float, optional
-            Phase of the adiabatic inversion in degrees, relative to the
-            train's first pulse, which decides where the transverse
-            magnetization the inversion leaves points.
+            Phase of the adiabatic inversion in degrees, relative to the first pulse.
         spoiler : float, optional
-            Time in milliseconds between the inversion and the train, at the
-            end of which the transverse magnetization is spoiled.
+            Time in ms between inversion and train, ending in a spoiler.
         dwell : float, optional
-            How long each sample of a pulse is held, in milliseconds.
+            Hold time of each pulse sample in ms.
         rf_spoiling : float, optional
-            The RF spoiling increment in degrees: the n-th excitation, counted
-            from zero, is played at ``rf_spoiling * n (n + 1) / 2``. Not given,
-            the transverse magnetization is spoiled ideally.
+            RF-spoiling phase increment in degrees: excitation ``n``, from zero, has
+            phase ``rf_spoiling * n * (n + 1) / 2``. Ideal spoiling when not given.
 
         Raises
         ------
         ValueError
-            If the sample falls inside the pulse or after the next one, if
-            ``flip`` is neither scalar nor one per shot, or if a pulse is not
-            a whole number of samples.
+            If the sample falls inside the pulse or after the next one, if ``flip``
+            is neither scalar nor one per shot, or if a pulse is not a whole number
+            of samples.
         """
         pulse_s, dwell_s = 1e-3 * pulse_duration, 1e-3 * dwell
         repetition_s, echo_s = 1e-3 * TR, 1e-3 * TE

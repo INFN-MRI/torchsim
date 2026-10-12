@@ -16,17 +16,14 @@ from ._contrast import across_contrasts
 
 
 class ASLSimulator(Simulator):
-    """The label-control difference of arterial spin labelling, over time.
+    """Label-control difference of arterial spin labelling, over time.
 
-    The general kinetic model [1]_: labelled blood arrives after the arterial
-    transit time ``ATT``, is delivered at the blood flow ``CBF`` for the
-    labelling duration, and relaxes with the blood's T1 before it arrives and
-    with the tissue's apparent T1, ``1 / (1 / T1 + f / lambda)``, once it has
-    exchanged into tissue. Continuous and pseudo-continuous labelling deliver
-    a bolus of constant concentration; pulsed labelling one whose tail left
-    the labelling slab earlier and has relaxed for longer. The defaults for
-    the blood's T1, the partition coefficient and the labelling efficiency
-    are the consensus values at 3 T [2]_.
+    General kinetic model [1]_ for continuous, pseudo-continuous and pulsed
+    labelling. Blood labelled for ``tau`` arrives after ``ATT``, is delivered at
+    rate ``CBF``, and relaxes with ``T1_blood`` before arrival and with the
+    apparent tissue T1, ``1 / (1 / T1 + f / lambda)``, after exchange. The default
+    ``T1_blood``, ``partition`` and labelling efficiency are the 3 T consensus
+    values [2]_.
 
     References
     ----------
@@ -65,7 +62,7 @@ class ASLSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -81,26 +78,22 @@ class ASLSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``CBF`` in ml/100 g/min, ``ATT``, ``T1`` and ``T1_blood`` in
-            milliseconds (``T1_blood`` 1650 when not given), ``partition`` as
-            the blood-brain partition coefficient in ml/g (0.9 when not
-            given), and ``M0`` as the tissue's equilibrium magnetization.
-        t:
-            Times from the start of labelling, in milliseconds.
-        tau:
-            Labelling duration in milliseconds.
-        labelling:
-            ``"continuous"`` for continuous and pseudo-continuous labelling,
-            ``"pulsed"`` for pulsed.
-        efficiency:
-            Labelling efficiency; 0.85 for continuous labelling and 0.98 for
-            pulsed when not given.
+        properties : mapping
+            ``CBF`` in ml/100 g/min; ``ATT``, ``T1`` and ``T1_blood`` in ms
+            (``T1_blood`` defaults to 1650); ``partition`` in ml/g (0.9); ``M0`` scaling.
+        t : float or array-like
+            Times from the start of labelling, in ms.
+        tau : float or array-like
+            Labelling duration in ms.
+        labelling : {"continuous", "pulsed"}, optional
+            Continuous (including pseudo-continuous) or pulsed labelling.
+        efficiency : float or array-like, optional
+            Labelling efficiency; defaults to 0.85 (continuous) or 0.98 (pulsed).
 
         Raises
         ------
         ValueError
-            If ``labelling`` is neither of the two.
+            If ``labelling`` is neither ``"continuous"`` nor ``"pulsed"``.
         """
         if labelling not in ("continuous", "pulsed"):
             raise ValueError(

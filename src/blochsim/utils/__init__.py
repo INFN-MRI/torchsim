@@ -1,4 +1,4 @@
-"""Utilities subroutines."""
+"""Utilities."""
 
 __all__ = []
 

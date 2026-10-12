@@ -237,17 +237,13 @@ _HANDLER_SLOTS = (
 
 @dataclass(frozen=True)
 class EventOperators:
-    """Which operator plays each kind of event.
+    """Operator factories, one per kind of event.
 
-    Each field is an operator factory, called with the parameters the protocol
-    has for that event. Assigning one is how a sequence says that its readouts
-    wind the states on, or that its excitation is a shaped pulse rather than an
-    ideal rotation.
-
-    These are roles a sequence is written in terms of, not the tags the events
-    end up carrying: a factory here decides which
-    :class:`~blochsim.sequence.RfUse` and which
-    :class:`~blochsim.sequence.EventAction` its events are emitted with.
+    Each field is called with the protocol's parameters for that event and
+    decides which :class:`~blochsim.sequence.RfUse` and
+    :class:`~blochsim.sequence.EventAction` its events carry. Assigning one
+    selects, for example, a readout that winds the states on or a shaped
+    excitation.
     """
 
     #: What a pulse that tips magnetization into the transverse plane plays.
@@ -283,25 +279,20 @@ REFOCUSED = EventOperators(readout=FSEReadout)
 
 @dataclass(frozen=True)
 class SpinPhysics:
-    """Which properties a voxel has, and what each kind of event does to it.
+    """The tissue properties a model exposes and the operators that realize its events.
 
     Attributes
     ----------
     properties : mapping
-        ``{public name: tissue field}``. A field left unnamed is never given to
-        the tissue, and the kernels leave its term out -- so this is how a
-        model asks for off-resonance, diffusion, flow or a second pool. A name
-        mapped to ``None`` is the model's own and reaches the signal without
-        reaching the tissue.
+        ``{public name: tissue field}``. A name mapped to ``None`` reaches the
+        signal without reaching the tissue. Fields not named here are still
+        accepted under their public names.
     operators : EventOperators
-        What each kind of event plays.
+        Operator factory for each kind of event.
     fixed : mapping
-        Tissue fields the model pins rather than exposes, as
-        ``{field: value}``.
+        ``{tissue field: value}`` pinned rather than exposed.
     definitions : mapping
-        The RF resources the events name. The default is one ideal hard pulse
-        at id 0; a model whose excitation is slice-selective supplies a shaped
-        definition here instead.
+        RF definitions by id. Defaults to one ideal hard pulse at id 0.
     """
 
     properties: Mapping[str, str | None] = field(default_factory=lambda: _EMPTY)
@@ -312,12 +303,15 @@ class SpinPhysics:
     )
 
     def tissue(self, properties: Mapping[str, Any]) -> TissueProperties:
-        """Build the tissue, leaving everything undeclared at its identity.
+        """Return the :class:`~blochsim.sequence.TissueProperties` for ``properties``.
 
-        A property the model does not expose, and one it exposes that the
-        caller left out, are both simply absent -- so each reaches the gate as
-        the scalar default :class:`TissueProperties` holds and the kernels
-        leave its term out.
+        Fields without a value stay at their scalar defaults, so the kernels
+        omit their terms.
+
+        Parameters
+        ----------
+        properties : mapping
+            ``{public name: value}``.
 
         Raises
         ------
@@ -336,13 +330,15 @@ class SpinPhysics:
 
     @property
     def fields(self) -> dict[str, str | None]:
-        """The public-name to tissue-field map, checked against the tissue.
+        """The ``{public name: tissue field}`` map, validated against the tissue.
 
-        Every field a voxel has can be named, whether or not this model asked
-        for it: the vocabulary is the same for all of them, and giving a value
-        is what turns a term on. What ``properties`` adds is a model's own
-        spelling -- a name of its own for a field, or a name it answers to and
-        the tissue does not.
+        Every tissue field is nameable; ``properties`` adds model-specific
+        names.
+
+        Raises
+        ------
+        ValueError
+            If a name maps to a field the tissue does not have.
         """
         pairs = {**PUBLIC_PROPERTIES, **self.properties}
         unknown = {field for field in pairs.values() if field is not None}
@@ -354,37 +350,19 @@ class SpinPhysics:
 
 
 class Simulator(_SignalModel):
-    """A protocol: what a sequence plays, and the physics behind it.
+    """Base class of a pulse sequence protocol and its signal model.
 
-    The one thing anything downstream takes. Parameter inference, model-based
-    reconstruction and sequence design are written against this and never ask
-    how the signal is arrived at.
-
-    Subclasses set :attr:`model` and implement :meth:`layout`, which returns
-    the operators of one repetition in the order they are played. A protocol
-    with a closed form -- a steady state that needs no state machine --
-    implements :meth:`evaluate` instead and never reaches :meth:`layout`; its
-    :attr:`model` then carries only the property declaration, since there are
-    no events for operators to realize.
-
-    **The constructor takes the keywords** :meth:`simulate` **takes, and fixes
-    them; a call overrides.** So a sequence is written once with the tissue it
-    is being asked about already on it, and what is left to give per call is
-    whatever is actually varying -- the design under optimization, the map
-    being fitted.
-
-    A model that composes others rather than declaring physics of its own
-    names its properties in the class body and writes whatever constructor
-    suits it: every setting has a value at the class level, so one that never
-    reaches this constructor still answers :meth:`simulate`.
+    Subclasses set :attr:`model` and implement :meth:`layout`, or implement
+    :meth:`evaluate` directly for a closed-form signal. The constructor takes
+    the keywords :meth:`simulate` takes and fixes them; a call overrides.
 
     Attributes
     ----------
-    model : SpinPhysics, optional
-        The physics behind the protocol.
-    states : int, optional
-        Configuration orders to carry, or ``None`` to size them from the
-        winding the description asks for.
+    model : SpinPhysics
+        Tissue properties and event operators.
+    states : int or None
+        Configuration orders to carry. ``None`` sizes them from the winding in
+        the description.
     """
 
     model: SpinPhysics = SpinPhysics()
@@ -414,11 +392,7 @@ class Simulator(_SignalModel):
     _resolving: bool = True
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Simulator:
-        """Refuse the base class itself.
-
-        Nothing is named here: no physics, no handlers, and neither a layout
-        nor a closed form. A sequence is what a subclass says.
-        """
+        """Refuse to instantiate :class:`Simulator` itself."""
         if cls is Simulator:
             raise TypeError(
                 "Simulator is what a sequence is written against, not a "
@@ -428,20 +402,10 @@ class Simulator(_SignalModel):
         return super().__new__(cls)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Read handlers named in the class body into the model.
+        """Move operator slots named in the class body into ``model.operators``.
 
-        A subclass may say what plays each kind of event by naming it, which
-        is the shortest way to write a sequence family:
-
-        .. code-block:: python
-
-            class SSFPMRF(Simulator):
-                excitation = Excitation
-                readout = SSFPFidReadout
-
-        Anything not named keeps what the base class had, and a ``model``
-        given outright still wins, which is what a sequence needs when it also
-        fixes tissue or carries a pulse shape.
+        Slots not named keep the base class's operators. A ``model`` defined in
+        the class body takes precedence.
         """
         super().__init_subclass__(**kwargs)
         named = {
@@ -475,57 +439,41 @@ class Simulator(_SignalModel):
         voxel_size_m: float | None = _UNSET,
         **protocol: Any,
     ) -> None:
-        """Bind the physics, the protocol and any tissue this simulator plays.
+        """Fix the protocol, tissue properties and run settings of a simulator.
 
         Parameters
         ----------
-        model:
-            The physics, or ``None`` for the class's own.
-        states:
+        **protocol
+            Arguments of :meth:`layout` and tissue properties to fix, under
+            the names :meth:`simulate` takes. A call may override them.
+        model : SpinPhysics, optional
+            Replaces the class's physics.
+        states : int, optional
             Configuration orders to carry.
-        repetitions:
-            How many times the description is played to reach the state a
-            scanner plays it in, of which the last is the one recorded. One --
-            the default, unless the sequence declares otherwise -- records the
-            playing that starts from equilibrium, which is the transient a
-            scanner plays once and never again. ``"auto"`` reads the settled
-            state off a handful of playings rather than running to it, and
-            holds no structure fixed across calls.
-        record:
-            Which ADCs the signal holds.
-        execution:
-            Where to run -- ``"auto"`` to decide per call against what the
-            devices have free, ``"cpu"``, or a device or list of devices.
-            ``None`` follows whatever :func:`~blochsim.sequence.execution`
-            block is in scope, which is what lets a caller decide instead.
-        pulse:
-            The waveform the events drive, taking the place of the ideal hard
-            rotation the shipped operators name. Giving one is what makes the
-            layout's pulses shaped; where across the slice to work them out is
-            ``across_slice``.
-        shims:
-            The transmit shims the pulses are driven on, by id, for a layout
-            whose operators name a ``shim_id``. One channel driven alike when
-            not given.
-        across_slice:
-            How many positions across the slice to integrate a shaped pulse
-            at, or an ``exact_slice_profile()`` saying which. ``None`` works
-            it out at the slice centre alone, which is the hard-pulse answer.
-        resolve:
-            Whether to hold the protocol's structure fixed across calls, so
-            that a call which changes only numbers rebinds them onto events
-            already packed. A loop that plays the same sequence with
-            different numbers -- a design, a dictionary sweep -- is worth
-            roughly eight times the whole call this way. Turning it off
-            rebuilds the event stream every call, which is slower and agrees
-            to the last bit rather than to float32 round-off.
-        crusher_dephasing_rad, voxel_size_m:
-            The unbalanced gradient the sequence plays, and the voxel it winds
-            across. Their ratio is what diffusion is damped by and what flow
-            turns each dephasing order through.
-        protocol:
-            The sequence arguments :meth:`layout` reads, and any tissue
-            property to fix, under the names :attr:`properties` declares.
+        repetitions : int or "auto", optional
+            Playings of the description; the last is recorded. Defaults to the
+            class's own (1 unless it declares otherwise). ``"auto"``
+            extrapolates the steady state from a few playings.
+        record : {"all", "acquired", "echo"}, optional
+            Which ADC events the signal holds.
+        execution : str, torch.device or sequence of device, optional
+            ``"auto"``, ``"cpu"`` or CUDA device(s). ``None`` follows the
+            enclosing :func:`~blochsim.execution` block.
+        pulse : RfDefinition, optional
+            RF waveform replacing the ideal hard pulse at definition 0.
+        shims : mapping, optional
+            Transmit shims by ``shim_id``. One channel driven alike by default.
+        across_slice : int or ExactSliceProfile, optional
+            Positions across the slice at which a shaped pulse is integrated,
+            or an ``exact_slice_profile()``. ``None`` uses the
+            slice centre only.
+        resolve : bool, optional
+            Reuse the packed event structure across calls that change only
+            values. Defaults to ``True``; ``False`` rebuilds it every call.
+        crusher_dephasing_rad : float, optional
+            Dephasing of the unbalanced gradient across one voxel, in rad.
+        voxel_size_m : float, optional
+            Voxel size along the unbalanced gradient, in m.
         """
         _no_renamed(protocol)
         self.model = model if model is not None else type(self).model
@@ -574,12 +522,19 @@ class Simulator(_SignalModel):
         self._described = None
 
     def bind(self, **values: Any) -> Simulator:
-        """This simulator with more fixed on it, values or settings alike.
+        """Return a copy with further arguments fixed.
 
-        A property or a protocol argument is held for the next call; a setting
-        -- the pulse the events drive, where across the slice to work it out,
-        how many orders to carry -- is applied to the copy instead, because it
-        changes what is simulated rather than what is simulated with.
+        Parameters
+        ----------
+        **values
+            Tissue properties, protocol arguments and run settings (those of
+            the constructor, e.g. ``pulse`` and ``states``), under the names
+            :meth:`simulate` takes. Fixed values replace earlier ones.
+
+        Returns
+        -------
+        Simulator
+            The copy; ``self`` is unchanged.
         """
         _no_renamed(values)
         settings = {name: values.pop(name) for name in RUN_SETTINGS if name in values}
@@ -595,24 +550,12 @@ class Simulator(_SignalModel):
 
     @property
     def operators(self) -> EventOperators:
-        """What plays each kind of event, from this simulator's physics.
-
-        A layout reads its operators here. Each is resolved while a
-        description is being assembled and never again: what the layout
-        produces carries its own action word, and the run consults no slot.
-        """
+        """The :class:`EventOperators` of :attr:`model`, read by :meth:`layout`."""
         return self.model.operators
 
     @property
     def variables(self) -> tuple[str, ...]:
-        """The protocol arguments this simulator's layout takes.
-
-        What a sequence is written in, as against the tissue it is played on:
-        :attr:`exposes` and :attr:`accepts` name the properties, this names the
-        flip angles, spacings and times. Everything here can be fixed on the
-        constructor, given at the call, or carried as a tensor a cost is
-        differentiated back through.
-        """
+        """Names of the :meth:`layout` parameters, excluding ``*args`` and ``**kwargs``."""
         from inspect import Parameter, signature
 
         return tuple(
@@ -622,22 +565,17 @@ class Simulator(_SignalModel):
         )
 
     def to(self, device: torch.device | str) -> Simulator:
-        """This simulator, with everything it holds on ``device``.
-
-        A simulator carries its protocol -- echo times, a flip train -- and
-        whatever tissue is fixed on it, and the two have to arrive on a card
-        together: properties moved on their own would be multiplied against
-        echo times still on the host.
+        """Return a copy with its protocol and fixed properties on ``device``.
 
         Parameters
         ----------
         device : torch.device or str
-            Where to put it.
+            Target device.
 
         Returns
         -------
         Simulator
-            A copy. This one is left where it was.
+            The copy; ``self`` is unchanged.
         """
         moved = super().to(device)
         moved.protocol = _moved(moved.protocol, torch.device(device))
@@ -712,11 +650,16 @@ class Simulator(_SignalModel):
     # -- what a protocol says -----------------------------------------------
 
     def layout(self, **protocol: Any) -> Sequence[Operator | tuple[Any, Operator]]:
-        """Return the operators of one repetition, in the order they play.
+        """Return the operators of one repetition in playing order.
 
-        A bare operator starts where the one before it ended; one given as
-        ``(offset_s, operator)`` starts that far into the repetition instead,
-        which is how a sequence that times itself from an echo says so.
+        A bare operator starts where the previous one ended; an
+        ``(offset_s, operator)`` pair starts ``offset_s`` seconds into the
+        repetition.
+
+        Parameters
+        ----------
+        **protocol
+            The arguments named by :attr:`variables`.
 
         Raises
         ------
@@ -728,23 +671,26 @@ class Simulator(_SignalModel):
         )
 
     def repetition_s(self, played_s: Any, **protocol: Any) -> Any:
-        """Return how long one repetition lasts, given what the layout played.
+        """Return the duration of one repetition in seconds.
 
-        The default is the span the layout covers. A sequence whose TR is
-        longer than what it plays -- a refocused train waiting out its
-        recovery -- says so here, and only a run of more than one repetition
-        can tell the difference.
+        Defaults to ``played_s``, the span the layout covers. Override when
+        the repetition time exceeds it.
+
+        Parameters
+        ----------
+        played_s : float or torch.Tensor
+            Span covered by the layout, in seconds.
+        **protocol
+            The arguments of :meth:`layout`.
         """
         del protocol
         return played_s
 
     def played(self, **sequence: Any) -> dict[str, Any]:
-        """Return the protocol as it will be laid out.
+        """Return the protocol arguments of :meth:`layout`, arrays as torch tensors.
 
-        The constructor's arguments, with anything given at the call
-        overriding them, every array read as torch. Anything naming a run
-        setting is left out: those describe the run, and a layout has no use
-        for them.
+        The constructor's protocol overridden by ``sequence``; run settings are
+        dropped.
         """
         given = {
             name: value for name, value in sequence.items() if name not in RUN_SETTINGS
@@ -753,13 +699,25 @@ class Simulator(_SignalModel):
 
     @property
     def rf_raster_time_s(self) -> float:
-        """The dwell this simulator's RF shapes are sampled on."""
+        """RF raster time of the shapes, in seconds."""
         if self._described is not None:
             return self._described.rf_raster_time_s
         return _RF_RASTER_TIME_S
 
     def describe(self, **protocol: Any) -> SequenceDescription:
-        """Return the description this protocol plays."""
+        """Return the :class:`~blochsim.sequence.SequenceDescription` of a protocol.
+
+        Parameters
+        ----------
+        **protocol
+            Arguments of :meth:`layout`.
+
+        Returns
+        -------
+        SequenceDescription
+            The composed layout, or the stored description when the simulator
+            was built by :meth:`from_description` or :meth:`from_pulseq`.
+        """
         if self._described is not None:
             return self._described
         events, played_s = compose(*self.layout(**protocol))
@@ -783,28 +741,29 @@ class Simulator(_SignalModel):
     ) -> Simulator:
         """Return a simulator over one repetition of a Pulseq sequence.
 
-        The offline half of :meth:`from_description`: the same events, read
-        from the file a scanner would be given rather than from the stream it
-        sends back. The file states how many blocks a repetition holds, so
-        nothing here searches for the period; naming the simulator is what says
-        how those events are to be played.
+        The events are re-emitted through this class's operators, as in
+        :meth:`from_description`.
 
         Parameters
         ----------
-        source : str, Path or sequence
-            A ``.seq`` file, or a sequence in memory with pypulseq's reading
-            interface -- pypulseq's own ``Sequence``, or pypulseqpp's.
+        source : str, pathlib.Path or object
+            A ``.seq`` file, or a pypulseq or pypulseqpp ``Sequence``.
         tr_index : int, optional
-            Which repetition to read, counted in whole repetitions. Defaults to
-            the file's ``TRRef`` definition, and otherwise to the first
-            repetition that acquires -- which is refused when the repetitions
-            differ in their pulses.
-        settings : Any
-            Run settings and tissue, as the constructor takes them.
+            Repetition to read, counted from 0. Defaults to the ``TRRef``
+            definition, else the first repetition that acquires.
+        **settings
+            Run settings and tissue properties, as for the constructor.
 
         Returns
         -------
-            A simulator playing that repetition.
+        Simulator
+            Simulator playing that repetition.
+
+        Raises
+        ------
+        ValueError
+            If the file declares no ``TRSize``, ``tr_index`` is out of range,
+            or the repetitions differ in their pulses and none was named.
         """
         from ..sequence._pulseq import read_pulseq_description
 
@@ -819,36 +778,28 @@ class Simulator(_SignalModel):
         model: SpinPhysics | None = None,
         **settings: Any,
     ) -> Simulator:
-        """Return a simulator over a stream someone else assembled.
+        """Return a simulator that plays an existing description.
 
-        This is the path a description arriving from a scanner takes:
-        ``FSESimulator.from_description(stream)`` says the events are to be
-        read as a refocused train, and the only thing left to give is the
-        tissue. Echo spacing, echo train length, flip angles and pulse shapes
-        are in the stream and are not named again.
-
-        Which simulator you call it on is the whole of what you choose, and it
-        matters. A description says what was played -- an RF pulse, tagged with
-        the use its designer gave it, and an ADC window -- and says nothing
-        about the gradients between them, because the transport carries none.
-        The dephasing lives in the handlers instead: a
-        :func:`~blochsim.SSFPFidReadout` winds one order after every sample, a
-        :func:`~blochsim.SSFPEchoReadout` winds it before, a
-        :func:`~blochsim.SPGRReadout` spoils, and a refocusing pulse is
-        crushed either side. So the events are re-emitted through this model's
-        own operators rather than taken as they arrive.
+        The description carries RF pulses and ADC windows but no gradients, so
+        its events are re-emitted through this class's operators, which supply
+        the dephasing (crushers, winding, spoiling). The class the method is
+        called on therefore selects how the events are interpreted.
 
         Parameters
         ----------
         description : SequenceDescription
-            The stream, as the MRD client decodes it or a Pulseq design
-            exports it.
+            Description decoded from an MRD stream or exported from a Pulseq
+            design.
         model : SpinPhysics, optional
-            The physics to read it with. Defaults to this simulator's own,
-            which is what naming a concrete one is for.
-        settings : Any, optional
-            Run settings and tissue, as the constructor takes them.
-            ``repetitions`` defaults to this simulator's own.
+            Physics to read it with. Defaults to the class's own.
+        **settings
+            Run settings and tissue properties, as for the constructor.
+            ``repetitions`` defaults to the class's own.
+
+        Returns
+        -------
+        Simulator
+            Simulator playing the re-emitted description.
 
         Raises
         ------
@@ -871,11 +822,17 @@ class Simulator(_SignalModel):
     # -- what a signal model owes -------------------------------------------
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Run one simulation of the described protocol.
+        """Return the signal of one simulation of the protocol.
 
-        ``states``, ``repetitions``, ``record``, ``device`` and ``execution``
-        describe the run and are taken here, each falling back to what the
-        constructor was given; everything else overrides a protocol argument.
+        Parameters
+        ----------
+        properties : mapping
+            Tissue property values by public name.
+        **sequence
+            Run settings (``states``, ``repetitions``, ``record``,
+            ``device``, ``execution``, ``across_slice``), each defaulting to
+            the constructor's, and protocol arguments overriding the
+            constructor's.
         """
         given = dict(sequence)
         states = given.pop("states", self.states)

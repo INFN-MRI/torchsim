@@ -16,12 +16,11 @@ from ._contrast import across_contrasts
 
 
 class bSSFPSimulator(Simulator):
-    """The balanced SSFP steady state, read at the echo time.
+    """Balanced SSFP steady state, read at the echo time.
 
-    A balanced repetition returns the transverse magnetization to where it
-    started, so the steady state is a closed form in the phase a voxel accrues
-    across one TR and no state machine is run. Fitting T2 to a set of these,
-    given a T1 from :class:`SPGRSimulator`, is DESPOT2 [1]_.
+    Closed form in the phase accrued across one TR; no state machine is run.
+    Fitting T2 to a set of these, with T1 from :class:`SPGRSimulator`, is
+    DESPOT2 [1]_.
 
     References
     ----------
@@ -52,7 +51,7 @@ class bSSFPSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -68,17 +67,15 @@ class bSSFPSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` and ``T2`` in milliseconds, ``B0`` and ``chemshift`` in Hz,
-            and ``M0`` as a scaling.
-        flip:
+        properties : mapping
+            ``T1`` and ``T2`` in ms, ``B0`` and ``chemshift`` in Hz, ``M0`` scaling.
+        flip : float or array-like
             Excitation flip angle in degrees.
-        TR:
-            Repetition time in milliseconds.
-        TE:
-            Echo time in milliseconds, defaulting to the middle of the
-            repetition, where a balanced sequence refocuses.
-        phase_inc:
+        TR : float or array-like
+            Repetition time in ms.
+        TE : float or array-like, optional
+            Echo time in ms; defaults to ``TR / 2``.
+        phase_inc : float or array-like, optional
             Linear phase-cycling increment in degrees.
         """
         if TE is None:

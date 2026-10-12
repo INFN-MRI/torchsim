@@ -1,39 +1,12 @@
-"""Inverting the forward operator, one linearized problem at a time.
+"""Gauss-Newton inversion of the forward operator.
 
-Every Newton-type method for a nonlinear inverse problem does the same thing:
-linearize where it stands, solve the linear problem that leaves, step, repeat.
+Each step solves the linearized problem
 
     x_{n+1} = x_n + argmin_d || DF(x_n) d + F(x_n) - y ||^2 + a_n R(x_n + d)
 
-What separates the methods is *how the linear problem is solved* and *where the
-damping comes from*, and both belong to the caller.
-
-The linear solve is a callable, and mostly it is somebody else's.
-:func:`iterative` takes any :class:`LeastSquares` -- anything minimizing
-``||A d - b||^2 + (1/g) ||d - z||^2`` from products with the Jacobian alone,
-which is exactly what a Gauss-Newton step leaves. Given nothing it reaches
-deepinv's ``least_squares``. There is no conjugate gradient written here and
-there should not be: a package that ships its own is one more copy of an
-algorithm nobody wanted three of.
-
-:func:`direct` is the exception, and only because it is not a general linear
-solver: where the operator is voxel-diagonal the problem is a stack of small
-independent least-squares systems, and one batched factorization over all of
-them is the Levenberg-Marquardt step itself. That factorization is
-:func:`torch.linalg.lstsq`.
-
-Anything with the same signature does, and wrapping an external proximal
-solver is how a regularizer enters -- which is the difference between an
-iteratively regularized Gauss-Newton solved by conjugate gradients and one
-solved by FISTA under an L1 prior.
-
-The damping is a policy. :class:`Schedule` lowers one number geometrically and
-accepts every step, which is the iteratively regularized Gauss-Newton the
-model-based reconstruction literature runs. :class:`TrustRegion` gives each
-voxel its own damping, accepts or rejects on whether the step actually helped,
-and retires voxels as they converge -- which is Levenberg-Marquardt. The
-second is the first with the bookkeeping that independent rows make possible,
-and the two land in the same place on a problem both can solve.
+with a caller-chosen linear solve (:func:`direct`, :func:`iterative`, or any
+callable of the same signature) and damping policy (:class:`Schedule`,
+:class:`TrustRegion`).
 """
 
 from __future__ import annotations
@@ -61,23 +34,17 @@ _TINY = torch.finfo(torch.float32).tiny
 
 @dataclass(frozen=True)
 class Linearization:
-    """The forward operator's derivative at one point, as products with it.
-
-    A Gauss-Newton step never needs the Jacobian, only what it does to a
-    vector, so that is what this carries. :attr:`blocks` is the exception and
-    is filled in only where the operator is voxel-diagonal: there the Jacobian
-    really is a stack of small independent matrices and factorizing them
-    outright beats iterating.
+    """The forward operator's derivative at one point, as products.
 
     Attributes
     ----------
     matvec : callable
         ``d -> J d``, from map space to measurement space.
     rmatvec : callable
-        ``v -> J^H v``, back again, real because the maps are.
+        ``v -> J^H v``, real.
     blocks : torch.Tensor, optional
-        ``(voxels, channels, contrasts)`` where the operator is voxel-diagonal,
-        ``None`` where an encoding has mixed the voxels together.
+        ``(voxels, channels, contrasts)`` per-voxel Jacobian; ``None`` where an
+        encoding has mixed the voxels.
     """
 
     matvec: Callable[[torch.Tensor], torch.Tensor]
@@ -87,24 +54,21 @@ class Linearization:
 
 @dataclass(frozen=True)
 class Solution:
-    """What a solve returned, and what it did to get there.
+    """Result of :meth:`GaussNewton.minimize`.
 
     Attributes
     ----------
     x : torch.Tensor
-        The maps, as the variables that were solved for. Pass them through
+        Solved-for variables; pass through
         :meth:`~blochsim.recon.ModelOperator.split` for the properties.
     cost : torch.Tensor
-        The squared residual after each step, so convergence is read rather
-        than assumed.
+        Squared residual before the first step and after each step.
     damping : torch.Tensor
-        The damping each step ran at, averaged over the voxels where each
-        carries its own.
+        Damping of each step, averaged over voxels where it is per voxel.
     iterations : int
-        How many steps were taken.
+        Steps taken.
     unconverged : int
-        How many voxels were still moving when the loop stopped. Zero for a
-        solve that ran to its tolerance.
+        Voxels still moving when the loop stopped (0 under an encoding).
     """
 
     x: torch.Tensor
@@ -119,29 +83,27 @@ class Solution:
 
 @runtime_checkable
 class LeastSquares(Protocol):
-    """A regularized linear least-squares solve, in deepinv's calling shape.
+    """Regularized linear least-squares solve, in deepinv's calling shape.
 
-    Minimize ``||A d - y||^2 + (1/gamma) ||d - z||^2`` given only products
-    with the operator and its adjoint. ``deepinv.optim.linear.least_squares``
-    satisfies this, and so does anything a caller writes to the same
-    signature; :func:`iterative` takes either.
+    Minimizes ``||A d - y||^2 + (1/gamma) ||d - z||^2`` from products with the
+    operator and its adjoint. ``deepinv.optim.linear.least_squares`` conforms.
 
     Parameters
     ----------
     A : callable
-        The forward product, ``d -> A d``.
+        Forward product ``d -> A d``.
     AT : callable
-        The adjoint product, ``r -> A^H r``.
+        Adjoint product ``r -> A^H r``.
     y : torch.Tensor
-        The right-hand side.
+        Right-hand side.
     z : torch.Tensor
-        What the regularizer pulls the solution towards.
+        Point the regularizer pulls towards.
     gamma : float or torch.Tensor or None
-        The reciprocal of the damping, or ``None`` where there is none.
+        Reciprocal of the damping; ``None`` for no damping.
     max_iter : int
-        Most iterations to take.
+        Maximum iterations.
     tol : float
-        Stop when the residual has fallen this far relative to the data.
+        Relative residual tolerance.
     """
 
     def __call__(
@@ -161,47 +123,28 @@ class LeastSquares(Protocol):
 def iterative(
     solver: LeastSquares | None = None, *, max_iter: int = 50, tol: float = 1e-6
 ) -> Callable[..., torch.Tensor]:
-    """The inner solve, by a regularized linear least-squares routine.
-
-    A Gauss-Newton step leaves ``||A d - b||^2 + (1/g) ||d - z||^2`` once the
-    damping and its reference are in it, and asks only for products with the
-    Jacobian, so it does not care whether an encoding operator sits in front
-    of the model. Any :class:`LeastSquares` minimizes exactly that.
+    """Build an inner solve from a regularized least-squares routine.
 
     Parameters
     ----------
     solver : LeastSquares, optional
-        Anything matching :class:`LeastSquares`. The default is deepinv's
-        ``least_squares``, which is conjugate gradients. One of its others is
-        that same function with the argument bound::
-
-            from functools import partial
-            from deepinv.optim.linear import least_squares
-
-            iterative(partial(least_squares, solver="lsqr"))
-
-        Which one suits depends on the problem and is worth measuring:
-        conjugate gradients works on the normal equations, so on a small
-        well-scaled system it stops on a tolerance the squared condition
-        number has already spoiled, while LSQR and MINRES reach what a direct
-        solve reaches -- and on a large encoded problem inside a fixed
-        iteration budget the ordering reverses.
+        Routine minimizing the damped linear problem. Defaults to deepinv's
+        ``least_squares`` (conjugate gradients); ``partial(least_squares,
+        solver="lsqr")`` selects another.
     max_iter : int, optional
-        Most inner iterations per Gauss-Newton step.
+        Maximum inner iterations per Gauss-Newton step. Defaults to 50.
     tol : float, optional
-        Stop when the residual has fallen this far relative to the data.
+        Relative residual tolerance. Defaults to 1e-6.
 
     Returns
     -------
     callable
-        An inner solve, to give :class:`GaussNewton` as ``solve=``.
+        Inner solve, for :class:`GaussNewton` ``solve=``.
 
     Raises
     ------
     ImportError
-        If no solver is given and deepinv is not installed. BlochSim does not
-        depend on it: pass a :class:`LeastSquares` of your own, or use
-        :func:`direct` where the model stands alone.
+        If no solver is given and deepinv is not installed.
     """
 
     def solve(
@@ -250,48 +193,32 @@ def direct(
     damping: torch.Tensor,
     reference: torch.Tensor,
 ) -> torch.Tensor:
-    """Solve every voxel's linearized system outright, all of them at once.
+    """Solve every voxel's damped linearized system by batched least squares.
 
-    Where nothing has mixed the voxels together the problem is a stack of
-    small independent least-squares systems, one per voxel, and a batched
-    factorization over the whole stack is the Levenberg-Marquardt step itself
-    -- not a general linear solver, which is why this is here and a conjugate
-    gradient is not.
-
-    The damping enters as extra rows rather than as a ridge on the normal
-    equations:
-
-        [ J^T        ] d  =  [ rhs           ]
-        [ sqrt(a) I  ]       [ sqrt(a) z     ]
-
-    which is the same minimizer without squaring the condition number, and
-    which has full column rank for any positive damping -- so there is no
-    singular case to detect and none to work around.
-
-    A complex contrast is two real measurements, because what is minimized is
-    the squared modulus.
+    Valid only for a voxel-diagonal Jacobian. The damping enters as extra rows
+    ``sqrt(a) I d = sqrt(a) z`` rather than as a ridge on the normal equations.
+    A complex contrast counts as two real measurements.
 
     Parameters
     ----------
     linearization : Linearization
-        The derivative, which must carry its blocks.
+        Derivative carrying its ``blocks``.
     rhs : torch.Tensor
         ``(voxels, contrasts)``, ``y - F(x)``.
     damping : torch.Tensor
-        ``(voxels, 1)`` or one number.
+        ``(voxels, 1)`` or a single value.
     reference : torch.Tensor
-        ``(voxels, channels)``, what the damping pulls towards.
+        ``(voxels, channels)``, point the damping pulls towards.
 
     Returns
     -------
     torch.Tensor
-        ``(voxels, channels)``.
+        ``(voxels, channels)`` step.
 
     Raises
     ------
     ValueError
-        If the linearization carries no blocks, which is what an encoding
-        operator in front of the model leaves.
+        If the linearization carries no blocks.
     """
     blocks = linearization.blocks
     if blocks is None:
@@ -314,20 +241,17 @@ def direct(
 class Schedule:
     """One damping for the whole volume, lowered geometrically.
 
-    The iteratively regularized part of an iteratively regularized
-    Gauss-Newton: early steps are held close to the starting guess, where the
-    linearization is trustworthy, and the hold is released as the iterate
-    settles. Every step is accepted.
+    Iteratively regularized Gauss-Newton: steps are pulled towards the
+    starting guess with a weight that decays each step. Every step is accepted.
 
     Attributes
     ----------
     initial : float
-        The first weight.
+        First weight. Defaults to 1.
     factor : float
-        What it is multiplied by after each step.
+        Multiplier applied after each step, in (0, 1). Defaults to 1/3.
     minimum : float
-        The floor, so late steps stay regularized rather than becoming a bare
-        Gauss-Newton on an ill-posed problem.
+        Floor of the weight. Defaults to 1e-3.
     """
 
     initial: float = 1.0
@@ -347,7 +271,7 @@ class Schedule:
             raise ValueError(f"minimum must be positive, got {self.minimum}")
 
     def begin(self, curvature: torch.Tensor) -> torch.Tensor:
-        """The weight to start at, given the curvature at the starting point."""
+        """Return the initial weight."""
         return torch.as_tensor(
             self.initial, dtype=torch.float32, device=curvature.device
         )
@@ -355,7 +279,7 @@ class Schedule:
     def judge(
         self, damping: torch.Tensor, gain: torch.Tensor, singular: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Take the step, and lower the weight for the next one."""
+        """Accept every step and lower the weight."""
         return (
             torch.ones_like(gain, dtype=torch.bool),
             (damping * self.factor).clamp_min(self.minimum),
@@ -364,18 +288,16 @@ class Schedule:
 
 @dataclass
 class TrustRegion:
-    """Each voxel its own damping, raised when a step does not pay.
+    """Levenberg-Marquardt: per-voxel damping, raised where a step does not pay.
 
-    Levenberg-Marquardt. A step is taken only where it actually lowered the
-    residual; where it did not, the damping goes up and the step is tried
-    again shorter. That needs the voxels to be independent, so it applies to a
-    model with no encoding in front of it.
+    A step is accepted per voxel only if it lowers the residual. Requires
+    independent voxels, so no encoding operator.
 
     Attributes
     ----------
     tau : float
-        Sets the first damping, as this times the largest curvature the
-        starting point shows. Small where the guess is good.
+        First damping as a multiple of the largest diagonal curvature at the
+        start. Defaults to 1e-2.
     """
 
     tau: float = 1e-2
@@ -390,7 +312,7 @@ class TrustRegion:
             raise ValueError(f"tau must be positive, got {self.tau}")
 
     def begin(self, curvature: torch.Tensor) -> torch.Tensor:
-        """Scale the first damping to the curvature the starting point shows."""
+        """Return the initial per-voxel damping from the curvature."""
         damping = self.tau * curvature.diagonal(dim1=-2, dim2=-1).amax(-1)
         self._rising = torch.full_like(damping, 2.0)
         return damping
@@ -398,12 +320,7 @@ class TrustRegion:
     def judge(
         self, damping: torch.Tensor, gain: torch.Tensor, singular: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Accept where the step paid, and move the damping either way.
-
-        The Nielsen update: a step that predicted its own gain well lets the
-        damping fall a long way, one that barely paid lets it fall a little,
-        and a rejected step doubles it and doubles the doubling.
-        """
+        """Accept steps with positive gain and update the damping (Nielsen)."""
         better = (gain > 0) & ~singular
         rising = self._rising
         lowered = damping * (1.0 - (2.0 * gain - 1.0).pow(3)).clamp_min(1.0 / 3.0)
@@ -411,7 +328,7 @@ class TrustRegion:
         return better, torch.where(better, lowered, damping * rising)
 
     def retire(self, keep: torch.Tensor) -> None:
-        """Close up after the converged voxels have been written out."""
+        """Drop the state of retired voxels."""
         self._rising = self._rising[keep]
 
 
@@ -424,20 +341,22 @@ class GaussNewton:
     Parameters
     ----------
     damping : Schedule or TrustRegion, optional
-        :class:`Schedule` for an iteratively regularized Gauss-Newton,
-        :class:`TrustRegion` for Levenberg-Marquardt.
+        Damping policy: ``Schedule`` for iteratively regularized Gauss-Newton,
+        ``TrustRegion`` for Levenberg-Marquardt. Defaults to ``Schedule()``.
     solve : callable, optional
-        The inner solve, called as
-        ``solve(linearization, rhs, damping, reference)``. Left out, it is
-        :func:`direct` where the model stands alone and ``iterative()`` --
-        deepinv's conjugate gradients -- where an encoding operator does not
-        leave independent voxels. A closure around anything else is how a
-        regularizer enters.
+        Inner solve, ``solve(linearization, rhs, damping, reference)``.
+        Defaults to :func:`direct` without an encoding and :func:`iterative`
+        with one.
     max_iterations : int, optional
-        Most outer steps to take.
+        Maximum outer steps. Defaults to 8.
     gradient_tolerance, step_tolerance : float, optional
-        A voxel is done when its gradient is flat or its step is short
-        relative to where it stands.
+        A voxel is done when its gradient magnitude is below the first or its
+        step is short relative to its norm by the second. Default 1e-8 each.
+
+    Raises
+    ------
+    ValueError
+        If ``max_iterations`` is below 1.
 
     Examples
     --------
@@ -446,12 +365,6 @@ class GaussNewton:
         loop = GaussNewton(Schedule(initial=1.0))
         found = loop.minimize(operator, kspace, start, encoding=nufft)
         maps = operator.split(found.x)
-
-    Raises
-    ------
-    ValueError
-        If a per-voxel damping is asked for under an encoding operator, which
-        has mixed the voxels together and left no independent rows.
     """
 
     def __init__(
@@ -484,25 +397,26 @@ class GaussNewton:
 
         Parameters
         ----------
-        operator:
-            A :class:`~blochsim.recon.ModelOperator`.
-        measured:
-            The data. Without an encoding, ``(..., contrasts)`` -- the
-            contrast images themselves. With one, whatever the encoding
-            produces.
-        initial:
-            ``(..., channels)``, where to start. Build it with
+        operator : ModelOperator
+            Forward model.
+        measured : torch.Tensor
+            Data: ``(..., contrasts)`` without an encoding, otherwise the
+            encoding's output.
+        initial : torch.Tensor
+            ``(..., channels)`` start; see
             :meth:`~blochsim.recon.ModelOperator.initial`.
-        encoding:
-            Anything with ``A`` and ``A_adjoint`` -- a deepinv
-            ``LinearPhysics``, an mri-nufft operator through its deepinv
-            bridge. It sees the contrast axis first, at axis 1, which is the
-            convention on that side of the line; the maps keep it last, which
-            is the convention on this one.
+        encoding : object, optional
+            Anything with ``A`` and ``A_adjoint`` (deepinv ``LinearPhysics``).
+            It receives the contrast axis at axis 1.
 
         Returns
         -------
         Solution
+
+        Raises
+        ------
+        ValueError
+            If the damping is per voxel and an encoding is given.
         """
         solve = self.solve or (direct if encoding is None else iterative())
         if encoding is not None and getattr(self.damping, "per_voxel", False):

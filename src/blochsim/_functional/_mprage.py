@@ -24,51 +24,44 @@ def mprage_sim(
     device: str | torch.device | None = None,
     **values: Any,
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-    """
-    MPRAGE simulator wrapper.
+    """Simulate the sampled MPRAGE shot in closed form.
+
+    Wraps :class:`~blochsim.simulators.MPRAGESimulator`.
 
     Parameters
     ----------
     TI : float
-        Inversion time (s) in milliseconds.
-    flip : float | npt.ArrayLike
-        Flip angle train in degrees of shape ``(2,)``.
-        If scalar, assume same angle for both blocks.
+        Inversion time in ms, measured to the sampled shot.
+    flip : float
+        Excitation flip angle in degrees.
     TRspgr : float
-        Repetition time in milliseconds for each SPGR readout.
-    nshots : int | npt.ArrayLike
-        Number of SPGR readout within the inversion block of shape ``(npre, npost)``
-        If scalar, assume ``npre == npost == 0.5 * nshots``. Usually, this
-        is the number of slice encoding lines ``(nshots = nz / Rz)``,
-        i.e., the number of slices divided by the total acceleration factor along ``z``.
-    T1 : float | npt.ArrayLike
-        Longitudinal relaxation time in milliseconds.
-    diff : str | tuple[str], optional
-        Arguments to get the signal derivative with respect to.
-        The default is ``None`` (no differentation).
-    inv_efficiency : float | npt.ArrayLike, optional
-        Inversion efficiency map, default is ``1.0``.
+        Repetition time of one readout, in ms.
+    nshots : int or array-like
+        Readouts in the block: a total including the sampled shot, split evenly
+        around it, or ``(before, after)`` the sampled shot.
+    T1 : float or array-like
+        Longitudinal relaxation time in ms.
+    diff : str or tuple of str, optional
+        Parameters to differentiate with respect to; ``None`` returns the signal only.
+    inv_efficiency : float or array-like, optional
+        Inversion efficiency, a fraction of a perfect inversion.
     M0 : float or array-like, optional
-        Proton density scaling factor, default is ``1.0``.
+        Proton density scaling.
     phases : float or array-like, optional
-        Sequence phase schedule in degrees. The default is ``0.0``.
-    **values : optional
-        Additional call-time tissue, protocol or run settings accepted by
-        ``Simulator.simulate``. Settings fixed only at simulator construction
-        remain class-interface features.
-    device : str | torch.device, optional
-        Computational device for simulation.
-        The default is ``None`` (infer from input).
+        Excitation phases in degrees.
+    device : str or torch.device, optional
+        Device to run on; follows the inputs when ``None``.
+    **values
+        Further tissue, protocol or run arguments accepted by
+        :meth:`~blochsim.model.Simulator.simulate`.
 
     Returns
     -------
-    sig : npt.ArrayLike
-        Signal evolution of shape ``(...,)``.
-    jac : npt.ArrayLike
-        Derivatives of signal wrt ``diff`` parameters,
-        of shape ``(..., len(diff))``.
-        Not returned if ``diff`` is ``None``.
-
+    signal : array-like
+        Signal of shape ``(...)``.
+    jacobian : array-like
+        Derivatives with respect to ``diff``, of shape ``(..., len(diff))``. Returned only
+        when ``diff`` is given; a single name drops the ``len(diff)`` axis.
     """
     return evaluated(
         MPRAGESimulator(),

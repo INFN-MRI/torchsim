@@ -149,40 +149,33 @@ class TransitionTable:
 def compose_spinor(
     drive: Any, turn_z: torch.Tensor | Iterable[torch.Tensor]
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """The Cayley-Klein pair a shaped pulse leaves, sample by sample.
+    """Return the Cayley-Klein pair of a shaped pulse, composed over its samples.
 
-    One SU(2) element per raster sample, composed in the order the scanner
-    plays them. Each is the rotation about the effective field a spin sees
-    while that sample lasts: the RF in the transverse plane, the gradient
-    along z.
+    One SU(2) rotation per sample, composed in play order, about the effective
+    field ``(drive.real, drive.imag, turn_z)``.
 
     Parameters
     ----------
-    drive
-        The transverse field per sample, radians turned per sample. A tensor
-        with the sample axis first, or any iterable of per-sample tensors --
-        which is how a per-voxel field is composed without ever holding one
-        for every sample at once.
-    turn_z
-        The longitudinal turn per sample, radians, one per spin. A tensor is
-        the turn every sample makes -- a gradient the scanner holds -- and an
-        iterable of per-sample tensors is one it moves, in the same form
-        ``drive`` takes.
+    drive : torch.Tensor or iterable of torch.Tensor
+        Transverse field per sample, in radians per sample: a tensor with the
+        sample axis first, or an iterable of per-sample tensors.
+    turn_z : torch.Tensor or iterable of torch.Tensor
+        Longitudinal turn per sample, in radians, one per spin. A tensor holds
+        for every sample (a static gradient); an iterable gives one tensor per
+        sample.
 
     Returns
     -------
     a, b : torch.Tensor
-        Complex128, shaped like the turn. Each sample turns the magnetisation
-        right-handedly about ``(drive.real, drive.imag, turn_z)`` by that
-        vector's length, so a spin starting along ``+z`` ends with
-        ``Mxy = -2 conj(a b)`` and ``Mz = |a|^2 - |b|^2``. A real drive of
+        Complex128, shaped like the turn. Each sample rotates right-handedly by
+        the length of the effective-field vector, so a spin along ``+z`` ends
+        with ``Mxy = -2 conj(a b)`` and ``Mz = |a|^2 - |b|^2``. A real drive of
         area ``t`` on resonance gives ``(cos(t/2), -i sin(t/2))``.
 
     Raises
     ------
     ValueError
-        If a moving gradient runs out before the pulse does, or the other way
-        about.
+        If an iterable ``turn_z`` and ``drive`` differ in length.
     """
     held = isinstance(turn_z, torch.Tensor)
     if held:

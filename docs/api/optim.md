@@ -4,16 +4,12 @@
 .. currentmodule:: blochsim
 ```
 
-Choosing a sequence's parameters by minimizing a cost you write. The
-acquisition is a simulator with the tissue it is designed for already fixed on
-it; the cost is a plain function of what it records; a
-{class}`SequenceDesign` holds the parameters and runs the loop.
+Minimization of a user-written cost over bounded sequence parameters; see
+{doc}`../explanations/sequence-design`.
 
-{class}`Bounded` holds a parameter inside the limits the scanner will play, by
-optimizing a transformed variable -- no iterate is ever outside them.
-{func}`crlb` turns the derivative of a signal with respect to tissue into the
-lowest variance an unbiased estimate of it can have, which is the cost a
-precision-driven design minimizes.
+{class}`SequenceDesign` holds the cost and the parameters and runs the loop.
+{class}`Bounded` keeps a parameter inside given limits. {func}`crlb` returns the
+Cramer-Rao lower bound on parameter variance from a signal Jacobian.
 
 ```{eval-rst}
 .. autosummary::

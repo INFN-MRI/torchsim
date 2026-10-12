@@ -48,12 +48,10 @@ def _apparent(
 class LookLockerSimulator(Simulator):
     """Recovery from an inversion under a spoiled train of small flip angles.
 
-    Each pulse tips a little of the longitudinal magnetization away, so the
-    recovery runs towards a steady state below equilibrium at the apparent
-    rate ``R1* = R1 - ln(cos a) / TR`` [1]_, and each readout records the
-    longitudinal magnetization just ahead of its pulse, times ``sin a``.
-    Reading the recovery at a set of times after the inversion gives T1, the
-    flip angle's efficiency ``B1`` and the proton density together.
+    The longitudinal magnetization recovers towards a steady state below
+    equilibrium at the apparent rate ``R1* = R1 - ln(cos a) / TR`` [1]_. Each
+    readout records the longitudinal magnetization just before its pulse, times
+    ``sin a``.
 
     References
     ----------
@@ -84,7 +82,7 @@ class LookLockerSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -101,22 +99,19 @@ class LookLockerSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` in milliseconds, ``B1`` as a fraction of the nominal flip
-            angle, ``inv_efficiency`` as a fraction of a perfect inversion,
-            and ``M0`` as a scaling.
-        flip:
+        properties : mapping
+            ``T1`` in ms, ``B1`` as a fraction of the nominal flip angle,
+            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.
+        flip : float or array-like
             Flip angle of the readout pulses in degrees.
-        TR:
-            Spacing of the readout pulses in milliseconds.
-        TI:
-            Time of each readout after the inversion, in milliseconds.
-        short_TR:
-            Take the steady state as ``M0 R1 / R1*``, its limit for
-            ``TR << T1``.
-        from_steady_state:
-            Invert the steady state rather than the equilibrium
-            magnetization.
+        TR : float or array-like
+            Spacing of the readout pulses in ms.
+        TI : float or array-like
+            Time of each readout after the inversion, in ms.
+        short_TR : bool, optional
+            Take the steady state as ``M0 R1 / R1*``, its ``TR << T1`` limit.
+        from_steady_state : bool, optional
+            Invert the steady state rather than the equilibrium magnetization.
         """
         held = across_contrasts(properties, flip, TR, TI)
         density = held.get("M0", 1.0)
@@ -132,11 +127,10 @@ class LookLockerSimulator(Simulator):
 class MOLLISimulator(Simulator):
     """Look-Locker readout blocks separated by free recovery, after one inversion.
 
-    Modified Look-Locker inversion recovery [1]_ reads the recovery in
-    blocks, one per heartbeat. The first block starts from the inversion;
-    between blocks the pulses stop, and the longitudinal magnetization the
-    last readout of a block recorded recovers towards ``M0`` for
-    ``recovery`` milliseconds before the next block starts from it.
+    Modified Look-Locker inversion recovery [1]_ reads the recovery in blocks. The
+    first block starts from the inversion; between blocks the pulses stop, and the
+    longitudinal magnetization left by a block's last readout recovers towards
+    ``M0`` for ``recovery`` ms before the next block starts from it.
 
     References
     ----------
@@ -167,7 +161,7 @@ class MOLLISimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **self.played(**sequence))
 
     def _signal(
@@ -184,21 +178,19 @@ class MOLLISimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` in milliseconds, ``B1`` as a fraction of the nominal flip
-            angle, ``inv_efficiency`` as a fraction of a perfect inversion,
-            and ``M0`` as a scaling.
-        flip:
+        properties : mapping
+            ``T1`` in ms, ``B1`` as a fraction of the nominal flip angle,
+            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.
+        flip : float or array-like
             Flip angle of the readout pulses in degrees.
-        TR:
-            Spacing of the readout pulses in milliseconds.
-        readouts:
-            How many readouts each block holds.
-        recovery:
-            Free recovery between blocks, in milliseconds.
-        short_TR:
-            Take the steady state as ``M0 R1 / R1*``, its limit for
-            ``TR << T1``.
+        TR : float or array-like
+            Spacing of the readout pulses in ms.
+        readouts : sequence of int
+            Readouts in each block.
+        recovery : float or array-like
+            Free recovery between blocks, in ms.
+        short_TR : bool, optional
+            Take the steady state as ``M0 R1 / R1*``, its ``TR << T1`` limit.
         """
         counts = [int(count) for count in readouts]
         positions = torch.cat([torch.arange(count) for count in counts])
@@ -225,12 +217,9 @@ class MOLLISimulator(Simulator):
 class IRbSSFPSimulator(Simulator):
     """Recovery from an inversion under a balanced SSFP train.
 
-    After an alpha/2 preparation the balanced train drives the magnetization
-    along one exponential towards the bSSFP steady state, at a rate that
-    mixes R1 and R2 by the flip angle [1]_, so the recovery curve yields T1,
-    T2 and the proton density together. The signal is read at a series of
-    times after the inversion; ``inv_efficiency`` scales the magnetization
-    the recovery starts from.
+    After an alpha/2 preparation the magnetization approaches the bSSFP steady
+    state along one exponential, at a rate mixing R1 and R2 by the flip angle
+    [1]_. ``inv_efficiency`` scales the magnetization the recovery starts from.
 
     References
     ----------
@@ -263,7 +252,7 @@ class IRbSSFPSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -277,15 +266,14 @@ class IRbSSFPSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` and ``T2`` in milliseconds, ``B1`` as a fraction of the
-            nominal flip angle, ``inv_efficiency`` as a fraction of a perfect
-            inversion, and ``M0`` as a scaling.
-        flip:
+        properties : mapping
+            ``T1`` and ``T2`` in ms, ``B1`` as a fraction of the nominal flip angle,
+            ``inv_efficiency`` as a fraction of a perfect inversion, ``M0`` scaling.
+        flip : float or array-like
             Flip angle of the balanced train in degrees.
-        TI:
-            Time of each readout after the inversion, in milliseconds: the
-            repetition time times the readout's index.
+        TI : float or array-like
+            Time of each readout after the inversion, in ms: ``TR`` times the
+            readout index.
         """
         held = across_contrasts(properties, flip, TI)
         angle = held.get("B1", 1.0) * (torch.pi / 180.0) * flip
