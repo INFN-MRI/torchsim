@@ -10,7 +10,7 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import Simulator, SpinPhysics
+from .._model import Simulator, SpinPhysics
 from ..sequence import Delay, Excitation, Readout, SampledPulse, Spoil
 from ..sequence._array import arrays, as_torch
 from ._contrast import across_contrasts
@@ -37,7 +37,7 @@ class LorentzianSimulator(Simulator):
     offsets : array-like
         Saturation offsets from water, in the unit of the pool widths and shifts
         (conventionally ppm). Passed by keyword, as for any
-        :class:`~blochsim.model.Simulator`.
+        :class:`~blochsim.Simulator`.
     **values
         Properties or protocol arguments to fix.
 

@@ -10,7 +10,7 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import SPOILED, Simulator, SpinPhysics
+from .._model import SPOILED, Simulator, SpinPhysics
 from ..sequence._array import as_torch, matched
 
 

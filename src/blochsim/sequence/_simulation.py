@@ -276,9 +276,9 @@ class EpgEngine:
     than a simulator: one a builder such as
     :func:`~blochsim.fse_description` emitted, one assembled from operators by
     hand, or one that arrived from a scanner. A
-    :class:`~blochsim.model.Simulator` wraps this and is what most sequences
+    :class:`~blochsim.Simulator` wraps this and is what most sequences
     are written as -- it fixes tissue and protocol on itself, and adds
-    :meth:`~blochsim.model.Simulator.jacobian`, binding and device
+    :meth:`~blochsim.Simulator.jacobian`, binding and device
     placement. Nothing here does any of that: give it a description and a
     tissue, get a :class:`SimulationResult` back.
 

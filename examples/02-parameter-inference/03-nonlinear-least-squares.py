@@ -11,7 +11,8 @@ on a noise floor, so the decay does not reach zero. Unlike the proton density,
 this offset does not divide out of a normalized match: ignoring it biases T2,
 and adding it to the dictionary multiplies the number of atoms. A fit instead
 adds one column to the Jacobian, at the cost of no guarantee that it finds the
-global minimum.
+global minimum. blochsim supplies the model and its derivative; the fit is
+`bartorch <https://github.com/pulserver/bartorch>`_'s ``apps.mobafit``.
 
 Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 """
@@ -20,7 +21,7 @@ Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 # .. colab-link::
 #    :needs_gpu: 0
 #
-#    !pip install blochsim matplotlib brainweb-dl cmap
+#    !pip install blochsim bartorch matplotlib brainweb-dl cmap
 #    !wget --quiet --no-clobber https://raw.githubusercontent.com/pulserver/blochsim/main/docs/figure_style.py
 
 # sphinx_gallery_start_ignore
@@ -34,7 +35,6 @@ import matplotlib.pyplot as plt
 from brainweb_dl import get_mri
 from cmap import Colormap
 
-import blochsim
 from figure_style import MUTED, PAGE_WIDTH, SERIES, legend_outside
 
 warnings.filterwarnings("ignore")
@@ -99,16 +99,15 @@ def footprint(problem):
 def mapped(problem, passes=3):
     """Map the slice a few times: the quickest pass, and the peak GPU memory."""
     on_device = torch.cuda.is_available()
-    with blochsim.execution():
-        problem(measured[:64])
-        if on_device:
-            torch.cuda.reset_peak_memory_stats()
-        best = float("inf")
-        for _ in range(passes):
-            start = time.perf_counter()
-            maps = problem(measured)
-            best = min(best, time.perf_counter() - start)
-        peak = torch.cuda.max_memory_allocated() / 2**20 if on_device else float("nan")
+    problem(measured[:64], execution="auto")
+    if on_device:
+        torch.cuda.reset_peak_memory_stats()
+    best = float("inf")
+    for _ in range(passes):
+        start = time.perf_counter()
+        maps = problem(measured, execution="auto")
+        best = min(best, time.perf_counter() - start)
+    peak = torch.cuda.max_memory_allocated() / 2**20 if on_device else float("nan")
     return maps, best, peak
 
 
@@ -126,7 +125,10 @@ def held(megabytes):
 import numpy as np
 import torch
 
-from blochsim.estimators import DictionaryMatcher, NonlinearLeastSquares
+from bartorch import apps, nlop
+
+from blochsim import ModelOperator
+from blochsim.estimators import DictionaryMatcher
 from blochsim.simulators import MultiEchoSimulator
 
 # %%
@@ -221,23 +223,27 @@ plt.show()
 # Nonlinear fit
 # -------------
 #
-# ``NonlinearLeastSquares`` takes the range of every unknown, a starting value
-# and the noise level. All voxels are updated in the same pass; each carries
-# its own damping, accepts or rejects its own step, and stops when it
-# converges.
-#
-# The bounds are enforced by fitting a transformed variable, not by clipping:
-# no iterate leaves the interval and no bound is active at the solution. The
-# transformation also puts all parameters on a common scale, which the damping
-# assumes.
+# A :class:`~blochsim.ModelOperator` declares the unknowns and the range of
+# each. The bounds are enforced by fitting a transformed variable, not by
+# clipping: no iterate leaves the interval and no bound is active at the
+# solution. The transformation also puts all parameters on a common scale,
+# which the damping assumes. M0 is one of the unknowns, so the operator carries
+# no separate complex amplitude.
 BOUNDS = {"T2": (10.0, 500.0), "M0": (0.1, 2.0), "offset": (0.0, 0.2)}
 START = {"T2": 100.0, "M0": 1.0, "offset": 0.02}
 
-fit = NonlinearLeastSquares(simulator, bounds=BOUNDS, initial=START).fit(
-    BOUNDS, noise_std=NOISE_STD, seed=0
-)
+operator = ModelOperator(simulator, *BOUNDS, bounds=BOUNDS, amplitude=False)
 
-maps = fit.map(measured)  # {"T2": ..., "M0": ..., "offset": ...}
+# %%
+# bartorch's :func:`~bartorch.apps.mobafit` fits it voxel by voxel by
+# Levenberg-Marquardt. All voxels are updated in the same pass; each carries its
+# own damping, accepts or rejects its own step, and stops when it converges.
+# :class:`bartorch.nlop.ModelOperator` carries the model on the voxel shape, and
+# the images go in with the echoes first:
+model = nlop.ModelOperator(operator, (measured.shape[0],))
+maps = apps.mobafit(
+    measured.mT, model, **START
+)  # {"T2": ..., "M0": ..., "offset": ...}
 
 
 # sphinx_gallery_start_ignore
@@ -246,20 +252,31 @@ def fitted(unknown):
     fixed = {name: START[name] for name in START if name not in unknown}
     if "offset" in fixed:
         fixed["offset"] = FLOOR
-    problem = NonlinearLeastSquares(
-        simulator.bind(**fixed),
-        bounds={name: BOUNDS[name] for name in unknown},
-        initial={name: START[name] for name in unknown},
+    problem = nlop.ModelOperator(
+        ModelOperator(
+            simulator.bind(**fixed),
+            *unknown,
+            bounds={name: BOUNDS[name] for name in unknown},
+            amplitude=False,
+        ),
+        (measured.shape[0],),
     )
-    start = time.perf_counter()
-    problem.fit(
-        **{name: BOUNDS[name] for name in unknown},
-        noise_std=NOISE_STD,
-        seed=0,
+    start = {name: START[name] for name in unknown}
+    images = measured.mT.contiguous()
+    apps.mobafit(images, problem, **start)
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+    best = float("inf")
+    for _ in range(3):
+        began = time.perf_counter()
+        found = apps.mobafit(images, problem, **start)
+        best = min(best, time.perf_counter() - began)
+    peak = (
+        torch.cuda.max_memory_allocated() / 2**20
+        if torch.cuda.is_available()
+        else float("nan")
     )
-    training = time.perf_counter() - start
-    found, timing, peak = mapped(problem)
-    return found, training, timing, footprint(problem), peak
+    return found, 0.0, best, 0.0, peak
 
 
 two_maps, two_training, two_time, two_model, two_peak = fitted(("T2", "M0"))
@@ -327,7 +344,7 @@ matches = {floors: matched(floors) for floors in FLOOR_VALUES}
 # -----------------
 #
 # Times are the best of three passes after a warm-up. *model* is the memory the
-# fitted estimator holds between volumes. *peak* is the maximum GPU memory
+# fitted estimator holds between volumes, none for a fit. *peak* is the maximum GPU memory
 # allocated while mapping the slice, blank on a machine without a GPU. The
 # error is the median relative T2 error over the brain voxels.
 
@@ -384,8 +401,8 @@ for name, training, timing, model, peak, found in (
 # The fit is slower in wall-clock time, because a Levenberg-Marquardt loop takes
 # tens of passes where a match takes one. Each additional nuisance parameter
 # multiplies the number of atoms but adds one column to the Jacobian, so the
-# time curves cross at some number of nuisance values, and the memory curves
-# have already crossed.
+# time curves cross at some number of nuisance values. The fit holds no table
+# between volumes at all, so its memory does not appear on the right.
 
 # sphinx_gallery_start_ignore
 fig, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 0.4 * PAGE_WIDTH))
@@ -404,7 +421,6 @@ axes[0].set(
 axes[1].plot(
     atoms, [matches[f][4] for f in FLOOR_VALUES], "-o", color=SERIES[0], label="match"
 )
-axes[1].axhline(three_model, color=SERIES[1], ls="--", label="fit, 3 unknowns")
 axes[1].set(
     xlabel="atoms in the dictionary",
     ylabel="estimator memory (MiB)",
@@ -467,10 +483,11 @@ plt.show()
 #
 # .. code-block:: text
 #
-#    With blochsim, map T2 in BrainWeb subject 0, slice 90, from a 16-echo
-#    multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor offset
-#    of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
-#    NonlinearLeastSquares (bounds T2 10-500 ms, M0 0.1-2, offset 0-0.2).
+#    With blochsim and bartorch, map T2 in BrainWeb subject 0, slice 90, from a
+#    16-echo multi-echo spin echo (TE 10 to 200 ms) with a constant noise-floor
+#    offset of 0.05 and Gaussian noise of 0.005. Fit T2, M0 and the offset with
+#    bartorch's apps.mobafit over a blochsim ModelOperator (bounds T2 10-500 ms,
+#    M0 0.1-2, offset 0-0.2).
 #    Compare with a DictionaryMatcher over 400 log-spaced T2 values, without
 #    the offset and with 10 to 80 offset values on the grid. Report mapping
 #    time, estimator memory and median relative T2 error, and plot the maps.

@@ -4,6 +4,28 @@
 
 ### Changed
 
+- **A smaller public API.** `Simulator` and `ModelOperator` are imported from
+  `blochsim`; `blochsim.model` and `blochsim.recon` are no longer public.
+  The estimators and the design tools are imported from `blochsim.estimators`
+  and `blochsim.optim` only. `SpinPhysics`, `EventOperators`, the operator
+  presets, the `Estimator` base class, `execution` and `offload` are private:
+  a simulator, an estimator's `map` and a `ModelOperator` take `execution=`
+  instead.
+- **One handler per Pulseq RF use.** `preparation` and `other` join
+  `excitation`, `refocusing`, `inversion` and `saturation`; both default to
+  `Excitation`.
+
+### Removed
+
+- **The nonlinear solvers.** `GaussNewton`, `Schedule`, `TrustRegion`,
+  `direct`, `iterative` and `NonlinearLeastSquares` are removed. bartorch's
+  `apps.mobafit` is the same per-voxel Levenberg-Marquardt fit, and
+  `nlop.IRGNM` and `apps.moba` solve through an encoding, all over a
+  `blochsim.ModelOperator`; the gallery examples that fitted or reconstructed
+  use them, and bartorch joins the `examples` extra.
+- **`blochsim.utils.b1rms`.** pypulseqpp's `calc_rf_power` reports the RF
+  power of a pulse.
+
 - **The package is `blochsim`.** The distribution, the import name and the
   repository are `blochsim`; `import torchsim` becomes `import blochsim`, with
   the same modules and names beneath it.

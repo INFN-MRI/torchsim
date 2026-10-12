@@ -5,10 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from blochsim import (
-    execution,
-)
-from blochsim.recon import ModelOperator
+from blochsim import ModelOperator
+from blochsim._execution import execution
 from blochsim.simulators import MultiEchoSimulator
 
 deepinv = pytest.importorskip("deepinv")
@@ -68,7 +66,7 @@ def test_differentiating_through_the_operator_does_not_stream_it(
     differentiated, and the streamed path would silently give it nothing, so
     a call under one runs where it stands however loud the policy is.
     """
-    from blochsim.recon import _operator as module
+    from blochsim import _operator as module
 
     entered = []
     real = module.per_voxel
@@ -108,8 +106,6 @@ def test_a_deepinv_optimizer_drives_the_composed_operator(operator) -> None:
     Composing this way gives up the analytic derivative -- deepinv takes the
     Jacobian products by differentiating the whole chain -- which is the trade
     for reaching every optimizer and prior it has.
-    :class:`~blochsim.recon.GaussNewton` chains the two operators' own
-    products instead and keeps it.
     """
     from deepinv.optim import L2
 

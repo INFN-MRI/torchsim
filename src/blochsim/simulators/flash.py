@@ -10,7 +10,7 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import Simulator, SpinPhysics
+from .._model import Simulator, SpinPhysics
 from ..sequence import EventAction, Readout, module
 from ..sequence._array import as_torch
 from ._pulses import excitation, inversion_parts

@@ -12,14 +12,10 @@ from __future__ import annotations
 
 __all__ = [
     "DictionaryMatcher",
-    "Estimator",
     "LookupTable",
-    "NonlinearLeastSquares",
     "PERK",
 ]
 
 from ._dictionary import DictionaryMatcher, MatchResult  # noqa: F401
 from ._lookup import LookupTable
-from ._mapping import Estimator
-from ._nlls import NonlinearLeastSquares
 from ._perk import PERK

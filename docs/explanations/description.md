@@ -61,7 +61,7 @@ wire format are in {doc}`../developer-guide/internals/description`.
 - **Reproduces the spoiled gradient-echo steady state from a description read either way.**
 
   :::{dropdown} Show code and tests
-  Code: {meth}`~blochsim.model.Simulator.from_description`. Tests: *the steady state is the spoiled gradient echo closed form* (`test_pulseq_reader.py`); *a described sequence drives the spoiled gradient echo steady state* (`test_mrd_reader.py`).
+  Code: {meth}`~blochsim.Simulator.from_description`. Tests: *the steady state is the spoiled gradient echo closed form* (`test_pulseq_reader.py`); *a described sequence drives the spoiled gradient echo steady state* (`test_mrd_reader.py`).
   :::
 
 ::::

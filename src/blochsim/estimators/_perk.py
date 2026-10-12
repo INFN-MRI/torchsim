@@ -52,7 +52,7 @@ class PERK(Estimator):
         compatible with a ``rank`` passed to :meth:`fit`; a ``subspace`` is
         accepted.
     uncertainty : bool, default=True
-        Learn the error model that :meth:`~Estimator.map` reads with
+        Learn the error model that :meth:`map` reads with
         ``uncertainty=True``, at the cost of a second pass over the training
         source. With ``False`` that request raises.
 
@@ -66,7 +66,7 @@ class PERK(Estimator):
     training set was simulated at.
 
     Estimation is differentiable with respect to the signals. Volumes are
-    streamed under :func:`~blochsim.execution`.
+    streamed as ``map(execution=...)`` says.
 
     References
     ----------

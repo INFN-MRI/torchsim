@@ -20,7 +20,7 @@ import pytest
 import torch
 
 import blochsim
-from blochsim.estimators import PERK, DictionaryMatcher, NonlinearLeastSquares
+from blochsim.estimators import PERK, DictionaryMatcher
 from blochsim.simulators import MRFSimulator
 
 CONTRASTS, VOXELS, DRAWS = 400, 40, 300
@@ -245,57 +245,6 @@ def test_a_measurement_of_another_amplitude_is_outside_what_was_learned(
     assert 0.8 < float(halved.median()) / float(stated.median()) < 1.25
 
 
-# --- least squares ---------------------------------------------------------
-
-
-def _least_squares(acquisition, noise_std):
-    return NonlinearLeastSquares(
-        acquisition,
-        bounds={"T1": (200.0, 5000.0), "T2": (20.0, 600.0)},
-        initial={"T1": 1000.0, "T2": 100.0},
-    ).fit(T1=(200.0, 5000.0), T2=(20.0, 600.0), noise_std=noise_std)
-
-
-def test_least_squares_states_its_own_standard_error(
-    acquisition, measurement, truth
-) -> None:
-    """The inverse Fisher matrix at the solution, against repeated fits.
-
-    This is the number a fit reports as a standard error, and it is a
-    linearization about the answer -- so it is checked where the residual is
-    small, which is where a fit is entitled to report one.
-    """
-    clean, noise_std = measurement
-    estimator = _least_squares(acquisition, noise_std)
-
-    found, stated = estimator(clean, uncertainty=True)
-    assert float((found["T1"] - truth[0]).abs().max()) < 1.0
-
-    generator = torch.Generator().manual_seed(5)
-    drawn: dict[str, list[torch.Tensor]] = {}
-    for _ in range(40):
-        for name, values in estimator(_noisy(clean, noise_std, generator)).items():
-            drawn.setdefault(name, []).append(values)
-
-    for name in ("T1", "T2"):
-        ratio = stated[name] / torch.stack(drawn[name]).std(0)
-        assert 0.7 < float(ratio.median()) < 1.4, name
-
-
-def test_a_standard_error_is_never_below_the_bound(
-    acquisition, measurement, truth
-) -> None:
-    """No unbiased estimate beats the Cramer-Rao bound, and this one does not."""
-    clean, noise_std = measurement
-    stated = _least_squares(acquisition, noise_std).uncertainty_of(clean)
-
-    _signal, sensitivity = acquisition.jacobian(["T1", "T2"], T1=truth[0], T2=truth[1])
-    floor = blochsim.crlb(sensitivity, noise_variance=noise_std**2).sqrt()
-
-    for column, name in enumerate(("T1", "T2")):
-        assert float((stated[name] / floor[:, column]).min()) > 0.99, name
-
-
 # --- and where there is none to state --------------------------------------
 
 
@@ -307,9 +256,9 @@ def test_a_voxel_that_cannot_be_read_is_infinite_rather_than_a_failure() -> None
     sensitivity[1, 1] = 0.0  # nothing there responds to the second parameter
 
     with pytest.raises(torch.linalg.LinAlgError):
-        blochsim.crlb(sensitivity)
+        blochsim.optim.crlb(sensitivity)
 
-    bound = blochsim.crlb(sensitivity, singular="infinite")
+    bound = blochsim.optim.crlb(sensitivity, singular="infinite")
     assert torch.isinf(bound[1]).all()
     assert torch.isfinite(bound[[0, 2]]).all()
 

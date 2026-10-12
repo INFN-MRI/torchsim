@@ -340,7 +340,7 @@ def test_a_settled_state_carries_the_spread(route):
 
 
 def test_a_model_declares_it_like_any_other_property():
-    from blochsim.model._state_machine import SpinPhysics
+    from blochsim._model._state_machine import SpinPhysics
     from blochsim.sequence._parameters import features_of
 
     physics = SpinPhysics(

@@ -14,7 +14,7 @@ from typing import Any
 import numpy.typing as npt
 import torch
 
-from ..model import Simulator, SpinPhysics
+from .._model import Simulator, SpinPhysics
 from ..sequence._array import arrays
 from ._contrast import across_contrasts
 

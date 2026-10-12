@@ -7,8 +7,8 @@ import math
 import pytest
 import torch
 
+from blochsim import Simulator
 from blochsim.estimators import PERK, DictionaryMatcher
-from blochsim.model import Simulator
 from blochsim.simulators import MultiEchoSimulator
 
 

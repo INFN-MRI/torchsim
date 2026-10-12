@@ -4,9 +4,9 @@
 .. currentmodule:: blochsim
 ```
 
-The sequences that ship with BlochSim, as {class}`~blochsim.model.Simulator`
+The sequences that ship with BlochSim, as {class}`~blochsim.Simulator`
 subclasses. A constructor fixes protocol arguments, the keywords of
-{meth}`~blochsim.model.Simulator.simulate`; tissue properties are given at the
+{meth}`~blochsim.Simulator.simulate`; tissue properties are given at the
 call. See the {doc}`../explanations/signal-model` page.
 
 ## Closed form
@@ -53,7 +53,7 @@ Trains that are played out event by event on the extended phase graph engine ({d
 
 The `*_sim` functions evaluate a subset of the simulators in one call, with an
 optional Jacobian. They are not an extension API: new sequence families are
-{class}`~blochsim.model.Simulator` subclasses. The classes are preferred when a
+{class}`~blochsim.Simulator` subclasses. The classes are preferred when a
 sequence is reused, bound to a protocol, or passed to an estimator,
 reconstruction or design object.
 

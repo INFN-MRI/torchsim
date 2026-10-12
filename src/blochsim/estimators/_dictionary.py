@@ -75,7 +75,7 @@ class DictionaryMatcher(Estimator):
     A ``rank`` given to :meth:`fit` compresses the dictionary to
     ``(atoms, rank)`` before grouping. The estimator also returns an ``M0``
     map, computed from the match score and atom norms without touching atoms.
-    Volumes are streamed under :func:`~blochsim.execution`.
+    Volumes are streamed as ``map(execution=...)`` says.
 
     References
     ----------
