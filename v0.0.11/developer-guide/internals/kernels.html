@@ -1,0 +1,901 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Kernels &#8212; BlochSim Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=4418a689" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=c83e6b79" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=a20394c5" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
+
+    <script src="../../_static/documentation_options.js?v=87ab6723"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/sg-tags.js?v=d80f6fa4"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'developer-guide/internals/kernels';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.20.0';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://pulserver.github.io/blochsim/versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'v0.0.11';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner =
+            true;
+        </script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <link rel="canonical" href="https://pulserver.github.io/blochsim/v0.0.11/developer-guide/internals/kernels.html" />
+    <link rel="icon" href="../../_static/blochsim-mark.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Explanations" href="../../explanations/index.html" />
+    <link rel="prev" title="Sequence description: reading rules" href="description.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="v0.0.11" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/blochsim-mark.svg" class="logo__image only-light" alt="blochsim"/>
+    <img src="../../_static/blochsim-mark-dark.svg" class="logo__image only-dark pst-js-only" alt="blochsim"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+<div class="version-switcher__container dropdown pst-js-only">
+  <button id="pst-version-switcher-button-2"
+    type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-controls="pst-version-switcher-list-2"
+    aria-label="Version switcher list"
+  >
+    Choose version  <!-- this text may get changed later by javascript -->
+    <span class="caret"></span>
+  </button>
+  <div id="pst-version-switcher-list-2"
+    class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox" aria-labelledby="pst-version-switcher-button-2">
+    <!-- dropdown will be populated by javascript on page load -->
+  </div>
+</div></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../index.html">
+                    Homepage
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">Developer guide</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../terminology.html">Terminology</a></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="index.html">Internals</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Kernels</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/signal-model.html">Signal model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/epg.html">Extended phase graphs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/sequence-design.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../examples/index.html">Examples</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../examples/course.html">Course</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/01-first-simulation.html">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/05-custom-operator.html">5. Custom operator</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../examples/applications.html">Applications</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/01-dictionary-matching.html">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/03-sequence-optimization/01-echo-train-design.html">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/03-sequence-optimization/02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/03-sequence-optimization/03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../api/index.html">API reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../api/model.html">Signal models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/simulators.html">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/recon.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/optim.html">Sequence design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/execution.html">Execution</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../misc/license.html">License</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../misc/related.html">Related Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../misc/contributors.html">Contributors</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/edit/main/developer-guide/internals/kernels.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/issues/new?title=Issue%20on%20page%20%2Fdeveloper-guide/internals/kernels.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/developer-guide/internals/kernels.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Kernels</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#event-packing">Event packing</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#events-and-action-words">Events and action words</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#value-rebinding">Value rebinding</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#per-voxel-state">Per-voxel state</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fused-kernel">Fused kernel</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#layouts-and-compiles">Layouts and compiles</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#limits">Limits</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#declared-terms">Declared terms</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#real-subspace-path">Real-subspace path</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pulses">Pulses</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#verification-against-closed-forms">Verification against closed forms</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#scope-of-the-kernels">Scope of the kernels</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="kernels">
+<h1>Kernels<a class="headerlink" href="#kernels" title="Link to this heading">#</a></h1>
+<p>How a <a class="reference internal" href="../../generated/blochsim.SequenceDescription.html#blochsim.SequenceDescription" title="blochsim.SequenceDescription"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDescription</span></code></a> becomes packed buffers, and how
+the fused CPU and CUDA kernels run them. The physics is on
+<a class="reference internal" href="../../explanations/epg.html"><span class="doc">Extended phase graphs</span></a>; derivatives and device placement are on
+<a class="reference internal" href="../../explanations/derivatives.html"><span class="doc">Derivatives</span></a> and <a class="reference internal" href="../../explanations/execution.html"><span class="doc">Execution</span></a>.</p>
+<section id="event-packing">
+<h2>Event packing<a class="headerlink" href="#event-packing" title="Link to this heading">#</a></h2>
+<p>A description is a list of events, each with a timestamp, a payload and an
+action word. Whatever assembled it – composed operators, a shipped builder, a
+Pulseq file or an MRD stream – the path afterwards is the same.</p>
+<figure class="align-default" id="id7">
+<a class="reference internal image-reference" href="../../_images/pipeline.png"><img alt="Operators to description to packed buffers to fused kernel to signal." src="../../_images/pipeline.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left of the dashed line is Python and runs once per structure; right of it is
+compiled and runs once per call. The kernels do not interpret a sequence and
+do not dispatch per event: they receive the tissue arrays and nine flat event
+arrays.</span><a class="headerlink" href="#id7" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The event arrays are <code class="docutils literal notranslate"><span class="pre">duration</span></code>, <code class="docutils literal notranslate"><span class="pre">kind</span></code>, <code class="docutils literal notranslate"><span class="pre">flip</span></code>, <code class="docutils literal notranslate"><span class="pre">phase</span></code>, <code class="docutils literal notranslate"><span class="pre">action</span></code>,
+<code class="docutils literal notranslate"><span class="pre">output_index</span></code>, <code class="docutils literal notranslate"><span class="pre">shim_index</span></code>, <code class="docutils literal notranslate"><span class="pre">saturation</span></code> and <code class="docutils literal notranslate"><span class="pre">rf_frequency_hz</span></code>
+(<code class="docutils literal notranslate"><span class="pre">EVENT_PARAMETERS</span></code> in <code class="docutils literal notranslate"><span class="pre">src/blochsim/sequence/_parameters.py</span></code>, the parameter
+ABI shared by the dispatch, the C++ extension and the CUDA kernels).</p>
+<section id="events-and-action-words">
+<h3>Events and action words<a class="headerlink" href="#events-and-action-words" title="Link to this heading">#</a></h3>
+<p>An event is a wait, an RF pulse or an ADC. Gradients are not events. A Pulseq
+file has no gradient use field, so a crusher cannot be told from a phase encode
+without tracking the k-space moment through the TR; instead each event carries
+its role as bits of <code class="docutils literal notranslate"><span class="pre">blochsim.sequence.EventAction</span></code>: <code class="docutils literal notranslate"><span class="pre">CRUSH_BEFORE</span></code> and
+<code class="docutils literal notranslate"><span class="pre">CRUSH_AFTER</span></code> for the unbalanced gradients a refocusing pulse sits between,
+<code class="docutils literal notranslate"><span class="pre">SHIFT_AFTER</span></code> for one played after a readout, <code class="docutils literal notranslate"><span class="pre">SPOIL_AFTER</span></code> for ideal
+transverse spoiling there instead. The same bit values are the packed action
+word.</p>
+<figure class="align-default" id="id8">
+<a class="reference internal image-reference" href="../../_images/event_stream.png"><img alt="A timeline of RF, ADC and wait events for a four-echo refocused train." src="../../_images/event_stream.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">A four-echo refocused train, as <a class="reference internal" href="../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator.describe" title="blochsim.model.Simulator.describe"><code class="xref py py-meth docutils literal notranslate"><span class="pre">describe()</span></code></a>
+emits it. The crushers are carried by the refocusing pulses between them,
+which is why <code class="docutils literal notranslate"><span class="pre">Refocusing</span></code> is one operator rather than three. The ADCs are
+marked as echo centres, which is how a reconstruction selects samples without
+counting events.</span><a class="headerlink" href="#id8" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The operators (<code class="docutils literal notranslate"><span class="pre">Excitation</span></code>, <code class="docutils literal notranslate"><span class="pre">Refocusing</span></code>, <code class="docutils literal notranslate"><span class="pre">Readout</span></code>, <code class="docutils literal notranslate"><span class="pre">Dephase</span></code>, <code class="docutils literal notranslate"><span class="pre">Spoil</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Delay</span></code> and the readout modules built from them) emit exactly this
+vocabulary, so a module written outside the package – a T2 preparation, an
+MT saturation, a shaped pulse – reaches the kernels unchanged.</p>
+</section>
+<section id="value-rebinding">
+<h3>Value rebinding<a class="headerlink" href="#value-rebinding" title="Link to this heading">#</a></h3>
+<figure class="align-default" id="id9">
+<a class="reference internal image-reference" href="../../_images/binding.png"><img alt="The packed buffers, with the four that change per call marked." src="../../_images/binding.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">What a call with different numbers rebuilds when the structure is resolved.</span><a class="headerlink" href="#id9" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>A layout turns its arguments into event parameters by scaling and offsetting
+them: degrees to radians, a flip angle divided and multiplied by the pulse’s
+envelope integral, a phase plus the integral’s argument, a timestamp
+accumulating a spacing. Each entry of <code class="docutils literal notranslate"><span class="pre">duration</span></code>, <code class="docutils literal notranslate"><span class="pre">flip</span></code> and <code class="docutils literal notranslate"><span class="pre">phase</span></code> is
+therefore <code class="docutils literal notranslate"><span class="pre">offset</span> <span class="pre">+</span> <span class="pre">scale</span> <span class="pre">*</span> <span class="pre">value</span></code> in one element of one argument. Two
+forward-mode passes recover the map – a tangent of ones gives the scale, a
+tangent of <code class="docutils literal notranslate"><span class="pre">1,</span> <span class="pre">2,</span> <span class="pre">3,</span> <span class="pre">...</span></code> gives the scale times the source index – and later
+calls rebuild these buffers with whole-tensor arithmetic. Sample times are not
+mapped: a timestamp is the running total of every interval before it, so they
+are read off the rebuilt intervals.</p>
+<p>The map is refused when a recovered index is not a whole number (an entry
+draws on more than one element) or when a rebuild disagrees with a fresh
+packing at a point the map was not read at (<code class="docutils literal notranslate"><span class="pre">src/blochsim/model/_binding.py</span></code>).
+A refusal is remembered rather than retried each call. With
+<code class="docutils literal notranslate"><span class="pre">repetitions=&quot;auto&quot;</span></code> no structure is held across calls.</p>
+</section>
+</section>
+<section id="per-voxel-state">
+<h2>Per-voxel state<a class="headerlink" href="#per-voxel-state" title="Link to this heading">#</a></h2>
+<figure class="align-default" id="id10">
+<a class="reference internal image-reference" href="../../_images/state_memory.png"><img alt="The three state families over eight orders, and the memory that costs per voxel." src="../../_images/state_memory.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">One voxel’s state, and its memory as more orders are carried. In complex64, a
+voxel at 20 orders is 480 bytes, so a million-voxel volume holds a few hundred
+megabytes of state: a run is bounded by how many voxels a card holds rather
+than by the sequence.</span><a class="headerlink" href="#id10" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The state of a voxel is the three families <span class="math notranslate nohighlight">\(F^+_k\)</span>, <span class="math notranslate nohighlight">\(F^-_k\)</span> and <span class="math notranslate nohighlight">\(Z_k\)</span> over
+the orders it carries. <code class="docutils literal notranslate"><span class="pre">states=</span></code> on a simulator, or <code class="docutils literal notranslate"><span class="pre">nstates=</span></code> on a call, sets
+the order count. Left unset, it is one more than the winding the description
+declares – every <code class="docutils literal notranslate"><span class="pre">CRUSH_BEFORE</span></code>, <code class="docutils literal notranslate"><span class="pre">CRUSH_AFTER</span></code> and <code class="docutils literal notranslate"><span class="pre">SHIFT_AFTER</span></code> over every
+repetition – clamped to between 8 and 64.</p>
+</section>
+<section id="fused-kernel">
+<h2>Fused kernel<a class="headerlink" href="#fused-kernel" title="Link to this heading">#</a></h2>
+<figure class="align-default" id="id11">
+<a class="reference internal image-reference" href="../../_images/fusion.png"><img alt="A launch per event crossing memory each time, against one fused launch." src="../../_images/fusion.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Written as tensor operations, an EPG simulation is one launch per event, each
+reading the state from memory and writing it back. The fused program walks the
+whole event stream with the state in registers, touching memory at the start,
+at the end and at each recorded sample. The loop is over events; the
+parallelism is over voxels.</span><a class="headerlink" href="#id11" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The CPU kernels are a threaded C++ extension (<code class="docutils literal notranslate"><span class="pre">_epg_cpu.cpp</span></code>, <code class="docutils literal notranslate"><span class="pre">_perk_cpu.cpp</span></code>)
+over a worker pool that outlives the calls (<code class="docutils literal notranslate"><span class="pre">_threads.hpp</span></code>). The CUDA kernels
+are compiled ahead of time (<code class="docutils literal notranslate"><span class="pre">_gpu.cu</span></code>, <code class="docutils literal notranslate"><span class="pre">_epg_kernels.hpp</span></code>, <code class="docutils literal notranslate"><span class="pre">_pools_kernels.hpp</span></code>),
+with a block of threads per program. Every mode exists on both sides –
+forward, forward mode, adjoint, forward-over-reverse, the real-subspace
+specialization and the pool models – and the two agree to float32 round-off.
+On Linux the same CUDA kernels are also compiled for the host (<code class="docutils literal notranslate"><span class="pre">_gpu_host</span></code>),
+which is how the suite checks them without a card.</p>
+<section id="layouts-and-compiles">
+<h3>Layouts and compiles<a class="headerlink" href="#layouts-and-compiles" title="Link to this heading">#</a></h3>
+<p>The EPG kernels on a card are written for their layouts (<code class="docutils literal notranslate"><span class="pre">_layout.hpp</span></code>). A
+layout is what is compiled: the pool count, how a pulse is formed, whether the
+tissue has per-voxel maps, how many problems a thread holds, and whether
+there is one train. Every other switch is read at run time and steers whole
+blocks once per event, so one compile serves every combination of them. The
+loops are written once over a number type (<code class="docutils literal notranslate"><span class="pre">_layout_numbers.hpp</span></code>): at <code class="docutils literal notranslate"><span class="pre">float</span></code>
+they are the forward simulation, at <code class="docutils literal notranslate"><span class="pre">num::Dual</span></code> the Jacobian-vector product.
+The adjoints keep the state every few events on the forward sweep and replay
+each stretch from it on the reverse sweep. A launch whose rows fit a warp runs
+a layout kernel ahead of any tile kernel.</p>
+</section>
+<section id="limits">
+<h3>Limits<a class="headerlink" href="#limits" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>1024 threads per block.</strong> A tile holds one state order per thread, so an
+EPG launch with more than 1024 orders, or a pooled one whose orders times
+pools pass 1024, is refused with the kernel’s name. A thread holds
+<code class="docutils literal notranslate"><span class="pre">Y_LANES</span></code> problems in registers (<code class="docutils literal notranslate"><span class="pre">_lanes.hpp</span></code>), so one read of each event
+serves all of them.</p></li>
+<li><p><strong>32-bit indexing.</strong> The EPG kernels index with <code class="docutils literal notranslate"><span class="pre">bsk::index_t</span></code>, a 32-bit
+integer (<code class="docutils literal notranslate"><span class="pre">_tile.hpp</span></code>). An offset that can pass <span class="math notranslate nohighlight">\(2^{31}\)</span> is cast to 64 bits
+where it is formed, and the launcher refuses an integer argument that does
+not fit rather than truncating it.</p></li>
+</ul>
+</section>
+</section>
+<section id="declared-terms">
+<h2>Declared terms<a class="headerlink" href="#declared-terms" title="Link to this heading">#</a></h2>
+<p>A tissue property has an identity value, at which it has no effect, and a run
+reads which properties were given as maps to decide which terms the kernel
+evaluates. Off-resonance, diffusion, flow, a transmit array and a second pool
+are each absent unless a model declares them and a call gives them.</p>
+<figure class="align-default" id="id12">
+<a class="reference internal image-reference" href="../../_images/declared_physics.png"><img alt="Run time of the same schedule with off-resonance and with diffusion declared." src="../../_images/declared_physics.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">The same fingerprinting schedule over the same voxels, with more physics
+declared each time, measured on the machine that built this page. A second
+pool is not a term on top of these: it selects a different kernel, with a
+coupled relaxation-exchange operator <a class="footnote-reference brackets" href="#id4" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a> in place of the two scalar factors.</span><a class="headerlink" href="#id12" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="real-subspace-path">
+<h2>Real-subspace path<a class="headerlink" href="#real-subspace-path" title="Link to this heading">#</a></h2>
+<p>If every refocusing pulse shares one phase, the excitation is in phase with
+them or a half turn away, and there is no off-resonance, transmit phase or
+flow, the states stay on one axis of the complex plane for the whole train:
+the CPMG and anti-CPMG arrangements of the EPG literature <a class="footnote-reference brackets" href="#id5" id="id2" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>. The arithmetic
+can then be done in real numbers: the shift’s conjugate coupling becomes a
+sign, and the rotation reduces to a real 3x3 matrix.</p>
+<p>A pulse a half turn round is the same pulse turning the other way, and a
+sample demodulated a half turn round is the same sample negated. The event
+stream is packed with those half turns removed – the flips they negate carry
+the sign, and the samples they negate pass theirs to the signal – so an
+anti-CPMG train, or one alternating its phase by a half turn every repetition
+as a phase-cycled balanced sequence does, takes this path. Both identities hold
+at every phase, so the rewrite is differentiated exactly.</p>
+<figure class="align-default" id="id13">
+<a class="reference internal image-reference" href="../../_images/real_subspace.png"><img alt="A state trajectory on a line against one filling the plane, and the run times of each." src="../../_images/real_subspace.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left, the recorded state in the two cases. Right, the same 64-echo train over
+the same voxels with the excitation in phase with the refocusing pulses, a
+quarter turn from them, and in phase with off-resonance declared. Only the
+first is confined to the axis.</span><a class="headerlink" href="#id13" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The test is made per run (<code class="docutils literal notranslate"><span class="pre">real_subspace_axis</span></code> in
+<code class="docutils literal notranslate"><span class="pre">src/blochsim/sequence/_accelerators.py</span></code>), and skipped for a problem too small
+to repay it (<code class="docutils literal notranslate"><span class="pre">detection</span></code> in <code class="docutils literal notranslate"><span class="pre">_calibration.py</span></code>). It refuses three arrangements
+that look real and are not: off-resonance, which is refocused at the echo
+centres but not between them; an excitation a quarter turn from the refocusing
+pulses, whose samples are real while the states fill the plane; and a shaped
+pulse, whose rotation axis has a component along <span class="math notranslate nohighlight">\(z\)</span>. A train alternating
+between quarter-turn phases leaves the axis and runs the complex kernel. On the
+host, the real-subspace kernels run blocks of eight trains in SIMD lanes
+(<code class="docutils literal notranslate"><span class="pre">REAL_LANES</span></code>); <code class="docutils literal notranslate"><span class="pre">BLOCHSIM_REAL_SCALAR=1</span></code> routes them through the
+one-train-at-a-time kernels instead.</p>
+</section>
+<section id="pulses">
+<h2>Pulses<a class="headerlink" href="#pulses" title="Link to this heading">#</a></h2>
+<p>Pulses are instantaneous rotations by default. A slice-selective pulse can be
+integrated ahead of time into a table over slice position and effective flip
+angle <a class="footnote-reference brackets" href="#id6" id="id3" role="doc-noteref"><span class="fn-bracket">[</span>3<span class="fn-bracket">]</span></a>, read back by cubic Hermite interpolation. The flip angle and the
+transmit scaling enter only through their product and the RF phase factors
+out, which keeps that table small. It is requested with <code class="docutils literal notranslate"><span class="pre">across_slice=</span></code>.</p>
+</section>
+<section id="verification-against-closed-forms">
+<h2>Verification against closed forms<a class="headerlink" href="#verification-against-closed-forms" title="Link to this heading">#</a></h2>
+<p>Where a sequence has an analytic steady state, the state machine reproduces
+it. Where it does not, each operator still has a closed form, and the tests
+under <code class="docutils literal notranslate"><span class="pre">tests/epg/</span></code> pin the shift, the RF rotation, relaxation, diffusion, flow,
+spoiling and the two- and three-pool longitudinal steps against expressions
+written out in the test.</p>
+<figure class="align-default" id="id14">
+<a class="reference internal image-reference" href="../../_images/closed_form_agreement.png"><img alt="The simulated spoiled steady state over the Ernst curve, and the difference between them." src="../../_images/closed_form_agreement.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">A spoiled gradient echo played out event by event, against the Ernst
+expression shipped as a closed-form simulator. They agree to float32
+round-off over the flip angles that matter. The residual at the smallest
+angles is the approach to steady state: recovery is slow enough there that 300
+repetitions have not reached the state the closed form gives.</span><a class="headerlink" href="#id14" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>A change to the physics brings a check of the same kind; see
+<a class="reference internal" href="../workflow.html#dev-tests"><span class="std std-ref">Tests</span></a>.</p>
+</section>
+<section id="scope-of-the-kernels">
+<h2>Scope of the kernels<a class="headerlink" href="#scope-of-the-kernels" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p><strong>Gradient waveforms.</strong> A description declares one crusher moment for the
+whole sequence and dephasing is quantized to whole orders, so a bipolar
+pair, a b-value of its own, or a crusher of twice its neighbour’s area has no
+representation.</p></li>
+<li><p><strong>Intravoxel field variation.</strong> Off-resonance is a per-voxel constant, so
+<span class="math notranslate nohighlight">\(T_2'\)</span> dephasing comes from a distribution across voxels rather than from
+within one.</p></li>
+<li><p><strong>Three pools beyond a voxel’s magnetization.</strong> Three pools with two
+different second pools are carried, but a tissue cannot declare more than a
+voxel’s worth of magnetization between them.</p></li>
+</ul>
+<p>These are boundaries of the model rather than of the implementation.</p>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
+</section>
+</section>
+<aside class="footnote-list brackets">
+<aside class="footnote brackets" id="id4" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id1">1</a><span class="fn-bracket">]</span></span>
+<p>Malik, S. J., Teixeira, R. P. A. G., Hajnal, J. V., “Extended phase
+graph formalism for systems with magnetization transfer and exchange”,
+Magnetic Resonance in Medicine 80.2 (2018), pp. 767-779.
+<a class="reference external" href="https://doi.org/10.1002/mrm.27040">https://doi.org/10.1002/mrm.27040</a></p>
+</aside>
+<aside class="footnote brackets" id="id5" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id2">2</a><span class="fn-bracket">]</span></span>
+<p>Weigel, M., “Extended phase graphs: dephasing, RF pulses, and echoes -
+pure and simple”, Journal of Magnetic Resonance Imaging 41.2 (2015),
+pp. 266-295. <a class="reference external" href="https://doi.org/10.1002/jmri.24619">https://doi.org/10.1002/jmri.24619</a></p>
+</aside>
+<aside class="footnote brackets" id="id6" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id3">3</a><span class="fn-bracket">]</span></span>
+<p>Guenthner, C., Amthor, T., Doneva, M., Kozerke, S., “A unifying view on
+extended phase graphs and Bloch simulations for quantitative MRI”,
+Scientific Reports 11 (2021), 21289.
+<a class="reference external" href="https://doi.org/10.1038/s41598-021-00233-6">https://doi.org/10.1038/s41598-021-00233-6</a></p>
+</aside>
+</aside>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="description.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Sequence description: reading rules</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="../../explanations/index.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Explanations</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#event-packing">Event packing</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#events-and-action-words">Events and action words</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#value-rebinding">Value rebinding</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#per-voxel-state">Per-voxel state</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#fused-kernel">Fused kernel</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#layouts-and-compiles">Layouts and compiles</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#limits">Limits</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#declared-terms">Declared terms</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#real-subspace-path">Real-subspace path</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pulses">Pulses</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#verification-against-closed-forms">Verification against closed forms</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#scope-of-the-kernels">Scope of the kernels</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BlochSim Contributors
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024, BlochSim Contributors.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

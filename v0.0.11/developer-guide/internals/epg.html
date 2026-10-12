@@ -1,0 +1,1033 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Extended phase graphs: operators &#8212; BlochSim Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=4418a689" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery.css?v=c83e6b79" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=a20394c5" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
+
+    <script src="../../_static/documentation_options.js?v=87ab6723"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/sg-tags.js?v=d80f6fa4"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'developer-guide/internals/epg';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.20.0';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://pulserver.github.io/blochsim/versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'v0.0.11';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner =
+            true;
+        </script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <link rel="canonical" href="https://pulserver.github.io/blochsim/v0.0.11/developer-guide/internals/epg.html" />
+    <link rel="icon" href="../../_static/blochsim-mark.svg"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Sequence description: reading rules" href="description.html" />
+    <link rel="prev" title="Internals" href="index.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="v0.0.11" />
+  
+    
+    <script src="../../_static/searchtools.js"></script>
+    <script src="../../_static/language_data.js"></script>
+    <script src="../../searchindex.js"></script>
+  
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/blochsim-mark.svg" class="logo__image only-light" alt="blochsim"/>
+    <img src="../../_static/blochsim-mark-dark.svg" class="logo__image only-dark pst-js-only" alt="blochsim"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+<div class="version-switcher__container dropdown pst-js-only">
+  <button id="pst-version-switcher-button-2"
+    type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-controls="pst-version-switcher-list-2"
+    aria-label="Version switcher list"
+  >
+    Choose version  <!-- this text may get changed later by javascript -->
+    <span class="caret"></span>
+  </button>
+  <div id="pst-version-switcher-list-2"
+    class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox" aria-labelledby="pst-version-switcher-button-2">
+    <!-- dropdown will be populated by javascript on page load -->
+  </div>
+</div></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../index.html">
+                    Homepage
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">Developer guide</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../terminology.html">Terminology</a></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="index.html">Internals</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="kernels.html">Kernels</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/signal-model.html">Signal model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/epg.html">Extended phase graphs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../explanations/sequence-design.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../examples/index.html">Examples</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../examples/course.html">Course</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/01-first-simulation.html">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/01-framework/05-custom-operator.html">5. Custom operator</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../examples/applications.html">Applications</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/01-dictionary-matching.html">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/02-parameter-inference/04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/03-sequence-optimization/01-echo-train-design.html">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/03-sequence-optimization/02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/03-sequence-optimization/03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../generated/autoexamples/05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../api/index.html">API reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../api/model.html">Signal models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/simulators.html">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/recon.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/optim.html">Sequence design</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/execution.html">Execution</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../misc/license.html">License</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../misc/related.html">Related Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../misc/contributors.html">Contributors</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/edit/main/developer-guide/internals/epg.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/issues/new?title=Issue%20on%20page%20%2Fdeveloper-guide/internals/epg.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/developer-guide/internals/epg.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Extended phase graphs: operators</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dephasing">Dephasing</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-states">Configuration states</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#three-families-of-state">Three families of state</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#rf-pulses">RF pulses</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#instantaneous-rotation">Instantaneous rotation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#transmit-arrays">Transmit arrays</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#integrated-rotation">Integrated rotation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#per-voxel-rotation">Per-voxel rotation</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gradients">Gradients</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#relaxation-and-recovery">Relaxation and recovery</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phase-graph">Phase graph</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#truncation">Truncation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#off-resonance-and-field-spread">Off-resonance and field spread</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#second-pools">Second pools</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#semisolid-pool">Semisolid pool</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#chemically-exchanging-pools">Chemically exchanging pools</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#diffusion">Diffusion</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#flow-and-washout">Flow and washout</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="extended-phase-graphs-operators">
+<h1>Extended phase graphs: operators<a class="headerlink" href="#extended-phase-graphs-operators" title="Link to this heading">#</a></h1>
+<p>The configuration-state formalism blochsim’s kernels implement, operator by
+operator, and how each tissue term enters. What the kernels hold and leave out
+is summarised on <a class="reference internal" href="../../explanations/epg.html"><span class="doc">Extended phase graphs</span></a>; how the operators are packed and
+run is <a class="reference internal" href="kernels.html"><span class="doc">Kernels</span></a>. The notation is Weigel’s review <a class="footnote-reference brackets" href="#id7" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>.</p>
+<section id="dephasing">
+<h2>Dephasing<a class="headerlink" href="#dephasing" title="Link to this heading">#</a></h2>
+<p>A voxel is an ensemble of isochromats. A gradient gives each a Larmor
+frequency that depends on its position, so over an interval the phase they
+acquire is linear in position: the ensemble winds into a helix and the voxel
+sum falls. A gradient of the opposite sign unwinds it.</p>
+<figure class="align-default" id="id10">
+<a class="reference internal image-reference" href="../../_images/dephasing_helix.png"><img alt="Isochromats fanning out in the transverse plane as a gradient winds them." src="../../_images/dephasing_helix.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Isochromats across one voxel, in the transverse plane, after gradient areas
+winding zero, a quarter, one and three turns across it. The arrow is their
+sum, which is the signal. Past one full turn the sum is near zero while the
+ensemble remains ordered.</span><a class="headerlink" href="#id10" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The winding is <span class="math notranslate nohighlight">\(k = \gamma \int G\,\mathrm{d}t\)</span>, the k-space coordinate of
+imaging. A gradient acts on the ensemble only by changing <span class="math notranslate nohighlight">\(k\)</span>.</p>
+</section>
+<section id="configuration-states">
+<h2>Configuration states<a class="headerlink" href="#configuration-states" title="Link to this heading">#</a></h2>
+<p>Because the phase is linear in position, the transverse magnetization across
+the voxel is a sum of spatial harmonics labelled by <span class="math notranslate nohighlight">\(k\)</span>. With
+<span class="math notranslate nohighlight">\(M^{+}(r) = M_x + iM_y\)</span>, the <strong>configuration states</strong> are</p>
+<div class="math notranslate nohighlight">
+\[
+\tilde F^{+}(k) = \int_V M^{+}(r)\, e^{-ikr}\, \mathrm{d}^3r ,
+\]</div>
+<p>and the measured signal is <span class="math notranslate nohighlight">\(\tilde F^{+}(0)\)</span>. This is the configuration-state
+treatment of echo trains of Hennig <a class="footnote-reference brackets" href="#id6" id="id2" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>.</p>
+<figure class="align-default" id="id11">
+<a class="reference internal image-reference" href="../../_images/configuration_states.png"><img alt="A spatially modulated magnetization profile beside its few Fourier coefficients." src="../../_images/configuration_states.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left, the transverse magnetization across a voxel part-way through a
+sequence. Right, the same state as configuration amplitudes. A sequence that
+winds by whole turns populates only integer orders.</span><a class="headerlink" href="#id11" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The cost of the simulation is the number of orders the sequence populates, not
+a spatial resolution.</p>
+</section>
+<section id="three-families-of-state">
+<h2>Three families of state<a class="headerlink" href="#three-families-of-state" title="Link to this heading">#</a></h2>
+<p>The two conjugate halves of the transverse magnetization move in opposite
+directions under a gradient and are tracked separately as <span class="math notranslate nohighlight">\(\tilde F^{+}(k)\)</span>
+and <span class="math notranslate nohighlight">\(\tilde F^{-}(k)\)</span>. Longitudinal magnetization is modulated across the
+voxel too – a pulse can store a dephased transverse state along <span class="math notranslate nohighlight">\(z\)</span>, where it
+neither dephases further nor decays with <span class="math notranslate nohighlight">\(T_2\)</span> – so it has states
+<span class="math notranslate nohighlight">\(\tilde Z(k)\)</span>.</p>
+<figure class="align-default" id="id12">
+<a class="reference internal image-reference" href="../../_images/state_ladder.png"><img alt="A grid of F-plus, F-minus and Z states over dephasing orders zero to four." src="../../_images/state_ladder.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">The state of a voxel: three families over the integer dephasing orders. A
+gradient moves populations along the rows in opposite directions; an RF pulse
+mixes them within a column. At order zero <span class="math notranslate nohighlight">\(\tilde F^{+}(0)\)</span> and
+<span class="math notranslate nohighlight">\(\tilde F^{-}(0)\)</span> are complex conjugates, which is why order zero needs a rule
+of its own in the shift.</span><a class="headerlink" href="#id12" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="rf-pulses">
+<h2>RF pulses<a class="headerlink" href="#rf-pulses" title="Link to this heading">#</a></h2>
+<section id="instantaneous-rotation">
+<h3>Instantaneous rotation<a class="headerlink" href="#instantaneous-rotation" title="Link to this heading">#</a></h3>
+<p>A hard pulse of flip angle <span class="math notranslate nohighlight">\(\alpha\)</span> and phase <span class="math notranslate nohighlight">\(\varphi\)</span> acts identically on
+every order, as one 3x3 matrix applied to each column:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}
+\begin{pmatrix}\tilde F^{+}\\ \tilde F^{-}\\ \tilde Z\end{pmatrix}
+\leftarrow
+\mathbf{T}(\alpha, \varphi)
+\begin{pmatrix}\tilde F^{+}\\ \tilde F^{-}\\ \tilde Z\end{pmatrix} .
+\end{split}\]</div>
+<figure class="align-default" id="id13">
+<a class="reference internal image-reference" href="../../_images/rf_operator.png"><img alt="The magnitude of the EPG rotation matrix at 30, 90 and 180 degrees." src="../../_images/rf_operator.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">The magnitude of <span class="math notranslate nohighlight">\(\mathbf{T}\)</span> at three flip angles. 180° swaps the two
+transverse families and inverts <span class="math notranslate nohighlight">\(\tilde Z\)</span>. 90° refocuses half, leaves half
+dephasing, converts longitudinal magnetization into transverse, and stores half
+of the transverse along <span class="math notranslate nohighlight">\(z\)</span>. A small flip angle leaves most of each state in
+place.</span><a class="headerlink" href="#id13" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>Every pulse other than 0° and 180° splits each populated state three ways, so
+the number of pathways grows with each pulse until relaxation and truncation
+remove the weakest.</p>
+<p>The flip angle is the prescribed one times the voxel’s <span class="math notranslate nohighlight">\(B_1\)</span>
+(<code class="docutils literal notranslate"><span class="pre">b1</span></code>), and the phase is the event’s plus the voxel’s transmit phase
+(<code class="docutils literal notranslate"><span class="pre">b1_phase_rad</span></code>). An inversion is scaled by <code class="docutils literal notranslate"><span class="pre">inversion_efficiency</span></code>.</p>
+</section>
+<section id="transmit-arrays">
+<h3>Transmit arrays<a class="headerlink" href="#transmit-arrays" title="Link to this heading">#</a></h3>
+<p>With several transmit channels the field in a voxel is
+<span class="math notranslate nohighlight">\(B_1(v, s) = \sum_c S_c(v)\, w_c(s)\)</span> for channel sensitivities <span class="math notranslate nohighlight">\(S_c\)</span> and the
+complex weights <span class="math notranslate nohighlight">\(w_c\)</span> of shim <span class="math notranslate nohighlight">\(s\)</span>. When every channel plays the same waveform
+(static parallel transmit) the spatial factor leaves the pulse integral, and
+the rotation is a flip of <span class="math notranslate nohighlight">\(|B_1|\)</span> times the nominal one about an axis at
+<span class="math notranslate nohighlight">\(\arg B_1\)</span>. The combination is a complex sum, done before the kernels, so a
+gradient reaches the sensitivities and the weights by autograd. Two channels
+in antiphase leave the voxel untouched; summing magnitudes and phases
+separately would not.</p>
+</section>
+<section id="integrated-rotation">
+<h3>Integrated rotation<a class="headerlink" href="#integrated-rotation" title="Link to this heading">#</a></h3>
+<p>A shaped pulse under a slice-select gradient acts on a spin off the slice
+centre about an axis that is neither transverse nor the same everywhere. Its
+rotation is the Cayley–Klein pair <span class="math notranslate nohighlight">\((a, b)\)</span>, integrated from the waveform ahead
+of time and tabulated over slice position and effective flip angle:</p>
+<ul class="simple">
+<li><p>Flip angle and <span class="math notranslate nohighlight">\(B_1\)</span> enter only through their product, since only the
+transverse part of the effective field <span class="math notranslate nohighlight">\((\omega_1(t)\, s, 0, \gamma G z)\)</span>
+carries the scaling <span class="math notranslate nohighlight">\(s\)</span>. 180° at <span class="math notranslate nohighlight">\(B_1 = 0.7\)</span> is the rotation of 126° at
+<span class="math notranslate nohighlight">\(B_1 = 1\)</span>.</p></li>
+<li><p>The RF phase factors out: turning the pulse by <span class="math notranslate nohighlight">\(\varphi\)</span> is
+<span class="math notranslate nohighlight">\(b \rightarrow b\, e^{-i\varphi}\)</span>, so the table is built at zero phase.</p></li>
+</ul>
+<p>64 flip-angle knots, read by cubic Hermite interpolation with the slope stored
+beside each, carry a windowed sinc to about <span class="math notranslate nohighlight">\(10^{-8}\)</span>. Positions are in slice
+thicknesses, the passband being <span class="math notranslate nohighlight">\([-0.5, 0.5]\)</span>, and the off-resonance a
+position adds is the definition’s <code class="docutils literal notranslate"><span class="pre">bandwidth_hz</span></code> times the position. A
+definition with no bandwidth selects nothing and is the same at every
+position.</p>
+<p>The RF definition chooses the mode (<code class="docutils literal notranslate"><span class="pre">RfMode</span></code>). A rectangle with no bandwidth
+is <code class="docutils literal notranslate"><span class="pre">INSTANT</span></code>, since integrating it lands exactly on the hard pulse, and a
+tabulated one read between knots would not. Any other single-channel
+definition is <code class="docutils literal notranslate"><span class="pre">PROFILED</span></code>, and a definition with one waveform per channel is
+<code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code>. A profiled pulse is integrated at the slice centre unless
+<code class="docutils literal notranslate"><span class="pre">across_slice</span></code> gives positions, in which case the signal is the mean over
+them.</p>
+<p>This is the hybrid Bloch–EPG treatment of Guenthner et al. <a class="footnote-reference brackets" href="#id9" id="id3" role="doc-noteref"><span class="fn-bracket">[</span>4<span class="fn-bracket">]</span></a>. A tabulated
+pair is a pure rotation: relaxation, precession and exchange during the pulse
+are not in it. <a class="reference internal" href="../../generated/blochsim.SampledPulse.html#blochsim.SampledPulse" title="blochsim.SampledPulse"><code class="xref py py-func docutils literal notranslate"><span class="pre">SampledPulse()</span></code></a> plays the waveform as one hard
+pulse per sample with free precession between them instead, which is second
+order in the dwell.</p>
+</section>
+<section id="per-voxel-rotation">
+<h3>Per-voxel rotation<a class="headerlink" href="#per-voxel-rotation" title="Link to this heading">#</a></h3>
+<p>A pulse whose channel weights vary while it plays (kT-points, spokes) does not
+factor into a flip and a phase: its effect on a voxel is a rotation about an
+arbitrary axis. It is integrated per voxel from the voxel’s own sensitivities,
+and, with positions, per slice position too. A static shim beside a dynamic
+pulse is refused.</p>
+</section>
+</section>
+<section id="gradients">
+<h2>Gradients<a class="headerlink" href="#gradients" title="Link to this heading">#</a></h2>
+<p>A gradient changes the winding, which in this basis is a shift by whole orders:</p>
+<div class="math notranslate nohighlight">
+\[
+\tilde F^{+}(k) \rightarrow \tilde F^{+}(k + \Delta k), \qquad
+\tilde Z(k) \rightarrow \tilde Z(k).
+\]</div>
+<figure class="align-default" id="id14">
+<a class="reference internal image-reference" href="../../_images/shift_operator.png"><img alt="Transverse state populations before and after a one-order shift." src="../../_images/shift_operator.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">One unbalanced gradient. Transverse states move up one order in
+<span class="math notranslate nohighlight">\(\tilde F^{+}\)</span> and down one in <span class="math notranslate nohighlight">\(\tilde F^{-}\)</span>. The order-zero entry
+of <span class="math notranslate nohighlight">\(\tilde F^{+}\)</span> is refilled with the conjugate of the state that moves down
+to order zero in <span class="math notranslate nohighlight">\(\tilde F^{-}\)</span>.</span><a class="headerlink" href="#id14" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>The event action word (<code class="docutils literal notranslate"><span class="pre">EventAction</span></code>) says which shifts the sequence makes:
+<code class="docutils literal notranslate"><span class="pre">CRUSH_BEFORE</span></code> and <code class="docutils literal notranslate"><span class="pre">CRUSH_AFTER</span></code> around a refocusing pulse, <code class="docutils literal notranslate"><span class="pre">SHIFT_AFTER</span></code>
+after a readout. <code class="docutils literal notranslate"><span class="pre">SPOIL_AFTER</span></code> sets every transverse order to zero instead,
+the ideal spoiling a spoiled gradient echo assumes of its spoiler and RF phase
+cycling together. Every shift is one order: the sequence has one crusher
+moment, <code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code> across <code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code>, which is what diffusion
+and flow are scaled by.</p>
+</section>
+<section id="relaxation-and-recovery">
+<h2>Relaxation and recovery<a class="headerlink" href="#relaxation-and-recovery" title="Link to this heading">#</a></h2>
+<p>Between events transverse states decay by <span class="math notranslate nohighlight">\(E_2 = e^{-\Delta t / T_2}\)</span> and
+longitudinal states by <span class="math notranslate nohighlight">\(E_1 = e^{-\Delta t / T_1}\)</span>. Recovery adds
+magnetization with no spatial modulation, so it enters <span class="math notranslate nohighlight">\(\tilde Z(0)\)</span> alone.</p>
+<figure class="align-default" id="id15">
+<a class="reference internal image-reference" href="../../_images/relaxation.png"><img alt="Relaxation curves, and longitudinal state populations before and after an interval." src="../../_images/relaxation.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left, the two attenuation factors for white matter at 3 T. Right, 100 ms of
+longitudinal relaxation on a set of <span class="math notranslate nohighlight">\(\tilde Z\)</span> states: every order is scaled
+by <span class="math notranslate nohighlight">\(E_1\)</span>, and only order zero gains <span class="math notranslate nohighlight">\(M_0(1 - E_1)\)</span>.</span><a class="headerlink" href="#id15" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>Relaxation times enter as rates <span class="math notranslate nohighlight">\(1000 / T\)</span>; a non-positive time is clamped to
+a small positive value, so a voxel of zeros in a measured map gives no signal
+rather than NaN.</p>
+</section>
+<section id="phase-graph">
+<h2>Phase graph<a class="headerlink" href="#phase-graph" title="Link to this heading">#</a></h2>
+<p>Plotting <span class="math notranslate nohighlight">\(k\)</span> against time draws the pathways. Between pulses every
+transverse pathway moves at a rate set by the gradients; at each pulse it
+continues, reverses, or is stored along <span class="math notranslate nohighlight">\(z\)</span>. Wherever a transverse pathway
+crosses <span class="math notranslate nohighlight">\(k = 0\)</span> there is an echo, and the sample is the sum of every pathway
+crossing there.</p>
+<figure class="align-default" id="id16">
+<a class="reference internal image-reference" href="../../_images/phase_graph.png"><img alt="A phase graph of a refocused train above the echo amplitudes blochsim computes." src="../../_images/phase_graph.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Above, the phase graph of six refocusing pulses: solid lines are transverse
+pathways, dotted lines magnetization stored along <span class="math notranslate nohighlight">\(z\)</span>, dashed verticals the
+pulses. Below, the echo amplitudes blochsim computes. From the fourth pulse
+on, each echo contains direct spin echoes and stimulated echoes.</span><a class="headerlink" href="#id16" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+<p>With refocusing angles other than 180°, stimulated-echo pathways spend part
+of their time along <span class="math notranslate nohighlight">\(z\)</span> and arrive with less <span class="math notranslate nohighlight">\(T_2\)</span> decay than their echo time
+suggests, so the train is not mono-exponential.</p>
+<figure class="align-default" id="id17">
+<a class="reference internal image-reference" href="../../_images/mono_exponential.png"><img alt="Echo trains at three refocusing angles, and the T2 a mono-exponential fit returns for each." src="../../_images/mono_exponential.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left, a 48-echo train at three refocusing angles beside <span class="math notranslate nohighlight">\(e^{-t/T_2}\)</span>. Right,
+the <span class="math notranslate nohighlight">\(T_2\)</span> a mono-exponential fit of each train returns. Only the 180° train
+recovers the true value.</span><a class="headerlink" href="#id17" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="truncation">
+<h2>Truncation<a class="headerlink" href="#truncation" title="Link to this heading">#</a></h2>
+<p>After <span class="math notranslate nohighlight">\(n\)</span> shifts no state beyond order <span class="math notranslate nohighlight">\(n\)</span> exists, and attenuation makes the
+far orders negligible before that. The orders carried are <code class="docutils literal notranslate"><span class="pre">states</span></code> on a
+<a class="reference internal" href="../../generated/blochsim.model.Simulator.html#blochsim.model.Simulator" title="blochsim.model.Simulator"><code class="xref py py-class docutils literal notranslate"><span class="pre">Simulator</span></code></a> and <code class="docutils literal notranslate"><span class="pre">nstates</span></code> on <code class="docutils literal notranslate"><span class="pre">EpgEngine.simulate</span></code>; a
+simulator refuses <code class="docutils literal notranslate"><span class="pre">nstates</span></code>. Left unset, the count is
+<span class="math notranslate nohighlight">\(\max(8, \min(64, 1 + n_\mathrm{rep} n_\mathrm{shift}))\)</span> for <span class="math notranslate nohighlight">\(n_\mathrm{rep}\)</span>
+repetitions of <span class="math notranslate nohighlight">\(n_\mathrm{shift}\)</span> shift actions each.</p>
+<figure class="align-default" id="id18">
+<a class="reference internal image-reference" href="../../_images/truncation.png"><img alt="An unbalanced train simulated with different numbers of configuration orders, and the error of each." src="../../_images/truncation.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left, an unbalanced fingerprinting train carried with 2, 6 and 20 orders.
+Right, the largest error against a 60-order reference, which falls
+geometrically with the number of orders.</span><a class="headerlink" href="#id18" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="off-resonance-and-field-spread">
+<h2>Off-resonance and field spread<a class="headerlink" href="#off-resonance-and-field-spread" title="Link to this heading">#</a></h2>
+<p><span class="math notranslate nohighlight">\(B_0\)</span> (<code class="docutils literal notranslate"><span class="pre">b0_hz</span></code>) precesses the transverse states by <span class="math notranslate nohighlight">\(-2\pi B_0 \Delta t\)</span> over
+each interval, in the frame the pulses define. <span class="math notranslate nohighlight">\(T_2'\)</span> (<code class="docutils literal notranslate"><span class="pre">t2_prime_ms</span></code>) is a
+Lorentzian population of frequencies of half-width <span class="math notranslate nohighlight">\(1/T_2'\)</span> in angular
+frequency, whose average over the voxel is <span class="math notranslate nohighlight">\(e^{-|\tau|/T_2'}\)</span> in the time
+<span class="math notranslate nohighlight">\(\tau\)</span> a sample has gone unrefocused. A configuration order carries the
+winding a state has been through but not the elapsed time, so the spread
+cannot be carried by the states.</p>
+<p>Where the dephasing order advances at one steady rate – every stretch between
+two pulses whose transverse states survive winds the same orders in the same
+time – the order also stands for time, and both terms are applied to the
+samples as one complex factor
+<span class="math notranslate nohighlight">\(e^{-|\tau|/T_2'}\, e^{-2\pi i B_0 \tau}\)</span> with the signed unrefocused time
+<span class="math notranslate nohighlight">\(\tau\)</span> the packing keeps. A gradient echo then decays at <span class="math notranslate nohighlight">\(T_2^*\)</span>, a spin echo
+is left at <span class="math notranslate nohighlight">\(T_2\)</span>, and the decay grows and recovers either side of each echo.
+A balanced train, which keeps its coherences unwound across a pulse, and a
+train whose repetitions last unlike, do not wind at one rate: <span class="math notranslate nohighlight">\(B_0\)</span> is then
+carried through the states, and a <span class="math notranslate nohighlight">\(T_2'\)</span> is refused.</p>
+</section>
+<section id="second-pools">
+<h2>Second pools<a class="headerlink" href="#second-pools" title="Link to this heading">#</a></h2>
+<p>The semisolid pool and the chemically exchanging pools are the extensions of
+Malik et al. <a class="footnote-reference brackets" href="#id8" id="id4" role="doc-noteref"><span class="fn-bracket">[</span>3<span class="fn-bracket">]</span></a>, counted as in BART’s Bloch–McConnell model: the free water,
+up to four exchanging pools (<code class="docutils literal notranslate"><span class="pre">pool_b</span></code> to <code class="docutils literal notranslate"><span class="pre">pool_e</span></code>), and a semisolid pool. Each
+second pool exchanges with the free water and not with another, and the
+fractions share the voxel, so they cannot sum past one. A pool’s fraction is
+the gate on it: at zero it is left out of the kernels.</p>
+<section id="semisolid-pool">
+<h3>Semisolid pool<a class="headerlink" href="#semisolid-pool" title="Link to this heading">#</a></h3>
+<p>The bound pool (<code class="docutils literal notranslate"><span class="pre">bound_fraction</span></code>, <code class="docutils literal notranslate"><span class="pre">bound_exchange_hz</span></code>, <code class="docutils literal notranslate"><span class="pre">t1_bound_ms</span></code>) has no
+transverse magnetization. <span class="math notranslate nohighlight">\(F^\pm\)</span> stay single-pool; <span class="math notranslate nohighlight">\(Z\)</span> becomes a 2-vector
+with <span class="math notranslate nohighlight">\(Z \leftarrow \mathbf{E}_1 Z\)</span> and
+<span class="math notranslate nohighlight">\(\mathbf{E}_1 = \exp\{(\mathbf{K} - \operatorname{diag}(R_1))\,\Delta t\}\)</span>,
+taken in closed form: for a 2x2 generator <span class="math notranslate nohighlight">\(\mathbf{L}\)</span>, with
+<span class="math notranslate nohighlight">\(\tau = \operatorname{tr}\mathbf{L}/2\)</span>, <span class="math notranslate nohighlight">\(d^2 = \tau^2 - \det\mathbf{L}\)</span>,</p>
+<div class="math notranslate nohighlight">
+\[
+e^{\mathbf{L}} = e^{\tau}\left[\cosh d\,\mathbf{I} + \frac{\sinh d}{d}(\mathbf{L} - \tau\mathbf{I})\right],
+\]</div>
+<p>and <span class="math notranslate nohighlight">\(d^2\)</span> is a sum of non-negative terms, so no complex branch arises.</p>
+<p>RF saturates the pool at a rate set by the pulse power and the absorption
+lineshape at the pulse’s offset less the voxel’s <span class="math notranslate nohighlight">\(B_0\)</span>. The lineshape is the
+super-Lorentzian,</p>
+<div class="math notranslate nohighlight">
+\[
+G(\Delta f) = \int_0^1 \sqrt{2/\pi}\, \frac{T_{2b}}{|3u^2 - 1|}
+\exp\!\left[-2\left(\frac{2\pi\,\Delta f\, T_{2b}}{3u^2 - 1}\right)^2\right] \mathrm{d}u ,
+\]</div>
+<p>with <span class="math notranslate nohighlight">\(T_{2b} = 12\)</span> µs a model constant, tabulated over <span class="math notranslate nohighlight">\(|\Delta f|\)</span> and read by
+cubic Hermite interpolation. Inside a cutoff near resonance, where the
+integral diverges, the table is filled by a spline mirrored about resonance,
+which keeps it even and its slope zero there. What a pulse deposits per unit of
+flip angle squared, <span class="math notranslate nohighlight">\(-\pi \gamma^2 B_{1,\mathrm{rms}}^2 \tau\)</span>, is a property of
+its shape.</p>
+<figure class="align-default" id="id19">
+<a class="reference internal image-reference" href="../../_images/two_pool.png"><img alt="A fingerprinting trajectory with and without a bound pool, and its derivative." src="../../_images/two_pool.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left, a fingerprinting trajectory on white matter with and without a bound
+pool holding 12% of the magnetization. Right, the derivative of the signal
+with respect to the bound fraction.</span><a class="headerlink" href="#id19" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="chemically-exchanging-pools">
+<h3>Chemically exchanging pools<a class="headerlink" href="#chemically-exchanging-pools" title="Link to this heading">#</a></h3>
+<p>An exchanging pool (<code class="docutils literal notranslate"><span class="pre">pool_b_fraction</span></code>, <code class="docutils literal notranslate"><span class="pre">pool_b_exchange_hz</span></code>, <code class="docutils literal notranslate"><span class="pre">t1_pool_b_ms</span></code>,
+<code class="docutils literal notranslate"><span class="pre">t2_pool_b_ms</span></code>, <code class="docutils literal notranslate"><span class="pre">pool_b_shift_hz</span></code>) carries transverse states and sits at its
+own chemical shift from the free water, which sits at <span class="math notranslate nohighlight">\(B_0\)</span>. The transverse
+step for one such pool is the 2x2
+<span class="math notranslate nohighlight">\(\exp\{(\mathbf{K} - \operatorname{diag}(R_2) - 2\pi i \operatorname{diag}(\Delta f))\,\Delta t\}\)</span>,
+by the same closed form with complex entries; <span class="math notranslate nohighlight">\(\cosh d\)</span> and <span class="math notranslate nohighlight">\(\sinh d / d\)</span> are
+even in <span class="math notranslate nohighlight">\(d\)</span>, so the branch of the square root does not reach the result. A
+pulse rotates both pools alike, and the ADC reads the sum over pools.</p>
+<p>With the semisolid pool and one exchanging pool, only <span class="math notranslate nohighlight">\(Z\)</span> sees all three, and
+its 3x3 exponential is formed in closed form in double precision: its
+eigenvalues are real and non-positive by detailed balance, and float32 loses
+accuracy like the square of the interval. With more than one exchanging pool,
+the relaxation and exchange operators are tabulated per voxel and per interval
+length.</p>
+</section>
+</section>
+<section id="diffusion">
+<h2>Diffusion<a class="headerlink" href="#diffusion" title="Link to this heading">#</a></h2>
+<p>Over an interval a state at order <span class="math notranslate nohighlight">\(k\)</span> accumulates a b-factor weighted by
+<span class="math notranslate nohighlight">\(k^2\)</span> while longitudinal and by <span class="math notranslate nohighlight">\(k^2 + k + 1/3\)</span> while transverse <a class="footnote-reference brackets" href="#id7" id="id5" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>. The
+rate is <span class="math notranslate nohighlight">\(D\,(\phi / L)^2\)</span> for the crusher dephasing <span class="math notranslate nohighlight">\(\phi\)</span>
+(<code class="docutils literal notranslate"><span class="pre">crusher_dephasing_rad</span></code>) across a voxel of <span class="math notranslate nohighlight">\(L\)</span> (<code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code>), so <span class="math notranslate nohighlight">\(D\)</span> in
+µm²/ms enters as <span class="math notranslate nohighlight">\(10^{-9}\)</span> m²/s. The longitudinal order zero is not damped;
+the transverse order zero is, with weight 1/3. A dephasing of zero leaves the
+term out.</p>
+<figure class="align-default" id="id20">
+<a class="reference internal image-reference" href="../../_images/diffusion.png"><img alt="The b-factor weight per configuration order, and the diffusion attenuation of an echo train." src="../../_images/diffusion.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Left, the weight one interval gives each order. Right, a 120° train between
+crushers winding 20 turns across a 1 mm voxel at two diffusion coefficients,
+relative to the same train without diffusion.</span><a class="headerlink" href="#id20" title="Link to this image">#</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="flow-and-washout">
+<h2>Flow and washout<a class="headerlink" href="#flow-and-washout" title="Link to this heading">#</a></h2>
+<p>A velocity <span class="math notranslate nohighlight">\(v\)</span> (<code class="docutils literal notranslate"><span class="pre">velocity_m_per_s</span></code>) drives two terms through different
+geometry. Flow dephasing turns a longitudinal state at order <span class="math notranslate nohighlight">\(k\)</span> through
+<span class="math notranslate nohighlight">\(-k\,(\phi/L)\,v\,\Delta t\)</span> over an interval, and a transverse one through
+<span class="math notranslate nohighlight">\(-(k + 1/2)\,(\phi/L)\,v\,\Delta t\)</span>, half an order further along the
+gradient; it needs the crusher dephasing, and leaves <span class="math notranslate nohighlight">\(\tilde Z(0)\)</span> alone. Washout replaces the voxel’s spins at the
+rate <span class="math notranslate nohighlight">\(|v| / L\)</span> whether or not a gradient plays, with spins that are relaxed
+and unexcited, which is an affine map of the shape longitudinal recovery has,
+and enters as a scaling of the relaxation factors. A voxel that turns over
+within one interval is clamped. Without <code class="docutils literal notranslate"><span class="pre">voxel_size_m</span></code> neither term acts.</p>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
+</section>
+</section>
+<aside class="footnote-list brackets">
+<aside class="footnote brackets" id="id6" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id2">1</a><span class="fn-bracket">]</span></span>
+<p>Hennig J. Multiecho imaging sequences with low refocusing flip angles.
+J Magn Reson 1988;78:397-407. <a class="reference external" href="https://doi.org/10.1016/0022-2364(88)90128-X">https://doi.org/10.1016/0022-2364(88)90128-X</a></p>
+</aside>
+<aside class="footnote brackets" id="id7" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></span>
+<span class="backrefs">(<a role="doc-backlink" href="#id1">1</a>,<a role="doc-backlink" href="#id5">2</a>)</span>
+<p>Weigel M. Extended phase graphs: dephasing, RF pulses, and echoes - pure
+and simple. J Magn Reson Imaging 2015;41(2):266-295.
+<a class="reference external" href="https://doi.org/10.1002/jmri.24619">https://doi.org/10.1002/jmri.24619</a></p>
+</aside>
+<aside class="footnote brackets" id="id8" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id4">3</a><span class="fn-bracket">]</span></span>
+<p>Malik SJ, Teixeira RPAG, Hajnal JV. Extended phase graph formalism for
+systems with magnetization transfer and exchange. Magn Reson Med
+2018;80(2):767-779. <a class="reference external" href="https://doi.org/10.1002/mrm.27040">https://doi.org/10.1002/mrm.27040</a></p>
+</aside>
+<aside class="footnote brackets" id="id9" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id3">4</a><span class="fn-bracket">]</span></span>
+<p>Guenthner C, Amthor T, Doneva M, Kozerke S. A unifying view on extended
+phase graphs and Bloch simulations for quantitative MRI. Sci Rep
+2021;11:21289. <a class="reference external" href="https://doi.org/10.1038/s41598-021-00233-6">https://doi.org/10.1038/s41598-021-00233-6</a></p>
+</aside>
+</aside>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Internals</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="description.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Sequence description: reading rules</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dephasing">Dephasing</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#configuration-states">Configuration states</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#three-families-of-state">Three families of state</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#rf-pulses">RF pulses</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#instantaneous-rotation">Instantaneous rotation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#transmit-arrays">Transmit arrays</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#integrated-rotation">Integrated rotation</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#per-voxel-rotation">Per-voxel rotation</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gradients">Gradients</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#relaxation-and-recovery">Relaxation and recovery</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#phase-graph">Phase graph</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#truncation">Truncation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#off-resonance-and-field-spread">Off-resonance and field spread</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#second-pools">Second pools</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#semisolid-pool">Semisolid pool</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#chemically-exchanging-pools">Chemically exchanging pools</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#diffusion">Diffusion</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#flow-and-washout">Flow and washout</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BlochSim Contributors
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024, BlochSim Contributors.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
