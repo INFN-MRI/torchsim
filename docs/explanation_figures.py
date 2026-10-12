@@ -1707,10 +1707,10 @@ def parameter_estimation():
 
 def model_based_reconstruction():
     """T2 from undersampled k-space: fit after, a subspace, the model inside."""
-    from blochsim.estimators import DictionaryMatcher
     from bartorch import linop, nlop
 
     from blochsim import ModelOperator
+    from blochsim.estimators import DictionaryMatcher
     from blochsim.simulators import MultiEchoSimulator
 
     size, echoes, step = 48, 8, 3
