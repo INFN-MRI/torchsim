@@ -30,10 +30,15 @@ class FSESimulator(Simulator):
     """
 
     model = SpinPhysics(
-        properties={"T1": "t1_ms", "T2": "t2_ms", "M0": None, "B1": "b1"},
+        properties={"T1": "t1_ms", "T2": "t2_ms", "M0": "m0", "B1": "b1"},
         operators=REFOCUSED,
     )
     states = 10
+    # The first playing leaves the longitudinal magnetization the TR recovers
+    # to, and the second, which is recorded, starts from it. A 90 degree
+    # excitation leaves no longitudinal memory of the train before, so two
+    # playings are the steady state; another excitation needs repetitions="auto".
+    repetitions = 2
 
     def layout(
         self,
@@ -98,39 +103,43 @@ class FSESimulator(Simulator):
             parts.append((echo_s, self.operators.readout(demodulation[..., index])))
         return parts
 
-    def _echoes(self, played: Mapping[str, Any]) -> int:
-        """How many echoes the train records."""
-        return torch.atleast_1d(as_torch(played["flip"])).shape[-1]
-
     def repetition_s(self, played_s: Any, **protocol: Any) -> Any:
         """Return the TR, which the train waits out before the next one."""
         del played_s
         return protocol.get("TR", 1e6) * 1e-3
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Simulate one train, then let it recover for what is left of the TR."""
+        """Simulate the train, one train at a time where each has its own TR.
+
+        The engine plays a batch of trains on one clock, so trains that wait
+        out different repetition times are run separately and stacked along
+        the train axis, the leading axis of ``TR`` and of every per-echo
+        argument batched with it.
+        """
         played = self.played(**sequence)
-        signal = super().evaluate(properties, **sequence)
-        echoes = self._echoes(played)
-
-        def beside(value: Any) -> Any:
-            """Put a value where the signal came back from.
-
-            A run may be asked for a device the tissue was not written on, and
-            what is worked out here multiplies the signal rather than reaching
-            a kernel.
-            """
-            return value.to(signal.device) if torch.is_tensor(value) else value
-
-        left_ms = beside(played.get("TR", 1e6)) - beside(played["ESP"]) * echoes
-        recovered = torch.exp(-1e3 / beside(properties["T1"]) * left_ms * 1e-3)
-        # Both carry the tissue shape and the signal is (..., tissue, echo), so
-        # one trailing axis lines them up and any leading train axis broadcasts.
-        recovered = recovered[..., None]
-        density = beside(properties.get("M0", 1.0))
-        if torch.is_tensor(density):
-            density = density[..., None]
-        return density * signal * (1 - recovered) / (1 - recovered * signal)
+        repetition = played.get("TR")
+        playings = sequence.get("repetitions", self.repetitions)
+        if not torch.is_tensor(repetition) or repetition.numel() < 2 or playings == 1:
+            return super().evaluate(properties, **sequence)
+        trains = repetition.shape[0]
+        batched = {
+            name: value
+            for name, value in played.items()
+            if torch.is_tensor(value) and value.ndim >= 2 and value.shape[0] == trains
+        }
+        return torch.stack(
+            [
+                super(FSESimulator, self).evaluate(
+                    properties,
+                    **{
+                        **sequence,
+                        **{name: value[train] for name, value in batched.items()},
+                        "TR": repetition.reshape(trains, -1)[train, 0],
+                    },
+                )
+                for train in range(trains)
+            ]
+        )
 
 
 class HyperechoSimulator(FSESimulator):
@@ -208,6 +217,3 @@ class HyperechoSimulator(FSESimulator):
         return self._train(
             angles, turns, torch.zeros_like(turns), ESP, exc_flip, exc_phase
         )
-
-    def _echoes(self, played: Mapping[str, Any]) -> int:
-        return 2 * super()._echoes(played) + 1

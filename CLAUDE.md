@@ -172,20 +172,26 @@ which would define every label in it twice.
 ### The gallery's prose
 
 `~/.claude/CLAUDE.md` carries the rules for explanatory prose and they bind
-here. Two things are specific to this gallery.
+here. These are specific to this gallery.
 
-**`examples/01-framework/01-getting-started.py` is the register.** Match it:
-a docstring that opens "The scope of this notebook is to…", section titles that
-are plain noun phrases naming the operation — *Forward simulation*, *Approaching
-steady state*, *Performance tweaking*, *Functional wrapper* — and bodies that
-state the thing once, in the second person or the declarative, with no
-rhetorical scaffolding around it.
+**`examples/01-framework/01-first-simulation.py` and `03-custom-signal-model.py`
+are the register.** Match them: a numbered title for a Course lesson, an
+opening that tells you what you will do, a **Learning objectives** list and a
+Previous/Next line; then sections each named by the concept it covers, giving
+the physics or the mental model first and the code after it, written to
+"you". The last section, *Specification*, is a `text` code block stating what the
+page did the way you would ask an agent for it. An Application opens with its
+objective and a *Prerequisites* line naming the lessons it assumes, and has no
+Previous/Next.
 
 **Every notebook has one scope and stays inside it.** A dictionary match is the
 subject of `02-parameter-inference/01`; a notebook that needs one as a baseline
-fits it in a hidden cell and gives it a row in a table, not a section. Reverse-
-mode derivatives and Cramér–Rao bounds belong to `03-sequence-optimization`, not
-to the getting-started page.
+fits it in a hidden cell and gives it a row in a table, not a section.
+
+**Figures read in both themes.** Take colours from `docs/figure_style.py`
+(`SERIES`, `MUTED`), never a fixed grey, black or white, and put every legend
+outside the axes with `legend_outside`. Check each figure on a light and a dark
+background before committing.
 
 **Show the API and hide the plotting.** `sphinx_gallery_start_ignore` is for
 figure code and print formatting. A cell a reader would type themselves —

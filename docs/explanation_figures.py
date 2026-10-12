@@ -597,7 +597,8 @@ def two_pool():
 
 
 # ---------------------------------------------------------------------------
-# The implementation page.
+# The signal model, derivatives and execution pages, and the kernels
+# internals page.
 # ---------------------------------------------------------------------------
 
 
@@ -644,6 +645,56 @@ def _arrow(axis, start, end, color=MUTED):
         xytext=start,
         arrowprops=dict(arrowstyle="-|>", color=color, lw=1.8),
     )
+
+
+def signal_model():
+    """Where a description comes from, and what the handlers do with it."""
+    figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
+    width, height = 2.1, 0.8
+    sources = [
+        ("layout(**protocol)", "the default, built\nby the constructor"),
+        ("from_pulseq", "a .seq file"),
+        ("from_description", "an MRD stream"),
+    ]
+    for row, (title, subtitle) in enumerate(sources):
+        y = 2.2 - row * 1.1
+        _box(axis, 0.0, y, width, height, title, subtitle, TRANSVERSE)
+        _arrow(axis, (width + 0.05, y + height / 2), (2.95, 1.5))
+    _box(
+        axis,
+        3.0,
+        1.1,
+        width,
+        height,
+        "description",
+        "RF, ADC and wait\nevents, timestamped",
+        ACCENT,
+    )
+    _arrow(axis, (3.0 + width + 0.05, 1.5), (5.95, 1.5))
+    _box(
+        axis,
+        6.0,
+        1.1,
+        width,
+        height,
+        "handlers",
+        "an operator per\nkind of event",
+        LONGITUDINAL,
+    )
+    _arrow(axis, (6.0 + width / 2, 1.05), (6.0 + width / 2, 0.45))
+    _box(axis, 6.0, -0.4, width, height, "signal", "and its derivatives", ACCENT)
+    axis.text(
+        6.0 + width / 2,
+        2.3,
+        "excitation, refocusing, inversion,\nsaturation, readout, delay",
+        ha="center",
+        va="center",
+        color=MUTED,
+        fontsize=9,
+    )
+    axis.set(xlim=(-0.2, 8.3), ylim=(-0.6, 3.15))
+    axis.axis("off")
+    return figure
 
 
 def pipeline():
@@ -882,11 +933,12 @@ def _interleaved(calls: dict, repeats: int = 4) -> dict:
 
 
 def derivative_cost():
-    """Which mode a derivative is taken in, and what each one costs."""
-    contrasts = 500
+    """What a derivative costs, in simulations, against how many are taken."""
+    from figure_style import SERIES, legend_outside
+
+    contrasts, voxels = 200, 256
     repetition = torch.arange(contrasts, dtype=torch.float32)
     flip = 10.0 + 50.0 * torch.sin(torch.pi * repetition / contrasts) ** 2
-    voxels = 512
     tissue = {
         "T1": T1_MS * torch.ones(voxels),
         "T2": T2_MS * torch.ones(voxels),
@@ -894,49 +946,68 @@ def derivative_cost():
         "B1": torch.ones(voxels),
     }
     acquisition = MRFSimulator(flip=flip, TR=10.0, TI=20.0, states=20)
-    names = ("T1", "T2", "M0", "B1")
-
-    forward = _fastest(lambda: acquisition.simulate(**tissue))
-    costs = [
-        _fastest(lambda count=count: acquisition.jacobian(names[:count], **tissue))
-        for count in range(1, 5)
-    ]
-
+    names = tuple(tissue)
     design = flip.clone().requires_grad_(True)
 
     def adjoint():
-        signal = acquisition.simulate(flip=design, T1=T1_MS, T2=T2_MS)
+        signal = acquisition.simulate(flip=design, **tissue)
         signal.abs().square().sum().backward()
         design.grad = None
 
-    reverse = _fastest(adjoint)
-    scalar = _fastest(lambda: acquisition.simulate(flip=flip, T1=T1_MS, T2=T2_MS))
+    times = _interleaved(
+        {
+            "simulation": lambda: acquisition.simulate(**tissue),
+            **{
+                count: lambda count=count: acquisition.jacobian(names[:count], **tissue)
+                for count in range(1, len(names) + 1)
+            },
+            "adjoint": adjoint,
+        },
+        repeats=3,
+    )
+    once = times["simulation"]
+    counts = np.arange(1, len(names) + 1)
+    forward = np.array([times[count] / once for count in counts])
+    per_direction = float(np.polyfit(counts, forward, 1)[0])
+    reverse = times["adjoint"] / once
 
-    figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.0))
-    axes[0].plot(
-        range(1, 5),
-        [cost / forward for cost in costs],
-        "o-",
-        color=TRANSVERSE,
+    figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.2))
+    reach = np.array([1.0, float(contrasts)])
+    axis.plot(
+        reach,
+        per_direction * reach,
+        "--",
+        color=SERIES[0],
+        lw=1.2,
+        label="forward mode, one pass per direction",
     )
-    axes[0].set(
-        xlabel="tissue properties differentiated",
-        xticks=range(1, 5),
-        ylabel="cost, in forward passes",
-        ylim=(0, None),
-        title=f"forward mode, {voxels} voxels at once",
+    axis.plot(
+        counts,
+        forward,
+        "o",
+        color=SERIES[0],
+        label="forward mode: Jacobian w.r.t. T1, T2, M0, B1",
     )
-    axes[0].grid(alpha=0.3)
-
-    axes[1].bar(
-        ["forward\npass", f"gradient of a cost\nw.r.t. {contrasts} flip angles"],
-        [1.0, reverse / scalar],
-        color=[MUTED, LONGITUDINAL],
+    axis.plot(reach, [reverse, reverse], "-", color=SERIES[1], lw=1.2)
+    axis.plot(
+        [contrasts],
+        [reverse],
+        "s",
+        color=SERIES[1],
+        label=f"reverse mode: gradient of a scalar cost\nw.r.t. {contrasts} flip angles",
     )
-    axes[1].set(
-        ylabel="cost, in forward passes",
-        title="reverse mode, one voxel",
+    axis.axhline(1.0, color=MUTED, lw=0.8, ls=":")
+    axis.text(1.1, 1.08, "one simulation", color=MUTED, fontsize=10, va="bottom")
+    axis.set(
+        xscale="log",
+        yscale="log",
+        xlabel="derivatives taken",
+        ylabel="cost, in simulations",
+        title=f"{contrasts}-contrast schedule, {voxels} voxels, on the build machine",
     )
+    axis.grid(alpha=0.3)
+    legend_outside(axis)
+    figure.tight_layout()
     return figure
 
 
@@ -1071,10 +1142,10 @@ def execution_policy():
     figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
     _box(axis, 0.0, 1.15, 2.0, 1.0, "the problem", "voxels x events", MUTED)
     choices = [
-        (2.9, 2.5, "stay on the host", "a launch would not repay itself", MUTED),
-        (2.9, 1.25, "cross whole", "it fits on the card", ACCENT),
-        (2.9, 0.0, "stream in chunks", "transfer overlaps arithmetic", TRANSVERSE),
-        (2.9, -1.25, "spread across cards", "one shard of voxels each", LONGITUDINAL),
+        (2.9, 2.5, "stay on the host", "too little work to repay a launch", MUTED),
+        (2.9, 1.25, "cross whole", "fits in one card's free memory", ACCENT),
+        (2.9, 0.0, "spread across cards", "fewest cards that hold it", LONGITUDINAL),
+        (2.9, -1.25, "stream in chunks", "chunks sized to budget_bytes", TRANSVERSE),
     ]
     for x, y, title, subtitle, color in choices:
         _box(axis, x, y, 3.8, 1.0, title, subtitle, color)
@@ -1082,8 +1153,8 @@ def execution_policy():
     axis.text(
         7.0,
         1.65,
-        "execution() and offload()\nname the policy;\nleft alone, it "
-        "is decided\nper call",
+        'execution("auto")\ndecides per call;\noutside a block, a call\n'
+        "runs where its\ntensors are",
         color=INK,
         va="center",
         fontsize=11,
@@ -1354,7 +1425,526 @@ def description_echo():
     return figure
 
 
+# ---------------------------------------------------------------------------
+# The extended phase graphs page.
+# ---------------------------------------------------------------------------
+
+
+def epg_mechanism():
+    """The pathways of a refocused train, and what each tissue term does to it."""
+    from figure_style import SERIES, legend_outside
+
+    pulses, esp_ms, flip = 4, 5.0, 120.0
+    figure, axes = plt.subplots(
+        2, 1, figsize=(PAGE_WIDTH, 5.6), height_ratios=(1.0, 1.1)
+    )
+
+    # At a pulse a state at order k continues, reflects to -k, or is stored
+    # along z; between pulses every transverse state winds on by one order.
+    axis = axes[0]
+    centres = [(index + 0.5) * esp_ms for index in range(pulses)]
+    ceiling = 3.01
+    transverse, stored = [(0.0, 0.0)], []
+    for centre in centres:
+        continuing, still_stored = [], []
+        for start, order in transverse:
+            end = order + (centre - start) / esp_ms
+            axis.plot([start, centre], [order, end], color=SERIES[0], lw=1.2)
+            continuing.extend([(centre, end), (centre, -end)])
+            still_stored.append((centre, end))
+        for start, order in stored:
+            axis.plot([start, centre], [order, order], color=SERIES[1], lw=1.1, ls=":")
+            continuing.extend([(centre, order), (centre, -order)])
+            still_stored.append((centre, order))
+        transverse = [pair for pair in continuing if abs(pair[1]) <= ceiling]
+        stored = [pair for pair in still_stored if abs(pair[1]) <= ceiling]
+        axis.axvline(centre, color=MUTED, lw=0.9, ls="--")
+    final = pulses * esp_ms
+    for start, order in transverse:
+        end = order + (final - start) / esp_ms
+        if abs(end) <= ceiling:
+            axis.plot([start, final], [order, end], color=SERIES[0], lw=1.2)
+    axis.plot(
+        esp_ms * np.arange(1, pulses + 1),
+        np.zeros(pulses),
+        "o",
+        color=SERIES[2],
+        ms=7,
+        zorder=5,
+    )
+    axis.axhline(0.0, color=INK, lw=0.8)
+    axis.set(
+        xlabel="time [ms]",
+        ylabel="order $k$",
+        ylim=(-3.3, 3.3),
+        title=f"pathways of {pulses} refocusing pulses at {flip:g}$^\\circ$",
+    )
+    axis.legend(
+        handles=[
+            plt.Line2D([], [], color=SERIES[0], lw=1.4, label="$F_k$ (transverse)"),
+            plt.Line2D([], [], color=SERIES[1], lw=1.4, ls=":", label="$Z_k$ (stored)"),
+            plt.Line2D(
+                [], [], color=SERIES[2], marker="o", ls="", label="echo ($k = 0$)"
+            ),
+            plt.Line2D([], [], color=MUTED, lw=1.0, ls="--", label="RF pulse"),
+        ],
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+
+    # The same train simulated, with one tissue term switched on at a time.
+    echoes = 32
+    times = esp_ms * np.arange(1, echoes + 1)
+    train = FSESimulator(
+        ESP=esp_ms,
+        TR=3000.0,
+        crusher_dephasing_rad=20 * 2 * np.pi,
+        voxel_size_m=1e-3,
+        states=20,
+    )
+    angles = torch.full((echoes,), flip)
+    tissue = {"T1": T1_MS, "T2": T2_MS}
+    terms = (
+        ("$T_1$, $T_2$", {}),
+        ("$B_1$ = 0.8", {"B1": 0.8}),
+        (r"$D$ = 1 $\mu$m$^2$/ms", {"D": 1.0}),
+        (
+            "12% bound pool",
+            {"bound_fraction": 0.12, "bound_exchange": 30.0, "bound_T1": 1000.0},
+        ),
+    )
+    axis = axes[1]
+    for (label, extra), colour in zip(terms, SERIES[:4], strict=True):
+        signal = train.simulate(flip=angles, **tissue, **extra).abs().numpy()
+        axis.plot(times, signal, color=colour, lw=1.4, label=label)
+    axis.plot(
+        times, np.exp(-times / T2_MS), color=MUTED, ls="--", label=r"$e^{-t/T_2}$"
+    )
+    axis.set(
+        xlabel="echo time [ms]",
+        ylabel="|signal|",
+        title=f"a {echoes}-echo train at {flip:g}$^\\circ$, simulated",
+    )
+    legend_outside(axis)
+    return figure
+
+
+# ---------------------------------------------------------------------------
+# The sequence description page.
+# ---------------------------------------------------------------------------
+
+
+def sequence_description():
+    """Pulseq blocks, the events they are read as, and where an echo is stamped."""
+    from figure_style import SERIES
+
+    from blochsim.sequence import EventType, SequenceDescription
+
+    sequence = _example_sequence()
+    described = SequenceDescription.from_pulseq(SEQ_FILE)
+    shown = 13
+    starts_ms = 1e3 * np.concatenate(
+        ([0.0], np.cumsum([sequence.block_durations[i] for i in range(1, shown + 1)]))
+    )
+    colours = {EventType.RF: SERIES[0], EventType.ADC: SERIES[1]}
+
+    figure, axes = plt.subplots(
+        2, 1, figsize=(PAGE_WIDTH, 4.6), sharex=True, height_ratios=(1.25, 1.0)
+    )
+    axis = axes[0]
+    for index in range(shown):
+        block = sequence.get_block(index + 1)
+        held = [
+            name
+            for name, present in (
+                ("RF", block.rf),
+                ("Gx", block.gx),
+                ("Gy", block.gy),
+                ("Gz", block.gz),
+                ("ADC", block.adc),
+            )
+            if present is not None
+        ]
+        event = described.events[index]
+        colour = colours.get(event.type, MUTED)
+        axis.add_patch(
+            plt.Rectangle(
+                (starts_ms[index], 0.6),
+                starts_ms[index + 1] - starts_ms[index],
+                0.34,
+                facecolor=colour,
+                alpha=0.18,
+                edgecolor=colour,
+            )
+        )
+        axis.text(
+            0.5 * (starts_ms[index] + starts_ms[index + 1]),
+            0.77,
+            "\n".join(held) or "-",
+            ha="center",
+            va="center",
+            fontsize=9,
+            color=INK,
+        )
+        stamp_ms = 1e-3 * float(event.timestamp_us)
+        axis.plot([stamp_ms, stamp_ms], [0.12, 0.42], color=colour, lw=2.4)
+        axis.plot([stamp_ms], [0.42], "o", color=colour, ms=6)
+        if event.type is not EventType.WAIT:
+            axis.text(
+                stamp_ms,
+                0.0,
+                event.type.name,
+                ha="center",
+                fontsize=10,
+                color=colour,
+            )
+    axis.set(
+        ylim=(-0.05, 1.0),
+        yticks=[0.77, 0.27],
+        yticklabels=["blocks", "events"],
+        title="one block, one event: the first two echoes of a spin-echo train",
+    )
+    axis.tick_params(axis="y", length=0)
+    for side in ("left", "right", "top"):
+        axis.spines[side].set_visible(False)
+
+    # The readout-axis k-space coordinate at each ADC sample, which places the
+    # stamp; the gradients themselves become no event.
+    k_adc, _, _, _, t_adc = sequence.calculate_kspace()
+    t_ms = 1e3 * np.asarray(t_adc)
+    inside = t_ms <= starts_ms[-1]
+    axis = axes[1]
+    axis.plot(t_ms[inside], np.asarray(k_adc)[0, inside], ".", color=SERIES[1], ms=2.5)
+    for event in described.events[:shown]:
+        if event.type is EventType.ADC:
+            axis.axvline(1e-3 * float(event.timestamp_us), color=SERIES[1], lw=1.0)
+    axis.axhline(0.0, color=MUTED, lw=0.8)
+    axis.set(
+        xlabel="time from the start of the repetition [ms]",
+        ylabel="$k_x$ [1/m]",
+        title="an ADC event is stamped where its readout crosses $k_x = 0$",
+    )
+    return figure
+
+
+# ---------------------------------------------------------------------------
+# The parameter estimation, model-based reconstruction and sequence design
+# pages.
+# ---------------------------------------------------------------------------
+
+
+def parameter_estimation():
+    """Six estimators on one T2-mapping problem: error across T2, and cost."""
+    from figure_style import SERIES, legend_outside
+
+    from blochsim.estimators import (
+        PERK,
+        DictionaryMatcher,
+        LookupTable,
+        NonlinearLeastSquares,
+    )
+    from blochsim.simulators import MultiEchoSimulator
+
+    generator = torch.Generator().manual_seed(3)
+    acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 160.0, 16))
+    unit = acquisition.bind(M0=1.0)
+    voxels, noise = 2000, 0.01
+    t2 = 20.0 + 280.0 * torch.rand(voxels, generator=generator)
+    m0 = 0.5 + torch.rand(voxels, generator=generator)
+    clean = torch.as_tensor(acquisition.simulate(T2=t2, M0=m0))
+    measured = clean + noise * torch.randn(clean.shape, generator=generator)
+
+    fine = torch.logspace(1.0, np.log10(500.0), 300)
+    coarse = torch.logspace(1.0, np.log10(500.0), 24)
+
+    def ratio(signals):
+        """Late echoes over early ones: a function of T2 alone."""
+        return signals[..., 8:].sum(-1) / signals[..., :8].sum(-1)
+
+    methods = {
+        "dictionary, 300 atoms": DictionaryMatcher(unit).fit(T2=fine),
+        "dictionary, 24 atoms": DictionaryMatcher(unit).fit(T2=coarse),
+        "rank 3, 16 groups": DictionaryMatcher(unit, groups=16).fit(T2=fine, rank=3),
+        "lookup table, 24 points": LookupTable(unit, combine=ratio).fit(T2=coarse),
+        "nonlinear least squares": NonlinearLeastSquares(
+            acquisition,
+            bounds={"T2": (5.0, 500.0), "M0": (0.05, 3.0)},
+            initial={"T2": 100.0, "M0": 1.0},
+        ).fit(T2=(10.0, 400.0), M0=(0.1, 2.0)),
+        "PERK": PERK(unit, n_features=500, normalize=True, feature_seed=0).fit(
+            T2=(10.0, 400.0), noise_std=noise, seed=0, samples=20_000
+        ),
+    }
+
+    edges = np.linspace(20.0, 300.0, 15)
+    centres = 0.5 * (edges[1:] + edges[:-1])
+    which = np.digitize(t2.numpy(), edges) - 1
+    figure, axes = plt.subplots(1, 2, figsize=(PAGE_WIDTH, 3.3))
+    for color, (label, estimator) in zip(SERIES, methods.items(), strict=False):
+        estimator.map(measured[:32])
+        start = time.perf_counter()
+        found = estimator.map(measured)["T2"]
+        seconds = time.perf_counter() - start
+        relative = ((found - t2) / t2).abs().numpy() * 100.0
+        rms = [
+            np.sqrt(np.mean(relative[which == index] ** 2))
+            for index in range(centres.size)
+        ]
+        axes[0].plot(centres, rms, "o-", color=color, markersize=3.5, label=label)
+        axes[1].plot(
+            seconds / voxels * 1e6, np.median(relative), "o", color=color, markersize=7
+        )
+    axes[0].set(
+        xlabel="true T2 (ms)",
+        ylabel="RMS relative error (%)",
+        title="error across the range",
+    )
+    axes[0].set_yscale("log")
+    axes[0].set_yticks([1, 2, 5, 10], ["1", "2", "5", "10"])
+    axes[0].yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    axes[1].set(
+        xlabel="mapping time per voxel (µs)",
+        ylabel="median relative error (%)",
+        title="cost of a map",
+        xscale="log",
+    )
+    for axis in axes:
+        axis.grid(alpha=0.3)
+    legend_outside(figure)
+    return figure
+
+
+def model_based_reconstruction():
+    """T2 from undersampled k-space: fit after, a subspace, the model inside."""
+    from blochsim.estimators import DictionaryMatcher
+    from blochsim.recon import GaussNewton, ModelOperator, Schedule, iterative
+    from blochsim.simulators import MultiEchoSimulator
+
+    size, echoes, step = 48, 8, 3
+    yy, xx = torch.meshgrid(
+        torch.linspace(-1.0, 1.0, size), torch.linspace(-1.0, 1.0, size), indexing="ij"
+    )
+    head = xx.square() / 0.8 + yy.square() / 0.95 < 1.0
+    t2 = torch.where(head, 70.0, 0.0)
+    m0 = torch.where(head, 0.8, 0.0)
+    for x0, y0, radius, value, density in (
+        (-0.35, -0.2, 0.25, 40.0, 0.7),
+        (0.35, -0.2, 0.22, 120.0, 0.9),
+        (0.0, 0.4, 0.2, 250.0, 1.0),
+    ):
+        disc = (xx - x0).square() + (yy - y0).square() < radius**2
+        t2, m0 = torch.where(disc, value, t2), torch.where(disc, density, m0)
+
+    acquisition = MultiEchoSimulator(TE=torch.linspace(10.0, 150.0, echoes))
+    images = torch.as_tensor(acquisition.simulate(T2=t2.clamp_min(10.0)))
+    images = images.to(torch.complex64) * m0[..., None]
+
+    # One phase-encode line in three per echo, shifted from echo to echo, and
+    # the six central lines in every echo.
+    mask = torch.zeros(echoes, size, dtype=torch.bool)
+    for echo in range(echoes):
+        mask[echo, echo % step :: step] = True
+        mask[echo, size // 2 - 3 : size // 2 + 3] = True
+
+    class CartesianEncoding:
+        """``(batch, echoes, y, x)`` images to their sampled k-space lines."""
+
+        def A(self, x):
+            return torch.fft.fft2(x, norm="ortho") * mask[None, :, :, None]
+
+        def A_adjoint(self, y):
+            return torch.fft.ifft2(y * mask[None, :, :, None], norm="ortho")
+
+    def conjugate_gradients(*, A, AT, y, z, gamma, max_iter, tol):
+        """``argmin ||A d - y||^2 + (1/gamma) ||d - z||^2``, the LeastSquares call."""
+        weight = 0.0 if gamma is None else 1.0 / gamma
+        right = AT(y) + weight * z
+        found = torch.zeros_like(right)
+        residual = right.clone()
+        direction = residual.clone()
+        power = (residual.conj() * residual).real.sum()
+        floor = tol**2 * power
+        for _ in range(max_iter):
+            image = AT(A(direction)) + weight * direction
+            length = power / (direction.conj() * image).real.sum()
+            found = found + length * direction
+            residual = residual - length * image
+            renewed = (residual.conj() * residual).real.sum()
+            if renewed < floor:
+                break
+            direction = residual + (renewed / power) * direction
+            power = renewed
+        return found
+
+    encoding = CartesianEncoding()
+    generator = torch.Generator().manual_seed(1)
+    kspace = encoding.A(images.movedim(-1, 0)[None])
+    kspace = (
+        kspace
+        + 0.002
+        * torch.complex(
+            torch.randn(kspace.shape, generator=generator),
+            torch.randn(kspace.shape, generator=generator),
+        )
+        * mask[None, :, :, None]
+    )
+
+    mapping = DictionaryMatcher(acquisition).fit(
+        T2=torch.linspace(10.0, 400.0, 400), M0=1.0, rank=3, seed=0
+    )
+    basis = mapping.subspace
+    gridded = encoding.A_adjoint(kspace)[0].movedim(0, -1)
+
+    class InBasis:
+        """The encoding applied to coefficient images expanded into echoes."""
+
+        def A(self, c):
+            return encoding.A(basis.expand(c.movedim(1, -1)).movedim(-1, 1))
+
+        def A_adjoint(self, y):
+            return basis.project(encoding.A_adjoint(y).movedim(1, -1)).movedim(-1, 1)
+
+    route = InBasis()
+    coefficients = conjugate_gradients(
+        A=route.A,
+        AT=route.A_adjoint,
+        y=kspace,
+        z=torch.zeros(1, basis.rank, size, size, dtype=torch.complex64),
+        gamma=100.0,
+        max_iter=40,
+        tol=1e-6,
+    )
+
+    operator = ModelOperator(acquisition, "T2", bounds={"T2": (10.0, 400.0)})
+    start = operator.initial((1, size, size), T2=100.0)
+    start[0, ..., 1], start[0, ..., 2] = gridded[..., 0].real, gridded[..., 0].imag
+    found = GaussNewton(
+        Schedule(initial=1e-2, factor=0.5, minimum=1e-6),
+        solve=iterative(conjugate_gradients, max_iter=20),
+        max_iterations=10,
+    ).minimize(operator, kspace, start, encoding=encoding)
+
+    maps = {
+        "truth": t2,
+        "zero-filled, then matched": mapping(gridded)["T2"],
+        "subspace, rank 3": mapping.from_coefficients(coefficients[0].movedim(0, -1))[
+            "T2"
+        ],
+        "Gauss-Newton, model inside": operator.split(found.x)["T2"][0],
+    }
+    figure, axes = plt.subplots(1, 4, figsize=(PAGE_WIDTH, 2.75))
+    for axis, (label, values) in zip(axes, maps.items(), strict=True):
+        shown = np.where(head.numpy(), values.detach().numpy(), np.nan)
+        handle = axis.imshow(shown, cmap="viridis", vmin=0.0, vmax=300.0)
+        error = 100 * float(((values - t2).abs()[head] / t2[head]).mean())
+        axis.set_title(f"{label}\nmean error {error:.1f}%", fontsize=10)
+        axis.set_xticks([])
+        axis.set_yticks([])
+        for spine in axis.spines.values():
+            spine.set_visible(False)
+    axes[0].set_title("truth\n", fontsize=10)
+    figure.colorbar(handle, ax=list(axes), label="T2 (ms)", shrink=0.85)
+    return figure
+
+
+def sequence_design():
+    """A DESPOT protocol's flip angles, designed against a Cramér-Rao bound."""
+    from figure_style import SERIES, legend_outside
+
+    from blochsim.optim import Bounded, SequenceDesign, crlb
+    from blochsim.simulators import SPGRSimulator, bSSFPSimulator
+
+    t1, t2, noise = torch.tensor([830.0, 1330.0]), torch.tensor([80.0, 110.0]), 0.005
+    spgr = SPGRSimulator(TE=2.0, TR=6.0, T1=t1, T2star=t2, M0=1.0, B0=0.0)
+    ssfp = bSSFPSimulator(TE=2.5, TR=5.0, T1=t1, T2=t2, M0=1.0, B0=0.0)
+    joint = ("T1", "T2", "M0", "B0")
+
+    def rows(acquisition, **design):
+        present = [name for name in joint if name in acquisition.exposes]
+        _, jacobian = acquisition.jacobian(present, **design)
+        placed = jacobian.new_zeros(
+            (*jacobian.shape[:-2], len(joint), jacobian.shape[-1])
+        )
+        where = torch.tensor([joint.index(name) for name in present])
+        return placed.index_copy(-2, where, jacobian)
+
+    def bound(spgr_flip, ssfp_flip):
+        together = torch.cat(
+            (rows(spgr, flip=spgr_flip), rows(ssfp, flip=ssfp_flip)), dim=-1
+        )
+        return crlb(together, noise_variance=noise**2)
+
+    def precision(spgr_flip, ssfp_flip):
+        variance = bound(spgr_flip, ssfp_flip)
+        return (variance[..., 0] / t1**2 + variance[..., 1] / t2**2).mean().log()
+
+    spgr_start = torch.tensor([2.0, 4.0, 8.0, 16.0])
+    ssfp_start = torch.tensor([10.0, 20.0, 40.0, 60.0])
+    result = SequenceDesign(
+        precision,
+        spgr_flip=Bounded(spgr_start, 1.0, 40.0),
+        ssfp_flip=Bounded(ssfp_start, 1.0, 70.0),
+    ).minimize(iterations=50, learning_rate=0.5)
+    designed = (result.parameters["spgr_flip"], result.parameters["ssfp_flip"])
+
+    figure, axes = plt.subplots(1, 3, figsize=(PAGE_WIDTH, 2.9))
+    axes[0].plot(result.loss.numpy(), color=SERIES[0])
+    axes[0].set(xlabel="step", ylabel="cost", title="cost at each step")
+
+    scans = np.arange(1, 5)
+    for offset, (label, start, end, upper, color) in enumerate(
+        (
+            ("SPGR", spgr_start, designed[0], 40.0, SERIES[0]),
+            ("bSSFP", ssfp_start, designed[1], 70.0, SERIES[1]),
+        )
+    ):
+        x = scans + 4 * offset
+        axes[1].plot(x, start, "o", mfc="none", color=color, label=f"{label}, start")
+        axes[1].plot(x, end, "o", color=color, label=f"{label}, designed")
+        axes[1].hlines(upper, x[0] - 0.4, x[-1] + 0.4, colors=color, linestyles=":")
+    axes[1].set(
+        xlabel="scan", ylabel="flip angle (deg)", title="flip angles (dotted: limit)"
+    )
+    axes[1].set_xticks(np.arange(1, 9))
+
+    with torch.no_grad():
+        before = bound(spgr_start, ssfp_start)
+        after = bound(*designed)
+    width = 0.38
+    labels = ["T1 WM", "T1 GM", "T2 WM", "T2 GM"]
+    for shift, (name, variance, color) in enumerate(
+        (("start", before, SERIES[2]), ("designed", after, SERIES[3]))
+    ):
+        relative = (
+            torch.cat((variance[..., 0].sqrt() / t1, variance[..., 1].sqrt() / t2))
+            * 100.0
+        )
+        axes[2].bar(
+            np.arange(4) + (shift - 0.5) * width,
+            relative.numpy(),
+            width,
+            color=color,
+            label=f"bound, {name}",
+        )
+    axes[2].set_xticks(np.arange(4), labels, rotation=30)
+    axes[2].set(ylabel="relative SD (%)", title="Cramér-Rao bound")
+    for axis in axes:
+        axis.grid(alpha=0.3, axis="y")
+    legend_outside(figure)
+    return figure
+
+
 FIGURES = {
+    # the parameter estimation, model-based reconstruction and sequence design
+    # pages
+    "parameter_estimation": parameter_estimation,
+    "model_based_reconstruction": model_based_reconstruction,
+    "sequence_design": sequence_design,
+    # the extended phase graphs page
+    "epg_mechanism": epg_mechanism,
+    # the sequence description page
+    "sequence_description": sequence_description,
     # the theory page
     "dephasing_helix": dephasing_helix,
     "configuration_states": configuration_states,
@@ -1367,15 +1957,19 @@ FIGURES = {
     "truncation": truncation,
     "diffusion": diffusion,
     "two_pool": two_pool,
-    # the implementation page
+    # the signal model page
+    "signal_model": signal_model,
+    # the derivatives page
+    "derivative_cost": derivative_cost,
+    # the execution page
+    "execution_policy": execution_policy,
+    # the kernels internals page
     "pipeline": pipeline,
     "event_stream": event_stream,
     "state_memory": state_memory,
     "fusion": fusion,
-    "derivative_cost": derivative_cost,
     "real_subspace": real_subspace,
     "declared_physics": declared_physics,
-    "execution_policy": execution_policy,
     "binding": binding,
     "closed_form_agreement": closed_form_agreement,
     "description_blocks": description_blocks,

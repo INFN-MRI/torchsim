@@ -848,6 +848,7 @@ class Simulator(_SignalModel):
             which is what naming a concrete one is for.
         settings : Any, optional
             Run settings and tissue, as the constructor takes them.
+            ``repetitions`` defaults to this simulator's own.
 
         Raises
         ------
@@ -862,6 +863,7 @@ class Simulator(_SignalModel):
                 "FSESimulator.from_description(...) for a refocused train"
             )
         physics = model if model is not None else cls.model
+        settings.setdefault("repetitions", cls.repetitions)
         simulator = _Described(model=physics, **settings)
         simulator._described = realised(description, physics)
         return simulator

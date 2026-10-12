@@ -214,7 +214,9 @@ def _echo_and_role(
     return echo, role
 
 
-def _pulse(signal: np.ndarray, times_s: np.ndarray, raster_s: float) -> RfDefinition:
+def _pulse(
+    signal: np.ndarray, times_s: np.ndarray, raster_s: float, bandwidth_hz: float
+) -> RfDefinition:
     """Return the shape of one pulse, scaled so an amplitude in radians is a flip.
 
     Raises
@@ -235,8 +237,26 @@ def _pulse(signal: np.ndarray, times_s: np.ndarray, raster_s: float) -> RfDefini
     return rf_definition(
         np.asarray(signal, dtype=np.complex128),
         dwell_s=float(steps[0]) if steps.size else raster_s,
+        bandwidth_hz=bandwidth_hz,
         rf_raster_time_s=raster_s,
     )
+
+
+def _bandwidth_hz(pulse: Any) -> float:
+    """The full width at half maximum of a pulse's small-tip profile, in Hz."""
+    signal = np.asarray(pulse.signal, dtype=np.complex128)
+    times = np.asarray(pulse.t, dtype=float)
+    dwell_s = float(times[1] - times[0]) if times.size > 1 else 1.0
+    size = 64 * max(signal.size, 64)
+    profile = np.abs(np.fft.fftshift(np.fft.fft(signal, size)))
+    peak = int(np.argmax(profile))
+    above = profile >= 0.5 * profile[peak]
+    low, high = peak, peak
+    while low > 0 and above[low - 1]:
+        low -= 1
+    while high < size - 1 and above[high + 1]:
+        high += 1
+    return (high - low + 1) / (size * dwell_s)
 
 
 def _rf_definitions(
@@ -247,20 +267,44 @@ def _rf_definitions(
     Rows differing only in amplitude, phase or frequency -- which is what RF
     spoiling writes one of per repetition -- are one pulse played differently,
     so they share a definition.
+
+    A pulse played under a slice-select gradient is given the bandwidth that
+    gradient selects across one reference slice thickness: the excitation's,
+    read as its small-tip bandwidth over its own gradient. Slice positions are
+    then in units of that thickness for every pulse in the repetition, so a
+    refocusing pulse that selects a wider slice than the excitation does so in
+    the simulation as well.
     """
-    by_shapes: dict[tuple[int, ...], int] = {}
-    of_row: dict[int, int] = {}
-    definitions: dict[int, RfDefinition] = {}
+    played: dict[int, tuple[Any, float]] = {}
     for index in blocks:
         row = int(sequence.block_events[index][_RF])
-        if not row or row in of_row:
+        if not row or row in played:
             continue
-        pulse = sequence.get_block(index).rf
-        key = _shape(pulse)
+        block = sequence.get_block(index)
+        centre_s = block.rf.delay + float(block.rf.center)
+        played[row] = (block.rf, _slice_select(block, centre_s))
+
+    selective = [(pulse, gradient) for pulse, gradient in played.values() if gradient]
+    reference = next(
+        (
+            (pulse, gradient)
+            for pulse, gradient in selective
+            if str(pulse.use) == "excitation"
+        ),
+        selective[0] if selective else None,
+    )
+    thickness_m = _bandwidth_hz(reference[0]) / reference[1] if reference else 0.0
+
+    by_shapes: dict[tuple[Any, ...], int] = {}
+    of_row: dict[int, int] = {}
+    definitions: dict[int, RfDefinition] = {}
+    for row, (pulse, gradient) in played.items():
+        bandwidth_hz = gradient * thickness_m
+        key = (*_shape(pulse), round(bandwidth_hz, 6))
         if key not in by_shapes:
             identifier = len(by_shapes)
             by_shapes[key] = identifier
-            shape = _pulse(pulse.signal, np.asarray(pulse.t), raster_s)
+            shape = _pulse(pulse.signal, np.asarray(pulse.t), raster_s, bandwidth_hz)
             definitions[identifier] = RfDefinition(
                 **{**shape.__dict__, "id": identifier}
             )
@@ -403,15 +447,18 @@ def _flip(pulse: Any) -> float:
 
 
 def _slice_select(block: Any, when_s: float) -> float:
-    """The gradient under a pulse's isocenter, when exactly one axis carries one."""
-    playing = []
-    for axis in (block.gx, block.gy, block.gz):
-        if axis is None:
-            continue
-        value = _gradient_at(axis, when_s)
-        if abs(value) > 1e-3:
-            playing.append(abs(value))
-    return playing[0] if len(playing) == 1 else 0.0
+    """The magnitude of the gradient played under a pulse's centre, in Hz/m.
+
+    An oblique slice is selected along the vector the axes play together, so
+    the magnitude of that vector is the gradient the slice is selected by.
+    """
+    playing = [
+        _gradient_at(axis, when_s)
+        for axis in (block.gx, block.gy, block.gz)
+        if axis is not None
+    ]
+    magnitude = float(np.linalg.norm(playing)) if playing else 0.0
+    return magnitude if magnitude > 1e-3 else 0.0
 
 
 def _gradient_at(gradient: Any, when_s: float) -> float:

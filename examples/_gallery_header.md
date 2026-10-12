@@ -2,48 +2,25 @@
 
 # Examples
 
-The examples have two jobs: a short **Course** teaches the framework itself,
-then **Tours** show what can be built on top of it. Every page is executable
-and uses the same public interfaces documented in the API reference.
+Every page here runs as you read it: the figures and numbers are computed by
+the code on the page, and each page has an *Open in Colab* button that runs it
+in your browser.
 
 ## Course
 
-Read the four **Framework** lessons in order. They are the shortest path from a
-shipped sequence to one of your own:
+Five lessons that take you from a sequence blochsim ships to a sequence and an
+operator of your own. Read them in order.
 
-1. **Getting started** — run a shipped {class}`blochsim.model.Simulator`,
-   inspect its sequence description, differentiate the signal, and see where
-   execution happens.
-2. **Expanded physics** — turn on off-resonance, transmit variation,
-   diffusion, flow, exchange and magnetization transfer without changing the
-   sequence abstraction.
-3. **Writing a simulator** — the extension point of the framework:
-   subclass {class}`blochsim.model.Simulator`, choose the command handlers
-   that interpret an incoming Pulseq/MRD event stream, and implement
-   {meth}`blochsim.model.Simulator.layout` for offline construction.
-4. **Custom operator** — package a preparation or readout as an operator while
-   leaving the state-machine kernels untouched.
+| Lesson | The question it answers |
+| --- | --- |
+| {doc}`1. Your first simulation <01-framework/01-first-simulation>` | How do I simulate a sequence and get its derivatives? |
+| {doc}`2. Advanced physics <01-framework/02-advanced-physics>` | How do I add B1, off resonance, magnetization transfer, diffusion or flow? |
+| {doc}`3. Custom signal model <01-framework/03-custom-signal-model>` | How do I simulate a sequence blochsim does not ship? |
+| {doc}`4. Description-based simulation <01-framework/04-description-based-simulation>` | How do I simulate a Pulseq file, or the sequence a scanner is running? |
+| {doc}`5. Custom operator <01-framework/05-custom-operator>` | How do I add a preparation or a readout of my own? |
 
-A simulator is deliberately the common object in both directions. Offline,
-`layout()` builds the sequence description. During acquisition,
-`Simulator.from_description()` takes the description decoded from the
-scanner's MRD stream and replays the RF/ADC commands through the simulator's
-handlers. The physics, differentiation, execution policy, estimators and
-reconstruction code therefore see the same object in either case.
+## Applications
 
-## Tours
-
-The remaining sections are standalone applications. They assume the Course,
-but not one another.
-
-**Parameter inference** compares dictionary matching, lookup tables, nonlinear
-least squares and PERK on the same mapping problem.
-
-**Sequence optimization** differentiates through the simulator to design echo
-trains, quantitative schedules and RF pulses.
-
-**Model-based imaging** places the simulator inside the forward model, through
-a linear subspace or nonlinear inversion.
-
-**Miscellaneous** contains complete pipelines that do not belong to the linear
-course.
+Complete worked examples built on the Course: mapping tissue parameters,
+designing sequences, reconstructing parameter maps from k-space, and making
+synthetic data. Each stands alone and says which lessons it assumes.

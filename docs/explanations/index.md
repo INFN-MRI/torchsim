@@ -1,28 +1,46 @@
 # Explanations
 
-The concepts behind BlochSim, separate from the step-by-step examples and the
-API reference.
+What blochsim does, and how, one concept per page, in the order data flows
+through it.
 
-{doc}`description`
-: The sequence representation BlochSim consumes: events, RF definitions,
-  readout roles, Pulseq input, and the MRD description a running scanner can
-  send.
+{doc}`signal-model`
+: A sequence written as handlers and a layout.
 
 {doc}`epg`
-: Extended phase graphs: configuration states, RF transitions, gradient
-  shifts, relaxation, diffusion, flow, exchange, and the assumptions behind
-  the model.
+: The physics in the kernels: configuration states, relaxation, B1 and B0,
+  pools, diffusion and flow.
 
-{doc}`implementation`
-: How a {class}`~blochsim.model.Simulator` turns either an offline layout or
-  an incoming sequence description into the fused CPU/GPU state machine, and
-  how differentiation and execution are arranged.
+{doc}`description`
+: What a Pulseq file or an MRD stream gives a simulator.
+
+{doc}`derivatives`
+: Forward mode for tissue properties, reverse mode for sequence parameters,
+  and the Cramér-Rao bound built on them.
+
+{doc}`execution`
+: CPU threads or a GPU, chunking to fit memory, and structure resolved once.
+
+{doc}`parameter-estimation`
+: Dictionary matching, low-rank matching, lookup tables, nonlinear least
+  squares and PERK.
+
+{doc}`model-based-reconstruction`
+: The signal model inside a reconstruction, linear in a subspace or
+  nonlinear.
+
+{doc}`sequence-design`
+: Protocol parameters optimized against a Cramér-Rao bound.
 
 ```{toctree}
 :hidden:
 :maxdepth: 1
 
-description
+signal-model
 epg
-implementation
+description
+derivatives
+execution
+parameter-estimation
+model-based-reconstruction
+sequence-design
 ```

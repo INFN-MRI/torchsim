@@ -8,7 +8,7 @@
 html[data-theme="dark"] .bd-content img.sphx-glr-single-img,
 html[data-theme="dark"] .bd-content img.sphx-glr-multi-img,
 html[data-theme="dark"] .bd-content figure img {
-  background-color: transparent;
+  background-color: transparent !important;
   filter: none;
 }
 
@@ -31,3 +31,43 @@ ul.sphx-glr-horizontal li { display: block; }
   color: var(--pst-color-primary);
 }
 .admonition.tldr ul { margin-bottom: 0; }
+
+/* A text block is a spec to paste into an agent: its copy button is shown
+   without hovering, which a touch screen cannot do. */
+div.highlight-text .copybtn {
+  opacity: 1;
+}
+
+/* Body text is justified, with hyphenation to keep the word spacing even.
+   Table cells and admonition titles stay left-aligned. */
+.bd-article p,
+.bd-article li {
+  text-align: justify;
+  hyphens: auto;
+}
+.bd-article td p,
+.bd-article th p,
+.bd-article .admonition-title {
+  text-align: left;
+}
+
+/* A capability's code and test, folded under its statement. */
+.bd-article .capabilities details.sd-dropdown {
+  margin: -0.4em 0 0.6em;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+.bd-article .capabilities details.sd-dropdown > summary.sd-card-header {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 0.85em;
+  color: var(--pst-color-text-muted);
+}
+.bd-article .capabilities details.sd-dropdown .sd-card-body {
+  padding: 0.2em 0 0;
+  font-size: 0.9em;
+  text-align: left;
+  color: var(--pst-color-text-muted);
+}

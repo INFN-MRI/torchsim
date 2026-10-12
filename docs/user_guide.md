@@ -8,7 +8,7 @@ and a map of where the rest of this documentation is.
 :depth: 2
 ```
 
-## Install
+## Installation
 
 BlochSim is a PyTorch package with two compiled kernels behind it. `pip`
 installs the Python side and its NumPy and SciPy dependencies for you. Two
@@ -16,7 +16,7 @@ things it cannot decide on your behalf, and which you therefore settle first:
 **which build of PyTorch you want**, and **where you want the whole thing to
 live**.
 
-### An environment of its own
+### Virtual environment
 
 Install into an isolated environment rather than the system interpreter. A
 simulation pins versions of PyTorch, NumPy and SciPy, and the phantom, coil
@@ -70,7 +70,7 @@ Read `uv pip install` for `pip install` in everything that follows.
 
 ::::
 
-### PyTorch first
+### PyTorch
 
 **Install PyTorch before BlochSim.** The wheel you want depends on hardware
 `pip` cannot see: a CPU-only build and a CUDA build have the same name and
@@ -181,7 +181,7 @@ signal = acquisition.simulate(flip=torch.full((48,), 60.0, device="cuda"))
 The kernels are compiled ahead of time, so the first GPU call costs what
 any other does, apart from PyTorch initialising CUDA.
 
-## Your first simulation
+## First simulation
 
 The central public object in BlochSim is a
 {class}`~blochsim.model.Simulator`. A shipped simulator fixes the sequence;
@@ -212,17 +212,17 @@ subclass when you implement a sequence.
 Arrays go in and come back in whatever library you wrote them in -- NumPy here,
 CuPy or PyTorch elsewhere -- over the same memory rather than a copy.
 
-## Finding your way around this documentation
+## Documentation structure
 
 {doc}`explanations/index`
 : The conceptual pages: the sequence description, the EPG physics and the
   fused implementation.
 
 {doc}`generated/autoexamples/index`
-: The executable Course and Tours. The Course starts with a shipped simulator,
-  then shows how to implement a new sequence by subclassing
-  {class}`~blochsim.model.Simulator`; the Tours cover inference, design and
-  model-based reconstruction.
+: The executable Course and Applications. The Course starts with a shipped
+  simulator and ends with a signal model and an operator of your own; the
+  Applications cover parameter mapping, sequence design, model-based
+  reconstruction and synthetic data.
 
 {doc}`api/index`
 : The reference. Start at {doc}`api/simulators` for what ships, at
@@ -233,7 +233,7 @@ CuPy or PyTorch elsewhere -- over the same memory rather than a copy.
 : Setting up to change BlochSim: the editable install, the style the code is
   written in, the tests, and how a pull request is opened.
 
-## Getting help, and reporting what breaks
+## Support and bug reports
 
 **Ask a question** in
 [Discussions](https://github.com/pulserver/blochsim/discussions). How to model

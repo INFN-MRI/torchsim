@@ -232,3 +232,85 @@ def test_naming_a_repetition_out_of_range_is_refused(tmp_path):
     _gradient_echo(path)
     with pytest.raises(ValueError, match="out of range"):
         SequenceDescription.from_pulseq(path, tr_index=7)
+
+
+def _slice_selective(path, *, refocusing_thickness_m=None):
+    """Write a sinc excitation, and optionally a sinc refocusing, on gz."""
+    system = _system()
+    sequence = pp.Sequence(system=system)
+    pulse, gz, rephaser = pp.make_sinc_pulse(
+        flip_angle=math.radians(FLIP_DEG),
+        duration=3e-3,
+        slice_thickness=5e-3,
+        time_bw_product=4,
+        apodization=0.5,
+        system=system,
+        return_gz=True,
+        use="excitation",
+    )
+    sequence.add_block(pulse, gz)
+    sequence.add_block(rephaser)
+    if refocusing_thickness_m is not None:
+        refocusing, gz_refocusing, _ = pp.make_sinc_pulse(
+            flip_angle=math.pi,
+            duration=3e-3,
+            slice_thickness=refocusing_thickness_m,
+            time_bw_product=4,
+            apodization=0.5,
+            system=system,
+            return_gz=True,
+            use="refocusing",
+        )
+        sequence.add_block(refocusing, gz_refocusing)
+    sequence.add_block(pp.make_adc(num_samples=SAMPLES, duration=1e-3, system=system))
+    sequence.add_block(pp.make_delay(TR_S))
+    sequence.set_definition("TRSize", len(sequence.block_durations))
+    sequence.write(str(path))
+
+
+def test_a_pulse_under_a_slice_select_gradient_selects_the_slice_it_was_designed_for(
+    tmp_path,
+):
+    """Bandwidth over gradient is the thickness pypulseq designed, both pulses."""
+    path = tmp_path / "selective.seq"
+    _slice_selective(path, refocusing_thickness_m=7.5e-3)
+    described = SequenceDescription.from_pulseq(path)
+    excitation, refocusing = (
+        event for event in described.events if event.type == EventType.RF
+    )
+    thickness_m = (
+        described.rf_definitions[excitation.rf_definition_id].bandwidth_hz
+        / excitation.slice_select_gradient_hz_per_m
+    )
+    assert thickness_m == pytest.approx(5e-3, rel=0.01)
+    # Positions are in units of the excitation's thickness, and the refocusing
+    # pulse's own passband spans one and a half of them.
+    refocusing = described.rf_definitions[refocusing.rf_definition_id]
+    widened = _small_tip_bandwidth_hz(refocusing) / refocusing.bandwidth_hz
+    assert widened == pytest.approx(1.5, rel=0.02)
+
+
+def _small_tip_bandwidth_hz(definition):
+    """The width at half maximum of the Fourier transform of the envelope."""
+    envelope = definition.combined_envelope()
+    dwell_s = 1e-6 * float(np.diff(definition.time.samples[:2])[0])
+    profile = np.abs(np.fft.fftshift(np.fft.fft(envelope, 1 << 18)))
+    above = np.flatnonzero(profile >= 0.5 * profile.max())
+    return (above[-1] - above[0] + 1) / ((1 << 18) * dwell_s)
+
+
+def test_a_slice_selective_pulse_from_a_file_excites_only_its_slice(tmp_path):
+    """Across two thicknesses, a small flip excites the one inside the passband."""
+    path = tmp_path / "selective.seq"
+    _slice_selective(path)
+
+    class Gre(Simulator):
+        excitation = Excitation
+        readout = SPGRReadout
+        states = 1
+
+    tissue = dict(T1=torch.tensor([830.0]), T2=torch.tensor([80.0]), M0=1.0)
+    played = Gre.from_pulseq(path, states=1)
+    centre = played.simulate(**tissue).abs()
+    across = played.simulate(**tissue, across_slice=41).abs()
+    assert float(across / centre) == pytest.approx(0.5, abs=0.03)
