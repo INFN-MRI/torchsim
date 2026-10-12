@@ -4,27 +4,20 @@
 .. currentmodule:: blochsim
 ```
 
-Device-agnostic description of an acquisition, shared by the interpreter, the
-estimators and the sequence optimizer. A description is a list of events with
-the timing and the tissue interaction each one carries; nothing in it names a
-vendor or a device.
+Device-agnostic description of an acquisition: a list of events with the
+timing and tissue interaction each carries, shared by the interpreter, the
+estimators and the sequence optimizer.
 
-This page is the description and what it is assembled from. Writing a
-simulator out of these is on {doc}`model`, running one is on {doc}`execution`,
-and the temporal basis a run spans is on {doc}`recon`.
+Simulators are written on {doc}`model`, run on {doc}`execution`, and the
+temporal basis a run spans is on {doc}`recon`. Concepts are in
+{doc}`../explanations/description`.
 
 ## Operators
 
-The modules a sequence is assembled from. An operator is a Python function
-returning the events it plays and how long it holds the timeline, and `@`
-composes two into one -- so a preparation or a readout BlochSim does not ship
-reaches the fused kernels with no change to them.
-
-The five readouts differ only in what they play around the sample, which is
-what separates a spoiled, an unbalanced, a balanced and a refocused train.
-{func}`SampledPulse` plays a waveform as one hard pulse per sample, with
-relaxation, precession and exchange between samples, for a pulse whose
-duration matters to the signal.
+Modules a sequence is assembled from. An operator is a function returning
+the events it plays and the time it holds the timeline; `@` composes two
+operators into one. {func}`SampledPulse` plays a waveform as one hard pulse per
+sample, with relaxation, precession and exchange between samples.
 
 ```{eval-rst}
 .. autosummary::
@@ -50,15 +43,11 @@ duration matters to the signal.
 
 ## Pulses and shims
 
-An ideal pulse turns the whole voxel through one angle. {func}`rf_definition`
-takes a complex envelope instead -- one row per transmit channel -- so a
-selective excitation is integrated over the slice rather than scaled, and
-{class}`ShimDefinition` gives the amplitude and phase each channel is driven
-at. A simulator takes them as `pulse=` and `shims=`.
-
-{func}`compose_spinor` is the rotation a shaped pulse leaves on each spin,
-composed sample by sample in torch so that derivatives reach the samples: how
-a pulse's own samples are designed rather than chosen.
+{func}`rf_definition` builds an RF definition from a complex envelope, one row
+per transmit channel. {class}`ShimDefinition` holds the amplitude and phase of
+each channel. A simulator takes them as `pulse=` and `shims=`.
+{func}`compose_spinor` composes the rotation a shaped pulse leaves on each
+spin, differentiably with respect to the samples.
 
 ```{eval-rst}
 .. autosummary::
@@ -72,17 +61,14 @@ a pulse's own samples are designed rather than chosen.
 
 ## Description
 
-The event stream itself: what a layout composes to, and what a sequence
-arriving from a scanner is read into.
-{meth}`SequenceDescription.from_operators` builds one directly,
-{meth}`SequenceDescription.from_pulseq` reads one out of a Pulseq `.seq` file
-or a sequence a design holds in memory, {func}`read_mrd_description` reads the
-ones an MRD stream carries ahead of its first acquisition,
-and {meth}`~blochsim.model.Simulator.from_description` runs any of them.
+The event stream a layout composes to, or a scanner sequence is read into.
+{meth}`SequenceDescription.from_operators` builds one from operators,
+{meth}`SequenceDescription.from_pulseq` reads a Pulseq `.seq` file or an
+in-memory sequence, {func}`read_mrd_description` reads those an MRD stream
+carries ahead of its first acquisition, and
+{meth}`~blochsim.model.Simulator.from_description` simulates any of them.
 
-Reading a `.seq` file needs pypulseq, which parses the format and computes the
-gradient trajectory the echo is found on: `pip install blochsim[pulseq]`.
-Nothing else in the package imports it.
+Reading Pulseq needs pypulseq: `pip install blochsim[pulseq]`.
 
 ```{eval-rst}
 .. autosummary::

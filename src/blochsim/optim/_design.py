@@ -1,29 +1,7 @@
-"""Stating a sequence-design problem, and solving it.
+"""Sequence design: a cost over bounded parameters, minimized by gradient descent.
 
-A design problem is three things, and this module is one object for each.
-
-The **acquisition** is a simulator with the tissue it is being designed for
-already fixed on it, so only the parameters under design are left to give. It
-answers the same two questions any simulator does -- what is recorded, and how
-that changes with the tissue -- which is what lets a cost be written against
-the simulator's own vocabulary.
-
-The **cost** is a plain function the user writes. It takes the parameters
-being designed by name, asks its acquisitions what they record, and returns
-one number. Nothing about it is registered or declared.
-
-:class:`SequenceDesign` holds the cost and the parameters, each with the
-limits it may move between, and :meth:`SequenceDesign.minimize` runs the loop.
-The gradient is reverse-mode autograd on the cost: the engine reads which of
-its inputs carry one and picks its kernel from that, so a design loop needs no
-derivative of its own.
-
-The two families this has to carry look nothing alike, which is the point.
-A quantitative sequence is designed for **precision** -- the cost is a
-Cramer-Rao bound on what it estimates, and reads the acquisition's Jacobian.
-An anatomical sequence is designed for **image quality** -- the cost is a
-property of the point spread function the echo train produces, and reads the
-signal alone. Both are the same object with a different function in it.
+The cost is a user function of the designed parameters (by keyword) returning
+one number; the gradient is reverse-mode autograd through it.
 """
 
 from __future__ import annotations
@@ -48,17 +26,17 @@ Limits: TypeAlias = tuple[Any, Any] | None
 
 @dataclass(frozen=True)
 class Bounded:
-    """An initial value and the range it is allowed to move in.
+    """An initial value and the interval a designed parameter stays in.
+
+    The limits are enforced exactly by optimizing a logit-transformed
+    variable, so no iterate leaves them.
 
     Attributes
     ----------
     initial : array-like
-        Where the design starts.
+        Starting value.
     lower, upper : float or array-like
-        The limits, either scalars or values per element. They are enforced
-        exactly, by optimizing a variable the limits are a sigmoid of, so no
-        iterate is ever outside them -- which matters when the bound is what
-        the scanner can actually play.
+        Limits, scalar or per element, in the parameter's units.
     """
 
     initial: Any
@@ -68,14 +46,14 @@ class Bounded:
 
 @dataclass(frozen=True)
 class SequenceOptimization:
-    """The designed parameters and the loss at every step that reached them.
+    """Result of :meth:`SequenceDesign.minimize`.
 
     Attributes
     ----------
     parameters : dict
-        ``{name: value}`` at the last step, inside the limits each was given.
+        ``{name: value}`` at the last step, inside their limits.
     loss : torch.Tensor
-        The cost after every step, so convergence is read rather than assumed.
+        Cost at each step.
     """
 
     parameters: dict[str, torch.Tensor]
@@ -83,17 +61,26 @@ class SequenceOptimization:
 
 
 class SequenceDesign(torch.nn.Module):
-    """A cost, the parameters it is minimized over, and the limits on them.
+    """A cost, the parameters it is minimized over, and their limits.
 
     Parameters
     ----------
     cost : callable
-        Called with the designed parameters by keyword, returning one number.
-        Everything sequence-specific lives here: what is simulated, what is
-        measured about it, and what is penalized.
-    parameters : Bounded or torch.Tensor, optional
-        One entry per designed parameter. A :class:`Bounded` carries its own
-        limits; a bare array is left free.
+        Called with the designed parameters by keyword; returns a one-element
+        tensor.
+    **parameters : Bounded or torch.Tensor
+        One entry per designed parameter. A :class:`Bounded` carries its limits;
+        a bare array is unbounded. At least one.
+
+    Raises
+    ------
+    ValueError
+        If no parameter is given, or a lower limit is not below its upper.
+
+    Notes
+    -----
+    A preference (a soft penalty) belongs in the cost; a hard scanner limit
+    belongs in :class:`Bounded`.
 
     Examples
     --------
@@ -103,12 +90,6 @@ class SequenceDesign(torch.nn.Module):
             sharpness, flip=Bounded(torch.full((8, 120), 120.0), 20.0, 180.0)
         )
         result = design.minimize(iterations=120)
-
-    Notes
-    -----
-    A feasibility term the scanner would merely prefer belongs in the cost,
-    where it trades against everything else. A limit the scanner cannot exceed
-    belongs in :class:`Bounded`, where no iterate can cross it.
     """
 
     def __init__(self, cost: Callable[..., torch.Tensor], **parameters: Any) -> None:
@@ -126,14 +107,20 @@ class SequenceDesign(torch.nn.Module):
         self.raw = torch.nn.ParameterDict(raw)
 
     def values(self) -> dict[str, torch.Tensor]:
-        """The designed parameters as the cost sees them, inside their limits."""
+        """Return the parameters as passed to the cost, inside their limits."""
         return {
             name: _constrained(value, self._limits[name])
             for name, value in self.raw.items()
         }
 
     def forward(self) -> torch.Tensor:
-        """Evaluate the cost at the parameters as they stand."""
+        """Evaluate the cost at the current parameters.
+
+        Raises
+        ------
+        ValueError
+            If the cost does not return one number.
+        """
         loss = self.cost(**self.values())
         if loss.numel() != 1:
             raise ValueError("a design cost must return one number")
@@ -149,25 +136,30 @@ class SequenceDesign(torch.nn.Module):
         callback: Callable[[int, dict[str, torch.Tensor], torch.Tensor], bool | None]
         | None = None,
     ) -> SequenceOptimization:
-        """Run the design to ``iterations`` steps.
+        """Minimize the cost over the designed parameters.
 
         Parameters
         ----------
         iterations : int, optional
-            How many updates to take.
+            Number of updates. Defaults to 200.
         learning_rate : float, optional
             Adam step size, used when ``optimizer_factory`` is omitted.
+            Defaults to 0.05.
         optimizer_factory : callable, optional
-            Called with the unconstrained variables, returning the optimizer
-            to drive them.
+            Maps the list of unconstrained variables to a
+            :class:`torch.optim.Optimizer`.
         callback : callable, optional
-            Called after each update with the step number, the parameters and
-            the loss, both detached. Returning ``True`` stops early.
+            Called after each update as ``callback(step, parameters, loss)``
+            with detached values; returning ``True`` stops early.
 
         Returns
         -------
         SequenceOptimization
-            The parameters as they finished, and the loss at every step.
+
+        Raises
+        ------
+        ValueError
+            If ``iterations`` or ``learning_rate`` is not positive.
         """
         if iterations < 1 or learning_rate <= 0:
             raise ValueError("iterations and learning_rate must be positive")
@@ -199,41 +191,32 @@ def crlb(
     noise_variance: float = 1.0,
     singular: Literal["raise", "infinite"] = "raise",
 ) -> torch.Tensor:
-    """The lowest variance an unbiased estimate of each parameter can have.
+    """Cramer-Rao lower bound on the variance of each parameter.
 
     Parameters
     ----------
     jacobian : torch.Tensor
-        ``(..., parameters, samples)`` -- the derivative of the signal with
-        respect to each parameter being estimated. Real and imaginary parts
-        are counted as separate measurements, which is what independent
-        Gaussian noise on the two channels means.
+        ``(..., parameters, samples)``, derivative of the signal with respect
+        to each parameter. Real and imaginary parts count as separate
+        measurements.
     noise_variance : float, optional
-        The variance of that noise, in the units the signal is in.
+        Variance of the noise per real measurement, in signal units squared.
+        Defaults to 1.
     singular : {"raise", "infinite"}, optional
-        What to do where the parameters are not jointly identifiable. The
-        default refuses, which is right for a design being scored: a
-        sequence that cannot separate its parameters has no bound to
-        report. ``"infinite"`` answers with an infinite variance at those
-        entries instead, which is what a map wants, since one voxel of
-        background need not stop the rest from being read.
+        Behaviour where the parameters are not jointly identifiable: raise, or
+        return an infinite variance at those entries. Defaults to ``"raise"``.
 
     Returns
     -------
     torch.Tensor
-        ``(..., parameters)``, the diagonal of the inverse Fisher matrix. What
-        to do with it is the design's: summing gives A-optimality, dividing by
-        the parameter values first makes the sum dimensionless and so weights
-        a short and a long relaxation time comparably.
+        ``(..., parameters)``, diagonal of the inverse Fisher matrix.
 
     Raises
     ------
     ValueError
-        If the Jacobian has no parameter axis.
+        If the Jacobian has no parameter axis, or ``singular`` is invalid.
     torch.linalg.LinAlgError
-        If the parameters are not jointly identifiable from these samples,
-        which is a singular Fisher matrix and says the design cannot work at
-        all rather than that it is imprecise.
+        If the Fisher matrix is singular and ``singular="raise"``.
     """
     if jacobian.ndim < 2:
         raise ValueError("a Jacobian is (..., parameters, samples)")

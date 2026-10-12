@@ -25,50 +25,45 @@ def bssfp_sim(
     device: str | torch.device | None = None,
     **values: Any,
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-    """
-    Balanced steady-state free-precession simulator wrapper.
+    """Simulate the balanced SSFP steady-state signal.
+
+    Wraps :class:`~blochsim.simulators.bSSFPSimulator`.
 
     Parameters
     ----------
-    flip : float | npt.ArrayLike
-        Flip angle train in degrees.
-    TE : float | npt.ArrayLike
-        Echo time in milliseconds.
-    TR : float | npt.ArrayLike
-        Repetition time in milliseconds.
-    T1 : float | npt.ArrayLike
-        Longitudinal relaxation time in milliseconds.
-    T2 : float | npt.ArrayLike
-        Transverse relaxation time in milliseconds.
-    diff : str | tuple[str], optional
-        Arguments to get the signal derivative with respect to.
-        The default is ``None`` (no differentation).
+    flip : float or array-like
+        Excitation flip angle in degrees.
+    TE : float or array-like
+        Echo time in ms.
+    TR : float
+        Repetition time in ms.
+    T1 : float or array-like
+        Longitudinal relaxation time in ms.
+    T2 : float or array-like
+        Transverse relaxation time in ms.
+    diff : str or tuple of str, optional
+        Parameters to differentiate with respect to; ``None`` returns the signal only.
     phase_inc : float, optional
-        Linear phase-cycle increment in degrees.
-        The default is ``180.0``
-    B0 : float | npt.ArrayLike, optional
-        Frequency offset map in Hz, default is ``0.0.``
-    chemshift : float | npt.ArrayLike, optional
-        Chemical shift in Hz, default is ``0.0``.
+        Linear phase-cycling increment in degrees.
+    B0 : float or array-like, optional
+        Off-resonance in Hz.
+    chemshift : float or array-like, optional
+        Chemical shift in Hz.
     M0 : float or array-like, optional
-        Proton density scaling factor, default is ``1.0``.
-    **values : optional
-        Additional call-time tissue, protocol or run settings accepted by
-        ``Simulator.simulate``. Settings fixed only at simulator construction
-        remain class-interface features.
-    device : str | torch.device, optional
-        Computational device for simulation.
-        The default is ``None`` (infer from input).
+        Proton density scaling.
+    device : str or torch.device, optional
+        Device to run on; follows the inputs when ``None``.
+    **values
+        Further tissue, protocol or run arguments accepted by
+        :meth:`~blochsim.model.Simulator.simulate`.
 
     Returns
     -------
-    sig : npt.ArrayLike
-        Signal evolution of shape ``(..., len(flip))``.
-    jac : npt.ArrayLike
-        Derivatives of signal wrt ``diff`` parameters,
-        of shape ``(..., len(diff), len(flip))``.
-        Not returned if ``diff`` is ``None``.
-
+    signal : array-like
+        Signal of shape ``(..., len(flip))``.
+    jacobian : array-like
+        Derivatives with respect to ``diff``, of shape ``(..., len(diff), len(flip))``. Returned only
+        when ``diff`` is given; a single name drops the ``len(diff)`` axis.
     """
     return evaluated(
         bSSFPSimulator(),

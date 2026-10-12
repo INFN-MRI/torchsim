@@ -16,64 +16,39 @@ from ._mapping import Estimator
 
 
 class NonlinearLeastSquares(Estimator):
-    """Levenberg-Marquardt, stepping every voxel together.
+    """Per-voxel Levenberg-Marquardt fit of the signal model.
 
-    Where a dictionary spans a grid whose size is the product of the parameter
-    ranges, a nonlinear fit walks downhill from a starting guess and pays
-    nothing for a third parameter beyond a third column of the Jacobian. What
-    it gives up is the guarantee: it finds a local minimum of the residual,
-    and which one depends on where it started.
-
-    This is an :class:`~blochsim.Estimator` face on
-    :class:`~blochsim.recon.GaussNewton`, and holds no algorithm of its own.
-    Fitting images voxel by voxel and reconstructing maps from k-space are the
-    same loop over the same :class:`~blochsim.recon.ModelOperator` with
-    nothing encoding the voxels together, so what is here is only the
-    adaptation: where the fit starts, and what the training set is for.
-
-    The loop it runs by default carries a per-voxel trust region, so every
-    voxel takes its step in the same pass, carries its own damping, accepts or
-    rejects on its own, and drops out when it has converged -- and the
-    remaining ones close up, so late iterations cost only what is left.
+    Fits the model itself, so each extra unknown adds one Jacobian column
+    rather than a dictionary axis. The result is a local minimum that depends
+    on the starting point. All voxels step together with their own trust
+    region and leave the loop on convergence. A face on
+    :class:`~blochsim.recon.GaussNewton`.
 
     Parameters
     ----------
     acquisition : Simulator, optional
-        The sequence being inverted: a simulator that ships with BlochSim, one
-        written by subclassing :class:`~blochsim.model.Simulator`, or any other
-        :class:`~blochsim.model.Simulator`. Every tissue property that is
-        neither unknown nor measured separately is fixed on it beforehand, with
-        the constructor or :meth:`~blochsim.model.Simulator.bind`. Leave it
-        out to fit from signals handed to :meth:`fit` directly.
+        The sequence being inverted, with every property that is neither
+        unknown nor measured separately already fixed.
     bounds : mapping, optional
-        ``{name: (low, high)}``, either end ``None`` for unbounded. A bound is
-        kept by fitting a transformed variable rather than by clipping a
-        result, so no iterate ever leaves the interval and the bound cannot be
-        sitting exactly on the answer. It also puts every parameter on the
-        same scale whatever its units, which is what the damping term assumes.
+        ``{name: (low, high)}``, either end ``None`` for unbounded. Enforced by
+        a variable transform, so iterates stay inside.
     initial : mapping, optional
-        ``{name: value}`` to start from, which must be strictly inside that
-        property's bound. Without one, :meth:`fit` takes the median of the
-        parameters the training set drew.
+        ``{name: value}`` start, strictly inside the bound. Default is the
+        median of the training draw.
     loop : GaussNewton, optional
-        The solve to run, and where every knob it has lives -- how many steps,
-        how the damping moves, which tolerance stops a voxel. The default is
-        Levenberg-Marquardt: a :class:`~blochsim.recon.TrustRegion` over
-        :func:`~blochsim.recon.direct`, twenty steps.
+        The solver. Default is a :class:`~blochsim.recon.TrustRegion` over
+        :func:`~blochsim.recon.direct`, 20 iterations.
 
     Notes
     -----
-    **Equality constraints are written into the model, not declared here.**
-    A constraint that fixes one parameter in terms of the others removes a
-    degree of freedom, so the way to impose it is to not have that freedom:
-    write the model in terms of the parameters that remain. For a fat-water
-    fit where the two fractions must sum to one, make the fat fraction ``f``
-    the only unknown and write water as ``1 - f`` inside the model. The
-    constraint then holds identically at every iterate, rather than being
-    restored after each one.
+    An equality constraint is written into the model by removing the degree
+    of freedom it fixes: for a fat-water fit with fractions summing to one,
+    make the fat fraction ``f`` the only unknown and use ``1 - f`` for water.
 
-    The solve is iterative and runs without building a graph, so an estimate
-    carries no gradient with respect to the measurement.
+    The estimate carries no gradient with respect to the measurement. The
+    stated uncertainty is the inverse-Fisher standard error at the solution
+    (a linearization, as :func:`~blochsim.crlb`), zero when the training noise
+    is zero.
 
     Examples
     --------
@@ -119,7 +94,7 @@ class NonlinearLeastSquares(Estimator):
 
     @property
     def fitted(self) -> bool:
-        """Whether a model and a starting point are both in place."""
+        """Whether a model and a starting point are in place."""
         return self.acquisition is not None and self._start is not None
 
     def _fit_arrays(

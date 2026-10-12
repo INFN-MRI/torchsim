@@ -15,17 +15,20 @@ from ..sequence._array import as_torch
 class StimulatedEchoSimulator(Simulator):
     """Three pulses, sampled at the spin echo of the first two and at the stimulated echo.
 
-    The second pulse, ``TE / 2`` after the first, refocuses part of the
-    transverse magnetization into a spin echo at ``TE`` and stores part of it
-    along z, where it relaxes with T1 alone; the third pulse, ``TM`` after the
-    second, returns that part to the transverse plane, where it rephases into
-    the stimulated echo ``TE / 2`` later [1]_. With instantaneous pulses about
-    x, the two samples are ``i M0 sin(a1) sin^2(a2 / 2) exp(-TE / T2)`` and
-    ``i M0 sin(a1) sin(a2) sin(a3) exp(-TE / T2) exp(-TM / T1) / 2``, whatever
-    the off-resonance. The transverse magnetization is spoiled after the spin
-    echo, so the second sample is the stimulated echo alone. With one flip
-    angle, and ``TE`` twice and ``TM`` three times its own echo time, this is
-    the sequence BART's ``epg`` plays as Spinecho.
+    The second pulse, ``TE / 2`` after the first, forms a spin echo at ``TE`` and
+    stores part of the magnetization along z, where it relaxes with T1 alone. The
+    third pulse, ``TM`` after the second, returns that part to the transverse
+    plane, where it forms the stimulated echo ``TE / 2`` later [1]_. The
+    transverse magnetization is spoiled after the spin echo, so the second sample
+    is the stimulated echo alone.
+
+    Notes
+    -----
+    For instantaneous pulses about x the samples are
+    ``i M0 sin(a1) sin^2(a2 / 2) exp(-TE / T2)`` and
+    ``i M0 sin(a1) sin(a2) sin(a3) exp(-TE / T2) exp(-TM / T1) / 2``, independent
+    of off-resonance. With one flip angle, ``TE`` twice and ``TM`` three times
+    BART's echo time, this is the sequence BART's ``epg`` plays as Spinecho.
 
     References
     ----------
@@ -70,16 +73,16 @@ class StimulatedEchoSimulator(Simulator):
         flip : float or array-like
             Flip angle in degrees, scalar or one per pulse.
         TE : float
-            Echo time in milliseconds: twice the spacing of the first two
-            pulses, and of the third pulse and the stimulated echo.
+            Echo time in ms; twice the spacing of the first two pulses, and of the
+            third pulse and the stimulated echo.
         TM : float
-            Mixing time in milliseconds, from the second pulse to the third.
+            Mixing time in ms, from the second pulse to the third.
 
         Raises
         ------
         ValueError
-            If the third pulse would play before the spin echo, or if ``flip``
-            is neither scalar nor one per pulse.
+            If the third pulse would play before the spin echo, or if ``flip`` is
+            neither scalar nor one per pulse.
         """
         angles = torch.deg2rad(torch.atleast_1d(as_torch(flip)).to(torch.float64))
         if angles.numel() == 1:

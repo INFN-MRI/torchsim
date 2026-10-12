@@ -16,12 +16,11 @@ from ._contrast import across_contrasts
 
 
 class SPGRSimulator(Simulator):
-    """The spoiled gradient-echo steady state, read at the echo time.
+    """Spoiled gradient-echo steady state, read at the echo time.
 
-    Spoiling leaves no transverse magnetization to carry over, so the steady
-    state is the Ernst expression [1]_ in closed form and no state machine is
-    run. Fitting T1 to a set of these at different flip angles is DESPOT1
-    [2]_.
+    Spoiling leaves no transverse magnetization to carry over, so the steady state
+    is the Ernst expression [1]_ in closed form. Fitting T1 to several flip angles
+    is DESPOT1 [2]_.
 
     References
     ----------
@@ -56,7 +55,7 @@ class SPGRSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -71,15 +70,15 @@ class SPGRSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` and ``T2star`` in milliseconds, ``B0`` and ``chemshift`` in
-            Hz, and ``M0`` as a scaling.
-        flip:
+        properties : mapping
+            ``T1`` and ``T2star`` in ms, ``B0`` and ``chemshift`` in Hz, ``M0``
+            scaling.
+        flip : float or array-like
             Excitation flip angle in degrees.
-        TR:
-            Repetition time in milliseconds.
-        TE:
-            Echo time in milliseconds.
+        TR : float or array-like
+            Repetition time in ms.
+        TE : float or array-like
+            Echo time in ms.
         """
         held = across_contrasts(properties, flip, TR, TE)
         angle = torch.pi / 180.0 * flip

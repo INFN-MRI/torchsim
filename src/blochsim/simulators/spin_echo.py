@@ -16,14 +16,12 @@ from ._contrast import across_contrasts
 
 
 class SpinEchoSimulator(Simulator):
-    """A spin echo repeated every TR, optionally behind an inversion.
+    """Spin echo repeated every TR, optionally behind an inversion.
 
-    The refocusing pulse at ``TE / 2`` inverts what has recovered since the
-    excitation, so the longitudinal magnetization the next excitation finds
-    is ``1 - 2 exp(-(TR - TE / 2) / T1) + exp(-TR / T1)`` of equilibrium
-    [1]_, and the echo decays with T2. An inversion time multiplies this by
-    the recovery from the inversion, ``1 - (1 + inv_efficiency)
-    exp(-TI / T1)``.
+    The refocusing pulse at ``TE / 2`` inverts the magnetization recovered since
+    the excitation, so the next excitation finds ``1 - 2 exp(-(TR - TE / 2) / T1) +
+    exp(-TR / T1)`` of equilibrium [1]_, and the echo decays with T2. An inversion
+    time multiplies this by ``1 - (1 + inv_efficiency) exp(-TI / T1)``.
 
     References
     ----------
@@ -53,7 +51,7 @@ class SpinEchoSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -68,15 +66,15 @@ class SpinEchoSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` and ``T2`` in milliseconds, ``inv_efficiency`` as a
-            fraction of a perfect inversion, and ``M0`` as a scaling.
-        TE:
-            Echo times in milliseconds.
-        TR:
-            Repetition time in milliseconds.
-        TI:
-            Inversion times in milliseconds, or ``None`` for no inversion.
+        properties : mapping
+            ``T1`` and ``T2`` in ms, ``inv_efficiency`` as a fraction of a perfect
+            inversion, ``M0`` scaling.
+        TE : float or array-like
+            Echo times in ms.
+        TR : float or array-like
+            Repetition time in ms.
+        TI : float or array-like, optional
+            Inversion times in ms; no inversion when not given.
         """
         timings = (TE, TR) if TI is None else (TE, TR, TI)
         held = across_contrasts(properties, *timings)

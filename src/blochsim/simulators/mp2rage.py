@@ -18,11 +18,10 @@ from ..sequence._array import arrays, as_torch, matched
 class MP2RAGESimulator(Simulator):
     """Two gradient-echo blocks read at two inversion times, in closed form.
 
-    The train is spoiled and sampled at the k-space centre of each block, so
-    only the longitudinal magnetization carries between shots and the steady
-    state it settles into has a closed form. Combining the two blocks into one
-    ratio gives an image free of the receive bias field, which is what the
-    sequence is for [1]_.
+    The spoiled train is sampled at the k-space centre of each block, so only the
+    longitudinal magnetization carries between shots and the steady state has a
+    closed form. The ratio of the two blocks is free of the receive bias field
+    [1]_.
 
     References
     ----------
@@ -64,7 +63,7 @@ class MP2RAGESimulator(Simulator):
     record = "acquired"
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def layout(
@@ -77,37 +76,34 @@ class MP2RAGESimulator(Simulator):
         nshots: int | npt.ArrayLike,
         phases: float | npt.ArrayLike = 0.0,
     ) -> list:
-        """Return the whole train: one inversion, then two blocks of readouts.
+        """Return one inversion followed by two blocks of readouts.
 
-        The closed form of :meth:`evaluate` is what a lookup table is built
-        from, because it costs one expression per T1. This is the same
-        sequence written out event by event, which is what a description
-        arriving from a scanner is compared against and what carries a train
-        the closed form has no parameter for.
+        Event-by-event form of the closed form of :meth:`evaluate`, for comparison
+        with a description arriving from a scanner and for trains the closed form has
+        no parameter for.
 
         Parameters
         ----------
         TI : array-like
-            The two inversion times in milliseconds, each measured to the
-            sampled shot of its block.
+            The two inversion times in ms, each measured to the sampled shot of its
+            block.
         flip : float or array-like
-            Excitation flip angle in degrees, one per block or one shared.
+            Excitation flip angle in degrees, one per block or shared.
         TRspgr : float or array-like
-            Repetition time in milliseconds of one readout.
+            Repetition time of one readout, in ms.
         TRmp2rage : float or array-like
-            Repetition time in milliseconds of the whole inversion block.
+            Repetition time of the whole inversion block, in ms.
         nshots : int or array-like
-            Readouts per block, either the total -- halved for each block --
-            or ``(before, after)`` the sampled shot.
+            Readouts per block: a total, split evenly before and after the sampled
+            shot, or ``(before, after)``.
         phases : float or array-like, optional
-            Excitation phases in degrees, one per block or one shared.
+            Excitation phases in degrees, one per block or shared.
 
         Raises
         ------
         ValueError
-            If either inversion time falls before its block's first
-            excitation, or if the second block does not fit inside the
-            repetition time.
+            If an inversion time falls before its block's first excitation, or if the
+            second block does not fit inside the repetition time.
         """
         angle = torch.deg2rad(_shared_or_two(as_torch(flip)))
         turn = torch.deg2rad(_shared_or_two(matched(phases, angle)))
@@ -161,21 +157,20 @@ class MP2RAGESimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``T1`` in milliseconds, ``M0`` as a scaling, and the inversion
-            efficiency.
-        TI:
-            The two inversion times in milliseconds, measured to the sampled
-            shot of each block.
-        flip:
-            Excitation flip angle in degrees, one per block or one shared.
-        TRspgr:
-            Repetition time in milliseconds of one readout.
-        TRmp2rage:
-            Repetition time in milliseconds of the whole inversion block.
-        nshots:
-            Readouts per block, either the total -- halved for each block --
-            or ``(before, after)`` the sampled shot.
+        properties : mapping
+            ``T1`` in ms, ``inv_efficiency``, ``M0`` scaling.
+        TI : array-like
+            The two inversion times in ms, each measured to the sampled shot of its
+            block.
+        flip : float or array-like
+            Excitation flip angle in degrees, one per block or shared.
+        TRspgr : float or array-like
+            Repetition time of one readout, in ms.
+        TRmp2rage : float or array-like
+            Repetition time of the whole inversion block, in ms.
+        nshots : int or array-like
+            Readouts per block: a total, split evenly before and after the sampled
+            shot, or ``(before, after)``.
         """
         radians = torch.pi / 180.0
         angle = _shared_or_two(radians * flip)

@@ -19,22 +19,23 @@ from .gradient_echo import GAMMA_BAR_HZ_PER_T
 
 
 class LorentzianSimulator(Simulator):
-    """A Z-spectrum as equilibrium minus one Lorentzian line per pool.
+    """Z-spectrum as equilibrium minus one Lorentzian line per pool.
 
-    Each pool saturates the water signal along a Lorentzian line centred on
-    its own offset [1]_, and the lines add:
+    Each pool saturates the water signal along a Lorentzian line centred on its
+    own offset [1]_, and the lines add:
 
     ``M0 (1 - sum_i A_i (W_i / 2)^2 / ((W_i / 2)^2 + (offset - shift_i)^2))``
 
-    Pool ``i``, counted from one, exposes ``pool{i}_amplitude``,
-    ``pool{i}_width`` (the full width at half maximum) and ``pool{i}_shift``.
+    Pool ``i``, counted from one, exposes ``pool{i}_amplitude``, ``pool{i}_width``
+    (full width at half maximum) and ``pool{i}_shift``.
 
     Parameters
     ----------
-    pools:
-        How many Lorentzian lines.
+    pools : int, optional
+        Number of Lorentzian lines.
     **values
-        Properties or sequence arguments to fix, as for any simulator.
+        Properties or sequence arguments to fix, as for any
+        :class:`~blochsim.model.Simulator`.
 
     References
     ----------
@@ -78,7 +79,7 @@ class LorentzianSimulator(Simulator):
         super().__init__(**values)
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -91,12 +92,11 @@ class LorentzianSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``pool{i}_amplitude`` as a fraction of ``M0``, ``pool{i}_width``
-            and ``pool{i}_shift`` in the unit of ``offsets``, and ``M0`` as a
-            scaling.
-        offsets:
-            Saturation frequency offsets from water, conventionally in ppm.
+        properties : mapping
+            ``pool{i}_amplitude`` as a fraction of ``M0``; ``pool{i}_width`` and
+            ``pool{i}_shift`` in the unit of ``offsets``; ``M0`` scaling.
+        offsets : array-like
+            Saturation offsets from water, conventionally in ppm.
         """
         held = across_contrasts(properties, offsets)
         remaining = 1.0
@@ -109,19 +109,18 @@ class LorentzianSimulator(Simulator):
 
 
 class CESTSimulator(Simulator):
-    """A Z-spectrum simulated through a train of saturation pulses, pool by pool.
+    """Z-spectrum simulated through a train of rectangular saturation pulses.
 
-    At each offset the magnetization starts from equilibrium, a train of
-    rectangular pulses saturates it while the free water and every exchanging
-    pool precess at their own frequency, relax and exchange, and the
-    longitudinal magnetization left once a spoiled delay has passed is the
-    point of the spectrum. The pools are the Bloch-McConnell model's [1]_:
-    ``poolB_*`` to ``poolE_*`` beside the free water, each a fraction of
-    ``M0`` with its own exchange rate, relaxation times and chemical shift in
-    Hz. Each pulse starts at the phase the one before it ended at, so the
-    train is continuous in phase over the time the pulses play and not over
-    the delays between them, which is how a Pulseq CEST protocol accumulates
-    it. This is the sequence BART's ``sim`` plays as ``CEST``.
+    Each offset starts from equilibrium. Free water and the exchanging pools
+    (``poolB_*`` to ``poolE_*``, the Bloch-McConnell model [1]_) evolve through
+    the pulses and a spoiled delay, and the longitudinal magnetization at the read
+    is the point of the spectrum. Each pool has a ``fraction`` of ``M0``, an
+    exchange rate, relaxation times and a chemical shift in Hz. Each pulse starts
+    at the phase the previous one ended at; the delays between pulses accrue none.
+
+    Notes
+    -----
+    Corresponds to the sequence BART's ``sim`` plays as ``CEST``.
 
     References
     ----------
@@ -177,22 +176,21 @@ class CESTSimulator(Simulator):
         Parameters
         ----------
         offsets : array-like
-            Saturation frequency offsets from the free water, in ppm.
+            Saturation offsets from the free water, in ppm.
         field_strength : float, optional
-            Main field in tesla, which turns an offset in ppm into Hz.
+            Main field in T; converts ppm to Hz.
         B1sat : float, optional
-            Amplitude of each saturation pulse in microtesla.
+            Saturation pulse amplitude in microtesla.
         npulses : int, optional
             Saturation pulses per offset.
         pulse_duration : float, optional
-            Duration of each pulse in milliseconds.
+            Duration of each pulse in ms.
         interpulse_delay : float, optional
-            Time between two pulses in milliseconds.
+            Delay between pulses in ms.
         recovery : float, optional
-            Time in milliseconds from the end of the last pulse to the read,
-            over which the transverse magnetization is spoiled.
+            Spoiled delay from the last pulse to the read, in ms.
         dwell : float, optional
-            How long each sample of a pulse is held, in milliseconds.
+            Hold time of each pulse sample in ms.
 
         Raises
         ------

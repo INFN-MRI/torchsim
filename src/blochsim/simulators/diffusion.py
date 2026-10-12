@@ -20,12 +20,11 @@ TENSOR = ("Dxx", "Dyy", "Dzz", "Dxy", "Dxz", "Dyz")
 
 
 class DiffusionSimulator(Simulator):
-    """Attenuation by Gaussian diffusion, at a series of b-values.
+    """Attenuation by Gaussian diffusion at a series of b-values.
 
-    The signal is ``M0 exp(-b D)`` for an isotropic ``D`` [1]_, or
-    ``M0 exp(-b g^T D g)`` for a diffusion tensor along unit gradient
-    directions ``g``, which is what giving ``directions`` asks for: the six
-    entries of :data:`TENSOR` are then the properties, and ``D`` is not.
+    The signal is ``M0 exp(-b D)`` for an isotropic ``D`` [1]_. With
+    ``directions`` it is ``M0 exp(-b g^T D g)`` for unit gradient directions ``g``,
+    and the six entries of :data:`TENSOR` are the properties in place of ``D``.
 
     References
     ----------
@@ -55,7 +54,7 @@ class DiffusionSimulator(Simulator):
     )
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Evaluate the closed form, no state machine and no description."""
+        """Return the closed-form signal."""
         return self._signal(properties, **arrays(self.played(**sequence)))
 
     def _signal(
@@ -69,13 +68,12 @@ class DiffusionSimulator(Simulator):
 
         Parameters
         ----------
-        properties:
-            ``D`` or the entries of :data:`TENSOR` in square micrometres per
-            millisecond, and ``M0`` as a scaling.
-        b:
-            b-values in seconds per square millimetre.
-        directions:
-            Unit gradient directions, ``(len(b), 3)``, for a tensor.
+        properties : mapping
+            ``D`` or the entries of :data:`TENSOR` in um^2/ms; ``M0`` scaling.
+        b : float or array-like
+            b-values in s/mm^2.
+        directions : array-like, optional
+            Unit gradient directions of shape ``(len(b), 3)``; selects the tensor model.
 
         Raises
         ------

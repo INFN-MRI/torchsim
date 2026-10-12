@@ -14,18 +14,18 @@ from .flash import _per_shot
 
 
 class TrueFISPSimulator(Simulator):
-    """A balanced SSFP train from equilibrium, optionally inverted first.
+    """Balanced SSFP train from equilibrium, optionally inverted first.
 
-    The pulses alternate in phase and each sample is demodulated by the phase
-    of its own pulse. An alpha/2 pulse of opposite phase, played before the
-    train, damps the oscillation of the approach to the steady state [1]_;
-    after an inversion, the train is the inversion-recovery TrueFISP whose
-    recovery curve carries T1, T2 and the proton density together [2]_. Every
-    pulse is a windowed sinc played sample by sample, so the magnetization
-    relaxes, precesses off resonance and exchanges between pools while it
-    plays, unless ``pulse_duration`` is zero and each is an instantaneous
-    rotation. This is the sequence BART's ``sim`` plays as ``BSSFP`` and
-    ``IR-BSSFP``, and with instantaneous pulses the one its ``epg`` plays as
+    Pulses alternate in phase and each sample is demodulated by its pulse's phase.
+    An alpha/2 pulse of opposite phase before the train damps the approach to the
+    steady state [1]_; after an inversion the train is the inversion-recovery
+    TrueFISP [2]_. Each pulse is a windowed sinc played sample by sample, or an
+    instantaneous rotation when ``pulse_duration`` is zero.
+
+    Notes
+    -----
+    Corresponds to the sequences BART's ``sim`` plays as ``BSSFP`` and
+    ``IR-BSSFP``, and with instantaneous pulses to the one its ``epg`` plays as
     bSSFP.
 
     References
@@ -89,47 +89,39 @@ class TrueFISPSimulator(Simulator):
         flip : float or array-like
             Flip angle in degrees, scalar or one per shot.
         TR : float
-            Repetition time in milliseconds, pulse centre to pulse centre.
+            Repetition time in ms, pulse centre to pulse centre.
         nshots : int
             Excitations in the train.
         TE : float, optional
-            Echo time in milliseconds, from the centre of the pulse; half the
-            repetition time when not given, where a balanced train refocuses.
+            Echo time in ms, from the pulse centre; defaults to ``TR / 2``.
         pulse_duration : float, optional
-            Duration of each pulse in milliseconds. Zero plays each as an
-            instantaneous rotation.
+            Pulse duration in ms; zero is an instantaneous rotation.
         bandwidth_time : float, optional
-            Zero crossings of the Hamming-windowed sinc across the pulse.
+            Zero crossings of the Hamming-windowed sinc across a pulse.
         half_alpha : bool, optional
-            Whether an alpha/2 pulse prepares the train.
+            Prepare the train with an alpha/2 pulse.
         preparation : float, optional
-            Time in milliseconds from the start of the alpha/2 pulse to the
-            start of the train's first pulse, half the repetition time when not
-            given. Zero is an instantaneous alpha/2 rotation at the start of
-            the train.
+            Time in ms from the start of the alpha/2 pulse to the start of the first
+            pulse; defaults to ``TR / 2``. Zero is an instantaneous alpha/2 rotation
+            at the start of the train.
         inversion : {None, "ideal", "adiabatic"}, optional
-            What comes before the preparation: nothing, an instantaneous
-            inversion scaled by ``inv_efficiency``, or a hyperbolic secant
-            played sample by sample.
+            Preceding the preparation: none, an instantaneous inversion scaled by
+            ``inv_efficiency``, or a sampled hyperbolic secant.
         inversion_duration : float, optional
-            Duration of the adiabatic inversion in milliseconds.
+            Duration of the adiabatic inversion in ms.
         inversion_phase : float, optional
-            Phase of the adiabatic inversion in degrees, relative to the
-            train's first pulse, which decides where the transverse
-            magnetization the inversion leaves points.
+            Phase of the adiabatic inversion in degrees, relative to the first pulse.
         spoiler : float, optional
-            Time in milliseconds between the inversion and the preparation, at
-            the end of which the transverse magnetization is spoiled.
+            Time in ms between inversion and preparation, ending in a spoiler.
         dwell : float, optional
-            How long each sample of a pulse is held, in milliseconds.
+            Hold time of each pulse sample in ms.
 
         Raises
         ------
         ValueError
             If the sample falls inside the pulse or after the next one, if the
-            preparation is shorter than its pulse, if ``flip`` is neither
-            scalar nor one per shot, or if a pulse is not a whole number of
-            samples.
+            preparation is shorter than its pulse, if ``flip`` is neither scalar nor
+            one per shot, or if a pulse is not a whole number of samples.
         """
         pulse_s, dwell_s = 1e-3 * pulse_duration, 1e-3 * dwell
         repetition_s = 1e-3 * TR

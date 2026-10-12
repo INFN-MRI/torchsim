@@ -1,4 +1,4 @@
-"""Designing a sequence: an acquisition, a cost, and the parameters under it."""
+"""Sequence design by minimizing a cost over bounded parameters."""
 
 from __future__ import annotations
 

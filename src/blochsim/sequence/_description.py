@@ -570,20 +570,19 @@ class RfDefinition:
 
 @dataclass(frozen=True)
 class ShimDefinition:
-    """One transmit-shim definition: a complex weight per channel.
+    """Transmit shim: a complex weight per channel for static parallel transmit.
 
-    The weights hold for the whole pulse, and every channel plays the same
-    waveform -- static parallel transmit. :mod:`._transmit` combines them with
-    the per-channel sensitivities into the field a voxel sees.
+    Every channel plays the same waveform; the weights hold for the whole
+    pulse.
 
     Attributes
     ----------
     id : int
-        What an RF event names this shim by.
+        Identifier RF events name the shim by.
     magnitudes : tuple of float
-        One weight per transmit channel.
+        Weight per transmit channel.
     phases_rad : tuple of float
-        One phase per transmit channel, in radians.
+        Phase per transmit channel, in radians.
     """
 
     id: int
@@ -593,43 +592,34 @@ class ShimDefinition:
 
 @dataclass(frozen=True)
 class SequenceDescription:
-    """Event stream and RF resources for one sequence or subsequence.
+    """Event stream and RF resources of one repetition of a sequence.
 
-    ``crusher_dephasing_rad`` is the dephasing the sequence's unbalanced
-    gradient winds across one voxel of ``voxel_size_m``. Their ratio sets the
-    b-factor diffusion is damped by and the phase each dephasing order turns
-    through under flow, so a dephasing of zero leaves both terms out however
-    large the coefficient behind them.
-
-    ``voxel_size_m`` also stands on its own: spins cross a voxel of that size
-    at their own speed whether or not a gradient is playing, which is what
-    washes the voxel out and replaces it with unexcited magnetization. Leaving
-    it ``None`` declares no voxel, and a spin velocity then has nothing to
-    cross.
+    The ratio ``crusher_dephasing_rad / voxel_size_m`` sets the b-factor
+    diffusion is damped by and the phase each dephasing order acquires under
+    flow; a zero dephasing leaves both out. ``voxel_size_m`` also sets the
+    distance a moving spin crosses, which washes out the voxel; ``None``
+    declares no voxel, so spin velocity has no effect.
 
     Attributes
     ----------
     subsequence_index : int
-        Which subsequence of a multi-part acquisition this is.
+        Index of this subsequence within a multi-part acquisition.
     tr_duration_us : float or torch.Tensor
-        How long one playing of this stream holds the timeline, in
-        microseconds.
+        Duration of one playing of the stream, in microseconds.
     events : tuple of SequenceEvent
-        The stream itself, in the order it is played.
+        Events in play order.
     rf_definitions : dict
-        ``{id: RfDefinition}`` -- the pulses the RF events name.
+        ``{id: RfDefinition}`` for the pulses the RF events name.
     shim_definitions : dict
-        ``{id: ShimDefinition}`` -- the transmit shims the RF events drive.
+        ``{id: ShimDefinition}`` for the shims the RF events name.
     crusher_dephasing_rad : float
-        Dephasing wound across one voxel by the sequence's unbalanced
-        gradient.
+        Dephasing wound across one voxel by the unbalanced gradient, in
+        radians.
     voxel_size_m : float, optional
-        The voxel a spin crosses, and the length the dephasing is wound
-        across. ``None`` declares no voxel.
+        Voxel length the dephasing is wound across, in metres.
     rf_raster_time_s : float
-        The dwell the RF shapes are sampled on. A pulse is integrated against
-        it, so a stream carrying shapes on a 2 microsecond raster and read on a
-        1 microsecond one turns half the angle it should.
+        Dwell the RF shapes are sampled on, in seconds. Pulses are integrated
+        against it.
     """
 
     subsequence_index: int
@@ -652,33 +642,30 @@ class SequenceDescription:
         voxel_size_m: float | None = None,
         start_s: Any = 0.0,
     ) -> SequenceDescription:
-        """Lay operators out end to end and return the stream they make.
-
-        The other way in besides a scanner: what a sequence written here plays,
-        in the same object one that arrived would be read into.
+        """Build a description by laying operators out end to end.
 
         Parameters
         ----------
-        parts : Operator, optional
-            The operators, in the order they play.
+        *parts : Operator or tuple, optional
+            Operators in play order, or ``(offset_s, operator)`` pairs.
         rf_definitions : mapping, optional
-            The pulses the events drive, by id. One ideal pulse under id zero
-            when not given, which is what an operator naming no shape asks for.
+            ``{id: RfDefinition}``. One ideal pulse under id 0 when not given.
         shim_definitions : mapping, optional
-            The transmit shims the pulses are driven on, by id.
+            ``{id: ShimDefinition}``.
         subsequence_index : int, optional
-            Which subsequence of a scan this is.
+            Index of the subsequence within a scan.
         crusher_dephasing_rad : float, optional
-            The turn one crusher puts across a voxel. Diffusion and flow are
-            read off it and are zero without it.
+            Dephasing of one crusher across a voxel, in radians. Diffusion and
+            flow are zero without it.
         voxel_size_m : float, optional
-            The distance that turn is put across.
+            Voxel length the dephasing is wound across, in metres.
         start_s : float or torch.Tensor, optional
-            When the first operator starts.
+            Start time of the first operator, in seconds.
 
         Returns
         -------
-            The stream, lasting as long as the operators laid out end to end.
+        SequenceDescription
+            Lasting as long as the operators laid out end to end.
         """
         from ._operators import compose
 
@@ -697,49 +684,54 @@ class SequenceDescription:
 
     @classmethod
     def from_pulseq(cls, source: Any, **settings: Any) -> SequenceDescription:
-        """Return what one repetition of a Pulseq sequence plays.
+        """Read one repetition of a Pulseq sequence.
+
+        Requires pypulseq (``pip install blochsim[pulseq]``).
 
         Parameters
         ----------
         source : str, Path or sequence
-            A ``.seq`` file, or a sequence in memory with pypulseq's reading
-            interface -- pypulseq's own ``Sequence``, or pypulseqpp's.
-        settings : Any
-            ``tr_index`` to name which repetition to read, and the
-            ``subsequence_index``, ``crusher_dephasing_rad`` and
-            ``voxel_size_m`` the description carries.
+            A ``.seq`` file, or an in-memory pypulseq or pypulseqpp
+            ``Sequence``.
+        **settings
+            ``tr_index``, ``subsequence_index``, ``crusher_dephasing_rad`` and
+            ``voxel_size_m``, as for ``read_pulseq_description``: ``tr_index``
+            is the repetition to read, in whole ``TRSize`` windows.
 
         Returns
         -------
-            The stream, in the same object a scanner's own would arrive in.
+        SequenceDescription
+
+        Raises
+        ------
+        ImportError
+            If pypulseq is not installed.
+        ValueError
+            If the file declares no ``TRSize``, ``tr_index`` is out of range,
+            or the repetitions differ and none was named.
         """
         from ._pulseq import read_pulseq_description
 
         return read_pulseq_description(source, **settings)
 
     def plot(self, axis: Any = None, *, upto_s: float | None = None) -> Any:
-        """Draw the stream: pulses as stems, samples as markers.
-
-        What a layout actually laid down, which is easier to check here than
-        in the signal it produces. A pulse's stem is as tall as the angle it
-        turns.
+        """Plot the events: RF as stems of height equal to the flip, ADC as markers.
 
         Parameters
         ----------
         axis : matplotlib.axes.Axes, optional
-            Where to draw. A new figure when not given.
+            Axes to draw on; a new figure when not given.
         upto_s : float, optional
-            Stop after this much of the stream, for a repetition long enough
-            that all of it is a smear.
+            Plot events up to this time, in seconds.
 
         Returns
         -------
-            The axis drawn on.
+        matplotlib.axes.Axes
 
         Raises
         ------
-            ImportError: if matplotlib is not installed, which is not a
-                dependency of this package.
+        ImportError
+            If matplotlib is not installed.
         """
         try:
             import matplotlib.pyplot as plt
@@ -832,57 +824,41 @@ def rf_definition(
     band_bandwidth_hz: float | None = None,
     rf_raster_time_s: float = 1e-6,
 ) -> RfDefinition:
-    """Return the definition of a pulse from the envelope a scanner plays.
+    """Return the RF definition of a pulse envelope.
 
-    The envelope is whatever a designer or a Pulseq block hands over -- a
-    complex waveform on a uniform raster, in any amplitude units, one row per
-    transmit channel where there is more than one. What it is scaled to does
-    not matter and must not be relied on: it is rescaled here so that its
-    integral is ``1 / (2 pi)`` seconds, which is what makes an event's
-    amplitude, written in radians, the flip that event turns. A pulse handed
-    over peak-normalized and left that way turns a fraction of a degree and
-    returns a signal of nothing, which is the one mistake this exists to stop.
-
-    The pulse's own phase is kept rather than divided out, so a linear-phase
-    pulse keeps the axis it turns about.
+    The envelope is rescaled so that it integrates to ``1 / (2 pi)`` seconds,
+    making an event amplitude in radians the flip angle in radians. The
+    waveform's own phase is kept.
 
     Parameters
     ----------
     waveform : array-like
-        The complex envelope, ``(samples,)`` or ``(channels, samples)``.
+        Complex envelope in arbitrary amplitude units, ``(samples,)`` or
+        ``(channels, samples)``.
     dwell_s : float
-        How long one sample is held, in seconds.
+        Sample duration, in seconds.
     bandwidth_hz : float, optional
-        The pulse's bandwidth, which the slice select is quoted against. Zero
-        -- the default -- is a pulse that selects nothing and stays on the
-        instant operator, and a non-zero one is what makes a pulse slice
-        selective. There is no separate flag for that, here or in the stream a
-        description arrives on.
+        Pulse bandwidth, in Hz. Non-zero makes the pulse slice-selective.
     definition_id : int, optional
-        The identifier events name this pulse by.
+        Identifier events name the pulse by.
     band_frequency_offsets_hz : sequence of float, optional
-        Where each band sits, for a multiband pulse. One band at zero when not
-        given.
+        Band centres of a multiband pulse, in Hz; one to eight values. One
+        band at 0 Hz when not given.
     band_bandwidth_hz : float, optional
-        The bandwidth of one band, defaulting to ``bandwidth_hz``.
+        Bandwidth of one band, in Hz. Defaults to ``bandwidth_hz``.
     rf_raster_time_s : float, optional
-        The raster the sample times are written against, which is the one the
-        run will read them back with. Sample times are carried in units of it
-        rather than in seconds, so a pulse whose dwell is not the raster still
-        says how long it lasts.
+        RF raster the sample times are expressed in, in seconds.
 
     Returns
     -------
     RfDefinition
-        The pulse, scaled so an event amplitude in radians is a flip in
-        radians.
 
     Raises
     ------
     ValueError
-        If the envelope is empty, if ``dwell_s`` is not positive, or if the
-        waveform integrates to nothing and so has no flip angle to be read
-        against.
+        If the envelope is empty, ``dwell_s`` or ``rf_raster_time_s`` is not
+        positive, the band count is outside one to eight, or the waveform
+        integrates to zero.
     """
     samples = np.asarray(waveform)
     if samples.ndim == 1:

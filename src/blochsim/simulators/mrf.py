@@ -15,7 +15,7 @@ from ..sequence._array import as_torch, matched
 
 
 class MRFSimulator(Simulator):
-    """An inversion, then a variable flip-angle train whose readouts wind on.
+    """Inversion followed by a variable flip-angle train whose readouts wind on.
 
     Examples
     --------
@@ -58,9 +58,9 @@ class MRFSimulator(Simulator):
         flip : float or array-like
             Excitation flip angles in degrees, one per repetition.
         TR : float or array-like
-            Repetition time in milliseconds, scalar or one per repetition.
+            Repetition time in ms, scalar or one per repetition.
         TI : float or array-like, optional
-            Inversion time in milliseconds.
+            Inversion time in ms.
         phases : float or array-like, optional
             Excitation phases in degrees.
         """
@@ -77,7 +77,7 @@ class MRFSimulator(Simulator):
         return parts
 
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Return the last playing of the train, which is the one measured."""
+        """Return the signal of the recorded playing of the train."""
         signal = super().evaluate(properties, **sequence)
         played = self.played(**sequence)
         echoes = torch.atleast_1d(played["flip"]).shape[-1]

@@ -14,19 +14,19 @@ from .flash import _per_shot
 
 
 class fmSSFPSimulator(Simulator):
-    """A balanced SSFP train whose RF frequency is swept through one passband per sweep.
+    """Balanced SSFP train with RF phase swept through one passband per sweep.
 
-    The n-th pulse of a sweep, counted from zero, is played ``pi + 2 pi n /
-    nshots`` radians ahead of the pulse before it. A phase increment acts on
-    the magnetization as an off-resonance of ``increment / (2 pi TR)``, so
-    across one sweep of ``nshots`` repetitions every voxel is carried once
-    through the period ``1 / TR`` of the balanced SSFP off-resonance profile
-    [1]_. Each sample is demodulated by the phase of its own pulse, and
-    ``sweeps`` sweeps are played before the one recorded, which is how the
-    radial acquisition of [2]_ is prepared. The pulses are instantaneous
-    rotations unless ``pulse_duration`` is given, and are then the windowed
-    sincs :class:`TrueFISPSimulator` plays. This is the sequence BART's ``epg``
-    plays as fmSSFP.
+    Pulse ``n`` of a sweep is played ``pi + 2 pi n / nshots`` rad ahead in phase of
+    the previous pulse, so each voxel is carried once through the ``1 / TR`` period
+    of the bSSFP off-resonance profile [1]_. Each sample is demodulated by its
+    pulse's phase, and ``sweeps`` sweeps are played before the recorded one, as in
+    the radial acquisition of [2]_. Pulses are instantaneous rotations unless
+    ``pulse_duration`` is given, and are then the windowed sincs of
+    :class:`TrueFISPSimulator`.
+
+    Notes
+    -----
+    Corresponds to the sequence BART's ``epg`` plays as fmSSFP.
 
     References
     ----------
@@ -83,28 +83,26 @@ class fmSSFPSimulator(Simulator):
         flip : float or array-like
             Flip angle in degrees, scalar or one per shot of a sweep.
         TR : float
-            Repetition time in milliseconds, pulse centre to pulse centre.
+            Repetition time in ms, pulse centre to pulse centre.
         nshots : int
             Excitations in one sweep.
         sweeps : int, optional
-            Sweeps played before the one recorded.
+            Sweeps played before the recorded one.
         TE : float, optional
-            Echo time in milliseconds, from the centre of the pulse; half the
-            repetition time when not given, where a balanced train refocuses.
+            Echo time in ms, from the pulse centre; defaults to ``TR / 2``.
         pulse_duration : float, optional
-            Duration of each pulse in milliseconds. Zero plays each as an
-            instantaneous rotation.
+            Pulse duration in ms; zero is an instantaneous rotation.
         bandwidth_time : float, optional
             Zero crossings of the Hamming-windowed sinc across a pulse.
         dwell : float, optional
-            How long each sample of a pulse is held, in milliseconds.
+            Hold time of each pulse sample in ms.
 
         Raises
         ------
         ValueError
-            If the sample falls inside the pulse or after the next one, if
-            ``sweeps`` is negative, if ``flip`` is neither scalar nor one per
-            shot, or if a pulse is not a whole number of samples.
+            If the sample falls inside the pulse or after the next one, if ``sweeps``
+            is negative, if ``flip`` is neither scalar nor one per shot, or if a pulse
+            is not a whole number of samples.
         """
         pulse_s, dwell_s = 1e-3 * pulse_duration, 1e-3 * dwell
         repetition_s = 1e-3 * TR

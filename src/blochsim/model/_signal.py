@@ -53,103 +53,95 @@ _NOTHING: Mapping[str, Any] = MappingProxyType({})
 
 
 class _SignalModel(ABC):
-    """What every model owes, and the two derivative modes over it.
+    """Interface of a signal model: declared properties and a signal.
 
-    The interface :class:`~blochsim.model.Simulator` presents, and everything
-    downstream consumes: declared properties, and a signal. What a model has
-    to supply is :attr:`properties` and :meth:`evaluate`.
-
-    **The constructor takes the keywords** :meth:`simulate` **takes, and fixes
-    them; a call overrides.** :meth:`bind` fixes more on a copy, so what a
-    caller is left to give per call is whatever is actually varying.
+    A subclass supplies :attr:`properties` and :meth:`evaluate`. The
+    constructor fixes keyword arguments under the names :meth:`simulate`
+    takes; a call overrides them.
 
     Attributes
     ----------
     properties : mapping or sequence of str
-        What the model exposes, as names. A mapping is read for its keys, so a
-        subclass that also needs to say where each property goes -- as
-        :class:`~blochsim.model.SpinPhysics` does, naming the tissue
-        field each fills -- declares both at once.
+        Names of the exposed tissue properties. A mapping is read for its
+        keys.
     bound : mapping
-        The arguments fixed on this model, under the names :meth:`simulate`
-        takes them by. A call may name any of them again, and the call wins.
+        Arguments fixed on this model; a call may override them.
     """
 
     properties: Mapping[str, str | None] | Sequence[str] = ()
     bound: Mapping[str, Any] = _NOTHING
 
     def __init__(self, **values: Any) -> None:
-        """Fix the arguments this model is asked about.
+        """Fix arguments on the model.
 
         Parameters
         ----------
-        values : float or array-like, optional
-            Properties or sequence arguments, under the names
-            :meth:`simulate` takes them by.
+        **values : float or array-like
+            Tissue properties or sequence arguments, under the names
+            :meth:`simulate` takes.
         """
         self.bound = self._fix(values)
 
     @abstractmethod
     def evaluate(self, properties: Mapping[str, Any], **sequence: Any) -> torch.Tensor:
-        """Return the signal these properties and this sequence record.
+        """Return the signal recorded for these properties and sequence arguments.
 
-        ``properties`` holds the declared values the caller passed, under the
-        names :attr:`properties` gives them, and holds nothing for those the
-        caller left out. Public units are the caller's -- milliseconds and
-        degrees -- and converting them belongs here, with the sequence.
+        Parameters
+        ----------
+        properties : mapping
+            ``{name: torch.Tensor}`` for the declared properties the caller
+            gave, in public units (ms, degrees, Hz).
+        **sequence
+            Sequence arguments, as given.
+
+        Returns
+        -------
+        torch.Tensor
+            Signal, with the voxel axis first when properties are maps.
         """
 
     # -- what is fixed on the model -----------------------------------------
 
     @property
     def exposes(self) -> tuple[str, ...]:
-        """The property names this model declares, in its own order."""
+        """Names of the declared properties."""
         return tuple(self.properties)
 
     @property
     def accepts(self) -> tuple[str, ...]:
-        """Every property name a call may use: what is declared, and the rest.
-
-        A model declares the vocabulary its protocol is written in, and a voxel
-        has more fields than any one model names. Both are accepted, so asking
-        for off-resonance or a second pool is giving one a value rather than
-        rebuilding the model around it.
-        """
+        """Names of every property a call may give: declared and undeclared tissue fields."""
         return tuple(dict.fromkeys((*self.exposes, *PUBLIC_PROPERTIES)))
 
     def bind(self, **values: Any) -> Any:
-        """This model with more arguments fixed on it, or some of them changed.
-
-        What a fit does with a property measured separately: the same sequence,
-        with one more map held on it.
+        """Return a copy with further arguments fixed.
 
         Parameters
         ----------
-        values : float or array-like, optional
-            Properties or sequence arguments, under the names
-            :meth:`simulate` takes them by.
+        **values : float or array-like
+            Tissue properties or sequence arguments, under the names
+            :meth:`simulate` takes. They replace earlier fixed values.
 
         Returns
         -------
         Simulator
-            A copy. This one is left as it was.
+            The copy; ``self`` is unchanged.
         """
         held = shallow_copy(self)
         held.bound = {**self.bound, **self._fix(values)}
         return held
 
     def to(self, device: torch.device | str) -> Any:
-        """This model, with everything fixed on it on ``device``.
+        """Return a copy with the fixed arguments on ``device``.
 
         Parameters
         ----------
         device : torch.device or str
-            Where to put it.
+            Target device.
 
         Returns
         -------
         Simulator
-            A copy. This one is left where it was.
+            The copy; ``self`` is unchanged.
         """
         moved = shallow_copy(self)
         moved.bound = _moved(self.bound, torch.device(device))
@@ -160,11 +152,20 @@ class _SignalModel(ABC):
     def simulate(self, **values: Any) -> torch.Tensor:
         """Return the recorded signal.
 
-        Property and sequence arguments are given together and told apart by
-        :attr:`properties`, and join whatever :attr:`bound` already holds. A
-        cost built on this and differentiated with
-        :meth:`torch.Tensor.backward` reaches the engine's adjoint, which is
-        the mode that suits a sequence parameter.
+        Differentiating a cost of the result with :meth:`torch.Tensor.backward`
+        gives gradients with respect to sequence arguments by the adjoint.
+
+        Parameters
+        ----------
+        **values : float or array-like
+            Tissue properties and sequence arguments. Properties broadcast to
+            the voxel shape; values override those in :attr:`bound`.
+
+        Returns
+        -------
+        torch.Tensor
+            Complex signal, shaped ``(*voxel_shape, samples)`` for property
+            maps. Returned in the caller's array library.
         """
         backend = self._backend(values)
         held, sequence = self._split({**self.bound, **values})
@@ -174,24 +175,23 @@ class _SignalModel(ABC):
     def jacobian(
         self, diff: str | Sequence[str], **values: Any
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return the signal and its derivative with respect to ``diff``.
+        """Return the signal and its derivative with respect to tissue properties.
 
-        Forward mode, one directional derivative per differentiated property.
-        Voxels are independent, so each pass yields every voxel's derivative at
-        once and the cost is one pass per property rather than per voxel.
+        Forward mode, with one pass per differentiated property.
 
         Parameters
         ----------
         diff : str or sequence of str
-            One property name, or several. A single name collapses the
-            parameter axis; a sequence keeps it, stacked before the samples.
-        values : float or array-like, optional
-            The property and sequence arguments, as for :meth:`simulate`.
+            Property name(s). A single name gives no parameter axis; a
+            sequence stacks one before the samples.
+        **values : float or array-like
+            Tissue properties and sequence arguments, as for :meth:`simulate`.
 
         Returns
         -------
-        tuple
-            The signal, and its Jacobian.
+        signal, jacobian : torch.Tensor
+            The signal and its derivative, shaped
+            ``(*voxel_shape, [parameters,] samples)`` for the Jacobian.
 
         Raises
         ------
