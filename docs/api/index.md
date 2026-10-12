@@ -6,13 +6,13 @@ reconstruction and design are written against.
 
 | Page | Module | Contents |
 | --- | --- | --- |
-| {doc}`model` | `blochsim.model` | Signal models, event physics, simulator. |
-| {doc}`simulators` | `blochsim.simulators` | Shipped sequences, classes and functional wrappers. |
-| {doc}`sequence` | `blochsim.sequence` | Sequence descriptions, events, operators, builders. |
-| {doc}`estimators` | `blochsim.estimators` | Dictionary matching, lookup tables, nonlinear least squares, PERK. |
-| {doc}`recon` | `blochsim.recon` | Model-based reconstruction, temporal basis. |
-| {doc}`optim` | `blochsim.optim` | Sequence parameter optimization. |
-| {doc}`execution` | `blochsim` | Execution policy. |
+| {doc}`model` | `blochsim.model` | Signal models, event physics, simulator |
+| {doc}`simulators` | `blochsim.simulators` | Shipped sequences, classes and functional wrappers |
+| {doc}`sequence` | `blochsim.sequence` | Sequence descriptions, events, operators, builders |
+| {doc}`estimators` | `blochsim.estimators` | Dictionary matching, lookup tables, nonlinear least squares, PERK |
+| {doc}`recon` | `blochsim.recon` | Model-based reconstruction, temporal basis |
+| {doc}`optim` | `blochsim.optim` | Sequence parameter optimization |
+| {doc}`execution` | `blochsim` | Execution policy |
 
 ```{toctree}
 :hidden:
