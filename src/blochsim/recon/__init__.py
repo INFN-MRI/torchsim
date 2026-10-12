@@ -9,6 +9,7 @@ from __future__ import annotations
 __all__ = [
     "GaussNewton",
     "ModelOperator",
+    "Schedule",
     "TrustRegion",
     "direct",
     "iterative",
@@ -18,7 +19,7 @@ from ._gauss_newton import (
     GaussNewton,
     LeastSquares,  # noqa: F401
     Linearization,  # noqa: F401
-    Schedule,  # noqa: F401
+    Schedule,
     Solution,  # noqa: F401
     TrustRegion,
     direct,

@@ -38,7 +38,7 @@ inside the forward operator rather than fitted to images afterwards.
 - **Damps by a geometric schedule (iteratively regularized Gauss-Newton) or a per-voxel trust region (Levenberg-Marquardt).**
 
   :::{dropdown} Show code and tests
-  Code: `Schedule`, {class}`~blochsim.TrustRegion`, {func}`~blochsim.direct`. Tests: *the two policies land in the same place*; *a per voxel damping is refused under an encoding* (`test_gauss_newton.py`).
+  Code: {class}`~blochsim.Schedule`, {class}`~blochsim.TrustRegion`, {func}`~blochsim.direct`. Tests: *the two policies land in the same place*; *a per voxel damping is refused under an encoding* (`test_gauss_newton.py`).
   :::
 - **Hands the temporal basis to a subspace encoding operator, and reads maps from the coefficients it returns.**
 
@@ -98,7 +98,7 @@ Each Gauss-Newton step linearizes $F$ at the current maps and solves the
 damped least-squares problem for the step. With an encoding, the step is
 solved by an iterative solver from products alone: one encoding application
 and one `A_jvp` forward, one adjoint encoding and one `A_vjp` back.
-`Schedule` lowers one damping weight geometrically and pulls each step toward
+{class}`~blochsim.Schedule` lowers one damping weight geometrically and pulls each step toward
 the starting maps; a per-voxel {class}`~blochsim.TrustRegion` needs
 independent voxels and applies only without an encoding, where the same loop
 with {func}`~blochsim.direct` is {class}`~blochsim.NonlinearLeastSquares`. Composing through
