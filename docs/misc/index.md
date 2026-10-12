@@ -3,11 +3,11 @@
 Project information that is useful to keep with the documentation but is not
 part of the learning path.
 
-| Page | Scope |
+| Page | Topic |
 | --- | --- |
-| {doc}`license` | The MIT license BlochSim is released under. |
-| {doc}`related` | Other MR simulators, what each is for, and where each is the better tool. |
-| {doc}`contributors` | The people who contributed to the project. |
+| {doc}`license` | MIT license. |
+| {doc}`related` | Other MR simulators. |
+| {doc}`contributors` | Contributors. |
 
 ```{toctree}
 :hidden:

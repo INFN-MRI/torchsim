@@ -1,15 +1,15 @@
 # Course
 
-Five lessons that take you from a sequence blochsim ships to a sequence and an
-operator of your own. Read them in order.
+Five lessons, read in order, from a shipped sequence to a custom signal model
+and operator.
 
-| Lesson | The question it answers |
+| Lesson | Topic |
 | --- | --- |
-| {doc}`1. Your first simulation </generated/autoexamples/01-framework/01-first-simulation>` | How do I simulate a sequence and get its derivatives? |
-| {doc}`2. Advanced physics </generated/autoexamples/01-framework/02-advanced-physics>` | How do I add B1, off resonance, magnetization transfer, diffusion or flow? |
-| {doc}`3. Custom signal model </generated/autoexamples/01-framework/03-custom-signal-model>` | How do I simulate a sequence blochsim does not ship? |
-| {doc}`4. Description-based simulation </generated/autoexamples/01-framework/04-description-based-simulation>` | How do I simulate a Pulseq file, or the sequence a scanner is running? |
-| {doc}`5. Custom operator </generated/autoexamples/01-framework/05-custom-operator>` | How do I add a preparation or a readout of my own? |
+| {doc}`1. Your first simulation </generated/autoexamples/01-framework/01-first-simulation>` | Simulation of a shipped sequence and its derivatives. |
+| {doc}`2. Advanced physics </generated/autoexamples/01-framework/02-advanced-physics>` | B1, off resonance, magnetization transfer, diffusion and flow. |
+| {doc}`3. Custom signal model </generated/autoexamples/01-framework/03-custom-signal-model>` | A signal model for a new sequence. |
+| {doc}`4. Description-based simulation </generated/autoexamples/01-framework/04-description-based-simulation>` | Simulation of a Pulseq file or an MRD stream. |
+| {doc}`5. Custom operator </generated/autoexamples/01-framework/05-custom-operator>` | A new preparation or readout operator. |
 
 ```{toctree}
 :hidden:
