@@ -1,7 +1,7 @@
 # Simulators
 
 ```{eval-rst}
-.. currentmodule:: blochsim.simulators
+.. currentmodule:: blochsim
 ```
 
 The sequences that ship with BlochSim, as {class}`~blochsim.model.Simulator`

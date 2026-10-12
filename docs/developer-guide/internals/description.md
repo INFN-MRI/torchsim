@@ -2,7 +2,7 @@
 
 How a Pulseq file and an MRD stream are read into a
 {class}`~blochsim.SequenceDescription`. What a description gives a simulator
-is summarised on {doc}`../explanations/description`; how it is packed for the
+is summarised on {doc}`../../explanations/description`; how it is packed for the
 kernels is {doc}`kernels`.
 
 ## Events
@@ -180,7 +180,7 @@ turn one unbalanced gradient winds across a voxel of `voxel_size_m`; their
 ratio scales diffusion and flow, and a dephasing of zero leaves both out.
 
 Which gradients play around each pulse and sample comes from the simulator's
-handlers (see {doc}`../explanations/signal-model`):
+handlers (see {doc}`../../explanations/signal-model`):
 
 ```python
 from blochsim.simulators import FSESimulator, MRFSimulator

@@ -107,7 +107,7 @@ affine map of the arguments; where that map does not hold, the simulator packs
 every call instead. A rebound call agrees with a fresh packing to float32
 round-off, since the same product is formed in a different order. What each
 declared tissue property costs is on {doc}`signal-model`; the packed buffers
-and the kernels are on {doc}`../internals/kernels`.
+and the kernels are on {doc}`../developer-guide/internals/kernels`.
 
 ## Examples
 

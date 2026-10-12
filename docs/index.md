@@ -7,10 +7,10 @@
 :hidden:
 :maxdepth: 2
 
-user_guide
-developer_guide
+user-guide/index
+developer-guide/index
 explanations/index
-generated/autoexamples/index
+examples/index
 api/index
 misc/index
 ```

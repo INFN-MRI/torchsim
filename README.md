@@ -143,15 +143,16 @@ pip install blochsim
 pip install "blochsim[cu12]"  # the GPU kernels, beside a CUDA 12 build of torch
 ```
 
-The [User guide](https://pulserver.github.io/blochsim/latest/user_guide.html)
+The [User guide](https://pulserver.github.io/blochsim/latest/user-guide/index.html)
 covers CUDA versions, macOS and building from source.
 
 ## Learn more
 
-- [Course](https://pulserver.github.io/blochsim/latest/generated/autoexamples/index.html):
-  four lessons, from a shipped simulator to your own signal model and your own
+- [Course](https://pulserver.github.io/blochsim/latest/examples/course.html):
+  five lessons, from a shipped simulator to your own signal model and your own
   operator.
-- Tours: parameter mapping, sequence design, model-based reconstruction and
+- [Applications](https://pulserver.github.io/blochsim/latest/examples/applications.html):
+  parameter mapping, sequence design, model-based reconstruction and
   synthetic data, each a complete worked example.
 - [Documentation](https://pulserver.github.io/blochsim/latest/), for the
   physics and every API detail.

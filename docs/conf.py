@@ -236,7 +236,10 @@ sphinx_gallery_conf = {
             "./binder/apt.txt",
             "./binder/environment.yml",
         ],
-        "notebooks_dir": "examples",
+        # Not "examples": sphinx-gallery empties this directory of the built
+        # site before it copies the notebooks in, and `examples/` holds the
+        # landing pages.
+        "notebooks_dir": "notebooks",
         "use_jupyter_lab": True,
         # The branch holds one directory per version, and the notebooks of
         # this one are under its own.
