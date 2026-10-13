@@ -137,10 +137,10 @@ import torch
 from blochsim.simulators import FSESimulator
 
 acquisition = FSESimulator(
-    ESP=5.0,  # ms
-    TR=3000.0,  # ms
+    ESP=5.0,                                   # ms
+    TR=3000.0,                                 # ms
     T1=torch.tensor([830.0, 1330.0, 4000.0]),  # ms
-    T2=torch.tensor([80.0, 110.0, 2000.0]),  # ms
+    T2=torch.tensor([80.0, 110.0, 2000.0]),    # ms
 )
 signal = acquisition.simulate(flip=torch.full((48,), 60.0))
 print(signal.shape)  # torch.Size([3, 48])
