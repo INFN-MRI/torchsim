@@ -26,7 +26,7 @@ import numpy as np
 import torch
 from figure_style import FOREGROUND, STYLE
 
-from blochsim.model import Simulator
+from blochsim import Simulator
 from blochsim.sequence import Delay, EventAction, Excitation, SPGRReadout
 from blochsim.simulators import FSESimulator, MRFSimulator, SPGRSimulator
 
@@ -1139,27 +1139,25 @@ def declared_physics():
 
 def execution_policy():
     """Where the per-voxel work goes, decided per call."""
-    figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
-    _box(axis, 0.0, 1.15, 2.0, 1.0, "the problem", "voxels x events", MUTED)
+    figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.0))
+    _box(axis, 0.0, 0.55, 2.0, 1.0, "the problem", "voxels x events", MUTED)
     choices = [
-        (2.9, 2.5, "stay on the host", "too little work to repay a launch", MUTED),
-        (2.9, 1.25, "cross whole", "fits in one card's free memory", ACCENT),
-        (2.9, 0.0, "spread across cards", "fewest cards that hold it", LONGITUDINAL),
-        (2.9, -1.25, "stream in chunks", "chunks sized to budget_bytes", TRANSVERSE),
+        (2.9, 1.25, "run where it is", "too little work to repay a launch", MUTED),
+        (2.9, -0.15, "chunks over every card", "sized to the free memory", ACCENT),
     ]
     for x, y, title, subtitle, color in choices:
         _box(axis, x, y, 3.8, 1.0, title, subtitle, color)
-        _arrow(axis, (2.1, 1.6), (x - 0.1, y + 0.5))
+        _arrow(axis, (2.1, 1.05), (x - 0.1, y + 0.5))
     axis.text(
         7.0,
-        1.65,
-        'execution("auto")\ndecides per call;\noutside a block, a call\n'
-        "runs where its\ntensors are",
+        1.05,
+        'execution="auto"\ndecides per call;\nthe answer comes back\n'
+        "where the tensors are",
         color=INK,
         va="center",
         fontsize=11,
     )
-    axis.set(xlim=(-0.3, 10.6), ylim=(-1.5, 3.8))
+    axis.set(xlim=(-0.3, 10.6), ylim=(-0.4, 2.5))
     axis.axis("off")
     return figure
 
@@ -1635,15 +1633,10 @@ def sequence_description():
 
 
 def parameter_estimation():
-    """Six estimators on one T2-mapping problem: error across T2, and cost."""
+    """Five estimators on one T2-mapping problem: error across T2, and cost."""
     from figure_style import SERIES, legend_outside
 
-    from blochsim.estimators import (
-        PERK,
-        DictionaryMatcher,
-        LookupTable,
-        NonlinearLeastSquares,
-    )
+    from blochsim.estimators import PERK, DictionaryMatcher, LookupTable
     from blochsim.simulators import MultiEchoSimulator
 
     generator = torch.Generator().manual_seed(3)
@@ -1667,11 +1660,6 @@ def parameter_estimation():
         "dictionary, 24 atoms": DictionaryMatcher(unit).fit(T2=coarse),
         "rank 3, 16 groups": DictionaryMatcher(unit, groups=16).fit(T2=fine, rank=3),
         "lookup table, 24 points": LookupTable(unit, combine=ratio).fit(T2=coarse),
-        "nonlinear least squares": NonlinearLeastSquares(
-            acquisition,
-            bounds={"T2": (5.0, 500.0), "M0": (0.05, 3.0)},
-            initial={"T2": 100.0, "M0": 1.0},
-        ).fit(T2=(10.0, 400.0), M0=(0.1, 2.0)),
         "PERK": PERK(unit, n_features=500, normalize=True, feature_seed=0).fit(
             T2=(10.0, 400.0), noise_std=noise, seed=0, samples=20_000
         ),
@@ -1717,8 +1705,10 @@ def parameter_estimation():
 
 def model_based_reconstruction():
     """T2 from undersampled k-space: fit after, a subspace, the model inside."""
+    from bartorch import linop, nlop
+
+    from blochsim import ModelOperator
     from blochsim.estimators import DictionaryMatcher
-    from blochsim.recon import GaussNewton, ModelOperator, Schedule, iterative
     from blochsim.simulators import MultiEchoSimulator
 
     size, echoes, step = 48, 8, 3
@@ -1747,14 +1737,10 @@ def model_based_reconstruction():
         mask[echo, echo % step :: step] = True
         mask[echo, size // 2 - 3 : size // 2 + 3] = True
 
-    class CartesianEncoding:
-        """``(batch, echoes, y, x)`` images to their sampled k-space lines."""
-
-        def A(self, x):
-            return torch.fft.fft2(x, norm="ortho") * mask[None, :, :, None]
-
-        def A_adjoint(self, y):
-            return torch.fft.ifft2(y * mask[None, :, :, None], norm="ortho")
+    # A centred unitary FFT over each echo, then each echo's lines.
+    shape = (echoes, size, size)
+    lines = mask[:, :, None].expand(shape).to(torch.complex64)
+    encoding = linop.Diagonal(lines, shape) @ linop.FFT(shape, axes=(-2, -1))
 
     def conjugate_gradients(*, A, AT, y, z, gamma, max_iter, tol):
         """``argmin ||A d - y||^2 + (1/gamma) ||d - z||^2``, the LeastSquares call."""
@@ -1777,61 +1763,50 @@ def model_based_reconstruction():
             power = renewed
         return found
 
-    encoding = CartesianEncoding()
     generator = torch.Generator().manual_seed(1)
-    kspace = encoding.A(images.movedim(-1, 0)[None])
-    kspace = (
-        kspace
-        + 0.002
-        * torch.complex(
-            torch.randn(kspace.shape, generator=generator),
-            torch.randn(kspace.shape, generator=generator),
-        )
-        * mask[None, :, :, None]
+    kspace = encoding(images.movedim(-1, 0).contiguous())
+    kspace = kspace + 0.002 * lines * torch.complex(
+        torch.randn(shape, generator=generator), torch.randn(shape, generator=generator)
     )
 
     mapping = DictionaryMatcher(acquisition).fit(
         T2=torch.linspace(10.0, 400.0, 400), M0=1.0, rank=3, seed=0
     )
     basis = mapping.subspace
-    gridded = encoding.A_adjoint(kspace)[0].movedim(0, -1)
+    gridded = encoding.H(kspace).movedim(0, -1)
 
-    class InBasis:
+    def in_basis(c):
         """The encoding applied to coefficient images expanded into echoes."""
+        return encoding(basis.expand(c.movedim(0, -1)).movedim(-1, 0).contiguous())
 
-        def A(self, c):
-            return encoding.A(basis.expand(c.movedim(1, -1)).movedim(-1, 1))
+    def from_basis(y):
+        return basis.project(encoding.H(y).movedim(0, -1)).movedim(-1, 0)
 
-        def A_adjoint(self, y):
-            return basis.project(encoding.A_adjoint(y).movedim(1, -1)).movedim(-1, 1)
-
-    route = InBasis()
     coefficients = conjugate_gradients(
-        A=route.A,
-        AT=route.A_adjoint,
+        A=in_basis,
+        AT=from_basis,
         y=kspace,
-        z=torch.zeros(1, basis.rank, size, size, dtype=torch.complex64),
+        z=torch.zeros(basis.rank, size, size, dtype=torch.complex64),
         gamma=100.0,
         max_iter=40,
         tol=1e-6,
     )
 
-    operator = ModelOperator(acquisition, "T2", bounds={"T2": (10.0, 400.0)})
-    start = operator.initial((1, size, size), T2=100.0)
-    start[0, ..., 1], start[0, ..., 2] = gridded[..., 0].real, gridded[..., 0].imag
-    found = GaussNewton(
-        Schedule(initial=1e-2, factor=0.5, minimum=1e-6),
-        solve=iterative(conjugate_gradients, max_iter=20),
-        max_iterations=10,
-    ).minimize(operator, kspace, start, encoding=encoding)
+    model = nlop.ModelOperator(
+        ModelOperator(acquisition, "T2", bounds={"T2": (10.0, 400.0)}), (size, size)
+    )
+    start = model.initial(T2=100.0, amplitude=gridded[..., 0])
+    found = nlop.IRGNM(iterations=10, alpha=1e-2, cg_maxiter=20)(
+        kspace, encoding @ model, x0=start
+    )
 
     maps = {
         "truth": t2,
         "zero-filled, then matched": mapping(gridded)["T2"],
-        "subspace, rank 3": mapping.from_coefficients(coefficients[0].movedim(0, -1))[
+        "subspace, rank 3": mapping.from_coefficients(coefficients.movedim(0, -1))[
             "T2"
         ],
-        "Gauss-Newton, model inside": operator.split(found.x)["T2"][0],
+        "Gauss-Newton, model inside": model.split(found)["T2"],
     }
     figure, axes = plt.subplots(1, 4, figsize=(PAGE_WIDTH, 2.75))
     for axis, (label, values) in zip(axes, maps.items(), strict=True):

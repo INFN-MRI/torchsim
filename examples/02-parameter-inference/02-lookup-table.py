@@ -10,7 +10,7 @@ points on the curve to see which method depends on it.
 With a single unknown, the dictionary atoms lie on a curve instead of filling
 a space. Interpolating between the two nearest points on the curve costs
 nothing and removes the grid spacing from the error; this is what
-:class:`~blochsim.LookupTable` does.
+:class:`~blochsim.estimators.LookupTable` does.
 
 Prerequisites: Course lesson :doc:`../01-framework/01-first-simulation`.
 """
@@ -33,7 +33,6 @@ import matplotlib.pyplot as plt
 from brainweb_dl import get_mri
 from cmap import Colormap
 
-import blochsim
 from figure_style import MUTED, PAGE_WIDTH, SERIES, legend_outside
 
 warnings.filterwarnings("ignore")
@@ -98,16 +97,15 @@ def footprint(problem):
 def mapped(problem, passes=3):
     """Map the slice a few times: the quickest pass, and the peak GPU memory."""
     on_device = torch.cuda.is_available()
-    with blochsim.execution():
-        problem(measured[:64])
-        if on_device:
-            torch.cuda.reset_peak_memory_stats()
-        best = float("inf")
-        for _ in range(passes):
-            start = time.perf_counter()
-            maps = problem(measured)
-            best = min(best, time.perf_counter() - start)
-        peak = torch.cuda.max_memory_allocated() / 2**20 if on_device else float("nan")
+    problem(measured[:64], execution="auto")
+    if on_device:
+        torch.cuda.reset_peak_memory_stats()
+    best = float("inf")
+    for _ in range(passes):
+        start = time.perf_counter()
+        maps = problem(measured, execution="auto")
+        best = min(best, time.perf_counter() - start)
+    peak = torch.cuda.max_memory_allocated() / 2**20 if on_device else float("nan")
     return maps, best, peak
 
 

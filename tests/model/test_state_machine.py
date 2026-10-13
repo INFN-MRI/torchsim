@@ -15,7 +15,8 @@ from dataclasses import replace
 import pytest
 import torch
 
-from blochsim.model import (
+from blochsim import Excitation
+from blochsim._model import (
     BALANCED,
     REFOCUSED,
     SPOILED,
@@ -24,7 +25,13 @@ from blochsim.model import (
     Simulator,
     SpinPhysics,
 )
-from blochsim.sequence import EpgEngine, EventAction, EventType, ideal_rf_definition
+from blochsim.sequence import (
+    EpgEngine,
+    EventAction,
+    EventType,
+    RfUse,
+    ideal_rf_definition,
+)
 from blochsim.simulators import MRFSimulator
 
 FLIP = torch.linspace(5.0, 60.0, 12)
@@ -239,7 +246,7 @@ def test_a_gradient_standing_on_its_own_does_not_survive_the_round_trip() -> Non
     scanner could not have carried it either.
     """
     from blochsim import Delay, Excitation, Spoil
-    from blochsim.model._state_machine import realised
+    from blochsim._model._state_machine import realised
     from blochsim.sequence import EventAction
 
     class Prepared(Simulator):
@@ -298,3 +305,37 @@ def test_shim_definition_reaches_the_pulses():
 
     assert torch.allclose(played(math.pi), torch.zeros(1, 4), atol=1e-6)
     assert played(0.0).max() > 0.5
+
+
+@pytest.mark.parametrize(
+    ("use", "slot"), [(RfUse.PREPARATION, "preparation"), (RfUse.OTHER, "other")]
+)
+def test_a_pulse_is_played_by_the_handler_its_rf_use_names(use, slot) -> None:
+    """Each Pulseq RF use has a handler of its own, defaulting to the excitation.
+
+    The same stream is read twice: through the defaults, where the pulses play
+    as excitations, and through a class whose handler for that use plays no
+    rotation, which leaves nothing to sample.
+    """
+    described = Train(flip=FLIP, TR=10.0).describe(flip=FLIP, TR=10.0)
+    tagged = replace(
+        described,
+        events=tuple(
+            replace(event, params=(event.params[0], int(use), *event.params[2:]))
+            if event.type == EventType.RF
+            else event
+            for event in described.events
+        ),
+    )
+
+    def unrotated(flip_rad, phase_rad=0.0):
+        return Excitation(0.0 * flip_rad, phase_rad)
+
+    silenced_class = type("Silenced", (Train,), {slot: staticmethod(unrotated)})
+
+    played = Train.from_description(tagged, states=8).simulate(**TISSUE)
+    expected = Train.from_description(described, states=8).simulate(**TISSUE)
+    silenced = silenced_class.from_description(tagged, states=8).simulate(**TISSUE)
+
+    torch.testing.assert_close(played, expected)
+    assert float(silenced.abs().max()) < 1e-6

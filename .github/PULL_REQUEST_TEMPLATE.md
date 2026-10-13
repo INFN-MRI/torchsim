@@ -1,17 +1,21 @@
-## What this changes
+## What changed
 
 <!-- What the code does now that it did not do before, in one or two
-     sentences. Link the issue or discussion it comes from, if there is one. -->
+     sentences. -->
 
-## How it was checked
+## Why
+
+<!-- Problem and relevant issue or discussion. -->
+
+## Validation
 
 <!-- The command you ran and what it printed: a test that fails before the
      change and passes after it, an analytic case the new physics reproduces,
      a benchmark. "Tests pass" on its own does not say which ones. -->
 
-```
-pytest tests/
-```
+## Documentation impact
+
+<!-- User-facing changes, or "None" with a reason. -->
 
 ## Checklist
 

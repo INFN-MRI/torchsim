@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from blochsim.model import UNBALANCED, Simulator, SpinPhysics
+from blochsim._model import UNBALANCED, Simulator, SpinPhysics
 from blochsim.sequence import (
     EpgEngine,
     TissueProperties,

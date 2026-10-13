@@ -41,7 +41,7 @@ warnings.filterwarnings("ignore")
 #
 # A design has three pieces. A simulator with the tissue fixed on it, a cost
 # written on the signal it records, and the bounded parameters that
-# :class:`~blochsim.SequenceDesign` adjusts to lower the cost.
+# :class:`~blochsim.optim.SequenceDesign` adjusts to lower the cost.
 #
 # The tissues are those of a PD-weighted knee protocol, read for the
 # separation between fluid and cartilage. The design uses all three at once, so
@@ -182,7 +182,7 @@ def single_train(control):
 # ------------
 #
 # Start from a conventional prescription: 50 degree minimum, 90 degree
-# centre-of-k-space angle and 150 degree maximum. :class:`~blochsim.Bounded`
+# centre-of-k-space angle and 150 degree maximum. :class:`~blochsim.optim.Bounded`
 # holds each angle inside the limits the scanner plays:
 design = SequenceDesign(single_train, control=Bounded(PRESCRIBED, LOWEST, HIGHEST))
 

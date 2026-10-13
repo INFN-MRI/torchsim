@@ -74,10 +74,11 @@ python -c "import blochsim._epg_cpu as k; print(k.__file__)"
 | Path | Content |
 | --- | --- |
 | `src/blochsim/sequence/` | Events, operators and builders, and the dispatch to the kernels. `_parameters.py` is the parameter ABI the Python dispatch, the C++ extension and the GPU kernels share. |
-| `src/blochsim/model/` | The signal model: physics, the simulator that orders events, and the binding that resolves a protocol's structure once. |
+| `src/blochsim/_model/` | The signal model: physics, the simulator that orders events, and the binding that resolves a protocol's structure once. |
 | `src/blochsim/_epg_cpu.cpp`, `_perk_cpu.cpp` | The CPU kernels. Every GPU path exists here too; the two agree to float32 round-off. |
 | `src/blochsim/_epg_kernels.hpp`, `_pools_kernels.hpp` | The GPU kernels. |
-| `src/blochsim/simulators/`, `estimators/`, `recon/`, `optim/` | Shipped sequences, and what is built on them. |
+| `src/blochsim/_operator.py`, `_subspace.py` | The model operator and the temporal basis a reconstruction composes with. |
+| `src/blochsim/simulators/`, `estimators/`, `optim/` | Shipped sequences, and what is built on them. |
 | `tests/`, `examples/`, `docs/` | Tests mirrored by subpackage, gallery scripts, Sphinx sources. |
 
 Read {doc}`internals/kernels` before changing any of the kernels.

@@ -21,8 +21,9 @@ from typing import Any
 
 import torch
 
+from .. import _execution
+from .._model import Simulator
 from .._subspace import Subspace
-from ..model import Simulator
 
 #: How many samples are simulated at once while a training set is drawn.
 _CHUNK = 4096
@@ -323,6 +324,7 @@ class Estimator(torch.nn.Module):
         known: Any = None,
         *,
         uncertainty: bool = False,
+        execution: Any = None,
     ) -> Any:
         """Estimate the tissue parameters of a measured volume.
 
@@ -337,6 +339,11 @@ class Estimator(torch.nn.Module):
         uncertainty : bool, default=False
             Also return the uncertainty of each map; see
             :meth:`uncertainty_of`.
+        execution : {"auto", "cpu"}, torch.device or sequence of device, default=None
+            Where the per-voxel work runs. ``"auto"``, which ``None`` stands
+            for, runs a small volume where ``volume`` is and cuts a larger one
+            into chunks of voxels spread over every CUDA device; the maps come
+            back where ``volume`` is.
 
         Returns
         -------
@@ -355,6 +362,9 @@ class Estimator(torch.nn.Module):
         ValueError
             If a measured map is missing or has the wrong voxel count.
         """
+        if execution is not None:
+            with _execution.execution(execution):
+                return self.map(volume, known, uncertainty=uncertainty)
         if not self._unknown:
             values = self._estimate_arrays(volume, known)
             if not uncertainty:
@@ -371,19 +381,18 @@ class Estimator(torch.nn.Module):
         known: Any = None,
         *,
         uncertainty: bool = False,
+        execution: Any = None,
     ) -> Any:
         """Alias of :meth:`map`."""
-        return self.map(volume, known, uncertainty=uncertainty)
+        return self.map(volume, known, uncertainty=uncertainty, execution=execution)
 
     def uncertainty_of(self, volume: Any, known: Any = None) -> Any:
         """Uncertainty of each map, as a standard deviation in the map's units.
 
-        What it measures depends on the method. :class:`~blochsim.PERK` states
+        What it measures depends on the method. :class:`~blochsim.estimators.PERK` states
         the learned total error, prior and noise together, rescaled to a
         standard deviation for a Gaussian error.
-        :class:`~blochsim.NonlinearLeastSquares` states the standard error from
-        the inverse Fisher matrix at the solution, which is zero when the
-        training noise is zero. Compare with :func:`~blochsim.crlb`.
+        Compare with :func:`~blochsim.optim.crlb`.
 
         Parameters
         ----------
@@ -400,8 +409,8 @@ class Estimator(torch.nn.Module):
         Raises
         ------
         NotImplementedError
-            If the method states no uncertainty (:class:`~blochsim.DictionaryMatcher`,
-            :class:`~blochsim.LookupTable`).
+            If the method states no uncertainty (:class:`~blochsim.estimators.DictionaryMatcher`,
+            :class:`~blochsim.estimators.LookupTable`).
         """
         _, spread = self.map(volume, known, uncertainty=True)
         return spread
@@ -502,9 +511,9 @@ class Estimator(torch.nn.Module):
                 f"{type(self).__name__} does not state an uncertainty. A method "
                 f"whose answer is a grid point moves in steps rather than "
                 f"smoothly, so propagating the noise through it gives zero "
-                f"rather than an error bar; PERK and NonlinearLeastSquares do "
-                f"state one, and blochsim.crlb bounds what any unbiased method "
-                f"could reach on this sequence."
+                f"rather than an error bar; PERK does state one, and "
+                f"blochsim.optim.crlb bounds what any unbiased method could "
+                f"reach on this sequence."
             )
         return spread
 

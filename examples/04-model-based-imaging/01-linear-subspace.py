@@ -247,7 +247,7 @@ plt.show()
 # Temporal basis
 # --------------
 #
-# A :class:`~blochsim.DictionaryMatcher` serves every reconstruction below as
+# A :class:`~blochsim.estimators.DictionaryMatcher` serves every reconstruction below as
 # the estimator that turns images into T2. Giving ``fit`` a rank fits a temporal
 # basis to the simulated signals of a grid of T2 values. Three directions hold
 # essentially all of an eight-echo exponential decay:

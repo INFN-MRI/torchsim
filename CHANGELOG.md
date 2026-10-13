@@ -4,6 +4,36 @@
 
 ### Changed
 
+- **Every GPU, a bounded share of it, by default.** `execution="auto"` is the
+  default of a simulator, an estimator's `map` and a `ModelOperator`. A call
+  too small to repay a launch, or a simulator call carrying a gradient, runs
+  where its tensors are; a larger one is cut into chunks of voxels sized to
+  the cards' free memory and dealt to every GPU, whether its tensors are on
+  the host or on a card, and the answer comes back where they are. Transmit
+  shims, slice profiles, per-voxel rotations and semisolid, exchanging and
+  tabulated pools are cut with their voxels.
+- **A smaller public API.** `Simulator` and `ModelOperator` are imported from
+  `blochsim`; `blochsim.model` and `blochsim.recon` are no longer public.
+  The estimators and the design tools are imported from `blochsim.estimators`
+  and `blochsim.optim` only. `SpinPhysics`, `EventOperators`, the operator
+  presets, the `Estimator` base class, `execution` and `offload` are private:
+  a simulator, an estimator's `map` and a `ModelOperator` take `execution=`
+  instead.
+- **One handler per Pulseq RF use.** `preparation` and `other` join
+  `excitation`, `refocusing`, `inversion` and `saturation`; both default to
+  `Excitation`.
+
+### Removed
+
+- **The nonlinear solvers.** `GaussNewton`, `Schedule`, `TrustRegion`,
+  `direct`, `iterative` and `NonlinearLeastSquares` are removed. bartorch's
+  `apps.mobafit` is the same per-voxel Levenberg-Marquardt fit, and
+  `nlop.IRGNM` and `apps.moba` solve through an encoding, all over a
+  `blochsim.ModelOperator`; the gallery examples that fitted or reconstructed
+  use them, and bartorch joins the `examples` extra.
+- **`blochsim.utils.b1rms`.** pypulseqpp's `calc_rf_power` reports the RF
+  power of a pulse.
+
 - **The package is `blochsim`.** The distribution, the import name and the
   repository are `blochsim`; `import torchsim` becomes `import blochsim`, with
   the same modules and names beneath it.

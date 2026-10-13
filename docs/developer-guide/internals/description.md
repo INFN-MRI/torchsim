@@ -26,7 +26,7 @@ added when the events are re-emitted through a simulator's handlers.
 
 The use tag is Pulseq's: `EXCITATION`, `REFOCUSING`, `INVERSION`,
 `SATURATION`, `PREPARATION`, `OTHER`, or `UNKNOWN` where the file is silent.
-{meth}`~blochsim.model.Simulator.from_description` sends `REFOCUSING`,
+{meth}`~blochsim.Simulator.from_description` sends `REFOCUSING`,
 `INVERSION` and `SATURATION` to the handlers of the same name and every other
 use to `excitation`, so a refocusing pulse reaches the refocusing handler
 whatever angle it turns.

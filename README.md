@@ -1,7 +1,7 @@
 [![Tests](https://github.com/pulserver/blochsim/actions/workflows/test.yml/badge.svg)](https://github.com/pulserver/blochsim/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/blochsim.svg)](https://pypi.org/project/blochsim/)
 [![Docs](https://img.shields.io/badge/docs-latest-2b76ad)](https://pulserver.github.io/blochsim/latest/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-ffbd28.svg)](https://github.com/pulserver/blochsim/blob/main/LICENSE.txt)
+[![License: MIT](https://img.shields.io/badge/license-MIT-ffbd28.svg)](https://github.com/pulserver/blochsim/blob/main/LICENSE)
 
 <p align="center"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/pulserver/blochsim/main/docs/_static/blochsim-logo-dark.svg">
@@ -65,9 +65,10 @@ signal, dT2 = fse.jacobian("T2", flip=flip, T1=1000.0, T2=80.0)
 A signal model is two things:
 
 - **handlers**: which operator plays each kind of event. A sequence has
-  excitations, readouts and waits, and may have refocusing, inversion and
-  saturation pulses. Each is a class attribute; one you do not set keeps
-  its default (a wait is `Delay`: free precession, no RF and no ADC).
+  excitations, readouts and waits, and may have refocusing, inversion,
+  saturation, preparation and other pulses, one handler for each Pulseq RF
+  use. Each is a class attribute; one you do not set keeps its default (a
+  wait is `Delay`: free precession, no RF and no ADC).
 - **layout**: the events of one repetition, in order, written with those
   handlers. It is the sequence's default description: the constructor builds
   it from the parameters you pass. `from_pulseq` and `from_description` read
@@ -80,7 +81,7 @@ Here is saturation recovery, which saturates, waits, and reads what came back:
 import torch
 
 from blochsim import Delay, Excitation, SPGRReadout, Spoil
-from blochsim.model import Simulator
+from blochsim import Simulator
 
 
 def Saturate(flip_rad=torch.pi / 2, phase_rad=0.0):
@@ -123,13 +124,16 @@ without another line.
 
 ## Estimation, design and reconstruction
 
-- **Parameter maps**: dictionary matching, lookup tables, nonlinear least
-  squares and PERK, all built from a simulator (`blochsim.estimators`).
+- **Parameter maps**: dictionary matching, lookup tables and PERK, all built
+  from a simulator (`blochsim.estimators`).
 - **Model-based reconstruction**: the signal model as a factor of the forward
-  operator, linear (a subspace) or nonlinear (`blochsim.recon`).
+  operator, linear (`blochsim.Subspace`) or nonlinear
+  (`blochsim.ModelOperator`). [bartorch](https://github.com/pulserver/bartorch)
+  supplies the encoding and the Gauss-Newton solvers, and fits the same model
+  voxel by voxel with `apps.mobafit`.
 - **Sequence design**: flip angles, timings or RF pulse samples optimized by
   gradient descent through the simulation, within the scanner's limits
-  (`blochsim.SequenceDesign`).
+  (`blochsim.optim.SequenceDesign`).
 - **Sequences you did not write**: `Simulator.from_pulseq` reads a `.seq`
   file, and `Simulator.from_description` reads the sequence description
   pulserver streams from a running scanner.
@@ -177,4 +181,4 @@ blochsim's state machine is the extended phase graph formalism
 
 ## License
 
-MIT, see [LICENSE](https://github.com/pulserver/blochsim/blob/main/LICENSE.txt).
+MIT, see [LICENSE](https://github.com/pulserver/blochsim/blob/main/LICENSE).

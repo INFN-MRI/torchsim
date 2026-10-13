@@ -40,7 +40,7 @@ pytest tests/ -n auto                  # across cores
 `tests/` mirrors the source. `epg/` pins the state machine operator by operator
 against closed forms — the shift, the RF rotation, relaxation, diffusion, flow,
 spoiling, the two-pool and three-pool longitudinal steps — while `sequence/`,
-`model/`, `estimators/`, `recon/` and `optim/` cover the layers above.
+`model/`, `operator/`, `estimators/` and `optim/` cover the layers above.
 
 ## The GPU kernels, without a GPU
 

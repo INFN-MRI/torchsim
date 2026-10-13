@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dynamic = ["version"]
 
 license = "MIT"
-license-files = ["LICENSE.txt"]
+license-files = ["LICENSE"]
 keywords = ["epg", "mri", "simulation", "bloch"]
 
 
@@ -77,8 +77,11 @@ test = [
 ]
 # What it takes to build these pages, minus the packages the gallery examples
 # import while they execute -- those are the ``examples`` extra, so a
-# documentation build without the gallery does not drag them in.
+# documentation build without the gallery does not drag them in. bartorch is
+# here because an explanation figure is drawn with it; it depends on blochsim,
+# and blochsim's runtime never imports it.
 doc = [
+"bartorch>=0.0.14",
 "sphinx>=7.0",
 "sphinx_book_theme>=1.1",
 "sphinx-design>=0.6",
@@ -92,7 +95,7 @@ doc = [
 "ipywidgets>=8.0",
 ]
 # What the gallery examples reach for. None of it is needed to simulate: the
-# phantoms, the segmentation, the coils, the Fourier encoding and the linear
+# phantoms, the segmentation, the coils, the Fourier encoding and the
 # solvers all come from elsewhere, which is the point several examples make.
 examples = [
 "brainweb-dl>=0.3",

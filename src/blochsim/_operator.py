@@ -18,14 +18,15 @@ from __future__ import annotations
 __all__ = ["ModelOperator"]
 
 from collections.abc import Mapping, Sequence
+from contextlib import nullcontext
 from copy import copy as shallow_copy
 from typing import Any
 
 import torch
 
-from .._bounds import bound_of, to_free, to_natural, widen
-from .._derivative import forward_mode
-from .._execution import PER_VOXEL_CROSSOVER, per_voxel
+from ._bounds import bound_of, to_free, to_natural, widen
+from ._derivative import forward_mode
+from ._execution import PER_VOXEL_CROSSOVER, execution, per_voxel
 
 #: What the amplitude occupies, when it is carried: real part then imaginary.
 _AMPLITUDE = ("amplitude.real", "amplitude.imag")
@@ -59,6 +60,11 @@ class ModelOperator(torch.nn.Module):
     subspace : Subspace, default=None
         Basis the prediction is projected onto, to solve in the temporal
         basis rather than in the contrasts.
+    execution : {"auto", "cpu"}, torch.device or sequence of device, default=None
+        Where the per-voxel work runs. ``"auto"``, which ``None`` stands for,
+        runs a small volume where the maps are and cuts a larger one into
+        chunks of voxels spread over every CUDA device; the answer comes back
+        where the maps are. ``"cpu"`` or named devices force the choice.
 
     Raises
     ------
@@ -97,6 +103,7 @@ class ModelOperator(torch.nn.Module):
         scale: Mapping[str, float] | None = None,
         amplitude: bool = True,
         subspace: Any = None,
+        execution: Any = None,
     ) -> None:
         super().__init__()
         if not unknown:
@@ -106,6 +113,7 @@ class ModelOperator(torch.nn.Module):
         self.bounds = dict(bounds or {})
         self.amplitude = bool(amplitude)
         self.subspace = subspace
+        self.execution = execution
         for label, given in (("bounds", self.bounds), ("scale", scale or {})):
             stray = set(given) - set(self.unknown)
             if stray:
@@ -344,8 +352,8 @@ class ModelOperator(torch.nn.Module):
         Notes
         -----
         A deepinv ``ComposedPhysics`` differentiates the chain by autograd, not
-        by the analytic products of this class. :class:`~blochsim.recon.GaussNewton`
-        chains the analytic products.
+        by the analytic products of this class; a Gauss-Newton solver such as
+        bartorch's ``nlop.IRGNM`` chains the analytic products.
         """
         try:
             from deepinv.physics import Physics
@@ -460,10 +468,18 @@ class ModelOperator(torch.nn.Module):
         )
         if not differentiating:
             contrasts = self._contrasts(flat[0])
-            with torch.no_grad():
+            # A chunk simulates every frame and its derivative along each
+            # unknown before the subspace projects them, so that is what it
+            # holds at its widest.
+            frames = contrasts if self.subspace is None else self.subspace.contrasts
+            simulated = frames * 8 * (2 + len(self.unknown))
+            policy = (
+                nullcontext() if self.execution is None else execution(self.execution)
+            )
+            with torch.no_grad(), policy:
                 answer = per_voxel(
                     flat,
-                    bytes_per_voxel=(self.channels + 2 * contrasts) * 4,
+                    bytes_per_voxel=(self.channels + 2 * contrasts) * 4 + simulated,
                     work=int(flat[0].shape[0]) * contrasts,
                     crossover=PER_VOXEL_CROSSOVER,
                     body=lambda chunk, device: body(

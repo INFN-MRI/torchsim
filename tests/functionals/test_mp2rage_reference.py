@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import torch
 
-from blochsim.model import Simulator
+from blochsim import Simulator
 from blochsim.simulators import MP2RAGESimulator
 
 # The protocol of Marques et al., Neuroimage 49(2):1271, Table 1 at 7 T.

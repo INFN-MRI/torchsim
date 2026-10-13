@@ -168,13 +168,11 @@ for states in (10, 24, 32):
 # The 60-degree train requires the full 48 states, which the previous figure
 # used.
 #
-# ``blochsim.execution`` selects the device. The default, ``"auto"``, runs
-# small problems on the CPU and large ones on a GPU when available, split
-# into chunks when they exceed device memory. A named device overrides this:
-import blochsim
-
-with blochsim.execution("cpu"):
-    on_cpu = fse.simulate(flip=flip, T1=1000.0, T2=T2)
+# ``execution=`` selects the device. By default (``"auto"``) a small problem
+# runs where its tensors are, and a large one is cut into chunks of voxels
+# spread over every GPU, each sized to the card's free memory; the signal comes
+# back where the tensors are. ``"cpu"`` or a named device overrides this:
+on_cpu = fse.simulate(flip=flip, T1=1000.0, T2=T2, execution="cpu")
 
 # %%
 # The first call resolves the sequence structure; later calls only rebind
@@ -182,9 +180,9 @@ with blochsim.execution("cpu"):
 #
 # Each shipped sequence also has a functional form, convenient for one-off
 # calls:
-signal, dT2 = blochsim.fse_sim(
-    flip=flip, ESP=5.0, TR=3000.0, T1=1000.0, T2=T2, diff="T2"
-)
+from blochsim import fse_sim
+
+signal, dT2 = fse_sim(flip=flip, ESP=5.0, TR=3000.0, T1=1000.0, T2=T2, diff="T2")
 
 # %%
 # Specification

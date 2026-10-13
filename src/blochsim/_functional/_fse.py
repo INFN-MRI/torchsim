@@ -68,7 +68,7 @@ def fse_sim(
         Device to run on. ``None`` follows the inputs.
     **values
         Any further property or protocol argument of the simulator, such as
-        ``B0`` or ``B1``, passed to :meth:`~blochsim.model.Simulator.simulate`.
+        ``B0`` or ``B1``, passed to :meth:`~blochsim.Simulator.simulate`.
         Arguments given as ``None`` are dropped.
 
     Returns

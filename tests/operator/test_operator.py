@@ -5,11 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from blochsim import (
-    Subspace,
-    execution,
-)
-from blochsim.recon import ModelOperator
+from blochsim import ModelOperator, Subspace
+from blochsim._execution import execution
 from blochsim.simulators import FSESimulator, MultiEchoSimulator
 
 TE_MS = torch.tensor([10.0, 20.0, 40.0, 80.0, 160.0])
@@ -271,12 +268,14 @@ def test_a_policy_changes_where_the_work_runs_and_nothing_else(
         operator.A_vjp(x, cotangent),
     )
 
-    with execution(target):
-        there = (
-            operator.A(x),
-            operator.A_jvp(x, direction),
-            operator.A_vjp(x, cotangent),
-        )
+    placed = ModelOperator(
+        operator.acquisition, *operator.unknown, bounds=BOUND, execution=target
+    )
+    there = (
+        placed.A(x),
+        placed.A_jvp(x, direction),
+        placed.A_vjp(x, cotangent),
+    )
 
     for ours, theirs in zip(here, there, strict=True):
         assert theirs.device == x.device

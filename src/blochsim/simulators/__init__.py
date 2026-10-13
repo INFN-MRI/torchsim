@@ -1,10 +1,10 @@
-"""The sequences that ship with BlochSim, as :class:`~blochsim.model.Simulator` subclasses.
+"""The sequences that ship with BlochSim, as :class:`~blochsim.Simulator` subclasses.
 
 Each is a pulse sequence named as in the literature: gradient-echo, spin-echo and
 balanced SSFP trains, inversion-prepared (MPRAGE, MP2RAGE, MPnRAGE, Look-Locker)
 and fingerprinting sequences, and the closed-form relaxometry contrasts. The
 sequence's protocol (flip angles, timings, counts) is given to the constructor
-and tissue properties to :meth:`~blochsim.model.Simulator.simulate`; each class
+and tissue properties to :meth:`~blochsim.Simulator.simulate`; each class
 documents both. Closed-form classes evaluate their expression directly, the
 others play their event train through the state machine.
 """

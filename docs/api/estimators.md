@@ -1,13 +1,13 @@
 # Parameter estimation
 
 ```{eval-rst}
-.. currentmodule:: blochsim
+.. currentmodule:: blochsim.estimators
 ```
 
 Estimators map a measured volume to tissue parameter maps. An estimator is
-made from the acquisition it inverts, {meth}`~Estimator.fit` states the
-unknowns and their ranges and draws the training set from the acquisition, and
-{meth}`~Estimator.map` returns one named map per unknown:
+made from the acquisition it inverts, `fit` states the unknowns and their
+ranges and draws the training set from the acquisition, and `map` returns one
+named map per unknown:
 
 ```python
 fitter = PERK(acquisition, n_features=1000)
@@ -17,24 +17,19 @@ maps = fitter.map(volume)
 
 `fit(signals=..., parameters=...)` takes arrays instead, and `map` then returns
 the parameter columns as a tensor. A `rank` or `subspace` given to `fit` works
-in a temporal {class}`Subspace`, left on the estimator as
-{attr}`~Estimator.subspace`. {class}`DictionaryMatcher` and {class}`PERK`
-honour {func}`execution`. `map(volume, uncertainty=True)` also returns an
-uncertainty map; its meaning depends on the method and is stated at
-{meth}`~Estimator.uncertainty_of`. See the
+in a temporal {class}`~blochsim.Subspace`, left on the estimator as its
+`subspace` attribute. `map(volume, execution="auto")` streams a volume held on
+the host through the CUDA devices. `map(volume, uncertainty=True)` also
+returns an uncertainty map; its meaning depends on the method and is stated at
+{meth}`PERK.uncertainty_of`. A per-voxel Levenberg-Marquardt fit of the
+same model is bartorch's `apps.mobafit`, over a
+{class}`~blochsim.ModelOperator`. See the
 {doc}`../explanations/parameter-estimation` page for the methods.
-
-## The base class
-
-| Object | Description |
-| --- | --- |
-| {obj}`~blochsim.Estimator` | Base class of the mapping methods. |
 
 ## Methods
 
 | Object | Description |
 | --- | --- |
-| {obj}`~blochsim.DictionaryMatcher` | Match signals to dictionary atoms by normalized complex inner product. |
-| {obj}`~blochsim.LookupTable` | Read one unknown back from a monotonic signal curve. |
-| {obj}`~blochsim.NonlinearLeastSquares` | Per-voxel Levenberg-Marquardt fit of the signal model. |
-| {obj}`~blochsim.PERK` | Parameter estimation via regression with kernels (PERK). |
+| {obj}`~blochsim.estimators.DictionaryMatcher` | Match signals to dictionary atoms by normalized complex inner product. |
+| {obj}`~blochsim.estimators.LookupTable` | Read one unknown back from a monotonic signal curve. |
+| {obj}`~blochsim.estimators.PERK` | Parameter estimation via regression with kernels (PERK). |
