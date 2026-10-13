@@ -51,8 +51,8 @@ Every example has one scope. A dictionary match is the subject of
 a hidden cell and gives it a row in a table, not a section.
 
 `sphinx_gallery_start_ignore` is for figure code and print formatting. A cell a
-reader would type -- `execution(...)`, `stream=`, `budget_bytes=`, a
-`description(...)` built by hand -- is visible even when its output is not
+reader would type -- `execution="cpu"`, a `description(...)` built by
+hand -- is visible even when its output is not
 interesting.
 
 ## Figures

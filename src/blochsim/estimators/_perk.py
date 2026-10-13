@@ -640,6 +640,7 @@ class PERK(Estimator):
             voxels=sample_count,
             bytes_per_voxel=(contrasts + self.n_features) * 4,
             crossover=PER_VOXEL_CROSSOVER,
+            home=inputs.device,
         )
 
     def _random_features(

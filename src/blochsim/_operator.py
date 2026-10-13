@@ -61,10 +61,10 @@ class ModelOperator(torch.nn.Module):
         Basis the prediction is projected onto, to solve in the temporal
         basis rather than in the contrasts.
     execution : {"auto", "cpu"}, torch.device or sequence of device, default=None
-        Where the per-voxel work runs. ``"auto"`` keeps small volumes on the
-        CPU, sends one that fits to the CUDA devices whole and streams a
-        larger one through them in chunks. ``None`` runs the work where the
-        maps are.
+        Where the per-voxel work runs. ``"auto"``, which ``None`` stands for,
+        runs a small volume where the maps are and cuts a larger one into
+        chunks of voxels spread over every CUDA device; the answer comes back
+        where the maps are. ``"cpu"`` or named devices force the choice.
 
     Raises
     ------
@@ -468,13 +468,18 @@ class ModelOperator(torch.nn.Module):
         )
         if not differentiating:
             contrasts = self._contrasts(flat[0])
+            # A chunk simulates every frame and its derivative along each
+            # unknown before the subspace projects them, so that is what it
+            # holds at its widest.
+            frames = contrasts if self.subspace is None else self.subspace.contrasts
+            simulated = frames * 8 * (2 + len(self.unknown))
             policy = (
                 nullcontext() if self.execution is None else execution(self.execution)
             )
             with torch.no_grad(), policy:
                 answer = per_voxel(
                     flat,
-                    bytes_per_voxel=(self.channels + 2 * contrasts) * 4,
+                    bytes_per_voxel=(self.channels + 2 * contrasts) * 4 + simulated,
                     work=int(flat[0].shape[0]) * contrasts,
                     crossover=PER_VOXEL_CROSSOVER,
                     body=lambda chunk, device: body(

@@ -266,31 +266,6 @@ def test_a_streamed_volume_reads_the_table_a_whole_one_does() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
-def test_a_chunk_holds_whole_voxels_when_a_table_is_read() -> None:
-    """The kernel takes the row from the index within the chunk.
-
-    So a chunk boundary inside a voxel's slice copies shifts every row after
-    it, which returns a plausible signal for an entirely different slice.
-    """
-    from blochsim.sequence._accelerators import _Offload, _offload_plan
-
-    _, events, outputs = _packed(96)
-    plan = _Offload(devices=(torch.device("cuda"),), budget_bytes=1 << 12, lanes=1)
-    bare, _, _ = _offload_plan(plan, "forward", events, 96, outputs, STATES, None)
-    # A slice width the unaligned chunk is not already a multiple of, so the
-    # alignment has something to do however the budget happens to divide. Taken
-    # from the measured width rather than fixed, which would go vacuous the
-    # next time a tissue property changes what a voxel costs.
-    locations = next(width for width in range(2, bare) if bare % width)
-    aligned, _, _ = _offload_plan(
-        plan, "forward", events, 96, outputs, STATES, None, locations=locations
-    )
-
-    assert aligned % locations == 0
-    assert aligned <= bare
-
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_a_streamed_adjoint_reads_the_table_a_whole_one_does() -> None:
     from blochsim.sequence._accelerators import _run_packed_vjp_jvp
 

@@ -53,6 +53,7 @@ from typing import Any
 
 import torch
 
+from .._execution import without_policy
 from ..sequence import (
     Delay,
     EpgEngine,
@@ -211,6 +212,19 @@ def _rf_operator(event: SequenceEvent, operators: EventOperators) -> Any:
         shim_id=event.rf_shim_id,
     )
     return handler(**offered)
+
+
+def _carries_a_gradient(*values: Mapping[str, Any]) -> bool:
+    """Whether any tensor among the arguments is tracked by autograd.
+
+    A design loop differentiates a small problem many times over; moving it
+    between devices on every step would cost more than it computes.
+    """
+    return any(
+        isinstance(value, torch.Tensor) and value.requires_grad
+        for mapping in values
+        for value in mapping.values()
+    )
 
 
 def replace_pulse(simulator: Simulator, pulse: RfDefinition) -> Simulator:
@@ -447,10 +461,11 @@ class Simulator(_SignalModel):
         Which ADC events the signal holds: every one, those that acquire data,
         or those flagged as echoes.
     execution : str, torch.device or sequence of device, default=None
-        ``"auto"``, ``"cpu"`` or CUDA device(s). ``"auto"`` keeps small
-        problems on the CPU, sends one that fits to the CUDA devices whole and
-        streams a larger one through them in chunks. ``None`` runs the work
-        where the tissue tensors are.
+        ``"auto"``, ``"cpu"`` or CUDA device(s). ``"auto"``, which ``None``
+        stands for, runs a small problem where the tissue tensors are and cuts
+        a larger one into chunks of voxels spread over every CUDA device; the
+        signal comes back where the tissue tensors are. A call that carries
+        a gradient runs where its tensors are unless a target is named.
     pulse : RfDefinition, default=None
         RF waveform replacing the ideal hard pulse of definition 0, which the
         shipped operators play.
@@ -976,7 +991,12 @@ class Simulator(_SignalModel):
             device=settings["device"],
             across_slice=profile,
         )
-        block = nullcontext() if target is None else execution(target)
+        if target is not None:
+            block = execution(target)
+        elif _carries_a_gradient(properties, given):
+            block = without_policy()
+        else:
+            block = nullcontext()
         with block:
             return (
                 EpgEngine()

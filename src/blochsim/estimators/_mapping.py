@@ -340,10 +340,10 @@ class Estimator(torch.nn.Module):
             Also return the uncertainty of each map; see
             :meth:`uncertainty_of`.
         execution : {"auto", "cpu"}, torch.device or sequence of device, default=None
-            Where the per-voxel work runs. ``"auto"`` keeps small volumes on
-            the CPU, sends one that fits to the CUDA devices whole and streams
-            a larger one through them in chunks. ``None`` runs the work where
-            ``volume`` is.
+            Where the per-voxel work runs. ``"auto"``, which ``None`` stands
+            for, runs a small volume where ``volume`` is and cuts a larger one
+            into chunks of voxels spread over every CUDA device; the maps come
+            back where ``volume`` is.
 
         Returns
         -------

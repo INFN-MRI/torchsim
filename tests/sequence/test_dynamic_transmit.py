@@ -1787,60 +1787,13 @@ def test_the_table_reads_the_moving_gradient_too():
 # --- the routes that cannot cut a per-voxel rotation say so ---
 
 
-class _Elsewhere:
-    """Stands in for a streaming plan, so the refusal can be reached without a
-    second device to stream to. Nothing reads it: the guard runs first.
-    """
-
-    devices = ()
-    budget_bytes = 1 << 20
-    lanes = 1
-
-
-def _streamed(monkeypatch):
-    from blochsim import (
-        _execution,
-    )
-
-    monkeypatch.setattr(_execution, "_OFFLOAD", _Elsewhere())
-
-
-@pytest.mark.parametrize("pass_name", ["forward", "forward-mode", "adjoint"])
-def test_the_streamed_route_refuses_a_per_voxel_pair(monkeypatch, pass_name):
-    """A table is the same for every voxel so a chunked run can broadcast one.
-    The pair is per voxel, so a route that moves the volume a piece at a time
-    would have to cut it the same way -- and is told to say so rather than
-    quietly reach for a hard pulse.
-    """
-    from blochsim.sequence._accelerators import (
-        _run_packed,
-        _run_packed_jvp,
-        _run_packed_vjp,
-    )
-
-    _, prepared, events, pairs = _train()
-    _streamed(monkeypatch)
-    still = tuple(torch.zeros_like(value) for value in prepared)
-    quiet = tuple(torch.zeros_like(events[index]) for index in (0, 2, 3))
-    seed = torch.ones(VOXELS, ECHOES, dtype=torch.complex64)
-    arguments = dict(state_count=16, output_count=ECHOES, dynamic=pairs)
-
-    with pytest.raises(NotImplementedError, match="streamed route does not cut"):
-        if pass_name == "forward":
-            _run_packed(prepared, events, 16, ECHOES, 1, dynamic=pairs)
-        elif pass_name == "forward-mode":
-            _run_packed_jvp(prepared, events, still, quiet, threads=1, **arguments)
-        else:
-            _run_packed_vjp(prepared, events, seed, threads=1, **arguments)
-
-
-def test_the_streamed_route_still_takes_a_train_with_no_pair(monkeypatch):
+def test_the_sharded_route_still_takes_a_train_with_no_pair():
     """The guard has to be about the pair and not about the route, or a plain
-    sequence would lose streaming with it.
+    sequence would lose sharding with it.
     """
     from blochsim.sequence._accelerators import _carries_the_pair
 
-    assert _carries_the_pair(None, "streamed") is None
+    assert _carries_the_pair(None, "sharded") is None
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")

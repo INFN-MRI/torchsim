@@ -1,9 +1,9 @@
 """Choosing where a simulation runs.
 
-``execution`` collapses three separate decisions into one: host or device, how
-many devices, and whether the volume can be resident or has to be streamed. The
-tests split accordingly -- what gets chosen, and whether every route that could
-be chosen produces the same numbers.
+``execution`` decides whether a problem runs as written or is cut into chunks
+of voxels, which devices take the chunks, and how wide a chunk is. The tests
+split accordingly -- what gets chosen, and whether every route that could be
+chosen produces the same numbers.
 
 Deciding reads the free memory on the card, so the size tests pin the reserve
 rather than trusting whatever else happens to be resident when they run.
@@ -47,28 +47,30 @@ def _voxels_worth(kind, share):
     return max(1, int(floor * share / per_voxel))
 
 
-def test_without_a_block_a_call_is_left_where_it_is():
-    """Simulations must not start moving themselves unasked."""
-    events, prepared, outputs = _volume(64)
+def test_without_a_block_a_small_call_is_left_where_it_is():
+    """The default policy moves nothing that would not repay the move."""
+    events, prepared, outputs = _volume(4)
     assert _choose("forward", prepared, events, outputs, STATES, 1) is None
 
 
 @pytest.mark.parametrize("kind", ["forward", "jvp", "adjoint"])
-def test_work_too_small_to_repay_a_launch_stays_on_the_host(kind):
+def test_work_too_small_to_repay_a_launch_runs_where_its_tensors_are(kind):
     """Where that line falls is what the threshold says, so the size is taken
     from it.
     """
     voxels = _voxels_worth(kind, 1 / 8) if torch.cuda.is_available() else 4
-    assert _decide(kind, voxels, target="auto").where == "cpu"
+    assert _decide(kind, voxels, target="auto") is None
 
 
 @cuda_only
 @pytest.mark.parametrize("kind", ["forward", "jvp", "adjoint"])
-def test_work_that_fits_goes_across_in_one_piece(kind):
+def test_work_that_fits_is_shared_evenly_between_the_cards(kind):
     choice = _decide(kind, 4096, target="auto")
 
-    assert choice.where == "upfront"
-    assert choice.devices
+    assert choice.devices == tuple(
+        torch.device("cuda", index) for index in range(torch.cuda.device_count())
+    )
+    assert choice.chunk == -(-4096 // len(choice.devices))
 
 
 @cuda_only
@@ -80,44 +82,42 @@ def test_the_forward_pass_needs_more_work_than_the_adjoint_to_leave_the_host():
 @cuda_only
 @pytest.mark.parametrize("kind", ["forward", "jvp", "adjoint"])
 def test_work_well_past_the_crossover_goes_to_the_card(kind):
-    assert _decide(kind, _voxels_worth(kind, 8), target="auto").where != "cpu"
+    choice = _decide(kind, _voxels_worth(kind, 8), target="auto")
+
+    assert choice.devices[0].type == "cuda"
+
+
+def _footprint(kind, voxels):
+    events, prepared, outputs = _volume(voxels)
+    return _bytes_per_voxel(kind, 1, int(events[1].numel()), outputs, STATES, 1)
 
 
 @cuda_only
-def test_a_volume_larger_than_the_card_is_streamed():
-    """Reserving everything leaves nothing resident, so it has to chunk."""
+def test_a_volume_larger_than_the_card_is_cut_into_chunks():
+    """Reserving everything leaves room for one voxel at a time."""
     free, _total = torch.cuda.mem_get_info(0)
     choice = _decide("forward", 4096, target="auto", reserve_bytes=free)
 
-    assert choice.where == "stream"
-    assert choice.offload.budget_bytes > 0
+    assert choice.chunk == 1
 
 
 @cuda_only
-def test_streaming_can_be_demanded_for_a_volume_that_would_fit():
-    choice = _decide("forward", 4096, target="cuda", stream=True)
-
-    assert choice.where == "stream"
-
-
-@cuda_only
-def test_residency_can_be_demanded_for_a_volume_that_will_not_fit():
+def test_one_even_share_per_card_can_be_demanded_for_a_volume_that_will_not_fit():
     """Better to fail on the allocation than to quietly do something else."""
     free, _total = torch.cuda.mem_get_info(0)
     choice = _decide("forward", 4096, target="cuda", stream=False, reserve_bytes=free)
 
-    assert choice.where == "upfront"
+    assert choice.chunk == 4096
 
 
 @cuda_only
 def test_the_budget_can_be_set_outright():
-    free, _total = torch.cuda.mem_get_info(0)
     choice = _decide(
         "forward", 4096, target="cuda", stream=True, budget_bytes=7 << 20, lanes=3
     )
 
-    assert choice.offload.budget_bytes == 7 << 20
-    assert choice.offload.lanes == 3
+    assert choice.lanes == 3
+    assert choice.chunk == min(4096, (7 << 20) // (3 * _footprint("forward", 4096)))
 
 
 @cuda_only
@@ -125,14 +125,15 @@ def test_the_reserve_is_left_alone():
     """A recon server's product pipeline keeps its own memory resident."""
     free, _total = torch.cuda.mem_get_info(0)
     choice = _decide(
-        "forward", 4096, target="cuda", stream=True, reserve_bytes=free // 2
+        "forward", 1 << 20, target="cuda", stream=True, reserve_bytes=free // 2
     )
 
-    assert choice.offload.budget_bytes <= free - free // 2
+    assert choice.chunk * _footprint("forward", 1) <= free - free // 2
 
 
 def test_the_host_can_be_demanded_whatever_the_size():
-    assert _decide("adjoint", 4096, target="cpu").where == "cpu"
+    """A host volume then runs as written, on the host."""
+    assert _decide("adjoint", 4096, target="cpu") is None
 
 
 @cuda_only
@@ -140,7 +141,6 @@ def test_a_named_device_is_used_however_small_the_work():
     """Naming one is an instruction, not a hint, so the threshold is skipped."""
     choice = _decide("forward", 4, target="cuda:0")
 
-    assert choice.where == "upfront"
     assert choice.devices == (torch.device("cuda:0"),)
 
 
@@ -200,7 +200,7 @@ def _all_four(prepared, events, outputs, seeds, cotangent):
         {"target": "cuda", "stream": False},
         {"target": "cuda", "stream": True, "budget_bytes": 1 << 20},
     ],
-    ids=["auto", "cpu", "named", "upfront", "streamed"],
+    ids=["auto", "cpu", "named", "one-share", "chunked"],
 )
 def test_every_route_gives_the_same_answer(arguments):
     voxels = 3000
@@ -290,7 +290,7 @@ def test_the_previous_setting_comes_back_after_a_failure():
         with execution("cpu"):
             raise RuntimeError("boom")
 
-    assert _policy._EXECUTION is None
+    assert _policy._EXECUTION is _policy._DEFAULT
 
 
 def test_blocks_nest():
@@ -298,4 +298,8 @@ def test_blocks_nest():
         with execution("auto"):
             assert _policy._EXECUTION.target == "auto"
         assert _policy._EXECUTION.target == "cpu"
-    assert _policy._EXECUTION is None
+    assert _policy._EXECUTION is _policy._DEFAULT
+
+
+def test_the_policy_outside_any_block_is_auto():
+    assert _policy.policy().target == "auto"
