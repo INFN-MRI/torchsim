@@ -482,7 +482,7 @@
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#division-of-responsibility">Division of responsibility</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#method">Method</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#route-selection">Route selection</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#streaming">Streaming</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#chunks">Chunks</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#structure-and-values">Structure and values</a></li>
 </ul>
 </li>
@@ -503,24 +503,24 @@
 <div class="tldr admonition">
 <p class="admonition-title">TL;DR</p>
 <ul class="simple">
-<li><p>A call runs where its tensors are; <code class="docutils literal notranslate"><span class="pre">execution=</span></code> chooses the host, a GPU, several GPUs or streaming instead.</p></li>
-<li><p>A volume larger than a card’s free memory is streamed through it in chunks sized to a memory budget.</p></li>
+<li><p>A small call runs where its tensors are; a large one is cut into chunks of voxels and spread over every GPU.</p></li>
+<li><p>A card holds one chunk at a time, sized to its free memory, so a volume of any size runs; the answer comes back where the tensors are.</p></li>
 <li><p>A simulator resolves its sequence structure on the first call and rebinds only the numbers on later calls.</p></li>
 </ul>
 </div>
 <p>You choose where a simulation, a dictionary match or a model-based
 reconstruction runs. Each simulator accepts scalar and tensor-valued inputs;
 tensor-valued inputs are simulated in parallel, over multiple CPU threads or on
-a GPU.</p>
+every GPU of the machine.</p>
 <section id="capabilities">
 <h2>Capabilities<a class="headerlink" href="#capabilities" title="Link to this heading">#</a></h2>
 <div class="capabilities docutils container">
 <ul>
-<li><p><strong>Runs a call where its tensors are when no <code class="docutils literal notranslate"><span class="pre">execution=</span></code> is given.</strong></p>
+<li><p><strong>Runs a call too small to repay a launch where its tensors are, and a call carrying a gradient through a simulator there too.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Test: <em>without a block a call is left where it is</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>work too small to repay a launch runs where its tensors are</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>a gradient through a simulator runs where its tensors are</em> (<code class="docutils literal notranslate"><span class="pre">test_chunks.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Runs the host kernels over a pool of <code class="docutils literal notranslate"><span class="pre">torch.get_num_threads()</span></code> threads, or <code class="docutils literal notranslate"><span class="pre">BLOCHSIM_NUM_THREADS</span></code>, with the same answer at any count.</strong></p>
@@ -530,11 +530,25 @@ a GPU.</p>
 <p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_threads.hpp</span></code>. Tests: <em>fused vjp matches the reference</em>; <em>fused vjp is bitwise deterministic</em> (<code class="docutils literal notranslate"><span class="pre">test_vjp.py</span></code>).</p>
 </div>
 </details></li>
-<li><p><strong>Decides per call under <code class="docutils literal notranslate"><span class="pre">execution=&quot;auto&quot;</span></code>: the host for small work, one card when it fits, otherwise the fewest cards that hold it, otherwise streaming.</strong></p>
+<li><p><strong>Cuts a larger call into chunks of voxels and deals them to every GPU, whether the tensors are on the host or on a card.</strong></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>work too small to repay a launch stays on the host</em>; <em>work that fits goes across in one piece</em>; <em>a volume larger than the card is streamed</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>work that fits is shared evenly between the cards</em>; <em>a volume larger than the card is cut into chunks</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>a device resident volume is chunked on its card and stays there</em> (<code class="docutils literal notranslate"><span class="pre">test_offload.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Sizes a chunk to the smallest card’s free memory less a reserve, so the cards hold a bounded share of the volume at a time.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>the reserve is left alone</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>the device footprint stays inside the budget</em>; <em>the adjoint footprint stays inside the budget</em> (<code class="docutils literal notranslate"><span class="pre">test_offload.py</span></code>).</p>
+</div>
+</details></li>
+<li><p><strong>Cuts every physics a voxel carries with it: transmit shims, slice profiles, per-voxel rotations, semisolid, exchanging and tabulated pools, diffusion and flow.</strong></p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
+<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/sequence/_accelerators.py</span></code>. Tests: <em>a chunked pass matches the whole volume</em>; <em>tabulated pools chunk like the whole volume</em>; <em>a chunk holds whole voxels when a table is read</em>; <em>a rotation per voxel is cut with its voxels</em> (<code class="docutils literal notranslate"><span class="pre">test_chunks.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Runs on the host or on named devices whatever the size, under <code class="docutils literal notranslate"><span class="pre">execution=&quot;cpu&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">execution=&quot;cuda:0&quot;</span></code>.</strong></p>
@@ -542,13 +556,6 @@ a GPU.</p>
 <summary class="sd-summary-title sd-card-header">
 <span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
 <p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>the host can be demanded whatever the size</em>; <em>a named device is used however small the work</em>; <em>a device resident call can be forced back to the host</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>).</p>
-</div>
-</details></li>
-<li><p><strong>Sizes streamed chunks to each card’s free memory less a reserve.</strong></p>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-<span class="sd-summary-text">Show code and tests</span><span class="sd-summary-state-marker sd-summary-chevron-right"><svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z"></path></svg></span></summary><div class="sd-summary-content sd-card-body docutils">
-<p class="sd-card-text">Code: <code class="docutils literal notranslate"><span class="pre">blochsim/_execution.py</span></code>. Tests: <em>the budget can be set outright</em>; <em>the reserve is left alone</em> (<code class="docutils literal notranslate"><span class="pre">test_execution.py</span></code>); <em>the device footprint stays inside the budget</em>; <em>a streamed volume matches the cpu run</em> (<code class="docutils literal notranslate"><span class="pre">test_offload.py</span></code>).</p>
 </div>
 </details></li>
 <li><p><strong>Returns the same signal, Jacobian and gradient on every route.</strong></p>
@@ -578,35 +585,40 @@ a GPU.</p>
 <section id="division-of-responsibility">
 <h2>Division of responsibility<a class="headerlink" href="#division-of-responsibility" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><strong>Placement without a request.</strong> With no <code class="docutils literal notranslate"><span class="pre">execution=</span></code>, nothing moves a tensor between host and card.</p></li>
 <li><p><strong>Multi-node execution.</strong> Several cards in one process are supported; several processes or machines are not.</p></li>
-<li><p><strong>Thresholds measured on your machine.</strong> The work below which the host is preferred is a fixed constant, not measured where it runs.</p></li>
+<li><p><strong>Thresholds measured on your machine.</strong> The work below which a call runs where it is is a fixed constant, not measured where it runs.</p></li>
+<li><p><strong>Memory you keep elsewhere.</strong> The free memory a card reports is what a chunk is sized against; memory another process claims after the call starts is not.</p></li>
 </ul>
 </section>
 <section id="method">
 <h2>Method<a class="headerlink" href="#method" title="Link to this heading">#</a></h2>
 <figure class="align-default" id="id1">
-<a class="reference internal image-reference" href="../_images/execution_policy.png"><img alt="A decision fan from the problem to the host, one card, several cards, or streaming." src="../_images/execution_policy.png" style="width: 100%;" />
+<a class="reference internal image-reference" href="../_images/execution_policy.png"><img alt="A decision fan from the problem to running in place or chunks over every card." src="../_images/execution_policy.png" style="width: 100%;" />
 </a>
 <figcaption>
-<p><span class="caption-text">The four routes <code class="docutils literal notranslate"><span class="pre">execution=&quot;auto&quot;</span></code> chooses between, per call, from the work
+<p><span class="caption-text">The two routes <code class="docutils literal notranslate"><span class="pre">execution=&quot;auto&quot;</span></code> chooses between, per call, from the work
 in the problem and the free memory each card reports.</span><a class="headerlink" href="#id1" title="Link to this image">#</a></p>
 </figcaption>
 </figure>
 <section id="route-selection">
 <h3>Route selection<a class="headerlink" href="#route-selection" title="Link to this heading">#</a></h3>
-<p>The policy is the <code class="docutils literal notranslate"><span class="pre">execution=</span></code> argument of a simulator, at construction or per
-call, of an estimator’s <code class="docutils literal notranslate"><span class="pre">map</span></code>, and of a <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a>. Work is counted in (voxel,
-train, event) triples and compared with a crossover; past it, the device
-footprint is compared with each card’s free memory less <code class="docutils literal notranslate"><span class="pre">reserve_bytes</span></code>
-(512 MiB by default), which leaves room for other processes on a
-reconstruction server.</p>
+<p>The policy is <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> unless the <code class="docutils literal notranslate"><span class="pre">execution=</span></code> argument of a simulator, of an
+estimator’s <code class="docutils literal notranslate"><span class="pre">map</span></code> or of a <a class="reference internal" href="../generated/blochsim.ModelOperator.html#blochsim.ModelOperator" title="blochsim.ModelOperator"><code class="xref py py-class docutils literal notranslate"><span class="pre">ModelOperator</span></code></a> names another. Work
+is counted in (voxel, train, event) triples and compared with a crossover;
+below it the call runs where its tensors are. Past it, the voxels are cut into
+chunks no wider than an even share per card, and no wider than the smallest
+card’s free memory less a 512 MiB reserve allows, which leaves room for other
+processes on a reconstruction server.</p>
 </section>
-<section id="streaming">
-<h3>Streaming<a class="headerlink" href="#streaming" title="Link to this heading">#</a></h3>
-<p>Chunks of voxels are staged through pinned host memory, and the result returns
-to the device the inputs came from. A smaller budget gives smaller chunks,
-which fill the card less and pay more launch and transfer latency.</p>
+<section id="chunks">
+<h3>Chunks<a class="headerlink" href="#chunks" title="Link to this heading">#</a></h3>
+<p>Each card runs its chunks on a stream of its own. A chunk leaving the host is
+staged through pinned memory, so its transfer overlaps another chunk’s
+arithmetic; the events, the slice and lineshape tables and the pool indices
+cross to each card once. Per-voxel answers are written into place on the
+device the inputs came from, and the event gradients, to which every voxel
+contributes, are added up. A slice profile keeps a voxel’s copies along the
+slice in one chunk.</p>
 </section>
 <section id="structure-and-values">
 <h3>Structure and values<a class="headerlink" href="#structure-and-values" title="Link to this heading">#</a></h3>
@@ -680,7 +692,7 @@ and the kernels are on <a class="reference internal" href="../developer-guide/in
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#division-of-responsibility">Division of responsibility</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#method">Method</a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#route-selection">Route selection</a></li>
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#streaming">Streaming</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#chunks">Chunks</a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#structure-and-values">Structure and values</a></li>
 </ul>
 </li>

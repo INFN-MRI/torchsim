@@ -168,10 +168,10 @@ for states in (10, 24, 32):
 # The 60-degree train requires the full 48 states, which the previous figure
 # used.
 #
-# ``execution=`` selects the device. ``"auto"`` runs small problems on the CPU
-# and large ones on a GPU when available, split into chunks when they exceed
-# device memory; a named device overrides this. Without it, the simulation
-# runs where its tensors are:
+# ``execution=`` selects the device. By default (``"auto"``) a small problem
+# runs where its tensors are, and a large one is cut into chunks of voxels
+# spread over every GPU, each sized to the card's free memory; the signal comes
+# back where the tensors are. ``"cpu"`` or a named device overrides this:
 on_cpu = fse.simulate(flip=flip, T1=1000.0, T2=T2, execution="cpu")
 
 # %%

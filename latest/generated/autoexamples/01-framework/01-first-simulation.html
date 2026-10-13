@@ -615,10 +615,10 @@ the refocusing angle is low:</p>
 </div>
 <p>The 60-degree train requires the full 48 states, which the previous figure
 used.</p>
-<p><code class="docutils literal notranslate"><span class="pre">execution=</span></code> selects the device. <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> runs small problems on the CPU
-and large ones on a GPU when available, split into chunks when they exceed
-device memory; a named device overrides this. Without it, the simulation
-runs where its tensors are:</p>
+<p><code class="docutils literal notranslate"><span class="pre">execution=</span></code> selects the device. By default (<code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>) a small problem
+runs where its tensors are, and a large one is cut into chunks of voxels
+spread over every GPU, each sized to the card’s free memory; the signal comes
+back where the tensors are. <code class="docutils literal notranslate"><span class="pre">&quot;cpu&quot;</span></code> or a named device overrides this:</p>
 <div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">on_cpu</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">fse</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">T1</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">,</span> <span class="n">T2</span><span class="o">=</span><span class="n">T2</span><span class="p">,</span> <span class="n">execution</span><span class="o">=</span><span class="s2">&quot;</span><span class="s2">cpu</span><span class="s2">&quot;</span><span class="p">)</span><span class="w">
 </span></pre></div></div>
 <p>The first call resolves the sequence structure; later calls only rebind
@@ -641,7 +641,7 @@ that the number of configuration states kept is enough for the 60 degree
 train.
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.851 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.429 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-01-framework-01-first-simulation-py">
 <div class="binder-badge docutils container">
 <a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/latest/notebooks/generated/autoexamples/01-framework/01-first-simulation.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo.svg" style="width: 150px;" />

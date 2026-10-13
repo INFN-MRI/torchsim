@@ -268,10 +268,10 @@ the refocusing angle is low:
 The 60-degree train requires the full 48 states, which the previous figure
 used.
 
-``execution=`` selects the device. ``"auto"`` runs small problems on the CPU
-and large ones on a GPU when available, split into chunks when they exceed
-device memory; a named device overrides this. Without it, the simulation
-runs where its tensors are:
+``execution=`` selects the device. By default (``"auto"``) a small problem
+runs where its tensors are, and a large one is cut into chunks of voxels
+spread over every GPU, each sized to the card's free memory; the signal comes
+back where the tensors are. ``"cpu"`` or a named device overrides this:
 
 .. GENERATED FROM PYTHON SOURCE LINES 175-177
 
@@ -328,7 +328,7 @@ What this lesson did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.851 seconds)
+   **Total running time of the script:** (0 minutes 1.429 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_01-framework_01-first-simulation.py:

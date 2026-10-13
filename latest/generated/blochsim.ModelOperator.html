@@ -527,10 +527,10 @@ interval.</p></li>
 channels (real, imaginary).</p></li>
 <li><p><strong>subspace</strong> (<a class="reference internal" href="blochsim.Subspace.html#blochsim.Subspace" title="blochsim.Subspace"><em>Subspace</em></a><em>, </em><em>default=None</em>) – Basis the prediction is projected onto, to solve in the temporal
 basis rather than in the contrasts.</p></li>
-<li><p><strong>execution</strong> (<em>{&quot;auto&quot;</em><em>, </em><em>&quot;cpu&quot;}</em><em>, </em><em>torch.device</em><em> or </em><em>sequence</em><em> of </em><em>device</em><em>, </em><em>default=None</em>) – Where the per-voxel work runs. <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> keeps small volumes on the
-CPU, sends one that fits to the CUDA devices whole and streams a
-larger one through them in chunks. <code class="docutils literal notranslate"><span class="pre">None</span></code> runs the work where the
-maps are.</p></li>
+<li><p><strong>execution</strong> (<em>{&quot;auto&quot;</em><em>, </em><em>&quot;cpu&quot;}</em><em>, </em><em>torch.device</em><em> or </em><em>sequence</em><em> of </em><em>device</em><em>, </em><em>default=None</em>) – Where the per-voxel work runs. <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, which <code class="docutils literal notranslate"><span class="pre">None</span></code> stands for,
+runs a small volume where the maps are and cuts a larger one into
+chunks of voxels spread over every CUDA device; the answer comes back
+where the maps are. <code class="docutils literal notranslate"><span class="pre">&quot;cpu&quot;</span></code> or named devices force the choice.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Raises<span class="colon">:</span></dt>

@@ -571,10 +571,11 @@ or those flagged as echoes.</p>
 <dd class="field-even"><p>{“all”, “acquired”, “echo”}, default=”all”</p>
 </dd>
 <dt class="field-odd">param execution<span class="colon">:</span></dt>
-<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;cpu&quot;</span></code> or CUDA device(s). <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code> keeps small
-problems on the CPU, sends one that fits to the CUDA devices whole and
-streams a larger one through them in chunks. <code class="docutils literal notranslate"><span class="pre">None</span></code> runs the work
-where the tissue tensors are.</p>
+<dd class="field-odd"><p><code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;cpu&quot;</span></code> or CUDA device(s). <code class="docutils literal notranslate"><span class="pre">&quot;auto&quot;</span></code>, which <code class="docutils literal notranslate"><span class="pre">None</span></code>
+stands for, runs a small problem where the tissue tensors are and cuts
+a larger one into chunks of voxels spread over every CUDA device; the
+signal comes back where the tissue tensors are. A call that carries
+a gradient runs where its tensors are unless a target is named.</p>
 </dd>
 <dt class="field-even">type execution<span class="colon">:</span></dt>
 <dd class="field-even"><p>str, torch.device or sequence of device, default=None</p>
