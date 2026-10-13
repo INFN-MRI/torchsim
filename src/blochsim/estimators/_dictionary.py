@@ -10,7 +10,7 @@ from typing import Any
 import torch
 
 from .._execution import PER_VOXEL_CROSSOVER, per_voxel
-from ._grouped import Grouping, correlate, match_in_groups
+from ._grouped import Grouping, best_of, correlate, match_in_groups
 from ._mapping import Estimator
 
 
@@ -360,12 +360,12 @@ class DictionaryMatcher(Estimator):
                 stop = min(start + self.dictionary_chunk_size, self.dictionary.shape[0])
                 scores = correlate(query, self.normalized_dictionary[start:stop])
                 local_count = min(self.top_k, scores.shape[-1])
-                local_scores, local_indices = torch.topk(scores, local_count, dim=-1)
+                local_scores, local_indices = best_of(scores, local_count)
                 local_indices += start
                 candidates = torch.cat((best_scores, local_scores), dim=-1)
                 candidate_indices = torch.cat((best_indices, local_indices), dim=-1)
                 keep = min(self.top_k, candidates.shape[-1])
-                best_scores, selection = torch.topk(candidates, keep, dim=-1)
+                best_scores, selection = best_of(candidates, keep)
                 best_indices = torch.gather(candidate_indices, -1, selection)
             score_chunks.append(best_scores)
             index_chunks.append(best_indices)

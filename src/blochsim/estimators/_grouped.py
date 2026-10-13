@@ -163,6 +163,30 @@ class Grouping:
         )
 
 
+def best_of(scores: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """The ``k`` highest scores along the last axis, and where they are.
+
+    One candidate is a single reduction. ``torch.topk`` selects by radix
+    passes whatever ``k`` is, which for ``k = 1`` costs about three times a
+    match's correlation and reduction together.
+
+    Parameters
+    ----------
+    scores : torch.Tensor
+        ``(..., candidates)``, real.
+    k : int
+        How many to keep, at most the candidate count.
+
+    Returns
+    -------
+    tuple of torch.Tensor
+        ``(values, indices)``, each ``(..., k)``, values in descending order.
+    """
+    if k == 1:
+        return scores.max(dim=-1, keepdim=True)
+    return torch.topk(scores, k, dim=-1)
+
+
 def match_in_groups(
     signals: torch.Tensor,
     grouping: Grouping,
@@ -202,10 +226,10 @@ def match_in_groups(
         atoms = grouping.atoms[group]
         local = correlate(signals[rows], atoms)
         take = min(top_k, int(atoms.shape[0]))
-        found, where = torch.topk(local, take, dim=-1)
+        found, where = best_of(local, take)
         candidates = torch.cat((scores[rows], found), dim=-1)
         named = torch.cat((indices[rows], grouping.members[group][where]), dim=-1)
-        kept, choice = torch.topk(candidates, top_k, dim=-1)
+        kept, choice = best_of(candidates, top_k)
         scores[rows] = kept
         indices[rows] = torch.gather(named, -1, choice)
     return indices, scores
