@@ -197,7 +197,7 @@ background before committing.
 
 **Show the API and hide the plotting.** `sphinx_gallery_start_ignore` is for
 figure code and print formatting. A cell a reader would type themselves —
-`execution(...)`, `stream=`, `budget_bytes=`, a `description(...)` built by hand
+`execution="cpu"`, a `description(...)` built by hand
 — is visible even when its output is not interesting.
 
 The figures on the explanation pages are simulated at build time by

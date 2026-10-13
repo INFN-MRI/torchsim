@@ -1,10 +1,10 @@
-"""Streaming a host-resident volume through a memory-limited device.
+"""Streaming a volume through a memory-limited device.
 
 Parameter mapping and model-based imaging scale with voxels, and the signal
 alone outgrows a recon server's spare VRAM well before the voxel counts get
-interesting. The contract here is that a volume stays on the host, moves
-through the device in chunks, and comes back with the same numbers a CPU run
-would have produced -- whatever chunk size the budget implies.
+interesting. The contract here is that a volume stays where the caller put it,
+moves through the device in chunks, and comes back with the same numbers a CPU
+run would have produced -- whatever chunk size the budget implies.
 
 The budget is the part worth pinning down: a chunk that does not divide the
 volume leaves a short final chunk, and the kernels stride the signal by the
@@ -17,13 +17,11 @@ import torch
 
 import blochsim._execution as _policy
 import blochsim.sequence._accelerators as accelerators
+from blochsim._execution import _Offload, chunk_voxels
 from blochsim.sequence import EpgEngine, offload
 from blochsim.sequence._accelerators import (
     _FLOAT_INPUTS,
     _bytes_per_voxel,
-    _chunk_voxels,
-    _Lane,
-    _Offload,
     _pack_events,
     _run_packed,
 )
@@ -165,9 +163,10 @@ def test_a_smaller_budget_makes_a_smaller_chunk():
         return _Offload((torch.device("cuda"),), budget, lanes)
 
     shape = (1, 200, 100, STATES, 1)  # trains, events, outputs, states, real axis
-    wide = _chunk_voxels(plan(1 << 30, 1), "forward", *shape)
-    narrow = _chunk_voxels(plan(1 << 20, 1), "forward", *shape)
-    shared = _chunk_voxels(plan(1 << 30, 4), "forward", *shape)
+    voxel = _bytes_per_voxel("forward", *shape)
+    wide = chunk_voxels(plan(1 << 30, 1), voxel)
+    narrow = chunk_voxels(plan(1 << 20, 1), voxel)
+    shared = chunk_voxels(plan(1 << 30, 4), voxel)
 
     assert wide > narrow >= 1
     assert shared * 4 <= wide * 1.01
@@ -183,17 +182,19 @@ def test_a_budget_too_small_for_one_voxel_still_runs():
     assert ((expected - actual).abs().max() / expected.abs().max()) < 1e-5
 
 
-def test_a_device_resident_volume_is_left_alone():
-    """Already on the card, so there is nothing to stream."""
-    events, prepared, outputs = _volume(512)
+def test_a_device_resident_volume_is_chunked_on_its_card_and_stays_there():
+    """Already on the card, so only the scratch of one chunk is added to it."""
+    events, prepared, outputs = _volume(4096)
+    expected = _run_packed(prepared, events, STATES, outputs, 0, real_axis=1)
     device_events = tuple(value.cuda() for value in events)
     device_tissue = tuple(value.cuda() for value in prepared)
-    with offload(["cuda"], budget_bytes=1 << 20):
+    with offload(["cuda"], budget_bytes=1 << 18):
         actual = _run_packed(
             device_tissue, device_events, STATES, outputs, 0, real_axis=1
         )
 
     assert actual.device.type == "cuda"
+    assert ((expected - actual.cpu()).abs().max() / expected.abs().max()) < 1e-5
 
 
 def test_an_empty_device_list_is_refused():
@@ -417,70 +418,6 @@ def test_the_adjoint_footprint_stays_inside_the_budget():
     assert resident <= budget * 1.1
 
 
-def test_the_adjoint_claims_its_buffers_once():
-    """Every buffer belongs to a lane, so nothing in the chunk loop allocates.
-
-    A hundred chunks therefore cost exactly what one costs.
-    """
-    voxels = 20_000
-    events, prepared, outputs = _volume(voxels)
-
-    def allocations(budget):
-        _adjoint(events, prepared, outputs, voxels, 1, 1, budget)
-        before = torch.cuda.memory_stats()["allocation.all.allocated"]
-        _adjoint(events, prepared, outputs, voxels, 1, 1, budget)
-        return torch.cuda.memory_stats()["allocation.all.allocated"] - before
-
-    plan = _Offload((torch.device("cuda"),), 4 << 20, 2)
-    shape = (1, int(events[1].numel()), outputs, STATES, 1)
-    assert voxels > 50 * _chunk_voxels(plan, "adjoint", *shape)
-    assert allocations(4 << 20) == allocations(1 << 30)
-
-
-# --- staging a chunk on the device ---
-
-
-def test_a_lane_does_not_overwrite_a_chunk_still_in_flight():
-    """A staged chunk is read asynchronously, long after the host wrote it.
-
-    Nothing orders the host's next write against that read but the lane, so
-    with a busy stream the first chunk has to survive the second being staged.
-    """
-    lane = _Lane(torch.device("cuda"), 4096, 1, 8, STATES, 1)
-    first = torch.full((4096, 8), 1 + 1j, dtype=torch.complex64)
-    second = torch.full((4096, 8), 2 + 2j, dtype=torch.complex64)
-    ballast = torch.randn((1024, 1024), device="cuda")
-    with torch.cuda.stream(lane.stream):
-        for _ in range(40):
-            ballast = ballast @ ballast
-        landed = lane.send(first)
-        snapshot = landed.clone()
-        lane.send(second)
-    torch.cuda.current_stream().wait_stream(lane.stream)
-    torch.cuda.synchronize()
-
-    assert snapshot.eq(1 + 1j).all()
-
-
-def test_lanes_stage_through_buffers_of_their_own():
-    """Two lanes run at once, so one buffer between them would be a race."""
-    lanes = [_Lane(torch.device("cuda"), 256, 1, 8, STATES, 1) for _ in range(2)]
-    piece = torch.zeros((256, 8), dtype=torch.complex64)
-    for lane in lanes:
-        with torch.cuda.stream(lane.stream):
-            lane.send(piece)
-    torch.cuda.synchronize()
-
-    assert lanes[0].staging.data_ptr() != lanes[1].staging.data_ptr()
-
-
-def test_a_pass_that_only_brings_signals_home_stages_nothing():
-    """Pinned memory is expensive to claim; the forward path never needs it."""
-    lane = _Lane(torch.device("cuda"), 256, 1, 8, STATES, 1)
-
-    assert lane.staging is None
-
-
 def _shim_volume(voxels, trains=1):
     """A spoiled train whose pulses are split across two transmit shims.
 
@@ -696,7 +633,7 @@ def test_a_host_resident_first_order_adjoint_follows_the_execution_target():
     assert worst < 1e-4
 
 
-def test_a_host_adjoint_with_no_policy_stays_on_the_host_kernel():
+def test_a_small_host_adjoint_stays_on_the_host_kernel():
     """The forward-over-reverse kernel carries a direction the first-order
     pass has no use for, so reaching the devices through it must not become
     what an unqualified call does.
@@ -721,27 +658,19 @@ def test_a_host_adjoint_with_no_policy_stays_on_the_host_kernel():
     assert not taken
 
 
-def test_a_backward_through_the_public_api_streams():
+def test_a_backward_through_the_public_api_streams(monkeypatch):
     """The level the gap was reported at.
 
     ``torch.autograd`` reaches the adjoint by a route of its own, and it is
     the one an ordinary user's ``.backward()`` takes.
     """
-    from blochsim.sequence import TissueProperties
+    from blochsim.sequence import TissueProperties, _epg_gpu
 
     voxels = 20_000
     reached = []
-    forwarded = accelerators._run_offloaded_vjp
     second_order = []
-    around = accelerators._run_offloaded_vjp_jvp
-
-    def spy(*arguments, **options):
-        reached.append(True)
-        return forwarded(*arguments, **options)
-
-    def watch(*arguments, **options):
-        second_order.append(True)
-        return around(*arguments, **options)
+    forwarded = accelerators._card_vjp
+    around = _epg_gpu.simulate_vjp_jvp
 
     def gradients():
         t1 = torch.linspace(600.0, 1400.0, voxels, requires_grad=True)
@@ -764,16 +693,24 @@ def test_a_backward_through_the_public_api_streams():
         return t1.grad, t2.grad
 
     expected = gradients()
-    accelerators._run_offloaded_vjp = spy
-    accelerators._run_offloaded_vjp_jvp = watch
-    try:
-        with offload(["cuda"], budget_bytes=1 << 24):
-            actual = gradients()
-    finally:
-        accelerators._run_offloaded_vjp = forwarded
-        accelerators._run_offloaded_vjp_jvp = around
+    monkeypatch.setattr(
+        accelerators,
+        "_card_vjp",
+        lambda *arguments, **options: (
+            reached.append(True) or forwarded(*arguments, **options)
+        ),
+    )
+    monkeypatch.setattr(
+        _epg_gpu,
+        "simulate_vjp_jvp",
+        lambda *arguments, **options: (
+            second_order.append(True) or around(*arguments, **options)
+        ),
+    )
+    with offload(["cuda"], budget_bytes=1 << 24):
+        actual = gradients()
 
-    assert reached, "the backward never reached the streamed route"
+    assert reached, "the backward never reached the chunked route"
     # And took the kernel written for it, rather than the pass that carries a
     # forward direction nobody asked for.
     assert not second_order
@@ -781,29 +718,27 @@ def test_a_backward_through_the_public_api_streams():
 
 
 @pytest.mark.parametrize("trains", [1, 3])
-def test_a_streamed_first_order_adjoint_takes_its_own_kernel(trains):
+def test_a_streamed_first_order_adjoint_takes_its_own_kernel(trains, monkeypatch):
     """A chunk of a first-order adjoint is a first-order adjoint, so streaming
     must not cost the kernel written for it.
     """
-    from blochsim.sequence import _accelerators as accelerators
+    from blochsim.sequence import _epg_gpu
 
     voxels = 2000
     events, prepared, outputs = _volume(voxels, trains=trains)
     wanted = _inside_the_subspace()
     second_order = []
-    around = accelerators._run_offloaded_vjp_jvp
-
-    def watch(*arguments, **options):
-        second_order.append(True)
-        return around(*arguments, **options)
-
-    accelerators._run_offloaded_vjp_jvp = watch
-    try:
-        streamed = _first_order_adjoint(
-            events, prepared, outputs, voxels, trains, wanted, 1 << 20
-        )
-    finally:
-        accelerators._run_offloaded_vjp_jvp = around
+    around = _epg_gpu.simulate_vjp_jvp
+    monkeypatch.setattr(
+        _epg_gpu,
+        "simulate_vjp_jvp",
+        lambda *arguments, **options: (
+            second_order.append(True) or around(*arguments, **options)
+        ),
+    )
+    streamed = _first_order_adjoint(
+        events, prepared, outputs, voxels, trains, wanted, 1 << 20
+    )
 
     assert not second_order
     assert max(float(value.abs().max()) for value in streamed) > 0.0

@@ -1,14 +1,15 @@
 """Where a per-voxel workload runs, and how it gets there.
 
 Simulating a volume and mapping one are both per-voxel, and both outgrow a
-card long before they outgrow a host. What to do about that is one policy --
-stay on the host when a launch would not repay itself, cross whole when the
-problem fits, stream through in chunks when it does not, and spread across as
-many cards as there are -- and it is written once, here.
+card long before they outgrow a host. The policy is written once, here: a
+problem too small to repay a launch runs where its tensors are, and a larger
+one is cut into chunks of voxels that are dealt to every CUDA device in turn,
+each chunk sized so the cards hold a bounded share of it at a time, and its
+answer gathered on the device the caller's tensors are on.
 
 A workload joins by answering three questions: how much work it is, what one
 voxel costs on the device, and what to do with a chunk. Choosing the devices,
-sizing the chunk to a memory budget, the pinned staging, and the streams that
+sizing the chunk to the free memory, the pinned staging, and the streams that
 let one chunk's transfer overlap another chunk's arithmetic are the same
 whatever the kernel underneath computes.
 
@@ -22,7 +23,7 @@ from __future__ import annotations
 __all__ = ["execution", "offload"]
 
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,16 +59,19 @@ class _Execution:
 
 @dataclass(frozen=True)
 class _Choice:
-    """What to do with one particular problem."""
+    """Where one particular problem runs: devices, chunk width and lanes."""
 
-    where: str  # "cpu", "upfront" or "stream"
-    devices: tuple[torch.device, ...] = ()
-    offload: _Offload | None = None
+    devices: tuple[torch.device, ...]
+    chunk: int
+    lanes: int = 1
 
 
+#: Whole on the host, for a problem whose tensors are elsewhere.
+_ON_HOST = _Choice((torch.device("cpu"),), 1 << 62)
+
+_DEFAULT = _Execution("auto", (), None, None, 1, _RESERVE_BYTES)
 _OFFLOAD: _Offload | None = None
-_EXECUTION: _Execution | None = None
-_ON_HOST = _Choice("cpu")
+_EXECUTION: _Execution | None = _DEFAULT
 
 
 def policy() -> _Execution | None:
@@ -78,6 +82,28 @@ def policy() -> _Execution | None:
 def offloading() -> _Offload | None:
     """The offload plan in force, or ``None`` if there is none."""
     return _OFFLOAD
+
+
+def snapshot() -> tuple[_Execution | None, _Offload | None]:
+    """The policy and offload plan in force, to be put back with :func:`restored`."""
+    return _EXECUTION, _OFFLOAD
+
+
+@contextmanager
+def restored(state: tuple[_Execution | None, _Offload | None]) -> Iterator[None]:
+    """Run inside the block under a policy taken by :func:`snapshot`.
+
+    A backward pass runs after the call that recorded it has returned; it
+    follows the policy that call ran under, not whatever is in force when the
+    gradient is asked for.
+    """
+    global _EXECUTION, _OFFLOAD
+    previous = (_EXECUTION, _OFFLOAD)
+    _EXECUTION, _OFFLOAD = state
+    try:
+        yield
+    finally:
+        _EXECUTION, _OFFLOAD = previous
 
 
 @contextmanager
@@ -120,13 +146,13 @@ def offload(
     budget_bytes: int = _DEFAULT_BUDGET_BYTES,
     lanes: int = 1,
 ) -> Iterator[None]:
-    """Stream host-resident volumes through CUDA devices inside the block.
+    """Stream every per-voxel workload through CUDA devices inside the block.
 
-    A per-voxel workload (a simulation or a mapping over many voxels) whose
-    tensors are on the host runs on ``devices`` in chunks of voxels sized to
-    ``budget_bytes``, and the result returns on the host. Host-to-device
-    transfers of one chunk overlap the arithmetic of another. Blocks nest; the
-    previous plan is restored on exit.
+    A per-voxel workload (a simulation or a mapping over many voxels) runs on
+    ``devices`` in chunks of voxels sized to ``budget_bytes``, whatever its
+    size and wherever its tensors are, and the result returns to the device
+    the tensors came from. Transfers of one chunk overlap the arithmetic of
+    another. Blocks nest; the previous plan is restored on exit.
 
     Parameters
     ----------
@@ -175,22 +201,21 @@ def execution(
 ) -> Iterator[None]:
     """Set where per-voxel work runs inside the block.
 
-    With ``target="auto"``, work too small to repay a device launch stays on
-    the CPU, work that fits in the free memory of the CUDA devices is sent
-    whole, and larger work is streamed in chunks. Outside a block, work runs
-    where its tensors are. Blocks nest; the previous policy is restored on
-    exit.
+    With ``target="auto"``, which is also the policy outside any block, work
+    too small to repay a device launch runs where its tensors are, and larger
+    work is cut into chunks of voxels spread over every CUDA device. Blocks
+    nest; the previous policy is restored on exit.
 
     Parameters
     ----------
     target : {"auto", "cpu"}, torch.device or sequence of device, default="auto"
         ``"auto"`` decides per call from the free memory of all visible CUDA
         devices. ``"cpu"`` (or CPU devices only) keeps work on the host.
-        Named CUDA devices restrict the choice to them.
+        Named CUDA devices restrict the choice to them, whatever the size.
     stream : bool, default=None
-        ``True`` always streams in chunks. ``False`` requires the whole volume
-        to be resident and fails when it does not fit. ``None`` decides per
-        call.
+        ``True`` sizes chunks to the budget alone. ``False`` gives each device
+        one even share and fails when it does not fit. ``None`` takes the
+        narrower of the two.
     budget_bytes : int, default=None
         Cap on device memory held while streaming, in bytes. ``None`` uses the
         smallest free memory among the devices less ``reserve_bytes``.
@@ -244,9 +269,16 @@ def _free_bytes(device: torch.device, reserve: int) -> int:
     return max(0, free - reserve)
 
 
+def _indexed(device: torch.device) -> torch.device:
+    """``device`` with its index named, so the same card compares equal."""
+    if device.type == "cuda" and device.index is None:
+        return torch.device("cuda", torch.cuda.current_device())
+    return device
+
+
 def _candidate_devices(plan: _Execution) -> tuple[torch.device, ...]:
     if plan.devices:
-        return plan.devices
+        return tuple(_indexed(device) for device in plan.devices)
     return tuple(
         torch.device("cuda", index) for index in range(torch.cuda.device_count())
     )
@@ -258,14 +290,26 @@ def _candidate_devices(plan: _Execution) -> tuple[torch.device, ...]:
 PER_VOXEL_CROSSOVER = 2_000_000.0
 
 
+def chunk_voxels(plan: _Offload, bytes_per_voxel: int) -> int:
+    """Largest voxel chunk whose buffers fit the budget, across every lane."""
+    across = plan.lanes * len(plan.devices)
+    return max(1, plan.budget_bytes // (across * max(1, bytes_per_voxel)))
+
+
 def choose(
     *,
     work: int,
     voxels: int,
     bytes_per_voxel: int,
     crossover: float,
+    home: torch.device,
 ) -> _Choice | None:
     """Decide where one per-voxel problem runs, given the policy in force.
+
+    Under ``"auto"`` a problem below the crossover runs where its tensors are.
+    Past it, the voxels are cut into chunks and dealt to every CUDA device in
+    turn: a chunk is as wide as the smallest card's free memory allows, and no
+    wider than an even share, so every card has work.
 
     Parameters
     ----------
@@ -278,98 +322,221 @@ def choose(
         Device memory one voxel needs for this pass.
     crossover:
         The work below which a launch does not repay itself.
+    home:
+        The device the problem's tensors are on, where the answer goes back.
 
     Returns
     -------
     _Choice or None
-        ``None`` means no policy is in force and the call stands as written:
-        it runs wherever its tensors already are.
+        ``None`` means the call stands as written: it runs whole wherever its
+        tensors already are.
     """
+    if voxels == 0:
+        return None
+    forced = _OFFLOAD
+    if forced is not None:
+        chunk = min(voxels, chunk_voxels(forced, bytes_per_voxel))
+        devices = tuple(_indexed(device) for device in forced.devices)
+        return _Choice(devices, max(1, chunk), forced.lanes)
     plan = _EXECUTION
     if plan is None:
         return None
-    if plan.target == "cpu":
-        return _ON_HOST
-    if not torch.cuda.is_available():
-        return _ON_HOST
-
+    if plan.target == "cpu" or not torch.cuda.is_available():
+        return None if home.type == "cpu" else _ON_HOST
     devices = _candidate_devices(plan)
     if not devices:
-        return _ON_HOST
-
+        return None if home.type == "cpu" else _ON_HOST
     if plan.target == "auto" and work < crossover:
-        return _ON_HOST
+        return None
 
-    footprint = voxels * bytes_per_voxel
-    free = [_free_bytes(device, plan.reserve_bytes) for device in devices]
-
-    if plan.stream is not True:
-        # Fewest cards that can hold it, so the rest stay out of the way.
-        for count in range(1, len(devices) + 1):
-            if sum(free[:count]) >= footprint:
-                return _Choice("upfront", devices[:count])
-        if plan.stream is False:
-            # Asked for resident and it will not fit; let the allocator say so
-            # rather than silently doing something else.
-            return _Choice("upfront", devices)
-
-    budget = plan.budget_bytes or max(1, min(free) if free else 0)
-    return _Choice("stream", devices, _Offload(devices, max(1, budget), plan.lanes))
+    share = -(-voxels // len(devices))
+    if plan.stream is False:
+        chunk = share
+    else:
+        if plan.budget_bytes is not None:
+            budget = plan.budget_bytes // len(devices)
+        else:
+            budget = min(_free_bytes(device, plan.reserve_bytes) for device in devices)
+        fits = max(1, budget // (plan.lanes * max(1, bytes_per_voxel)))
+        chunk = min(voxels, fits) if plan.stream else min(share, fits)
+    if len(devices) == 1 and devices[0] == home and chunk >= voxels:
+        return None
+    return _Choice(devices, max(1, chunk), plan.lanes)
 
 
-def chunk_voxels(plan: _Offload, bytes_per_voxel: int) -> int:
-    """Largest voxel chunk whose buffers fit the budget, across every lane."""
-    across = plan.lanes * len(plan.devices)
-    return max(1, plan.budget_bytes // (across * max(1, bytes_per_voxel)))
+def one_device(
+    *,
+    work: int,
+    voxels: int,
+    bytes_per_voxel: int,
+    crossover: float,
+    home: torch.device,
+) -> torch.device | None:
+    """Where a chunked reduction should run, under the policy in force.
+
+    A reduction keeps small accumulators in one place and feeds them a chunk
+    at a time, so unlike a per-voxel map it wants a device rather than a plan:
+    the chunking is already the caller's, and what crosses is the chunk. The
+    arguments mean what they mean for :func:`choose`.
+
+    Returns
+    -------
+    torch.device or None
+        ``None`` means the caller should run where its tensors already are.
+    """
+    choice = choose(
+        work=work,
+        voxels=voxels,
+        bytes_per_voxel=bytes_per_voxel,
+        crossover=crossover,
+        home=home,
+    )
+    if choice is None:
+        return None
+    return choice.devices[0]
 
 
-class Lane:
-    """One device stream, and the pinned buffer its transfers go through."""
+def cut(
+    value: torch.Tensor, axis: int, begin: int, end: int, device: torch.device
+) -> torch.Tensor:
+    """One chunk of ``value`` along its voxel axis, contiguous on ``device``.
+
+    A chunk leaving the host goes through pinned memory, so its copy runs on
+    the chunk's stream and overlaps whatever the device is already doing.
+    """
+    piece = value.narrow(axis, begin, end - begin).contiguous()
+    if piece.device == device:
+        return piece
+    if piece.device.type == "cpu" and device.type == "cuda":
+        return piece.pin_memory().to(device, non_blocking=True)
+    if device.type == "cpu":
+        return piece.to(device)
+    return piece.to(device, non_blocking=True)
+
+
+def in_chunks(
+    choice: _Choice,
+    voxels: int,
+    home: torch.device,
+    pieces: Callable[[int, int, torch.device], Any],
+    body: Callable[[Any, torch.device], Sequence[torch.Tensor]],
+    axes: Callable[[int, torch.Tensor, int], int | None],
+) -> tuple[torch.Tensor, ...]:
+    """Run a per-voxel body a chunk at a time and assemble it on ``home``.
+
+    Chunks are dealt to the devices' lanes in turn, each lane on a stream of
+    its own, so one chunk's transfers overlap another's arithmetic and every
+    card computes at once. Nothing in the loop reads a device result, which is
+    what lets the host run ahead and keep the lanes fed.
+
+    Parameters
+    ----------
+    choice:
+        The devices, chunk width and lanes from :func:`choose`.
+    voxels:
+        Length of the voxel axis being chunked.
+    home:
+        Where the assembled answers go.
+    pieces:
+        ``pieces(begin, end, device)`` returns the chunk's inputs on
+        ``device``.
+    body:
+        ``body(inputs, device)`` returns the chunk's answers.
+    axes:
+        ``axes(index, answer, width)`` names the voxel axis of the
+        ``index``-th answer of a chunk ``width`` voxels wide, or ``None`` for
+        an answer every chunk contributes to, which is summed.
+
+    Returns
+    -------
+    tuple of torch.Tensor
+        The answers, on ``home``.
+    """
+    # The answers are allocated on the stream the caller queues on, which the
+    # lanes' own streams are not, so the caller can use them once the loop ends.
+    allocating = (
+        torch.cuda.stream(torch.cuda.current_stream(home))
+        if home.type == "cuda"
+        else nullcontext()
+    )
+    lanes = [_Lane(device) for device in choice.devices for _ in range(choice.lanes)]
+    width = choice.chunk
+    placed: dict[int, tuple[int | None, torch.Tensor | list[torch.Tensor]]] = {}
+    count = 0
+    for index, begin in enumerate(range(0, voxels, width)):
+        end = min(voxels, begin + width)
+        lane = lanes[index % len(lanes)]
+        with lane.running(), unpoliced():
+            answers = body(pieces(begin, end, lane.device), lane.device)
+            count = len(answers)
+            for position, answer in enumerate(answers):
+                if position not in placed:
+                    axis = axes(position, answer, end - begin)
+                    if axis is None:
+                        placed[position] = (None, [])
+                    else:
+                        shape = list(answer.shape)
+                        shape[axis] = voxels
+                        with allocating:
+                            whole = torch.empty(
+                                shape,
+                                dtype=answer.dtype,
+                                device=home,
+                                pin_memory=home.type == "cpu"
+                                and lane.device.type == "cuda",
+                            )
+                        placed[position] = (axis, whole)
+                axis, held = placed[position]
+                if axis is None:
+                    held.append(answer)
+                else:
+                    held.narrow(axis, begin, end - begin).copy_(
+                        answer, non_blocking=True
+                    )
+            # Dropped before the next chunk is cut, so a lane holds one chunk.
+            del answers, answer
+    for lane in lanes:
+        lane.finish()
+    answers = []
+    for position in range(count):
+        axis, held = placed[position]
+        if axis is None:
+            total = held[0].to(home)
+            for answer in held[1:]:
+                total = total + answer.to(home)
+            answers.append(total)
+        else:
+            answers.append(held)
+    return tuple(answers)
+
+
+class _Lane:
+    """One stream on one device, which the chunks dealt to it are queued on."""
 
     def __init__(self, device: torch.device) -> None:
         self.device = device
-        self.stream = torch.cuda.Stream(device=device)
-        self.drained = torch.cuda.Event()
-        # Claimed by the first :meth:`stage`; a pass that only brings results
-        # home never needs it.
-        self.staging: torch.Tensor | None = None
+        self.stream = None
+        if device.type == "cuda":
+            self.stream = torch.cuda.Stream(device=device)
+            # Whatever the caller queued before the loop -- the inputs among
+            # it -- is finished before this lane reads anything.
+            self.stream.wait_stream(torch.cuda.current_stream(device))
 
-    def upload(self, piece: torch.Tensor) -> torch.Tensor:
-        """One chunk on this lane's device.
+    @contextmanager
+    def running(self) -> Iterator[None]:
+        """Queue on this lane's stream inside the block."""
+        if self.stream is None:
+            yield
+            return
+        with torch.cuda.device(self.device), torch.cuda.stream(self.stream):
+            yield
 
-        A chunk coming from the host goes through pinned memory so the copy
-        can overlap another chunk's arithmetic; one already on a device is
-        left where it is.
-        """
-        if piece.device == self.device:
-            return piece
-        if piece.device.type != "cpu":
-            return piece.to(self.device)
-        landed = torch.empty(piece.shape, dtype=piece.dtype, device=self.device)
-        return self.stage(piece, landed)
-
-    def stage(self, piece: torch.Tensor, landed: torch.Tensor) -> torch.Tensor:
-        """Copy one host chunk into a device buffer, and return it there.
-
-        The staging buffer is pinned, so the transfer runs asynchronously and
-        the stream reads the buffer long after the host wrote it. Overwriting
-        it for the next chunk therefore has to wait for that read.
-        """
-        size = piece.numel()
-        if (
-            self.staging is None
-            or self.staging.numel() < size
-            or self.staging.dtype != piece.dtype
-        ):
-            self.staging = torch.empty(
-                size, dtype=piece.dtype, device="cpu", pin_memory=True
-            )
-        self.drained.synchronize()
-        host = self.staging[:size].view(piece.shape)
-        host.copy_(piece)
-        landed.copy_(host, non_blocking=True)
-        self.drained.record(torch.cuda.current_stream(self.device))
-        return landed
+    def finish(self) -> None:
+        """Make the device's own stream wait for this lane, then the host."""
+        if self.stream is None:
+            return
+        torch.cuda.current_stream(self.device).wait_stream(self.stream)
+        self.stream.synchronize()
 
 
 def per_voxel(
@@ -405,123 +572,26 @@ def per_voxel(
     -------
     tuple of torch.Tensor, or None
         The assembled answers, on the device the inputs came from. ``None``
-        means no policy is in force and the caller should proceed as written.
+        means the caller should proceed as written.
     """
     voxels = int(inputs[0].shape[0])
-    choice = choose(
-        work=work,
-        voxels=voxels,
-        bytes_per_voxel=bytes_per_voxel,
-        crossover=crossover,
-    )
-    if choice is None:
-        return None
     home = inputs[0].device
-    if choice.where == "cpu":
-        gathered = body([value.cpu() for value in inputs], torch.device("cpu"))
-    elif choice.where == "upfront":
-        gathered = _spread(inputs, voxels, choice.devices, body)
-    else:
-        gathered = _streamed(inputs, voxels, choice.offload, bytes_per_voxel, body)
-    return tuple(value.to(home) for value in gathered)
-
-
-def one_device(
-    *,
-    work: int,
-    voxels: int,
-    bytes_per_voxel: int,
-    crossover: float,
-) -> torch.device | None:
-    """Where a chunked reduction should run, under the policy in force.
-
-    A reduction keeps small accumulators in one place and feeds them a chunk
-    at a time, so unlike a per-voxel map it wants a device rather than a plan:
-    the chunking is already the caller's, and what crosses is the chunk. The
-    arguments mean what they mean for :func:`per_voxel`.
-
-    Returns
-    -------
-    torch.device or None
-        ``None`` means no policy is in force and the caller should run where
-        its tensors already are.
-    """
     choice = choose(
         work=work,
         voxels=voxels,
         bytes_per_voxel=bytes_per_voxel,
         crossover=crossover,
+        home=home,
     )
     if choice is None:
         return None
-    if choice.where == "cpu":
-        return torch.device("cpu")
-    return choice.devices[0]
-
-
-def _spread(
-    inputs: Sequence[torch.Tensor],
-    voxels: int,
-    devices: tuple[torch.device, ...],
-    body: Callable[[Sequence[torch.Tensor], torch.device], tuple[torch.Tensor, ...]],
-) -> tuple[torch.Tensor, ...]:
-    """One share of the voxels to each card, resident, then joined."""
-    share = -(-voxels // len(devices))
-    pieces = []
-    for index, device in enumerate(devices):
-        begin = index * share
-        end = min(voxels, begin + share)
-        if begin >= end:
-            break
-        answer = body([value[begin:end].to(device) for value in inputs], device)
-        pieces.append(tuple(value.cpu() for value in answer))
-    return _joined(pieces)
-
-
-def _streamed(
-    inputs: Sequence[torch.Tensor],
-    voxels: int,
-    plan: _Offload,
-    bytes_per_voxel: int,
-    body: Callable[[Sequence[torch.Tensor], torch.device], tuple[torch.Tensor, ...]],
-) -> tuple[torch.Tensor, ...]:
-    """The volume through the cards a chunk at a time, transfers overlapping."""
-    chunk = max(1, min(voxels, chunk_voxels(plan, bytes_per_voxel)))
-    lanes = [Lane(device) for device in plan.devices for _ in range(plan.lanes)]
-    pieces: list[Any] = [None] * ((voxels + chunk - 1) // chunk)
-
-    def run(lane: Lane, begin: int, end: int) -> None:
-        moved = [lane.upload(value[begin:end]) for value in inputs]
-        answer = body(moved, lane.device)
-        pieces[begin // chunk] = tuple(value.cpu() for value in answer)
-
-    stream_chunks(plan, voxels, chunk, lanes, run)
-    return _joined([piece for piece in pieces if piece is not None])
-
-
-def _joined(pieces: Sequence[tuple[torch.Tensor, ...]]) -> tuple[torch.Tensor, ...]:
-    """Each chunk's answers, concatenated along the voxel axis."""
-    return tuple(torch.cat(column, dim=0) for column in zip(*pieces, strict=True))
-
-
-def stream_chunks(
-    plan: _Offload,
-    voxels: int,
-    chunk: int,
-    lanes: Sequence[Any],
-    body: Callable[[Any, int, int], None],
-) -> None:
-    """Walk the volume one chunk per lane, then wait for every stream.
-
-    The launches are asynchronous, so the loop runs ahead of the devices and a
-    chunk's transfer can proceed while another chunk computes.
-    """
-    for index, begin in enumerate(range(0, voxels, chunk)):
-        end = min(voxels, begin + chunk)
-        lane = lanes[index % len(lanes)]
-        with torch.cuda.stream(lane.stream):
-            body(lane, begin, end)
-    for lane in lanes:
-        torch.cuda.current_stream(lane.device).wait_stream(lane.stream)
-    for device in plan.devices:
-        torch.cuda.synchronize(device)
+    return in_chunks(
+        choice,
+        voxels,
+        home,
+        lambda begin, end, device: [
+            cut(value, 0, begin, end, device) for value in inputs
+        ],
+        body,
+        lambda _position, _answer, _width: 0,
+    )

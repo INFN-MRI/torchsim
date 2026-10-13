@@ -1139,27 +1139,25 @@ def declared_physics():
 
 def execution_policy():
     """Where the per-voxel work goes, decided per call."""
-    figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.4))
-    _box(axis, 0.0, 1.15, 2.0, 1.0, "the problem", "voxels x events", MUTED)
+    figure, axis = plt.subplots(figsize=(PAGE_WIDTH, 3.0))
+    _box(axis, 0.0, 0.55, 2.0, 1.0, "the problem", "voxels x events", MUTED)
     choices = [
-        (2.9, 2.5, "stay on the host", "too little work to repay a launch", MUTED),
-        (2.9, 1.25, "cross whole", "fits in one card's free memory", ACCENT),
-        (2.9, 0.0, "spread across cards", "fewest cards that hold it", LONGITUDINAL),
-        (2.9, -1.25, "stream in chunks", "chunks sized to budget_bytes", TRANSVERSE),
+        (2.9, 1.25, "run where it is", "too little work to repay a launch", MUTED),
+        (2.9, -0.15, "chunks over every card", "sized to the free memory", ACCENT),
     ]
     for x, y, title, subtitle, color in choices:
         _box(axis, x, y, 3.8, 1.0, title, subtitle, color)
-        _arrow(axis, (2.1, 1.6), (x - 0.1, y + 0.5))
+        _arrow(axis, (2.1, 1.05), (x - 0.1, y + 0.5))
     axis.text(
         7.0,
-        1.65,
-        'execution("auto")\ndecides per call;\noutside a block, a call\n'
-        "runs where its\ntensors are",
+        1.05,
+        'execution="auto"\ndecides per call;\nthe answer comes back\n'
+        "where the tensors are",
         color=INK,
         va="center",
         fontsize=11,
     )
-    axis.set(xlim=(-0.3, 10.6), ylim=(-1.5, 3.8))
+    axis.set(xlim=(-0.3, 10.6), ylim=(-0.4, 2.5))
     axis.axis("off")
     return figure
 
