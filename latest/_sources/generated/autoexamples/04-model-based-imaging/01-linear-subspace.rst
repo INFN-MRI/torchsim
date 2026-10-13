@@ -379,7 +379,7 @@ second time.
 
  .. code-block:: none
 
-    iterative subspace     0.8s   T2 error  16.9 ms (13.1%)
+    iterative subspace     1.0s   T2 error  16.9 ms (13.1%)
 
     tensor([[ 51.9840,  73.3066,  67.2144,  ...,  86.2525,  60.3607,  35.2305],
             [ 20.0000,  23.0461,  30.6613,  ..., 102.2445,  41.3226,  70.2605],
@@ -458,7 +458,7 @@ What this Application did, stated the way you would ask an agent for it:
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.138 seconds)
+   **Total running time of the script:** (0 minutes 2.784 seconds)
 
 
 .. _sphx_glr_download_generated_autoexamples_04-model-based-imaging_01-linear-subspace.py:

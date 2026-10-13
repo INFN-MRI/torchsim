@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**01:43.375** total execution time for 1 file **from generated/autoexamples/05-misc**:
+**02:13.058** total execution time for 1 file **from generated/autoexamples/05-misc**:
 
 .. container::
 
@@ -33,5 +33,5 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_generated_autoexamples_05-misc_01-synthetic-data.py` (``01-synthetic-data.py``)
-     - 01:43.375
+     - 02:13.058
      - 0.0
