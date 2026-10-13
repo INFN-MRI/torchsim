@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from blochsim.estimators import DictionaryMatcher
-from blochsim.estimators._grouped import Grouping
+from blochsim.estimators._grouped import Grouping, best_of
 from blochsim.simulators import MRFSimulator
 
 
@@ -323,3 +323,13 @@ def test_a_tighter_threshold_can_prune_away_the_right_group() -> None:
 
     assert misses(5e-3) > 0
     assert misses(0.05) == 0
+
+
+def test_one_best_candidate_is_the_first_of_topk() -> None:
+    generator = torch.Generator().manual_seed(1)
+    scores = torch.randn(500, 300, generator=generator)
+    value, index = best_of(scores, 1)
+    reference = torch.topk(scores, 1, dim=-1)
+    torch.testing.assert_close(value, reference.values)
+    torch.testing.assert_close(index, reference.indices)
+    assert best_of(scores, 3)[0].shape == (500, 3)
