@@ -1,0 +1,73 @@
+/* Keep the documentation column comfortably readable. */
+.bd-main .bd-content .bd-article-container { max-width: 58rem; }
+.sig { overflow-wrap: anywhere; }
+.sphx-glr-thumbcontainer { min-height: 210px; }
+
+/* Documentation figures are rendered on a transparent canvas with a
+   light/dark-safe foreground, so do not put them on a white card or dim them. */
+html[data-theme="dark"] .bd-content img.sphx-glr-single-img,
+html[data-theme="dark"] .bd-content img.sphx-glr-multi-img,
+html[data-theme="dark"] .bd-content figure img {
+  background-color: transparent !important;
+  filter: none;
+}
+
+/* A cell with several gallery figures reads better vertically at page width. */
+ul.sphx-glr-horizontal li { display: block; }
+.bd-content img.sphx-glr-multi-img {
+  display: block;
+  margin: 0 auto 1rem;
+  max-width: 100%;
+}
+
+/* TL;DR blocks on explanation pages. */
+.admonition.tldr {
+  border-color: var(--pst-color-primary);
+}
+.admonition.tldr > .admonition-title {
+  background-color: var(--pst-color-primary-bg);
+}
+.admonition.tldr > .admonition-title::after {
+  color: var(--pst-color-primary);
+}
+.admonition.tldr ul { margin-bottom: 0; }
+
+/* A text block is a spec to paste into an agent: its copy button is shown
+   without hovering, which a touch screen cannot do. */
+div.highlight-text .copybtn {
+  opacity: 1;
+}
+
+/* Body text is justified, with hyphenation to keep the word spacing even.
+   Table cells and admonition titles stay left-aligned. */
+.bd-article p,
+.bd-article li {
+  text-align: justify;
+  hyphens: auto;
+}
+.bd-article td p,
+.bd-article th p,
+.bd-article .admonition-title {
+  text-align: left;
+}
+
+/* A capability's code and test, folded under its statement. */
+.bd-article .capabilities details.sd-dropdown {
+  margin: -0.4em 0 0.6em;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+.bd-article .capabilities details.sd-dropdown > summary.sd-card-header {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 0.85em;
+  color: var(--pst-color-text-muted);
+}
+.bd-article .capabilities details.sd-dropdown .sd-card-body {
+  padding: 0.2em 0 0;
+  font-size: 0.9em;
+  text-align: left;
+  color: var(--pst-color-text-muted);
+}
