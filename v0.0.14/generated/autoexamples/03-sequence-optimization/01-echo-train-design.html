@@ -1,0 +1,1012 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Echo train design for sharpness &#8212; BlochSim Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=4418a689" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery.css?v=c83e6b79" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
+
+    <script src="../../../_static/documentation_options.js?v=be36e789"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../_static/sg-tags.js?v=d80f6fa4"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'generated/autoexamples/03-sequence-optimization/01-echo-train-design';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.20.0';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://pulserver.github.io/blochsim/versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'v0.0.14';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner =
+            true;
+        </script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <link rel="canonical" href="https://pulserver.github.io/blochsim/v0.0.14/generated/autoexamples/03-sequence-optimization/01-echo-train-design.html" />
+    <link rel="icon" href="../../../_static/blochsim-mark.svg"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Joint relaxometry protocol design" href="02-joint-relaxometry.html" />
+    <link rel="prev" title="PERK: kernel ridge regression" href="../02-parameter-inference/04-perk.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="v0.0.14" />
+  
+    
+    <script src="../../../_static/searchtools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <script src="../../../searchindex.js"></script>
+  
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/blochsim-mark.svg" class="logo__image only-light" alt="blochsim"/>
+    <img src="../../../_static/blochsim-mark-dark.svg" class="logo__image only-dark pst-js-only" alt="blochsim"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+<div class="version-switcher__container dropdown pst-js-only">
+  <button id="pst-version-switcher-button-2"
+    type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-controls="pst-version-switcher-list-2"
+    aria-label="Version switcher list"
+  >
+    Choose version  <!-- this text may get changed later by javascript -->
+    <span class="caret"></span>
+  </button>
+  <div id="pst-version-switcher-list-2"
+    class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox" aria-labelledby="pst-version-switcher-button-2">
+    <!-- dropdown will be populated by javascript on page load -->
+  </div>
+</div></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    Homepage
+                </a>
+            </li>
+        </ul>
+        <ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer-guide/index.html">Developer guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/terminology.html">Terminology</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../developer-guide/internals/index.html">Internals</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../../../examples/index.html">Examples</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../examples/course.html">Course</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/01-first-simulation.html">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../01-framework/05-custom-operator.html">5. Custom operator</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="../../../examples/applications.html">Applications</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/01-dictionary-matching.html">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../02-parameter-inference/04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../api/index.html">API reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/model.html">Signal models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/license.html">License</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/related.html">Related Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/contributors.html">Contributors</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/edit/main/generated/autoexamples/03-sequence-optimization/01-echo-train-design.rst" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/issues/new?title=Issue%20on%20page%20%2Fgenerated/autoexamples/03-sequence-optimization/01-echo-train-design.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../../_sources/generated/autoexamples/03-sequence-optimization/01-echo-train-design.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Echo train design for sharpness</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#design-problem">Design problem</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blur">Blur</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#echo-train">Echo train</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cost">Cost</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#optimization">Optimization</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#image">Image</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#segmented-protocol">Segmented protocol</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <div class="sphx-glr-download-link-note admonition note">
+<p class="admonition-title">Note</p>
+<p><a class="reference internal" href="#sphx-glr-download-generated-autoexamples-03-sequence-optimization-01-echo-train-design-py"><span class="std std-ref">Go to the end</span></a>
+to download the full example code or to run this example in your browser via Binder.</p>
+</div>
+<section class="sphx-glr-example-title" id="echo-train-design-for-sharpness">
+<span id="sphx-glr-generated-autoexamples-03-sequence-optimization-01-echo-train-design-py"></span><h1>Echo train design for sharpness<a class="headerlink" href="#echo-train-design-for-sharpness" title="Link to this heading">#</a></h1>
+<p>In this example you design the refocusing flip angles of a fast spin echo for
+image quality rather than for precision: first one echo train, then a whole
+segmented 3D protocol in which each shot has its own repetition time, echo
+train length and angles.</p>
+<p>T2 decay along a long train modulates k-space. That modulation is a point
+spread function, so the refocusing angles set the resolution of the image <a class="footnote-reference brackets" href="#id4" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>.
+You design the angles against a cost that measures this blur, the contrast
+between tissues and the RF power.</p>
+<p>Prerequisites: Course lesson <a class="reference internal" href="../01-framework/01-first-simulation.html"><span class="doc">1. Your first simulation</span></a>.</p>
+<div class="colab-button">
+            <a href="https://colab.research.google.com/github/pulserver/blochsim/blob/gh-pages/v0.0.14/notebooks/generated/autoexamples/03-sequence-optimization/01-echo-train-design.ipynb" target="_blank">
+                <img src="https://colab.research.google.com/assets/colab-badge.svg"
+                alt="Open In Colab"/>
+            </a>
+        </div>
+        <section id="design-problem">
+<h2>Design problem<a class="headerlink" href="#design-problem" title="Link to this heading">#</a></h2>
+<p>A design has three pieces. A simulator with the tissue fixed on it, a cost
+written on the signal it records, and the bounded parameters that
+<a class="reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><code class="xref py py-class docutils literal notranslate"><span class="pre">SequenceDesign</span></code></a> adjusts to lower the cost.</p>
+<p>The tissues are those of a PD-weighted knee protocol, read for the
+separation between fluid and cartilage. The design uses all three at once, so
+that the train is not tailored to one of them. T1 and T2 are in
+milliseconds:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span><span class="w">
+</span><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">optim</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">SequenceDesign</span></a><span class="w">
+</span><span class="kn">from</span><span class="w"> </span><span class="nn">blochsim</span><span class="nn">.</span><span class="nn">simulators</span><span class="w"> </span><span class="kn">import</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">FSESimulator</span></a><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">TISSUES</span></a> <span class="o">=</span> <span class="p">{</span><span class="w">
+</span>    <span class="c1">#            cartilage  muscle  synovial fluid</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">T1</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1200.0</span><span class="p">,</span> <span class="mf">1420.0</span><span class="p">,</span> <span class="mf">3600.0</span><span class="p">]</span><span class="p">,</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">T2</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mf">35.0</span><span class="p">,</span> <span class="mf">30.0</span><span class="p">,</span> <span class="mf">250.0</span><span class="p">]</span><span class="p">,</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CARTILAGE</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">MUSCLE</span></a><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">FLUID</span></a> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="w">
+</span></pre></div></div>
+</section>
+<section id="blur">
+<h2>Blur<a class="headerlink" href="#blur" title="Link to this heading">#</a></h2>
+<p>Let the echo index run along one k-space direction. The magnitude of the echo
+train is then the k-space modulation, and the width of its Fourier transform
+is the blur it adds. You can read that width off the modulation without a
+transform: the second moment of <span class="math notranslate nohighlight">\(|\mathcal{F}w|^2\)</span> is the energy in the
+slope of the train <span class="math notranslate nohighlight">\(w\)</span> divided by the energy in <span class="math notranslate nohighlight">\(w\)</span>.</p>
+<p>A train that stops early contributes fewer terms, so trains of different
+lengths compare on the same footing. The second half of this example needs
+that. <code class="docutils literal notranslate"><span class="pre">signal</span></code> is <code class="docutils literal notranslate"><span class="pre">(shots,</span> <span class="pre">tissues,</span> <span class="pre">echoes)</span></code> and <code class="docutils literal notranslate"><span class="pre">acquired</span></code> is
+<code class="docutils literal notranslate"><span class="pre">(shots,</span> <span class="pre">echoes)</span></code>, one where the shot is still acquiring. The result is the
+blur in pixels, <code class="docutils literal notranslate"><span class="pre">(shots,</span> <span class="pre">tissues)</span></code>:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">blur</span><span class="p">(</span><span class="n">signal</span><span class="p">,</span> <span class="n">acquired</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="n">pair</span> <span class="o">=</span> <span class="n">acquired</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">acquired</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="p">]</span><span class="w">
+</span>    <span class="n">step</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">signal</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="n">pair</span><span class="w">
+</span>    <span class="n">energy</span> <span class="o">=</span> <span class="p">(</span><span class="n">signal</span> <span class="o">*</span> <span class="n">acquired</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:</span><span class="p">]</span><span class="p">)</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mf">1e-12</span><span class="p">)</span><span class="w">
+</span>    <span class="n">lines</span> <span class="o">=</span> <span class="n">acquired</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">lines</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">torch</span><span class="o">.</span><span class="n">pi</span></a><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">step</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">energy</span><span class="p">)</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+</section>
+<section id="echo-train">
+<h2>Echo train<a class="headerlink" href="#echo-train" title="Link to this heading">#</a></h2>
+<p>A 120-echo train has 120 angles but three degrees of freedom:</p>
+<ul class="simple">
+<li><p>the minimum angle, which sets how much flow and motion spoil the train;</p></li>
+<li><p>the angle at the centre of k-space, which sets the image contrast;</p></li>
+<li><p>the maximum angle, which the deposited RF power limits.</p></li>
+</ul>
+<p>The train starts at the maximum, drops to the minimum as the pseudo steady
+state is established, rises to the centre-of-k-space angle where the centre of
+k-space is sampled, and ramps back up to the maximum:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">ESP_MS</span></a> <span class="o">=</span> <span class="mf">5.0</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a> <span class="o">=</span> <span class="mi">120</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CENTRE_ECHO</span></a> <span class="o">=</span> <span class="mi">24</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">one_train</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">FSESimulator</span></a><span class="p">(</span><span class="n">ESP</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">ESP_MS</span></a><span class="p">,</span> <span class="n">states</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">TISSUES</span></a><span class="p">)</span><span class="w">
+</span><span class="n">echo</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="k">def</span><span class="w"> </span><span class="nf">ramp</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">start</span></a><span class="p">,</span> <span class="n">stop</span><span class="p">,</span> <span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;A smooth step from ``first`` to ``last`` between two echo indices.&quot;&quot;&quot;</span><span class="w">
+</span>    <span class="n">span</span> <span class="o">=</span> <span class="p">(</span><span class="p">(</span><span class="n">index</span> <span class="o">-</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">start</span></a><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">stop</span> <span class="o">-</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">start</span></a><span class="p">)</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><span class="mf">1e-3</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">clamp</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">first</span> <span class="o">+</span> <span class="p">(</span><span class="n">last</span> <span class="o">-</span> <span class="n">first</span><span class="p">)</span> <span class="o">*</span> <span class="n">span</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">3.0</span> <span class="o">-</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">span</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="k">def</span><span class="w"> </span><span class="nf">shape</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">control</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <span class="n">centre_echo</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;Refocusing angles of a train of ``length`` echoes.
+
+    ``control`` is ``(shots, 3)``: the minimum, centre-of-k-space and maximum
+    angles. ``centre_echo`` is the echo that samples the centre of the shot's
+    k-space band.
+    &quot;&quot;&quot;</span><span class="w">
+</span>    <span class="n">low</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">middle</span></a><span class="p">,</span> <span class="n">high</span> <span class="o">=</span> <span class="n">control</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">0</span><span class="p">:</span><span class="mi">1</span><span class="p">]</span><span class="p">,</span> <span class="n">control</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">1</span><span class="p">:</span><span class="mi">2</span><span class="p">]</span><span class="p">,</span> <span class="n">control</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="mi">2</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span><span class="w">
+</span>    <span class="n">settled</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">low</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">)</span><span class="w">
+</span>    <span class="n">sampled</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">low</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">centre_echo</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="w">
+</span>        <span class="n">index</span> <span class="o">&lt;</span><span class="o">=</span> <span class="mi">5</span><span class="p">,</span><span class="w">
+</span>        <span class="n">ramp</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">low</span><span class="p">)</span><span class="p">,</span> <span class="n">settled</span><span class="p">,</span> <span class="n">high</span><span class="p">,</span> <span class="n">low</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>        <span class="n">torch</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="w">
+</span>            <span class="n">index</span> <span class="o">&lt;</span><span class="o">=</span> <span class="n">centre_echo</span><span class="p">,</span><span class="w">
+</span>            <span class="n">ramp</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">settled</span><span class="p">,</span> <span class="n">sampled</span><span class="p">,</span> <span class="n">low</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">middle</span></a><span class="p">)</span><span class="p">,</span><span class="w">
+</span>            <span class="n">ramp</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">sampled</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">middle</span></a><span class="p">,</span> <span class="n">high</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>        <span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="p">)</span><span class="w">
+</span></pre></div></div>
+</section>
+<section id="cost">
+<h2>Cost<a class="headerlink" href="#cost" title="Link to this heading">#</a></h2>
+<p>The image should be sharp, fluid should stand out from cartilage, and the RF
+power should stay where the scanner accepts it. Power is the refocusing
+energy, relative to a train of 180 degree pulses, divided by the time it is
+spread over. A train that ends early gets no credit for echoes it never
+played:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">LOWEST</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="mf">20.0</span><span class="p">,</span> <span class="mf">30.0</span><span class="p">,</span> <span class="mf">60.0</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="n">HIGHEST</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="mf">90.0</span><span class="p">,</span> <span class="mf">160.0</span><span class="p">,</span> <span class="mf">170.0</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="n">PRESCRIBED</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">50.0</span><span class="p">,</span> <span class="mf">90.0</span><span class="p">,</span> <span class="mf">150.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="n">ALWAYS</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="k">def</span><span class="w"> </span><span class="nf">power</span><span class="p">(</span><span class="n">flip</span><span class="p">,</span> <span class="n">acquired</span><span class="p">,</span> <span class="n">TR_ms</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="n">energy</span> <span class="o">=</span> <span class="p">(</span><span class="p">(</span><span class="n">flip</span> <span class="o">/</span> <span class="mf">180.0</span><span class="p">)</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span> <span class="o">*</span> <span class="n">acquired</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">energy</span> <span class="o">/</span> <span class="p">(</span><span class="n">TR_ms</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-3</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<p>The scanner limits RF power, so the cost may spend up to what the prescribed
+train already deposits and no more. The weights set the trade between the
+three terms:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">POWER_BUDGET</span> <span class="o">=</span> <span class="n">power</span><span class="p">(</span><span class="w">
+</span>    <span class="n">shape</span><span class="p">(</span><span class="n">echo</span><span class="p">,</span> <span class="n">PRESCRIBED</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">)</span><span class="p">)</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CENTRE_ECHO</span></a><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="n">ALWAYS</span><span class="p">,</span><span class="w">
+</span>    <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="mf">1800.0</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="k">def</span><span class="w"> </span><span class="nf">single_train</span><span class="p">(</span><span class="n">control</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="n">flip</span> <span class="o">=</span> <span class="n">shape</span><span class="p">(</span><span class="n">echo</span><span class="p">,</span> <span class="n">control</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">control</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="p">:</span><span class="mi">1</span><span class="p">]</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">)</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CENTRE_ECHO</span></a><span class="p">)</span><span class="w">
+</span>    <span class="n">signal</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">one_train</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">1800.0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>    <span class="n">at_centre</span> <span class="o">=</span> <span class="n">signal</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CENTRE_ECHO</span></a> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="w">
+</span>    <span class="n">contrast</span> <span class="o">=</span> <span class="n">at_centre</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">FLUID</span></a><span class="p">]</span> <span class="o">-</span> <span class="n">at_centre</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CARTILAGE</span></a><span class="p">]</span><span class="w">
+</span>    <span class="n">deposited</span> <span class="o">=</span> <span class="n">power</span><span class="p">(</span><span class="n">flip</span><span class="p">,</span> <span class="n">ALWAYS</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">full_like</span><span class="p">(</span><span class="n">control</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="p">:</span><span class="mi">1</span><span class="p">]</span><span class="p">,</span> <span class="mf">1800.0</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span>    <span class="k">return</span> <span class="p">(</span><span class="w">
+</span>        <span class="n">blur</span><span class="p">(</span><span class="n">signal</span><span class="p">,</span> <span class="n">ALWAYS</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>        <span class="o">-</span> <span class="mf">12.0</span> <span class="o">*</span> <span class="n">contrast</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>        <span class="o">+</span> <span class="mf">20.0</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">deposited</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="p">)</span> <span class="o">/</span> <span class="n">POWER_BUDGET</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span><span class="w">
+</span>    <span class="p">)</span><span class="w">
+</span></pre></div></div>
+</section>
+<section id="optimization">
+<h2>Optimization<a class="headerlink" href="#optimization" title="Link to this heading">#</a></h2>
+<p>Start from a conventional prescription: 50 degree minimum, 90 degree
+centre-of-k-space angle and 150 degree maximum. <a class="reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bounded</span></code></a>
+holds each angle inside the limits the scanner plays:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">design</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">SequenceDesign</span></a><span class="p">(</span><span class="n">single_train</span><span class="p">,</span> <span class="n">control</span><span class="o">=</span><a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">(</span><span class="n">PRESCRIBED</span><span class="p">,</span> <span class="n">LOWEST</span><span class="p">,</span> <span class="n">HIGHEST</span><span class="p">)</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="n">one</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign.minimize" title="blochsim.optim.SequenceDesign.minimize"><span class="n">design</span><span class="o">.</span><span class="n">minimize</span></a><span class="p">(</span><span class="n">iterations</span><span class="o">=</span><span class="mi">25</span><span class="p">,</span> <span class="n">learning_rate</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>one train of 120 echoes designed in 0.07 s, 2.9 ms per iteration
+</pre></div>
+</div>
+<p>Simulate the prescribed and the designed trains, and compare the angles, the
+signal and the point spread:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="n">LENGTH</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">ECHOES</span></a><span class="p">)</span><span class="p">)</span><span class="w">
+</span><span class="n">prescribed_flip</span> <span class="o">=</span> <span class="n">shape</span><span class="p">(</span><span class="n">echo</span><span class="p">,</span> <span class="n">PRESCRIBED</span><span class="p">,</span> <span class="n">LENGTH</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CENTRE_ECHO</span></a><span class="p">)</span><span class="w">
+</span><span class="n">designed_flip</span> <span class="o">=</span> <span class="n">shape</span><span class="p">(</span><span class="n">echo</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">one</span><span class="o">.</span><span class="n">parameters</span></a><span class="p">[</span><span class="s2">&quot;</span><span class="s2">control</span><span class="s2">&quot;</span><span class="p">]</span><span class="p">,</span> <span class="n">LENGTH</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CENTRE_ECHO</span></a><span class="p">)</span><span class="w">
+</span><span class="n">prescribed_signal</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">one_train</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">prescribed_flip</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">1800.0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span><span class="n">designed_signal</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">one_train</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">designed_flip</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="mf">1800.0</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<img src="../../../_images/sphx_glr_01-echo-train-design_001.png" srcset="../../../_images/sphx_glr_01-echo-train-design_001.png" alt="train, k-space modulation, cartilage" class = "sphx-glr-single-img"/><div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>prescribed  min  50.0  centre  90.0  max 150.0 deg | blur 2.79 px | fluid - cartilage 0.100
+designed    min  89.4  centre  80.6  max 149.0 deg | blur 2.25 px | fluid - cartilage 0.112
+</pre></div>
+</div>
+<p>The designed train has a lower blur and keeps the contrast at the centre of
+k-space. The cartilage point spread narrows from the prescribed to the
+designed train.</p>
+</section>
+<section id="image">
+<h2>Image<a class="headerlink" href="#image" title="Link to this heading">#</a></h2>
+<p>The echo index runs along one k-space direction, so forming the image is a
+multiplication. Transform each tissue’s contribution along the phase-encode
+axis, weight every line by the train at the echo that sampled it, and
+transform back. A train that decays fast weights the edges of k-space down,
+and the image comes back smeared.</p>
+<p>The phantom is a cartoon knee: a cartilage band with a two-pixel joint line,
+and four fluid bars five, three, two and one pixels thick. No noise is added,
+so the two images differ only by the train.</p>
+<img src="../../../_images/sphx_glr_01-echo-train-design_002.png" srcset="../../../_images/sphx_glr_01-echo-train-design_002.png" alt="prescribed, designed, through the bars" class = "sphx-glr-single-img"/><p>The joint line and the thin bars show a point spread of a pixel or two. The
+ringing at every edge comes from the finite matrix, not from the train. The
+design moves the depth of the troughs between the bars.</p>
+<p>Sharpness moved without giving up contrast: the fluid-to-cartilage difference
+at the centre of k-space is within a percent of where it started, and the
+point spread narrowed by nearly a fifth. The power term keeps the deposited
+power at or below the prescribed level.</p>
+<p>The one-pixel bar is the limit. A point spread narrower than a pixel is not
+available, so a bar that is flat in both images is flattened by the matrix.</p>
+</section>
+<section id="segmented-protocol">
+<h2>Segmented protocol<a class="headerlink" href="#segmented-protocol" title="Link to this heading">#</a></h2>
+<p>Segmented 3D TSE splits k-space over many shots. The centre of k-space sets
+the contrast and the periphery sets the sharpness. With parameters specific to
+each shot, the protocol can use a long repetition time for the shots that
+determine contrast and a short one for the others <a class="footnote-reference brackets" href="#id5" id="id2" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>.</p>
+<p>The prescription is two sets of numbers, one at the centre and one at the
+periphery, and a cubic transition fills in every shot between them. The
+repetition time, the echo train length and the three control angles
+transition:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">ESP_SPACE_MS</span></a> <span class="o">=</span> <span class="mf">3.5</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">TE_MS</span></a> <span class="o">=</span> <span class="mf">28.0</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">TE_ECHO</span></a> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">TE_MS</span></a> <span class="o">/</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">ESP_SPACE_MS</span></a><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">GRID</span></a> <span class="o">=</span> <span class="mi">64</span>  <span class="c1"># padded echo axis, at least as long as the longest train</span><span class="w">
+</span><span class="w">
+</span><span class="c1"># 320 x 240 phase-encode matrix, CAIPIRINHA 4, elliptical scanning.</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">LINES</span></a> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="mi">320</span> <span class="o">*</span> <span class="mi">240</span> <span class="o">/</span> <span class="mi">4</span> <span class="o">*</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">torch</span><span class="o">.</span><span class="n">pi</span></a> <span class="o">/</span> <span class="mi">4</span><span class="p">)</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">BUDGET_S</span></a> <span class="o">=</span> <span class="mf">300.0</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SAMPLES</span></a> <span class="o">=</span> <span class="mi">16</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">protocol_shots</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">FSESimulator</span></a><span class="p">(</span><span class="n">ESP</span><span class="o">=</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">ESP_SPACE_MS</span></a><span class="p">,</span> <span class="n">states</span><span class="o">=</span><span class="mi">12</span><span class="p">,</span> <span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">TISSUES</span></a><span class="p">)</span><span class="w">
+</span><span class="n">grid_echo</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">GRID</span></a> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="c1"># Each sampled radius stands for the shots at that distance from the centre of</span><span class="w">
+</span><span class="c1"># k-space. Their number grows with radius, which is the area element of the</span><span class="w">
+</span><span class="c1"># phase-encode plane.</span><span class="w">
+</span><span class="n">radius</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SAMPLES</span></a><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">/</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">SAMPLES</span></a><span class="w">
+</span><span class="n">density</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">radius</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">radius</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span><span class="n">cubic</span> <span class="o">=</span> <span class="p">(</span><span class="mi">3</span> <span class="o">*</span> <span class="n">radius</span><span class="o">.</span><span class="n">square</span><span class="p">(</span><span class="p">)</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">radius</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="p">)</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="k">def</span><span class="w"> </span><span class="nf">transition</span><span class="p">(</span><span class="n">centre</span><span class="p">,</span> <span class="n">periphery</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">centre</span> <span class="o">+</span> <span class="p">(</span><span class="n">periphery</span> <span class="o">-</span> <span class="n">centre</span><span class="p">)</span> <span class="o">*</span> <span class="n">cubic</span><span class="w">
+</span></pre></div></div>
+<p>The shots differ in length. A long train at the centre is acceptable because
+the contrast is set by one echo of it. A short train at the periphery limits
+the T2 blur of its lines. A train that has ended is masked out of the padded
+echo axis.</p>
+<p>A refocusing angle of exactly zero is a corner, not a point: what reaches the
+scanner is a magnitude, which has no sign there. The mask therefore floors at
+a negligible angle:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">FLOOR</span></a> <span class="o">=</span> <span class="mf">1e-6</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="k">def</span><span class="w"> </span><span class="nf">protocol</span><span class="p">(</span><span class="w">
+</span>    <span class="n">centre_control</span><span class="p">,</span> <span class="n">edge_control</span><span class="p">,</span> <span class="n">centre_length</span><span class="p">,</span> <span class="n">edge_length</span><span class="p">,</span> <span class="n">centre_TR</span><span class="p">,</span> <span class="n">edge_TR</span><span class="w">
+</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="n">control</span> <span class="o">=</span> <span class="n">transition</span><span class="p">(</span><span class="n">centre_control</span><span class="p">,</span> <span class="n">edge_control</span><span class="p">)</span><span class="w">
+</span>    <span class="n">length</span> <span class="o">=</span> <span class="n">transition</span><span class="p">(</span><span class="n">centre_length</span><span class="p">,</span> <span class="n">edge_length</span><span class="p">)</span><span class="w">
+</span>    <span class="n">TR</span> <span class="o">=</span> <span class="n">transition</span><span class="p">(</span><span class="n">centre_TR</span><span class="p">,</span> <span class="n">edge_TR</span><span class="p">)</span><span class="w">
+</span>    <span class="n">acquired</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sigmoid</span><span class="p">(</span><span class="n">length</span> <span class="o">-</span> <span class="n">grid_echo</span><span class="p">)</span><span class="o">.</span><span class="n">clamp_min</span><span class="p">(</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">FLOOR</span></a><span class="p">)</span><span class="w">
+</span>    <span class="n">flip</span> <span class="o">=</span> <span class="n">shape</span><span class="p">(</span><span class="n">grid_echo</span><span class="p">,</span> <span class="n">control</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">TE_ECHO</span></a><span class="p">)</span> <span class="o">*</span> <span class="n">acquired</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <span class="n">acquired</span><span class="w">
+</span></pre></div></div>
+<p>Covering k-space ties the two ends together. A shot covers as many lines as
+its train is long, so the number of shots is the number of lines divided by
+the average train length, and the scan time is that many shots at the average
+repetition time. Longer trains at the centre allow a longer repetition time there:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">measure</span><span class="p">(</span><span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">design</span></a><span class="p">)</span><span class="p">:</span><span class="w">
+</span><span class="w">    </span><span class="sd">&quot;&quot;&quot;Everything the cost reads, from one batched simulation of all shots.&quot;&quot;&quot;</span><span class="w">
+</span>    <span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <span class="n">acquired</span> <span class="o">=</span> <span class="n">protocol</span><span class="p">(</span><span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">design</span></a><span class="p">)</span><span class="w">
+</span>    <span class="n">signal</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-simulators sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.simulators.FSESimulator.html#blochsim.simulators.FSESimulator" title="blochsim.simulators.FSESimulator"><span class="n">protocol_shots</span></a><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">flip</span><span class="o">=</span><span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="o">=</span><span class="n">TR</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>    <span class="n">shots</span> <span class="o">=</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">LINES</span></a> <span class="o">/</span> <span class="p">(</span><span class="n">density</span> <span class="o">*</span> <span class="n">acquired</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>    <span class="n">scan_s</span> <span class="o">=</span> <span class="n">shots</span> <span class="o">*</span> <span class="p">(</span><span class="n">density</span> <span class="o">*</span> <span class="n">TR</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-3</span><span class="w">
+</span>    <span class="k">return</span> <span class="n">signal</span><span class="p">,</span> <span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <span class="n">acquired</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">scan_s</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="k">def</span><span class="w"> </span><span class="nf">deposited</span><span class="p">(</span><span class="n">flip</span><span class="p">,</span> <span class="n">acquired</span><span class="p">,</span> <span class="n">TR</span><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="k">return</span> <span class="p">(</span><span class="n">density</span> <span class="o">*</span> <span class="n">power</span><span class="p">(</span><span class="n">flip</span><span class="p">,</span> <span class="n">acquired</span><span class="p">,</span> <span class="n">TR</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="w">
+</span><span class="c1"># The exam may spend the power the prescription deposits.</span><span class="w">
+</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">PRESCRIBED_PROTOCOL</span></a> <span class="o">=</span> <span class="n">protocol</span><span class="p">(</span><span class="w">
+</span>    <span class="n">PRESCRIBED</span><span class="p">,</span><span class="w">
+</span>    <span class="n">PRESCRIBED</span><span class="p">,</span><span class="w">
+</span>    <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">45.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">20.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">1800.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">150.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span><span class="p">)</span><span class="w">
+</span><span class="n">SPACE_POWER_BUDGET</span> <span class="o">=</span> <span class="n">deposited</span><span class="p">(</span><span class="w">
+</span>    <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">PRESCRIBED_PROTOCOL</span></a><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">PRESCRIBED_PROTOCOL</span></a><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="tuple"><span class="n">PRESCRIBED_PROTOCOL</span></a><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w">
+</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<p>The cost asks for sharpness where it is decided (the outer shots) and for
+contrast where it is decided (the inner shots). It also penalizes a scan
+longer than the budget, a train that does not fit inside its repetition time
+with 60 ms for the excitation and fat saturation, and RF power above the
+prescription:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><span class="k">def</span><span class="w"> </span><span class="nf">image_quality</span><span class="p">(</span><span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">design</span></a><span class="p">)</span><span class="p">:</span><span class="w">
+</span>    <span class="n">signal</span><span class="p">,</span> <span class="n">flip</span><span class="p">,</span> <span class="n">TR</span><span class="p">,</span> <span class="n">length</span><span class="p">,</span> <span class="n">acquired</span><span class="p">,</span> <span class="n">shots</span><span class="p">,</span> <span class="n">scan_s</span> <span class="o">=</span> <span class="n">measure</span><span class="p">(</span><span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">design</span></a><span class="p">)</span><span class="w">
+</span>    <span class="n">at_centre</span> <span class="o">=</span> <span class="n">signal</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">TE_ECHO</span></a> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="w">
+</span>    <span class="n">contrast</span> <span class="o">=</span> <span class="n">at_centre</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">FLUID</span></a><span class="p">]</span> <span class="o">-</span> <span class="n">at_centre</span><span class="p">[</span><span class="p">:</span><span class="p">,</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="int"><span class="n">CARTILAGE</span></a><span class="p">]</span><span class="w">
+</span>    <span class="n">outer</span><span class="p">,</span> <span class="n">inner</span> <span class="o">=</span> <span class="n">density</span> <span class="o">*</span> <span class="n">radius</span><span class="p">,</span> <span class="n">density</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="n">radius</span><span class="p">)</span><span class="w">
+</span>    <span class="n">infeasible</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="w">
+</span>        <span class="n">length</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">ESP_SPACE_MS</span></a> <span class="o">+</span> <span class="mf">60.0</span> <span class="o">-</span> <span class="n">TR</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="w">
+</span>    <span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>    <span class="k">return</span> <span class="p">(</span><span class="w">
+</span>        <span class="mf">0.7</span> <span class="o">*</span> <span class="p">(</span><span class="n">outer</span> <span class="o">*</span> <span class="n">blur</span><span class="p">(</span><span class="n">signal</span><span class="p">,</span> <span class="n">acquired</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span> <span class="o">/</span> <span class="n">outer</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>        <span class="o">-</span> <span class="mf">12.0</span> <span class="o">*</span> <span class="p">(</span><span class="n">inner</span> <span class="o">*</span> <span class="n">contrast</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span> <span class="o">/</span> <span class="n">inner</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="p">)</span><span class="w">
+</span>        <span class="o">+</span> <span class="mf">20.0</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">scan_s</span> <span class="o">-</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">BUDGET_S</span></a><span class="p">)</span> <span class="o">/</span> <a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="float"><span class="n">BUDGET_S</span></a><span class="w">
+</span>        <span class="o">+</span> <span class="mf">10.0</span> <span class="o">*</span> <span class="n">infeasible</span> <span class="o">/</span> <span class="mf">60.0</span><span class="w">
+</span>        <span class="o">+</span> <span class="mf">20.0</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">deposited</span><span class="p">(</span><span class="n">flip</span><span class="p">,</span> <span class="n">acquired</span><span class="p">,</span> <span class="n">TR</span><span class="p">)</span> <span class="o">/</span> <span class="n">SPACE_POWER_BUDGET</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">)</span><span class="w">
+</span>    <span class="p">)</span><span class="w">
+</span></pre></div></div>
+<p>Start from the prescription of the abstract in <a class="footnote-reference brackets" href="#id5" id="id3" role="doc-noteref"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></a>: a 45-echo train at
+1800 ms at the centre and a 20-echo train at 150 ms at the periphery:</p>
+<div class="highlight-Python notranslate"><div class="highlight"><pre><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">PRESCRIPTION</span></a> <span class="o">=</span> <span class="p">{</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">centre_control</span><span class="s2">&quot;</span><span class="p">:</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">(</span><span class="n">PRESCRIBED</span><span class="p">,</span> <span class="n">LOWEST</span><span class="p">,</span> <span class="n">HIGHEST</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">edge_control</span><span class="s2">&quot;</span><span class="p">:</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">(</span><span class="n">PRESCRIBED</span><span class="p">,</span> <span class="n">LOWEST</span><span class="p">,</span> <span class="n">HIGHEST</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">centre_length</span><span class="s2">&quot;</span><span class="p">:</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">45.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mf">60.0</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">edge_length</span><span class="s2">&quot;</span><span class="p">:</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">20.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mf">60.0</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">centre_TR</span><span class="s2">&quot;</span><span class="p">:</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">1800.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <span class="mf">150.0</span><span class="p">,</span> <span class="mf">2600.0</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span>    <span class="s2">&quot;</span><span class="s2">edge_TR</span><span class="s2">&quot;</span><span class="p">:</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.Bounded.html#blochsim.optim.Bounded" title="blochsim.optim.Bounded"><span class="n">Bounded</span></a><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="p">[</span><span class="p">[</span><span class="mf">150.0</span><span class="p">]</span><span class="p">]</span><span class="p">)</span><span class="p">,</span> <span class="mf">150.0</span><span class="p">,</span> <span class="mf">2600.0</span><span class="p">)</span><span class="p">,</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span><span class="w">
+</span><a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class sphx-glr-backref-instance reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">design</span></a> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-class reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign" title="blochsim.optim.SequenceDesign"><span class="n">SequenceDesign</span></a><span class="p">(</span><span class="n">image_quality</span><span class="p">,</span> <span class="o">*</span><span class="o">*</span><a class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="dict"><span class="n">PRESCRIPTION</span></a><span class="p">)</span><span class="w">
+</span><span class="w">
+</span><span class="n">many</span> <span class="o">=</span> <a class="sphx-glr-backref-module-blochsim-optim sphx-glr-backref-type-py-method reference internal" href="../../blochsim.optim.SequenceDesign.html#blochsim.optim.SequenceDesign.minimize" title="blochsim.optim.SequenceDesign.minimize"><span class="n">design</span><span class="o">.</span><span class="n">minimize</span></a><span class="p">(</span><span class="n">iterations</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">learning_rate</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span><span class="w">
+</span></pre></div></div>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>a whole protocol designed in 1.07 s, 26.8 ms per iteration
+</pre></div>
+</div>
+<p>The number of shots follows from the echo train lengths. Compare the
+prescribed and the designed protocol:</p>
+<div class="sphx-glr-script-out highlight-none notranslate"><div class="highlight"><pre><span></span>                centre of k-space          periphery
+                ETL     TR         ETL     TR       shots    scan
+prescribed    44.9   1795 ms     20.1   155 ms      558   6.01 min
+designed      56.0    717 ms     17.5   152 ms      529   2.83 min
+
+refocusing angles      min  centre-of-band    max
+  prescribed, centre       50.0   90.0  150.0
+  prescribed, periphery    50.0   90.0  150.0
+  designed, centre         88.8   37.2  127.5
+  designed, periphery      72.4   44.6  118.0
+
+fluid - cartilage at the centre -0.070 -&gt; -0.025
+blur at the periphery          0.48 -&gt; 0.43 px
+RF power                       22.51 -&gt; 19.33  (budget 22.51)
+</pre></div>
+</div>
+<p>Each curve in the first panel is one sampled distance from the centre of
+k-space. Shots between the curves read the curve at their own radius, so
+k-space has no discontinuities between shots.</p>
+<img src="../../../_images/sphx_glr_01-echo-train-design_003.png" srcset="../../../_images/sphx_glr_01-echo-train-design_003.png" alt="designed trains, length, scan 2.8 min, cartilage, synovial fluid, contrast" class = "sphx-glr-single-img"/></section>
+<section id="specification">
+<h2>Specification<a class="headerlink" href="#specification" title="Link to this heading">#</a></h2>
+<p>What this example did, stated the way you would ask an agent for it:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>With blochsim, design the refocusing angles of a 120-echo fast spin echo
+for a knee (cartilage, muscle, synovial fluid; ESP 5 ms, TR 1800 ms).
+Parameterize the train by its minimum, centre-of-k-space and maximum
+angles, bounded to what the scanner plays. Minimize the blur of the echo
+train, minus the fluid-to-cartilage contrast at the centre, under an RF
+power budget. Show the point spread and a phantom image before and after.
+Then design a segmented 3D protocol whose repetition time, train length
+and angles transition cubically from the centre to the periphery of
+k-space, under a scan-time budget of 300 s.
+</pre></div>
+</div>
+</section>
+<section id="references">
+<h2>References<a class="headerlink" href="#references" title="Link to this heading">#</a></h2>
+<aside class="footnote-list brackets">
+<aside class="footnote brackets" id="id4" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id1">1</a><span class="fn-bracket">]</span></span>
+<p>Busse, R. F., Brau, A. C. S., Vu, A., et al., “Effects of
+refocusing flip angle modulation and view ordering in 3D fast spin
+echo”, Magnetic Resonance in Medicine 60.3 (2008), pp. 640-649.
+<a class="reference external" href="https://doi.org/10.1002/mrm.21680">https://doi.org/10.1002/mrm.21680</a></p>
+</aside>
+<aside class="footnote brackets" id="id5" role="doc-footnote">
+<span class="label"><span class="fn-bracket">[</span>2<span class="fn-bracket">]</span></span>
+<span class="backrefs">(<a role="doc-backlink" href="#id2">1</a>,<a role="doc-backlink" href="#id3">2</a>)</span>
+<p>Buonincontri, G., Paul, D., Liu, W., Forman, C., Kluge, T.,
+“Doubling the repetition time without paying the price: 3D turbo spin
+echo with individually parameterized echo trains”, Proceedings of the
+International Society for Magnetic Resonance in Medicine (2025),
+abstract 566-05-007.</p>
+</aside>
+</aside>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 2.046 seconds)</p>
+<div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-generated-autoexamples-03-sequence-optimization-01-echo-train-design-py">
+<div class="binder-badge docutils container">
+<a class="reference external image-reference" href="https://mybinder.org/v2/gh/pulserver/blochsim/gh-pages?urlpath=lab/tree/v0.0.14/notebooks/generated/autoexamples/03-sequence-optimization/01-echo-train-design.ipynb"><img alt="Launch binder" src="../../../_images/binder_badge_logo2.svg" style="width: 150px;" />
+</a>
+</div>
+<div class="sphx-glr-download sphx-glr-download-jupyter docutils container">
+<p><a class="reference download internal" download="" href="../../../_downloads/5bcfb4d7dffe754809a3cf6b66c02a60/01-echo-train-design.ipynb"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Jupyter</span> <span class="pre">notebook:</span> <span class="pre">01-echo-train-design.ipynb</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-python docutils container">
+<p><a class="reference download internal" download="" href="../../../_downloads/40e53e0c274959ece5ab9c8c861e6d46/01-echo-train-design.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">01-echo-train-design.py</span></code></a></p>
+</div>
+<div class="sphx-glr-download sphx-glr-download-zip docutils container">
+<p><a class="reference download internal" download="" href="../../../_downloads/5a9a4dcdffba89fec3a8f365d42b99a1/01-echo-train-design.zip"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">zipped:</span> <span class="pre">01-echo-train-design.zip</span></code></a></p>
+</div>
+</div>
+<p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="../02-parameter-inference/04-perk.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">PERK: kernel ridge regression</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="02-joint-relaxometry.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Joint relaxometry protocol design</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#design-problem">Design problem</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#blur">Blur</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#echo-train">Echo train</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cost">Cost</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#optimization">Optimization</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#image">Image</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#segmented-protocol">Segmented protocol</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specification">Specification</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#references">References</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BlochSim Contributors
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024, BlochSim Contributors.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

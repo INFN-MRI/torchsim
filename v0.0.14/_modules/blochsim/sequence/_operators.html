@@ -1,0 +1,1352 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>blochsim.sequence._operators &#8212; BlochSim Documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=90905a2f556bf617f1a9" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/styles/sphinx-book-theme.css?v=4418a689" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery.css?v=c83e6b79" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=a20394c5" />
+  
+  <!-- So that users can add custom icons -->
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9" />
+
+    <script src="../../../_static/documentation_options.js?v=be36e789"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../../_static/sg-tags.js?v=d80f6fa4"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/blochsim/sequence/_operators';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.20.0';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://pulserver.github.io/blochsim/versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'v0.0.14';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner =
+            true;
+        </script>
+    <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
+    <link rel="canonical" href="https://pulserver.github.io/blochsim/v0.0.14/_modules/blochsim/sequence/_operators.html" />
+    <link rel="icon" href="../../../_static/blochsim-mark.svg"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="v0.0.14" />
+  
+    
+    <script src="../../../_static/searchtools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <script src="../../../searchindex.js"></script>
+  
+  </head>
+  <body data-default-mode="">
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+  
+  
+  
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header id="pst-header" class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../../_static/blochsim-mark.svg" class="logo__image only-light" alt="blochsim"/>
+    <img src="../../../_static/blochsim-mark-dark.svg" class="logo__image only-dark pst-js-only" alt="blochsim"/>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item">
+<div class="version-switcher__container dropdown pst-js-only">
+  <button id="pst-version-switcher-button-2"
+    type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-controls="pst-version-switcher-list-2"
+    aria-label="Version switcher list"
+  >
+    Choose version  <!-- this text may get changed later by javascript -->
+    <span class="caret"></span>
+  </button>
+  <div id="pst-version-switcher-list-2"
+    class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox" aria-labelledby="pst-version-switcher-button-2">
+    <!-- dropdown will be populated by javascript on page load -->
+  </div>
+</div></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    Homepage
+                </a>
+            </li>
+        </ul>
+        <ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../../user-guide/index.html">User guide</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../developer-guide/index.html">Developer guide</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/installation.html">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/workflow.html">Workflow</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/style.html">Style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/documentation.html">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../developer-guide/terminology.html">Terminology</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../developer-guide/internals/index.html">Internals</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/epg.html">Extended phase graphs: operators</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/description.html">Sequence description: reading rules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../developer-guide/internals/kernels.html">Kernels</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../explanations/index.html">Explanations</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/signal-model.html">Signal model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/epg.html">Extended phase graphs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/description.html">Sequence description</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/derivatives.html">Derivatives</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/execution.html">Execution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/parameter-estimation.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/model-based-reconstruction.html">Model-based reconstruction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../explanations/sequence-design.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../examples/index.html">Examples</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../examples/course.html">Course</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/01-framework/01-first-simulation.html">1. Your first simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/01-framework/02-advanced-physics.html">2. Advanced physics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/01-framework/03-custom-signal-model.html">3. Custom signal model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/01-framework/04-description-based-simulation.html">4. Description-based simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/01-framework/05-custom-operator.html">5. Custom operator</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../examples/applications.html">Applications</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/02-parameter-inference/01-dictionary-matching.html">Dictionary matching</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/02-parameter-inference/02-lookup-table.html">MP2RAGE lookup table</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/02-parameter-inference/03-nonlinear-least-squares.html">T2 mapping by nonlinear least squares</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/02-parameter-inference/04-perk.html">PERK: kernel ridge regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/03-sequence-optimization/01-echo-train-design.html">Echo train design for sharpness</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/03-sequence-optimization/02-joint-relaxometry.html">Joint relaxometry protocol design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/03-sequence-optimization/03-rf-pulse-design.html">RF pulse design by optimal control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/04-model-based-imaging/01-linear-subspace.html">Subspace reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/04-model-based-imaging/02-nonlinear-inversion.html">Nonlinear inversion from k-space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../generated/autoexamples/05-misc/01-synthetic-data.html">Synthetic fingerprint</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../api/index.html">API reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/model.html">Signal models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/simulators.html">Simulators</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/sequence.html">Sequences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/estimators.html">Parameter estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../api/optim.html">Sequence design</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../misc/index.html">Miscellaneous</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/license.html">License</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/related.html">Related Projects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../misc/contributors.html">Contributors</a></li>
+</ul>
+</details></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/pulserver/blochsim/issues/new?title=Issue%20on%20page%20%2F_modules/blochsim/sequence/_operators.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<div class="theme-switch-container dropdown pst-js-only" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Color mode">
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button dropdown-toggle" aria-label="Color mode" data-bs-toggle="dropdown">
+    <i class="theme-switch fa-solid fa-sun fa-lg fa-fw" data-mode="light" title="Light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg fa-fw" data-mode="dark" title="Dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg fa-fw" data-mode="auto" title="System Settings"></i>
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg fa-fw me-1"></i>System Settings</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="light"><i class="fa-solid fa-sun fa-lg fa-fw me-1"></i>Light</button></li>
+    <li><button class="dropdown-item d-flex align-items-center theme-change-button" data-mode="dark"><i class="fa-solid fa-moon fa-lg fa-fw me-1"></i>Dark</button></li>
+  </ul>
+</div>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for blochsim.sequence._operators</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Composable modules a sequence description is assembled from.</span>
+
+<span class="sd">An operator is one module -- a pulse, a readout, a delay, a preparation --</span>
+<span class="sd">that knows what it plays and how long it holds the timeline. :func:`compose`</span>
+<span class="sd">lays modules end to end and turns their spans into the absolute timestamps a</span>
+<span class="sd">description carries, which is the accumulator a builder would otherwise keep</span>
+<span class="sd">for itself. A sequence whose timing is computed rather than accumulated calls</span>
+<span class="sd">:meth:`Operator.emit` at the time it wants instead.</span>
+
+<span class="sd">An operator names a thing rather than an action -- ``Readout``, ``Dephase``,</span>
+<span class="sd">``SSFPFidReadout`` -- and is capitalized to say so, even where it is a function</span>
+<span class="sd">rather than a class. ``bSSFPReadout`` keeps the lowercase ``b`` the sequence is</span>
+<span class="sd">written with everywhere else.</span>
+
+<span class="sd">Operators speak only the vocabulary the fused kernels already implement: the</span>
+<span class="sd">three event types, the four dephasing actions, and the RF and ADC roles. A</span>
+<span class="sd">module that needs nothing beyond that -- a T2 preparation, a</span>
+<span class="sd">magnetization-transfer preparation, a shaped or per-channel pulse -- is</span>
+<span class="sd">written here and reaches the kernels with no change to them.</span>
+
+<span class="sd">What an operator cannot say is *how much* a gradient dephases. A description</span>
+<span class="sd">carries one crusher moment for the whole sequence and dephasing is quantized</span>
+<span class="sd">to whole configuration orders, so a bipolar pair, a b-value of its own, or a</span>
+<span class="sd">crusher of twice its neighbour's area have no representation here.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"Delay"</span><span class="p">,</span>
+    <span class="s2">"Dephase"</span><span class="p">,</span>
+    <span class="s2">"Excitation"</span><span class="p">,</span>
+    <span class="s2">"FSEReadout"</span><span class="p">,</span>
+    <span class="s2">"Inversion"</span><span class="p">,</span>
+    <span class="s2">"Operator"</span><span class="p">,</span>
+    <span class="s2">"Readout"</span><span class="p">,</span>
+    <span class="s2">"Refocusing"</span><span class="p">,</span>
+    <span class="s2">"SPGRReadout"</span><span class="p">,</span>
+    <span class="s2">"SSFPEchoReadout"</span><span class="p">,</span>
+    <span class="s2">"SSFPFidReadout"</span><span class="p">,</span>
+    <span class="s2">"SampledPulse"</span><span class="p">,</span>
+    <span class="s2">"Saturation"</span><span class="p">,</span>
+    <span class="s2">"Spoil"</span><span class="p">,</span>
+    <span class="s2">"bSSFPReadout"</span><span class="p">,</span>
+    <span class="s2">"compose"</span><span class="p">,</span>
+    <span class="s2">"module"</span><span class="p">,</span>
+    <span class="s2">"operator"</span><span class="p">,</span>
+    <span class="s2">"operator_names"</span><span class="p">,</span>
+    <span class="s2">"register_operator"</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._description</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AdcRole</span><span class="p">,</span>
+    <span class="n">EventAction</span><span class="p">,</span>
+    <span class="n">EventType</span><span class="p">,</span>
+    <span class="n">RfUse</span><span class="p">,</span>
+    <span class="n">SequenceEvent</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Seconds to the microseconds a description timestamps in.</span>
+<span class="n">_TO_US</span> <span class="o">=</span> <span class="mf">1e6</span>
+
+
+<div class="viewcode-block" id="Operator">
+<a class="viewcode-back" href="../../../generated/blochsim.Operator.html#blochsim.Operator">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One module of a sequence: the events it plays and the time it spans.</span>
+
+<span class="sd">    ``a @ b`` plays two operators back to back as one operator.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    emit : callable</span>
+<span class="sd">        Maps the module's start time in seconds to the tuple of</span>
+<span class="sd">        ``SequenceEvent`` it plays.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Time the module holds the timeline, in seconds. Zero leaves the next</span>
+<span class="sd">        module to start at the same time.</span>
+<span class="sd">    """</span>
+
+    <span class="n">emit</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Any</span><span class="p">],</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+<div class="viewcode-block" id="Operator.__matmul__">
+<a class="viewcode-back" href="../../../generated/blochsim.Operator.html#blochsim.Operator.__matmul__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__matmul__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="n">Operator</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Play ``self`` then ``other`` as one operator; durations add."""</span>
+        <span class="k">return</span> <span class="n">module</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">,</span> <span class="n">duration_s</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">duration_s</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span class="n">duration_s</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">compose</span><span class="p">(</span>
+    <span class="o">*</span><span class="n">parts</span><span class="p">:</span> <span class="n">Operator</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Operator</span><span class="p">],</span> <span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Lay operators out in time and return their events and end time.</span>
+
+<span class="sd">    A bare operator starts where the previous one ended. An ``(offset_s,</span>
+<span class="sd">    operator)`` pair starts ``offset_s`` after ``start_s``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    *parts : Operator or tuple</span>
+<span class="sd">        Operators in play order, or ``(offset_s, operator)`` pairs, in seconds.</span>
+<span class="sd">    start_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Start time of the first operator, in seconds.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    events : tuple of SequenceEvent</span>
+<span class="sd">        Events at absolute times.</span>
+<span class="sd">    end_s : float or torch.Tensor</span>
+<span class="sd">        End time of the last operator, in seconds.</span>
+<span class="sd">    """</span>
+    <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">start_s</span>
+    <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span><span class="p">:</span>
+        <span class="n">offset</span><span class="p">,</span> <span class="n">played</span> <span class="o">=</span> <span class="n">part</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">part</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
+        <span class="n">when</span> <span class="o">=</span> <span class="n">cursor</span> <span class="k">if</span> <span class="n">offset</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">start_s</span> <span class="o">+</span> <span class="n">offset</span>
+        <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">played</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">when</span><span class="p">))</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="n">when</span> <span class="o">+</span> <span class="n">played</span><span class="o">.</span><span class="n">duration_s</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">events</span><span class="p">),</span> <span class="n">cursor</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">module</span><span class="p">(</span><span class="o">*</span><span class="n">parts</span><span class="p">:</span> <span class="n">Operator</span> <span class="o">|</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Operator</span><span class="p">],</span> <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Package operators as one operator.</span>
+
+<span class="sd">    Offsets inside ``parts`` are relative to the start of the module.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    *parts : Operator or tuple</span>
+<span class="sd">        Operators in play order, or ``(offset_s, operator)`` pairs.</span>
+<span class="sd">    duration_s : float or torch.Tensor</span>
+<span class="sd">        Time the module holds the timeline, in seconds. Not derived from</span>
+<span class="sd">        ``parts``, so an offset part may extend past it.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        The parts as one operator that spans ``duration_s``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="n">events</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">compose</span><span class="p">(</span><span class="o">*</span><span class="n">parts</span><span class="p">,</span> <span class="n">start_s</span><span class="o">=</span><span class="n">start_s</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="Excitation">
+<a class="viewcode-back" href="../../../generated/blochsim.Excitation.html#blochsim.Excitation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Excitation</span><span class="p">(</span>
+    <span class="n">flip_rad</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">definition_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">frequency_hz</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">shim_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">action</span><span class="p">:</span> <span class="n">EventAction</span> <span class="o">=</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Excitation pulse.</span>
+
+<span class="sd">    Plays one RF event with the excitation tag at the start of the module. The</span>
+<span class="sd">    module holds the timeline for ``duration_s`` without rotating over it: an</span>
+<span class="sd">    ideal pulse (``definition_id=0``) turns instantly, and a shaped one turns</span>
+<span class="sd">    through the integral of its definition.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    flip_rad : float or torch.Tensor</span>
+<span class="sd">        Flip angle, in radians.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    definition_id : int, default=0</span>
+<span class="sd">        RF definition played; 0 is the ideal pulse.</span>
+<span class="sd">    frequency_hz : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Frequency offset, in Hz.</span>
+<span class="sd">    shim_id : int, default=0</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
+<span class="sd">    action : EventAction, default=EventAction.NONE</span>
+<span class="sd">        Gradient action played around the pulse.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        One RF event, tagged as an excitation, at the start of the module.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="o">.</span><span class="n">rf</span><span class="p">(</span>
+                <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span>
+                <span class="n">definition_id</span><span class="p">,</span>
+                <span class="n">RfUse</span><span class="o">.</span><span class="n">EXCITATION</span><span class="p">,</span>
+                <span class="n">flip_rad</span><span class="p">,</span>
+                <span class="n">phase_rad</span><span class="p">,</span>
+                <span class="n">frequency_hz</span><span class="p">,</span>
+                <span class="n">shim_id</span><span class="p">,</span>
+                <span class="n">action</span><span class="o">=</span><span class="n">action</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Refocusing">
+<a class="viewcode-back" href="../../../generated/blochsim.Refocusing.html#blochsim.Refocusing">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Refocusing</span><span class="p">(</span>
+    <span class="n">flip_rad</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">crushed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">definition_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">frequency_hz</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">shim_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Refocusing pulse, between crusher gradients by default.</span>
+
+<span class="sd">    Plays one RF event with the refocusing tag at the start of the module. With</span>
+<span class="sd">    ``crushed`` an unbalanced gradient is played before and after it</span>
+<span class="sd">    (``EventAction.CRUSH_BEFORE | CRUSH_AFTER``).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    flip_rad : float or torch.Tensor</span>
+<span class="sd">        Flip angle, in radians.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    definition_id : int, default=0</span>
+<span class="sd">        RF definition played; 0 is the ideal pulse.</span>
+<span class="sd">    frequency_hz : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Frequency offset, in Hz.</span>
+<span class="sd">    shim_id : int, default=0</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
+<span class="sd">    crushed : bool, default=True</span>
+<span class="sd">        Play an unbalanced gradient before and after the pulse.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        One RF event, tagged as a refocusing pulse, at the start of the module.</span>
+<span class="sd">    """</span>
+    <span class="n">action</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">EventAction</span><span class="o">.</span><span class="n">CRUSH_BEFORE</span> <span class="o">|</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">CRUSH_AFTER</span>
+        <span class="k">if</span> <span class="n">crushed</span>
+        <span class="k">else</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span>
+    <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="o">.</span><span class="n">rf</span><span class="p">(</span>
+                <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span>
+                <span class="n">definition_id</span><span class="p">,</span>
+                <span class="n">RfUse</span><span class="o">.</span><span class="n">REFOCUSING</span><span class="p">,</span>
+                <span class="n">flip_rad</span><span class="p">,</span>
+                <span class="n">phase_rad</span><span class="p">,</span>
+                <span class="n">frequency_hz</span><span class="p">,</span>
+                <span class="n">shim_id</span><span class="p">,</span>
+                <span class="n">action</span><span class="o">=</span><span class="n">action</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Inversion">
+<a class="viewcode-back" href="../../../generated/blochsim.Inversion.html#blochsim.Inversion">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Inversion</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">flip_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">definition_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Ideal inversion pulse.</span>
+
+<span class="sd">    The kernels apply ``Mz -&gt; -efficiency * Mz`` on every order with no</span>
+<span class="sd">    rotation, so the pulse deposits no power in a bound pool. Use</span>
+<span class="sd">    :func:`Saturation` for a preparation whose saturation matters.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    flip_rad : float or torch.Tensor, default=torch.pi</span>
+<span class="sd">        Nominal flip angle, in radians.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    definition_id : int, default=0</span>
+<span class="sd">        RF definition played; 0 is the ideal pulse.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        One RF event, tagged as an inversion, at the start of the module.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="o">.</span><span class="n">rf</span><span class="p">(</span>
+                <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span>
+                <span class="n">definition_id</span><span class="p">,</span>
+                <span class="n">RfUse</span><span class="o">.</span><span class="n">INVERSION</span><span class="p">,</span>
+                <span class="n">flip_rad</span><span class="p">,</span>
+                <span class="n">phase_rad</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Saturation">
+<a class="viewcode-back" href="../../../generated/blochsim.Saturation.html#blochsim.Saturation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Saturation</span><span class="p">(</span>
+    <span class="n">definition_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">flip_rad</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">offset_hz</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">shim_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Off-resonance saturation pulse that deposits power in a semisolid pool.</span>
+
+<span class="sd">    The deposit follows the waveform of ``definition_id`` and ``offset_hz``,</span>
+<span class="sd">    read against the tissue lineshape.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    definition_id : int</span>
+<span class="sd">        RF definition played.</span>
+<span class="sd">    flip_rad : float or torch.Tensor</span>
+<span class="sd">        Flip angle, in radians.</span>
+<span class="sd">    offset_hz : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Frequency offset from the centre frequency, in Hz.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        RF phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    shim_id : int, default=0</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        One RF event at the start of the module, played at ``offset_hz``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="o">.</span><span class="n">rf</span><span class="p">(</span>
+                <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span>
+                <span class="n">definition_id</span><span class="p">,</span>
+                <span class="n">RfUse</span><span class="o">.</span><span class="n">EXCITATION</span><span class="p">,</span>
+                <span class="n">flip_rad</span><span class="p">,</span>
+                <span class="n">phase_rad</span><span class="p">,</span>
+                <span class="n">offset_hz</span><span class="p">,</span>
+                <span class="n">shim_id</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SampledPulse">
+<a class="viewcode-back" href="../../../generated/blochsim.SampledPulse.html#blochsim.SampledPulse">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">SampledPulse</span><span class="p">(</span>
+    <span class="n">waveform_rad_per_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+    <span class="n">dwell_s</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">offset_hz</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">definition_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="n">shim_id</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Shaped pulse played as one hard pulse per sample, with free evolution between.</span>
+
+<span class="sd">    Each sample rotates the magnetization through its area at the middle of</span>
+<span class="sd">    its dwell; between samples each pool precesses, relaxes and exchanges</span>
+<span class="sd">    (hard-pulse approximation [1]_). A complex waveform rotates about the axis</span>
+<span class="sd">    given by its phase; a real one rotates through its signed area. An</span>
+<span class="sd">    ``offset_hz`` advances the rotation axis by ``-2 pi offset_hz`` rad/s from</span>
+<span class="sd">    the start of the pulse. A ``phase_rad`` or ``offset_hz`` with one value per</span>
+<span class="sd">    train plays one train per value.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    waveform_rad_per_s : array-like</span>
+<span class="sd">        Nutation rate (gamma times B1), one sample per dwell, in rad/s.</span>
+<span class="sd">    dwell_s : float</span>
+<span class="sd">        Sample duration, in seconds.</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Phase of the whole pulse, in radians.</span>
+<span class="sd">    offset_hz : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Frequency offset from the centre frequency, in Hz.</span>
+<span class="sd">    definition_id : int, default=0</span>
+<span class="sd">        RF definition every sample names; sets the power deposited in a</span>
+<span class="sd">        semisolid pool. Non-zero requires a single offset.</span>
+<span class="sd">    shim_id : int, default=0</span>
+<span class="sd">        Transmit shim definition; 0 for none.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        Holds the timeline for ``len(waveform) * dwell_s``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If the waveform is empty or not one-dimensional, ``dwell_s`` is not</span>
+<span class="sd">        positive, or a non-zero ``definition_id`` is played at more than one</span>
+<span class="sd">        offset.</span>
+
+<span class="sd">    References</span>
+<span class="sd">    ----------</span>
+<span class="sd">    .. [1] Pauly, J., Le Roux, P., Nishimura, D., Macovski, A., "Parameter</span>
+<span class="sd">       relations for the Shinnar-Le Roux selective excitation pulse design</span>
+<span class="sd">       algorithm", IEEE Transactions on Medical Imaging 10.1 (1991),</span>
+<span class="sd">       pp. 53-65. https://doi.org/10.1109/42.75611</span>
+<span class="sd">    """</span>
+    <span class="n">samples</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">waveform_rad_per_s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">samples</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="n">samples</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"a sampled pulse is a non-empty one-dimensional waveform"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">float</span><span class="p">(</span><span class="n">dwell_s</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"dwell_s must be positive, not </span><span class="si">{</span><span class="n">dwell_s</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="n">offset</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">offset_hz</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">definition_id</span> <span class="o">!=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">offset</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">"a semisolid pool reads its lineshape at one offset, so a sampled "</span>
+            <span class="s2">"pulse naming a definition is played at one offset for every train"</span>
+        <span class="p">)</span>
+    <span class="n">frequency_hz</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">offset</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="n">offset</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="n">samples</span><span class="o">.</span><span class="n">is_complex</span><span class="p">():</span>
+        <span class="n">areas</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">*</span> <span class="n">dwell_s</span>
+        <span class="n">turns</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">angle</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">areas</span> <span class="o">=</span> <span class="n">samples</span> <span class="o">*</span> <span class="n">dwell_s</span>
+        <span class="n">turns</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
+    <span class="n">middle_s</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">samples</span><span class="o">.</span><span class="n">numel</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span> <span class="o">+</span> <span class="mf">0.5</span><span class="p">)</span> <span class="o">*</span> <span class="n">dwell_s</span>
+    <span class="n">phases</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">as_tensor</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">)[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="o">+</span> <span class="n">turns</span>
+        <span class="o">-</span> <span class="mf">2.0</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">pi</span> <span class="o">*</span> <span class="n">offset</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="n">middle_s</span>
+    <span class="p">)</span>
+    <span class="c1"># A value per train leads the axis a train count is read from, and a</span>
+    <span class="c1"># plain number stays one so a train of a thousand samples packs as fast</span>
+    <span class="c1"># as a train of a thousand ideal pulses.</span>
+    <span class="n">flips</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">areas</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span> <span class="k">if</span> <span class="n">areas</span><span class="o">.</span><span class="n">requires_grad</span> <span class="k">else</span> <span class="n">areas</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">phases</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">:</span>
+        <span class="n">per_sample</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">phases</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+    <span class="k">elif</span> <span class="n">phases</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">per_sample</span> <span class="o">=</span> <span class="n">phases</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">per_sample</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">phases</span><span class="o">.</span><span class="n">movedim</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">unbind</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+    <span class="n">offsets_s</span> <span class="o">=</span> <span class="n">middle_s</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="o">.</span><span class="n">rf</span><span class="p">(</span>
+                <span class="n">_TO_US</span> <span class="o">*</span> <span class="p">(</span><span class="n">start_s</span> <span class="o">+</span> <span class="n">at_s</span><span class="p">),</span>
+                <span class="n">definition_id</span><span class="p">,</span>
+                <span class="n">RfUse</span><span class="o">.</span><span class="n">EXCITATION</span><span class="p">,</span>
+                <span class="n">flip</span><span class="p">,</span>
+                <span class="n">phase</span><span class="p">,</span>
+                <span class="n">frequency_hz</span><span class="p">,</span>
+                <span class="n">shim_id</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">at_s</span><span class="p">,</span> <span class="n">flip</span><span class="p">,</span> <span class="n">phase</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">offsets_s</span><span class="p">,</span> <span class="n">flips</span><span class="p">,</span> <span class="n">per_sample</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">samples</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">*</span> <span class="n">dwell_s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Readout">
+<a class="viewcode-back" href="../../../generated/blochsim.Readout.html#blochsim.Readout">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Readout</span><span class="p">(</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">role</span><span class="p">:</span> <span class="n">AdcRole</span> <span class="o">=</span> <span class="n">AdcRole</span><span class="o">.</span><span class="n">SINGLE</span><span class="p">,</span>
+    <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">action</span><span class="p">:</span> <span class="n">EventAction</span> <span class="o">=</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One ADC sample of the transverse magnetization.</span>
+
+<span class="sd">    The sample is the transverse magnetization at the start of the module,</span>
+<span class="sd">    demodulated by ``phase_rad``; ``duration_s`` only sets how long the module</span>
+<span class="sd">    holds the timeline.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    role : AdcRole, default=AdcRole.SINGLE</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, default=True</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    action : EventAction, default=EventAction.NONE</span>
+<span class="sd">        Gradient action played after the sample, e.g. ``SPOIL_AFTER``.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        One ADC event at the start of the module.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="o">.</span><span class="n">adc</span><span class="p">(</span>
+                <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span>
+                <span class="n">role</span><span class="p">,</span>
+                <span class="n">phase_rad</span><span class="p">,</span>
+                <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">,</span>
+                <span class="n">action</span><span class="o">=</span><span class="n">action</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Delay">
+<a class="viewcode-back" href="../../../generated/blochsim.Delay.html#blochsim.Delay">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Delay</span><span class="p">(</span><span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">EventAction</span> <span class="o">=</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Delay, optionally carrying a gradient action.</span>
+
+<span class="sd">    Free precession, relaxation and exchange act over ``duration_s``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    duration_s : float or torch.Tensor</span>
+<span class="sd">        Time held on the timeline, in seconds.</span>
+<span class="sd">    action : EventAction, default=EventAction.NONE</span>
+<span class="sd">        Gradient action played at the start of the delay.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        One wait event at the start of the module, spanning ``duration_s``.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">emit</span><span class="p">(</span><span class="n">start_s</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">SequenceEvent</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">action</span> <span class="ow">is</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">NONE</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">SequenceEvent</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">),)</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">SequenceEvent</span><span class="p">(</span><span class="n">EventType</span><span class="o">.</span><span class="n">WAIT</span><span class="p">,</span> <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span> <span class="p">(),</span> <span class="n">action</span><span class="p">),)</span>
+
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span><span class="n">emit</span><span class="p">,</span> <span class="n">duration_s</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Dephase">
+<a class="viewcode-back" href="../../../generated/blochsim.Dephase.html#blochsim.Dephase">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Dephase</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Unbalanced gradient of zero duration.</span>
+
+<span class="sd">    Every configuration order advances by one. The dephasing across a voxel</span>
+<span class="sd">    is the description's ``crusher_dephasing_rad``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span>
+        <span class="k">lambda</span> <span class="n">start_s</span><span class="p">:</span> <span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="p">(</span>
+                <span class="n">EventType</span><span class="o">.</span><span class="n">WAIT</span><span class="p">,</span> <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span> <span class="p">(),</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">CRUSH_AFTER</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="Spoil">
+<a class="viewcode-back" href="../../../generated/blochsim.Spoil.html#blochsim.Spoil">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">Spoil</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Ideal transverse spoiling of zero duration.</span>
+
+<span class="sd">    Every transverse order is discarded.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">Operator</span><span class="p">(</span>
+        <span class="k">lambda</span> <span class="n">start_s</span><span class="p">:</span> <span class="p">(</span>
+            <span class="n">SequenceEvent</span><span class="p">(</span>
+                <span class="n">EventType</span><span class="o">.</span><span class="n">WAIT</span><span class="p">,</span> <span class="n">_TO_US</span> <span class="o">*</span> <span class="n">start_s</span><span class="p">,</span> <span class="p">(),</span> <span class="n">EventAction</span><span class="o">.</span><span class="n">SPOIL_AFTER</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="bSSFPReadout">
+<a class="viewcode-back" href="../../../generated/blochsim.bSSFPReadout.html#blochsim.bSSFPReadout">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">bSSFPReadout</span><span class="p">(</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">role</span><span class="p">:</span> <span class="n">AdcRole</span> <span class="o">=</span> <span class="n">AdcRole</span><span class="o">.</span><span class="n">SINGLE</span><span class="p">,</span>
+    <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Balanced SSFP readout: a sample, then the rest of the repetition time.</span>
+
+<span class="sd">    No gradient action is played, so the dephasing over a repetition is zero.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, default=AdcRole.SINGLE</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, default=True</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        Sample, then a delay of ``duration_s``; the module spans ``duration_s``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
+        <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
+        <span class="n">Delay</span><span class="p">(</span><span class="n">duration_s</span><span class="p">),</span>
+        <span class="n">duration_s</span><span class="o">=</span><span class="n">duration_s</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SSFPFidReadout">
+<a class="viewcode-back" href="../../../generated/blochsim.SSFPFidReadout.html#blochsim.SSFPFidReadout">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">SSFPFidReadout</span><span class="p">(</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">role</span><span class="p">:</span> <span class="n">AdcRole</span> <span class="o">=</span> <span class="n">AdcRole</span><span class="o">.</span><span class="n">SINGLE</span><span class="p">,</span>
+    <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Unbalanced SSFP readout (FISP): a sample, then one unbalanced gradient.</span>
+
+<span class="sd">    The gradient advances every configuration order by one, so the free</span>
+<span class="sd">    induction decay is sampled before the order shift.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, default=AdcRole.SINGLE</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, default=True</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        Sample, one unbalanced gradient, then a delay of ``duration_s``; the module spans ``duration_s``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
+        <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
+        <span class="n">Dephase</span><span class="p">(),</span>
+        <span class="n">Delay</span><span class="p">(</span><span class="n">duration_s</span><span class="p">),</span>
+        <span class="n">duration_s</span><span class="o">=</span><span class="n">duration_s</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SSFPEchoReadout">
+<a class="viewcode-back" href="../../../generated/blochsim.SSFPEchoReadout.html#blochsim.SSFPEchoReadout">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">SSFPEchoReadout</span><span class="p">(</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">role</span><span class="p">:</span> <span class="n">AdcRole</span> <span class="o">=</span> <span class="n">AdcRole</span><span class="o">.</span><span class="n">SINGLE</span><span class="p">,</span>
+    <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Reversed SSFP readout (PSIF): one unbalanced gradient, then a sample.</span>
+
+<span class="sd">    The sample reads the echo of the previous excitation (the T2-weighted</span>
+<span class="sd">    half of a reversed-FISP pair). The order shift is that</span>
+<span class="sd">    of :func:`SSFPFidReadout`, applied before the sample.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, default=AdcRole.SINGLE</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, default=True</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        Unbalanced gradient, sample, then a delay of ``duration_s``; the module spans ``duration_s``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
+        <span class="n">Dephase</span><span class="p">(),</span>
+        <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
+        <span class="n">Delay</span><span class="p">(</span><span class="n">duration_s</span><span class="p">),</span>
+        <span class="n">duration_s</span><span class="o">=</span><span class="n">duration_s</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SPGRReadout">
+<a class="viewcode-back" href="../../../generated/blochsim.SPGRReadout.html#blochsim.SPGRReadout">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">SPGRReadout</span><span class="p">(</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">role</span><span class="p">:</span> <span class="n">AdcRole</span> <span class="o">=</span> <span class="n">AdcRole</span><span class="o">.</span><span class="n">SINGLE</span><span class="p">,</span>
+    <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Spoiled gradient-echo readout: a sample, then ideal transverse spoiling.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Repetition time remaining after the sample, in seconds.</span>
+<span class="sd">    role : AdcRole, default=AdcRole.SINGLE</span>
+<span class="sd">        Role of the sample in the event stream.</span>
+<span class="sd">    is_echo : bool, default=True</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        Sample, ideal spoiling, then a delay of ``duration_s``; the module spans ``duration_s``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
+        <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">role</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
+        <span class="n">Spoil</span><span class="p">(),</span>
+        <span class="n">Delay</span><span class="p">(</span><span class="n">duration_s</span><span class="p">),</span>
+        <span class="n">duration_s</span><span class="o">=</span><span class="n">duration_s</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="FSEReadout">
+<a class="viewcode-back" href="../../../generated/blochsim.FSEReadout.html#blochsim.FSEReadout">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">FSEReadout</span><span class="p">(</span>
+    <span class="n">phase_rad</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">duration_s</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="n">is_echo</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Operator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Fast spin-echo readout: the sample at a spin echo, marked as the echo centre.</span>
+
+<span class="sd">    No gradient action is played; dephasing is carried by the refocusing</span>
+<span class="sd">    pulses.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    phase_rad : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Demodulation phase, in radians.</span>
+<span class="sd">    duration_s : float or torch.Tensor, default=0.0</span>
+<span class="sd">        Echo spacing remaining after the sample, in seconds.</span>
+<span class="sd">    is_echo : bool, default=True</span>
+<span class="sd">        Whether the sample is at the k-space origin.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Operator</span>
+<span class="sd">        Sample, then a delay of ``duration_s``; the module spans ``duration_s``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">module</span><span class="p">(</span>
+        <span class="n">Readout</span><span class="p">(</span><span class="n">phase_rad</span><span class="p">,</span> <span class="n">role</span><span class="o">=</span><span class="n">AdcRole</span><span class="o">.</span><span class="n">ECHO_CENTER</span><span class="p">,</span> <span class="n">is_echo</span><span class="o">=</span><span class="n">is_echo</span><span class="p">),</span>
+        <span class="n">Delay</span><span class="p">(</span><span class="n">duration_s</span><span class="p">),</span>
+        <span class="n">duration_s</span><span class="o">=</span><span class="n">duration_s</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="n">_REGISTRY</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Operator</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"excitation"</span><span class="p">:</span> <span class="n">Excitation</span><span class="p">,</span>
+    <span class="s2">"refocusing"</span><span class="p">:</span> <span class="n">Refocusing</span><span class="p">,</span>
+    <span class="s2">"inversion"</span><span class="p">:</span> <span class="n">Inversion</span><span class="p">,</span>
+    <span class="s2">"saturation"</span><span class="p">:</span> <span class="n">Saturation</span><span class="p">,</span>
+    <span class="s2">"sampled-pulse"</span><span class="p">:</span> <span class="n">SampledPulse</span><span class="p">,</span>
+    <span class="s2">"readout"</span><span class="p">:</span> <span class="n">Readout</span><span class="p">,</span>
+    <span class="s2">"delay"</span><span class="p">:</span> <span class="n">Delay</span><span class="p">,</span>
+    <span class="s2">"dephase"</span><span class="p">:</span> <span class="n">Dephase</span><span class="p">,</span>
+    <span class="s2">"spoil"</span><span class="p">:</span> <span class="n">Spoil</span><span class="p">,</span>
+    <span class="s2">"bssfp-readout"</span><span class="p">:</span> <span class="n">bSSFPReadout</span><span class="p">,</span>
+    <span class="s2">"ssfp-fid-readout"</span><span class="p">:</span> <span class="n">SSFPFidReadout</span><span class="p">,</span>
+    <span class="s2">"ssfp-echo-readout"</span><span class="p">:</span> <span class="n">SSFPEchoReadout</span><span class="p">,</span>
+    <span class="s2">"spgr-readout"</span><span class="p">:</span> <span class="n">SPGRReadout</span><span class="p">,</span>
+    <span class="s2">"fse-readout"</span><span class="p">:</span> <span class="n">FSEReadout</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">register_operator</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">factory</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Operator</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Register an operator factory under a name.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Case-insensitive; underscores are read as hyphens.</span>
+<span class="sd">    factory : callable</span>
+<span class="sd">        Called with the operator's own parameters; returns an ``Operator``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If the name is already registered.</span>
+<span class="sd">    """</span>
+    <span class="n">normalized</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="s2">"-"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">normalized</span> <span class="ow">in</span> <span class="n">_REGISTRY</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"operator </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2"> is already registered"</span><span class="p">)</span>
+    <span class="n">_REGISTRY</span><span class="p">[</span><span class="n">normalized</span><span class="p">]</span> <span class="o">=</span> <span class="n">factory</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">operator</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Operator</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return the registered operator factory for a name.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    name : str</span>
+<span class="sd">        Case-insensitive; underscores are read as hyphens.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    callable</span>
+<span class="sd">        The factory, e.g. :func:`Excitation` for ``"excitation"``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If no operator of that name is registered.</span>
+<span class="sd">    """</span>
+    <span class="n">normalized</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="s2">"-"</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_REGISTRY</span><span class="p">[</span><span class="n">normalized</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">KeyError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"unknown operator </span><span class="si">{</span><span class="n">name</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">error</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">operator_names</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return every registered operator name, in registration order.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    tuple of str</span>
+<span class="sd">        Lowercase hyphenated names, e.g. ``"ssfp-fid-readout"``.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_REGISTRY</span><span class="p">)</span>
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By BlochSim Contributors
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024, BlochSim Contributors.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=90905a2f556bf617f1a9"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=90905a2f556bf617f1a9"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
