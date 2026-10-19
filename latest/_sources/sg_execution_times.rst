@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**04:52.358** total execution time for 15 files **from all galleries**:
+**05:01.866** total execution time for 15 files **from all galleries**:
 
 .. container::
 
@@ -33,47 +33,47 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_generated_autoexamples_05-misc_01-synthetic-data.py` (``../examples/05-misc/01-synthetic-data.py``)
-     - 02:13.058
+     - 02:15.899
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_01-dictionary-matching.py` (``../examples/02-parameter-inference/01-dictionary-matching.py``)
-     - 01:01.632
+     - 01:00.943
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_04-perk.py` (``../examples/02-parameter-inference/04-perk.py``)
-     - 00:31.571
+     - 00:30.117
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_01-framework_02-advanced-physics.py` (``../examples/01-framework/02-advanced-physics.py``)
-     - 00:15.826
-     - 0.0
-   * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_03-nonlinear-least-squares.py` (``../examples/02-parameter-inference/03-nonlinear-least-squares.py``)
-     - 00:12.933
+     - 00:17.346
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_03-sequence-optimization_02-joint-relaxometry.py` (``../examples/03-sequence-optimization/02-joint-relaxometry.py``)
-     - 00:12.061
+     - 00:14.098
+     - 0.0
+   * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_03-nonlinear-least-squares.py` (``../examples/02-parameter-inference/03-nonlinear-least-squares.py``)
+     - 00:14.027
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_03-sequence-optimization_03-rf-pulse-design.py` (``../examples/03-sequence-optimization/03-rf-pulse-design.py``)
-     - 00:07.480
+     - 00:09.559
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_04-model-based-imaging_02-nonlinear-inversion.py` (``../examples/04-model-based-imaging/02-nonlinear-inversion.py``)
-     - 00:05.461
+     - 00:06.530
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_04-model-based-imaging_01-linear-subspace.py` (``../examples/04-model-based-imaging/01-linear-subspace.py``)
-     - 00:02.784
+     - 00:02.870
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_03-sequence-optimization_01-echo-train-design.py` (``../examples/03-sequence-optimization/01-echo-train-design.py``)
-     - 00:02.604
+     - 00:02.826
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_01-framework_04-description-based-simulation.py` (``../examples/01-framework/04-description-based-simulation.py``)
-     - 00:02.436
+     - 00:02.780
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_02-parameter-inference_02-lookup-table.py` (``../examples/02-parameter-inference/02-lookup-table.py``)
-     - 00:01.801
+     - 00:01.991
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_01-framework_01-first-simulation.py` (``../examples/01-framework/01-first-simulation.py``)
-     - 00:01.709
+     - 00:01.773
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_01-framework_03-custom-signal-model.py` (``../examples/01-framework/03-custom-signal-model.py``)
-     - 00:00.617
+     - 00:00.676
      - 0.0
    * - :ref:`sphx_glr_generated_autoexamples_01-framework_05-custom-operator.py` (``../examples/01-framework/05-custom-operator.py``)
-     - 00:00.385
+     - 00:00.429
      - 0.0
